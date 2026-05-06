@@ -5,6 +5,7 @@ import type { InvoiceStatus } from "./actions";
 import { CopyInvoiceLinkButton } from "./copy-link-button";
 import { getSequenceConfig } from "@/features/sequences/services/sequence-admin";
 import { requireOrgContext } from "@/lib/auth";
+import { TagFilterChips } from "@/components/tags/tag-filter-chips";
 
 export const metadata = {
   title: "Invoice Vault | Slipwise",
@@ -101,6 +102,7 @@ async function InvoiceTable({
   sequenceId,
   amountMin,
   amountMax,
+  tagIds,
 }: {
   status?: InvoiceStatus;
   search?: string;
@@ -110,10 +112,12 @@ async function InvoiceTable({
   sequenceId?: string;
   amountMin?: number;
   amountMax?: number;
+  tagIds?: string[];
 }) {
   const { invoices, total, totalPages } = await listInvoices({
     status, search, page, limit: 20,
     dateFrom, dateTo, sequenceId, amountMin, amountMax,
+    tagIds,
   });
 
   if (invoices.length === 0) {
@@ -447,7 +451,7 @@ function InvoiceActions({ invoiceId, status, token }: { invoiceId: string; statu
 export default async function InvoicesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string; search?: string; page?: string; view?: string; dateFrom?: string; dateTo?: string; amountMin?: string; amountMax?: string; sequenceId?: string; filters?: string }>;
+  searchParams: Promise<{ status?: string; search?: string; page?: string; view?: string; dateFrom?: string; dateTo?: string; amountMin?: string; amountMax?: string; sequenceId?: string; filters?: string; tagId?: string | string[] }>; 
 }) {
   const params = await searchParams;
   const page = parseInt(params.page || "1", 10);
@@ -458,6 +462,7 @@ export default async function InvoicesPage({
   const amountMin = params.amountMin ? parseFloat(params.amountMin) : undefined;
   const amountMax = params.amountMax ? parseFloat(params.amountMax) : undefined;
   const sequenceId = params.sequenceId;
+  const tagIds = typeof params.tagId === "string" ? [params.tagId] : params.tagId || undefined;
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -536,6 +541,9 @@ export default async function InvoicesPage({
         {view === "list" && (
           <div className="mb-4">
             <StatusFilterChips currentStatus={status} extraParams={{ view: params.view, search: params.search || undefined }} />
+            <Suspense fallback={null}>
+              <TagFilterChips />
+            </Suspense>
           </div>
         )}
 
@@ -544,7 +552,7 @@ export default async function InvoicesPage({
           {view === "sequence" ? (
             <InvoiceSequenceView search={params.search} />
           ) : (
-            <InvoiceTable status={status} search={params.search} page={page} dateFrom={dateFrom} dateTo={dateTo} sequenceId={sequenceId} amountMin={amountMin} amountMax={amountMax} />
+            <InvoiceTable status={status} search={params.search} page={page} dateFrom={dateFrom} dateTo={dateTo} sequenceId={sequenceId} amountMin={amountMin} amountMax={amountMax} tagIds={tagIds} />
           )}
         </Suspense>
       </div>

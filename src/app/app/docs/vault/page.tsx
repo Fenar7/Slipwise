@@ -5,6 +5,7 @@ import type { DocType, VaultRow } from "@/lib/docs-vault";
 import { StatusBadge } from "@/components/dashboard/status-badge";
 import { cn } from "@/lib/utils";
 import { Search, ArrowRight, FileText, Receipt, Banknote, FileCheck } from "lucide-react";
+import { TagFilterChips } from "@/components/tags/tag-filter-chips";
 
 export const metadata = {
   title: "Document Vault | Slipwise",
@@ -151,6 +152,7 @@ async function VaultTable({
   sortBy,
   sortDir,
   page,
+  tagIds,
 }: {
   docType?: string;
   status?: string;
@@ -159,6 +161,7 @@ async function VaultTable({
   sortBy?: string;
   sortDir?: string;
   page: number;
+  tagIds?: string[];
 }) {
   const result = await queryVault({
     docType: (docType as DocType) || "all",
@@ -169,6 +172,7 @@ async function VaultTable({
     sortDir: (sortDir as "asc" | "desc") || "desc",
     page,
     limit: 25,
+    tagIds,
   });
 
   const { rows, total, totalPages } = result;
@@ -380,6 +384,8 @@ export default async function VaultPage({
   const sortBy = params.sortBy ?? "updatedAt";
   const sortDir = params.sortDir ?? "desc";
   const status = params.status ?? "all";
+  const tagIdStr = params.tagId;
+  const tagIds = tagIdStr ? (Array.isArray(tagIdStr) ? tagIdStr : [tagIdStr]) : undefined;
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6">
@@ -442,6 +448,9 @@ export default async function VaultPage({
         {/* Filters */}
         <div className="flex flex-wrap items-center gap-3">
           <TypeFilter current={docType} params={params} />
+          <Suspense fallback={null}>
+            <TagFilterChips />
+          </Suspense>
           <div className="ml-auto flex flex-wrap items-center gap-3">
             <ArchivedFilter current={archived} params={params} />
             <SortSelect params={params} />
@@ -466,6 +475,7 @@ export default async function VaultPage({
           sortBy={sortBy}
           sortDir={sortDir}
           page={page}
+          tagIds={tagIds}
         />
       </Suspense>
 

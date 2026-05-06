@@ -3,6 +3,7 @@ import Link from "next/link";
 import { listVouchers, archiveVoucher, duplicateVoucher } from "./actions";
 import { getSequenceConfig } from "@/features/sequences/services/sequence-admin";
 import { requireOrgContext } from "@/lib/auth";
+import { TagFilterChips } from "@/components/tags/tag-filter-chips";
 
 export const metadata = {
   title: "Voucher Vault | Slipwise",
@@ -141,7 +142,7 @@ function AdvancedFilters({
 // ─── List View Table ───────────────────────────────────────────────────────────
 
 async function VoucherTable({
-  type, search, page, dateFrom, dateTo, amountMin, amountMax,
+  type, search, page, dateFrom, dateTo, amountMin, amountMax, tagIds,
 }: {
   type?: "payment" | "receipt";
   search?: string;
@@ -150,8 +151,9 @@ async function VoucherTable({
   dateTo?: string;
   amountMin?: number;
   amountMax?: number;
+  tagIds?: string[];
 }) {
-  const { vouchers, total, totalPages } = await listVouchers({ type, search, page, limit: 20, dateFrom, dateTo, amountMin, amountMax });
+  const { vouchers, total, totalPages } = await listVouchers({ type, search, page, limit: 20, dateFrom, dateTo, amountMin, amountMax, tagIds });
 
   if (vouchers.length === 0) {
     return (
@@ -333,7 +335,7 @@ function VoucherActions({ voucherId }: { voucherId: string }) {
 export default async function VouchersPage({
   searchParams,
 }: {
-  searchParams: Promise<{ type?: string; search?: string; page?: string; view?: string; dateFrom?: string; dateTo?: string; amountMin?: string; amountMax?: string; filters?: string }>;
+  searchParams: Promise<{ type?: string; search?: string; page?: string; view?: string; dateFrom?: string; dateTo?: string; amountMin?: string; amountMax?: string; filters?: string; tagId?: string | string[] }>;
 }) {
   const params = await searchParams;
   const page = parseInt(params.page || "1", 10);
@@ -343,6 +345,7 @@ export default async function VouchersPage({
   const dateTo = params.dateTo;
   const amountMin = params.amountMin ? parseFloat(params.amountMin) : undefined;
   const amountMax = params.amountMax ? parseFloat(params.amountMax) : undefined;
+  const tagIds = typeof params.tagId === "string" ? [params.tagId] : params.tagId || undefined;
 
   const extraParams: Record<string, string | undefined> = { view };
 
@@ -411,6 +414,9 @@ export default async function VouchersPage({
         {view === "list" && (
           <div className="mb-4">
             <TypeFilterChips currentType={type} extraParams={{ search: params.search, view }} />
+            <Suspense fallback={null}>
+              <TagFilterChips />
+            </Suspense>
           </div>
         )}
 
@@ -419,7 +425,7 @@ export default async function VouchersPage({
           {view === "sequence" ? (
             <VoucherSequenceView type={type} search={params.search} />
           ) : (
-            <VoucherTable type={type} search={params.search} page={page} dateFrom={dateFrom} dateTo={dateTo} amountMin={amountMin} amountMax={amountMax} />
+            <VoucherTable type={type} search={params.search} page={page} dateFrom={dateFrom} dateTo={dateTo} amountMin={amountMin} amountMax={amountMax} tagIds={tagIds} />
           )}
         </Suspense>
       </div>
