@@ -20,27 +20,6 @@ async function verifyOrgEntity(
   return record !== null;
 }
 
-async function loadTagsForAssignments(
-  assignmentIds: string[],
-  tagCache: Map<string, TagData>
-): Promise<TagData[]> {
-  if (assignmentIds.length === 0) return [];
-
-  const uncached = assignmentIds.filter((id) => !tagCache.has(id));
-  if (uncached.length > 0) {
-    const tags = await db.documentTag.findMany({
-      where: { id: { in: uncached } },
-    });
-    for (const tag of tags) {
-      tagCache.set(tag.id, tag as TagData);
-    }
-  }
-
-  return assignmentIds
-    .map((id) => tagCache.get(id))
-    .filter((t): t is TagData => t !== undefined);
-}
-
 // ─── Invoice Tag Assignments ────────────────────────────────────────────────────
 
 export async function addInvoiceTag(
@@ -60,13 +39,14 @@ export async function addInvoiceTag(
     });
     if (!tag) return { success: false, error: "Tag not found" };
 
-    await db.invoiceTagAssignment.upsert({
-      where: {
-        invoiceId_tagId: { invoiceId, tagId },
-      },
-      create: { invoiceId, tagId },
-      update: {},
+    const existing = await db.invoiceTagAssignment.findFirst({
+      where: { invoiceId, tagId },
+      select: { id: true },
     });
+
+    if (!existing) {
+      await db.invoiceTagAssignment.create({ data: { invoiceId, tagId } });
+    }
 
     return { success: true, data: null };
   } catch (error) {
@@ -176,13 +156,14 @@ export async function addVoucherTag(
     });
     if (!tag) return { success: false, error: "Tag not found" };
 
-    await db.voucherTagAssignment.upsert({
-      where: {
-        voucherId_tagId: { voucherId, tagId },
-      },
-      create: { voucherId, tagId },
-      update: {},
+    const existing = await db.voucherTagAssignment.findFirst({
+      where: { voucherId, tagId },
+      select: { id: true },
     });
+
+    if (!existing) {
+      await db.voucherTagAssignment.create({ data: { voucherId, tagId } });
+    }
 
     return { success: true, data: null };
   } catch (error) {
@@ -292,13 +273,14 @@ export async function addCustomerDefaultTag(
     });
     if (!tag) return { success: false, error: "Tag not found" };
 
-    await db.customerDefaultTag.upsert({
-      where: {
-        customerId_tagId: { customerId, tagId },
-      },
-      create: { customerId, tagId },
-      update: {},
+    const existing = await db.customerDefaultTag.findFirst({
+      where: { customerId, tagId },
+      select: { id: true },
     });
+
+    if (!existing) {
+      await db.customerDefaultTag.create({ data: { customerId, tagId } });
+    }
 
     return { success: true, data: null };
   } catch (error) {
@@ -408,13 +390,14 @@ export async function addVendorDefaultTag(
     });
     if (!tag) return { success: false, error: "Tag not found" };
 
-    await db.vendorDefaultTag.upsert({
-      where: {
-        vendorId_tagId: { vendorId, tagId },
-      },
-      create: { vendorId, tagId },
-      update: {},
+    const existing = await db.vendorDefaultTag.findFirst({
+      where: { vendorId, tagId },
+      select: { id: true },
     });
+
+    if (!existing) {
+      await db.vendorDefaultTag.create({ data: { vendorId, tagId } });
+    }
 
     return { success: true, data: null };
   } catch (error) {
