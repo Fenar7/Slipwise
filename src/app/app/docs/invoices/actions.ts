@@ -12,6 +12,7 @@ import { postInvoiceIssueTx, postInvoicePaymentTx, reverseJournalEntryTx } from 
 import { fireWorkflowTrigger } from "@/lib/flow/workflow-engine";
 import { emitInvoiceEvent } from "@/lib/document-events";
 import { syncInvoiceToIndex, removeDocumentFromIndex } from "@/lib/docs-vault";
+import { setInvoiceTags } from "@/lib/tags/assignment-service";
 import { checkUsageLimit } from "@/lib/usage-metering";
 import { getOutboundUnitCostTx, recordStockEventTx } from "@/lib/inventory/stock-events";
 import {
@@ -74,6 +75,8 @@ export interface InvoiceInput {
   notes?: string;
   formData: Record<string, unknown>;
   lineItems: InvoiceLineItemInput[];
+  /** Phase 29: Tag IDs to assign to this invoice */
+  tagIds?: string[];
 }
 
 async function reverseInvoicePostingIfNeededTx(
@@ -489,6 +492,10 @@ export async function saveInvoice(
     });
     await syncInvoiceRecordToIndex(orgId, invoice.id);
 
+    if (input.tagIds !== undefined) {
+      await setInvoiceTags(invoice.id, input.tagIds);
+    }
+
     revalidatePath("/app/docs/invoices");
     return { success: true, data: { id: invoice.id, invoiceNumber } };
   } catch (error) {
@@ -566,6 +573,10 @@ export async function updateInvoice(
 
     await emitInvoiceEvent(orgId, id, "updated", { actorId: userId });
     await syncInvoiceRecordToIndex(orgId, id);
+
+    if (input.tagIds !== undefined) {
+      await setInvoiceTags(id, input.tagIds);
+    }
 
     revalidatePath("/app/docs/invoices");
       revalidatePath(`/app/docs/invoices/${id}`);

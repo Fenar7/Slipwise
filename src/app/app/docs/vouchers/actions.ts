@@ -9,6 +9,7 @@ import type { Prisma } from "@/generated/prisma/client";
 import { postVoucherTx } from "@/lib/accounting";
 import { emitVoucherEvent } from "@/lib/document-events";
 import { syncVoucherToIndex } from "@/lib/docs-vault";
+import { setVoucherTags } from "@/lib/tags/assignment-service";
 import { checkUsageLimit } from "@/lib/usage-metering";
 import { consumeSequenceNumber } from "@/features/sequences/services/sequence-engine";
 import { getSequenceConfig } from "@/features/sequences/services/sequence-admin";
@@ -35,6 +36,8 @@ export interface VoucherInput {
   status?: "draft" | "approved";
   formData: Record<string, unknown>;
   lines: VoucherLineInput[];
+  /** Phase 29: Tag IDs to assign to this voucher */
+  tagIds?: string[];
 }
 
 function normalizeVoucherLines(
@@ -255,6 +258,10 @@ export async function saveVoucher(
     // Phase 19.1: Sync to DocumentIndex
     await syncVoucherRecordToIndex(orgId, voucher.id);
 
+    if (input.tagIds !== undefined) {
+      await setVoucherTags(voucher.id, input.tagIds);
+    }
+
     revalidatePath("/app/docs/vouchers");
     return { success: true, data: { id: voucher.id, voucherNumber } };
   } catch (error) {
@@ -376,6 +383,10 @@ export async function updateVoucher(
     // Phase 19.2: emit normalized document event
     await emitVoucherEvent(orgId, id, "updated", { actorId: userId });
     await syncVoucherRecordToIndex(orgId, id);
+
+    if (input.tagIds !== undefined) {
+      await setVoucherTags(id, input.tagIds);
+    }
 
     revalidatePath("/app/docs/vouchers");
     revalidatePath(`/app/docs/vouchers/${id}`);

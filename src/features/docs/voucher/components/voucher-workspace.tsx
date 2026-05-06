@@ -32,6 +32,8 @@ import {
 import { VoucherPreview } from "@/features/docs/voucher/components/voucher-preview";
 import { VoucherDocumentFrame } from "@/features/docs/voucher/components/voucher-document-frame";
 import { VendorPicker } from "@/features/docs/voucher/components/vendor-picker";
+import { TagPicker } from "@/components/tags/tag-picker";
+import { getVoucherTags, getVendorDefaultTags } from "@/lib/tags/assignment-service";
 import { MultiLineVoucherEditor } from "@/features/docs/voucher/components/multi-line-voucher-editor";
 import { VoucherSaveBar } from "@/features/docs/voucher/components/voucher-save-bar";
 import { voucherFormSchema } from "@/features/docs/voucher/schema";
@@ -70,6 +72,7 @@ const voucherWorkspaceSections: WorkspaceSectionMeta[] = [
   { id: "voucher-setup", label: "Setup" },
   { id: "voucher-branding", label: "Brand" },
   { id: "voucher-details", label: "Details" },
+  { id: "voucher-tags", label: "Tags" },
   { id: "voucher-approvals", label: "Approvals" },
   { id: "voucher-visibility", label: "Visibility" },
 ];
@@ -118,6 +121,21 @@ function VoucherPanel({
   const [savedNumber, setSavedNumber] = useState<string | undefined>(
     voucherId ? values.voucherNumber : undefined
   );
+  const [tagIds, setTagIds] = useState<string[]>([]);
+  const [tagIdsLoaded, setTagIdsLoaded] = useState(false);
+
+  useEffect(() => {
+    if (voucherId && !tagIdsLoaded) {
+      getVoucherTags(voucherId).then((result) => {
+        if (result.success) {
+          setTagIds(result.data.map((t) => t.id));
+        }
+        setTagIdsLoaded(true);
+      });
+    } else if (!voucherId) {
+      setTagIdsLoaded(true);
+    }
+  }, [voucherId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Sync multi-line total → amount field so preview stays live
   useEffect(() => {
@@ -142,6 +160,7 @@ function VoucherPanel({
         isMultiLine: currentValues.isMultiLine,
         formData: currentValues as Record<string, unknown>,
         lines: buildLines(currentValues),
+        tagIds,
       };
       if (savedId) {
         const result = await updateVoucher(savedId, input);
@@ -186,6 +205,7 @@ function VoucherPanel({
         status: "approved",
         formData: currentValues as Record<string, unknown>,
         lines: buildLines(currentValues),
+        tagIds,
       };
       if (savedId) {
         const result = await updateVoucher(savedId, input);
@@ -565,6 +585,18 @@ function VoucherPanel({
                     <VendorPicker
                       vendors={vendors}
                       label={isPayment ? "Select vendor" : "Select from"}
+                      onSelect={(vendor) => {
+                        if (tagIds.length === 0) {
+                          getVendorDefaultTags(vendor.id).then((result) => {
+                            if (result.success && result.data.length > 0) {
+                              const defaultIds = result.data.map((t) => t.id);
+                              if (!defaultIds.some((id) => tagIds.includes(id))) {
+                                setTagIds([...tagIds, ...defaultIds]);
+                              }
+                            }
+                          });
+                        }
+                      }}
                     />
 
                     <TextField<VoucherFormValues>
@@ -649,6 +681,20 @@ function VoucherPanel({
                     ) : null}
                   </div>
                 </FormSection>
+            </div>
+
+            <div id="voucher-tags" className="scroll-mt-28">
+              <FormSection
+                eyebrow="Tags"
+                title="Document tags"
+                description="Add tags to categorize this voucher. Tags are internal and not shown on the PDF."
+              >
+                <TagPicker
+                  value={tagIds}
+                  onChange={setTagIds}
+                  placeholder="Add tags..."
+                />
+              </FormSection>
             </div>
 
             <div id="voucher-approvals" className="scroll-mt-28">
