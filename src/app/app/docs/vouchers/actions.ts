@@ -508,6 +508,7 @@ export async function listVouchers(params?: {
   amountMax?: number;
   vendorId?: string;
   tagIds?: string[];
+  hasTags?: boolean;
 }) {
   const { orgId } = await requireOrgContext();
   const page = params?.page ?? 1;
@@ -552,6 +553,13 @@ export async function listVouchers(params?: {
   if (params?.tagIds && params.tagIds.length > 0) {
     where.tagAssignments = {
       some: { tagId: { in: params.tagIds } },
+    };
+  }
+
+  // Tagged-only filter (has at least one tag)
+  if (params?.hasTags && !(params.tagIds && params.tagIds.length > 0)) {
+    where.tagAssignments = {
+      some: {},
     };
   }
   

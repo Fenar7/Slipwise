@@ -141,7 +141,7 @@ function AdvancedFilters({
 // ─── List View Table ───────────────────────────────────────────────────────────
 
 async function VoucherTable({
-  type, search, page, dateFrom, dateTo, amountMin, amountMax, tagIds,
+  type, search, page, dateFrom, dateTo, amountMin, amountMax, tagIds, hasTags,
 }: {
   type?: "payment" | "receipt";
   search?: string;
@@ -151,8 +151,9 @@ async function VoucherTable({
   amountMin?: number;
   amountMax?: number;
   tagIds?: string[];
+  hasTags?: boolean;
 }) {
-  const { vouchers, total, totalPages } = await listVouchers({ type, search, page, limit: 20, dateFrom, dateTo, amountMin, amountMax, tagIds });
+  const { vouchers, total, totalPages } = await listVouchers({ type, search, page, limit: 20, dateFrom, dateTo, amountMin, amountMax, tagIds, hasTags });
 
   if (vouchers.length === 0) {
     return (
@@ -334,7 +335,7 @@ function VoucherActions({ voucherId }: { voucherId: string }) {
 export default async function VouchersPage({
   searchParams,
 }: {
-  searchParams: Promise<{ type?: string; search?: string; page?: string; view?: string; dateFrom?: string; dateTo?: string; amountMin?: string; amountMax?: string; tagIds?: string; filters?: string }>;
+  searchParams: Promise<{ type?: string; search?: string; page?: string; view?: string; dateFrom?: string; dateTo?: string; amountMin?: string; amountMax?: string; tagIds?: string; tagged?: string; filters?: string }>;
 }) {
   const params = await searchParams;
   const page = parseInt(params.page || "1", 10);
@@ -345,8 +346,9 @@ export default async function VouchersPage({
   const amountMin = params.amountMin ? parseFloat(params.amountMin) : undefined;
   const amountMax = params.amountMax ? parseFloat(params.amountMax) : undefined;
   const tagIds = params.tagIds ? params.tagIds.split(",").filter(Boolean) : undefined;
+  const hasTags = params.tagged === "1";
 
-  const extraParams: Record<string, string | undefined> = { view, tagIds: params.tagIds || undefined };
+  const extraParams: Record<string, string | undefined> = { view, tagIds: params.tagIds || undefined, tagged: params.tagged || undefined };
 
   return (
     <div className="min-h-screen bg-slate-50">
