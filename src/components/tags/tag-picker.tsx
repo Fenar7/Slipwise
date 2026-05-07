@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { Search, Plus, ChevronDown, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { listTags, createTag } from "@/lib/tags/tag-service";
+import { listTags, createTag, canManageTags } from "@/lib/tags/tag-service";
 import type { TagData } from "@/lib/tags/tag-service";
 import { TagChips } from "./tag-chips";
 import { panelAppear } from "@/components/foundation/motion-primitives";
@@ -32,6 +32,8 @@ export function TagPicker({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [userCanManage, setUserCanManage] = useState<boolean | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -42,49 +44,30 @@ export function TagPicker({
     return allTags.filter((t) => value.includes(t.id));
   }, [allTags, value]);
 
-  const archivedSelectedTags = useMemo(() => {
-    const archivedIds = new Set(archivedTagIds);
-    return selectedTags.filter((t) => archivedIds.has(t.id));
-  }, [selectedTags, archivedTagIds]);
-
-  // Fetch tags on mount
+  // Fetch tags + capability on mount (include archived so historical tags are visible immediately)
   useEffect(() => {
     let cancelled = false;
     async function load() {
       setLoading(true);
       setError(null);
-      const result = await listTags({ includeArchived: false });
+      const [tagsResult, canManageResult] = await Promise.allSettled([
+        listTags({ includeArchived: true }),
+        canManageTags(),
+      ]);
       if (cancelled) return;
-      if (result.success) {
-        setAllTags(result.data);
-      } else {
-        setError(result.error);
+      if (tagsResult.status === "fulfilled" && tagsResult.value.success) {
+        setAllTags(tagsResult.value.data);
+      } else if (tagsResult.status === "rejected") {
+        setError("Failed to load tags");
+      }
+      if (canManageResult.status === "fulfilled") {
+        setUserCanManage(canManageResult.value);
       }
       setLoading(false);
     }
     load();
     return () => { cancelled = true; };
   }, []);
-
-  // If we have archived assigned tags not in the active list, fetch them too
-  useEffect(() => {
-    if (archivedTagIds.length === 0) return;
-    const missingArchived = archivedTagIds.filter(
-      (id) => !allTags.some((t) => t.id === id)
-    );
-    if (missingArchived.length === 0) return;
-
-    let cancelled = false;
-    async function loadArchived() {
-      const result = await listTags({ includeArchived: true });
-      if (cancelled) return;
-      if (result.success) {
-        setAllTags(result.data);
-      }
-    }
-    loadArchived();
-    return () => { cancelled = true; };
-  }, [archivedTagIds]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Click outside to close
   useEffect(() => {
@@ -157,11 +140,14 @@ export function TagPicker({
     if (!name || creating) return;
 
     setCreating(true);
+    setCreateError(null);
     const result = await createTag({ name });
     if (result.success) {
       setAllTags((prev) => [result.data, ...prev]);
       onChange([...value, result.data.id]);
       setSearch("");
+    } else {
+      setCreateError(result.error);
     }
     setCreating(false);
   }, [search, creating, value, onChange]);
@@ -212,7 +198,7 @@ export function TagPicker({
     [filteredTags, highlightedIndex, handleSelect, handleCreate, exactMatchExists, search, value, onChange]
   );
 
-  const showCreateOption = search.trim() && !exactMatchExists && !creating;
+  const showCreateOption = search.trim() && !exactMatchExists && !creating && userCanManage === true;
 
   return (
     <div ref={containerRef} className={cn("relative", className)}>
@@ -244,6 +230,7 @@ export function TagPicker({
             setSearch(e.target.value);
             setOpen(true);
             setHighlightedIndex(-1);
+            setCreateError(null);
           }}
           onFocus={() => setOpen(true)}
           onKeyDown={handleKeyDown}
@@ -365,24 +352,39 @@ export function TagPicker({
 
             {/* Create new tag */}
             {showCreateOption && (
-              <div className="border-t border-[var(--border-soft)] p-2">
-                <button
-                  type="button"
-                  onClick={handleCreate}
-                  disabled={creating}
-                  className={cn(
-                    "flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors",
-                    "text-[var(--brand-primary)] hover:bg-[var(--surface-subtle)]",
-                    creating && "opacity-50 cursor-not-allowed"
-                  )}
-                >
-                  {creating ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Plus className="h-4 w-4" />
-                  )}
-                  Create &ldquo;<span className="font-semibold">{search.trim()}</span>&rdquo;
-                </button>
+              <div className="border-t border-[var(--border-soft)]">
+                {createError && (
+                  <div className="px-3 py-2 text-xs text-[var(--state-danger)] border-b border-[var(--border-soft)]">
+                    {createError}
+                  </div>
+                )}
+                <div className="p-2">
+                  <button
+                    type="button"
+                    onClick={handleCreate}
+                    disabled={creating}
+                    className={cn(
+                      "flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors",
+                      "text-[var(--brand-primary)] hover:bg-[var(--surface-subtle)]",
+                      creating && "opacity-50 cursor-not-allowed"
+                    )}
+                  >
+                    {creating ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Plus className="h-4 w-4" />
+                    )}
+                    Create &ldquo;<span className="font-semibold">{search.trim()}</span>&rdquo;
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {search.trim() && !exactMatchExists && !creating && userCanManage === false && (
+              <div className="border-t border-[var(--border-soft)] px-3 py-2">
+                <p className="text-xs text-[var(--text-muted)]">
+                  Contact an admin to create new tags.
+                </p>
               </div>
             )}
           </motion.div>

@@ -12,16 +12,19 @@ const mockTags = [
 vi.mock("@/lib/tags/tag-service", () => ({
   listTags: vi.fn(),
   createTag: vi.fn(),
+  canManageTags: vi.fn(),
 }));
 
-import { listTags, createTag } from "@/lib/tags/tag-service";
+import { listTags, createTag, canManageTags } from "@/lib/tags/tag-service";
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Now we fetch with includeArchived: true, so include archived tags in mock
   vi.mocked(listTags).mockResolvedValue({
     success: true,
-    data: mockTags.filter((t) => !t.isArchived),
+    data: mockTags,
   });
+  vi.mocked(canManageTags).mockResolvedValue(true);
 });
 
 describe("TagPicker", () => {
@@ -41,10 +44,7 @@ describe("TagPicker", () => {
 
   it("opens dropdown on click", async () => {
     render(<TagPicker value={[]} onChange={() => {}} />);
-
-    const trigger = screen.getByPlaceholderText("Add tag...");
-    fireEvent.focus(trigger);
-
+    fireEvent.focus(screen.getByPlaceholderText("Add tag..."));
     await waitFor(() => {
       expect(screen.getByPlaceholderText("Search tags...")).toBeInTheDocument();
     });
@@ -82,7 +82,6 @@ describe("TagPicker", () => {
 
   it("filters tags by search", async () => {
     render(<TagPicker value={[]} onChange={() => {}} />);
-
     fireEvent.focus(screen.getByPlaceholderText("Add tag..."));
 
     await waitFor(() => {
@@ -99,21 +98,20 @@ describe("TagPicker", () => {
     });
   });
 
-  it("shows create button when no tags match search", async () => {
+  it("shows create button when no tags match search and user can manage", async () => {
     render(<TagPicker value={[]} onChange={() => {}} />);
-
     fireEvent.focus(screen.getByPlaceholderText("Add tag..."));
 
     await waitFor(() => {
       expect(screen.getByText("Hotel Sarovar")).toBeInTheDocument();
     });
 
-    const searchInput = screen.getByPlaceholderText("Search tags...");
-    fireEvent.change(searchInput, { target: { value: "New Unique Tag" } });
+    fireEvent.change(screen.getByPlaceholderText("Search tags..."), {
+      target: { value: "New Unique Tag" },
+    });
 
     await waitFor(() => {
-      const createBtn = screen.getByRole("button", { name: /Create/ });
-      expect(createBtn).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /Create/ })).toBeInTheDocument();
     });
   });
 
@@ -125,15 +123,15 @@ describe("TagPicker", () => {
     });
 
     render(<TagPicker value={[]} onChange={onChange} />);
-
     fireEvent.focus(screen.getByPlaceholderText("Add tag..."));
 
     await waitFor(() => {
       expect(screen.getByText("Hotel Sarovar")).toBeInTheDocument();
     });
 
-    const searchInput = screen.getByPlaceholderText("Search tags...");
-    fireEvent.change(searchInput, { target: { value: "New Unique Tag" } });
+    fireEvent.change(screen.getByPlaceholderText("Search tags..."), {
+      target: { value: "New Unique Tag" },
+    });
 
     await waitFor(() => {
       expect(screen.getByRole("button", { name: /Create/ })).toBeInTheDocument();
@@ -147,17 +145,69 @@ describe("TagPicker", () => {
     });
   });
 
+  it("shows error when inline create fails", async () => {
+    vi.mocked(createTag).mockResolvedValue({
+      success: false,
+      error: "A tag with a similar name already exists",
+    });
+
+    render(<TagPicker value={[]} onChange={() => {}} />);
+    fireEvent.focus(screen.getByPlaceholderText("Add tag..."));
+
+    await waitFor(() => {
+      expect(screen.getByText("Hotel Sarovar")).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByPlaceholderText("Search tags..."), {
+      target: { value: "Hotel Sarovar" },
+    });
+
+    // "Hotel Sarovar" already exists (exactMatchExists = true), so no create button
+    // Try a truly unique name
+    fireEvent.change(screen.getByPlaceholderText("Search tags..."), {
+      target: { value: "Duplicate Name" },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Create/ })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /Create/ }));
+
+    await waitFor(() => {
+      expect(screen.getByText("A tag with a similar name already exists")).toBeInTheDocument();
+    });
+  });
+
+  it("does not show create when user lacks permission", async () => {
+    vi.mocked(canManageTags).mockResolvedValue(false);
+
+    render(<TagPicker value={[]} onChange={() => {}} />);
+    fireEvent.focus(screen.getByPlaceholderText("Add tag..."));
+
+    await waitFor(() => {
+      expect(screen.getByText("Hotel Sarovar")).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByPlaceholderText("Search tags..."), {
+      target: { value: "New Unique Tag" },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText(/Contact an admin/i)).toBeInTheDocument();
+    });
+    expect(screen.queryByRole("button", { name: /Create/ })).not.toBeInTheDocument();
+  });
+
   it("closes dropdown on Escape", async () => {
     render(<TagPicker value={[]} onChange={() => {}} />);
-
     fireEvent.focus(screen.getByPlaceholderText("Add tag..."));
 
     await waitFor(() => {
       expect(screen.getByPlaceholderText("Search tags...")).toBeInTheDocument();
     });
 
-    const searchInput = screen.getByPlaceholderText("Search tags...");
-    fireEvent.keyDown(searchInput, { key: "Escape" });
+    fireEvent.keyDown(screen.getByPlaceholderText("Search tags..."), { key: "Escape" });
 
     await waitFor(() => {
       expect(screen.queryByPlaceholderText("Search tags...")).not.toBeInTheDocument();
@@ -166,7 +216,6 @@ describe("TagPicker", () => {
 
   it("does not show archived tags in dropdown unless already assigned", async () => {
     render(<TagPicker value={[]} onChange={() => {}} />);
-
     fireEvent.focus(screen.getByPlaceholderText("Add tag..."));
 
     await waitFor(() => {
@@ -176,12 +225,7 @@ describe("TagPicker", () => {
     expect(screen.queryByText("Old Event")).not.toBeInTheDocument();
   });
 
-  it("shows archived tag when it is already assigned", async () => {
-    vi.mocked(listTags).mockResolvedValue({
-      success: true,
-      data: mockTags,
-    });
-
+  it("shows archived assigned tag as chip", async () => {
     render(
       <TagPicker
         value={["tag_4"]}

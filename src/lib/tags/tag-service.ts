@@ -1,7 +1,7 @@
 "use server";
 
 import { db } from "@/lib/db";
-import { requireOrgContext, requireRole } from "@/lib/auth";
+import { requireOrgContext, requireRole, getOrgContext, hasRole } from "@/lib/auth";
 import { recordTagEvent } from "./telemetry";
 
 export type ActionResult<T> =
@@ -172,6 +172,16 @@ export async function archiveTag(id: string): Promise<ActionResult<TagData>> {
   } catch (error) {
     console.error("archiveTag error:", error);
     return { success: false, error: "Failed to archive tag" };
+  }
+}
+
+export async function canManageTags(): Promise<boolean> {
+  try {
+    const ctx = await getOrgContext();
+    if (!ctx) return false;
+    return hasRole(ctx.role, "admin");
+  } catch {
+    return false;
   }
 }
 
