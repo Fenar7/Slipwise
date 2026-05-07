@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { FormProvider, useFieldArray, useForm, useFormContext, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -35,6 +35,8 @@ import {
 import { normalizeMoney } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { CustomerPicker } from "./customer-picker";
+import { TagPicker } from "@/components/tags/tag-picker";
+import { getInvoiceTags, getCustomerDefaultTags } from "@/lib/tags/assignment-service";
 import { InvoiceSaveBar } from "./invoice-save-bar";
 import {
   saveInvoice,
@@ -52,6 +54,7 @@ const invoiceWorkspaceSections: WorkspaceSectionMeta[] = [
   { id: "invoice-setup", label: "Setup" },
   { id: "invoice-client", label: "Client" },
   { id: "invoice-meta", label: "Meta" },
+  { id: "invoice-tags", label: "Tags" },
   { id: "invoice-billing", label: "Billing" },
   { id: "invoice-footer", label: "Footer" },
   { id: "invoice-visibility", label: "Visibility" },
@@ -221,9 +224,12 @@ interface InvoicePanelProps {
     totalAvailable: number;
     trackInventory: boolean;
   }>;
+  tagIds?: string[];
+  onTagIdsChange?: (tagIds: string[]) => void;
+  archivedTagIds?: string[];
 }
 
-function InvoicePanel({ customers = [], inventoryItems = [] }: InvoicePanelProps) {
+function InvoicePanel({ customers = [], inventoryItems = [], tagIds = [], onTagIdsChange, archivedTagIds = [] }: InvoicePanelProps) {
   const { control, getValues, setValue, trigger } = useFormContextSafe();
   const values = useWatch({ control }) as InvoiceFormValues;
   const [selectedTemplateId, setSelectedTemplateId] = useState<InvoiceFormValues["templateId"]>(() => getValues("templateId") ?? "professional");
@@ -513,7 +519,21 @@ function InvoicePanel({ customers = [], inventoryItems = [] }: InvoicePanelProps
                 title="Client details"
                 description="Control how the client block appears in the invoice preview."
               >
-                <CustomerPicker customers={customers} />
+                <CustomerPicker
+                  customers={customers}
+                  onSelect={(customer) => {
+                    if (onTagIdsChange && tagIds.length === 0) {
+                      getCustomerDefaultTags(customer.id).then((result) => {
+                        if (result.success && result.data.length > 0) {
+                          const defaultIds = result.data.map((t) => t.id);
+                          if (!defaultIds.some((id) => tagIds.includes(id))) {
+                            onTagIdsChange([...tagIds, ...defaultIds]);
+                          }
+                        }
+                      });
+                    }
+                  }}
+                />
                 <TextField<InvoiceFormValues>
                   name="clientName"
                   label="Client name"
@@ -590,6 +610,21 @@ function InvoicePanel({ customers = [], inventoryItems = [] }: InvoicePanelProps
                   />
                 </div>
               </FormSection>
+          </div>
+
+          <div id="invoice-tags" className="scroll-mt-28">
+            <FormSection
+              eyebrow="Tags"
+              title="Document tags"
+              description="Add tags to categorize this invoice. Tags are internal and not shown on the PDF."
+            >
+              <TagPicker
+                value={tagIds}
+                onChange={onTagIdsChange ?? (() => {})}
+                archivedTagIds={archivedTagIds}
+                placeholder="Add tags..."
+              />
+            </FormSection>
           </div>
 
           <div id="invoice-billing" className="scroll-mt-28">
@@ -800,6 +835,25 @@ export function InvoiceWorkspace({
     existingInvoice?.invoiceNumber
   );
   const [isSaving, setIsSaving] = useState(false);
+  const [tagIds, setTagIds] = useState<string[]>([]);
+  const [archivedTagIds, setArchivedTagIds] = useState<string[]>([]);
+  const [tagIdsLoaded, setTagIdsLoaded] = useState(false);
+
+  useEffect(() => {
+    if (existingInvoice?.id && !tagIdsLoaded) {
+      getInvoiceTags(existingInvoice.id).then((result) => {
+        if (result.success) {
+          setTagIds(result.data.map((t) => t.id));
+          setArchivedTagIds(
+            result.data.filter((t) => t.isArchived).map((t) => t.id)
+          );
+        }
+        setTagIdsLoaded(true);
+      });
+    } else if (!existingInvoice?.id) {
+      setTagIdsLoaded(true);
+    }
+  }, [existingInvoice?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSaveDraft = async (): Promise<string | undefined> => {
     setIsSaving(true);
@@ -820,6 +874,7 @@ export function InvoiceWorkspace({
             notes: values.notes || undefined,
             formData: values as Record<string, unknown>,
             lineItems,
+            tagIds,
           })
         : await saveInvoice(
             {
@@ -828,6 +883,7 @@ export function InvoiceWorkspace({
               notes: values.notes || undefined,
               formData: values as Record<string, unknown>,
               lineItems,
+              tagIds,
             },
             "DRAFT"
           );
@@ -883,7 +939,13 @@ export function InvoiceWorkspace({
 
   return (
     <FormProvider {...methods}>
-      <InvoicePanel customers={customers} inventoryItems={inventoryItems} />
+      <InvoicePanel 
+        customers={customers} 
+        inventoryItems={inventoryItems} 
+        tagIds={tagIds}
+        onTagIdsChange={setTagIds}
+        archivedTagIds={archivedTagIds}
+      />
       <InvoiceSaveBar
         onSaveDraft={() => void handleSaveDraft()}
         onIssue={() => void handleIssue()}

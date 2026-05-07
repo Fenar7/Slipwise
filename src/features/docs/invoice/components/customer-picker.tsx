@@ -16,9 +16,10 @@ interface Customer {
 
 interface CustomerPickerProps {
   customers: Customer[];
+  onSelect?: (customer: Customer) => void;
 }
 
-export function CustomerPicker({ customers }: CustomerPickerProps) {
+export function CustomerPicker({ customers, onSelect }: CustomerPickerProps) {
   const { setValue } = useFormContext<InvoiceFormValues>();
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -38,6 +39,7 @@ export function CustomerPicker({ customers }: CustomerPickerProps) {
     if (customer.gstin) setValue("clientTaxId", customer.gstin);
     setIsOpen(false);
     setSearch("");
+    onSelect?.(customer);
   };
 
   const clearCustomer = () => {

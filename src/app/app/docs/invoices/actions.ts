@@ -12,6 +12,7 @@ import { postInvoiceIssueTx, postInvoicePaymentTx, reverseJournalEntryTx } from 
 import { fireWorkflowTrigger } from "@/lib/flow/workflow-engine";
 import { emitInvoiceEvent } from "@/lib/document-events";
 import { syncInvoiceToIndex, removeDocumentFromIndex } from "@/lib/docs-vault";
+import { setInvoiceTags } from "@/lib/tags/assignment-service";
 import { checkUsageLimit } from "@/lib/usage-metering";
 import { getOutboundUnitCostTx, recordStockEventTx } from "@/lib/inventory/stock-events";
 import {
@@ -74,6 +75,8 @@ export interface InvoiceInput {
   notes?: string;
   formData: Record<string, unknown>;
   lineItems: InvoiceLineItemInput[];
+  /** Phase 29: Tag IDs to assign to this invoice */
+  tagIds?: string[];
 }
 
 async function reverseInvoicePostingIfNeededTx(
@@ -376,6 +379,19 @@ export async function saveInvoice(
     const invoiceDate = normalizeInvoiceDateInput(input.invoiceDate, "Invoice date");
     const dueDate = normalizeOptionalInvoiceDateInput(input.dueDate, "Due date");
 
+    // Phase 29: Validate tagIds before transaction (fail early if invalid)
+    let validatedTagIds: string[] | null = null;
+    if (input.tagIds !== undefined && input.tagIds.length > 0) {
+      const tags = await db.documentTag.findMany({
+        where: { id: { in: input.tagIds }, orgId },
+        select: { id: true },
+      });
+      if (tags.length !== input.tagIds.length) {
+        return { success: false, error: "One or more tags are invalid or do not belong to your organization" };
+      }
+      validatedTagIds = tags.map((t) => t.id);
+    }
+
     const invoice = await db.$transaction(async (tx) => {
       if (status === "ISSUED") {
         const assigned = await assignNextInvoiceNumber(orgId, invoiceDate, tx);
@@ -412,10 +428,19 @@ export async function saveInvoice(
               sortOrder: index,
             })),
           },
-        },
-      });
+          },
+        });
 
-      if (status === "ISSUED") {
+        // Phase 29: Create tag assignments within the transaction (atomic with document creation)
+        if (validatedTagIds !== null) {
+          for (const tagId of validatedTagIds) {
+            await tx.invoiceTagAssignment.create({
+              data: { invoiceId: created.id, tagId },
+            });
+          }
+        }
+
+        if (status === "ISSUED") {
         await tx.invoiceStateEvent.create({
           data: {
             invoiceId: created.id,
@@ -529,6 +554,23 @@ export async function updateInvoice(
       ? normalizeInvoiceLineItems(input.lineItems)
       : null;
 
+    // Phase 29: Validate tagIds before transaction
+    let validatedTagIds: string[] | null | undefined = undefined;
+    if (input.tagIds !== undefined) {
+      if (input.tagIds.length > 0) {
+        const tags = await db.documentTag.findMany({
+          where: { id: { in: input.tagIds }, orgId },
+          select: { id: true },
+        });
+        if (tags.length !== input.tagIds.length) {
+          return { success: false, error: "One or more tags are invalid or do not belong to your organization" };
+        }
+        validatedTagIds = tags.map((t) => t.id);
+      } else {
+        validatedTagIds = [];
+      }
+    }
+
     await db.$transaction(async (tx) => {
       await tx.invoice.update({
         where: { id },
@@ -561,6 +603,14 @@ export async function updateInvoice(
             sortOrder: index,
           })),
         });
+      }
+
+      // Phase 29: Atomically replace tag assignments within the transaction
+      if (validatedTagIds !== undefined) {
+        await tx.invoiceTagAssignment.deleteMany({ where: { invoiceId: id } });
+        for (const tagId of validatedTagIds) {
+          await tx.invoiceTagAssignment.create({ data: { invoiceId: id, tagId } });
+        }
       }
     });
 

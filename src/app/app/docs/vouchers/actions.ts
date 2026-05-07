@@ -9,6 +9,7 @@ import type { Prisma } from "@/generated/prisma/client";
 import { postVoucherTx } from "@/lib/accounting";
 import { emitVoucherEvent } from "@/lib/document-events";
 import { syncVoucherToIndex } from "@/lib/docs-vault";
+import { setVoucherTags } from "@/lib/tags/assignment-service";
 import { checkUsageLimit } from "@/lib/usage-metering";
 import { consumeSequenceNumber } from "@/features/sequences/services/sequence-engine";
 import { getSequenceConfig } from "@/features/sequences/services/sequence-admin";
@@ -35,6 +36,8 @@ export interface VoucherInput {
   status?: "draft" | "approved";
   formData: Record<string, unknown>;
   lines: VoucherLineInput[];
+  /** Phase 29: Tag IDs to assign to this voucher */
+  tagIds?: string[];
 }
 
 function normalizeVoucherLines(
@@ -182,6 +185,19 @@ export async function saveVoucher(
     const normalizedVoucher = normalizeVoucherLines(input.lines, {
       allowPartial: status === "draft",
     });
+
+    // Phase 29: Validate tagIds before transaction
+    let validatedTagIds: string[] | null = null;
+    if (input.tagIds !== undefined && input.tagIds.length > 0) {
+      const tags = await db.documentTag.findMany({
+        where: { id: { in: input.tagIds }, orgId },
+        select: { id: true },
+      });
+      if (tags.length !== input.tagIds.length) {
+        return { success: false, error: "One or more tags are invalid or do not belong to your organization" };
+      }
+      validatedTagIds = tags.map((t) => t.id);
+    }
     
     const voucher = await db.$transaction(async (tx) => {
       if (status === "approved") {
@@ -229,6 +245,15 @@ export async function saveVoucher(
           voucherId: created.id,
           actorId: userId,
         });
+      }
+
+      // Phase 29: Create tag assignments atomically
+      if (validatedTagIds !== null) {
+        for (const tagId of validatedTagIds) {
+          await tx.voucherTagAssignment.create({
+            data: { voucherId: created.id, tagId },
+          });
+        }
       }
 
       return created;
@@ -306,6 +331,23 @@ export async function updateVoucher(
 
     let assignedVoucherNumber: string | undefined;
 
+    // Phase 29: Validate tagIds before transaction
+    let validatedTagIds: string[] | null | undefined = undefined;
+    if (input.tagIds !== undefined) {
+      if (input.tagIds.length > 0) {
+        const tags = await db.documentTag.findMany({
+          where: { id: { in: input.tagIds }, orgId },
+          select: { id: true },
+        });
+        if (tags.length !== input.tagIds.length) {
+          return { success: false, error: "One or more tags are invalid or do not belong to your organization" };
+        }
+        validatedTagIds = tags.map((t) => t.id);
+      } else {
+        validatedTagIds = [];
+      }
+    }
+
     await db.$transaction(async (tx) => {
       await tx.voucher.update({
         where: { id },
@@ -370,6 +412,14 @@ export async function updateVoucher(
           voucherId: id,
           actorId: userId,
         });
+      }
+
+      // Phase 29: Atomically replace tag assignments
+      if (validatedTagIds !== undefined) {
+        await tx.voucherTagAssignment.deleteMany({ where: { voucherId: id } });
+        for (const tagId of validatedTagIds) {
+          await tx.voucherTagAssignment.create({ data: { voucherId: id, tagId } });
+        }
       }
     });
     
