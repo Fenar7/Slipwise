@@ -9,7 +9,6 @@ import type { Prisma } from "@/generated/prisma/client";
 import { postVoucherTx } from "@/lib/accounting";
 import { emitVoucherEvent } from "@/lib/document-events";
 import { syncVoucherToIndex } from "@/lib/docs-vault";
-import { setVoucherTags } from "@/lib/tags/assignment-service";
 import { checkUsageLimit } from "@/lib/usage-metering";
 import { consumeSequenceNumber } from "@/features/sequences/services/sequence-engine";
 import { getSequenceConfig } from "@/features/sequences/services/sequence-admin";
@@ -36,8 +35,6 @@ export interface VoucherInput {
   status?: "draft" | "approved";
   formData: Record<string, unknown>;
   lines: VoucherLineInput[];
-  /** Phase 29: Tag IDs to assign to this voucher */
-  tagIds?: string[];
 }
 
 function normalizeVoucherLines(
@@ -185,19 +182,6 @@ export async function saveVoucher(
     const normalizedVoucher = normalizeVoucherLines(input.lines, {
       allowPartial: status === "draft",
     });
-
-    // Phase 29: Validate tagIds before transaction
-    let validatedTagIds: string[] | null = null;
-    if (input.tagIds !== undefined && input.tagIds.length > 0) {
-      const tags = await db.documentTag.findMany({
-        where: { id: { in: input.tagIds }, orgId },
-        select: { id: true },
-      });
-      if (tags.length !== input.tagIds.length) {
-        return { success: false, error: "One or more tags are invalid or do not belong to your organization" };
-      }
-      validatedTagIds = tags.map((t) => t.id);
-    }
     
     const voucher = await db.$transaction(async (tx) => {
       if (status === "approved") {
@@ -245,15 +229,6 @@ export async function saveVoucher(
           voucherId: created.id,
           actorId: userId,
         });
-      }
-
-      // Phase 29: Create tag assignments atomically
-      if (validatedTagIds !== null) {
-        for (const tagId of validatedTagIds) {
-          await tx.voucherTagAssignment.create({
-            data: { voucherId: created.id, tagId },
-          });
-        }
       }
 
       return created;
@@ -331,23 +306,6 @@ export async function updateVoucher(
 
     let assignedVoucherNumber: string | undefined;
 
-    // Phase 29: Validate tagIds before transaction
-    let validatedTagIds: string[] | null | undefined = undefined;
-    if (input.tagIds !== undefined) {
-      if (input.tagIds.length > 0) {
-        const tags = await db.documentTag.findMany({
-          where: { id: { in: input.tagIds }, orgId },
-          select: { id: true },
-        });
-        if (tags.length !== input.tagIds.length) {
-          return { success: false, error: "One or more tags are invalid or do not belong to your organization" };
-        }
-        validatedTagIds = tags.map((t) => t.id);
-      } else {
-        validatedTagIds = [];
-      }
-    }
-
     await db.$transaction(async (tx) => {
       await tx.voucher.update({
         where: { id },
@@ -412,14 +370,6 @@ export async function updateVoucher(
           voucherId: id,
           actorId: userId,
         });
-      }
-
-      // Phase 29: Atomically replace tag assignments
-      if (validatedTagIds !== undefined) {
-        await tx.voucherTagAssignment.deleteMany({ where: { voucherId: id } });
-        for (const tagId of validatedTagIds) {
-          await tx.voucherTagAssignment.create({ data: { voucherId: id, tagId } });
-        }
       }
     });
     
@@ -557,8 +507,8 @@ export async function listVouchers(params?: {
   amountMin?: number;
   amountMax?: number;
   vendorId?: string;
-  /** Phase 29: Filter by one or more tag IDs (match any) */
   tagIds?: string[];
+  hasTags?: boolean;
 }) {
   const { orgId } = await requireOrgContext();
   const page = params?.page ?? 1;
@@ -599,18 +549,18 @@ export async function listVouchers(params?: {
     where.voucherDate = { lte: dateTo };
   }
 
-  // Phase 29: Tag filtering via relational joins
+  // Tag filter
   if (params?.tagIds && params.tagIds.length > 0) {
-    const taggedVoucherIds = await db.voucherTagAssignment.findMany({
-      where: { tagId: { in: params.tagIds } },
-      select: { voucherId: true },
-      distinct: ["voucherId"],
-    });
-    const matchingIds = taggedVoucherIds.map((a) => a.voucherId);
-    if (matchingIds.length === 0) {
-      return { vouchers: [], total: 0, page, totalPages: 0 };
-    }
-    (where as any).id = { in: matchingIds };
+    where.tagAssignments = {
+      some: { tagId: { in: params.tagIds } },
+    };
+  }
+
+  // Tagged-only filter (has at least one tag)
+  if (params?.hasTags && !(params.tagIds && params.tagIds.length > 0)) {
+    where.tagAssignments = {
+      some: {},
+    };
   }
   
   const [vouchers, total] = await Promise.all([
@@ -630,76 +580,4 @@ export async function listVouchers(params?: {
     page,
     totalPages: Math.ceil(total / limit),
   };
-}
-
-// ─── Phase 29: Bulk Tag Operations ─────────────────────────────────────────────
-
-export async function bulkAddVoucherTags(
-  voucherIds: string[],
-  tagId: string
-): Promise<ActionResult<{ succeeded: number; failed: number }>> {
-  try {
-    const { orgId } = await requireOrgContext();
-
-    const tag = await db.documentTag.findFirst({
-      where: { id: tagId, orgId },
-      select: { id: true },
-    });
-    if (!tag) return { success: false, error: "Tag not found" };
-
-    const vouchers = await db.voucher.findMany({
-      where: { id: { in: voucherIds }, organizationId: orgId },
-      select: { id: true },
-    });
-    const validIds = new Set(vouchers.map((v) => v.id));
-
-    let succeeded = 0;
-    for (const voucherId of voucherIds) {
-      if (!validIds.has(voucherId)) continue;
-      const existing = await db.voucherTagAssignment.findFirst({
-        where: { voucherId, tagId },
-        select: { id: true },
-      });
-      if (!existing) {
-        await db.voucherTagAssignment.create({ data: { voucherId, tagId } });
-      }
-      succeeded++;
-    }
-
-    revalidatePath("/app/docs/vouchers");
-    return { success: true, data: { succeeded, failed: voucherIds.length - succeeded } };
-  } catch (error) {
-    console.error("bulkAddVoucherTags error:", error);
-    return { success: false, error: "Failed to bulk add tags to vouchers" };
-  }
-}
-
-export async function bulkRemoveVoucherTags(
-  voucherIds: string[],
-  tagId: string
-): Promise<ActionResult<{ succeeded: number; failed: number }>> {
-  try {
-    const { orgId } = await requireOrgContext();
-
-    const vouchers = await db.voucher.findMany({
-      where: { id: { in: voucherIds }, organizationId: orgId },
-      select: { id: true },
-    });
-    const validIds = new Set(vouchers.map((v) => v.id));
-
-    let succeeded = 0;
-    for (const voucherId of voucherIds) {
-      if (!validIds.has(voucherId)) continue;
-      await db.voucherTagAssignment.deleteMany({
-        where: { voucherId, tagId },
-      });
-      succeeded++;
-    }
-
-    revalidatePath("/app/docs/vouchers");
-    return { success: true, data: { succeeded, failed: voucherIds.length - succeeded } };
-  } catch (error) {
-    console.error("bulkRemoveVoucherTags error:", error);
-    return { success: false, error: "Failed to bulk remove tags from vouchers" };
-  }
 }

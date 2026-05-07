@@ -2,7 +2,6 @@
 
 import { db } from "@/lib/db";
 import { requireOrgContext } from "@/lib/auth";
-import { recordTagEvent } from "./telemetry";
 import type { TagData } from "./tag-service";
 
 export type ActionResult<T> =
@@ -48,8 +47,6 @@ export async function addInvoiceTag(
     if (!existing) {
       await db.invoiceTagAssignment.create({ data: { invoiceId, tagId } });
     }
-
-    void recordTagEvent({ event: "tag_assigned_to_invoice", orgId, tagId, entityType: "invoice", entityId: invoiceId });
 
     return { success: true, data: null };
   } catch (error) {
@@ -167,8 +164,6 @@ export async function addVoucherTag(
     if (!existing) {
       await db.voucherTagAssignment.create({ data: { voucherId, tagId } });
     }
-
-    void recordTagEvent({ event: "tag_assigned_to_voucher", orgId, tagId, entityType: "voucher", entityId: voucherId });
 
     return { success: true, data: null };
   } catch (error) {
