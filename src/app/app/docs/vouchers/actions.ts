@@ -507,6 +507,7 @@ export async function listVouchers(params?: {
   amountMin?: number;
   amountMax?: number;
   vendorId?: string;
+  tagIds?: string[];
 }) {
   const { orgId } = await requireOrgContext();
   const page = params?.page ?? 1;
@@ -545,6 +546,13 @@ export async function listVouchers(params?: {
     where.voucherDate = { gte: dateFrom };
   } else if (dateTo) {
     where.voucherDate = { lte: dateTo };
+  }
+
+  // Tag filter
+  if (params?.tagIds && params.tagIds.length > 0) {
+    where.tagAssignments = {
+      some: { tagId: { in: params.tagIds } },
+    };
   }
   
   const [vouchers, total] = await Promise.all([

@@ -751,6 +751,7 @@ export async function listInvoices(params?: {
   amountMin?: number;
   amountMax?: number;
   customerId?: string;
+  tagIds?: string[];
 }) {
   const { orgId } = await requireOrgContext();
   const page = params?.page ?? 1;
@@ -787,6 +788,13 @@ export async function listInvoices(params?: {
     where.invoiceDate = { gte: dateFrom };
   } else if (dateTo) {
     where.invoiceDate = { lte: dateTo };
+  }
+
+  // Tag filter
+  if (params?.tagIds && params.tagIds.length > 0) {
+    where.tagAssignments = {
+      some: { tagId: { in: params.tagIds } },
+    };
   }
 
   const [invoices, total] = await Promise.all([

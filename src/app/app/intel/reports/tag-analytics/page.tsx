@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import {
   ResponsiveContainer,
@@ -70,62 +70,6 @@ function CustomTooltip({
   );
 }
 
-const TAG_LEADERBOARD_COLUMNS: Column<TagSummary>[] = [
-  {
-    key: "rank",
-    label: "#",
-    render: (_, idx) => (
-      <span className="text-xs font-semibold text-[var(--muted-foreground)]">
-        {idx + 1}
-      </span>
-    ),
-  },
-  {
-    key: "tagName",
-    label: "Tag",
-    render: (row) => (
-      <span className="inline-flex items-center gap-1.5">
-        {row.tagColor && (
-          <span
-            className="inline-block h-2.5 w-2.5 rounded-full"
-            style={{ backgroundColor: row.tagColor }}
-          />
-        )}
-        <span className="text-sm font-medium">{row.tagName}</span>
-      </span>
-    ),
-  },
-  {
-    key: "invoiceTotal",
-    label: "Invoice Total",
-    render: (row) => formatCurrency(row.invoiceTotal),
-  },
-  {
-    key: "voucherTotal",
-    label: "Voucher Total",
-    render: (row) => formatCurrency(row.voucherTotal),
-  },
-  {
-    key: "activityCount",
-    label: "Documents",
-    render: (row) => (
-      <span className="text-sm tabular-nums">{row.activityCount}</span>
-    ),
-  },
-  {
-    key: "lastActivityDate",
-    label: "Last Activity",
-    render: (row) =>
-      row.lastActivityDate
-        ? new Date(row.lastActivityDate).toLocaleDateString("en-IN", {
-            year: "numeric",
-            month: "short",
-            day: "numeric",
-          })
-        : "—",
-  },
-];
-
 export default function TagAnalyticsPage() {
   const [isPending, startTransition] = useTransition();
   const [mode, setMode] = useState<AnalyticsMode>("combined");
@@ -191,6 +135,100 @@ export default function TagAnalyticsPage() {
     if (dateTo) params.set("dateTo", dateTo);
     return `/app/docs/${docType === "invoice" ? "invoices" : "vouchers"}?${params.toString()}`;
   };
+
+  const buildDrilldownUrl = useCallback(
+    (tagId: string, docType: "invoice" | "voucher") => {
+      const params = new URLSearchParams();
+      params.set("tagIds", tagId);
+      if (dateFrom) params.set("dateFrom", dateFrom);
+      if (dateTo) params.set("dateTo", dateTo);
+      return `/app/docs/${docType === "invoice" ? "invoices" : "vouchers"}?${params.toString()}`;
+    },
+    [dateFrom, dateTo]
+  );
+
+  const leaderboardColumns = useMemo<Column<TagSummary>[]>(
+    () => [
+      {
+        key: "rank",
+        label: "#",
+        render: (_, idx) => (
+          <span className="text-xs font-semibold text-[var(--muted-foreground)]">
+            {idx + 1}
+          </span>
+        ),
+      },
+      {
+        key: "tagName",
+        label: "Tag",
+        render: (row) => (
+          <span className="inline-flex items-center gap-1.5">
+            {row.tagColor && (
+              <span
+                className="inline-block h-2.5 w-2.5 rounded-full"
+                style={{ backgroundColor: row.tagColor }}
+              />
+            )}
+            <span className="text-sm font-medium">{row.tagName}</span>
+          </span>
+        ),
+      },
+      {
+        key: "invoiceTotal",
+        label: "Invoice Total",
+        render: (row) => formatCurrency(row.invoiceTotal),
+      },
+      {
+        key: "voucherTotal",
+        label: "Voucher Total",
+        render: (row) => formatCurrency(row.voucherTotal),
+      },
+      {
+        key: "activityCount",
+        label: "Documents",
+        render: (row) => (
+          <span className="text-sm tabular-nums">{row.activityCount}</span>
+        ),
+      },
+      {
+        key: "lastActivityDate",
+        label: "Last Activity",
+        render: (row) =>
+          row.lastActivityDate
+            ? new Date(row.lastActivityDate).toLocaleDateString("en-IN", {
+                year: "numeric",
+                month: "short",
+                day: "numeric",
+              })
+            : "—",
+      },
+      {
+        key: "actions",
+        label: "Drill Down",
+        render: (row) => (
+          <div className="flex items-center gap-2">
+            {(mode === "revenue" || mode === "combined") && row.invoiceCount > 0 && (
+              <Link
+                href={buildDrilldownUrl(row.tagId, "invoice")}
+                className="text-xs text-[var(--accent)] hover:underline"
+              >
+                Invoices
+              </Link>
+            )}
+            {(mode === "expense" || mode === "combined") && row.voucherCount > 0 && (
+              <Link
+                href={buildDrilldownUrl(row.tagId, "voucher")}
+                className="text-xs text-[var(--accent)] hover:underline"
+              >
+                Vouchers
+              </Link>
+            )}
+          </div>
+        ),
+      },
+    ],
+    [mode, buildDrilldownUrl]
+  );
 
   const trendBars = () => {
     if (mode === "revenue") {
@@ -321,7 +359,7 @@ export default function TagAnalyticsPage() {
         </div>
       )}
 
-      {/* Top Tags KPI cards — uses server-side summary, not truncated leaderboard */}
+      {/* Top Tags KPI cards */}
       {loaded && summary.totalDocumentCount > 0 && (
         <div className="mb-6 grid gap-4 sm:grid-cols-3">
           <div className="rounded-xl border border-[var(--border-soft)] bg-white p-4 shadow-sm">
@@ -436,7 +474,7 @@ export default function TagAnalyticsPage() {
               </div>
             ) : (
               <ReportDataTable
-                columns={TAG_LEADERBOARD_COLUMNS}
+                columns={leaderboardColumns}
                 rows={topTags}
                 total={topTags.length}
                 page={1}
