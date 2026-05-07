@@ -210,6 +210,16 @@ export const settingsRouteEntries: SettingsRouteEntry[] = [
     navVisibility: "primary",
   },
   {
+    id: "tag-management",
+    groupId: "templates-documents",
+    label: "Tag Management",
+    description: "Manage your organisation's document tag vocabulary, usage, and governance.",
+    href: "/app/settings/tags",
+    icon: FileStack,
+    keywords: ["tags", "tag management", "catalog", "rename", "archive"],
+    navVisibility: "primary",
+  },
+  {
     id: "template-defaults",
     groupId: "templates-documents",
     label: "Default Templates",
