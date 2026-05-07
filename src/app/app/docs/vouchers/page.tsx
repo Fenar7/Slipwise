@@ -4,6 +4,8 @@ import { listVouchers, archiveVoucher, duplicateVoucher } from "./actions";
 import { getSequenceConfig } from "@/features/sequences/services/sequence-admin";
 import { requireOrgContext } from "@/lib/auth";
 import { TagFilterChips } from "@/components/tags/tag-filter-chips";
+import { BulkSelectShell } from "@/components/tags/bulk-select-shell";
+import { SelectableRowCheckbox } from "@/components/tags/selectable-row-checkbox";
 
 export const metadata = {
   title: "Voucher Vault | Slipwise",
@@ -42,11 +44,16 @@ function formatCurrency(amount: number) {
 
 // ─── Query Builder ─────────────────────────────────────────────────────────────
 
-function buildQuery(params: Record<string, string | number | undefined>): string {
-  return Object.entries(params)
+function buildQuery(params: Record<string, string | number | undefined>, extraTags?: string[]): string {
+  const base = Object.entries(params)
     .filter(([, v]) => v !== undefined && v !== null && v !== "" && v !== "undefined")
     .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`)
     .join("&");
+  if (extraTags && extraTags.length > 0) {
+    const tagStr = extraTags.map((t) => `tagId=${encodeURIComponent(t)}`).join("&");
+    return base ? `${base}&${tagStr}` : tagStr;
+  }
+  return base;
 }
 
 // ─── Type Filter Chips ─────────────────────────────────────────────────────────
@@ -171,11 +178,13 @@ async function VoucherTable({
   }
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white overflow-hidden">
-      <table className="w-full">
-        <thead>
-          <tr className="border-b border-slate-200 bg-slate-50">
-            <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">Voucher #</th>
+    <BulkSelectShell entityType="voucher">
+      <div className="rounded-lg border border-slate-200 bg-white overflow-hidden">
+        <table className="w-full">
+          <thead>
+            <tr className="border-b border-slate-200 bg-slate-50">
+              <th className="w-10 px-3 py-3"></th>
+              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">Voucher #</th>
             <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">Vendor</th>
             <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">Date</th>
             <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">Type</th>
@@ -206,12 +215,13 @@ async function VoucherTable({
         <div className="flex items-center justify-between border-t border-slate-200 px-4 py-3">
           <p className="text-sm text-slate-500">Showing {(page - 1) * 20 + 1} to {Math.min(page * 20, total)} of {total}</p>
           <div className="flex gap-2">
-            {page > 1 && <Link href={`?${buildQuery({ type, search, page: page - 1, dateFrom, dateTo, amountMin, amountMax })}`} className="rounded px-3 py-1 text-sm text-slate-600 hover:bg-slate-100">Previous</Link>}
-            {page < totalPages && <Link href={`?${buildQuery({ type, search, page: page + 1, dateFrom, dateTo, amountMin, amountMax })}`} className="rounded px-3 py-1 text-sm text-slate-600 hover:bg-slate-100">Next</Link>}
+            {page > 1 && <Link href={`?${buildQuery({ type, search, page: page - 1, dateFrom, dateTo, amountMin, amountMax }, tagIds)}`} className="rounded px-3 py-1 text-sm text-slate-600 hover:bg-slate-100">Previous</Link>}
+            {page < totalPages && <Link href={`?${buildQuery({ type, search, page: page + 1, dateFrom, dateTo, amountMin, amountMax }, tagIds)}`} className="rounded px-3 py-1 text-sm text-slate-600 hover:bg-slate-100">Next</Link>}
           </div>
         </div>
       )}
     </div>
+    </BulkSelectShell>
   );
 }
 
@@ -294,7 +304,8 @@ function VoucherFolderCard({
           </thead>
           <tbody className="divide-y divide-slate-50">
             {vouchers.map((v) => (
-              <tr key={v.id} className="hover:bg-slate-50">
+            <tr key={v.id} className="hover:bg-slate-50">
+              <td className="px-3 py-3"><SelectableRowCheckbox id={v.id} /></td>
                 <td className="px-4 py-2">
                   <Link href={`/app/docs/vouchers/${v.id}`} className="text-sm font-medium text-blue-600 hover:underline">{v.voucherNumber ?? "Draft"}</Link>
                 </td>
@@ -397,6 +408,7 @@ export default async function VouchersPage({
             {dateTo && dateTo !== "undefined" && <input type="hidden" name="dateTo" value={dateTo} />}
             {params.amountMin && params.amountMin !== "undefined" && <input type="hidden" name="amountMin" value={params.amountMin} />}
             {params.amountMax && params.amountMax !== "undefined" && <input type="hidden" name="amountMax" value={params.amountMax} />}
+            {tagIds && tagIds.map((tid) => <input type="hidden" key={tid} name="tagId" value={tid} />)}
             <input type="text" name="search" defaultValue={params.search || ""} placeholder="Search vouchers..."
               className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 pl-9 text-sm text-slate-700 placeholder-slate-400 focus:border-red-400 focus:outline-none focus:ring-1 focus:ring-red-400" />
             <svg className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
