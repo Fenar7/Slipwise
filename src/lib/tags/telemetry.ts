@@ -1,27 +1,33 @@
-/**
- * Phase 29: Tagging Platform — Telemetry Hooks
- *
- * Lightweight event recording for tag lifecycle actions.
- * Phase 1: Console-based logging for development and initial rollout.
- * Phase 5+: Replace with proper audit log integration.
- */
+import { trackEvent } from "@/lib/analytics";
 
-export interface TagTelemetryEvent {
-  event: string;
-  orgId: string;
-  tagId: string;
-  entityType?: string;
-  entityId?: string;
-  timestamp: string;
+export function trackTagCreated(properties?: Record<string, unknown>) {
+  trackEvent("tag_created", properties).catch(() => {});
 }
 
-export async function recordTagEvent(event: Omit<TagTelemetryEvent, "timestamp">): Promise<void> {
-  const entry: TagTelemetryEvent = {
-    ...event,
-    timestamp: new Date().toISOString(),
-  };
+export function trackTagApplied(docType: "invoice" | "voucher", tagCount: number) {
+  trackEvent("tag_applied", { doc_type: docType, tag_count: tagCount }).catch(() => {});
+}
 
-  if (process.env.NODE_ENV === "development" || process.env.TAG_TELEMETRY_ENABLED === "true") {
-    console.log("[tag-telemetry]", JSON.stringify(entry));
-  }
+export function trackTagRemoved(docType: "invoice" | "voucher") {
+  trackEvent("tag_removed", { doc_type: docType }).catch(() => {});
+}
+
+export function trackTagReportFiltered(reportType: "invoice" | "voucher", tagCount: number) {
+  trackEvent("tag_report_filtered", { report_type: reportType, tag_count: tagCount }).catch(() => {});
+}
+
+export function trackTagAnalyticsViewed(mode: string) {
+  trackEvent("tag_analytics_viewed", { mode }).catch(() => {});
+}
+
+export function trackTagDrilldownOpened(docType: "invoice" | "voucher") {
+  trackEvent("tag_drilldown_opened", { doc_type: docType }).catch(() => {});
+}
+
+export function trackTagDefaultsUpdated(entityType: "customer" | "vendor", tagCount: number) {
+  trackEvent("tag_defaults_updated", { entity_type: entityType, tag_count: tagCount }).catch(() => {});
+}
+
+export function trackBulkTaggingStarted(docType: "invoice" | "voucher", docCount: number) {
+  trackEvent("tag_bulk_started", { doc_type: docType, doc_count: docCount }).catch(() => {});
 }
