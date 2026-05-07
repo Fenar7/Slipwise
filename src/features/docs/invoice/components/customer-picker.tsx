@@ -18,9 +18,10 @@ interface Customer {
 interface CustomerPickerProps {
   customers: Customer[];
   onTagPrefill?: (tagIds: string[]) => void;
+  onCustomerSelect?: (customerId: string) => void;
 }
 
-export function CustomerPicker({ customers, onTagPrefill }: CustomerPickerProps) {
+export function CustomerPicker({ customers, onTagPrefill, onCustomerSelect }: CustomerPickerProps) {
   const { setValue } = useFormContext<InvoiceFormValues>();
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -40,6 +41,8 @@ export function CustomerPicker({ customers, onTagPrefill }: CustomerPickerProps)
     if (customer.gstin) setValue("clientTaxId", customer.gstin);
     setIsOpen(false);
     setSearch("");
+
+    if (onCustomerSelect) onCustomerSelect(customer.id);
 
     if (onTagPrefill) {
       try {

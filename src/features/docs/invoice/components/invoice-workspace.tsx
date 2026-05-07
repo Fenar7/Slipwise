@@ -37,6 +37,7 @@ import { cn } from "@/lib/utils";
 import { CustomerPicker } from "./customer-picker";
 import { InvoiceSaveBar } from "./invoice-save-bar";
 import { TagPicker } from "@/features/tags/components/tag-picker";
+import { getSuggestedTags, type SuggestedTag } from "@/lib/tags/suggestion-service";
 import {
   saveInvoice,
   updateInvoice,
@@ -514,7 +515,7 @@ function InvoicePanel({ customers = [], inventoryItems = [] }: InvoicePanelProps
                 title="Client details"
                 description="Control how the client block appears in the invoice preview."
               >
-                <CustomerPicker customers={customers} onTagPrefill={setTagIds} />
+                <CustomerPicker customers={customers} onTagPrefill={setTagIds} onCustomerSelect={loadSuggestions} />
                 <TextField<InvoiceFormValues>
                   name="clientName"
                   label="Client name"
@@ -564,6 +565,26 @@ function InvoicePanel({ customers = [], inventoryItems = [] }: InvoicePanelProps
                 onChange={setTagIds}
                 placeholder="Add tags..."
               />
+              {suggestions.length > 0 && (
+                <div className="mt-3">
+                  <p className="mb-1.5 text-xs font-medium text-[var(--muted-foreground)]">Suggestions</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {suggestions.map((s) => (
+                      <button
+                        key={s.id} type="button"
+                        onClick={() => { if (!tagIds.includes(s.id)) setTagIds([...tagIds, s.id]); }}
+                        disabled={tagIds.includes(s.id)}
+                        className="inline-flex items-center gap-1 rounded-full border border-dashed px-2 py-0.5 text-xs font-medium transition-colors hover:border-solid hover:bg-[var(--surface-soft)] disabled:opacity-30 disabled:cursor-default"
+                        style={{ borderColor: s.color ?? "var(--border-soft)", color: s.color ?? "var(--muted-foreground)" }}
+                        title={s.source === "recent" ? `Used ${s.usageCount} times with this customer` : "Popular in your organisation"}
+                      >
+                        <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4"/></svg>
+                        {s.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </FormSection>
           </div>
 
@@ -819,6 +840,14 @@ export function InvoiceWorkspace({
   const [tagIds, setTagIds] = useState<string[]>(
     existingInvoice?.tagAssignments?.map((a) => a.tag.id) ?? []
   );
+  const [suggestions, setSuggestions] = useState<SuggestedTag[]>([]);
+
+  const loadSuggestions = async (customerId: string) => {
+    try {
+      const result = await getSuggestedTags({ counterpartyId: customerId, counterpartyType: "customer", documentType: "invoice", limit: 8 });
+      setSuggestions(result.filter((s) => s.source !== "default"));
+    } catch { setSuggestions([]); }
+  };
 
   const handleSaveDraft = async (): Promise<string | undefined> => {
     setIsSaving(true);
@@ -947,3 +976,4 @@ function convertInvoiceToFormValues(invoice: ExistingInvoice): InvoiceFormValues
     })),
   };
 }
+// SPRINT 4.2 placeholder
