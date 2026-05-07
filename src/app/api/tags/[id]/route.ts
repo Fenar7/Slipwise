@@ -18,18 +18,34 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const body = await request.json();
-  if (!body.name || typeof body.name !== "string") {
-    return NextResponse.json({ error: "Tag name is required" }, { status: 400 });
+  let body: Record<string, unknown>;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
-  if (body.archive !== undefined) {
+
+  const hasArchive = typeof body.archive === "boolean";
+  const hasName = typeof body.name === "string" && body.name.trim().length > 0;
+
+  // Archive/unarchive — does not require name
+  if (hasArchive) {
     const result = body.archive ? await archiveTag(id) : await unarchiveTag(id);
     if (!result.success) {
       return NextResponse.json({ error: result.error }, { status: 400 });
     }
     return NextResponse.json({ tag: result.data });
   }
-  const result = await renameTag(id, { name: body.name });
+
+  // Rename — requires name
+  if (!hasName) {
+    return NextResponse.json(
+      { error: "Either 'name' (for rename) or 'archive' (boolean) is required" },
+      { status: 400 }
+    );
+  }
+
+  const result = await renameTag(id, { name: body.name as string });
   if (!result.success) {
     return NextResponse.json({ error: result.error }, { status: 400 });
   }

@@ -30,6 +30,7 @@ import {
   type TagSummary,
   type MonthlyTrendPoint,
 } from "./actions";
+import { trackTagAnalyticsViewed } from "@/lib/tags/telemetry";
 import {
   ReportDataTable,
   formatCurrency,
@@ -101,6 +102,7 @@ export default function TagAnalyticsPage() {
           setMonthlyTrend(result.monthlyTrend);
           setSummary(result.summary);
           setLoaded(true);
+          trackTagAnalyticsViewed(m);
         } catch (e) {
           setError(e instanceof Error ? e.message : "Failed to load analytics");
           setLoaded(true);

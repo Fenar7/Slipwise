@@ -35,6 +35,7 @@ import { VendorPicker } from "@/features/docs/voucher/components/vendor-picker";
 import { MultiLineVoucherEditor } from "@/features/docs/voucher/components/multi-line-voucher-editor";
 import { VoucherSaveBar } from "@/features/docs/voucher/components/voucher-save-bar";
 import { TagPicker } from "@/features/tags/components/tag-picker";
+import { trackTagApplied } from "@/lib/tags/telemetry";
 import { getSuggestedTags, type SuggestedTag } from "@/lib/tags/suggestion-service";
 import { voucherFormSchema } from "@/features/docs/voucher/schema";
 import type { VoucherDocument, VoucherFormValues } from "@/features/docs/voucher/types";
@@ -167,6 +168,7 @@ function VoucherPanel({
         if (result.success) {
           setSavedId(result.data.id);
           setSavedNumber(result.data.voucherNumber);
+          if (tagIds.length > 0) trackTagApplied("voucher", tagIds.length);
           toast.success("Voucher saved");
         } else {
           toast.error(result.error || "Failed to save voucher");

@@ -37,6 +37,7 @@ import { cn } from "@/lib/utils";
 import { CustomerPicker } from "./customer-picker";
 import { InvoiceSaveBar } from "./invoice-save-bar";
 import { TagPicker } from "@/features/tags/components/tag-picker";
+import { trackTagApplied } from "@/lib/tags/telemetry";
 import { getSuggestedTags, type SuggestedTag } from "@/lib/tags/suggestion-service";
 import {
   saveInvoice,
@@ -882,6 +883,7 @@ export function InvoiceWorkspace({
             "DRAFT"
           );
       if (result.success) {
+        if (tagIds.length > 0) trackTagApplied("invoice", tagIds.length);
         setSavedId(result.data.id);
         if (!savedId && "invoiceNumber" in result.data) {
           setSavedInvoiceNumber(

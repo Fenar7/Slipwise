@@ -237,7 +237,8 @@ export async function getVoucherTags(voucherId: string): Promise<ActionResult<Ta
 
 export async function addCustomerDefaultTag(customerId: string, tagId: string): Promise<ActionResult<null>> {
   try {
-    const { orgId, userId } = await requireOrgContext();
+    const { orgId, userId, role } = await requireOrgContext();
+    if (!hasRole(role, "invoice_operator")) return { success: false, error: "Insufficient permissions" };
     if (!(await verifyOrgEntity(orgId, "customer", customerId))) return { success: false, error: "Customer not found" };
     const tag = await db.documentTag.findFirst({ where: { id: tagId, orgId }, select: { id: true } });
     if (!tag) return { success: false, error: "Tag not found" };
@@ -255,7 +256,8 @@ export async function addCustomerDefaultTag(customerId: string, tagId: string): 
 
 export async function removeCustomerDefaultTag(customerId: string, tagId: string): Promise<ActionResult<null>> {
   try {
-    const { orgId, userId } = await requireOrgContext();
+    const { orgId, userId, role } = await requireOrgContext();
+    if (!hasRole(role, "invoice_operator")) return { success: false, error: "Insufficient permissions" };
     if (!(await verifyOrgEntity(orgId, "customer", customerId))) return { success: false, error: "Customer not found" };
     await db.customerDefaultTag.deleteMany({ where: { customerId, tagId } });
     void assignAudit(orgId, userId, "tag.default_customer_set", "Customer", customerId, { tagId, removed: true });
@@ -268,7 +270,8 @@ export async function removeCustomerDefaultTag(customerId: string, tagId: string
 
 export async function setCustomerDefaultTags(customerId: string, tagIds: string[]): Promise<ActionResult<null>> {
   try {
-    const { orgId, userId } = await requireOrgContext();
+    const { orgId, userId, role } = await requireOrgContext();
+    if (!hasRole(role, "invoice_operator")) return { success: false, error: "Insufficient permissions" };
     if (!(await verifyOrgEntity(orgId, "customer", customerId))) return { success: false, error: "Customer not found" };
     if (tagIds.length > 0) {
       const tags = await db.documentTag.findMany({ where: { id: { in: tagIds }, orgId }, select: { id: true } });
@@ -307,7 +310,8 @@ export async function getCustomerDefaultTags(customerId: string): Promise<Action
 
 export async function addVendorDefaultTag(vendorId: string, tagId: string): Promise<ActionResult<null>> {
   try {
-    const { orgId, userId } = await requireOrgContext();
+    const { orgId, userId, role } = await requireOrgContext();
+    if (!hasRole(role, "voucher_operator")) return { success: false, error: "Insufficient permissions" };
     if (!(await verifyOrgEntity(orgId, "vendor", vendorId))) return { success: false, error: "Vendor not found" };
     const tag = await db.documentTag.findFirst({ where: { id: tagId, orgId }, select: { id: true } });
     if (!tag) return { success: false, error: "Tag not found" };
@@ -325,7 +329,8 @@ export async function addVendorDefaultTag(vendorId: string, tagId: string): Prom
 
 export async function removeVendorDefaultTag(vendorId: string, tagId: string): Promise<ActionResult<null>> {
   try {
-    const { orgId, userId } = await requireOrgContext();
+    const { orgId, userId, role } = await requireOrgContext();
+    if (!hasRole(role, "voucher_operator")) return { success: false, error: "Insufficient permissions" };
     if (!(await verifyOrgEntity(orgId, "vendor", vendorId))) return { success: false, error: "Vendor not found" };
     await db.vendorDefaultTag.deleteMany({ where: { vendorId, tagId } });
     void assignAudit(orgId, userId, "tag.default_vendor_set", "Vendor", vendorId, { tagId, removed: true });
@@ -338,7 +343,8 @@ export async function removeVendorDefaultTag(vendorId: string, tagId: string): P
 
 export async function setVendorDefaultTags(vendorId: string, tagIds: string[]): Promise<ActionResult<null>> {
   try {
-    const { orgId, userId } = await requireOrgContext();
+    const { orgId, userId, role } = await requireOrgContext();
+    if (!hasRole(role, "voucher_operator")) return { success: false, error: "Insufficient permissions" };
     if (!(await verifyOrgEntity(orgId, "vendor", vendorId))) return { success: false, error: "Vendor not found" };
     if (tagIds.length > 0) {
       const tags = await db.documentTag.findMany({ where: { id: { in: tagIds }, orgId }, select: { id: true } });

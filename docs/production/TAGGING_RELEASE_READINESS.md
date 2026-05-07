@@ -33,8 +33,8 @@
 - [x] Audit logging wired to all tag catalog mutations
 - [x] Audit logging wired to assignment mutations (setInvoiceTags, setVoucherTags)
 - [x] Audit logging wired to default tag mutations
-- [x] Telemetry instrumentation for PostHog (tag_created, tag_applied, tag_removed, tag_analytics_viewed, tag_drilldown_opened, tag_defaults_updated)
-- [x] Telemetry instrumentation for PostHog (tag_created, tag_applied, tag_removed, tag_analytics_viewed, tag_drilldown_opened, tag_defaults_updated)
+- [x] Telemetry instrumentation wired (tag_applied in invoice/voucher workspaces, tag_analytics_viewed in analytics page)
+- [x] Audit logging serves as server-side observability for all other tag mutations
 
 ### 4. API Surface
 - [x] REST API: `GET /api/tags` — list tags
@@ -86,13 +86,14 @@
 - [x] Empty/invalid tag names rejected
 
 ### 10. Test Coverage
-- [x] Tag catalog service: 22 tests
-- [x] Assignment service: 16 tests
-- [x] Suggestion service: 8 tests
-- [x] Default tag CRUD: 12 tests
-- [x] Governance/admin: 8 tests
-- [x] Edge cases: 8 tests
-- [x] **Total: 74 tests**
+- [x] Tag catalog service tests
+- [x] Assignment service tests
+- [x] Suggestion service tests
+- [x] Edge case tests
+- [x] Governance/admin tests
+- [x] Vault tag filter tests
+- [x] Telemetry module tests
+- All focused tagging tests pass with zero unhandled errors
 
 ### 11. Internal-Only Enforcement
 - [x] Tags not rendered on PDF views

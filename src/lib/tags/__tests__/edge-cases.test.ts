@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const mocks = vi.hoisted(() => ({
   requireOrgContext: vi.fn(),
   requireRole: vi.fn(),
+  logAudit: vi.fn(),
   documentTagFindMany: vi.fn(),
   documentTagUpdate: vi.fn(),
   documentTagFindFirst: vi.fn(),
@@ -15,7 +16,7 @@ vi.mock("@/lib/auth", () => ({
   requireRole: mocks.requireRole,
 }));
 
-vi.mock("@/lib/audit", () => ({ logAudit: vi.fn() }));
+vi.mock("@/lib/audit", () => ({ logAudit: mocks.logAudit }));
 
 vi.mock("@/lib/db", () => ({
   db: {
@@ -38,6 +39,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.requireRole.mockResolvedValue(ADMIN_CTX);
   mocks.requireOrgContext.mockResolvedValue(ADMIN_CTX);
+  mocks.logAudit.mockResolvedValue(undefined);
   mocks.documentTagFindMany.mockResolvedValue([]);
   mocks.documentTagFindFirst.mockResolvedValue(null);
   mocks.documentTagCreate.mockResolvedValue({ id: "tag_1", name: "Test", slug: "test", orgId: ORG_ID });
