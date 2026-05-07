@@ -135,6 +135,13 @@ export default function TagAnalyticsPage() {
   const [monthlyTrend, setMonthlyTrend] = useState<MonthlyTrendPoint[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [summary, setSummary] = useState({
+    totalInvoiceValue: 0,
+    totalInvoiceCount: 0,
+    totalVoucherValue: 0,
+    totalVoucherCount: 0,
+    totalDocumentCount: 0,
+  });
 
   const fetchData = useCallback(
     (m: AnalyticsMode, df: string, dt: string) => {
@@ -148,6 +155,7 @@ export default function TagAnalyticsPage() {
           });
           setTopTags(result.topTags);
           setMonthlyTrend(result.monthlyTrend);
+          setSummary(result.summary);
           setLoaded(true);
         } catch (e) {
           setError(e instanceof Error ? e.message : "Failed to load analytics");
@@ -175,6 +183,14 @@ export default function TagAnalyticsPage() {
   const hasData = monthlyTrend.some(
     (d) => d.invoiceTotal > 0 || d.voucherTotal > 0 || d.combinedTotal > 0
   );
+
+  const buildTaggedUrl = (docType: "invoice" | "voucher") => {
+    const params = new URLSearchParams();
+    params.set("tagged", "1");
+    if (dateFrom) params.set("dateFrom", dateFrom);
+    if (dateTo) params.set("dateTo", dateTo);
+    return `/app/docs/${docType === "invoice" ? "invoices" : "vouchers"}?${params.toString()}`;
+  };
 
   const trendBars = () => {
     if (mode === "revenue") {
@@ -305,32 +321,62 @@ export default function TagAnalyticsPage() {
         </div>
       )}
 
-      {/* Top Tags KPI cards */}
-      {loaded && topTags.length > 0 && (
+      {/* Top Tags KPI cards — uses server-side summary, not truncated leaderboard */}
+      {loaded && summary.totalDocumentCount > 0 && (
         <div className="mb-6 grid gap-4 sm:grid-cols-3">
           <div className="rounded-xl border border-[var(--border-soft)] bg-white p-4 shadow-sm">
             <p className="text-xs font-medium uppercase tracking-wider text-[var(--muted-foreground)]">
               Total Tagged Documents
             </p>
             <p className="mt-1 text-xl font-bold text-[var(--foreground)]">
-              {topTags.reduce((s, t) => s + t.activityCount, 0)}
+              {summary.totalDocumentCount}
             </p>
+            <div className="mt-2 flex gap-2">
+              <Link
+                href={buildTaggedUrl("invoice")}
+                className="text-xs text-[var(--accent)] hover:underline"
+              >
+                Invoices →
+              </Link>
+              <Link
+                href={buildTaggedUrl("voucher")}
+                className="text-xs text-[var(--accent)] hover:underline"
+              >
+                Vouchers →
+              </Link>
+            </div>
           </div>
           <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
             <p className="text-xs font-medium uppercase tracking-wider text-blue-600">
               Total Invoice Value
             </p>
             <p className="mt-1 text-xl font-bold text-blue-700">
-              {formatCurrency(topTags.reduce((s, t) => s + t.invoiceTotal, 0))}
+              {formatCurrency(summary.totalInvoiceValue)}
             </p>
+            <div className="mt-2">
+              <Link
+                href={buildTaggedUrl("invoice")}
+                className="text-xs text-blue-600 hover:underline"
+              >
+                View Tagged Invoices →
+              </Link>
+            </div>
           </div>
           <div className="rounded-xl border border-red-200 bg-red-50 p-4">
             <p className="text-xs font-medium uppercase tracking-wider text-red-600">
               Total Voucher Value
             </p>
             <p className="mt-1 text-xl font-bold text-red-700">
-              {formatCurrency(topTags.reduce((s, t) => s + t.voucherTotal, 0))}
+              {formatCurrency(summary.totalVoucherValue)}
             </p>
+            <div className="mt-2">
+              <Link
+                href={buildTaggedUrl("voucher")}
+                className="text-xs text-red-600 hover:underline"
+              >
+                View Tagged Vouchers →
+              </Link>
+            </div>
           </div>
         </div>
       )}
