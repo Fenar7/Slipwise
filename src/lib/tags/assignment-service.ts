@@ -3,10 +3,15 @@
 import { db } from "@/lib/db";
 import { requireOrgContext } from "@/lib/auth";
 import type { TagData } from "./tag-service";
+import { logAudit } from "@/lib/audit";
 
 export type ActionResult<T> =
   | { success: true; data: T }
   | { success: false; error: string };
+
+async function assignAudit(ctx: { orgId: string; userId: string }, action: string, entityType: string, entityId: string, metadata?: Record<string, unknown>) {
+  logAudit({ orgId: ctx.orgId, actorId: ctx.userId, action, entityType, entityId, metadata }).catch(() => {});
+}
 
 async function verifyOrgEntity(
   orgId: string,
@@ -82,7 +87,7 @@ export async function setInvoiceTags(
   tagIds: string[]
 ): Promise<ActionResult<null>> {
   try {
-    const { orgId } = await requireOrgContext();
+    const { orgId, userId } = await requireOrgContext();
 
     if (!(await verifyOrgEntity(orgId, "invoice", invoiceId))) {
       return { success: false, error: "Invoice not found" };
@@ -106,6 +111,8 @@ export async function setInvoiceTags(
         db.invoiceTagAssignment.create({ data: { invoiceId, tagId } })
       ),
     ]);
+
+    void assignAudit({ orgId, userId }, "tag.assigned_invoice", "Invoice", invoiceId, { tagIds });
 
     return { success: true, data: null };
   } catch (error) {
@@ -199,7 +206,7 @@ export async function setVoucherTags(
   tagIds: string[]
 ): Promise<ActionResult<null>> {
   try {
-    const { orgId } = await requireOrgContext();
+    const { orgId, userId } = await requireOrgContext();
 
     if (!(await verifyOrgEntity(orgId, "voucher", voucherId))) {
       return { success: false, error: "Voucher not found" };
@@ -223,6 +230,8 @@ export async function setVoucherTags(
         db.voucherTagAssignment.create({ data: { voucherId, tagId } })
       ),
     ]);
+
+    void assignAudit({ orgId, userId }, "tag.assigned_voucher", "Voucher", voucherId, { tagIds });
 
     return { success: true, data: null };
   } catch (error) {
@@ -316,7 +325,7 @@ export async function setCustomerDefaultTags(
   tagIds: string[]
 ): Promise<ActionResult<null>> {
   try {
-    const { orgId } = await requireOrgContext();
+    const { orgId, userId } = await requireOrgContext();
 
     if (!(await verifyOrgEntity(orgId, "customer", customerId))) {
       return { success: false, error: "Customer not found" };
@@ -340,6 +349,8 @@ export async function setCustomerDefaultTags(
         db.customerDefaultTag.create({ data: { customerId, tagId } })
       ),
     ]);
+
+    void assignAudit({ orgId, userId }, "tag.default_customer_set", "Customer", customerId, { tagIds });
 
     return { success: true, data: null };
   } catch (error) {
@@ -433,7 +444,7 @@ export async function setVendorDefaultTags(
   tagIds: string[]
 ): Promise<ActionResult<null>> {
   try {
-    const { orgId } = await requireOrgContext();
+    const { orgId, userId } = await requireOrgContext();
 
     if (!(await verifyOrgEntity(orgId, "vendor", vendorId))) {
       return { success: false, error: "Vendor not found" };
@@ -457,6 +468,8 @@ export async function setVendorDefaultTags(
         db.vendorDefaultTag.create({ data: { vendorId, tagId } })
       ),
     ]);
+
+    void assignAudit({ orgId, userId }, "tag.default_vendor_set", "Vendor", vendorId, { tagIds });
 
     return { success: true, data: null };
   } catch (error) {
