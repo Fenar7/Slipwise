@@ -107,6 +107,55 @@ describe("voucher list tag filtering", () => {
   });
 });
 
+describe("tagged-only hasTags filter", () => {
+  it("filters invoices to only tagged documents when hasTags is true", async () => {
+    await listInvoices({ hasTags: true });
+
+    expect(mocks.invoiceFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          tagAssignments: { some: {} },
+        }),
+      })
+    );
+  });
+
+  it("does not apply hasTags filter when hasTags is false", async () => {
+    await listInvoices({ hasTags: false });
+
+    const callArg = mocks.invoiceFindMany.mock.calls[0][0];
+    expect(callArg.where).not.toHaveProperty("tagAssignments");
+  });
+
+  it("does not apply hasTags filter when hasTags is undefined", async () => {
+    await listInvoices({});
+
+    const callArg = mocks.invoiceFindMany.mock.calls[0][0];
+    expect(callArg.where).not.toHaveProperty("tagAssignments");
+  });
+
+  it("tagIds filter takes precedence over hasTags", async () => {
+    await listInvoices({ tagIds: ["tag_1"], hasTags: true });
+
+    const callArg = mocks.invoiceFindMany.mock.calls[0][0];
+    expect(callArg.where.tagAssignments).toEqual({
+      some: { tagId: { in: ["tag_1"] } },
+    });
+  });
+
+  it("filters vouchers to only tagged documents when hasTags is true", async () => {
+    await listVouchers({ hasTags: true });
+
+    expect(mocks.voucherFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          tagAssignments: { some: {} },
+        }),
+      })
+    );
+  });
+});
+
 describe("drill-down query parameters", () => {
   function buildDrilldownUrl(
     tagId: string,

@@ -206,8 +206,8 @@ async function VoucherTable({
         <div className="flex items-center justify-between border-t border-slate-200 px-4 py-3">
           <p className="text-sm text-slate-500">Showing {(page - 1) * 20 + 1} to {Math.min(page * 20, total)} of {total}</p>
           <div className="flex gap-2">
-            {page > 1 && <Link href={`?${buildQuery({ type, search, page: page - 1, dateFrom, dateTo, amountMin, amountMax, tagIds: tagIds?.join(",") })}`} className="rounded px-3 py-1 text-sm text-slate-600 hover:bg-slate-100">Previous</Link>}
-            {page < totalPages && <Link href={`?${buildQuery({ type, search, page: page + 1, dateFrom, dateTo, amountMin, amountMax, tagIds: tagIds?.join(",") })}`} className="rounded px-3 py-1 text-sm text-slate-600 hover:bg-slate-100">Next</Link>}
+            {page > 1 && <Link href={`?${buildQuery({ type, search, page: page - 1, dateFrom, dateTo, amountMin, amountMax, tagIds: tagIds?.join(","), tagged: hasTags ? "1" : undefined })}`} className="rounded px-3 py-1 text-sm text-slate-600 hover:bg-slate-100">Previous</Link>}
+            {page < totalPages && <Link href={`?${buildQuery({ type, search, page: page + 1, dateFrom, dateTo, amountMin, amountMax, tagIds: tagIds?.join(","), tagged: hasTags ? "1" : undefined })}`} className="rounded px-3 py-1 text-sm text-slate-600 hover:bg-slate-100">Next</Link>}
           </div>
         </div>
       )}
@@ -372,7 +372,7 @@ export default async function VouchersPage({
         <div className="mb-4 flex items-center gap-3">
           <div className="flex items-center rounded-xl bg-white p-1 shadow-sm border border-slate-200">
             <Link
-              href={`/app/docs/vouchers?${buildQuery({ search: params.search || undefined, tagIds: params.tagIds || undefined })}`}
+              href={`/app/docs/vouchers?${buildQuery({ search: params.search || undefined, tagIds: params.tagIds || undefined, tagged: params.tagged || undefined })}`}
               className={`flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-medium transition-all ${
                 view === "list" ? "bg-slate-900 text-white shadow-sm" : "text-slate-500 hover:text-slate-700"
               }`}
@@ -381,7 +381,7 @@ export default async function VouchersPage({
               List
             </Link>
             <Link
-              href={`/app/docs/vouchers?${buildQuery({ view: "sequence", search: params.search || undefined, tagIds: params.tagIds || undefined })}`}
+              href={`/app/docs/vouchers?${buildQuery({ view: "sequence", search: params.search || undefined, tagIds: params.tagIds || undefined, tagged: params.tagged || undefined })}`}
               className={`flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-medium transition-all ${
                 view === "sequence" ? "bg-slate-900 text-white shadow-sm" : "text-slate-500 hover:text-slate-700"
               }`}
@@ -399,6 +399,7 @@ export default async function VouchersPage({
             {params.amountMin && params.amountMin !== "undefined" && <input type="hidden" name="amountMin" value={params.amountMin} />}
             {params.amountMax && params.amountMax !== "undefined" && <input type="hidden" name="amountMax" value={params.amountMax} />}
             {params.tagIds && params.tagIds !== "undefined" && <input type="hidden" name="tagIds" value={params.tagIds} />}
+            {params.tagged === "1" && <input type="hidden" name="tagged" value="1" />}
             <input type="text" name="search" defaultValue={params.search || ""} placeholder="Search vouchers..."
               className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 pl-9 text-sm text-slate-700 placeholder-slate-400 focus:border-red-400 focus:outline-none focus:ring-1 focus:ring-red-400" />
             <svg className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
@@ -406,16 +407,16 @@ export default async function VouchersPage({
 
           <AdvancedFilters
             current={{ dateFrom, dateTo, amountMin: params.amountMin, amountMax: params.amountMax }}
-            extraParams={{ type: params.type || undefined, search: params.search || undefined, view, tagIds: params.tagIds || undefined }}
+            extraParams={{ type: params.type || undefined, search: params.search || undefined, view, tagIds: params.tagIds || undefined, tagged: params.tagged || undefined }}
             show={params.filters === "open"}
-            toggle={buildQuery({ type: params.type || undefined, search: params.search || undefined, view, tagIds: params.tagIds || undefined, filters: "open" })}
+            toggle={buildQuery({ type: params.type || undefined, search: params.search || undefined, view, tagIds: params.tagIds || undefined, tagged: params.tagged || undefined, filters: "open" })}
           />
         </div>
 
         {/* Type filter chips (list view only) */}
         {view === "list" && (
           <div className="mb-4">
-            <TypeFilterChips currentType={type} extraParams={{ search: params.search, view, tagIds: params.tagIds || undefined }} />
+            <TypeFilterChips currentType={type} extraParams={{ search: params.search, view, tagIds: params.tagIds || undefined, tagged: params.tagged || undefined }} />
           </div>
         )}
 
@@ -424,7 +425,7 @@ export default async function VouchersPage({
           {view === "sequence" ? (
             <VoucherSequenceView type={type} search={params.search} />
           ) : (
-            <VoucherTable type={type} search={params.search} page={page} dateFrom={dateFrom} dateTo={dateTo} amountMin={amountMin} amountMax={amountMax} tagIds={tagIds} />
+            <VoucherTable type={type} search={params.search} page={page} dateFrom={dateFrom} dateTo={dateTo} amountMin={amountMin} amountMax={amountMax} tagIds={tagIds} hasTags={hasTags} />
           )}
         </Suspense>
       </div>
