@@ -34,6 +34,7 @@ import { VoucherDocumentFrame } from "@/features/docs/voucher/components/voucher
 import { VendorPicker } from "@/features/docs/voucher/components/vendor-picker";
 import { MultiLineVoucherEditor } from "@/features/docs/voucher/components/multi-line-voucher-editor";
 import { VoucherSaveBar } from "@/features/docs/voucher/components/voucher-save-bar";
+import { TagPicker } from "@/features/tags/components/tag-picker";
 import { voucherFormSchema } from "@/features/docs/voucher/schema";
 import type { VoucherDocument, VoucherFormValues } from "@/features/docs/voucher/types";
 import { voucherTemplateRegistry } from "@/features/docs/voucher/templates";
@@ -118,6 +119,7 @@ function VoucherPanel({
   const [savedNumber, setSavedNumber] = useState<string | undefined>(
     voucherId ? values.voucherNumber : undefined
   );
+  const [tagIds, setTagIds] = useState<string[]>([]);
 
   // Sync multi-line total → amount field so preview stays live
   useEffect(() => {
@@ -142,6 +144,7 @@ function VoucherPanel({
         isMultiLine: currentValues.isMultiLine,
         formData: currentValues as Record<string, unknown>,
         lines: buildLines(currentValues),
+        tagIds,
       };
       if (savedId) {
         const result = await updateVoucher(savedId, input);
@@ -565,6 +568,7 @@ function VoucherPanel({
                     <VendorPicker
                       vendors={vendors}
                       label={isPayment ? "Select vendor" : "Select from"}
+                      onTagPrefill={setTagIds}
                     />
 
                     <TextField<VoucherFormValues>
@@ -649,6 +653,20 @@ function VoucherPanel({
                     ) : null}
                   </div>
                 </FormSection>
+            </div>
+
+            <div id="voucher-tags" className="scroll-mt-28">
+              <FormSection
+                eyebrow="Tags"
+                title="Document Tags"
+                description="Categorise this voucher for reporting and analytics."
+              >
+                <TagPicker
+                  selectedIds={tagIds}
+                  onChange={setTagIds}
+                  placeholder="Add tags..."
+                />
+              </FormSection>
             </div>
 
             <div id="voucher-approvals" className="scroll-mt-28">

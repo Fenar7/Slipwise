@@ -36,6 +36,7 @@ import { normalizeMoney } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { CustomerPicker } from "./customer-picker";
 import { InvoiceSaveBar } from "./invoice-save-bar";
+import { TagPicker } from "@/features/tags/components/tag-picker";
 import {
   saveInvoice,
   updateInvoice,
@@ -513,7 +514,7 @@ function InvoicePanel({ customers = [], inventoryItems = [] }: InvoicePanelProps
                 title="Client details"
                 description="Control how the client block appears in the invoice preview."
               >
-                <CustomerPicker customers={customers} />
+                <CustomerPicker customers={customers} onTagPrefill={setTagIds} />
                 <TextField<InvoiceFormValues>
                   name="clientName"
                   label="Client name"
@@ -550,6 +551,20 @@ function InvoicePanel({ customers = [], inventoryItems = [] }: InvoicePanelProps
                   placeholder="GSTIN 32AAACA1122R1ZV"
                 />
               </FormSection>
+          </div>
+
+          <div id="invoice-tags" className="scroll-mt-28">
+            <FormSection
+              eyebrow="Tags"
+              title="Document Tags"
+              description="Categorise this invoice for reporting and analytics."
+            >
+              <TagPicker
+                selectedIds={tagIds}
+                onChange={setTagIds}
+                placeholder="Add tags..."
+              />
+            </FormSection>
           </div>
 
           <div id="invoice-meta" className="scroll-mt-28">
@@ -801,6 +816,10 @@ export function InvoiceWorkspace({
   );
   const [isSaving, setIsSaving] = useState(false);
 
+  const [tagIds, setTagIds] = useState<string[]>(
+    existingInvoice?.tagAssignments?.map((a) => a.tag.id) ?? []
+  );
+
   const handleSaveDraft = async (): Promise<string | undefined> => {
     setIsSaving(true);
     try {
@@ -820,6 +839,7 @@ export function InvoiceWorkspace({
             notes: values.notes || undefined,
             formData: values as Record<string, unknown>,
             lineItems,
+            tagIds,
           })
         : await saveInvoice(
             {
@@ -828,6 +848,7 @@ export function InvoiceWorkspace({
               notes: values.notes || undefined,
               formData: values as Record<string, unknown>,
               lineItems,
+              tagIds,
             },
             "DRAFT"
           );

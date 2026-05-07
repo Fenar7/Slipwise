@@ -2,7 +2,9 @@
 
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
+import { useState } from "react";
 import { createCustomer, updateCustomer, type CustomerInput } from "../actions";
+import { TagPicker } from "@/features/tags/components/tag-picker";
 
 interface CustomerFormProps {
   customer?: {
@@ -13,12 +15,16 @@ interface CustomerFormProps {
     address: string | null;
     taxId: string | null;
     gstin: string | null;
+    defaultTagAssignments?: Array<{ tag: { id: string; name: string; slug: string; color: string | null } }>;
   };
 }
 
 export function CustomerForm({ customer }: CustomerFormProps) {
   const router = useRouter();
   const isEdit = !!customer;
+  const [tagIds, setTagIds] = useState<string[]>(
+    customer?.defaultTagAssignments?.map((a) => a.tag.id) ?? []
+  );
   
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<CustomerInput>({
     defaultValues: customer ? {
@@ -33,8 +39,8 @@ export function CustomerForm({ customer }: CustomerFormProps) {
   
   const onSubmit = async (data: CustomerInput) => {
     const result = isEdit
-      ? await updateCustomer(customer.id, data)
-      : await createCustomer(data);
+      ? await updateCustomer(customer.id, { ...data, tagIds })
+      : await createCustomer({ ...data, tagIds });
     
     if (result.success) {
       router.push("/app/data/customers");
@@ -100,6 +106,20 @@ export function CustomerForm({ customer }: CustomerFormProps) {
             className="w-full rounded-lg border border-slate-300 px-3 py-2 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
           />
         </div>
+      </div>
+
+      <div>
+        <label className="mb-1 block text-sm font-medium text-slate-700">
+          Default Tags
+        </label>
+        <p className="mb-2 text-xs text-slate-500">
+          These tags will be automatically suggested when creating invoices for this customer.
+        </p>
+        <TagPicker
+          selectedIds={tagIds}
+          onChange={setTagIds}
+          placeholder="Add default tags..."
+        />
       </div>
       
       <div className="flex gap-3 pt-4">

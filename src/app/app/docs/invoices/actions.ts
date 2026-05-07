@@ -27,6 +27,7 @@ import { consumeSequenceNumber } from "@/features/sequences/services/sequence-en
 import { getSequenceConfig } from "@/features/sequences/services/sequence-admin";
 import { rateLimitByOrg, RATE_LIMITS } from "@/lib/rate-limit";
 import type { ConsumeResult } from "@/features/sequences/types";
+import { setInvoiceTags } from "@/lib/tags/assignment-service";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -74,6 +75,7 @@ export interface InvoiceInput {
   notes?: string;
   formData: Record<string, unknown>;
   lineItems: InvoiceLineItemInput[];
+  tagIds?: string[];
 }
 
 async function reverseInvoicePostingIfNeededTx(
@@ -483,6 +485,11 @@ export async function saveInvoice(
       });
     }
 
+    // Assign tags if provided
+    if (input.tagIds !== undefined) {
+      await setInvoiceTags(invoice.id, input.tagIds);
+    }
+
     await emitInvoiceEvent(orgId, invoice.id, status === "ISSUED" ? "issued" : "created", {
       actorId: userId,
       metadata: { invoiceNumber },
@@ -563,6 +570,11 @@ export async function updateInvoice(
         });
       }
     });
+
+    // Assign tags if provided
+    if (input.tagIds !== undefined) {
+      await setInvoiceTags(id, input.tagIds);
+    }
 
     await emitInvoiceEvent(orgId, id, "updated", { actorId: userId });
     await syncInvoiceRecordToIndex(orgId, id);
@@ -717,6 +729,7 @@ export async function getInvoice(id: string) {
     include: {
       lineItems: { orderBy: { sortOrder: "asc" } },
       customer: true,
+      tagAssignments: { include: { tag: { select: { id: true, name: true, slug: true, color: true } } } },
     },
   });
 

@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import { useFormContext } from "react-hook-form";
 import type { InvoiceFormValues } from "../types";
+import { getCustomerDefaultTags } from "@/lib/tags/assignment-service";
 
 interface Customer {
   id: string;
@@ -16,9 +17,10 @@ interface Customer {
 
 interface CustomerPickerProps {
   customers: Customer[];
+  onTagPrefill?: (tagIds: string[]) => void;
 }
 
-export function CustomerPicker({ customers }: CustomerPickerProps) {
+export function CustomerPicker({ customers, onTagPrefill }: CustomerPickerProps) {
   const { setValue } = useFormContext<InvoiceFormValues>();
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -29,7 +31,7 @@ export function CustomerPicker({ customers }: CustomerPickerProps) {
     c.name.toLowerCase().includes(search.toLowerCase())
   );
 
-  const selectCustomer = (customer: Customer) => {
+  const selectCustomer = async (customer: Customer) => {
     setSelectedName(customer.name);
     setValue("clientName", customer.name);
     if (customer.address) setValue("clientAddress", customer.address);
@@ -38,6 +40,18 @@ export function CustomerPicker({ customers }: CustomerPickerProps) {
     if (customer.gstin) setValue("clientTaxId", customer.gstin);
     setIsOpen(false);
     setSearch("");
+
+    if (onTagPrefill) {
+      try {
+        const result = await getCustomerDefaultTags(customer.id);
+        if (result.success) {
+          const tagIds = result.data.map((t) => t.id);
+          onTagPrefill(tagIds);
+        }
+      } catch {
+        // Silently fail — suggestions are best-effort
+      }
+    }
   };
 
   const clearCustomer = () => {
