@@ -14,6 +14,7 @@ export interface InvoiceReportFilters {
   customerId?: string;
   amountMin?: number;
   amountMax?: number;
+  tagIds?: string[];
   page?: number;
   sortKey?: string;
   sortDir?: "asc" | "desc";
@@ -30,6 +31,7 @@ export interface InvoiceReportRow {
   totalAmount: number;
   amountPaid: number;
   balance: number;
+  tags: string;
 }
 
 export async function getInvoiceReport(filters: InvoiceReportFilters) {
@@ -64,6 +66,12 @@ export async function getInvoiceReport(filters: InvoiceReportFilters) {
     };
   }
 
+  if (filters.tagIds && filters.tagIds.length > 0) {
+    where.tagAssignments = {
+      some: { tagId: { in: filters.tagIds } },
+    };
+  }
+
   const orderBy: Record<string, string> = {};
   if (filters.sortKey) {
     const allowed = ["invoiceNumber", "invoiceDate", "dueDate", "totalAmount", "status"];
@@ -75,7 +83,7 @@ export async function getInvoiceReport(filters: InvoiceReportFilters) {
     orderBy.createdAt = "desc";
   }
 
-  const [invoices, total] = await Promise.all([
+  const [invoices, total, amountAgg] = await Promise.all([
     db.invoice.findMany({
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       where: where as any,
@@ -85,10 +93,13 @@ export async function getInvoiceReport(filters: InvoiceReportFilters) {
       include: {
         customer: { select: { id: true, name: true } },
         payments: { select: { amount: true } },
+        tagAssignments: { include: { tag: { select: { id: true, name: true, slug: true, color: true, isArchived: true } } } },
       },
     }),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     db.invoice.count({ where: where as any }),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    db.invoice.aggregate({ where: where as any, _sum: { totalAmount: true } }),
   ]);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -98,6 +109,9 @@ export async function getInvoiceReport(filters: InvoiceReportFilters) {
       0
     );
     const totalAmount = toAccountingNumber(inv.totalAmount);
+    const tagNames = (inv.tagAssignments ?? [])
+      .map((a: { tag: { name: string } }) => a.tag.name)
+      .sort();
     return {
       id: inv.id,
       invoiceNumber: inv.invoiceNumber,
@@ -109,10 +123,17 @@ export async function getInvoiceReport(filters: InvoiceReportFilters) {
       totalAmount,
       amountPaid,
       balance: totalAmount - amountPaid,
+      tags: tagNames.join(", ") || "—",
     };
   });
 
-  return { rows, total, page, pageSize: PAGE_SIZE };
+  return {
+    rows,
+    total,
+    page,
+    pageSize: PAGE_SIZE,
+    totalAmount: amountAgg._sum.totalAmount ?? 0,
+  };
 }
 
 export async function exportInvoiceReportCSV(
@@ -141,6 +162,7 @@ export async function exportInvoiceReportCSV(
       "Total Amount",
       "Amount Paid",
       "Balance",
+      "Tags",
     ],
     allRows.map((r) => [
       r.invoiceNumber,
@@ -151,6 +173,7 @@ export async function exportInvoiceReportCSV(
       r.totalAmount.toFixed(2),
       r.amountPaid.toFixed(2),
       r.balance.toFixed(2),
+      r.tags,
     ])
   );
 }

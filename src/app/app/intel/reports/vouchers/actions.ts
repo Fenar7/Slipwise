@@ -11,6 +11,7 @@ export interface VoucherReportFilters {
   dateFrom?: string;
   dateTo?: string;
   category?: string;
+  tagIds?: string[];
   page?: number;
   sortKey?: string;
   sortDir?: "asc" | "desc";
@@ -25,6 +26,7 @@ export interface VoucherReportRow {
   category: string;
   totalAmount: number;
   status: string;
+  tags: string;
 }
 
 export async function getVoucherReport(filters: VoucherReportFilters) {
@@ -56,6 +58,12 @@ export async function getVoucherReport(filters: VoucherReportFilters) {
     };
   }
 
+  if (filters.tagIds && filters.tagIds.length > 0) {
+    where.tagAssignments = {
+      some: { tagId: { in: filters.tagIds } },
+    };
+  }
+
   const orderBy: Record<string, string> = {};
   if (filters.sortKey) {
     const allowed = ["voucherNumber", "voucherDate", "totalAmount", "type", "status"];
@@ -76,6 +84,7 @@ export async function getVoucherReport(filters: VoucherReportFilters) {
       include: {
         vendor: { select: { name: true } },
         lines: { select: { category: true } },
+        tagAssignments: { include: { tag: { select: { id: true, name: true, slug: true, color: true, isArchived: true } } } },
       },
     }),
     db.voucher.count({ where: where }),  
@@ -97,6 +106,10 @@ export async function getVoucherReport(filters: VoucherReportFilters) {
       .filter(Boolean);
     const uniqueCategories = [...new Set(categories)];
 
+    const tagNames = ((v as any).tagAssignments ?? [])
+      .map((a: { tag: { name: string } }) => a.tag.name)
+      .sort();
+
     return {
       id: v.id,
       voucherNumber: v.voucherNumber,
@@ -106,6 +119,7 @@ export async function getVoucherReport(filters: VoucherReportFilters) {
       category: uniqueCategories.join(", ") || "—",
       totalAmount: v.totalAmount,
       status: v.status,
+      tags: tagNames.join(", ") || "—",
     };
   });
 
@@ -146,6 +160,7 @@ export async function exportVoucherReportCSV(
       "Category",
       "Total Amount",
       "Status",
+      "Tags",
     ],
     allRows.map((r) => [
       r.voucherNumber ?? "Draft",
@@ -155,6 +170,7 @@ export async function exportVoucherReportCSV(
       r.category,
       r.totalAmount.toFixed(2),
       r.status,
+      r.tags,
     ])
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import {
   getInvoiceReport,
@@ -18,6 +18,7 @@ import {
   formatCurrency,
   type Column,
 } from "@/features/intel/components/report-data-table";
+import { listTags } from "@/lib/tags/tag-service";
 
 const STATUS_OPTIONS = [
   { value: "DRAFT", label: "Draft" },
@@ -31,7 +32,7 @@ const STATUS_OPTIONS = [
   { value: "CANCELLED", label: "Cancelled" },
 ];
 
-const FILTER_FIELDS: FilterField[] = [
+const BASE_FILTER_FIELDS: FilterField[] = [
   {
     key: "status",
     label: "Status",
@@ -50,7 +51,7 @@ const FILTER_FIELDS: FilterField[] = [
   { key: "amountMax", label: "Max Amount", type: "number", placeholder: "∞" },
 ];
 
-const COLUMNS: Column<InvoiceReportRow>[] = [
+const BASE_COLUMNS: Column<InvoiceReportRow>[] = [
   { key: "invoiceNumber", label: "Invoice #", sortable: true },
   {
     key: "customerName",
@@ -91,6 +92,13 @@ const COLUMNS: Column<InvoiceReportRow>[] = [
     ),
   },
   {
+    key: "tags",
+    label: "Tags",
+    render: (row) => (
+      <span className="text-xs text-[var(--muted-foreground)]">{row.tags}</span>
+    ),
+  },
+  {
     key: "actions",
     label: "",
     render: (row) => (
@@ -114,6 +122,34 @@ export default function InvoiceReportPage() {
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [filters, setFilters] = useState<FilterValues>({});
   const [loaded, setLoaded] = useState(false);
+  const [serverTotalAmount, setServerTotalAmount] = useState(0);
+  const [tagOptions, setTagOptions] = useState<{ value: string; label: string }[]>([]);
+
+  useEffect(() => {
+    listTags({ includeArchived: false }).then((result) => {
+      if (result.success && result.data) {
+        setTagOptions(
+          result.data.map((t) => ({ value: t.id, label: t.name }))
+        );
+      }
+    });
+  }, []);
+
+  const filterFields = useMemo<FilterField[]>(() => {
+    if (tagOptions.length > 0) {
+      return [
+        ...BASE_FILTER_FIELDS,
+        {
+          key: "tagIds",
+          label: "Tags",
+          type: "multi-select",
+          options: tagOptions,
+          placeholder: "All tags",
+        },
+      ];
+    }
+    return BASE_FILTER_FIELDS;
+  }, [tagOptions]);
 
   const fetchData = useCallback(
     (f: FilterValues, p: number, sk?: string, sd?: "asc" | "desc") => {
@@ -125,6 +161,7 @@ export default function InvoiceReportPage() {
           customerId: f.customerId as string | undefined,
           amountMin: f.amountMin as number | undefined,
           amountMax: f.amountMax as number | undefined,
+          tagIds: (f.tagIds as string[])?.length ? (f.tagIds as string[]) : undefined,
           page: p,
           sortKey: sk,
           sortDir: sd,
@@ -133,6 +170,7 @@ export default function InvoiceReportPage() {
         setTotal(result.total);
         setPage(result.page);
         setPageSize(result.pageSize);
+        setServerTotalAmount(result.totalAmount ?? 0);
         setLoaded(true);
       });
     },
@@ -172,6 +210,7 @@ export default function InvoiceReportPage() {
         customerId: filters.customerId as string | undefined,
         amountMin: filters.amountMin as number | undefined,
         amountMax: filters.amountMax as number | undefined,
+        tagIds: (filters.tagIds as string[])?.length ? (filters.tagIds as string[]) : undefined,
       });
       const blob = new Blob([csv], { type: "text/csv" });
       const url = URL.createObjectURL(blob);
@@ -187,8 +226,6 @@ export default function InvoiceReportPage() {
     if (loaded) return;
     fetchData({}, 1);
   }, [fetchData, loaded]);
-
-  const totalAmount = rows.reduce((s, r) => s + r.totalAmount, 0);
 
   return (
     <div className="min-h-screen">
@@ -215,7 +252,7 @@ export default function InvoiceReportPage() {
 
       <div className="mb-6">
         <ReportFilterBar
-          fields={FILTER_FIELDS}
+          fields={filterFields}
           values={filters}
           onApply={handleApply}
           onClear={handleClear}
@@ -230,7 +267,7 @@ export default function InvoiceReportPage() {
           <div className="text-sm text-[var(--muted-foreground)]">
             Total Amount:{" "}
             <span className="font-semibold text-[var(--foreground)]">
-              {formatCurrency(totalAmount)}
+              {formatCurrency(serverTotalAmount)}
             </span>
           </div>
         </div>
@@ -243,7 +280,7 @@ export default function InvoiceReportPage() {
       ) : (
         <div className={isPending ? "opacity-60 pointer-events-none" : ""}>
           <ReportDataTable
-            columns={COLUMNS}
+            columns={BASE_COLUMNS}
             rows={rows}
             total={total}
             page={page}
