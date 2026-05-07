@@ -35,6 +35,7 @@ import { VendorPicker } from "@/features/docs/voucher/components/vendor-picker";
 import { MultiLineVoucherEditor } from "@/features/docs/voucher/components/multi-line-voucher-editor";
 import { VoucherSaveBar } from "@/features/docs/voucher/components/voucher-save-bar";
 import { TagPicker } from "@/features/tags/components/tag-picker";
+import { getSuggestedTags, type SuggestedTag } from "@/lib/tags/suggestion-service";
 import { voucherFormSchema } from "@/features/docs/voucher/schema";
 import type { VoucherDocument, VoucherFormValues } from "@/features/docs/voucher/types";
 import { voucherTemplateRegistry } from "@/features/docs/voucher/templates";
@@ -120,6 +121,14 @@ function VoucherPanel({
     voucherId ? values.voucherNumber : undefined
   );
   const [tagIds, setTagIds] = useState<string[]>([]);
+  const [suggestions, setSuggestions] = useState<SuggestedTag[]>([]);
+
+  const loadSuggestions = async (vendorId: string) => {
+    try {
+      const result = await getSuggestedTags({ counterpartyId: vendorId, counterpartyType: "vendor", documentType: "voucher", limit: 8 });
+      setSuggestions(result.filter((s) => s.source !== "default"));
+    } catch { setSuggestions([]); }
+  };
 
   // Sync multi-line total → amount field so preview stays live
   useEffect(() => {
@@ -569,6 +578,7 @@ function VoucherPanel({
                       vendors={vendors}
                       label={isPayment ? "Select vendor" : "Select from"}
                       onTagPrefill={setTagIds}
+                      onVendorSelect={loadSuggestions}
                     />
 
                     <TextField<VoucherFormValues>
@@ -666,6 +676,26 @@ function VoucherPanel({
                   onChange={setTagIds}
                   placeholder="Add tags..."
                 />
+                {suggestions.length > 0 && (
+                  <div className="mt-3">
+                    <p className="mb-1.5 text-xs font-medium text-[var(--muted-foreground)]">Suggestions</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {suggestions.map((s) => (
+                        <button
+                          key={s.id} type="button"
+                          onClick={() => { if (!tagIds.includes(s.id)) setTagIds([...tagIds, s.id]); }}
+                          disabled={tagIds.includes(s.id)}
+                          className="inline-flex items-center gap-1 rounded-full border border-dashed px-2 py-0.5 text-xs font-medium transition-colors hover:border-solid hover:bg-[var(--surface-soft)] disabled:opacity-30 disabled:cursor-default"
+                          style={{ borderColor: s.color ?? "var(--border-soft)", color: s.color ?? "var(--muted-foreground)" }}
+                          title={s.source === "recent" ? `Used ${s.usageCount} times with this vendor` : "Popular in your organisation"}
+                        >
+                          <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4"/></svg>
+                          {s.name}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </FormSection>
             </div>
 
