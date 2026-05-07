@@ -5,6 +5,9 @@ import type { InvoiceStatus } from "./actions";
 import { CopyInvoiceLinkButton } from "./copy-link-button";
 import { getSequenceConfig } from "@/features/sequences/services/sequence-admin";
 import { requireOrgContext } from "@/lib/auth";
+import { TagFilterChips } from "@/components/tags/tag-filter-chips";
+import { BulkSelectShell } from "@/components/tags/bulk-select-shell";
+import { SelectableRowCheckbox } from "@/components/tags/selectable-row-checkbox";
 
 export const metadata = {
   title: "Invoice Vault | Slipwise",
@@ -65,56 +68,11 @@ function AttentionSummary({
               ? `1 active query: ${formatTicketCategory(activeTickets[0].category)}`
               : `${activeTickets.length} active customer queries`}
           </span>
+            </div>
+          )}
         </div>
-      )}
-    </div>
+    </BulkSelectShell>
   );
-}
-
-function formatCurrency(amount: number) {
-  return new Intl.NumberFormat("en-IN", {
-    style: "currency",
-    currency: "INR",
-    minimumFractionDigits: 0,
-  }).format(amount);
-}
-
-function getDueDateColor(dueDate: string | null, status: string): string {
-  if (!dueDate) return "text-slate-500";
-  if (status === "PAID") return "text-green-600";
-  const now = new Date();
-  const due = new Date(dueDate);
-  const diffDays = Math.ceil((due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-  if (diffDays < 0 && status !== "PAID") return "text-red-600 font-medium";
-  if (diffDays <= 7) return "text-amber-600 font-medium";
-  return "text-slate-500";
-}
-
-// ─── Invoice Table (List View) ──────────────────────────────────────────────────
-
-async function InvoiceTable({
-  status,
-  search,
-  page,
-  dateFrom,
-  dateTo,
-  sequenceId,
-  amountMin,
-  amountMax,
-}: {
-  status?: InvoiceStatus;
-  search?: string;
-  page: number;
-  dateFrom?: string;
-  dateTo?: string;
-  sequenceId?: string;
-  amountMin?: number;
-  amountMax?: number;
-}) {
-  const { invoices, total, totalPages } = await listInvoices({
-    status, search, page, limit: 20,
-    dateFrom, dateTo, sequenceId, amountMin, amountMax,
-  });
 
   if (invoices.length === 0) {
     return (
@@ -134,11 +92,13 @@ async function InvoiceTable({
   }
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white overflow-hidden">
-      <table className="w-full">
-        <thead>
-          <tr className="border-b border-slate-200 bg-slate-50">
-            <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">Invoice #</th>
+    <BulkSelectShell entityType="invoice">
+      <div className="rounded-lg border border-slate-200 bg-white overflow-hidden">
+        <table className="w-full">
+          <thead>
+            <tr className="border-b border-slate-200 bg-slate-50">
+              <th className="w-10 px-3 py-3"></th>
+              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">Invoice #</th>
             <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">Customer</th>
             <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">Date</th>
             <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">Due Date</th>
@@ -151,6 +111,7 @@ async function InvoiceTable({
         <tbody className="divide-y divide-slate-200">
           {invoices.map((invoice) => (
             <tr key={invoice.id} className="hover:bg-slate-50">
+              <td className="px-3 py-3"><SelectableRowCheckbox id={invoice.id} /></td>
               <td className="px-4 py-3">
                 <Link href={`/app/docs/invoices/${invoice.id}`} className="font-medium text-blue-600 hover:underline">
                   {invoice.invoiceNumber ?? "Draft"}
@@ -175,8 +136,8 @@ async function InvoiceTable({
         <div className="flex items-center justify-between border-t border-slate-200 px-4 py-3">
           <p className="text-sm text-slate-500">Showing {(page - 1) * 20 + 1} to {Math.min(page * 20, total)} of {total}</p>
           <div className="flex gap-2">
-            {page > 1 && <Link href={`?${buildQuery({ status, search, page: page - 1, dateFrom, dateTo, sequenceId, amountMin, amountMax })}`} className="rounded px-3 py-1 text-sm text-slate-600 hover:bg-slate-100">Previous</Link>}
-            {page < totalPages && <Link href={`?${buildQuery({ status, search, page: page + 1, dateFrom, dateTo, sequenceId, amountMin, amountMax })}`} className="rounded px-3 py-1 text-sm text-slate-600 hover:bg-slate-100">Next</Link>}
+            {page > 1 && <Link href={`?${buildQuery({ status, search, page: page - 1, dateFrom, dateTo, sequenceId, amountMin, amountMax }, tagIds)}`} className="rounded px-3 py-1 text-sm text-slate-600 hover:bg-slate-100">Previous</Link>}
+            {page < totalPages && <Link href={`?${buildQuery({ status, search, page: page + 1, dateFrom, dateTo, sequenceId, amountMin, amountMax }, tagIds)}`} className="rounded px-3 py-1 text-sm text-slate-600 hover:bg-slate-100">Next</Link>}
           </div>
         </div>
       )}
@@ -305,11 +266,16 @@ function SequenceFolderCard({
 
 // ─── Query Builder ─────────────────────────────────────────────────────────────
 
-function buildQuery(params: Record<string, string | number | undefined>): string {
+function buildQuery(params: Record<string, string | number | undefined>, extraTags?: string[]): string {
   const parts: string[] = [];
   for (const [key, val] of Object.entries(params)) {
     if (val !== undefined && val !== null && val !== "" && val !== "undefined") {
       parts.push(`${encodeURIComponent(key)}=${encodeURIComponent(String(val))}`);
+    }
+  }
+  if (extraTags && extraTags.length > 0) {
+    for (const tid of extraTags) {
+      parts.push(`tagId=${encodeURIComponent(tid)}`);
     }
   }
   return parts.join("&");
@@ -447,7 +413,7 @@ function InvoiceActions({ invoiceId, status, token }: { invoiceId: string; statu
 export default async function InvoicesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string; search?: string; page?: string; view?: string; dateFrom?: string; dateTo?: string; amountMin?: string; amountMax?: string; sequenceId?: string; filters?: string }>;
+  searchParams: Promise<{ status?: string; search?: string; page?: string; view?: string; dateFrom?: string; dateTo?: string; amountMin?: string; amountMax?: string; sequenceId?: string; filters?: string; tagId?: string | string[] }>; 
 }) {
   const params = await searchParams;
   const page = parseInt(params.page || "1", 10);
@@ -458,6 +424,7 @@ export default async function InvoicesPage({
   const amountMin = params.amountMin ? parseFloat(params.amountMin) : undefined;
   const amountMax = params.amountMax ? parseFloat(params.amountMax) : undefined;
   const sequenceId = params.sequenceId;
+  const tagIds = typeof params.tagId === "string" ? [params.tagId] : params.tagId || undefined;
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -514,6 +481,7 @@ export default async function InvoicesPage({
             {dateTo && dateTo !== "undefined" && <input type="hidden" name="dateTo" value={dateTo} />}
             {params.amountMin && params.amountMin !== "undefined" && <input type="hidden" name="amountMin" value={params.amountMin} />}
             {params.amountMax && params.amountMax !== "undefined" && <input type="hidden" name="amountMax" value={params.amountMax} />}
+            {tagIds && tagIds.map((tid) => <input type="hidden" key={tid} name="tagId" value={tid} />)}
             <input
               type="text" name="search" defaultValue={params.search || ""} placeholder="Search invoices..."
               className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 pl-9 text-sm text-slate-700 placeholder-slate-400 focus:border-red-400 focus:outline-none focus:ring-1 focus:ring-red-400"
@@ -536,6 +504,9 @@ export default async function InvoicesPage({
         {view === "list" && (
           <div className="mb-4">
             <StatusFilterChips currentStatus={status} extraParams={{ view: params.view, search: params.search || undefined }} />
+            <Suspense fallback={null}>
+              <TagFilterChips />
+            </Suspense>
           </div>
         )}
 
@@ -544,7 +515,7 @@ export default async function InvoicesPage({
           {view === "sequence" ? (
             <InvoiceSequenceView search={params.search} />
           ) : (
-            <InvoiceTable status={status} search={params.search} page={page} dateFrom={dateFrom} dateTo={dateTo} sequenceId={sequenceId} amountMin={amountMin} amountMax={amountMax} />
+            <InvoiceTable status={status} search={params.search} page={page} dateFrom={dateFrom} dateTo={dateTo} sequenceId={sequenceId} amountMin={amountMin} amountMax={amountMax} tagIds={tagIds} />
           )}
         </Suspense>
       </div>

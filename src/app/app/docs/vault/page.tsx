@@ -5,6 +5,7 @@ import type { DocType, VaultRow } from "@/lib/docs-vault";
 import { StatusBadge } from "@/components/dashboard/status-badge";
 import { cn } from "@/lib/utils";
 import { Search, ArrowRight, FileText, Receipt, Banknote, FileCheck } from "lucide-react";
+import { TagFilterChips } from "@/components/tags/tag-filter-chips";
 
 export const metadata = {
   title: "Document Vault | Slipwise",
@@ -151,6 +152,7 @@ async function VaultTable({
   sortBy,
   sortDir,
   page,
+  tagIds,
 }: {
   docType?: string;
   status?: string;
@@ -159,6 +161,7 @@ async function VaultTable({
   sortBy?: string;
   sortDir?: string;
   page: number;
+  tagIds?: string[];
 }) {
   const result = await queryVault({
     docType: (docType as DocType) || "all",
@@ -169,6 +172,7 @@ async function VaultTable({
     sortDir: (sortDir as "asc" | "desc") || "desc",
     page,
     limit: 25,
+    tagIds,
   });
 
   const { rows, total, totalPages } = result;
@@ -263,16 +267,20 @@ async function VaultTable({
 
 // ─── Filter chips ─────────────────────────────────────────────────────────────
 
-function buildUrl(params: Record<string, string>, overrides: Record<string, string>) {
+function buildUrl(params: Record<string, string>, overrides: Record<string, string>, extraTags?: string[]) {
   const merged = { ...params, ...overrides, page: "1" };
   const qs = Object.entries(merged)
     .filter(([, v]) => v && v !== "all" && v !== "")
     .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
     .join("&");
-  return qs ? `?${qs}` : "?";
+  const tagStr = extraTags && extraTags.length > 0
+    ? extraTags.map((t) => `tagId=${encodeURIComponent(t)}`).join("&")
+    : "";
+  const combined = [qs, tagStr].filter(Boolean).join("&");
+  return combined ? `?${combined}` : "?";
 }
 
-function TypeFilter({ current, params }: { current: string; params: Record<string, string> }) {
+function TypeFilter({ current, params, tagIds }: { current: string; params: Record<string, string>; tagIds?: string[] }) {
   const types = [
     { value: "all", label: "All Types" },
     { value: "invoice", label: "Invoices" },
@@ -287,7 +295,7 @@ function TypeFilter({ current, params }: { current: string; params: Record<strin
         return (
           <Link
             key={t.value}
-            href={buildUrl(params, { docType: t.value })}
+            href={buildUrl(params, { docType: t.value }, tagIds)}
             className={cn(
               "rounded-full px-3 py-1 text-xs font-medium transition-colors",
               active
@@ -303,7 +311,7 @@ function TypeFilter({ current, params }: { current: string; params: Record<strin
   );
 }
 
-function ArchivedFilter({ current, params }: { current: string; params: Record<string, string> }) {
+function ArchivedFilter({ current, params, tagIds }: { current: string; params: Record<string, string>; tagIds?: string[] }) {
   const options = [
     { value: "active", label: "Active" },
     { value: "all", label: "All" },
@@ -316,7 +324,7 @@ function ArchivedFilter({ current, params }: { current: string; params: Record<s
         return (
           <Link
             key={o.value}
-            href={buildUrl(params, { archived: o.value })}
+            href={buildUrl(params, { archived: o.value }, tagIds)}
             className={cn(
               "rounded-md px-3 py-1 text-xs font-medium transition-colors",
               active ? "bg-[var(--brand-primary)] text-white" : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
@@ -330,7 +338,7 @@ function ArchivedFilter({ current, params }: { current: string; params: Record<s
   );
 }
 
-function SortSelect({ params }: { params: Record<string, string> }) {
+function SortSelect({ params, tagIds }: { params: Record<string, string>; tagIds?: string[] }) {
   const sorts = [
     { value: "updatedAt", label: "Recently updated" },
     { value: "createdAt", label: "Recently created" },
@@ -348,7 +356,7 @@ function SortSelect({ params }: { params: Record<string, string> }) {
             href={buildUrl(params, {
               sortBy: s.value,
               sortDir: s.value === "amount" ? "desc" : "desc",
-            })}
+            }, tagIds)}
             className={cn(
               "rounded px-2.5 py-1 text-xs font-medium transition-colors",
               current === s.value
@@ -380,6 +388,8 @@ export default async function VaultPage({
   const sortBy = params.sortBy ?? "updatedAt";
   const sortDir = params.sortDir ?? "desc";
   const status = params.status ?? "all";
+  const tagIdStr = params.tagId;
+  const tagIds = tagIdStr ? (Array.isArray(tagIdStr) ? tagIdStr : [tagIdStr]) : undefined;
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6">
@@ -426,6 +436,7 @@ export default async function VaultPage({
           {params.archived && <input type="hidden" name="archived" value={params.archived} />}
           {params.sortBy && <input type="hidden" name="sortBy" value={params.sortBy} />}
           {params.sortDir && <input type="hidden" name="sortDir" value={params.sortDir} />}
+          {tagIds && tagIds.map((tid) => <input type="hidden" key={tid} name="tagId" value={tid} />)}
 
           <div className="relative max-w-md">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-muted)]" />
@@ -441,10 +452,13 @@ export default async function VaultPage({
 
         {/* Filters */}
         <div className="flex flex-wrap items-center gap-3">
-          <TypeFilter current={docType} params={params} />
+          <TypeFilter current={docType} params={params} tagIds={tagIds} />
+          <Suspense fallback={null}>
+            <TagFilterChips />
+          </Suspense>
           <div className="ml-auto flex flex-wrap items-center gap-3">
-            <ArchivedFilter current={archived} params={params} />
-            <SortSelect params={params} />
+            <ArchivedFilter current={archived} params={params} tagIds={tagIds} />
+            <SortSelect params={params} tagIds={tagIds} />
           </div>
         </div>
       </div>
@@ -466,6 +480,7 @@ export default async function VaultPage({
           sortBy={sortBy}
           sortDir={sortDir}
           page={page}
+          tagIds={tagIds}
         />
       </Suspense>
 
