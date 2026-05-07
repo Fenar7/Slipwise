@@ -42,6 +42,7 @@ export type VoucherFormValues = {
   vendorId?: string;
   isMultiLine?: boolean;
   lineItems?: LineItemFormValues[];
+  tagIds?: string[];
 };
 
 export type VoucherDocument = {

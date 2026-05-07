@@ -161,14 +161,26 @@ export default async function CustomerDetailPage({
               </div>
             </DetailRailCard>
 
-            {customer.tags.length > 0 && (
-              <DetailRailCard title="Tags">
+            {customer.defaultTagAssignments && customer.defaultTagAssignments.length > 0 && (
+              <DetailRailCard title="Default Tags">
                 <div className="flex flex-wrap gap-1.5">
-                  {customer.tags.map((tag) => (
-                    <span key={tag} className="inline-flex items-center rounded-md bg-[var(--surface-subtle)] px-2 py-1 text-xs font-medium text-[var(--text-secondary)]">
-                      {tag}
-                    </span>
-                  ))}
+                  {customer.defaultTagAssignments.map((assignment) => {
+                    const tag = assignment.tag;
+                    const isArchived = (tag as any).isArchived;
+                    return (
+                      <span
+                        key={tag.id}
+                        className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium ${isArchived ? "opacity-50 line-through" : ""}`}
+                        style={{
+                          borderColor: tag.color ?? "var(--border-soft)",
+                          backgroundColor: tag.color ? `${tag.color}18` : "var(--surface-subtle)",
+                          color: tag.color ?? "var(--text-secondary)",
+                        }}
+                      >
+                        {tag.name}
+                      </span>
+                    );
+                  })}
                 </div>
               </DetailRailCard>
             )}

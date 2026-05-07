@@ -13,6 +13,7 @@ import { checkUsageLimit } from "@/lib/usage-metering";
 import { consumeSequenceNumber } from "@/features/sequences/services/sequence-engine";
 import { getSequenceConfig } from "@/features/sequences/services/sequence-admin";
 import type { ConsumeResult } from "@/features/sequences/types";
+import { setVoucherTags } from "@/lib/tags/assignment-service";
 import { fromMinorUnits, normalizeMoney, sumMinorUnits } from "@/lib/money";
 
 export type ActionResult<T> = 
@@ -35,6 +36,7 @@ export interface VoucherInput {
   status?: "draft" | "approved";
   formData: Record<string, unknown>;
   lines: VoucherLineInput[];
+  tagIds?: string[];
 }
 
 function normalizeVoucherLines(
@@ -234,6 +236,11 @@ export async function saveVoucher(
       return created;
     });
     
+    // Assign tags if provided
+    if (input.tagIds !== undefined) {
+      await setVoucherTags(voucher.id, input.tagIds);
+    }
+
     // Phase 19.2: emit normalized document event
     await emitVoucherEvent(orgId, voucher.id, status === "approved" ? "approved" : "created", {
       actorId: userId,
@@ -372,6 +379,11 @@ export async function updateVoucher(
         });
       }
     });
+
+    // Assign tags if provided
+    if (input.tagIds !== undefined) {
+      await setVoucherTags(id, input.tagIds);
+    }
     
     // Phase 19.2: emit normalized document event
     await emitVoucherEvent(orgId, id, "updated", { actorId: userId });
@@ -491,6 +503,7 @@ export async function getVoucher(id: string) {
     include: {
       lines: { orderBy: { sortOrder: "asc" } },
       vendor: true,
+      tagAssignments: { include: { tag: { select: { id: true, name: true, slug: true, color: true } } } },
     },
   });
 }

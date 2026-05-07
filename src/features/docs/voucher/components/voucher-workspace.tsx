@@ -32,10 +32,10 @@ import {
 import { VoucherPreview } from "@/features/docs/voucher/components/voucher-preview";
 import { VoucherDocumentFrame } from "@/features/docs/voucher/components/voucher-document-frame";
 import { VendorPicker } from "@/features/docs/voucher/components/vendor-picker";
-import { TagPicker } from "@/components/tags/tag-picker";
-import { getVoucherTags, getVendorDefaultTags } from "@/lib/tags/assignment-service";
 import { MultiLineVoucherEditor } from "@/features/docs/voucher/components/multi-line-voucher-editor";
 import { VoucherSaveBar } from "@/features/docs/voucher/components/voucher-save-bar";
+import { TagPicker } from "@/features/tags/components/tag-picker";
+import { getSuggestedTags, type SuggestedTag } from "@/lib/tags/suggestion-service";
 import { voucherFormSchema } from "@/features/docs/voucher/schema";
 import type { VoucherDocument, VoucherFormValues } from "@/features/docs/voucher/types";
 import { voucherTemplateRegistry } from "@/features/docs/voucher/templates";
@@ -72,7 +72,6 @@ const voucherWorkspaceSections: WorkspaceSectionMeta[] = [
   { id: "voucher-setup", label: "Setup" },
   { id: "voucher-branding", label: "Brand" },
   { id: "voucher-details", label: "Details" },
-  { id: "voucher-tags", label: "Tags" },
   { id: "voucher-approvals", label: "Approvals" },
   { id: "voucher-visibility", label: "Visibility" },
 ];
@@ -122,24 +121,14 @@ function VoucherPanel({
     voucherId ? values.voucherNumber : undefined
   );
   const [tagIds, setTagIds] = useState<string[]>([]);
-  const [archivedTagIds, setArchivedTagIds] = useState<string[]>([]);
-  const [tagIdsLoaded, setTagIdsLoaded] = useState(false);
+  const [suggestions, setSuggestions] = useState<SuggestedTag[]>([]);
 
-  useEffect(() => {
-    if (voucherId && !tagIdsLoaded) {
-      getVoucherTags(voucherId).then((result) => {
-        if (result.success) {
-          setTagIds(result.data.map((t) => t.id));
-          setArchivedTagIds(
-            result.data.filter((t) => t.isArchived).map((t) => t.id)
-          );
-        }
-        setTagIdsLoaded(true);
-      });
-    } else if (!voucherId) {
-      setTagIdsLoaded(true);
-    }
-  }, [voucherId]); // eslint-disable-line react-hooks/exhaustive-deps
+  const loadSuggestions = async (vendorId: string) => {
+    try {
+      const result = await getSuggestedTags({ counterpartyId: vendorId, counterpartyType: "vendor", documentType: "voucher", limit: 8 });
+      setSuggestions(result.filter((s) => s.source !== "default"));
+    } catch { setSuggestions([]); }
+  };
 
   // Sync multi-line total → amount field so preview stays live
   useEffect(() => {
@@ -209,7 +198,6 @@ function VoucherPanel({
         status: "approved",
         formData: currentValues as Record<string, unknown>,
         lines: buildLines(currentValues),
-        tagIds,
       };
       if (savedId) {
         const result = await updateVoucher(savedId, input);
@@ -589,18 +577,8 @@ function VoucherPanel({
                     <VendorPicker
                       vendors={vendors}
                       label={isPayment ? "Select vendor" : "Select from"}
-                      onSelect={(vendor) => {
-                        if (tagIds.length === 0) {
-                          getVendorDefaultTags(vendor.id).then((result) => {
-                            if (result.success && result.data.length > 0) {
-                              const defaultIds = result.data.map((t) => t.id);
-                              if (!defaultIds.some((id) => tagIds.includes(id))) {
-                                setTagIds([...tagIds, ...defaultIds]);
-                              }
-                            }
-                          });
-                        }
-                      }}
+                      onTagPrefill={setTagIds}
+                      onVendorSelect={loadSuggestions}
                     />
 
                     <TextField<VoucherFormValues>
@@ -690,15 +668,34 @@ function VoucherPanel({
             <div id="voucher-tags" className="scroll-mt-28">
               <FormSection
                 eyebrow="Tags"
-                title="Document tags"
-                description="Add tags to categorize this voucher. Tags are internal and not shown on the PDF."
+                title="Document Tags"
+                description="Categorise this voucher for reporting and analytics."
               >
                 <TagPicker
-                  value={tagIds}
+                  selectedIds={tagIds}
                   onChange={setTagIds}
-                  archivedTagIds={archivedTagIds}
                   placeholder="Add tags..."
                 />
+                {suggestions.length > 0 && (
+                  <div className="mt-3">
+                    <p className="mb-1.5 text-xs font-medium text-[var(--muted-foreground)]">Suggestions</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {suggestions.map((s) => (
+                        <button
+                          key={s.id} type="button"
+                          onClick={() => { if (!tagIds.includes(s.id)) setTagIds([...tagIds, s.id]); }}
+                          disabled={tagIds.includes(s.id)}
+                          className="inline-flex items-center gap-1 rounded-full border border-dashed px-2 py-0.5 text-xs font-medium transition-colors hover:border-solid hover:bg-[var(--surface-soft)] disabled:opacity-30 disabled:cursor-default"
+                          style={{ borderColor: s.color ?? "var(--border-soft)", color: s.color ?? "var(--muted-foreground)" }}
+                          title={s.source === "recent" ? `Used ${s.usageCount} times with this vendor` : "Popular in your organisation"}
+                        >
+                          <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4"/></svg>
+                          {s.name}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </FormSection>
             </div>
 

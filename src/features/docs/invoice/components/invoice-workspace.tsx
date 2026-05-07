@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 import { FormProvider, useFieldArray, useForm, useFormContext, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -35,9 +35,9 @@ import {
 import { normalizeMoney } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { CustomerPicker } from "./customer-picker";
-import { TagPicker } from "@/components/tags/tag-picker";
-import { getInvoiceTags, getCustomerDefaultTags } from "@/lib/tags/assignment-service";
 import { InvoiceSaveBar } from "./invoice-save-bar";
+import { TagPicker } from "@/features/tags/components/tag-picker";
+import { getSuggestedTags, type SuggestedTag } from "@/lib/tags/suggestion-service";
 import {
   saveInvoice,
   updateInvoice,
@@ -54,7 +54,6 @@ const invoiceWorkspaceSections: WorkspaceSectionMeta[] = [
   { id: "invoice-setup", label: "Setup" },
   { id: "invoice-client", label: "Client" },
   { id: "invoice-meta", label: "Meta" },
-  { id: "invoice-tags", label: "Tags" },
   { id: "invoice-billing", label: "Billing" },
   { id: "invoice-footer", label: "Footer" },
   { id: "invoice-visibility", label: "Visibility" },
@@ -224,12 +223,9 @@ interface InvoicePanelProps {
     totalAvailable: number;
     trackInventory: boolean;
   }>;
-  tagIds?: string[];
-  onTagIdsChange?: (tagIds: string[]) => void;
-  archivedTagIds?: string[];
 }
 
-function InvoicePanel({ customers = [], inventoryItems = [], tagIds = [], onTagIdsChange, archivedTagIds = [] }: InvoicePanelProps) {
+function InvoicePanel({ customers = [], inventoryItems = [] }: InvoicePanelProps) {
   const { control, getValues, setValue, trigger } = useFormContextSafe();
   const values = useWatch({ control }) as InvoiceFormValues;
   const [selectedTemplateId, setSelectedTemplateId] = useState<InvoiceFormValues["templateId"]>(() => getValues("templateId") ?? "professional");
@@ -519,21 +515,7 @@ function InvoicePanel({ customers = [], inventoryItems = [], tagIds = [], onTagI
                 title="Client details"
                 description="Control how the client block appears in the invoice preview."
               >
-                <CustomerPicker
-                  customers={customers}
-                  onSelect={(customer) => {
-                    if (onTagIdsChange && tagIds.length === 0) {
-                      getCustomerDefaultTags(customer.id).then((result) => {
-                        if (result.success && result.data.length > 0) {
-                          const defaultIds = result.data.map((t) => t.id);
-                          if (!defaultIds.some((id) => tagIds.includes(id))) {
-                            onTagIdsChange([...tagIds, ...defaultIds]);
-                          }
-                        }
-                      });
-                    }
-                  }}
-                />
+                <CustomerPicker customers={customers} onTagPrefill={setTagIds} onCustomerSelect={loadSuggestions} />
                 <TextField<InvoiceFormValues>
                   name="clientName"
                   label="Client name"
@@ -570,6 +552,40 @@ function InvoicePanel({ customers = [], inventoryItems = [], tagIds = [], onTagI
                   placeholder="GSTIN 32AAACA1122R1ZV"
                 />
               </FormSection>
+          </div>
+
+          <div id="invoice-tags" className="scroll-mt-28">
+            <FormSection
+              eyebrow="Tags"
+              title="Document Tags"
+              description="Categorise this invoice for reporting and analytics."
+            >
+              <TagPicker
+                selectedIds={tagIds}
+                onChange={setTagIds}
+                placeholder="Add tags..."
+              />
+              {suggestions.length > 0 && (
+                <div className="mt-3">
+                  <p className="mb-1.5 text-xs font-medium text-[var(--muted-foreground)]">Suggestions</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {suggestions.map((s) => (
+                      <button
+                        key={s.id} type="button"
+                        onClick={() => { if (!tagIds.includes(s.id)) setTagIds([...tagIds, s.id]); }}
+                        disabled={tagIds.includes(s.id)}
+                        className="inline-flex items-center gap-1 rounded-full border border-dashed px-2 py-0.5 text-xs font-medium transition-colors hover:border-solid hover:bg-[var(--surface-soft)] disabled:opacity-30 disabled:cursor-default"
+                        style={{ borderColor: s.color ?? "var(--border-soft)", color: s.color ?? "var(--muted-foreground)" }}
+                        title={s.source === "recent" ? `Used ${s.usageCount} times with this customer` : "Popular in your organisation"}
+                      >
+                        <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4"/></svg>
+                        {s.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </FormSection>
           </div>
 
           <div id="invoice-meta" className="scroll-mt-28">
@@ -610,21 +626,6 @@ function InvoicePanel({ customers = [], inventoryItems = [], tagIds = [], onTagI
                   />
                 </div>
               </FormSection>
-          </div>
-
-          <div id="invoice-tags" className="scroll-mt-28">
-            <FormSection
-              eyebrow="Tags"
-              title="Document tags"
-              description="Add tags to categorize this invoice. Tags are internal and not shown on the PDF."
-            >
-              <TagPicker
-                value={tagIds}
-                onChange={onTagIdsChange ?? (() => {})}
-                archivedTagIds={archivedTagIds}
-                placeholder="Add tags..."
-              />
-            </FormSection>
           </div>
 
           <div id="invoice-billing" className="scroll-mt-28">
@@ -835,25 +836,18 @@ export function InvoiceWorkspace({
     existingInvoice?.invoiceNumber
   );
   const [isSaving, setIsSaving] = useState(false);
-  const [tagIds, setTagIds] = useState<string[]>([]);
-  const [archivedTagIds, setArchivedTagIds] = useState<string[]>([]);
-  const [tagIdsLoaded, setTagIdsLoaded] = useState(false);
 
-  useEffect(() => {
-    if (existingInvoice?.id && !tagIdsLoaded) {
-      getInvoiceTags(existingInvoice.id).then((result) => {
-        if (result.success) {
-          setTagIds(result.data.map((t) => t.id));
-          setArchivedTagIds(
-            result.data.filter((t) => t.isArchived).map((t) => t.id)
-          );
-        }
-        setTagIdsLoaded(true);
-      });
-    } else if (!existingInvoice?.id) {
-      setTagIdsLoaded(true);
-    }
-  }, [existingInvoice?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [tagIds, setTagIds] = useState<string[]>(
+    existingInvoice?.tagAssignments?.map((a) => a.tag.id) ?? []
+  );
+  const [suggestions, setSuggestions] = useState<SuggestedTag[]>([]);
+
+  const loadSuggestions = async (customerId: string) => {
+    try {
+      const result = await getSuggestedTags({ counterpartyId: customerId, counterpartyType: "customer", documentType: "invoice", limit: 8 });
+      setSuggestions(result.filter((s) => s.source !== "default"));
+    } catch { setSuggestions([]); }
+  };
 
   const handleSaveDraft = async (): Promise<string | undefined> => {
     setIsSaving(true);
@@ -939,13 +933,7 @@ export function InvoiceWorkspace({
 
   return (
     <FormProvider {...methods}>
-      <InvoicePanel 
-        customers={customers} 
-        inventoryItems={inventoryItems} 
-        tagIds={tagIds}
-        onTagIdsChange={setTagIds}
-        archivedTagIds={archivedTagIds}
-      />
+      <InvoicePanel customers={customers} inventoryItems={inventoryItems} />
       <InvoiceSaveBar
         onSaveDraft={() => void handleSaveDraft()}
         onIssue={() => void handleIssue()}
@@ -988,3 +976,4 @@ function convertInvoiceToFormValues(invoice: ExistingInvoice): InvoiceFormValues
     })),
   };
 }
+// SPRINT 4.2 placeholder
