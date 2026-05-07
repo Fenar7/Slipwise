@@ -28,6 +28,7 @@ export const RESOURCES = [
   "intel",
   "inventory",
   "procurement",
+  "tags",
 ] as const;
 export type Resource = (typeof RESOURCES)[number];
 

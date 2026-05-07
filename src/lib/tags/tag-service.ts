@@ -2,10 +2,28 @@
 
 import { db } from "@/lib/db";
 import { requireOrgContext, requireRole } from "@/lib/auth";
+import { logAudit } from "@/lib/audit";
 
 export type ActionResult<T> =
   | { success: true; data: T }
   | { success: false; error: string };
+
+async function tagAudit(
+  orgId: string,
+  actorId: string,
+  action: string,
+  tagId: string,
+  metadata?: Record<string, unknown>
+): Promise<void> {
+  logAudit({
+    orgId,
+    actorId,
+    action,
+    entityType: "Tag",
+    entityId: tagId,
+    metadata,
+  }).catch(() => {});
+}
 
 export interface TagData {
   id: string;
@@ -44,7 +62,7 @@ export async function createTag(input: {
   description?: string;
 }): Promise<ActionResult<TagData>> {
   try {
-    const { orgId } = await requireRole("admin");
+    const { orgId, userId } = await requireRole("admin");
 
     const name = input.name.trim();
     if (!name) return { success: false, error: "Tag name is required" };
@@ -64,6 +82,8 @@ export async function createTag(input: {
         description: input.description?.trim() || null,
       },
     });
+
+    void tagAudit(orgId, userId, "tag.created", tag.id, { name, slug });
 
     return { success: true, data: tag };
   } catch (error) {
@@ -115,7 +135,7 @@ export async function renameTag(
   input: { name: string }
 ): Promise<ActionResult<TagData>> {
   try {
-    const { orgId } = await requireRole("admin");
+    const { orgId, userId } = await requireRole("admin");
 
     const name = input.name.trim();
     if (!name) return { success: false, error: "Tag name is required" };
@@ -133,6 +153,7 @@ export async function renameTag(
         where: { id },
         data: { name },
       });
+      void tagAudit(orgId, userId, "tag.renamed", id, { oldName: existing.name, newName: name });
       return { success: true, data: tag };
     }
 
@@ -144,6 +165,8 @@ export async function renameTag(
       data: { name, slug },
     });
 
+    void tagAudit(orgId, userId, "tag.renamed", id, { oldName: existing.name, newName: name });
+
     return { success: true, data: tag };
   } catch (error) {
     console.error("renameTag error:", error);
@@ -153,7 +176,7 @@ export async function renameTag(
 
 export async function archiveTag(id: string): Promise<ActionResult<TagData>> {
   try {
-    const { orgId } = await requireRole("admin");
+    const { orgId, userId } = await requireRole("admin");
 
     const existing = await db.documentTag.findFirst({
       where: { id, orgId },
@@ -165,6 +188,8 @@ export async function archiveTag(id: string): Promise<ActionResult<TagData>> {
       data: { isArchived: true },
     });
 
+    void tagAudit(orgId, userId, "tag.archived", id, { name: existing.name });
+
     return { success: true, data: tag };
   } catch (error) {
     console.error("archiveTag error:", error);
@@ -174,7 +199,7 @@ export async function archiveTag(id: string): Promise<ActionResult<TagData>> {
 
 export async function unarchiveTag(id: string): Promise<ActionResult<TagData>> {
   try {
-    const { orgId } = await requireRole("admin");
+    const { orgId, userId } = await requireRole("admin");
 
     const existing = await db.documentTag.findFirst({
       where: { id, orgId },
@@ -185,6 +210,8 @@ export async function unarchiveTag(id: string): Promise<ActionResult<TagData>> {
       where: { id },
       data: { isArchived: false },
     });
+
+    void tagAudit(orgId, userId, "tag.unarchived", id, { name: existing.name });
 
     return { success: true, data: tag };
   } catch (error) {
