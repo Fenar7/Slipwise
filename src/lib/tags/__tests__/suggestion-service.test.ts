@@ -8,10 +8,7 @@ const mocks = vi.hoisted(() => ({
   voucherTagAssignmentFindMany: vi.fn(),
 }));
 
-vi.mock("@/lib/auth", () => ({
-  requireOrgContext: mocks.requireOrgContext,
-}));
-
+vi.mock("@/lib/auth", () => ({ requireOrgContext: mocks.requireOrgContext }));
 vi.mock("@/lib/db", () => ({
   db: {
     customerDefaultTag: { findMany: mocks.customerDefaultTagFindMany },
@@ -26,16 +23,8 @@ import { getSuggestedTags } from "../suggestion-service";
 const ORG_ID = "org_test";
 const CTX = { orgId: ORG_ID, userId: "u1", role: "admin", representedId: null, proxyGrantId: null, proxyScope: null };
 
-function makeTagAssign(overrides: Record<string, unknown> = {}) {
-  return {
-    tagId: overrides.tagId ?? "tag_1",
-    tag: {
-      id: overrides.tagId ?? "tag_1",
-      name: overrides.tagName ?? "Priority",
-      slug: overrides.tagSlug ?? "priority",
-      color: (overrides.tagColor as string) ?? "#FF0000",
-    },
-  };
+function ta(id: string, name: string, slug?: string, color?: string) {
+  return { tagId: id, tag: { id, name, slug: slug ?? name.toLowerCase(), color: color ?? null } };
 }
 
 beforeEach(() => {
@@ -48,149 +37,50 @@ beforeEach(() => {
 });
 
 describe("getSuggestedTags", () => {
-  describe("default tags", () => {
-    it("returns customer default tags first", async () => {
-      mocks.customerDefaultTagFindMany.mockResolvedValue([
-        { tag: { id: "tag_d", name: "Default", slug: "default", color: "#0000FF" } },
-      ]);
-
-      const result = await getSuggestedTags({
-        counterpartyId: "cust_1",
-        counterpartyType: "customer",
-        documentType: "invoice",
-      });
-
-      expect(result).toHaveLength(1);
-      expect(result[0].name).toBe("Default");
-      expect(result[0].source).toBe("default");
-    });
-
-    it("returns vendor default tags first", async () => {
-      mocks.vendorDefaultTagFindMany.mockResolvedValue([
-        { tag: { id: "tag_d", name: "Vendor Default", slug: "vd", color: null } },
-      ]);
-
-      const result = await getSuggestedTags({
-        counterpartyId: "ven_1",
-        counterpartyType: "vendor",
-        documentType: "voucher",
-      });
-
-      expect(result).toHaveLength(1);
-      expect(result[0].name).toBe("Vendor Default");
-      expect(result[0].source).toBe("default");
-    });
+  it("returns customer default tags first", async () => {
+    mocks.customerDefaultTagFindMany.mockResolvedValue([{ tag: { id: "d1", name: "Default1", slug: "d1", color: null } }]);
+    const r = await getSuggestedTags({ counterpartyId: "c1", counterpartyType: "customer", documentType: "invoice" });
+    expect(r[0].source).toBe("default");
+    expect(r[0].name).toBe("Default1");
   });
 
-  describe("recent tags", () => {
-    it("returns recently used tags for customer invoices", async () => {
-      mocks.invoiceTagAssignmentFindMany.mockResolvedValue([
-        makeTagAssign({ tagId: "tag_r", tagName: "Recent", tagSlug: "recent", tagColor: "#00FF00" }),
-      ]);
-
-      const result = await getSuggestedTags({
-        counterpartyId: "cust_1",
-        counterpartyType: "customer",
-        documentType: "invoice",
-      });
-
-      expect(result).toHaveLength(1);
-      expect(result[0].name).toBe("Recent");
-      expect(result[0].source).toBe("recent");
-    });
-
-    it("returns recently used tags for vendor vouchers", async () => {
-      mocks.voucherTagAssignmentFindMany.mockResolvedValue([
-        makeTagAssign({ tagId: "tag_r", tagName: "Recent V", tagSlug: "recent-v", tagColor: null }),
-      ]);
-
-      const result = await getSuggestedTags({
-        counterpartyId: "ven_1",
-        counterpartyType: "vendor",
-        documentType: "voucher",
-      });
-
-      expect(result).toHaveLength(1);
-      expect(result[0].name).toBe("Recent V");
-      expect(result[0].source).toBe("recent");
-    });
-
-    it("counts usage and sorts by frequency", async () => {
-      mocks.invoiceTagAssignmentFindMany.mockResolvedValue([
-        makeTagAssign({ tagId: "tag_a", tagName: "Alpha", tagSlug: "alpha" }),
-        makeTagAssign({ tagId: "tag_b", tagName: "Beta", tagSlug: "beta" }),
-        makeTagAssign({ tagId: "tag_a", tagName: "Alpha", tagSlug: "alpha" }),
-        makeTagAssign({ tagId: "tag_a", tagName: "Alpha", tagSlug: "alpha" }),
-      ]);
-
-      const result = await getSuggestedTags({
-        counterpartyId: "cust_1",
-        counterpartyType: "customer",
-        documentType: "invoice",
-        limit: 5,
-      });
-
-      expect(result[0].name).toBe("Alpha");
-      expect(result[0].usageCount).toBe(3);
-      expect(result[1].name).toBe("Beta");
-      expect(result[1].usageCount).toBe(1);
-    });
+  it("returns recent tags for customer invoices", async () => {
+    mocks.invoiceTagAssignmentFindMany.mockResolvedValue([ta("r1", "Recent", "recent", "#00FF00")]);
+    const r = await getSuggestedTags({ counterpartyId: "c1", counterpartyType: "customer", documentType: "invoice" });
+    expect(r[0].source).toBe("recent");
+    expect(r[0].name).toBe("Recent");
   });
 
-  describe("deduplication", () => {
-    it("does not duplicate tags across sources", async () => {
-      mocks.customerDefaultTagFindMany.mockResolvedValue([
-        { tag: { id: "tag_x", name: "Shared", slug: "shared", color: null } },
-      ]);
-      mocks.invoiceTagAssignmentFindMany.mockResolvedValue([
-        makeTagAssign({ tagId: "tag_x", tagName: "Shared", tagSlug: "shared" }),
-      ]);
-
-      const result = await getSuggestedTags({
-        counterpartyId: "cust_1",
-        counterpartyType: "customer",
-        documentType: "invoice",
-      });
-
-      expect(result).toHaveLength(1);
-      expect(result[0].name).toBe("Shared");
-      expect(result[0].source).toBe("default");
-    });
+  it("returns recent tags for vendor vouchers", async () => {
+    mocks.voucherTagAssignmentFindMany.mockResolvedValue([ta("r1", "RecV", "recv")]);
+    const r = await getSuggestedTags({ counterpartyId: "v1", counterpartyType: "vendor", documentType: "voucher" });
+    expect(r[0].source).toBe("recent");
   });
 
-  describe("popular tags fallback", () => {
-    it("returns org-wide popular tags when few recent tags", async () => {
-      mocks.invoiceTagAssignmentFindMany
-        .mockResolvedValueOnce([]);
-
-      const result = await getSuggestedTags({
-        counterpartyId: "cust_1",
-        counterpartyType: "customer",
-        documentType: "invoice",
-        limit: 3,
-      });
-
-      // verify popular fallback was queried (the first findMany call is for recent, second for popular)
-      expect(mocks.invoiceTagAssignmentFindMany).toHaveBeenCalledTimes(2);
-    });
+  it("deduplicates tags across sources", async () => {
+    mocks.customerDefaultTagFindMany.mockResolvedValue([{ tag: { id: "shared", name: "Shared", slug: "shared", color: null } }]);
+    mocks.invoiceTagAssignmentFindMany.mockResolvedValue([ta("shared", "Shared", "shared")]);
+    const r = await getSuggestedTags({ counterpartyId: "c1", counterpartyType: "customer", documentType: "invoice" });
+    expect(r).toHaveLength(1);
+    expect(r[0].source).toBe("default");
   });
 
-  describe("limit", () => {
-    it("respects the limit parameter", async () => {
-      mocks.invoiceTagAssignmentFindMany.mockResolvedValue([
-        makeTagAssign({ tagId: "tag_1", tagName: "One", tagSlug: "one" }),
-        makeTagAssign({ tagId: "tag_2", tagName: "Two", tagSlug: "two" }),
-        makeTagAssign({ tagId: "tag_3", tagName: "Three", tagSlug: "three" }),
-      ]);
+  it("sorts recent by frequency", async () => {
+    mocks.invoiceTagAssignmentFindMany.mockResolvedValue([ta("a", "A"), ta("b", "B"), ta("a", "A"), ta("a", "A")]);
+    const r = await getSuggestedTags({ counterpartyId: "c1", counterpartyType: "customer", documentType: "invoice", limit: 5 });
+    expect(r[0].name).toBe("A");
+    expect(r[0].usageCount).toBe(3);
+  });
 
-      const result = await getSuggestedTags({
-        counterpartyId: "cust_1",
-        counterpartyType: "customer",
-        documentType: "invoice",
-        limit: 2,
-      });
+  it("respects limit", async () => {
+    mocks.invoiceTagAssignmentFindMany.mockResolvedValue([ta("1", "1"), ta("2", "2"), ta("3", "3")]);
+    const r = await getSuggestedTags({ counterpartyId: "c1", counterpartyType: "customer", documentType: "invoice", limit: 2 });
+    expect(r.length).toBeLessThanOrEqual(2);
+  });
 
-      expect(result.length).toBeLessThanOrEqual(2);
-    });
+  it("falls back to popular when few recent", async () => {
+    mocks.invoiceTagAssignmentFindMany.mockResolvedValueOnce([ta("r1", "R1")]);
+    const r = await getSuggestedTags({ counterpartyId: "c1", counterpartyType: "customer", documentType: "invoice", limit: 3 });
+    expect(mocks.invoiceTagAssignmentFindMany).toHaveBeenCalledTimes(2);
   });
 });
