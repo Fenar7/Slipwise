@@ -226,9 +226,10 @@ interface InvoicePanelProps {
   }>;
   tagIds?: string[];
   onTagIdsChange?: (tagIds: string[]) => void;
+  archivedTagIds?: string[];
 }
 
-function InvoicePanel({ customers = [], inventoryItems = [], tagIds = [], onTagIdsChange }: InvoicePanelProps) {
+function InvoicePanel({ customers = [], inventoryItems = [], tagIds = [], onTagIdsChange, archivedTagIds = [] }: InvoicePanelProps) {
   const { control, getValues, setValue, trigger } = useFormContextSafe();
   const values = useWatch({ control }) as InvoiceFormValues;
   const [selectedTemplateId, setSelectedTemplateId] = useState<InvoiceFormValues["templateId"]>(() => getValues("templateId") ?? "professional");
@@ -620,6 +621,7 @@ function InvoicePanel({ customers = [], inventoryItems = [], tagIds = [], onTagI
               <TagPicker
                 value={tagIds}
                 onChange={onTagIdsChange ?? (() => {})}
+                archivedTagIds={archivedTagIds}
                 placeholder="Add tags..."
               />
             </FormSection>
@@ -834,6 +836,7 @@ export function InvoiceWorkspace({
   );
   const [isSaving, setIsSaving] = useState(false);
   const [tagIds, setTagIds] = useState<string[]>([]);
+  const [archivedTagIds, setArchivedTagIds] = useState<string[]>([]);
   const [tagIdsLoaded, setTagIdsLoaded] = useState(false);
 
   useEffect(() => {
@@ -841,6 +844,9 @@ export function InvoiceWorkspace({
       getInvoiceTags(existingInvoice.id).then((result) => {
         if (result.success) {
           setTagIds(result.data.map((t) => t.id));
+          setArchivedTagIds(
+            result.data.filter((t) => t.isArchived).map((t) => t.id)
+          );
         }
         setTagIdsLoaded(true);
       });
@@ -938,6 +944,7 @@ export function InvoiceWorkspace({
         inventoryItems={inventoryItems} 
         tagIds={tagIds}
         onTagIdsChange={setTagIds}
+        archivedTagIds={archivedTagIds}
       />
       <InvoiceSaveBar
         onSaveDraft={() => void handleSaveDraft()}

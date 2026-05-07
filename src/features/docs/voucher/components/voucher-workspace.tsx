@@ -122,6 +122,7 @@ function VoucherPanel({
     voucherId ? values.voucherNumber : undefined
   );
   const [tagIds, setTagIds] = useState<string[]>([]);
+  const [archivedTagIds, setArchivedTagIds] = useState<string[]>([]);
   const [tagIdsLoaded, setTagIdsLoaded] = useState(false);
 
   useEffect(() => {
@@ -129,6 +130,9 @@ function VoucherPanel({
       getVoucherTags(voucherId).then((result) => {
         if (result.success) {
           setTagIds(result.data.map((t) => t.id));
+          setArchivedTagIds(
+            result.data.filter((t) => t.isArchived).map((t) => t.id)
+          );
         }
         setTagIdsLoaded(true);
       });
@@ -692,6 +696,7 @@ function VoucherPanel({
                 <TagPicker
                   value={tagIds}
                   onChange={setTagIds}
+                  archivedTagIds={archivedTagIds}
                   placeholder="Add tags..."
                 />
               </FormSection>

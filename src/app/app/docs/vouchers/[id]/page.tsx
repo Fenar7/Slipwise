@@ -8,6 +8,8 @@ import { getDocumentTimelineForPage } from "@/lib/document-events";
 import { DocumentTimeline } from "@/components/docs/document-timeline";
 import { DocumentActionBar } from "@/components/docs/document-action-bar";
 import { StatusBadge } from "@/components/dashboard/status-badge";
+import { getVoucherTags } from "@/lib/tags/assignment-service";
+import { TagChips } from "@/components/tags/tag-chips";
 
 export const metadata = {
   title: "Edit Voucher | Slipwise",
@@ -40,11 +42,12 @@ export default async function EditVoucherPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const [voucher, vendorsResult, attachments, events] = await Promise.all([
+  const [voucher, vendorsResult, attachments, events, tagsResult] = await Promise.all([
     getVoucher(id),
     listVendors({ limit: 100 }).catch(() => ({ vendors: [] })),
     getDocAttachments(id, "voucher"),
     getDocumentTimelineForPage("voucher", id).catch(() => []),
+    getVoucherTags(id).catch(() => ({ success: false as const, error: "" })),
   ]);
 
   if (!voucher) {
@@ -110,6 +113,14 @@ export default async function EditVoucherPage({
           <VoucherBrandingWrapper existingVoucher={voucher} vendors={vendorsResult.vendors} />
         </div>
         <aside className="w-full shrink-0 lg:w-80 space-y-4">
+          {tagsResult.success && tagsResult.data.length > 0 && (
+            <div className="rounded-xl border border-[var(--border-soft)] bg-white p-4 shadow-[var(--shadow-card)]">
+              <h3 className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-[var(--text-muted)]">
+                Tags
+              </h3>
+              <TagChips tags={tagsResult.data} />
+            </div>
+          )}
           <DocumentAttachments docId={voucher.id} docType="voucher" attachments={attachments} />
         </aside>
       </div>

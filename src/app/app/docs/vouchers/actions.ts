@@ -185,6 +185,19 @@ export async function saveVoucher(
     const normalizedVoucher = normalizeVoucherLines(input.lines, {
       allowPartial: status === "draft",
     });
+
+    // Phase 29: Validate tagIds before transaction
+    let validatedTagIds: string[] | null = null;
+    if (input.tagIds !== undefined && input.tagIds.length > 0) {
+      const tags = await db.documentTag.findMany({
+        where: { id: { in: input.tagIds }, orgId },
+        select: { id: true },
+      });
+      if (tags.length !== input.tagIds.length) {
+        return { success: false, error: "One or more tags are invalid or do not belong to your organization" };
+      }
+      validatedTagIds = tags.map((t) => t.id);
+    }
     
     const voucher = await db.$transaction(async (tx) => {
       if (status === "approved") {
@@ -234,6 +247,15 @@ export async function saveVoucher(
         });
       }
 
+      // Phase 29: Create tag assignments atomically
+      if (validatedTagIds !== null) {
+        for (const tagId of validatedTagIds) {
+          await tx.voucherTagAssignment.create({
+            data: { voucherId: created.id, tagId },
+          });
+        }
+      }
+
       return created;
     });
     
@@ -257,10 +279,6 @@ export async function saveVoucher(
 
     // Phase 19.1: Sync to DocumentIndex
     await syncVoucherRecordToIndex(orgId, voucher.id);
-
-    if (input.tagIds !== undefined) {
-      await setVoucherTags(voucher.id, input.tagIds);
-    }
 
     revalidatePath("/app/docs/vouchers");
     return { success: true, data: { id: voucher.id, voucherNumber } };
@@ -312,6 +330,23 @@ export async function updateVoucher(
       : null;
 
     let assignedVoucherNumber: string | undefined;
+
+    // Phase 29: Validate tagIds before transaction
+    let validatedTagIds: string[] | null | undefined = undefined;
+    if (input.tagIds !== undefined) {
+      if (input.tagIds.length > 0) {
+        const tags = await db.documentTag.findMany({
+          where: { id: { in: input.tagIds }, orgId },
+          select: { id: true },
+        });
+        if (tags.length !== input.tagIds.length) {
+          return { success: false, error: "One or more tags are invalid or do not belong to your organization" };
+        }
+        validatedTagIds = tags.map((t) => t.id);
+      } else {
+        validatedTagIds = [];
+      }
+    }
 
     await db.$transaction(async (tx) => {
       await tx.voucher.update({
@@ -378,15 +413,19 @@ export async function updateVoucher(
           actorId: userId,
         });
       }
+
+      // Phase 29: Atomically replace tag assignments
+      if (validatedTagIds !== undefined) {
+        await tx.voucherTagAssignment.deleteMany({ where: { voucherId: id } });
+        for (const tagId of validatedTagIds) {
+          await tx.voucherTagAssignment.create({ data: { voucherId: id, tagId } });
+        }
+      }
     });
     
     // Phase 19.2: emit normalized document event
     await emitVoucherEvent(orgId, id, "updated", { actorId: userId });
     await syncVoucherRecordToIndex(orgId, id);
-
-    if (input.tagIds !== undefined) {
-      await setVoucherTags(id, input.tagIds);
-    }
 
     revalidatePath("/app/docs/vouchers");
     revalidatePath(`/app/docs/vouchers/${id}`);
