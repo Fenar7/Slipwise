@@ -13,16 +13,16 @@ interface AppShellProps {
 
 export function AppShell({ children, orgName, initialUser }: AppShellProps) {
   return (
-    <div className="flex h-screen overflow-hidden bg-[var(--surface-base)]">
+    <div className="flex h-screen overflow-hidden" style={{ background: "#f8f9fc" }}>
       {/* Sidebar */}
       <div className="hidden lg:flex lg:flex-shrink-0">
-        <AppSidebar />
+        <AppSidebar orgName={orgName} initialUser={initialUser} />
       </div>
 
       {/* Main area */}
       <div className="flex flex-1 flex-col overflow-hidden">
-        <AppTopbar orgName={orgName} initialUser={initialUser} />
-        <main className="flex-1 overflow-y-auto bg-[var(--surface-base)]">
+        <AppTopbar orgName={orgName} />
+        <main className="flex-1 overflow-y-auto" style={{ background: "#f8f9fc" }}>
           {children}
         </main>
       </div>

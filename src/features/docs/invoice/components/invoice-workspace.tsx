@@ -37,6 +37,7 @@ import { cn } from "@/lib/utils";
 import { CustomerPicker } from "./customer-picker";
 import { InvoiceSaveBar } from "./invoice-save-bar";
 import { TagPicker } from "@/features/tags/components/tag-picker";
+import { getSuggestedTags, type SuggestedTag } from "@/lib/tags/suggestion-service";
 import {
   saveInvoice,
   updateInvoice,
@@ -819,6 +820,7 @@ export function InvoiceWorkspace({
   const [tagIds, setTagIds] = useState<string[]>(
     existingInvoice?.tagAssignments?.map((a) => a.tag.id) ?? []
   );
+  const [suggestions, setSuggestions] = useState<SuggestedTag[]>([]);
 
   const handleSaveDraft = async (): Promise<string | undefined> => {
     setIsSaving(true);
@@ -947,3 +949,4 @@ function convertInvoiceToFormValues(invoice: ExistingInvoice): InvoiceFormValues
     })),
   };
 }
+// SPRINT 4.2 placeholder
