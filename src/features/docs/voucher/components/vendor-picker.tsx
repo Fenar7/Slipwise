@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useFormContext } from "react-hook-form";
 import type { VoucherFormValues } from "../types";
+import { getVendorDefaultTags } from "@/lib/tags/assignment-service";
 
 interface Vendor {
   id: string;
@@ -16,9 +17,10 @@ interface Vendor {
 interface VendorPickerProps {
   vendors: Vendor[];
   label?: string;
+  onTagPrefill?: (tagIds: string[]) => void;
 }
 
-export function VendorPicker({ vendors, label = "Select contact" }: VendorPickerProps) {
+export function VendorPicker({ vendors, label = "Select contact", onTagPrefill }: VendorPickerProps) {
   const { setValue } = useFormContext<VoucherFormValues>();
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -29,12 +31,24 @@ export function VendorPicker({ vendors, label = "Select contact" }: VendorPicker
     v.name.toLowerCase().includes(search.toLowerCase())
   );
 
-  const selectVendor = (vendor: Vendor) => {
+  const selectVendor = async (vendor: Vendor) => {
     setSelectedName(vendor.name);
     setValue("vendorId", vendor.id);
     setValue("counterpartyName", vendor.name);
     setIsOpen(false);
     setSearch("");
+
+    if (onTagPrefill) {
+      try {
+        const result = await getVendorDefaultTags(vendor.id);
+        if (result.success) {
+          const tagIds = result.data.map((t) => t.id);
+          onTagPrefill(tagIds);
+        }
+      } catch {
+        // Silently fail — suggestions are best-effort
+      }
+    }
   };
 
   const clearVendor = () => {

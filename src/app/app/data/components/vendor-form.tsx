@@ -2,7 +2,9 @@
 
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
+import { useState } from "react";
 import { createVendor, updateVendor, type VendorInput } from "../actions";
+import { TagPicker } from "@/features/tags/components/tag-picker";
 
 interface VendorFormProps {
   vendor?: {
@@ -13,12 +15,16 @@ interface VendorFormProps {
     address: string | null;
     taxId: string | null;
     gstin: string | null;
+    defaultTagAssignments?: Array<{ tag: { id: string; name: string; slug: string; color: string | null } }>;
   };
 }
 
 export function VendorForm({ vendor }: VendorFormProps) {
   const router = useRouter();
   const isEdit = !!vendor;
+  const [tagIds, setTagIds] = useState<string[]>(
+    vendor?.defaultTagAssignments?.map((a) => a.tag.id) ?? []
+  );
   
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<VendorInput>({
     defaultValues: vendor ? {
@@ -33,8 +39,8 @@ export function VendorForm({ vendor }: VendorFormProps) {
   
   const onSubmit = async (data: VendorInput) => {
     const result = isEdit
-      ? await updateVendor(vendor.id, data)
-      : await createVendor(data);
+      ? await updateVendor(vendor.id, { ...data, tagIds })
+      : await createVendor({ ...data, tagIds });
     
     if (result.success) {
       router.push("/app/data/vendors");
@@ -100,6 +106,20 @@ export function VendorForm({ vendor }: VendorFormProps) {
             className="w-full rounded-lg border border-slate-300 px-3 py-2 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
           />
         </div>
+      </div>
+
+      <div>
+        <label className="mb-1 block text-sm font-medium text-slate-700">
+          Default Tags
+        </label>
+        <p className="mb-2 text-xs text-slate-500">
+          These tags will be automatically suggested when creating vouchers for this vendor.
+        </p>
+        <TagPicker
+          selectedIds={tagIds}
+          onChange={setTagIds}
+          placeholder="Add default tags..."
+        />
       </div>
       
       <div className="flex gap-3 pt-4">
