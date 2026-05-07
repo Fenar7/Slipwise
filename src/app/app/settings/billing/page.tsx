@@ -310,24 +310,22 @@ export default function BillingSettingsPage() {
                     borderColor: isCurrent ? "#DC2626" : "#E0E0E0",
                   }}
                 >
-                  <div className="absolute -top-2 left-0 right-0 flex justify-center gap-1.5">
-                    {plan.popular && (
-                      <span
-                        className="rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase"
-                        style={{ background: "#DC2626", color: "#fff" }}
-                      >
-                        Popular
-                      </span>
-                    )}
-                    {isCurrent && (
-                      <span
-                        className="rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase"
-                        style={{ background: "#1C1B1F", color: "#fff" }}
-                      >
-                        Current
-                      </span>
-                    )}
-                  </div>
+                  {plan.popular && (
+                    <span
+                      className="absolute -top-2 left-1/2 -translate-x-1/2 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase"
+                      style={{ background: "#DC2626", color: "#fff" }}
+                    >
+                      Popular
+                    </span>
+                  )}
+                  {isCurrent && (
+                    <span
+                      className="absolute -top-2 right-3 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase"
+                      style={{ background: "#1C1B1F", color: "#fff" }}
+                    >
+                      Current
+                    </span>
+                  )}
 
                   <h3 className="text-sm font-semibold" style={{ color: "#1C1B1F" }}>
                     {plan.name}
