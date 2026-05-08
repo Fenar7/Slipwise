@@ -2,8 +2,47 @@
 
 import { useEffect, useRef } from "react";
 
-export function AuthBlobBackground() {
+type AuthBlobVariant = "red" | "purple";
+
+const PALETTES: Record<AuthBlobVariant, {
+  ribbonOuter: string;
+  ribbonCore: string;
+  diagOuter: string;
+  diagCore: string;
+  orbInner: string;
+  orbMid: string;
+  orbOuter: string;
+  shadow: string;
+}> = {
+  red: {
+    ribbonOuter: "254,226,226",
+    ribbonCore: "220,38,38",
+    diagOuter: "252,165,165",
+    diagCore: "220,38,38",
+    orbInner: "255,245,245",
+    orbMid: "248,113,113",
+    orbOuter: "220,38,38",
+    shadow: "220,38,38",
+  },
+  purple: {
+    ribbonOuter: "243,210,230",
+    ribbonCore: "192,80,146",
+    diagOuter: "232,165,200",
+    diagCore: "192,80,146",
+    orbInner: "252,240,247",
+    orbMid: "220,130,180",
+    orbOuter: "192,80,146",
+    shadow: "192,80,146",
+  },
+};
+
+interface AuthBlobBackgroundProps {
+  variant?: AuthBlobVariant;
+}
+
+export function AuthBlobBackground({ variant = "red" }: AuthBlobBackgroundProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const palette = PALETTES[variant];
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -41,15 +80,15 @@ export function AuthBlobBackground() {
     ) => {
       const gradient = context.createLinearGradient(0, yBase - amplitude - thickness, 0, yBase + amplitude + thickness);
       gradient.addColorStop(0, "rgba(255,255,255,0)");
-      gradient.addColorStop(0.25, `rgba(243,210,230,${alpha * 0.5})`);
-      gradient.addColorStop(0.5, `rgba(192,80,146,${alpha})`);
-      gradient.addColorStop(0.75, `rgba(243,210,230,${alpha * 0.5})`);
+      gradient.addColorStop(0.25, `rgba(${palette.ribbonOuter},${alpha * 0.5})`);
+      gradient.addColorStop(0.5, `rgba(${palette.ribbonCore},${alpha})`);
+      gradient.addColorStop(0.75, `rgba(${palette.ribbonOuter},${alpha * 0.5})`);
       gradient.addColorStop(1, "rgba(255,255,255,0)");
 
       context.save();
       context.globalAlpha = 1;
       context.shadowBlur = 18;
-      context.shadowColor = `rgba(192,80,146,${alpha * 0.35})`;
+      context.shadowColor = `rgba(${palette.shadow},${alpha * 0.35})`;
       context.fillStyle = gradient;
       context.beginPath();
 
@@ -94,14 +133,14 @@ export function AuthBlobBackground() {
         yBase + diagLen * sinA * 0.3,
       );
       gradient.addColorStop(0, "rgba(255,255,255,0)");
-      gradient.addColorStop(0.3, `rgba(232,165,200,${alpha * 0.55})`);
-      gradient.addColorStop(0.5, `rgba(192,80,146,${alpha})`);
-      gradient.addColorStop(0.7, `rgba(232,165,200,${alpha * 0.55})`);
+      gradient.addColorStop(0.3, `rgba(${palette.diagOuter},${alpha * 0.55})`);
+      gradient.addColorStop(0.5, `rgba(${palette.diagCore},${alpha})`);
+      gradient.addColorStop(0.7, `rgba(${palette.diagOuter},${alpha * 0.55})`);
       gradient.addColorStop(1, "rgba(255,255,255,0)");
 
       context.save();
       context.shadowBlur = 20;
-      context.shadowColor = `rgba(192,80,146,${alpha * 0.3})`;
+      context.shadowColor = `rgba(${palette.shadow},${alpha * 0.3})`;
       context.fillStyle = gradient;
       context.beginPath();
 
@@ -147,13 +186,13 @@ export function AuthBlobBackground() {
       }
 
       const gradient = context.createRadialGradient(cx - rx * 0.1, cy - ry * 0.1, 0, cx, cy, Math.max(rx, ry));
-      gradient.addColorStop(0, `rgba(252,240,247,${alpha})`);
-      gradient.addColorStop(0.5, `rgba(220,130,180,${alpha * 0.8})`);
-      gradient.addColorStop(1, "rgba(192,80,146,0)");
+      gradient.addColorStop(0, `rgba(${palette.orbInner},${alpha})`);
+      gradient.addColorStop(0.5, `rgba(${palette.orbMid},${alpha * 0.8})`);
+      gradient.addColorStop(1, `rgba(${palette.orbOuter},0)`);
 
       context.save();
       context.shadowBlur = 16;
-      context.shadowColor = `rgba(192,80,146,${alpha * 0.25})`;
+      context.shadowColor = `rgba(${palette.shadow},${alpha * 0.25})`;
       context.fillStyle = gradient;
       context.beginPath();
       context.moveTo(points[0]!.x, points[0]!.y);
@@ -227,7 +266,7 @@ export function AuthBlobBackground() {
       window.cancelAnimationFrame(frameId);
       window.removeEventListener("resize", resize);
     };
-  }, []);
+  }, [palette]);
 
   return (
     <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">

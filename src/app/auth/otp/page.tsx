@@ -134,7 +134,7 @@ export default function OTPPage() {
         <Link
           href="/auth/login"
           className="font-medium hover:underline"
-          style={{ color: "#C05092" }}
+          style={{ color: "#DC2626" }}
         >
           Back to sign in
         </Link>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 import { AuthLogo } from "@/features/auth/components/auth-logo";
 import { AuthBlobBackground } from "@/features/auth/components/auth-blob-background";
 
@@ -57,6 +58,9 @@ const slides = [
 ];
 
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
+  const isSignup = pathname === "/auth/signup";
+  const blobVariant = isSignup ? "purple" : "red";
   const [active, setActive] = useState(0);
 
   useEffect(() => {
@@ -141,7 +145,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
       {/* Right form panel */}
       <div className="relative flex-1 flex flex-col items-center bg-white overflow-y-auto">
         {/* Liquid blob background behind form */}
-        <AuthBlobBackground />
+        <AuthBlobBackground variant={blobVariant} />
 
         <div className="relative z-10 w-full max-w-[520px] px-6 py-10 sm:px-10 my-auto">
           {/* Desktop logo inside form area */}
