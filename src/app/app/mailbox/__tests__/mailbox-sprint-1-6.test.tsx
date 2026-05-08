@@ -62,6 +62,12 @@ import {
 import { MailboxWorkspace } from "../mailbox-workspace";
 import { MailboxReadingPaneEmpty } from "../mailbox-reading-pane-empty";
 import { MailboxThreadList } from "../mailbox-thread-list";
+import { MailboxSettingsPageContent } from "../settings/page";
+
+function renderWorkspaceAtPath(pathname: string) {
+  mockPathname = pathname;
+  return render(<MailboxWorkspace />);
+}
 
 // ─── Sprint 1.1–1.5 regression ───────────────────────────────────────────────
 
@@ -518,6 +524,25 @@ describe("MailboxRailDrawer", () => {
     const drawer = screen.getByRole("dialog");
     expect(drawer).toHaveAttribute("aria-modal", "true");
   });
+
+  it("traps focus while open", () => {
+    render(
+      <div>
+        <button>Outside before</button>
+        <MailboxRailDrawer isOpen={true} onClose={vi.fn()}>
+          <button>First inside</button>
+          <button>Last inside</button>
+        </MailboxRailDrawer>
+        <button>Outside after</button>
+      </div>
+    );
+
+    expect(screen.getByRole("button", { name: /close navigation/i })).toHaveFocus();
+    fireEvent.keyDown(document, { key: "Tab", shiftKey: true });
+    expect(screen.getByRole("button", { name: "Last inside" })).toHaveFocus();
+    fireEvent.keyDown(document, { key: "Tab" });
+    expect(screen.getByRole("button", { name: /close navigation/i })).toHaveFocus();
+  });
 });
 
 describe("MobileTopBar", () => {
@@ -697,10 +722,45 @@ describe("MailboxWorkspace Sprint 1.6 integration", () => {
   });
 
   it("shows reconnect banner for accounts mailbox path", () => {
-    mockPathname = "/app/mailbox/accounts/inbox";
-    render(<MailboxWorkspace />);
+    renderWorkspaceAtPath("/app/mailbox/accounts/inbox");
     // accounts connection has status reconnect_required
     expect(screen.getByTestId("reconnect-banner-conn_accounts")).toBeInTheDocument();
+  });
+
+  it("shows a mailbox empty state for drafts routes instead of a blank list", () => {
+    renderWorkspaceAtPath("/app/mailbox/billing/drafts");
+    expect(screen.getByText(/billing · drafts is empty/i)).toBeInTheDocument();
+  });
+
+  it("shows a mailbox empty state for spam routes instead of a blank list", () => {
+    renderWorkspaceAtPath("/app/mailbox/support/spam");
+    expect(screen.getByText(/support · spam is empty/i)).toBeInTheDocument();
+  });
+
+  it("opens a narrow-viewport context panel from the reading pane", () => {
+    renderWorkspaceAtPath("/app/mailbox");
+    fireEvent.click(screen.getAllByRole("option")[0]);
+    fireEvent.click(screen.getByRole("button", { name: /view thread context/i }));
+
+    expect(screen.getByTestId("context-panel")).toBeInTheDocument();
+    expect(screen.getByText(/billing context/i)).toBeInTheDocument();
+  });
+
+  it("returns from context panel to the reading pane on mobile back", () => {
+    renderWorkspaceAtPath("/app/mailbox");
+    fireEvent.click(screen.getAllByRole("option")[0]);
+    fireEvent.click(screen.getByRole("button", { name: /view thread context/i }));
+    fireEvent.click(screen.getByRole("button", { name: /back/i }));
+
+    expect(screen.getByTestId("mailbox-reading-pane-active")).toBeInTheDocument();
+  });
+});
+
+describe("MailboxSettingsPageContent Sprint 1.6 integration", () => {
+  it("shows no-mailboxes empty state when there are no mailbox connections", () => {
+    render(<MailboxSettingsPageContent summaries={[]} />);
+    expect(screen.getByTestId("settings-empty-state")).toBeInTheDocument();
+    expect(screen.getByTestId("empty-no-mailboxes")).toBeInTheDocument();
   });
 });
 

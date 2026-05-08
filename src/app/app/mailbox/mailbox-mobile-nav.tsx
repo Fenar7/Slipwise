@@ -31,15 +31,71 @@ interface MailboxRailDrawerProps {
  */
 export function MailboxRailDrawer({ isOpen, onClose, children }: MailboxRailDrawerProps) {
   const drawerRef = useRef<HTMLDivElement>(null);
+  const lastFocusedRef = useRef<HTMLElement | null>(null);
 
   // Close on Escape
   useEffect(() => {
     if (!isOpen) return;
+    lastFocusedRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+
+    const drawer = drawerRef.current;
+    if (!drawer) return;
+
+    const selectors = [
+      'button:not([disabled])',
+      '[href]',
+      'input:not([disabled])',
+      'select:not([disabled])',
+      'textarea:not([disabled])',
+      '[tabindex]:not([tabindex="-1"])',
+    ].join(",");
+
+    const getFocusable = () =>
+      Array.from(drawer.querySelectorAll<HTMLElement>(selectors)).filter(
+        (el) => !el.hasAttribute("disabled") && el.tabIndex !== -1
+      );
+
+    const focusable = getFocusable();
+    (focusable[0] ?? drawer).focus();
+
     function handleKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") {
+        onClose();
+        return;
+      }
+
+      if (e.key !== "Tab") return;
+
+      const currentFocusable = getFocusable();
+      if (currentFocusable.length === 0) {
+        e.preventDefault();
+        drawer.focus();
+        return;
+      }
+
+      const first = currentFocusable[0];
+      const last = currentFocusable[currentFocusable.length - 1];
+      const active = document.activeElement as HTMLElement | null;
+
+      if (e.shiftKey) {
+        if (active === first || active === drawer) {
+          e.preventDefault();
+          last.focus();
+        }
+        return;
+      }
+
+      if (active === last) {
+        e.preventDefault();
+        first.focus();
+      }
     }
+
     document.addEventListener("keydown", handleKey);
-    return () => document.removeEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("keydown", handleKey);
+      lastFocusedRef.current?.focus();
+    };
   }, [isOpen, onClose]);
 
   // Prevent body scroll when open
@@ -72,6 +128,7 @@ export function MailboxRailDrawer({ isOpen, onClose, children }: MailboxRailDraw
         role="dialog"
         aria-modal="true"
         aria-label="Mailbox navigation"
+        tabIndex={-1}
         className={cn(
           "fixed inset-y-0 left-0 z-50 flex w-64 flex-col bg-white shadow-xl transition-transform duration-200 xl:hidden",
           isOpen ? "translate-x-0" : "-translate-x-full"

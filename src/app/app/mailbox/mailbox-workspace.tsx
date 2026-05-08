@@ -11,7 +11,7 @@ import { FloatingComposer } from "./mailbox-floating-composer";
 import { ExpandedComposer } from "./mailbox-expanded-composer";
 import { MailboxContextPanel, MailboxContextPanelEmpty } from "./mailbox-context-panel";
 import { FilterChipsBar } from "./mailbox-filter-chips";
-import { NoSearchResultsEmpty, NoMailboxesEmpty, SmartViewEmpty } from "./mailbox-empty-states";
+import { EmptyInboxState, NoMailboxesEmpty, NoSearchResultsEmpty, SmartViewEmpty } from "./mailbox-empty-states";
 import { ReconnectBanner } from "./mailbox-restricted-states";
 import { MailboxRailDrawer, MobileTopBar, TabletTopBar, MobileTabBar } from "./mailbox-mobile-nav";
 import {
@@ -165,6 +165,13 @@ function resolveVisibleThreads(pathname: string, filterState: ActiveFilterState)
   return threads;
 }
 
+function resolveEmptyMailboxLabel(pathname: string, activeConnection: MailboxConnection | null, viewLabel: string) {
+  if (!activeConnection) return viewLabel;
+  const folder = pathname.split("/").pop() ?? "inbox";
+  if (folder === "inbox") return activeConnection.displayName;
+  return `${activeConnection.displayName} · ${folder.charAt(0).toUpperCase()}${folder.slice(1)}`;
+}
+
 /** Resolve the reconnect-required connection for the current view, if any */
 function resolveReconnectConnection(pathname: string): MailboxConnection | null {
   const activeConnection = resolveActiveConnection(pathname);
@@ -212,6 +219,7 @@ export function MailboxWorkspace() {
   const selectedDetail = selectedThreadId ? MOCK_THREAD_DETAILS[selectedThreadId] ?? null : null;
   const reconnectConnection = resolveReconnectConnection(pathname);
   const smartViewEmpty = resolveSmartViewDescription(pathname);
+  const connectedMailboxCount = MOCK_CONNECTIONS.filter((conn) => conn.status !== "disconnected").length;
 
   const selectedContext: LinkedContextState | null = selectedThreadId
     ? { ...(MOCK_LINKED_CONTEXT[selectedThreadId] ?? null), ...(contextOverrides[selectedThreadId] ?? {}) } as LinkedContextState
@@ -235,9 +243,14 @@ export function MailboxWorkspace() {
   }, []);
 
   const handleMobileBack = useCallback(() => {
+    if (mobilePanel === "context") {
+      setMobilePanel("reading-pane");
+      return;
+    }
+
     setMobilePanel("thread-list");
     setSelectedThreadId(null);
-  }, []);
+  }, [mobilePanel]);
 
   const openNewCompose = useCallback(() => {
     setComposer(makeComposerState("new", null, null, "", [], defaultComposeConnection));
@@ -299,6 +312,9 @@ export function MailboxWorkspace() {
 
   // Resolve thread list empty state
   const threadListEmptyState = (() => {
+    if (connectedMailboxCount === 0) {
+      return <NoMailboxesEmpty isAdmin={true} />;
+    }
     if (hasActiveFilters) {
       return (
         <NoSearchResultsEmpty
@@ -316,6 +332,13 @@ export function MailboxWorkspace() {
         />
       );
     }
+    if (visibleThreads.length === 0) {
+      return (
+        <EmptyInboxState
+          mailboxLabel={resolveEmptyMailboxLabel(pathname, activeConnection, viewLabel)}
+        />
+      );
+    }
     return null;
   })();
 
@@ -330,7 +353,11 @@ export function MailboxWorkspace() {
 
   // Mobile label
   const mobileLabel =
-    mobilePanel === "reading-pane" && selectedDetail
+    mobilePanel === "context"
+      ? selectedDetail
+        ? `${selectedDetail.mailboxLabel} context`
+        : "Thread context"
+      : mobilePanel === "reading-pane" && selectedDetail
       ? selectedDetail.subject
       : viewLabel;
 
@@ -361,7 +388,11 @@ export function MailboxWorkspace() {
           activePanel={mobilePanel}
           label={mobileLabel}
           onOpenRail={() => setIsRailOpen(true)}
-          onBack={mobilePanel === "reading-pane" ? handleMobileBack : undefined}
+          onBack={
+            mobilePanel === "reading-pane" || mobilePanel === "context"
+              ? handleMobileBack
+              : undefined
+          }
           onCompose={openNewCompose}
         />
 
@@ -434,14 +465,23 @@ export function MailboxWorkspace() {
                 onCloseReply={closeComposer}
                 onExpandReply={expandComposer}
                 onPatchComposer={patchComposer}
+                onOpenContext={() => setMobilePanel("context")}
               />
             ) : (
               <MailboxReadingPaneEmpty />
             )}
           </div>
 
-          {/* Context panel — desktop only (xl+) */}
-          <div className="hidden xl:flex xl:flex-col" data-testid="mailbox-context-panel-container">
+          {/* Context panel — desktop always visible, mobile/tablet shown as panel */}
+          <div
+            className={[
+              "min-w-0 overflow-hidden",
+              mobilePanel === "context"
+                ? "flex w-full flex-col xl:w-64 xl:shrink-0"
+                : "hidden xl:flex xl:w-64 xl:shrink-0 xl:flex-col",
+            ].join(" ")}
+            data-testid="mailbox-context-panel-container"
+          >
             {selectedContext ? (
               <MailboxContextPanel context={selectedContext} onPatch={patchContext} />
             ) : (

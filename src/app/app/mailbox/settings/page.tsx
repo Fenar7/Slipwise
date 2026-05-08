@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { MOCK_ADMIN_SUMMARIES } from "../mock-data";
 import type { MailboxAdminSummary, MailboxConnectionStatus } from "../types";
+import { NoMailboxesEmpty } from "../mailbox-empty-states";
 import { MailboxConnectFlow } from "./mailbox-connect-flow";
 
 // ─── Status badge ─────────────────────────────────────────────────────────────
@@ -182,8 +183,13 @@ function ConnectionCard({ summary }: { summary: MailboxAdminSummary }) {
 
 // ─── Main settings page ───────────────────────────────────────────────────────
 
-export default function MailboxSettingsPage() {
+export function MailboxSettingsPageContent({
+  summaries = MOCK_ADMIN_SUMMARIES,
+}: {
+  summaries?: MailboxAdminSummary[];
+}) {
   const [showConnectFlow, setShowConnectFlow] = useState(false);
+  const hasConnections = summaries.length > 0;
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-8" data-testid="mailbox-settings-page">
@@ -212,21 +218,29 @@ export default function MailboxSettingsPage() {
         </button>
       </div>
 
-      {/* Admin notice */}
-      <div className="mb-6 flex items-center gap-2 rounded-lg border border-[#E2E5EA] bg-white px-4 py-3">
-        <ShieldCheck className="h-4 w-4 shrink-0 text-[#16294D]" aria-hidden="true" />
-        <p className="text-xs text-[#334155]">
-          <span className="font-semibold">Admin-only area.</span>{" "}
-          Changes here affect all members who have access to these mailboxes.
-        </p>
-      </div>
+      {hasConnections ? (
+        <>
+          {/* Admin notice */}
+          <div className="mb-6 flex items-center gap-2 rounded-lg border border-[#E2E5EA] bg-white px-4 py-3">
+            <ShieldCheck className="h-4 w-4 shrink-0 text-[#16294D]" aria-hidden="true" />
+            <p className="text-xs text-[#334155]">
+              <span className="font-semibold">Admin-only area.</span>{" "}
+              Changes here affect all members who have access to these mailboxes.
+            </p>
+          </div>
 
-      {/* Connection cards */}
-      <div className="space-y-4" data-testid="connection-list">
-        {MOCK_ADMIN_SUMMARIES.map((summary) => (
-          <ConnectionCard key={summary.connection.id} summary={summary} />
-        ))}
-      </div>
+          {/* Connection cards */}
+          <div className="space-y-4" data-testid="connection-list">
+            {summaries.map((summary) => (
+              <ConnectionCard key={summary.connection.id} summary={summary} />
+            ))}
+          </div>
+        </>
+      ) : (
+        <div className="overflow-hidden rounded-2xl border border-[#E2E5EA] bg-white" data-testid="settings-empty-state">
+          <NoMailboxesEmpty isAdmin={true} />
+        </div>
+      )}
 
       {/* Connect flow modal */}
       {showConnectFlow && (
@@ -234,4 +248,8 @@ export default function MailboxSettingsPage() {
       )}
     </div>
   );
+}
+
+export default function MailboxSettingsPage() {
+  return <MailboxSettingsPageContent />;
 }
