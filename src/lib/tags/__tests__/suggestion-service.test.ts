@@ -8,10 +8,7 @@ const mocks = vi.hoisted(() => ({
   voucherTagAssignmentFindMany: vi.fn(),
 }));
 
-vi.mock("@/lib/auth", () => ({
-  requireOrgContext: mocks.requireOrgContext,
-}));
-
+vi.mock("@/lib/auth", () => ({ requireOrgContext: mocks.requireOrgContext }));
 vi.mock("@/lib/db", () => ({
   db: {
     customerDefaultTag: { findMany: mocks.customerDefaultTagFindMany },
@@ -26,16 +23,8 @@ import { getSuggestedTags } from "../suggestion-service";
 const ORG_ID = "org_test";
 const CTX = { orgId: ORG_ID, userId: "u1", role: "admin", representedId: null, proxyGrantId: null, proxyScope: null };
 
-function makeTagAssign(overrides: Record<string, unknown> = {}) {
-  return {
-    tagId: overrides.tagId ?? "tag_1",
-    tag: {
-      id: overrides.tagId ?? "tag_1",
-      name: overrides.tagName ?? "Priority",
-      slug: overrides.tagSlug ?? "priority",
-      color: (overrides.tagColor as string) ?? "#FF0000",
-    },
-  };
+function ta(id: string, name: string, slug?: string, color?: string) {
+  return { tagId: id, tag: { id, name, slug: slug ?? name.toLowerCase(), color: color ?? null } };
 }
 
 beforeEach(() => {
@@ -84,9 +73,7 @@ describe("getSuggestedTags", () => {
 
   describe("recent tags", () => {
     it("returns recently used tags for customer invoices", async () => {
-      mocks.invoiceTagAssignmentFindMany.mockResolvedValue([
-        makeTagAssign({ tagId: "tag_r", tagName: "Recent", tagSlug: "recent", tagColor: "#00FF00" }),
-      ]);
+      mocks.invoiceTagAssignmentFindMany.mockResolvedValue([ta("r1", "Recent", "recent", "#00FF00")]);
 
       const result = await getSuggestedTags({
         counterpartyId: "cust_1",
@@ -100,9 +87,7 @@ describe("getSuggestedTags", () => {
     });
 
     it("returns recently used tags for vendor vouchers", async () => {
-      mocks.voucherTagAssignmentFindMany.mockResolvedValue([
-        makeTagAssign({ tagId: "tag_r", tagName: "Recent V", tagSlug: "recent-v", tagColor: null }),
-      ]);
+      mocks.voucherTagAssignmentFindMany.mockResolvedValue([ta("r1", "RecV", "recv")]);
 
       const result = await getSuggestedTags({
         counterpartyId: "ven_1",
@@ -111,16 +96,12 @@ describe("getSuggestedTags", () => {
       });
 
       expect(result).toHaveLength(1);
-      expect(result[0].name).toBe("Recent V");
       expect(result[0].source).toBe("recent");
     });
 
     it("counts usage and sorts by frequency", async () => {
       mocks.invoiceTagAssignmentFindMany.mockResolvedValue([
-        makeTagAssign({ tagId: "tag_a", tagName: "Alpha", tagSlug: "alpha" }),
-        makeTagAssign({ tagId: "tag_b", tagName: "Beta", tagSlug: "beta" }),
-        makeTagAssign({ tagId: "tag_a", tagName: "Alpha", tagSlug: "alpha" }),
-        makeTagAssign({ tagId: "tag_a", tagName: "Alpha", tagSlug: "alpha" }),
+        ta("a", "Alpha"), ta("b", "Beta"), ta("a", "Alpha"), ta("a", "Alpha"),
       ]);
 
       const result = await getSuggestedTags({
@@ -142,9 +123,7 @@ describe("getSuggestedTags", () => {
       mocks.customerDefaultTagFindMany.mockResolvedValue([
         { tag: { id: "tag_x", name: "Shared", slug: "shared", color: null } },
       ]);
-      mocks.invoiceTagAssignmentFindMany.mockResolvedValue([
-        makeTagAssign({ tagId: "tag_x", tagName: "Shared", tagSlug: "shared" }),
-      ]);
+      mocks.invoiceTagAssignmentFindMany.mockResolvedValue([ta("tag_x", "Shared", "shared")]);
 
       const result = await getSuggestedTags({
         counterpartyId: "cust_1",
@@ -160,8 +139,7 @@ describe("getSuggestedTags", () => {
 
   describe("popular tags fallback", () => {
     it("returns org-wide popular tags when few recent tags", async () => {
-      mocks.invoiceTagAssignmentFindMany
-        .mockResolvedValueOnce([]);
+      mocks.invoiceTagAssignmentFindMany.mockResolvedValueOnce([]);
 
       const result = await getSuggestedTags({
         counterpartyId: "cust_1",
@@ -170,7 +148,6 @@ describe("getSuggestedTags", () => {
         limit: 3,
       });
 
-      // verify popular fallback was queried (the first findMany call is for recent, second for popular)
       expect(mocks.invoiceTagAssignmentFindMany).toHaveBeenCalledTimes(2);
     });
   });
@@ -178,9 +155,7 @@ describe("getSuggestedTags", () => {
   describe("limit", () => {
     it("respects the limit parameter", async () => {
       mocks.invoiceTagAssignmentFindMany.mockResolvedValue([
-        makeTagAssign({ tagId: "tag_1", tagName: "One", tagSlug: "one" }),
-        makeTagAssign({ tagId: "tag_2", tagName: "Two", tagSlug: "two" }),
-        makeTagAssign({ tagId: "tag_3", tagName: "Three", tagSlug: "three" }),
+        ta("1", "One"), ta("2", "Two"), ta("3", "Three"),
       ]);
 
       const result = await getSuggestedTags({

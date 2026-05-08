@@ -1152,7 +1152,6 @@ model Customer {
   quotes           Quote[]
   arrangements     PaymentArrangement[]
   crmNotes         CrmNote[]                 @relation("CustomerNotes")
-  defaultTagAssignments CustomerDefaultTag[]
 
   @@index([organizationId])
   @@map("customer")
@@ -1185,7 +1184,6 @@ model Vendor {
   bills          VendorBill[]
   purchaseOrders PurchaseOrder[]
   crmNotes       CrmNote[]       @relation("VendorNotes")
-  defaultTagAssignments VendorDefaultTag[]
 
   @@index([organizationId])
   @@map("vendor")
@@ -1406,8 +1404,6 @@ model Invoice {
   postedJournalEntry  JournalEntry?         @relation("InvoicePostedJournal", fields: [postedJournalEntryId], references: [id])
   tdsRecords          TdsRecord[]
 
-  tagAssignments      InvoiceTagAssignment[]
-
   eInvoiceRequests EInvoiceRequest[]
 
   // Phase 1: Document Sequencing Platform
@@ -1476,8 +1472,6 @@ model Voucher {
   attachments      FileAttachment[]  @relation("VoucherAttachments")
   journalEntry     JournalEntry?     @relation("VoucherPostedJournal", fields: [journalEntryId], references: [id])
   approvalRequests ApprovalRequest[] @relation("VoucherApprovals")
-
-  tagAssignments    VoucherTagAssignment[]
 
   // Phase 1: Document Sequencing Platform
   sequenceId       String?
@@ -5436,69 +5430,12 @@ model DocumentTag {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  organization         Organization           @relation(fields: [orgId], references: [id], onDelete: Cascade)
-
-  invoiceAssignments   InvoiceTagAssignment[]
-  voucherAssignments   VoucherTagAssignment[]
-  customerDefaults     CustomerDefaultTag[]
-  vendorDefaults       VendorDefaultTag[]
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@unique([orgId, slug], map: "document_tag_org_slug_unique")
   @@index([orgId])
   @@index([orgId, isArchived])
   @@map("document_tag")
-}
-
-model InvoiceTagAssignment {
-  id        String @id @default(cuid())
-  invoiceId String
-  tagId     String
-
-  invoice Invoice      @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
-  tag     DocumentTag  @relation(fields: [tagId], references: [id], onDelete: Cascade)
-
-  @@unique([invoiceId, tagId], map: "invoice_tag_assignment_invoice_tag_unique")
-  @@index([tagId])
-  @@map("invoice_tag_assignment")
-}
-
-model VoucherTagAssignment {
-  id        String @id @default(cuid())
-  voucherId String
-  tagId     String
-
-  voucher Voucher      @relation(fields: [voucherId], references: [id], onDelete: Cascade)
-  tag     DocumentTag  @relation(fields: [tagId], references: [id], onDelete: Cascade)
-
-  @@unique([voucherId, tagId], map: "voucher_tag_assignment_voucher_tag_unique")
-  @@index([tagId])
-  @@map("voucher_tag_assignment")
-}
-
-model CustomerDefaultTag {
-  id         String @id @default(cuid())
-  customerId String
-  tagId      String
-
-  customer Customer     @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  tag      DocumentTag  @relation(fields: [tagId], references: [id], onDelete: Cascade)
-
-  @@unique([customerId, tagId], map: "customer_default_tag_customer_tag_unique")
-  @@index([tagId])
-  @@map("customer_default_tag")
-}
-
-model VendorDefaultTag {
-  id       String @id @default(cuid())
-  vendorId String
-  tagId    String
-
-  vendor Vendor       @relation(fields: [vendorId], references: [id], onDelete: Cascade)
-  tag    DocumentTag  @relation(fields: [tagId], references: [id], onDelete: Cascade)
-
-  @@unique([vendorId, tagId], map: "vendor_default_tag_vendor_tag_unique")
-  @@index([tagId])
-  @@map("vendor_default_tag")
 }
 
 // ─── Phase 27 Sprint 27.1: AI Financial Forecaster ──────────────────────────

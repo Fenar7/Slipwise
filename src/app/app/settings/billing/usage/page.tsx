@@ -93,12 +93,14 @@ export default async function UsagePage() {
   ];
 
   return (
-    <div className="space-y-8">
-      <UsageDashboardClient
-        rows={rows}
-        planName={planId}
-        periodLabel={periodLabel(periodStart, periodEnd)}
-      />
+    <div className="min-h-screen px-3 py-4 sm:px-4 lg:px-5" style={{ background: "#f8f9fc" }}>
+      <div className="mx-auto max-w-[1440px]">
+        <UsageDashboardClient
+          rows={rows}
+          planName={planId}
+          periodLabel={periodLabel(periodStart, periodEnd)}
+        />
+      </div>
     </div>
   );
 }

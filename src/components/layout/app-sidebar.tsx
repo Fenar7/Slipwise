@@ -246,11 +246,11 @@ export function AppSidebar({ orgName, initialUser }: AppSidebarProps) {
                         <Icon
                           className={cn(
                             "h-4 w-4 shrink-0 transition-colors",
-                            isActive ? "text-[#DC2626]" : "text-[#79747E] group-hover:text-[#49454F]"
+                            isActive ? "text-[#DC2626]" : "text-[#79747E] group-hover:text-[#DC2626]"
                           )}
                         />
                       )}
-                      <span className={cn(isActive ? "font-semibold" : "font-medium")}>{item.label}</span>
+                      <span className={cn(isActive ? "font-bold" : "font-semibold")}>{item.label}</span>
                       {item.children && (
                         <span
                           className={cn(
@@ -275,16 +275,16 @@ export function AppSidebar({ orgName, initialUser }: AppSidebarProps) {
                               <Link
                                 href={child.href}
                                 className={cn(
-                                  "flex items-center rounded-md px-2.5 py-1.5 text-xs transition-colors",
+                                  "flex items-center rounded-md px-2.5 py-1.5 text-sm transition-colors",
                                   childActive
-                                    ? "font-semibold text-[#DC2626]"
-                                    : "text-[#79747E] hover:text-[#49454F]"
+                                    ? "font-bold text-[#DC2626]"
+                                    : "text-[#49454F] hover:text-[#DC2626]"
                                 )}
                               >
                                 {childActive && (
-                                  <span className="mr-2 h-1 w-1 rounded-full bg-[#DC2626]" />
+                                  <span className="mr-2 h-1.5 w-1.5 rounded-full bg-[#DC2626]" />
                                 )}
-                                {child.label}
+                                <span className="font-medium">{child.label}</span>
                               </Link>
                             </li>
                           );
