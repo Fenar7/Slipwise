@@ -16,9 +16,10 @@ interface OrgItem {
 
 interface OrgSwitcherProps {
   initialOrgName?: string;
+  fullWidth?: boolean;
 }
 
-export function OrgSwitcher({ initialOrgName }: OrgSwitcherProps) {
+export function OrgSwitcher({ initialOrgName, fullWidth }: OrgSwitcherProps) {
   const [orgs, setOrgs] = useState<OrgItem[]>([]);
   const [activeOrgId, setActiveOrgId] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
@@ -90,13 +91,14 @@ export function OrgSwitcher({ initialOrgName }: OrgSwitcherProps) {
   }
 
   return (
-    <div className="relative" ref={ref}>
+    <div className={cn("relative", fullWidth && "w-full")} ref={ref}>
       <motion.button
         onClick={() => setOpen(!open)}
         disabled={switching}
         whileTap={{ scale: 0.98 }}
         className={cn(
           "flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm transition-colors",
+          fullWidth && "w-full",
           open
             ? "border-[var(--brand-primary)] bg-[var(--surface-selected)]"
             : "border-[var(--border-soft)] bg-white hover:bg-[var(--surface-subtle)]"
@@ -126,7 +128,10 @@ export function OrgSwitcher({ initialOrgName }: OrgSwitcherProps) {
             initial="hidden"
             animate="visible"
             exit="exit"
-            className="absolute right-0 top-full z-50 mt-1.5 w-72 overflow-hidden rounded-xl border border-[var(--border-soft)] bg-[var(--surface-panel)] shadow-lg"
+            className={cn(
+              "absolute right-0 top-full z-50 mt-1.5 overflow-hidden rounded-xl border border-[var(--border-soft)] bg-[var(--surface-panel)] shadow-lg",
+              fullWidth ? "left-0 w-full min-w-[220px]" : "w-72"
+            )}
           >
             {/* Header */}
             <div className="border-b border-[var(--border-soft)] px-3 py-2.5">

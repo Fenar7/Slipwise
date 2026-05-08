@@ -7,14 +7,12 @@ import { cn } from "@/lib/utils";
 import { Logo } from "@/components/foundation/logo";
 import { Avatar } from "@/components/ui/avatar";
 import { getNavigationContext } from "./navigation-context";
-import { Settings, LogOut, Building2, ChevronDown, Check, Plus } from "lucide-react";
+import { Settings, LogOut } from "lucide-react";
 import { staggerContainer, staggerItem } from "@/components/foundation/motion-primitives";
 import { useSupabaseSession } from "@/hooks/use-supabase-session";
 import { signOutSupabaseBrowser } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
-import { useState, useEffect, useCallback, useRef } from "react";
-import { AnimatePresence } from "motion/react";
-import { panelAppear, fadeInUp } from "@/components/foundation/motion-primitives";
+import { OrgSwitcher } from "@/components/org/org-switcher";
 
 interface AppSidebarProps {
   orgName?: string;
@@ -23,163 +21,6 @@ interface AppSidebarProps {
     email?: string | null;
     avatarUrl?: string | null;
   };
-}
-
-/* ── Org Switcher (compact sidebar version) ──────────────────────────────── */
-
-interface OrgItem {
-  orgId: string;
-  name: string;
-  slug: string;
-  role: string;
-}
-
-function SidebarOrgSwitcher({ initialOrgName }: { initialOrgName?: string }) {
-  const [orgs, setOrgs] = useState<OrgItem[]>([]);
-  const [activeOrgId, setActiveOrgId] = useState<string | null>(null);
-  const [open, setOpen] = useState(false);
-  const [switching, setSwitching] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  const load = useCallback(async () => {
-    try {
-      const res = await fetch("/api/org/list");
-      if (!res.ok) return;
-      const data = await res.json();
-      setOrgs(data.orgs ?? []);
-      setActiveOrgId(data.activeOrgId);
-    } catch {
-      // Silently fail
-    }
-  }, []);
-
-  useEffect(() => {
-    load();
-  }, [load]);
-
-  useEffect(() => {
-    function onClickOutside(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", onClickOutside);
-    return () => document.removeEventListener("mousedown", onClickOutside);
-  }, []);
-
-  async function handleSwitch(orgId: string) {
-    if (orgId === activeOrgId) {
-      setOpen(false);
-      return;
-    }
-    setSwitching(true);
-    try {
-      const res = await fetch("/api/org/switch", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ activeOrgId: orgId }),
-      });
-      if (res.ok) {
-        setActiveOrgId(orgId);
-        setOpen(false);
-        window.location.reload();
-      }
-    } catch {
-      // Switch failed
-    } finally {
-      setSwitching(false);
-    }
-  }
-
-  const activeOrg = orgs.find((o) => o.orgId === activeOrgId);
-  const displayName = activeOrg?.name ?? initialOrgName ?? "Organization";
-
-  if (orgs.length <= 1) {
-    return (
-      <div className="flex items-center gap-2 text-xs" style={{ color: "#79747E" }}>
-        <Building2 className="h-3.5 w-3.5 shrink-0" />
-        <span className="truncate font-medium">{displayName}</span>
-      </div>
-    );
-  }
-
-  return (
-    <div className="relative" ref={ref}>
-      <button
-        onClick={() => setOpen(!open)}
-        disabled={switching}
-        className="flex w-full items-center gap-2 rounded-lg border px-2.5 py-1.5 text-xs transition-colors"
-        style={{
-          borderColor: open ? "#DC2626" : "#F0F0F0",
-          background: open ? "#FEF2F2" : "#FAFAFA",
-          color: "#49454F",
-        }}
-      >
-        <Building2 className="h-3.5 w-3.5 shrink-0" style={{ color: "#79747E" }} />
-        <span className="truncate flex-1 text-left font-medium">{displayName}</span>
-        <motion.span
-          animate={{ rotate: open ? 180 : 0 }}
-          transition={{ duration: 0.2 }}
-        >
-          <ChevronDown className="h-3 w-3 shrink-0" style={{ color: "#79747E" }} />
-        </motion.span>
-      </button>
-
-      <AnimatePresence>
-        {open && (
-          <motion.div
-            variants={panelAppear}
-            initial="hidden"
-            animate="visible"
-            exit="exit"
-            className="absolute left-0 top-full z-50 mt-1.5 w-64 overflow-hidden rounded-xl border bg-white shadow-lg"
-            style={{ borderColor: "#E0E0E0" }}
-          >
-            <div className="border-b px-3 py-2" style={{ borderColor: "#F0F0F0" }}>
-              <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "#79747E" }}>
-                Organizations
-              </p>
-            </div>
-            <motion.div variants={fadeInUp} initial="hidden" animate="visible" className="max-h-60 overflow-y-auto p-1.5">
-              {orgs.map((org) => (
-                <button
-                  key={org.orgId}
-                  onClick={() => handleSwitch(org.orgId)}
-                  disabled={switching}
-                  className={cn(
-                    "flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-xs transition-colors",
-                    org.orgId === activeOrgId ? "font-medium" : "hover:bg-gray-50"
-                  )}
-                  style={org.orgId === activeOrgId ? { background: "#FEF2F2", color: "#DC2626" } : { color: "#1C1B1F" }}
-                >
-                  <div className="flex items-center gap-2 min-w-0">
-                    <div
-                      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[10px] font-bold text-white"
-                      style={{ background: org.orgId === activeOrgId ? "#DC2626" : "#E0E0E0" }}
-                    >
-                      {org.name.charAt(0).toUpperCase()}
-                    </div>
-                    <span className="truncate">{org.name}</span>
-                  </div>
-                  {org.orgId === activeOrgId && <Check className="h-3.5 w-3.5 shrink-0" style={{ color: "#DC2626" }} />}
-                </button>
-              ))}
-            </motion.div>
-            <div className="border-t p-1.5" style={{ borderColor: "#F0F0F0" }}>
-              <a
-                href="/onboarding"
-                className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs transition-colors hover:bg-gray-50"
-                style={{ color: "#49454F" }}
-              >
-                <Plus className="h-3.5 w-3.5" />
-                Create New
-              </a>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
 }
 
 /* ── Sidebar ─────────────────────────────────────────────────────────────── */
@@ -206,8 +47,8 @@ export function AppSidebar({ orgName, initialUser }: AppSidebarProps) {
       </div>
 
       {/* Org Switcher */}
-      <div className="border-b px-2.5 py-2.5" style={{ borderColor: "#E0E0E0" }}>
-        <SidebarOrgSwitcher initialOrgName={orgName} />
+      <div className="border-b px-3 py-2.5" style={{ borderColor: "#E0E0E0" }}>
+        <OrgSwitcher initialOrgName={orgName} fullWidth />
       </div>
 
       {/* Navigation */}
