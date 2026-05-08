@@ -19,6 +19,17 @@ export interface SuggestedTag {
   usageCount: number;
 }
 
+/**
+ * Returns suggested tags for a document workflow.
+ *
+ * Precedence:
+ * 1. Counterparty default tags (direct pre-fill handled by picker)
+ * 2. Recent tags used with this specific counterparty
+ * 3. Org-wide popular tags (fallback)
+ *
+ * Archived tags are excluded from all categories.
+ * Results are deduplicated by tag ID.
+ */
 export async function getSuggestedTags(
   context: SuggestionContext
 ): Promise<SuggestedTag[]> {
@@ -28,6 +39,7 @@ export async function getSuggestedTags(
   const seen = new Set<string>();
   const results: SuggestedTag[] = [];
 
+  // 1. Counterparty default tags
   const defaultAssignments =
     counterpartyType === "customer"
       ? await db.customerDefaultTag.findMany({
@@ -46,6 +58,7 @@ export async function getSuggestedTags(
     }
   }
 
+  // 2. Recent tags used with this counterparty
   if (results.length < limit) {
     if (documentType === "invoice" && counterpartyType === "customer") {
       const recent = await db.invoiceTagAssignment.findMany({
@@ -83,6 +96,7 @@ export async function getSuggestedTags(
     }
   }
 
+  // 3. Org-wide popular tags as fallback
   if (results.length < limit) {
     const popular = documentType === "invoice"
       ? await db.invoiceTagAssignment.findMany({

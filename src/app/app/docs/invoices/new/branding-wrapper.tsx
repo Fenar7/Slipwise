@@ -26,6 +26,14 @@ export type ExistingInvoice = {
     id: string;
     name: string;
   } | null;
+  tagAssignments?: Array<{
+    tag: {
+      id: string;
+      name: string;
+      slug: string;
+      color: string | null;
+    };
+  }>;
 };
 
 interface InvoiceBrandingWrapperProps {

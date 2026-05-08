@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   documentTagFindFirst: vi.fn(),
   documentTagFindMany: vi.fn(),
   documentTagUpdate: vi.fn(),
+  documentTagCreate: vi.fn(),
   invoiceTagAssignmentFindMany: vi.fn(),
   voucherTagAssignmentFindMany: vi.fn(),
   customerDefaultTagFindMany: vi.fn(),
@@ -17,6 +18,7 @@ const mocks = vi.hoisted(() => ({
   setCustomerDefaultTags: vi.fn(),
   setVendorDefaultTags: vi.fn(),
   logAudit: vi.fn(),
+  transaction: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({
@@ -28,11 +30,17 @@ vi.mock("@/lib/db", () => ({
   db: {
     invoice: { findMany: mocks.invoiceFindMany, aggregate: mocks.invoiceAggregate },
     voucher: { findMany: mocks.voucherFindMany, aggregate: mocks.voucherAggregate },
-    documentTag: { findFirst: mocks.documentTagFindFirst, findMany: mocks.documentTagFindMany, update: mocks.documentTagUpdate },
+    documentTag: {
+      findFirst: mocks.documentTagFindFirst,
+      findMany: mocks.documentTagFindMany,
+      update: mocks.documentTagUpdate,
+      create: mocks.documentTagCreate,
+    },
     invoiceTagAssignment: { findMany: mocks.invoiceTagAssignmentFindMany },
     voucherTagAssignment: { findMany: mocks.voucherTagAssignmentFindMany },
     customerDefaultTag: { findMany: mocks.customerDefaultTagFindMany },
     vendorDefaultTag: { findMany: mocks.vendorDefaultTagFindMany },
+    $transaction: mocks.transaction,
   },
 }));
 
@@ -43,9 +51,11 @@ vi.mock("@/lib/tags/assignment-service", () => ({
   setVendorDefaultTags: mocks.setVendorDefaultTags,
 }));
 
+import { createTag, renameTag, archiveTag, unarchiveTag } from "../tag-service";
 import { getTagAnalytics } from "../../intel/reports/tag-analytics/actions";
 
 const ORG_ID = "org_test";
+const ADMIN_CTX = { orgId: ORG_ID, userId: "u1", role: "admin", representedId: null, proxyGrantId: null, proxyScope: null };
 const CTX = { orgId: ORG_ID, userId: "u1", role: "admin", representedId: null, proxyGrantId: null, proxyScope: null };
 
 function makeInv(overrides: Record<string, unknown> = {}) {
@@ -76,13 +86,97 @@ function makeAgg(sum: number | null = null, count: number = 0) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.requireOrgContext.mockResolvedValue(CTX);
-  mocks.requireRole.mockResolvedValue(CTX);
+  mocks.requireRole.mockResolvedValue(ADMIN_CTX);
+  mocks.requireOrgContext.mockResolvedValue(ADMIN_CTX);
+  mocks.logAudit.mockResolvedValue(undefined);
+  mocks.documentTagFindMany.mockResolvedValue([]);
+  mocks.documentTagFindFirst.mockResolvedValue(null);
+  mocks.documentTagCreate.mockResolvedValue({ id: "tag_1", name: "Test", slug: "test", orgId: ORG_ID });
+  mocks.documentTagUpdate.mockResolvedValue({ id: "tag_1", name: "Test", slug: "test", orgId: ORG_ID, isArchived: false });
+  mocks.transaction.mockImplementation((ops: unknown[]) => Promise.all(Array.isArray(ops) ? ops.map((f) => typeof f === "function" ? f() : f) : []));
   mocks.invoiceFindMany.mockResolvedValue([]);
   mocks.invoiceAggregate.mockResolvedValue(makeAgg());
   mocks.voucherFindMany.mockResolvedValue([]);
   mocks.voucherAggregate.mockResolvedValue(makeAgg());
 });
+
+/* ── Tag Service Tests ───────────────────────────────────────────────────── */
+
+describe("archive preserves historical identity", () => {
+  it("archived tag maintains its ID", async () => {
+    mocks.documentTagFindFirst.mockResolvedValue({ id: "tag_z", name: "Old Tag", orgId: ORG_ID });
+    mocks.documentTagUpdate.mockResolvedValue({ id: "tag_z", name: "Old Tag", orgId: ORG_ID, slug: "old-tag", isArchived: true });
+
+    const result = await archiveTag("tag_z");
+
+    expect(result.success).toBe(true);
+    expect(result.success && result.data?.id).toBe("tag_z");
+  });
+
+  it("renamed tag preserves its ID", async () => {
+    mocks.documentTagFindFirst
+      .mockResolvedValueOnce({ id: "tag_r", name: "Old Name", orgId: ORG_ID, slug: "old-name" })
+      .mockResolvedValueOnce(null);
+    mocks.documentTagUpdate.mockResolvedValue({ id: "tag_r", name: "New Name", orgId: ORG_ID, slug: "new-name" });
+
+    const result = await renameTag("tag_r", { name: "New Name" });
+
+    expect(result.success).toBe(true);
+    expect(result.success && result.data?.id).toBe("tag_r");
+    expect(result.success && result.data?.name).toBe("New Name");
+  });
+
+  it("unarchived tag restores to active state", async () => {
+    mocks.documentTagFindFirst.mockResolvedValue({ id: "tag_u", name: "Was Archived", orgId: ORG_ID });
+    mocks.documentTagUpdate.mockResolvedValue({ id: "tag_u", name: "Was Archived", orgId: ORG_ID, slug: "was-archived", isArchived: false });
+
+    const result = await unarchiveTag("tag_u");
+
+    expect(result.success).toBe(true);
+  });
+});
+
+describe("cross-org safety", () => {
+  it("rejects tag lookup from different org", async () => {
+    mocks.documentTagFindFirst.mockResolvedValue(null);
+
+    const result = await archiveTag("other_org_tag");
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe("Tag not found");
+  });
+});
+
+describe("empty/invalid inputs", () => {
+  it("rejects empty tag name on create", async () => {
+    const result = await createTag({ name: "  " });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects tag name with no alphanumeric chars", async () => {
+    const result = await createTag({ name: "!!!" });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects rename to empty name", async () => {
+    mocks.documentTagFindFirst.mockResolvedValue({ id: "tag_e", name: "Exists", orgId: ORG_ID });
+    const result = await renameTag("tag_e", { name: "" });
+    expect(result.success).toBe(false);
+  });
+});
+
+describe("duplicate name rejection", () => {
+  it("rejects create when tag with same slug exists", async () => {
+    mocks.documentTagFindFirst.mockResolvedValue({ id: "existing", name: "Priority", slug: "priority", orgId: ORG_ID });
+    mocks.documentTagFindMany.mockResolvedValue([{ id: "existing" }]);
+
+    const result = await createTag({ name: "Priority" });
+
+    expect(result.success).toBe(false);
+  });
+});
+
+/* ── Tag Analytics Tests ─────────────────────────────────────────────────── */
 
 describe("multi-tag attribution correctness", () => {
   it("attributes full amount to each assigned tag", async () => {
@@ -99,11 +193,10 @@ describe("multi-tag attribution correctness", () => {
 
     const result = await getTagAnalytics({ mode: "revenue" });
 
-    const alpha = result.topTags.find((t) => t.tagName === "Alpha")!;
-    const beta = result.topTags.find((t) => t.tagName === "Beta")!;
+    const alpha = result.topTags.find((t: { tagName: string }) => t.tagName === "Alpha")!;
+    const beta = result.topTags.find((t: { tagName: string }) => t.tagName === "Beta")!;
     expect(alpha.invoiceTotal).toBe(10000);
     expect(beta.invoiceTotal).toBe(10000);
-    // Summary aggregate is correct (one invoice)
     expect(result.summary.totalInvoiceValue).toBe(10000);
     expect(result.summary.totalInvoiceCount).toBe(1);
   });
@@ -124,20 +217,15 @@ describe("zero-tag documents", () => {
 
 describe("suggestion service handles renamed tags", () => {
   it("returns tags by current name even if renamed", async () => {
-    // Tag exists in assignments with current name — handled by relational join
     mocks.invoiceTagAssignmentFindMany.mockResolvedValue([
       { tagId: "tag_x", tag: { id: "tag_x", name: "Renamed-Tag", slug: "renamed", color: null } },
     ]);
-
-    // Simulating: the suggestion service always joins tag by ID, getting current name
-    expect(true).toBe(true); // Relational integrity ensures this
+    expect(true).toBe(true);
   });
 });
 
 describe("archived tag handling in reports", () => {
   it("include tagAssignments even when tag is archived", async () => {
-    // Reports use include: { tagAssignments: { include: { tag: { select: {...} } } } }
-    // This always returns the tag data regardless of isArchived
     mocks.invoiceFindMany.mockResolvedValue([
       makeInv({
         id: "inv_1",
@@ -172,7 +260,6 @@ describe("high-cardinality tag catalogs", () => {
     const result = await getTagAnalytics({ mode: "revenue" });
 
     expect(result.topTags.length).toBeLessThanOrEqual(20);
-    // Summary uses aggregate, so it remains correct
     expect(result.summary.totalInvoiceCount).toBe(50);
   });
 });

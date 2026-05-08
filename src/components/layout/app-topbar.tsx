@@ -6,10 +6,27 @@ import { motion } from "motion/react";
 import { getNavigationContext } from "./navigation-context";
 import { NotificationBell } from "@/features/flow/components/notification-bell";
 import { ProxyBanner } from "@/features/access/components/proxy-banner";
-import { Plus, Upload, Users, Building2, Settings, BarChart3, BookOpen, FileText, Receipt, CreditCard, FileSpreadsheet } from "lucide-react";
+import { useWorkspaceTopBar } from "./workspace-topbar-context";
+import { cn } from "@/lib/utils";
+import {
+  Plus, Upload, Users, Building2, Settings, BarChart3, BookOpen,
+  FileText, Receipt, CreditCard, FileSpreadsheet, ScrollText,
+} from "lucide-react";
 
 interface AppTopbarProps {
   orgName?: string;
+}
+
+function actionClassName(variant: "primary" | "secondary" | "subtle") {
+  switch (variant) {
+    case "primary":
+      return "bg-[var(--brand-cta)] text-white hover:bg-[#B91C1C]";
+    case "secondary":
+      return "border border-[var(--border-default)] bg-white text-[var(--text-primary)] hover:bg-[var(--surface-subtle)]";
+    case "subtle":
+    default:
+      return "bg-transparent text-[var(--text-muted)] hover:text-[var(--text-primary)]";
+  }
 }
 
 /* ── Page actions based on route ─────────────────────────────────────────── */
@@ -81,7 +98,8 @@ function getPageActions(pathname: string): PageAction[] {
 export function AppTopbar({ orgName }: AppTopbarProps) {
   const pathname = usePathname();
   const { breadcrumbs, pageTitle, suiteLabel } = getNavigationContext(pathname);
-  const actions = getPageActions(pathname);
+  const { actions: workspaceActions, headerContent, viewToggle } = useWorkspaceTopBar();
+  const pageActions = getPageActions(pathname);
 
   return (
     <>
@@ -126,9 +144,77 @@ export function AppTopbar({ orgName }: AppTopbarProps) {
             ))}
           </nav>
 
-          {/* Right: page actions + notification */}
+          {/* Right: workspace actions + page actions + notification */}
           <div className="flex items-center gap-2 shrink-0">
-            {actions.map((action) => {
+            {/* Workspace header content (e.g. tags) */}
+            {headerContent}
+
+            {/* Workspace actions */}
+            {workspaceActions.length > 0 && (
+              <div className="flex items-center gap-1">
+                {workspaceActions.map((action) => {
+                  const className = cn(
+                    "inline-flex items-center justify-center rounded-md px-3 py-1.5 text-xs font-medium transition-all disabled:cursor-wait disabled:opacity-65",
+                    actionClassName(action.variant),
+                  );
+                  return action.href ? (
+                    <Link key={action.id} href={action.href} className={className}>
+                      {action.label}
+                    </Link>
+                  ) : (
+                    <button
+                      key={action.id}
+                      type="button"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        action.onClick?.();
+                      }}
+                      disabled={action.disabled}
+                      className={className}
+                    >
+                      {action.label}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* View toggle (Form/Document) */}
+            {viewToggle && (
+              <div className="flex gap-0.5 rounded-md bg-[var(--surface-subtle)] p-0.5">
+                <button
+                  type="button"
+                  onClick={() => viewToggle.onChange("form")}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded px-2 py-1.5 text-xs font-medium transition-colors",
+                    viewToggle.mode === "form"
+                      ? "bg-white text-[var(--text-primary)] shadow-sm"
+                      : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]",
+                  )}
+                >
+                  <FileText className="h-3.5 w-3.5" />
+                  Form
+                </button>
+                <button
+                  type="button"
+                  onClick={() => viewToggle.onChange("document")}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded px-2 py-1.5 text-xs font-medium transition-colors",
+                    viewToggle.mode === "document"
+                      ? "bg-white text-[var(--text-primary)] shadow-sm"
+                      : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]",
+                  )}
+                >
+                  <ScrollText className="h-3.5 w-3.5" />
+                  Document
+                </button>
+              </div>
+            )}
+
+            {/* Page actions */}
+            {pageActions.map((action) => {
               const Icon = action.icon;
               return (
                 <Link
@@ -142,7 +228,9 @@ export function AppTopbar({ orgName }: AppTopbarProps) {
                 </Link>
               );
             })}
+
             <div className="h-6 w-px mx-1" style={{ background: "#E0E0E0" }} />
+
             <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
               <NotificationBell />
             </motion.div>

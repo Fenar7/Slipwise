@@ -61,13 +61,13 @@ export function TraditionalLedgerVoucherTemplate({
                 imageClassName="h-full w-full rounded-[0.9rem] object-cover"
               />
               <div>
-                <p className="text-[0.7rem] font-semibold uppercase tracking-[0.32em] text-white/72">
+                <p className="text-[0.7rem] font-semibold uppercase tracking-[0.32em] text-white">
                   Formal voucher record
                 </p>
-                <h2 className="mt-3 text-[1.8rem] font-medium">{document.title}</h2>
+                <h2 className="mt-3 text-[1.8rem] font-medium text-white">{document.title}</h2>
               </div>
             </div>
-            <p className="text-right text-sm leading-7 text-white/82">
+            <p className="text-right text-sm leading-7 text-white">
               {document.branding.companyName || "Slipwise"}
             </p>
           </div>
@@ -174,10 +174,10 @@ function TraditionalLedgerEditor() {
                 imageClassName="h-full w-full rounded-[0.9rem] object-cover"
               />
               <div>
-                <p className="text-[0.7rem] font-semibold uppercase tracking-[0.32em] text-white/72">
+                <p className="text-[0.7rem] font-semibold uppercase tracking-[0.32em] text-white">
                   Formal voucher record
                 </p>
-                <h2 className="mt-3 text-[1.8rem] font-medium">{doc.title}</h2>
+                <h2 className="mt-3 text-[1.8rem] font-medium text-white">{doc.title}</h2>
               </div>
             </div>
             <InlineTextField

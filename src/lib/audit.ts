@@ -198,6 +198,18 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "sequence.resequence_confirmed": "Confirmed resequence batch",
   "sequence.locked_attempt_blocked": "Blocked sequence change on locked period",
   "sequence.diagnostics_ran": "Ran sequence diagnostics",
+  "tag.created": "Created tag",
+  "tag.renamed": "Renamed tag",
+  "tag.archived": "Archived tag",
+  "tag.unarchived": "Unarchived tag",
+  "tag.assigned_invoice": "Assigned tag to invoice",
+  "tag.removed_invoice": "Removed tag from invoice",
+  "tag.assigned_voucher": "Assigned tag to voucher",
+  "tag.removed_voucher": "Removed tag from voucher",
+  "tag.bulk_added": "Bulk-added tags to documents",
+  "tag.bulk_removed": "Bulk-removed tags from documents",
+  "tag.default_customer_set": "Updated customer default tags",
+  "tag.default_vendor_set": "Updated vendor default tags",
 };
 export function getAuditCategory(action: string): string {
   if (
@@ -211,7 +223,8 @@ export function getAuditCategory(action: string): string {
     action.startsWith("proof.") ||
     action.startsWith("salary.") ||
     action.startsWith("approval.") ||
-    action.startsWith("quote_")
+    action.startsWith("quote_") ||
+    action.startsWith("tag.")
   )
     return "Documents";
   if (action.startsWith("gst.")) return "Compliance";

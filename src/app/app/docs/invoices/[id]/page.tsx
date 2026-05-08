@@ -10,6 +10,8 @@ import { listInventoryItems } from "@/app/app/inventory/items/actions";
 import { DetailLayout, DetailRailCard } from "@/components/layout/detail-layout";
 import { DocumentActionBar } from "@/components/docs/document-action-bar";
 import { StatusBadge } from "@/components/dashboard/status-badge";
+import { getInvoiceTags } from "@/lib/tags/assignment-service";
+import { TagChips } from "@/components/tags/tag-chips";
 
 export const metadata = {
   title: "Edit Invoice | Slipwise",
@@ -34,13 +36,14 @@ export default async function EditInvoicePage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const [invoice, customersResult, inventoryResult, events, payments, attachments] = await Promise.all([
+  const [invoice, customersResult, inventoryResult, events, payments, attachments, tagsResult] = await Promise.all([
     getInvoice(id),
     listCustomers({ limit: 200 }).catch(() => ({ customers: [] })),
     listInventoryItems({ pageSize: 100 }).catch(() => ({ success: false as const, error: "Inventory unavailable" })),
     getInvoiceTimeline(id),
     getInvoicePayments(id),
     getDocAttachments(id, "invoice"),
+    getInvoiceTags(id).catch(() => ({ success: false as const, error: "" })),
   ]);
 
   if (!invoice) {
@@ -95,25 +98,12 @@ export default async function EditInvoicePage({
         <>
           {invoice.customer && (
             <DetailRailCard title="Customer">
-              <div className="space-y-2">
-                <Link
-                  href={`/app/data/customers/${invoice.customer.id}`}
-                  className="text-sm font-medium text-[var(--brand-primary)] hover:underline"
-                >
-                  {invoice.customer.name}
-                </Link>
-                {invoice.customer.email && (
-                  <p className="text-xs text-[var(--text-muted)]">{invoice.customer.email}</p>
-                )}
-                <div className="flex gap-2 pt-1">
-                  <Link
-                    href={`/app/crm/customers/${invoice.customer.id}`}
-                    className="text-xs font-medium text-[var(--brand-primary)] hover:underline"
-                  >
-                    CRM →
-                  </Link>
-                </div>
-              </div>
+              ...
+            </DetailRailCard>
+          )}
+          {tagsResult.success && tagsResult.data.length > 0 && (
+            <DetailRailCard title="Tags">
+              <TagChips tags={tagsResult.data} />
             </DetailRailCard>
           )}
           <DetailRailCard>

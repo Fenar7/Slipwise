@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   requireOrgContext: vi.fn(),
+  hasRole: vi.fn(),
+  logAudit: vi.fn(),
   documentTagFindFirst: vi.fn(),
   documentTagFindMany: vi.fn(),
   invoiceTagAssignmentFindFirst: vi.fn(),
@@ -29,6 +31,11 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/lib/auth", () => ({
   requireOrgContext: mocks.requireOrgContext,
+  hasRole: mocks.hasRole,
+}));
+
+vi.mock("@/lib/audit", () => ({
+  logAudit: mocks.logAudit,
 }));
 
 vi.mock("@/lib/db", () => ({
@@ -89,7 +96,7 @@ import {
 } from "../assignment-service";
 
 const ORG_ID = "org_abc";
-const CTX = { orgId: ORG_ID, userId: "user_1", role: "member", representedId: null, proxyGrantId: null, proxyScope: [] };
+const CTX = { orgId: ORG_ID, userId: "user_1", role: "invoice_operator", representedId: null, proxyGrantId: null, proxyScope: [] };
 
 function makeTag(id: string = "tag_001", overrides: Record<string, unknown> = {}) {
   return {
@@ -109,6 +116,12 @@ function makeTag(id: string = "tag_001", overrides: Record<string, unknown> = {}
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.requireOrgContext.mockResolvedValue(CTX);
+  mocks.hasRole.mockReturnValue(true);
+  mocks.logAudit.mockResolvedValue(undefined);
+  mocks.invoiceTagAssignmentFindMany.mockResolvedValue([]);
+  mocks.voucherTagAssignmentFindMany.mockResolvedValue([]);
+  mocks.customerDefaultTagFindMany.mockResolvedValue([]);
+  mocks.vendorDefaultTagFindMany.mockResolvedValue([]);
   mocks.transaction.mockImplementation((ops: any[]) => Promise.all(ops));
 });
 

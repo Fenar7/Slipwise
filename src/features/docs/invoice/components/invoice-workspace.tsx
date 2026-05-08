@@ -4,6 +4,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { FormProvider, useFieldArray, useForm, useFormContext, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { Palette, User, FileText, Calculator, StickyNote, Eye, Tag } from "lucide-react";
 import {
   DocumentWorkspaceLayout,
   type WorkspaceExportDialog,
@@ -36,6 +37,9 @@ import { normalizeMoney } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { CustomerPicker } from "./customer-picker";
 import { InvoiceSaveBar } from "./invoice-save-bar";
+import { TagPicker } from "@/features/tags/components/tag-picker";
+import { trackTagApplied } from "@/lib/tags/telemetry";
+import { getSuggestedTags, type SuggestedTag } from "@/lib/tags/suggestion-service";
 import {
   saveInvoice,
   updateInvoice,
@@ -221,9 +225,13 @@ interface InvoicePanelProps {
     totalAvailable: number;
     trackInventory: boolean;
   }>;
+  tagIds?: string[];
+  setTagIds?: (ids: string[]) => void;
+  suggestions?: SuggestedTag[];
+  loadSuggestions?: (customerId: string) => void;
 }
 
-function InvoicePanel({ customers = [], inventoryItems = [] }: InvoicePanelProps) {
+function InvoicePanel({ customers = [], inventoryItems = [], tagIds = [], setTagIds = () => {}, suggestions = [], loadSuggestions }: InvoicePanelProps) {
   const { control, getValues, setValue, trigger } = useFormContextSafe();
   const values = useWatch({ control }) as InvoiceFormValues;
   const [selectedTemplateId, setSelectedTemplateId] = useState<InvoiceFormValues["templateId"]>(() => getValues("templateId") ?? "professional");
@@ -340,9 +348,6 @@ function InvoicePanel({ customers = [], inventoryItems = [] }: InvoicePanelProps
 
   return (
     <DocumentWorkspaceLayout
-      eyebrow="Invoice workspace"
-      title="Invoice Generator"
-      description="Build client-ready invoices in a cleaner billing workspace with structured details, live preview, and export actions that stay easy to reach."
       actions={[
         { id: "home", label: "Back to home", href: "/", variant: "secondary" },
         {
@@ -407,18 +412,13 @@ function InvoicePanel({ customers = [], inventoryItems = [] }: InvoicePanelProps
               } satisfies WorkspaceExportDialog)
             : undefined
       }
-      builderEyebrow="Invoice controls"
-      builderTitle="Build the invoice"
-      builderDescription="Move from setup through client details, billing rows, and footer controls while keeping the live document visible."
       sections={invoiceWorkspaceSections}
-      previewEyebrow="Preview"
-      previewTitle="Live A4 document"
-      previewDescription="Review the invoice while you edit. Branding, line items, taxes, and payment summary update immediately."
       builderContent={
         <>
           <div id="invoice-setup" className="scroll-mt-28">
               <FormSection
-                eyebrow="Template"
+                icon={<Palette className="h-4 w-4" />}
+
                 title="Template and branding"
                 description="Switch invoice layouts without resetting the form or recalculating totals incorrectly."
               >
@@ -441,10 +441,10 @@ function InvoicePanel({ customers = [], inventoryItems = [] }: InvoicePanelProps
                             });
                           }}
                           className={cn(
-                            "rounded-[1.05rem] border px-4 py-3 text-left shadow-[0_12px_28px_rgba(34,34,34,0.04)] transition-colors",
+                            "w-full rounded-lg border px-4 py-3 text-left transition-all",
                             active
-                              ? "border-[var(--accent)] bg-white"
-                              : "border-[var(--border-soft)] bg-white/88 hover:bg-white",
+                              ? "border-[var(--brand-cta)] bg-[var(--surface-subtle)]"
+                              : "border-[var(--border-default)] bg-white hover:border-[var(--border-default)] hover:bg-[var(--surface-subtle)]",
                           )}
                         >
                           <span className="block text-sm font-medium text-[var(--foreground)]">
@@ -509,11 +509,12 @@ function InvoicePanel({ customers = [], inventoryItems = [] }: InvoicePanelProps
 
           <div id="invoice-client" className="scroll-mt-28">
               <FormSection
-                eyebrow="Client"
+                icon={<User className="h-4 w-4" />}
+
                 title="Client details"
                 description="Control how the client block appears in the invoice preview."
               >
-                <CustomerPicker customers={customers} />
+                <CustomerPicker customers={customers} onTagPrefill={setTagIds} onCustomerSelect={loadSuggestions} />
                 <TextField<InvoiceFormValues>
                   name="clientName"
                   label="Client name"
@@ -552,9 +553,47 @@ function InvoicePanel({ customers = [], inventoryItems = [] }: InvoicePanelProps
               </FormSection>
           </div>
 
+          <div id="invoice-tags" className="scroll-mt-28">
+            <FormSection
+              icon={<Tag className="h-4 w-4" />}
+
+
+              title="Document Tags"
+              description="Categorise this invoice for reporting and analytics."
+            >
+              <TagPicker
+                selectedIds={tagIds}
+                onChange={setTagIds}
+                placeholder="Search or create tags..."
+                allowCreate
+              />
+              {suggestions.length > 0 && (
+                <div className="mt-3">
+                  <p className="mb-1.5 text-xs font-medium text-[var(--muted-foreground)]">Suggestions</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {suggestions.map((s) => (
+                      <button
+                        key={s.id} type="button"
+                        onClick={() => { if (!tagIds.includes(s.id)) setTagIds([...tagIds, s.id]); }}
+                        disabled={tagIds.includes(s.id)}
+                        className="inline-flex items-center gap-1 rounded-full border border-dashed px-2 py-0.5 text-xs font-medium transition-colors hover:border-solid hover:bg-[var(--surface-soft)] disabled:opacity-30 disabled:cursor-default"
+                        style={{ borderColor: s.color ?? "var(--border-soft)", color: s.color ?? "var(--muted-foreground)" }}
+                        title={s.source === "recent" ? `Used ${s.usageCount} times with this customer` : "Popular in your organisation"}
+                      >
+                        <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4"/></svg>
+                        {s.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </FormSection>
+          </div>
+
           <div id="invoice-meta" className="scroll-mt-28">
               <FormSection
-                eyebrow="Meta"
+                icon={<FileText className="h-4 w-4" />}
+
                 title="Invoice metadata"
                 description="Dates and payment tracking stay separate from the line-item math."
               >
@@ -594,7 +633,8 @@ function InvoicePanel({ customers = [], inventoryItems = [] }: InvoicePanelProps
 
           <div id="invoice-billing" className="scroll-mt-28">
               <FormSection
-                eyebrow="Billing"
+                icon={<Calculator className="h-4 w-4" />}
+
                 title="Line items and totals"
                 description="Each line supports quantity, discount, and tax without leaving the form."
               >
@@ -618,7 +658,8 @@ function InvoicePanel({ customers = [], inventoryItems = [] }: InvoicePanelProps
 
           <div id="invoice-footer" className="scroll-mt-28">
               <FormSection
-                eyebrow="Footer"
+                icon={<StickyNote className="h-4 w-4" />}
+
                 title="Notes, terms, bank details, and signature"
                 description="Optional payment and approval information stays grouped here."
               >
@@ -663,7 +704,8 @@ function InvoicePanel({ customers = [], inventoryItems = [] }: InvoicePanelProps
 
           <div id="invoice-visibility" className="scroll-mt-28">
               <FormSection
-                eyebrow="Visibility"
+                icon={<Eye className="h-4 w-4" />}
+
                 title="Optional sections"
                 description="Hide optional business, client, and footer blocks without affecting totals."
               >
@@ -800,6 +842,19 @@ export function InvoiceWorkspace({
     existingInvoice?.invoiceNumber
   );
   const [isSaving, setIsSaving] = useState(false);
+
+  const [tagIds, setTagIds] = useState<string[]>(
+    existingInvoice?.tagAssignments?.map((a) => a.tag.id) ?? []
+  );
+  const [suggestions, setSuggestions] = useState<SuggestedTag[]>([]);
+
+  const loadSuggestions = async (customerId: string) => {
+    try {
+      const result = await getSuggestedTags({ counterpartyId: customerId, counterpartyType: "customer", documentType: "invoice", limit: 8 });
+      setSuggestions(result.filter((s) => s.source !== "default"));
+    } catch { setSuggestions([]); }
+  };
+
   const handleSaveDraft = async (): Promise<string | undefined> => {
     setIsSaving(true);
     try {
@@ -819,6 +874,7 @@ export function InvoiceWorkspace({
             notes: values.notes || undefined,
             formData: values as Record<string, unknown>,
             lineItems,
+            tagIds,
           })
         : await saveInvoice(
             {
@@ -827,10 +883,12 @@ export function InvoiceWorkspace({
               notes: values.notes || undefined,
               formData: values as Record<string, unknown>,
               lineItems,
+              tagIds,
             },
             "DRAFT"
           );
       if (result.success) {
+        if (tagIds.length > 0) trackTagApplied("invoice", tagIds.length);
         setSavedId(result.data.id);
         if (!savedId && "invoiceNumber" in result.data) {
           setSavedInvoiceNumber(
@@ -882,7 +940,7 @@ export function InvoiceWorkspace({
 
   return (
     <FormProvider {...methods}>
-      <InvoicePanel customers={customers} inventoryItems={inventoryItems} />
+      <InvoicePanel customers={customers} inventoryItems={inventoryItems} tagIds={tagIds} setTagIds={setTagIds} suggestions={suggestions} loadSuggestions={loadSuggestions} />
       <InvoiceSaveBar
         onSaveDraft={() => void handleSaveDraft()}
         onIssue={() => void handleIssue()}
