@@ -5,6 +5,7 @@ import { memo, useCallback, useEffect, useId, useRef, useState, type SVGProps } 
 import { ModuleCard } from "@/components/foundation/module-card";
 import { SlipwiseProductMockup } from "@/components/marketing/slipwise-product-mockup";
 import { useHomepageAnimations } from "@/components/marketing/use-homepage-animations";
+import { AuthBlobBackground } from "@/features/auth/components/auth-blob-background";
 import { cn } from "@/lib/utils";
 import { productModules } from "@/lib/modules";
 
@@ -361,6 +362,11 @@ export function SlipwiseHome({ className }: SlipwiseHomeProps) {
 
   return (
     <main ref={rootRef} className={cn("relative isolate overflow-hidden", className)}>
+      {/* Liquid blob background behind hero */}
+      <div className="absolute inset-x-0 top-0 h-[80vh] overflow-hidden pointer-events-none">
+        <AuthBlobBackground />
+      </div>
+
       <div className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[54rem] bg-[radial-gradient(circle_at_top,rgba(220,38,38,0.06),transparent_34%)]" />
       <div data-animate="hero-glow-left" className="pointer-events-none absolute left-[-8rem] top-40 -z-10 h-72 w-72 rounded-full bg-[rgba(220,38,38,0.04)] blur-[110px]" />
       <div data-animate="hero-glow-right" className="pointer-events-none absolute right-[-6rem] top-24 -z-10 h-80 w-80 rounded-full bg-[rgba(34,34,34,0.03)] blur-[120px]" />

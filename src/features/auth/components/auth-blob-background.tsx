@@ -2,7 +2,7 @@
 
 export function AuthBlobBackground() {
   return (
-    <div className="absolute inset-0 overflow-hidden pointer-events-none hidden lg:block">
+    <div className="absolute inset-0 overflow-hidden pointer-events-none">
       {/* SVG gooey filter */}
       <svg className="absolute w-0 h-0">
         <defs>
@@ -28,28 +28,28 @@ export function AuthBlobBackground() {
         <div
           className="absolute top-[20%] left-[25%] w-72 h-72 animate-blob-morph-1"
           style={{
-            background: "radial-gradient(circle at 30% 30%, rgba(220,38,38,0.28), rgba(185,28,28,0.14))",
+            background: "radial-gradient(circle at 30% 30%, rgba(220,38,38,0.45), rgba(185,28,28,0.22))",
           }}
         />
         {/* Blob 2 — medium, offset drift */}
         <div
           className="absolute top-[35%] left-[50%] w-56 h-56 animate-blob-morph-2"
           style={{
-            background: "radial-gradient(circle at 40% 40%, rgba(220,38,38,0.24), rgba(153,27,27,0.10))",
+            background: "radial-gradient(circle at 40% 40%, rgba(220,38,38,0.38), rgba(153,27,27,0.16))",
           }}
         />
         {/* Blob 3 — smaller, faster drift */}
         <div
           className="absolute top-[45%] left-[20%] w-48 h-48 animate-blob-morph-3"
           style={{
-            background: "radial-gradient(circle at 50% 50%, rgba(220,38,38,0.20), rgba(185,28,28,0.08))",
+            background: "radial-gradient(circle at 50% 50%, rgba(220,38,38,0.32), rgba(185,28,28,0.14))",
           }}
         />
         {/* Blob 4 — accent drift */}
         <div
           className="absolute top-[30%] left-[40%] w-40 h-40 animate-blob-morph-4"
           style={{
-            background: "radial-gradient(circle at 35% 35%, rgba(220,38,38,0.16), rgba(153,27,27,0.06))",
+            background: "radial-gradient(circle at 35% 35%, rgba(220,38,38,0.28), rgba(153,27,27,0.12))",
           }}
         />
       </div>
