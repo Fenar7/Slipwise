@@ -10,7 +10,6 @@ import {
   User,
   UserCircle2,
   Link2,
-  Link2Off,
   Sparkles,
   ChevronDown,
   ChevronUp,
@@ -22,6 +21,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 import type { LinkedContextState, ThreadLinkSummary, ThreadStatus } from "./types";
+import { NoLinkedRecordsEmpty } from "./mailbox-empty-states";
 
 // ─── Entity icon map ──────────────────────────────────────────────────────────
 
@@ -312,20 +312,7 @@ export function MailboxContextPanel({ context, onPatch }: MailboxContextPanelPro
 
               {/* No links, no suggestions */}
               {!hasAnyContext && (
-                <div
-                  className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-[#D1D5DB] px-3 py-4 text-center"
-                  data-testid="no-links-state"
-                >
-                  <Link2Off className="h-5 w-5 text-[#D1D5DB]" aria-hidden="true" />
-                  <p className="text-xs text-[#94A3B8]">No linked records</p>
-                  <button
-                    className="text-[11px] font-semibold text-[#16294D] underline underline-offset-2 hover:opacity-80"
-                    aria-label="Link a record to this thread"
-                    data-testid="link-record-btn"
-                  >
-                    Link a record
-                  </button>
-                </div>
+                <NoLinkedRecordsEmpty />
               )}
 
               {/* Add link button when links exist */}

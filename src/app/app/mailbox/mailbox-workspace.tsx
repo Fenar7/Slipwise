@@ -11,6 +11,9 @@ import { FloatingComposer } from "./mailbox-floating-composer";
 import { ExpandedComposer } from "./mailbox-expanded-composer";
 import { MailboxContextPanel, MailboxContextPanelEmpty } from "./mailbox-context-panel";
 import { FilterChipsBar } from "./mailbox-filter-chips";
+import { NoSearchResultsEmpty, NoMailboxesEmpty, SmartViewEmpty } from "./mailbox-empty-states";
+import { ReconnectBanner } from "./mailbox-restricted-states";
+import { MailboxRailDrawer, MobileTopBar, TabletTopBar, MobileTabBar } from "./mailbox-mobile-nav";
 import {
   GLOBAL_SMART_VIEWS,
   MOCK_CONNECTIONS,
@@ -24,6 +27,7 @@ import type {
   ActiveFilterState,
   ActiveFilter,
   LinkedContextState,
+  MailboxResponsivePanel,
 } from "./types";
 
 export function resolveViewLabel(pathname: string): string {
@@ -161,6 +165,34 @@ function resolveVisibleThreads(pathname: string, filterState: ActiveFilterState)
   return threads;
 }
 
+/** Resolve the reconnect-required connection for the current view, if any */
+function resolveReconnectConnection(pathname: string): MailboxConnection | null {
+  const activeConnection = resolveActiveConnection(pathname);
+  if (activeConnection?.status === "reconnect_required") return activeConnection;
+  return null;
+}
+
+/** Resolve smart view description for empty state */
+function resolveSmartViewDescription(pathname: string): { label: string; description: string } | null {
+  const smartView = GLOBAL_SMART_VIEWS.find(
+    (v) => v.href !== "/app/mailbox" && (pathname === v.href || pathname.startsWith(`${v.href}/`))
+  );
+  if (!smartView) return null;
+  const descriptions: Record<string, string> = {
+    unread: "All caught up — no unread threads right now.",
+    "assigned-to-me": "No threads are currently assigned to you.",
+    unassigned: "All threads have been assigned.",
+    flagged: "No threads are flagged for follow-up.",
+    waiting: "No threads are in a pending or waiting state.",
+    linked: "No threads are linked to a Slipwise record yet.",
+    unlinked: "All threads have been linked to records.",
+  };
+  return {
+    label: smartView.label,
+    description: descriptions[smartView.id] ?? "No threads in this view.",
+  };
+}
+
 export function MailboxWorkspace() {
   const pathname = usePathname();
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
@@ -168,12 +200,18 @@ export function MailboxWorkspace() {
   const [filterState, setFilterState] = useState<ActiveFilterState>({ filters: [], searchQuery: "" });
   const [contextOverrides, setContextOverrides] = useState<Record<string, Partial<LinkedContextState>>>({});
 
+  // Responsive state
+  const [isRailOpen, setIsRailOpen] = useState(false);
+  const [mobilePanel, setMobilePanel] = useState<MailboxResponsivePanel>("thread-list");
+
   const viewLabel = resolveViewLabel(pathname);
   const activeConnection = resolveActiveConnection(pathname);
   const visibleThreads = resolveVisibleThreads(pathname, filterState);
   const totalCount = visibleThreads.length;
   const unreadCount = visibleThreads.filter((t) => t.isUnread).length;
   const selectedDetail = selectedThreadId ? MOCK_THREAD_DETAILS[selectedThreadId] ?? null : null;
+  const reconnectConnection = resolveReconnectConnection(pathname);
+  const smartViewEmpty = resolveSmartViewDescription(pathname);
 
   const selectedContext: LinkedContextState | null = selectedThreadId
     ? { ...(MOCK_LINKED_CONTEXT[selectedThreadId] ?? null), ...(contextOverrides[selectedThreadId] ?? {}) } as LinkedContextState
@@ -189,6 +227,17 @@ export function MailboxWorkspace() {
       setSelectedThreadId(null);
     }
   }, [selectedThreadId, visibleThreads]);
+
+  // On mobile, selecting a thread navigates to reading pane
+  const handleSelectThread = useCallback((id: string) => {
+    setSelectedThreadId(id);
+    setMobilePanel("reading-pane");
+  }, []);
+
+  const handleMobileBack = useCallback(() => {
+    setMobilePanel("thread-list");
+    setSelectedThreadId(null);
+  }, []);
 
   const openNewCompose = useCallback(() => {
     setComposer(makeComposerState("new", null, null, "", [], defaultComposeConnection));
@@ -246,18 +295,84 @@ export function MailboxWorkspace() {
     setFilterState((prev) => ({ ...prev, searchQuery: "" }));
   }, []);
 
+  const hasActiveFilters = filterState.filters.length > 0 || !!filterState.searchQuery;
+
+  // Resolve thread list empty state
+  const threadListEmptyState = (() => {
+    if (hasActiveFilters) {
+      return (
+        <NoSearchResultsEmpty
+          query={filterState.searchQuery || undefined}
+          hasActiveFilters={filterState.filters.length > 0}
+          onClearFilters={clearFilters}
+        />
+      );
+    }
+    if (smartViewEmpty) {
+      return (
+        <SmartViewEmpty
+          viewLabel={smartViewEmpty.label}
+          viewDescription={smartViewEmpty.description}
+        />
+      );
+    }
+    return null;
+  })();
+
+  // Reconnect banner for thread list
+  const reconnectBanner = reconnectConnection ? (
+    <ReconnectBanner
+      mailboxLabel={reconnectConnection.displayName}
+      connectionId={reconnectConnection.id}
+      isAdmin={true}
+    />
+  ) : undefined;
+
+  // Mobile label
+  const mobileLabel =
+    mobilePanel === "reading-pane" && selectedDetail
+      ? selectedDetail.subject
+      : viewLabel;
+
   return (
     <div
       className="flex h-full overflow-hidden"
       style={{ background: "#F7F8FB" }}
       data-testid="mailbox-workspace"
     >
-      {/* Left rail */}
-      <MailboxLeftRail />
+        {/* ── Desktop left rail (xl+) — single instance, always in DOM ── */}
+        {/* On xl+: shown inline. On <xl: hidden (drawer has its own copy via portal). */}
+        <div className="hidden xl:flex xl:shrink-0" aria-hidden="false">
+          <MailboxLeftRail />
+        </div>
 
-      {/* Center + right panes */}
+        {/* ── Rail drawer for tablet + mobile — separate instance, aria-hidden when closed ── */}
+        <div className="xl:hidden" aria-hidden={!isRailOpen}>
+          <MailboxRailDrawer isOpen={isRailOpen} onClose={() => setIsRailOpen(false)}>
+            <MailboxLeftRail />
+          </MailboxRailDrawer>
+        </div>
+
+      {/* ── Center + right panes ── */}
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        {/* Command bar */}
+
+        {/* Mobile top bar */}
+        <MobileTopBar
+          activePanel={mobilePanel}
+          label={mobileLabel}
+          onOpenRail={() => setIsRailOpen(true)}
+          onBack={mobilePanel === "reading-pane" ? handleMobileBack : undefined}
+          onCompose={openNewCompose}
+        />
+
+        {/* Tablet top bar */}
+        <TabletTopBar
+          label={viewLabel}
+          onOpenRail={() => setIsRailOpen(true)}
+          onCompose={openNewCompose}
+        />
+
+        {/* Command bar — single instance for all viewports */}
         <MailboxCommandBar
           activeViewLabel={viewLabel}
           totalCount={totalCount}
@@ -274,7 +389,7 @@ export function MailboxWorkspace() {
           onClearFilters={clearFilters}
         />
 
-        {/* Filter chips bar — always visible so filters are reachable from zero state */}
+        {/* Filter chips bar */}
         <FilterChipsBar
           filterState={filterState}
           onAddFilter={addFilter}
@@ -282,23 +397,33 @@ export function MailboxWorkspace() {
           onClearAll={clearFilters}
         />
 
-        {/* Thread list + reading pane + context panel */}
+        {/* ── Main content area ── */}
         <div className="flex min-h-0 flex-1 overflow-hidden">
-          {/* Thread list */}
+
+          {/* Thread list — full width on mobile, fixed width on md+ */}
           <div
-            className="w-full shrink-0 overflow-hidden md:w-80 lg:w-96"
+            className={[
+              "shrink-0 overflow-hidden border-r",
+              // Mobile: show only when thread-list panel is active
+              mobilePanel === "thread-list" ? "flex w-full flex-col md:w-80 lg:w-96 md:flex" : "hidden md:flex md:w-80 lg:w-96 md:flex-col",
+            ].join(" ")}
             data-testid="mailbox-thread-list-pane"
           >
             <MailboxThreadList
               threads={visibleThreads}
               selectedThreadId={selectedThreadId}
-              onSelectThread={setSelectedThreadId}
+              onSelectThread={handleSelectThread}
+              reconnectBanner={reconnectBanner}
+              emptyState={threadListEmptyState ?? undefined}
             />
           </div>
 
-          {/* Reading pane */}
+          {/* Reading pane — hidden on mobile when thread-list is active */}
           <div
-            className="hidden min-w-0 flex-1 overflow-hidden md:flex md:flex-col"
+            className={[
+              "min-w-0 flex-1 overflow-hidden",
+              mobilePanel === "reading-pane" ? "flex flex-col" : "hidden md:flex md:flex-col",
+            ].join(" ")}
             data-testid="mailbox-reading-pane"
           >
             {selectedDetail ? (
@@ -315,7 +440,7 @@ export function MailboxWorkspace() {
             )}
           </div>
 
-          {/* Context panel — desktop only */}
+          {/* Context panel — desktop only (xl+) */}
           <div className="hidden xl:flex xl:flex-col" data-testid="mailbox-context-panel-container">
             {selectedContext ? (
               <MailboxContextPanel context={selectedContext} onPatch={patchContext} />
@@ -324,6 +449,13 @@ export function MailboxWorkspace() {
             )}
           </div>
         </div>
+
+        {/* Mobile bottom tab bar */}
+        <MobileTabBar
+          activePanel={mobilePanel}
+          onSelectPanel={setMobilePanel}
+          unreadCount={unreadCount}
+        />
       </div>
 
       {/* Floating composer */}
