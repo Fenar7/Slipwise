@@ -44,11 +44,11 @@ export function BoldBrandInvoiceTemplate({
               imageClassName="h-full w-full rounded-[1rem] object-cover"
             />
             <div>
-              <p className="text-[0.7rem] uppercase tracking-[0.32em] text-white/70">
+              <p className="text-[0.7rem] uppercase tracking-[0.32em] text-white">
                 {document.title}
               </p>
-              <h2 className="mt-3 text-[2.05rem] leading-tight">{document.branding.companyName}</h2>
-              <div className="mt-4 space-y-1.5 text-sm leading-6 text-white/84">
+              <h2 className="mt-3 text-[2.05rem] leading-tight text-white">{document.branding.companyName}</h2>
+              <div className="mt-4 space-y-1.5 text-sm leading-6 text-white">
                 {document.visibility.showAddress && document.branding.address ? <p>{document.branding.address}</p> : null}
                 {document.visibility.showEmail && document.branding.email ? <p>{document.branding.email}</p> : null}
                 {document.visibility.showPhone && document.branding.phone ? <p>{document.branding.phone}</p> : null}
@@ -57,12 +57,12 @@ export function BoldBrandInvoiceTemplate({
             </div>
           </div>
           <div className="min-w-[14rem] rounded-[1.4rem] bg-white/12 p-5">
-            <p className="text-[0.68rem] uppercase tracking-[0.25em] text-white/70">Invoice no.</p>
-            <p className="mt-2 text-xl font-medium">{document.invoiceNumber}</p>
-            <p className="mt-4 text-[0.68rem] uppercase tracking-[0.25em] text-white/70">Due</p>
-            <p className="mt-2 text-sm font-medium">{document.dueDate || document.invoiceDate}</p>
-            <p className="mt-5 text-[0.68rem] uppercase tracking-[0.25em] text-white/70">Balance due</p>
-            <p className="mt-2 text-2xl font-medium">{document.balanceDueFormatted}</p>
+            <p className="text-[0.68rem] uppercase tracking-[0.25em] text-white">Invoice no.</p>
+            <p className="mt-2 text-xl font-medium text-white">{document.invoiceNumber}</p>
+            <p className="mt-4 text-[0.68rem] uppercase tracking-[0.25em] text-white">Due</p>
+            <p className="mt-2 text-sm font-medium text-white">{document.dueDate || document.invoiceDate}</p>
+            <p className="mt-5 text-[0.68rem] uppercase tracking-[0.25em] text-white">Balance due</p>
+            <p className="mt-2 text-2xl font-medium text-white">{document.balanceDueFormatted}</p>
           </div>
         </div>
       </section>
@@ -280,25 +280,25 @@ function BoldBrandEditor({ document }: { document: InvoiceDocument }) {
               imageClassName="h-full w-full rounded-[1rem] object-cover"
             />
             <div>
-              <p className="text-[0.7rem] uppercase tracking-[0.32em] text-white/70">{document.title}</p>
+              <p className="text-[0.7rem] uppercase tracking-[0.32em] text-white">{document.title}</p>
               <InlineTextField name="branding.companyName" className="mt-3 text-[2.05rem] leading-tight text-white" />
               <div className="mt-4 space-y-1.5">
-                <InlineTextArea name="branding.address" className="text-sm leading-6 text-white/84" placeholder="Business address" />
-                <InlineTextField name="branding.email" className="text-sm leading-6 text-white/84" placeholder="Business email" />
-                <InlineTextField name="branding.phone" className="text-sm leading-6 text-white/84" placeholder="Business phone" />
-                <InlineTextField name="website" className="text-sm leading-6 text-white/84" placeholder="Website" />
+                <InlineTextArea name="branding.address" className="text-sm leading-6 text-white" placeholder="Business address" />
+                <InlineTextField name="branding.email" className="text-sm leading-6 text-white" placeholder="Business email" />
+                <InlineTextField name="branding.phone" className="text-sm leading-6 text-white" placeholder="Business phone" />
+                <InlineTextField name="website" className="text-sm leading-6 text-white" placeholder="Website" />
               </div>
             </div>
           </div>
           <div className="min-w-[14rem] rounded-[1.4rem] bg-white/12 p-5">
-            <p className="text-[0.68rem] uppercase tracking-[0.25em] text-white/70">Invoice no.</p>
+            <p className="text-[0.68rem] uppercase tracking-[0.25em] text-white">Invoice no.</p>
             <InlineTextField name="invoiceNumber" className="mt-2 text-xl font-medium text-white" />
-            <p className="mt-4 text-[0.68rem] uppercase tracking-[0.25em] text-white/70">Due</p>
+            <p className="mt-4 text-[0.68rem] uppercase tracking-[0.25em] text-white">Due</p>
             <InlineDateField name="dueDate" className="mt-2 text-sm font-medium text-white" />
-            <p className="mt-4 text-[0.68rem] uppercase tracking-[0.25em] text-white/70">Invoice date</p>
+            <p className="mt-4 text-[0.68rem] uppercase tracking-[0.25em] text-white">Invoice date</p>
             <InlineDateField name="invoiceDate" className="mt-2 text-sm font-medium text-white" />
-            <p className="mt-5 text-[0.68rem] uppercase tracking-[0.25em] text-white/70">Balance due</p>
-            <p className="mt-2 text-2xl font-medium">{doc.balanceDueFormatted}</p>
+            <p className="mt-5 text-[0.68rem] uppercase tracking-[0.25em] text-white">Balance due</p>
+            <p className="mt-2 text-2xl font-medium text-white">{doc.balanceDueFormatted}</p>
           </div>
         </div>
       </section>

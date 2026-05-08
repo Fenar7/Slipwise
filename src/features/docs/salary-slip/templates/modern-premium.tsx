@@ -41,13 +41,13 @@ function SummaryCard({
       <p
         className={
           accent
-            ? "text-[0.68rem] uppercase tracking-[0.24em] text-white/72"
+            ? "text-[0.68rem] uppercase tracking-[0.24em] text-white"
             : "text-[0.68rem] uppercase tracking-[0.24em] text-[rgba(29,23,16,0.45)]"
         }
       >
         {label}
       </p>
-      <p className="mt-3 text-2xl font-medium">{value}</p>
+      <p className={`mt-3 text-2xl font-medium ${accent ? "text-white" : ""}`}>{value}</p>
     </div>
   );
 }

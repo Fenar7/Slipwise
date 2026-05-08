@@ -127,13 +127,13 @@ export function VoucherDocumentEditor() {
           className="rounded-[1.5rem] p-5 text-white"
           style={{ backgroundColor: "var(--voucher-accent)" }}
         >
-          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.25em] text-white/70">
+          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.25em] text-white">
             Amount
           </p>
-          <p className="mt-3 text-3xl font-medium">
+          <p className="mt-3 text-3xl font-medium text-white">
             {doc.amountFormatted}
           </p>
-          <p className="mt-4 text-sm leading-7 text-white/82">
+          <p className="mt-4 text-sm leading-7 text-white">
             {doc.amountInWords}
           </p>
         </aside>

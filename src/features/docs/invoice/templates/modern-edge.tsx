@@ -136,13 +136,13 @@ export function ModernEdgeInvoiceTemplate({
             style={{ backgroundColor: "var(--voucher-accent)" }}
           >
             <div>
-              <p className="text-xs font-medium uppercase tracking-[0.2em] text-white/70">
+              <p className="text-xs font-medium uppercase tracking-[0.2em] text-white">
                 Balance Due
               </p>
-              <p className="mt-1 text-3xl font-bold tracking-tight">{document.balanceDueFormatted}</p>
+              <p className="mt-1 text-3xl font-bold tracking-tight text-white">{document.balanceDueFormatted}</p>
             </div>
-            <div className="ml-auto text-right text-sm leading-6 text-white/80">
-              <p>{document.amountInWords}</p>
+            <div className="ml-auto text-right text-sm leading-6 text-white">
+              <p className="text-white">{document.amountInWords}</p>
             </div>
           </div>
 
@@ -460,13 +460,13 @@ function ModernEdgeEditor({ document }: { document: InvoiceDocument }) {
             style={{ backgroundColor: "var(--voucher-accent)" }}
           >
             <div>
-              <p className="text-xs font-medium uppercase tracking-[0.2em] text-white/70">
+              <p className="text-xs font-medium uppercase tracking-[0.2em] text-white">
                 Balance Due
               </p>
-              <p className="mt-1 text-3xl font-bold tracking-tight">{doc.balanceDueFormatted}</p>
+              <p className="mt-1 text-3xl font-bold tracking-tight text-white">{doc.balanceDueFormatted}</p>
             </div>
-            <div className="ml-auto text-right text-sm leading-6 text-white/80">
-              <p>{doc.amountInWords}</p>
+            <div className="ml-auto text-right text-sm leading-6 text-white">
+              <p className="text-white">{doc.amountInWords}</p>
             </div>
           </div>
 
