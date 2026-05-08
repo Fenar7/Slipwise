@@ -3,12 +3,17 @@
 import { useState, useRef } from "react";
 import { Search, X, SlidersHorizontal, PenSquare } from "lucide-react";
 import { cn } from "@/lib/utils";
+import type { ActiveFilter, ActiveFilterState } from "./types";
 
 interface MailboxCommandBarProps {
   activeViewLabel: string;
   totalCount?: number;
   unreadCount?: number;
   onCompose?: () => void;
+  filterState?: ActiveFilterState;
+  onAddFilter?: (filter: ActiveFilter) => void;
+  onRemoveFilter?: (field: string, value: string) => void;
+  onClearFilters?: () => void;
 }
 
 export function MailboxCommandBar({
@@ -16,6 +21,10 @@ export function MailboxCommandBar({
   totalCount,
   unreadCount,
   onCompose,
+  filterState,
+  onAddFilter,
+  onRemoveFilter,
+  onClearFilters,
 }: MailboxCommandBarProps) {
   const [query, setQuery] = useState("");
   const [focused, setFocused] = useState(false);
@@ -87,11 +96,22 @@ export function MailboxCommandBar({
 
       {/* Filter button */}
       <button
-        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-[#E2E5EA] bg-white transition-colors hover:border-[#D1D5DB] hover:bg-[#F7F8FB]"
+        className={cn(
+          "relative flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border transition-colors",
+          filterState && filterState.filters.length > 0
+            ? "border-[#16294D] bg-[#16294D] text-white"
+            : "border-[#E2E5EA] bg-white text-[#64748B] hover:border-[#D1D5DB] hover:bg-[#F7F8FB]"
+        )}
         title="Filter threads"
         aria-label="Filter threads"
+        aria-pressed={filterState ? filterState.filters.length > 0 : false}
       >
-        <SlidersHorizontal className="h-3.5 w-3.5 text-[#64748B]" />
+        <SlidersHorizontal className="h-3.5 w-3.5" />
+        {filterState && filterState.filters.length > 0 && (
+          <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-[#DC2626] text-[9px] font-bold text-white">
+            {filterState.filters.length}
+          </span>
+        )}
       </button>
 
       {/* Compose button */}

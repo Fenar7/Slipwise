@@ -9,8 +9,22 @@ import { MailboxReadingPaneEmpty } from "./mailbox-reading-pane-empty";
 import { MailboxReadingPane } from "./mailbox-reading-pane";
 import { FloatingComposer } from "./mailbox-floating-composer";
 import { ExpandedComposer } from "./mailbox-expanded-composer";
-import { GLOBAL_SMART_VIEWS, MOCK_CONNECTIONS, MOCK_THREAD_DETAILS } from "./mock-data";
-import type { MailboxComposerState, ComposeMode, MailboxConnection } from "./types";
+import { MailboxContextPanel, MailboxContextPanelEmpty } from "./mailbox-context-panel";
+import { FilterChipsBar } from "./mailbox-filter-chips";
+import {
+  GLOBAL_SMART_VIEWS,
+  MOCK_CONNECTIONS,
+  MOCK_THREAD_DETAILS,
+  MOCK_LINKED_CONTEXT,
+} from "./mock-data";
+import type {
+  MailboxComposerState,
+  ComposeMode,
+  MailboxConnection,
+  ActiveFilterState,
+  ActiveFilter,
+  LinkedContextState,
+} from "./types";
 
 export function resolveViewLabel(pathname: string): string {
   const smartView = GLOBAL_SMART_VIEWS.find(
@@ -71,82 +85,107 @@ function resolveActiveConnection(pathname: string): MailboxConnection | null {
   );
 }
 
-function resolveVisibleThreads(pathname: string) {
+function resolveVisibleThreads(pathname: string, filterState: ActiveFilterState) {
   const activeConnection = resolveActiveConnection(pathname);
   const smartView = GLOBAL_SMART_VIEWS.find(
     (view) => view.href !== "/app/mailbox" && (pathname === view.href || pathname.startsWith(`${view.href}/`))
   );
 
-  if (smartView?.id === "unread") {
-    return MOCK_THREADS.filter((thread) => thread.isUnread);
+  let threads = MOCK_THREADS;
+
+  // Smart view filtering
+  if (smartView?.id === "unread") threads = threads.filter((t) => t.isUnread);
+  else if (smartView?.id === "assigned-to-me") threads = threads.filter((t) => t.assignee === "You");
+  else if (smartView?.id === "unassigned") threads = threads.filter((t) => !t.assignee);
+  else if (smartView?.id === "flagged") threads = threads.filter((t) => t.isFlagged);
+  else if (smartView?.id === "waiting") threads = threads.filter((t) => t.status === "pending");
+  else if (smartView?.id === "linked") {
+    threads = threads.filter((t) => (MOCK_LINKED_CONTEXT[t.id]?.links.length ?? 0) > 0);
+  } else if (smartView?.id === "unlinked") {
+    threads = threads.filter(
+      (t) =>
+        (MOCK_LINKED_CONTEXT[t.id]?.links.length ?? 0) === 0 &&
+        (MOCK_LINKED_CONTEXT[t.id]?.suggestions.length ?? 0) === 0
+    );
+  } else if (activeConnection) {
+    const folder = pathname.split("/").pop() ?? "inbox";
+    const connectionThreads = threads.filter((t) => t.mailboxConnectionId === activeConnection.id);
+    if (folder === "sent") {
+      threads = connectionThreads.filter((t) => {
+        const detail = MOCK_THREAD_DETAILS[t.id];
+        return detail?.messages[detail.messages.length - 1]?.direction === "outbound";
+      });
+    } else if (folder === "drafts" || folder === "spam") {
+      threads = [];
+    } else if (folder === "archive") {
+      threads = connectionThreads.filter((t) => t.status === "closed");
+    } else {
+      threads = connectionThreads.filter((t) => t.status !== "closed");
+    }
   }
 
-  if (smartView?.id === "assigned-to-me") {
-    return MOCK_THREADS.filter((thread) => thread.assignee === "You");
+  // Active filter chips
+  for (const filter of filterState.filters) {
+    if (filter.field === "unread" && filter.value === "true") {
+      threads = threads.filter((t) => t.isUnread);
+    } else if (filter.field === "flagged" && filter.value === "true") {
+      threads = threads.filter((t) => t.isFlagged);
+    } else if (filter.field === "assignee" && filter.value === "me") {
+      threads = threads.filter((t) => t.assignee === "You");
+    } else if (filter.field === "assignee" && filter.value === "none") {
+      threads = threads.filter((t) => !t.assignee);
+    } else if (filter.field === "status") {
+      threads = threads.filter((t) => t.status === filter.value);
+    } else if (filter.field === "linked" && filter.value === "true") {
+      threads = threads.filter((t) => (MOCK_LINKED_CONTEXT[t.id]?.links.length ?? 0) > 0);
+    } else if (filter.field === "linked" && filter.value === "false") {
+      threads = threads.filter(
+        (t) =>
+          (MOCK_LINKED_CONTEXT[t.id]?.links.length ?? 0) === 0 &&
+          (MOCK_LINKED_CONTEXT[t.id]?.suggestions.length ?? 0) === 0
+      );
+    }
   }
 
-  if (smartView?.id === "unassigned") {
-    return MOCK_THREADS.filter((thread) => !thread.assignee);
+  // Search query
+  if (filterState.searchQuery) {
+    const q = filterState.searchQuery.toLowerCase();
+    threads = threads.filter(
+      (t) =>
+        t.subject.toLowerCase().includes(q) ||
+        t.from.toLowerCase().includes(q) ||
+        t.snippet.toLowerCase().includes(q)
+    );
   }
 
-  if (smartView?.id === "flagged") {
-    return MOCK_THREADS.filter((thread) => thread.isFlagged);
-  }
-
-  if (smartView?.id === "waiting") {
-    return MOCK_THREADS.filter((thread) => thread.status === "pending");
-  }
-
-  if (!activeConnection) {
-    return MOCK_THREADS;
-  }
-
-  const folder = pathname.split("/").pop() ?? "inbox";
-  const connectionThreads = MOCK_THREADS.filter(
-    (thread) => thread.mailboxConnectionId === activeConnection.id
-  );
-
-  if (folder === "sent") {
-    return connectionThreads.filter((thread) => {
-      const detail = MOCK_THREAD_DETAILS[thread.id];
-      const latestMessage = detail?.messages[detail.messages.length - 1];
-      return latestMessage?.direction === "outbound";
-    });
-  }
-
-  if (folder === "drafts") {
-    return [];
-  }
-
-  if (folder === "archive") {
-    return connectionThreads.filter((thread) => thread.status === "closed");
-  }
-
-  if (folder === "spam") {
-    return [];
-  }
-
-  return connectionThreads.filter((thread) => thread.status !== "closed");
+  return threads;
 }
 
 export function MailboxWorkspace() {
   const pathname = usePathname();
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
   const [composer, setComposer] = useState<MailboxComposerState | null>(null);
+  const [filterState, setFilterState] = useState<ActiveFilterState>({ filters: [], searchQuery: "" });
+  const [contextOverrides, setContextOverrides] = useState<Record<string, Partial<LinkedContextState>>>({});
 
   const viewLabel = resolveViewLabel(pathname);
   const activeConnection = resolveActiveConnection(pathname);
-  const visibleThreads = resolveVisibleThreads(pathname);
+  const visibleThreads = resolveVisibleThreads(pathname, filterState);
   const totalCount = visibleThreads.length;
-  const unreadCount = visibleThreads.filter((thread) => thread.isUnread).length;
+  const unreadCount = visibleThreads.filter((t) => t.isUnread).length;
   const selectedDetail = selectedThreadId ? MOCK_THREAD_DETAILS[selectedThreadId] ?? null : null;
+
+  const selectedContext: LinkedContextState | null = selectedThreadId
+    ? { ...(MOCK_LINKED_CONTEXT[selectedThreadId] ?? null), ...(contextOverrides[selectedThreadId] ?? {}) } as LinkedContextState
+    : null;
+
   const defaultComposeConnection =
     activeConnection ??
-    MOCK_CONNECTIONS.find((connection) => connection.status === "connected") ??
+    MOCK_CONNECTIONS.find((c) => c.status === "connected") ??
     MOCK_CONNECTIONS[0];
 
   useEffect(() => {
-    if (selectedThreadId && !visibleThreads.some((thread) => thread.id === selectedThreadId)) {
+    if (selectedThreadId && !visibleThreads.some((t) => t.id === selectedThreadId)) {
       setSelectedThreadId(null);
     }
   }, [selectedThreadId, visibleThreads]);
@@ -158,29 +197,52 @@ export function MailboxWorkspace() {
   const openInlineReply = useCallback(
     (mode: ComposeMode, threadId: string, messageId: string, subject: string, to: string[]) => {
       const threadConnection =
-        MOCK_CONNECTIONS.find(
-          (connection) => connection.id === MOCK_THREAD_DETAILS[threadId]?.mailboxConnectionId
-        ) ?? defaultComposeConnection;
+        MOCK_CONNECTIONS.find((c) => c.id === MOCK_THREAD_DETAILS[threadId]?.mailboxConnectionId) ??
+        defaultComposeConnection;
       setComposer(makeComposerState(mode, threadId, messageId, subject, to, threadConnection, "inline"));
     },
     [defaultComposeConnection]
   );
 
   const closeComposer = useCallback(() => setComposer(null), []);
-
-  const expandComposer = useCallback(() => {
-    setComposer((prev) => prev ? { ...prev, layout: "expanded" } : prev);
-  }, []);
-
-  const collapseComposer = useCallback(() => {
-    setComposer((prev) =>
-      prev ? { ...prev, layout: prev.threadId ? "inline" : "floating" } : prev
-    );
-  }, []);
-
+  const expandComposer = useCallback(() => setComposer((p) => p ? { ...p, layout: "expanded" } : p), []);
+  const collapseComposer = useCallback(
+    () => setComposer((p) => p ? { ...p, layout: p.threadId ? "inline" : "floating" } : p),
+    []
+  );
   const patchComposer = useCallback((patch: Partial<MailboxComposerState>) => {
-    setComposer((prev) => prev ? { ...prev, ...patch } : prev);
+    setComposer((p) => p ? { ...p, ...patch } : p);
   }, []);
+
+  const patchContext = useCallback((patch: Partial<LinkedContextState>) => {
+    if (!selectedThreadId) return;
+    setContextOverrides((prev) => ({
+      ...prev,
+      [selectedThreadId]: { ...(prev[selectedThreadId] ?? {}), ...patch },
+    }));
+  }, [selectedThreadId]);
+
+  const addFilter = useCallback((filter: ActiveFilter) => {
+    setFilterState((prev) => ({
+      ...prev,
+      filters: prev.filters.some((f) => f.field === filter.field && f.value === filter.value)
+        ? prev.filters
+        : [...prev.filters, filter],
+    }));
+  }, []);
+
+  const removeFilter = useCallback((field: string, value: string) => {
+    setFilterState((prev) => ({
+      ...prev,
+      filters: prev.filters.filter((f) => !(f.field === field && f.value === value)),
+    }));
+  }, []);
+
+  const clearFilters = useCallback(() => {
+    setFilterState({ filters: [], searchQuery: "" });
+  }, []);
+
+  const hasActiveFilters = filterState.filters.length > 0;
 
   return (
     <div
@@ -199,10 +261,25 @@ export function MailboxWorkspace() {
           totalCount={totalCount}
           unreadCount={unreadCount}
           onCompose={openNewCompose}
+          filterState={filterState}
+          onAddFilter={addFilter}
+          onRemoveFilter={removeFilter}
+          onClearFilters={clearFilters}
         />
 
-        {/* Thread list + reading pane */}
+        {/* Filter chips bar — shown when filters are active */}
+        {hasActiveFilters && (
+          <FilterChipsBar
+            filterState={filterState}
+            onAddFilter={addFilter}
+            onRemoveFilter={removeFilter}
+            onClearAll={clearFilters}
+          />
+        )}
+
+        {/* Thread list + reading pane + context panel */}
         <div className="flex min-h-0 flex-1 overflow-hidden">
+          {/* Thread list */}
           <div
             className="w-full shrink-0 overflow-hidden md:w-80 lg:w-96"
             data-testid="mailbox-thread-list-pane"
@@ -214,6 +291,7 @@ export function MailboxWorkspace() {
             />
           </div>
 
+          {/* Reading pane */}
           <div
             className="hidden min-w-0 flex-1 overflow-hidden md:flex md:flex-col"
             data-testid="mailbox-reading-pane"
@@ -231,10 +309,19 @@ export function MailboxWorkspace() {
               <MailboxReadingPaneEmpty />
             )}
           </div>
+
+          {/* Context panel — desktop only */}
+          <div className="hidden xl:flex xl:flex-col" data-testid="mailbox-context-panel-container">
+            {selectedContext ? (
+              <MailboxContextPanel context={selectedContext} onPatch={patchContext} />
+            ) : (
+              <MailboxContextPanelEmpty />
+            )}
+          </div>
         </div>
       </div>
 
-      {/* Floating composer — shown when layout=floating and not inline */}
+      {/* Floating composer */}
       {composer?.isOpen && composer.layout === "floating" && composer.threadId === null && (
         <FloatingComposer
           state={composer}

@@ -189,3 +189,65 @@ export interface MailboxAdminSummary {
 
 export type DisconnectConfirmState = "idle" | "confirming" | "disconnecting" | "disconnected";
 export type ReconnectConfirmState = "idle" | "confirming" | "reconnecting";
+
+// ─── Sprint 1.5 additions ────────────────────────────────────────────────────
+
+export type LinkedEntityType = "customer" | "invoice" | "voucher" | "quote";
+export type LinkConfidence = "confirmed" | "suggested" | "none";
+
+export interface ThreadLinkSummary {
+  id: string;
+  threadId: string;
+  entityType: LinkedEntityType;
+  entityId: string;
+  entityLabel: string;
+  /** e.g. "INV-2026-0412", "QT-2026-0089" */
+  entityRef: string;
+  /** e.g. "₹48,500", "Due 30 Apr" */
+  entityMeta: string;
+  confidence: LinkConfidence;
+  isPrimary: boolean;
+}
+
+export interface LinkedContextState {
+  threadId: string;
+  links: ThreadLinkSummary[];
+  /** Suggested links not yet confirmed */
+  suggestions: ThreadLinkSummary[];
+  assignee: string | null;
+  status: ThreadStatus;
+  /** ISO timestamp of last status change */
+  statusChangedAt: string | null;
+  /** Free-text note placeholder */
+  internalNote: string;
+}
+
+export type SmartViewId =
+  | "all-inboxes"
+  | "unread"
+  | "assigned-to-me"
+  | "unassigned"
+  | "flagged"
+  | "waiting"
+  | "linked"
+  | "unlinked";
+
+export interface SmartViewDef {
+  id: SmartViewId;
+  label: string;
+  href: string;
+  description: string;
+}
+
+export type FilterField = "mailbox" | "status" | "assignee" | "linked" | "unread" | "flagged";
+
+export interface ActiveFilter {
+  field: FilterField;
+  value: string;
+  label: string;
+}
+
+export interface ActiveFilterState {
+  filters: ActiveFilter[];
+  searchQuery: string;
+}

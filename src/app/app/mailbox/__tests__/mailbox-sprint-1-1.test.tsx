@@ -69,7 +69,11 @@ describe("MailboxLeftRail", () => {
   it("renders all global smart views", () => {
     render(<MailboxLeftRail />);
     for (const view of GLOBAL_SMART_VIEWS) {
-      expect(screen.getByRole("link", { name: new RegExp(view.label, "i") })).toBeInTheDocument();
+      // Link text includes badge count, so use getAllByRole and check at least one matches
+      const links = screen.getAllByRole("link").filter((l) =>
+        l.textContent?.includes(view.label)
+      );
+      expect(links.length).toBeGreaterThan(0);
     }
   });
 
