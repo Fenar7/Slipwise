@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import {
@@ -184,9 +184,19 @@ export function ConnectionDetailClient({ connectionId }: ConnectionDetailClientP
   const { connection } = summary;
   const needsReconnect = connection.status === "reconnect_required";
 
+  useEffect(() => {
+    if (disconnectState !== "disconnecting") return;
+
+    const timeout = window.setTimeout(() => {
+      setDisconnectState("disconnected");
+    }, 1200);
+
+    return () => window.clearTimeout(timeout);
+  }, [disconnectState]);
+
   const handleSavePermissions = () => {
     setSaved(true);
-    setTimeout(() => setSaved(false), 2500);
+    window.setTimeout(() => setSaved(false), 2500);
   };
 
   const patchPolicy = (patch: Partial<typeof policy>) =>

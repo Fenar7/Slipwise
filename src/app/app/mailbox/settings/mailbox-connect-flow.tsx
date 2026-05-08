@@ -31,7 +31,7 @@ export function MailboxConnectFlow({ onClose, reconnectEmail }: MailboxConnectFl
   const [step, setStep] = useState<ConnectFlowStep>(
     reconnectEmail ? "reconnect_required" : "pre_connect"
   );
-  const [labelInput, setLabelInput] = useState(reconnectEmail ? "" : "");
+  const [labelInput, setLabelInput] = useState("");
 
   const isReconnect = !!reconnectEmail;
   const title = isReconnect ? "Reconnect Gmail mailbox" : "Connect a Gmail mailbox";
@@ -86,12 +86,16 @@ export function MailboxConnectFlow({ onClose, reconnectEmail }: MailboxConnectFl
           )}
           {step === "success" && (
             <SuccessStep
-              email={labelInput || reconnectEmail || "billing@acmecorp.com"}
+              displayName={labelInput || null}
+              email={reconnectEmail ?? null}
               onDone={onClose}
             />
           )}
           {step === "failed" && (
-            <FailedStep onRetry={() => setStep("pre_connect")} onCancel={onClose} />
+            <FailedStep
+              onRetry={() => setStep(isReconnect ? "reconnect_required" : "pre_connect")}
+              onCancel={onClose}
+            />
           )}
         </div>
       </div>
@@ -276,7 +280,15 @@ function AuthorizingStep({
 
 // ─── Step: Success ────────────────────────────────────────────────────────────
 
-function SuccessStep({ email, onDone }: { email: string; onDone: () => void }) {
+function SuccessStep({
+  displayName,
+  email,
+  onDone,
+}: {
+  displayName: string | null;
+  email: string | null;
+  onDone: () => void;
+}) {
   return (
     <div className="flex flex-col items-center gap-4 py-4 text-center" data-testid="connect-step-success">
       <div className="flex h-14 w-14 items-center justify-center rounded-full bg-green-50">
@@ -285,7 +297,18 @@ function SuccessStep({ email, onDone }: { email: string; onDone: () => void }) {
       <div>
         <p className="text-base font-bold text-[#0F172A]">Mailbox connected</p>
         <p className="mt-1 text-sm text-[#64748B]">
-          <strong>{email}</strong> is now connected to Slipwise. Initial sync will begin shortly.
+          {email ? (
+            <>
+              <strong>{email}</strong> is now connected to Slipwise.
+            </>
+          ) : displayName ? (
+            <>
+              The <strong>{displayName}</strong> mailbox is now connected to Slipwise.
+            </>
+          ) : (
+            <>Your Gmail mailbox is now connected to Slipwise.</>
+          )}{" "}
+          Initial sync will begin shortly.
         </p>
       </div>
       <div className="w-full rounded-xl border border-[#E2E5EA] bg-[#F7F8FB] p-4 text-left">

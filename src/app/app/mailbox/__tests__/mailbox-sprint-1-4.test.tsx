@@ -2,7 +2,7 @@
  * Sprint 1.4 tests — Settings, connections, and permissions.
  * Extends Sprint 1.1–1.3 coverage; does not replace them.
  */
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, act } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("next/navigation", () => ({
@@ -226,6 +226,19 @@ describe("MailboxConnectFlow — pre_connect step", () => {
     expect(screen.getByTestId("connect-step-pre-connect")).toBeInTheDocument();
   });
 
+  it("success step uses the mailbox display name instead of a fake fallback email", () => {
+    render(<MailboxConnectFlow onClose={vi.fn()} />);
+    fireEvent.change(screen.getByRole("textbox", { name: /mailbox display name/i }), {
+      target: { value: "Support" },
+    });
+    fireEvent.click(screen.getByTestId("authorize-btn"));
+    fireEvent.click(screen.getByTestId("simulate-success-btn"));
+    expect(
+      screen.getByText((content) => content.includes("The ") && content.includes(" mailbox is now connected to Slipwise."))
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/billing@acmecorp.com/i)).not.toBeInTheDocument();
+  });
+
   it("calls onClose when Close button clicked", () => {
     const onClose = vi.fn();
     render(<MailboxConnectFlow onClose={onClose} />);
@@ -259,6 +272,14 @@ describe("MailboxConnectFlow — reconnect mode", () => {
     render(<MailboxConnectFlow onClose={vi.fn()} reconnectEmail="accounts@acmecorp.com" />);
     fireEvent.click(screen.getByTestId("reconnect-authorize-btn"));
     expect(screen.getByTestId("connect-step-authorizing")).toBeInTheDocument();
+  });
+
+  it("retry after reconnect failure returns to reconnect step, not fresh connect", () => {
+    render(<MailboxConnectFlow onClose={vi.fn()} reconnectEmail="accounts@acmecorp.com" />);
+    fireEvent.click(screen.getByTestId("reconnect-authorize-btn"));
+    fireEvent.click(screen.getByTestId("simulate-failure-btn"));
+    fireEvent.click(screen.getByTestId("retry-btn"));
+    expect(screen.getByTestId("connect-step-reconnect")).toBeInTheDocument();
   });
 });
 
@@ -343,6 +364,18 @@ describe("ConnectionDetailClient", () => {
     fireEvent.click(screen.getByTestId("disconnect-btn"));
     fireEvent.click(screen.getByTestId("confirm-disconnect-btn"));
     expect(screen.getByTestId("disconnect-progress")).toBeInTheDocument();
+  });
+
+  it("disconnecting transitions to disconnected state", () => {
+    vi.useFakeTimers();
+    render(<ConnectionDetailClient connectionId="conn_billing" />);
+    fireEvent.click(screen.getByTestId("disconnect-btn"));
+    fireEvent.click(screen.getByTestId("confirm-disconnect-btn"));
+    act(() => {
+      vi.advanceTimersByTime(1200);
+    });
+    expect(screen.getByTestId("disconnect-done")).toBeInTheDocument();
+    vi.useRealTimers();
   });
 
   it("renders reconnect banner for reconnect_required connection", () => {
