@@ -36,6 +36,11 @@ import { normalizeMoney } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { CustomerPicker } from "./customer-picker";
 import { InvoiceSaveBar } from "./invoice-save-bar";
+<<<<<<< HEAD
+=======
+import { TagPicker } from "@/features/tags/components/tag-picker";
+import { getSuggestedTags, type SuggestedTag } from "@/lib/tags/suggestion-service";
+>>>>>>> ff5d3249 (feat(topbar): minimal topbar with profile moved to sidebar)
 import {
   saveInvoice,
   updateInvoice,
@@ -801,6 +806,14 @@ export function InvoiceWorkspace({
   );
   const [isSaving, setIsSaving] = useState(false);
 
+<<<<<<< HEAD
+=======
+  const [tagIds, setTagIds] = useState<string[]>(
+    existingInvoice?.tagAssignments?.map((a) => a.tag.id) ?? []
+  );
+  const [suggestions, setSuggestions] = useState<SuggestedTag[]>([]);
+
+>>>>>>> ff5d3249 (feat(topbar): minimal topbar with profile moved to sidebar)
   const handleSaveDraft = async (): Promise<string | undefined> => {
     setIsSaving(true);
     try {
@@ -926,3 +939,4 @@ function convertInvoiceToFormValues(invoice: ExistingInvoice): InvoiceFormValues
     })),
   };
 }
+// SPRINT 4.2 placeholder

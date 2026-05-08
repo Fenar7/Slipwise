@@ -1,42 +1,87 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import { useSupabaseSession } from "@/hooks/use-supabase-session";
-import { signOutSupabaseBrowser } from "@/lib/supabase/client";
-import { Avatar } from "@/components/ui/avatar";
-import { cn } from "@/lib/utils";
-import { Logo } from "@/components/foundation/logo";
-import { OrgSwitcher } from "@/components/org/org-switcher";
+import { usePathname } from "next/navigation";
 import { motion } from "motion/react";
-
+import { getNavigationContext } from "./navigation-context";
 import { NotificationBell } from "@/features/flow/components/notification-bell";
 import { ProxyBanner } from "@/features/access/components/proxy-banner";
-import { getNavigationContext } from "./navigation-context";
+import { Plus, Upload, Users, Building2, Settings, BarChart3, BookOpen, FileText, Receipt, CreditCard, FileSpreadsheet } from "lucide-react";
 
 interface AppTopbarProps {
   orgName?: string;
-  initialUser?: {
-    name?: string | null;
-    email?: string | null;
-    avatarUrl?: string | null;
-  };
 }
 
-export function AppTopbar({ orgName, initialUser }: AppTopbarProps) {
-  const { user, isPending } = useSupabaseSession();
-  const router = useRouter();
-  const pathname = usePathname();
-  const { breadcrumbs, pageTitle, suiteLabel, switcherItems } = getNavigationContext(pathname);
-  const resolvedName = user?.user_metadata.name ?? initialUser?.name ?? initialUser?.email ?? undefined;
-  const resolvedAvatar =
-    user?.user_metadata.avatar_url ?? initialUser?.avatarUrl ?? undefined;
-  const hasAuthenticatedUser = Boolean(user || initialUser);
+/* ── Page actions based on route ─────────────────────────────────────────── */
 
-  const handleSignOut = async () => {
-    await signOutSupabaseBrowser();
-    router.push("/");
-  };
+interface PageAction {
+  label: string;
+  href: string;
+  icon: React.ElementType;
+}
+
+function getPageActions(pathname: string): PageAction[] {
+  if (pathname === "/app/docs/invoices" || pathname === "/app/docs/invoices/") {
+    return [{ label: "New Invoice", href: "/app/docs/invoices/new", icon: Plus }];
+  }
+  if (pathname.startsWith("/app/docs/invoices/")) {
+    return [{ label: "Invoices", href: "/app/docs/invoices", icon: FileText }];
+  }
+  if (pathname === "/app/docs/vouchers" || pathname === "/app/docs/vouchers/") {
+    return [{ label: "New Voucher", href: "/app/docs/vouchers/new", icon: Plus }];
+  }
+  if (pathname.startsWith("/app/docs/vouchers/")) {
+    return [{ label: "Vouchers", href: "/app/docs/vouchers", icon: Receipt }];
+  }
+  if (pathname === "/app/docs/salary-slips" || pathname === "/app/docs/salary-slips/") {
+    return [{ label: "New Salary Slip", href: "/app/docs/salary-slips/new", icon: Plus }];
+  }
+  if (pathname.startsWith("/app/docs/salary-slips/")) {
+    return [{ label: "Salary Slips", href: "/app/docs/salary-slips", icon: CreditCard }];
+  }
+  if (pathname === "/app/docs/quotes" || pathname === "/app/docs/quotes/") {
+    return [{ label: "New Quote", href: "/app/docs/quotes/new", icon: Plus }];
+  }
+  if (pathname.startsWith("/app/docs/quotes/")) {
+    return [{ label: "Quotes", href: "/app/docs/quotes", icon: FileSpreadsheet }];
+  }
+  if (pathname.startsWith("/app/docs/vault")) {
+    return [{ label: "Upload", href: "/app/docs/vault/upload", icon: Upload }];
+  }
+  if (pathname === "/app/data" || pathname === "/app/data/") {
+    return [
+      { label: "Add Customer", href: "/app/data/customers/new", icon: Users },
+      { label: "Add Vendor", href: "/app/data/vendors/new", icon: Building2 },
+    ];
+  }
+  if (pathname.startsWith("/app/data/customers")) {
+    return [{ label: "Add Customer", href: "/app/data/customers/new", icon: Plus }];
+  }
+  if (pathname.startsWith("/app/data/vendors")) {
+    return [{ label: "Add Vendor", href: "/app/data/vendors/new", icon: Plus }];
+  }
+  if (pathname.startsWith("/app/settings")) {
+    return [{ label: "Organization", href: "/app/settings/organization", icon: Settings }];
+  }
+  if (pathname.startsWith("/app/intel")) {
+    return [{ label: "Reports", href: "/app/intel/reports", icon: BarChart3 }];
+  }
+  if (pathname.startsWith("/app/books")) {
+    return [{ label: "New Entry", href: "/app/books/new", icon: BookOpen }];
+  }
+  if (pathname.startsWith("/app/pay")) {
+    return [{ label: "Payments", href: "/app/pay", icon: CreditCard }];
+  }
+  if (pathname.startsWith("/app/compliance")) {
+    return [{ label: "Compliance", href: "/app/compliance", icon: FileText }];
+  }
+  return [];
+}
+
+export function AppTopbar({ orgName }: AppTopbarProps) {
+  const pathname = usePathname();
+  const { breadcrumbs, pageTitle, suiteLabel } = getNavigationContext(pathname);
+  const actions = getPageActions(pathname);
 
   return (
     <>
@@ -45,107 +90,64 @@ export function AppTopbar({ orgName, initialUser }: AppTopbarProps) {
         initial={{ opacity: 0, y: -4 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.25, ease: "easeOut" }}
-        className="sticky top-0 z-20 border-b border-[var(--topbar-border)] bg-[var(--topbar-bg)] backdrop-blur supports-[backdrop-filter]:bg-white/85"
+        className="sticky top-0 z-20 border-b bg-white"
+        style={{ borderColor: "#E0E0E0" }}
       >
-        <div className="flex h-[var(--topbar-height,56px)] items-center gap-4 px-4 sm:px-6">
-          {/* Mobile logo */}
-          <div className="flex items-center gap-3 lg:hidden">
-            <Logo variant="compact" />
-          </div>
-
-          {/* Page identity */}
-          <div className="min-w-0 flex-1 hidden lg:block">
-            <div className="flex items-center gap-2">
-              <span className="text-[0.7rem] font-semibold uppercase tracking-[0.2em] text-[var(--text-muted)]">
-                {suiteLabel === "Home" ? "Slipwise" : suiteLabel}
-              </span>
-            </div>
-            <h1 className="mt-0.5 truncate text-base font-semibold text-[var(--text-primary)]">
+        <div className="flex h-16 items-center gap-4 px-5">
+          {/* Left: Page title */}
+          <div className="min-w-0 flex-shrink-0">
+            <span className="text-[11px] font-bold uppercase tracking-widest" style={{ color: "#DC2626" }}>
+              {suiteLabel === "Home" ? "Slipwise" : suiteLabel}
+            </span>
+            <h1 className="truncate text-lg font-bold" style={{ color: "#1C1B1F" }}>
               {pageTitle}
             </h1>
           </div>
 
-          {/* Breadcrumbs - desktop only */}
-          <nav className="hidden xl:flex flex-wrap items-center gap-2 text-xs text-[var(--text-muted)] min-w-0 flex-1 px-4">
+          {/* Center: breadcrumbs */}
+          <nav className="hidden xl:flex flex-wrap items-center gap-2 text-sm min-w-0 flex-1 px-6" style={{ color: "#79747E" }}>
             {breadcrumbs.map((crumb, index) => (
               <div key={`${crumb.label}-${index}`} className="flex items-center gap-2 shrink-0">
                 {crumb.href ? (
                   <Link
                     href={crumb.href}
-                    className="transition-colors hover:text-[var(--text-primary)]"
+                    className="transition-colors hover:text-[#1C1B1F] font-medium"
+                    style={{ color: "#79747E" }}
                   >
                     {crumb.label}
                   </Link>
                 ) : (
-                  <span className="text-[var(--text-secondary)]">{crumb.label}</span>
+                  <span className="font-semibold" style={{ color: "#1C1B1F" }}>{crumb.label}</span>
                 )}
                 {index < breadcrumbs.length - 1 ? (
-                  <span className="text-[var(--border-default)]">/</span>
+                  <span style={{ color: "#E0E0E0" }}>/</span>
                 ) : null}
               </div>
             ))}
           </nav>
 
-          {/* Right utilities */}
-          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-            <OrgSwitcher initialOrgName={orgName} />
-            <div className="h-5 w-px bg-[var(--border-soft)] hidden sm:block" />
-            <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-              <NotificationBell />
-            </motion.div>
-            {isPending ? (
-              <div className="h-8 w-8 animate-pulse rounded-full border border-[var(--border-soft)] bg-[var(--surface-subtle)]" />
-            ) : hasAuthenticatedUser ? (
-              <div className="flex items-center gap-2">
-                <Avatar name={resolvedName} imageUrl={resolvedAvatar} size="sm" />
-                <span className="hidden sm:block text-sm font-medium text-[var(--text-primary)] max-w-[120px] truncate">
-                  {resolvedName}
-                </span>
-                <motion.button
-                  onClick={handleSignOut}
-                  whileTap={{ scale: 0.97 }}
-                  className="ml-1 rounded-lg border border-[var(--border-default)] bg-white px-3 py-1.5 text-xs font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--surface-subtle)] hover:text-[var(--text-primary)]"
-                >
-                  Sign out
-                </motion.button>
-              </div>
-            ) : (
-              <Link
-                href="/auth/login"
-                className="rounded-lg border border-[var(--border-default)] bg-white px-4 py-1.5 text-sm font-medium text-[var(--text-primary)] transition-colors hover:bg-[var(--surface-subtle)]"
-              >
-                Sign in
-              </Link>
-            )}
-          </div>
-        </div>
-
-        {/* Mobile suite switcher */}
-        <nav
-          aria-label="Suite switcher"
-          className="border-t border-[var(--border-soft)] px-3 py-2 lg:hidden"
-        >
-          <div className="flex gap-2 overflow-x-auto pb-1">
-            {switcherItems.map((item) => {
-              const Icon = item.icon;
+          {/* Right: page actions + notification */}
+          <div className="flex items-center gap-2 shrink-0">
+            {actions.map((action) => {
+              const Icon = action.icon;
               return (
                 <Link
-                  key={item.href}
-                  href={item.href}
-                  className={cn(
-                    "shrink-0 flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
-                    item.isActive
-                      ? "border-[var(--brand-primary)] bg-[var(--surface-selected)] text-[var(--brand-primary)]"
-                      : "border-[var(--border-soft)] bg-white text-[var(--text-muted)] hover:text-[var(--text-primary)]"
-                  )}
+                  key={action.href}
+                  href={action.href}
+                  className="inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-bold transition-opacity hover:opacity-90"
+                  style={{ background: "#DC2626", color: "#fff" }}
                 >
-                  {Icon && <Icon className="h-3 w-3" />}
-                  {item.label}
+                  <Icon className="h-4 w-4" />
+                  <span className="hidden sm:inline">{action.label}</span>
                 </Link>
               );
             })}
+            <div className="h-6 w-px mx-1" style={{ background: "#E0E0E0" }} />
+            <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+              <NotificationBell />
+            </motion.div>
           </div>
-        </nav>
+        </div>
       </motion.header>
     </>
   );
