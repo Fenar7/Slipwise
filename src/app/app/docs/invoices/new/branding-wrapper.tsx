@@ -78,6 +78,7 @@ export function InvoiceBrandingWrapper({
       <InvoiceWorkspace
         existingInvoice={existingInvoice}
         initialTemplateId={initialTemplateId}
+        initialAccentColor={branding.accentColor}
         customers={customers}
         inventoryItems={inventoryItems}
       />

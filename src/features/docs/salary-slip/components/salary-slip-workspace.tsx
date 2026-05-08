@@ -66,6 +66,7 @@ interface WorkspaceProps {
   employees?: WorkspaceEmployee[];
   presets?: WorkspacePreset[];
   initialTemplateId?: string;
+  initialAccentColor?: string;
 }
 
 const MONTH_NAMES = [
@@ -902,10 +903,10 @@ function SalarySlipEditableCanvas({ document }: { document: SalarySlipDocument }
   );
 }
 
-export function SalarySlipWorkspace({ employees = [], presets = [], initialTemplateId }: WorkspaceProps) {
+export function SalarySlipWorkspace({ employees = [], presets = [], initialTemplateId, initialAccentColor }: WorkspaceProps) {
   const methods = useForm<SalarySlipFormValues>({
     resolver: zodResolver(salarySlipFormSchema),
-    defaultValues: salarySlipDefaultValues,
+    defaultValues: { ...salarySlipDefaultValues, branding: { ...salarySlipDefaultValues.branding, accentColor: initialAccentColor ?? salarySlipDefaultValues.branding.accentColor } },
     mode: "onChange",
   });
 
