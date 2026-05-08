@@ -1,9 +1,19 @@
 "use client";
 
+import { useState } from "react";
 import { cn } from "@/lib/utils";
-import { Paperclip, Flag, UserCircle2 } from "lucide-react";
+import {
+  Paperclip,
+  Flag,
+  UserCircle2,
+  Reply,
+  Archive,
+  Trash2,
+  MailOpen,
+  MoreHorizontal,
+} from "lucide-react";
 
-interface ThreadRowData {
+export interface ThreadRowData {
   id: string;
   subject: string;
   snippet: string;
@@ -20,7 +30,7 @@ interface ThreadRowData {
   status: "open" | "pending" | "closed";
 }
 
-const MOCK_THREADS: ThreadRowData[] = [
+export const MOCK_THREADS: ThreadRowData[] = [
   {
     id: "t1",
     subject: "Invoice #INV-2026-0412 — Payment overdue",
@@ -121,6 +131,54 @@ const STATUS_STYLES: Record<ThreadRowData["status"], string> = {
   closed: "bg-gray-100 text-gray-500",
 };
 
+function QuickActions({ threadId }: { threadId: string }) {
+  return (
+    <div
+      className="absolute right-3 top-1/2 hidden -translate-y-1/2 items-center gap-0.5 rounded-lg border border-[#E2E5EA] bg-white p-0.5 shadow-sm group-hover:flex"
+      role="toolbar"
+      aria-label={`Quick actions for thread ${threadId}`}
+      // Stop click from propagating to the row button
+      onClick={(e) => e.stopPropagation()}
+    >
+      <button
+        className="flex h-6 w-6 items-center justify-center rounded-md text-[#64748B] transition-colors hover:bg-[#F1F3F7] hover:text-[#0F172A]"
+        title="Reply"
+        aria-label="Reply"
+      >
+        <Reply className="h-3.5 w-3.5" />
+      </button>
+      <button
+        className="flex h-6 w-6 items-center justify-center rounded-md text-[#64748B] transition-colors hover:bg-[#F1F3F7] hover:text-[#0F172A]"
+        title="Archive"
+        aria-label="Archive"
+      >
+        <Archive className="h-3.5 w-3.5" />
+      </button>
+      <button
+        className="flex h-6 w-6 items-center justify-center rounded-md text-[#64748B] transition-colors hover:bg-[#F1F3F7] hover:text-[#0F172A]"
+        title="Mark as read"
+        aria-label="Mark as read"
+      >
+        <MailOpen className="h-3.5 w-3.5" />
+      </button>
+      <button
+        className="flex h-6 w-6 items-center justify-center rounded-md text-[#64748B] transition-colors hover:bg-red-50 hover:text-[#DC2626]"
+        title="Delete"
+        aria-label="Delete"
+      >
+        <Trash2 className="h-3.5 w-3.5" />
+      </button>
+      <button
+        className="flex h-6 w-6 items-center justify-center rounded-md text-[#64748B] transition-colors hover:bg-[#F1F3F7] hover:text-[#0F172A]"
+        title="More actions"
+        aria-label="More actions"
+      >
+        <MoreHorizontal className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  );
+}
+
 function ThreadRow({
   thread,
   isSelected,
@@ -131,30 +189,34 @@ function ThreadRow({
   onClick: () => void;
 }) {
   return (
-    <button
+    <div
       onClick={onClick}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick(); } }}
+      role="option"
+      aria-selected={isSelected}
+      tabIndex={0}
+      data-thread-id={thread.id}
       className={cn(
-        "group relative flex w-full items-start gap-3 border-b px-4 py-3 text-left transition-colors",
+        "group relative flex w-full cursor-pointer items-start gap-3 border-b px-4 py-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[rgba(22,41,77,0.25)]",
         isSelected
-          ? "bg-[rgba(22,41,77,0.06)]"
+          ? "bg-[rgba(22,41,77,0.07)] ring-inset ring-1 ring-[rgba(22,41,77,0.12)]"
           : thread.isUnread
           ? "bg-white hover:bg-[#F7F8FB]"
-          : "bg-[#FAFBFC] hover:bg-[#F7F8FB]",
+          : "bg-[#FAFBFC] hover:bg-[#F7F8FB]"
       )}
       style={{ borderColor: "#E2E5EA" }}
-      aria-selected={isSelected}
     >
-      {/* Unread indicator */}
+      {/* Unread dot */}
       <span
         className={cn(
           "absolute left-1.5 top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full transition-opacity",
           thread.isUnread ? "opacity-100" : "opacity-0"
         )}
         style={{ background: "#DC2626" }}
-        aria-label="Unread"
+        aria-hidden="true"
       />
 
-      {/* Avatar */}
+      {/* Sender avatar */}
       <span
         className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white"
         style={{ background: thread.fromColor }}
@@ -164,8 +226,9 @@ function ThreadRow({
       </span>
 
       {/* Content */}
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
+      <div className="min-w-0 flex-1 pr-2">
+        {/* Row 1: sender + mailbox badge + timestamp */}
+        <div className="flex items-center gap-1.5">
           <span
             className={cn(
               "truncate text-sm",
@@ -174,21 +237,19 @@ function ThreadRow({
           >
             {thread.from}
           </span>
-
-          {/* Mailbox source badge */}
           <span
-            className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold"
+            className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold leading-none"
             style={{
-              background: `${thread.mailboxColor}14`,
+              background: `${thread.mailboxColor}18`,
               color: thread.mailboxColor,
             }}
           >
             {thread.mailboxLabel}
           </span>
-
           <span className="ml-auto shrink-0 text-[11px] text-[#94A3B8]">{thread.timestamp}</span>
         </div>
 
+        {/* Row 2: subject */}
         <p
           className={cn(
             "mt-0.5 truncate text-sm",
@@ -198,10 +259,9 @@ function ThreadRow({
           {thread.subject}
         </p>
 
+        {/* Row 3: snippet + indicators */}
         <div className="mt-0.5 flex items-center gap-2">
           <p className="flex-1 truncate text-xs text-[#64748B]">{thread.snippet}</p>
-
-          {/* Indicators */}
           <div className="flex shrink-0 items-center gap-1.5">
             {thread.hasAttachment && (
               <Paperclip className="h-3 w-3 text-[#94A3B8]" aria-label="Has attachment" />
@@ -211,17 +271,25 @@ function ThreadRow({
             )}
             {thread.assignee && (
               <span className="flex items-center gap-0.5 text-[10px] font-medium text-[#64748B]">
-                <UserCircle2 className="h-3 w-3" />
+                <UserCircle2 className="h-3 w-3" aria-hidden="true" />
                 {thread.assignee}
               </span>
             )}
-            <span className={cn("rounded px-1.5 py-0.5 text-[10px] font-semibold", STATUS_STYLES[thread.status])}>
+            <span
+              className={cn(
+                "rounded px-1.5 py-0.5 text-[10px] font-semibold",
+                STATUS_STYLES[thread.status]
+              )}
+            >
               {thread.status}
             </span>
           </div>
         </div>
       </div>
-    </button>
+
+      {/* Hover quick-action toolbar */}
+      <QuickActions threadId={thread.id} />
+    </div>
   );
 }
 
@@ -233,10 +301,11 @@ interface MailboxThreadListProps {
 export function MailboxThreadList({ selectedThreadId, onSelectThread }: MailboxThreadListProps) {
   return (
     <div
-      className="flex h-full flex-col overflow-hidden border-r"
+      className="flex h-full flex-col overflow-hidden border-r bg-white"
       style={{ borderColor: "#E2E5EA" }}
-      role="list"
+      role="listbox"
       aria-label="Thread list"
+      aria-multiselectable="false"
     >
       <div className="flex-1 overflow-y-auto">
         {MOCK_THREADS.map((thread) => (
@@ -251,5 +320,3 @@ export function MailboxThreadList({ selectedThreadId, onSelectThread }: MailboxT
     </div>
   );
 }
-
-export { MOCK_THREADS };

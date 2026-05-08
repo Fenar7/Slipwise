@@ -64,3 +64,46 @@ export interface MailboxHealthState {
   status: MailboxConnectionStatus;
   message: string | null;
 }
+
+// ─── Sprint 1.2 additions ────────────────────────────────────────────────────
+
+export type MessageDirection = "inbound" | "outbound";
+
+export interface MailboxAttachmentSummary {
+  id: string;
+  filename: string;
+  mimeType: string;
+  /** Human-readable size, e.g. "142 KB" */
+  sizeLabel: string;
+}
+
+export interface MailboxMessageItem {
+  id: string;
+  threadId: string;
+  direction: MessageDirection;
+  from: string;
+  fromInitial: string;
+  fromColor: string;
+  fromEmail: string;
+  to: string[];
+  cc?: string[];
+  subject: string;
+  bodyHtml: string;
+  sentAt: string;
+  /** Collapsed by default for older messages in a thread */
+  isCollapsed: boolean;
+  attachments: MailboxAttachmentSummary[];
+}
+
+export interface MailboxThreadDetail {
+  threadId: string;
+  subject: string;
+  status: ThreadStatus;
+  assignee: string | null;
+  mailboxLabel: string;
+  mailboxColor: string;
+  participantsSummary: string;
+  messages: MailboxMessageItem[];
+  /** Total attachment count across all messages */
+  totalAttachments: number;
+}
