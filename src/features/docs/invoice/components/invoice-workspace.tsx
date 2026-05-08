@@ -224,9 +224,13 @@ interface InvoicePanelProps {
     totalAvailable: number;
     trackInventory: boolean;
   }>;
+  tagIds?: string[];
+  setTagIds?: (ids: string[]) => void;
+  suggestions?: SuggestedTag[];
+  loadSuggestions?: (customerId: string) => void;
 }
 
-function InvoicePanel({ customers = [], inventoryItems = [] }: InvoicePanelProps) {
+function InvoicePanel({ customers = [], inventoryItems = [], tagIds = [], setTagIds = () => {}, suggestions = [], loadSuggestions }: InvoicePanelProps) {
   const { control, getValues, setValue, trigger } = useFormContextSafe();
   const values = useWatch({ control }) as InvoiceFormValues;
   const [selectedTemplateId, setSelectedTemplateId] = useState<InvoiceFormValues["templateId"]>(() => getValues("templateId") ?? "professional");
@@ -935,7 +939,7 @@ export function InvoiceWorkspace({
 
   return (
     <FormProvider {...methods}>
-      <InvoicePanel customers={customers} inventoryItems={inventoryItems} />
+      <InvoicePanel customers={customers} inventoryItems={inventoryItems} tagIds={tagIds} setTagIds={setTagIds} suggestions={suggestions} loadSuggestions={loadSuggestions} />
       <InvoiceSaveBar
         onSaveDraft={() => void handleSaveDraft()}
         onIssue={() => void handleIssue()}
