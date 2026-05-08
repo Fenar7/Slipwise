@@ -107,3 +107,39 @@ export interface MailboxThreadDetail {
   /** Total attachment count across all messages */
   totalAttachments: number;
 }
+
+// ─── Sprint 1.3 additions ────────────────────────────────────────────────────
+
+export type ComposeMode = "new" | "reply" | "reply-all" | "forward";
+export type ComposeLayout = "floating" | "expanded" | "inline";
+export type ComposeSendState = "idle" | "sending" | "sent" | "failed";
+
+export interface ComposeDraftAttachment {
+  id: string;
+  filename: string;
+  sizeLabel: string;
+  mimeType: string;
+}
+
+export interface MailboxComposerState {
+  isOpen: boolean;
+  layout: ComposeLayout;
+  mode: ComposeMode;
+  /** Which mailbox connection this sends from */
+  fromConnectionId: string;
+  fromLabel: string;
+  fromEmail: string;
+  to: string[];
+  cc: string[];
+  bcc: string[];
+  showCc: boolean;
+  showBcc: boolean;
+  subject: string;
+  bodyHtml: string;
+  attachments: ComposeDraftAttachment[];
+  sendState: ComposeSendState;
+  /** threadId being replied to / forwarded, null for new message */
+  threadId: string | null;
+  /** messageId being replied to, null for new/forward */
+  replyToMessageId: string | null;
+}

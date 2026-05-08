@@ -8,12 +8,14 @@ interface MailboxCommandBarProps {
   activeViewLabel: string;
   totalCount?: number;
   unreadCount?: number;
+  onCompose?: () => void;
 }
 
 export function MailboxCommandBar({
   activeViewLabel,
   totalCount,
   unreadCount,
+  onCompose,
 }: MailboxCommandBarProps) {
   const [query, setQuery] = useState("");
   const [focused, setFocused] = useState(false);
@@ -94,6 +96,7 @@ export function MailboxCommandBar({
 
       {/* Compose button */}
       <button
+        onClick={onCompose}
         className="flex h-7 items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold text-white transition-colors hover:opacity-90"
         style={{ background: "#16294D" }}
         title="Compose new message"
