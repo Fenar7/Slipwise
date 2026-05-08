@@ -1,4 +1,4 @@
-import type { MailboxConnection, MailboxGroup, MailboxTreeItem, MailboxThreadDetail } from "./types";
+import type { MailboxConnection, MailboxGroup, MailboxTreeItem, MailboxThreadDetail, MailboxAdminSummary, MailboxPermissionPolicy } from "./types";
 
 export const MOCK_CONNECTIONS: MailboxConnection[] = [
   {
@@ -365,3 +365,36 @@ export const MOCK_THREAD_DETAILS: Record<string, MailboxThreadDetail> = {
     ],
   },
 };
+
+// ─── Sprint 1.4: Admin / permission mock data ────────────────────────────────
+
+const MOCK_POLICIES: Record<string, MailboxPermissionPolicy> = {
+  conn_billing: {
+    connectionId: "conn_billing",
+    readAccess: "all_members",
+    sendAccess: "all_members",
+    manageAccess: "org_admins_only",
+    accessSummary: "All members can read and reply",
+  },
+  conn_support: {
+    connectionId: "conn_support",
+    readAccess: "all_members",
+    sendAccess: "specific_roles",
+    manageAccess: "org_admins_only",
+    accessSummary: "All members can read · Specific roles can reply",
+  },
+  conn_accounts: {
+    connectionId: "conn_accounts",
+    readAccess: "org_admins_only",
+    sendAccess: "org_admins_only",
+    manageAccess: "org_admins_only",
+    accessSummary: "Admins only",
+  },
+};
+
+export const MOCK_ADMIN_SUMMARIES: MailboxAdminSummary[] = MOCK_CONNECTIONS.map((conn) => ({
+  connection: conn,
+  policy: MOCK_POLICIES[conn.id],
+  lastAdminActionAt: conn.status === "reconnect_required" ? "2026-05-07T09:15:00Z" : "2026-05-08T14:30:00Z",
+  connectedBy: "Rahul Verma (Admin)",
+}));

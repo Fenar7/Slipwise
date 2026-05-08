@@ -233,7 +233,7 @@ export function MailboxLeftRail() {
         style={{ borderColor: "#E2E5EA" }}
       >
         <Link
-          href="/app/settings/integrations"
+          href="/app/mailbox/settings"
           className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs font-medium text-[#64748B] transition-colors hover:bg-[#F1F3F7] hover:text-[#0F172A]"
         >
           <Settings className="h-3.5 w-3.5 shrink-0" />

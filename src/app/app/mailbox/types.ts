@@ -144,3 +144,48 @@ export interface MailboxComposerState {
   /** messageId being replied to, null for new/forward */
   replyToMessageId: string | null;
 }
+
+// ─── Sprint 1.4 additions ────────────────────────────────────────────────────
+
+export type MailboxAccessRole = "admin" | "member" | "restricted";
+
+export interface MailboxPermissionPolicy {
+  connectionId: string;
+  /** Who can read threads in this mailbox */
+  readAccess: "org_admins_only" | "all_members" | "specific_roles";
+  /** Who can reply/send from this mailbox */
+  sendAccess: "org_admins_only" | "all_members" | "specific_roles";
+  /** Who can manage this mailbox connection */
+  manageAccess: "org_admins_only";
+  /** Human-readable summary for display */
+  accessSummary: string;
+}
+
+export type ConnectFlowStep =
+  | "idle"
+  | "pre_connect"
+  | "authorizing"
+  | "success"
+  | "reconnect_required"
+  | "failed";
+
+export interface MailboxConnectFlowState {
+  step: ConnectFlowStep;
+  provider: MailboxProvider;
+  /** Populated after success */
+  connectedEmail?: string;
+  /** Populated on failure */
+  errorMessage?: string;
+}
+
+export interface MailboxAdminSummary {
+  connection: MailboxConnection;
+  policy: MailboxPermissionPolicy;
+  /** ISO timestamp of last admin action */
+  lastAdminActionAt: string | null;
+  /** Display name of admin who connected this mailbox */
+  connectedBy: string;
+}
+
+export type DisconnectConfirmState = "idle" | "confirming" | "disconnecting" | "disconnected";
+export type ReconnectConfirmState = "idle" | "confirming" | "reconnecting";
