@@ -132,7 +132,7 @@ function SidebarOrgSwitcher({ initialOrgName }: { initialOrgName?: string }) {
             initial="hidden"
             animate="visible"
             exit="exit"
-            className="absolute left-0 bottom-full z-50 mb-1.5 w-64 overflow-hidden rounded-xl border bg-white shadow-lg"
+            className="absolute left-0 top-full z-50 mt-1.5 w-64 overflow-hidden rounded-xl border bg-white shadow-lg"
             style={{ borderColor: "#E0E0E0" }}
           >
             <div className="border-b px-3 py-2" style={{ borderColor: "#F0F0F0" }}>
@@ -203,6 +203,11 @@ export function AppSidebar({ orgName, initialUser }: AppSidebarProps) {
       {/* Logo */}
       <div className="flex h-14 items-center border-b px-4" style={{ borderColor: "#E0E0E0" }}>
         <Logo variant="full" />
+      </div>
+
+      {/* Org Switcher */}
+      <div className="border-b px-2.5 py-2.5" style={{ borderColor: "#E0E0E0" }}>
+        <SidebarOrgSwitcher initialOrgName={orgName} />
       </div>
 
       {/* Navigation */}
@@ -301,9 +306,6 @@ export function AppSidebar({ orgName, initialUser }: AppSidebarProps) {
 
       {/* Bottom: Profile + Settings */}
       <div className="border-t p-3 space-y-2" style={{ borderColor: "#E0E0E0" }}>
-        {/* Org Switcher */}
-        <SidebarOrgSwitcher initialOrgName={orgName} />
-
         {/* User Profile */}
         <div className="flex items-center gap-2.5 rounded-xl border p-2.5" style={{ borderColor: "#F0F0F0" }}>
           <Avatar name={resolvedName} imageUrl={resolvedAvatar} size="sm" />
