@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { listTags, createTag } from "@/lib/tags/tag-service";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    const result = await listTags({ includeArchived: true });
+    const { searchParams } = new URL(request.url);
+    const includeArchived = searchParams.get("includeArchived") === "true";
+    const result = await listTags({ includeArchived });
     if (!result.success) {
       return NextResponse.json({ error: result.error }, { status: 400 });
     }

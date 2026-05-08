@@ -2,7 +2,6 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { toast } from "sonner";
-import { listTags, createTag } from "@/lib/tags/tag-service";
 
 interface TagOption {
   id: string;
@@ -43,6 +42,40 @@ function getRandomColor() {
   return COLORS[Math.floor(Math.random() * COLORS.length)];
 }
 
+async function fetchTags(includeArchived = false): Promise<TagOption[]> {
+  const qs = includeArchived ? "?includeArchived=true" : "";
+  const res = await fetch(`/api/tags${qs}`);
+  if (!res.ok) throw new Error("Failed to load tags");
+  const json = await res.json();
+  if (!json.tags) throw new Error("Invalid response");
+  return json.tags.map((t: Record<string, unknown>) => ({
+    id: t.id as string,
+    name: t.name as string,
+    slug: t.slug as string,
+    color: t.color as string | null,
+  }));
+}
+
+async function apiCreateTag(input: { name: string; color: string }): Promise<TagOption> {
+  const res = await fetch("/api/tags", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    const json = await res.json().catch(() => ({}));
+    throw new Error(json.error || "Failed to create tag");
+  }
+  const json = await res.json();
+  const t = json.tag;
+  return {
+    id: t.id,
+    name: t.name,
+    slug: t.slug,
+    color: t.color,
+  };
+}
+
 export function TagPicker({
   selectedIds,
   onChange,
@@ -59,14 +92,8 @@ export function TagPicker({
   const [newTagName, setNewTagName] = useState("");
 
   useEffect(() => {
-    listTags({ includeArchived })
-      .then((result) => {
-        if (result.success && result.data) {
-          setTags(result.data.map((t) => ({ id: t.id, name: t.name, slug: t.slug, color: t.color })));
-        } else {
-          setError(result.error ?? "Failed to load tags");
-        }
-      })
+    fetchTags(includeArchived)
+      .then((data) => setTags(data))
       .catch(() => setError("Failed to load tags"))
       .finally(() => setLoading(false));
   }, [includeArchived]);
@@ -90,26 +117,19 @@ export function TagPicker({
     if (!newTagName.trim()) return;
 
     const color = getRandomColor();
-    const result = await createTag({
-      name: newTagName.trim(),
-      color,
-    });
-
-    if (result.success && result.data) {
-      const newTag: TagOption = {
-        id: result.data.id,
-        name: result.data.name,
-        slug: result.data.slug,
-        color: result.data.color,
-      };
+    try {
+      const newTag = await apiCreateTag({
+        name: newTagName.trim(),
+        color,
+      });
       setTags((prev) => [...prev, newTag]);
       onChange([...selectedIds, newTag.id]);
       setNewTagName("");
       setIsCreating(false);
       onTagCreated?.(newTag);
       toast.success(`Tag "${newTag.name}" created`);
-    } else {
-      toast.error(result.error || "Failed to create tag");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to create tag");
     }
   }, [newTagName, selectedIds, onChange, onTagCreated]);
 
