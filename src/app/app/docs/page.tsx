@@ -226,48 +226,35 @@ async function DocsHomeBody() {
           </div>
         </div>
 
-        {/* Right 1/3: Quick Actions + Templates */}
+        {/* Right 1/3: Quick Actions */}
         <div className="flex flex-col gap-3">
-          {/* Quick Actions */}
           <div
             className="rounded-2xl border bg-white p-4"
             style={{ borderColor: "#E0E0E0" }}
           >
-            <h2 className="mb-3 text-sm font-semibold" style={{ color: "#1C1B1F" }}>Quick Actions</h2>
-            <div className="flex flex-col gap-2">
-              {/* Featured */}
-              <Link
-                href="/app/docs/vault"
-                className="flex items-center gap-3 rounded-xl p-3 transition-colors hover:opacity-90"
-                style={{ background: "#DC2626" }}
-              >
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/20">
-                  <LayoutGrid className="h-4 w-4 text-white" />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold text-white">Document Vault</p>
-                  <p className="text-[11px] text-white/80">Browse all {totalDocs} documents</p>
-                </div>
-              </Link>
-              {/* Default actions */}
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-sm font-semibold" style={{ color: "#1C1B1F" }}>Quick Actions</h2>
+            </div>
+            <div className="space-y-2">
               {[
-                { href: "/app/docs/templates", label: "Templates", description: "Browse and manage document templates", icon: Layers },
-                { href: "/app/docs/pdf-studio", label: "PDF Studio", description: "Preview, export, and print documents", icon: FileImage },
+                { href: "/app/docs/vault", label: "Document Vault", description: `Browse all ${totalDocs} documents`, icon: LayoutGrid, iconBg: "#EFF6FF", iconColor: "#2563EB" },
+                { href: "/app/docs/templates", label: "Templates", description: "Browse and manage document templates", icon: Layers, iconBg: "#F5F5F5", iconColor: "#49454F" },
+                { href: "/app/docs/pdf-studio", label: "PDF Studio", description: "Preview, export, and print documents", icon: FileImage, iconBg: "#F5F5F5", iconColor: "#49454F" },
               ].map((action) => (
                 <Link
                   key={action.href}
                   href={action.href}
-                  className="flex items-center gap-3 rounded-xl border p-3 transition-colors hover:border-[#DC2626]"
-                  style={{ borderColor: "#E0E0E0" }}
+                  className="flex items-center gap-2.5 rounded-xl border p-2.5 transition-colors hover:border-[#DC2626]"
+                  style={{ borderColor: "#F0F0F0" }}
                 >
                   <div
-                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
-                    style={{ background: "#F5F5F5", color: "#49454F" }}
+                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg"
+                    style={{ background: action.iconBg, color: action.iconColor }}
                   >
-                    <action.icon className="h-4 w-4" />
+                    <action.icon className="h-3.5 w-3.5" />
                   </div>
                   <div className="min-w-0">
-                    <p className="text-sm font-semibold" style={{ color: "#1C1B1F" }}>{action.label}</p>
+                    <p className="text-xs font-medium" style={{ color: "#1C1B1F" }}>{action.label}</p>
                     <p className="text-[11px]" style={{ color: "#79747E" }}>{action.description}</p>
                   </div>
                 </Link>
