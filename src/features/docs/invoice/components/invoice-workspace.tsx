@@ -413,18 +413,6 @@ function InvoicePanel({ customers = [], inventoryItems = [], tagIds = [], setTag
             : undefined
       }
       sections={invoiceWorkspaceSections}
-      headerContent={
-        <div className="flex items-center gap-2">
-          <div className="w-56">
-            <TagPicker
-              selectedIds={tagIds}
-              onChange={setTagIds}
-              placeholder="Tags..."
-              allowCreate
-            />
-          </div>
-        </div>
-      }
       builderContent={
         <>
           <div id="invoice-setup" className="scroll-mt-28">
@@ -576,7 +564,8 @@ function InvoicePanel({ customers = [], inventoryItems = [], tagIds = [], setTag
               <TagPicker
                 selectedIds={tagIds}
                 onChange={setTagIds}
-                placeholder="Add tags..."
+                placeholder="Search or create tags..."
+                allowCreate
               />
               {suggestions.length > 0 && (
                 <div className="mt-3">

@@ -32,7 +32,6 @@ type DocumentWorkspaceLayoutProps = {
   previewContent: ReactNode;
   exportDialog?: WorkspaceExportDialog;
   documentEditorContent?: ReactNode;
-  headerContent?: ReactNode;
 };
 
 type ViewMode = "form" | "document";
@@ -57,12 +56,11 @@ export function DocumentWorkspaceLayout({
   previewContent,
   exportDialog,
   documentEditorContent,
-  headerContent,
 }: DocumentWorkspaceLayoutProps) {
   const [mobileTab, setMobileTab] = useState<MobileTab>("build");
   const [isDesktopWorkspace, setIsDesktopWorkspace] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>("form");
-  const { registerActions, registerHeaderContent, registerViewToggle, clear } = useWorkspaceTopBar();
+  const { registerActions, registerViewToggle, clear } = useWorkspaceTopBar();
 
   const handleSetViewMode = useCallback((mode: ViewMode) => {
     setViewMode(mode);
@@ -74,11 +72,6 @@ export function DocumentWorkspaceLayout({
     registerActions(actions);
     return () => clear();
   }, [actions, registerActions, clear]);
-
-  // Register header content (tags) in the top bar
-  useEffect(() => {
-    registerHeaderContent(headerContent);
-  }, [headerContent, registerHeaderContent]);
 
   // Register view toggle in the top bar
   useEffect(() => {

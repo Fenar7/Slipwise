@@ -407,18 +407,6 @@ function VoucherPanel({
               : undefined
         }
         sections={voucherWorkspaceSections}
-        headerContent={
-          <div className="flex items-center gap-2">
-            <div className="w-56">
-              <TagPicker
-                selectedIds={tagIds}
-                onChange={setTagIds}
-                placeholder="Tags..."
-                allowCreate
-              />
-            </div>
-          </div>
-        }
         builderContent={
           <>
             <div id="voucher-setup" className="scroll-mt-28">
@@ -673,7 +661,8 @@ function VoucherPanel({
                 <TagPicker
                   selectedIds={tagIds}
                   onChange={setTagIds}
-                  placeholder="Add tags..."
+                  placeholder="Search or create tags..."
+                  allowCreate
                 />
                 {suggestions.length > 0 && (
                   <div className="mt-3">
