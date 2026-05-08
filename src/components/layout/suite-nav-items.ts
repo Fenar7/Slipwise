@@ -15,6 +15,7 @@ import {
   ImageIcon,
   Receipt,
   Handshake,
+  Inbox,
 } from "lucide-react";
 
 export interface NavItem {
@@ -32,6 +33,12 @@ export const suiteNavItems: NavItem[] = [
     label: "Home",
     suite: "home",
     icon: Home,
+  },
+  {
+    href: "/app/mailbox",
+    label: "Mailbox",
+    suite: "mailbox",
+    icon: Inbox,
   },
   {
     href: "/app/docs",
