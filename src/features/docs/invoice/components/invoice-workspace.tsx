@@ -798,6 +798,7 @@ import type { ExistingInvoice } from "@/app/app/docs/invoices/new/branding-wrapp
 interface InvoiceWorkspaceProps {
   existingInvoice?: ExistingInvoice | null;
   initialTemplateId?: string;
+  initialAccentColor?: string;
   customers?: Array<{
     id: string;
     name: string;
@@ -819,12 +820,13 @@ interface InvoiceWorkspaceProps {
 export function InvoiceWorkspace({
   existingInvoice,
   initialTemplateId,
+  initialAccentColor,
   customers = [],
   inventoryItems = [],
 }: InvoiceWorkspaceProps) {
   const baseValues = existingInvoice
     ? convertInvoiceToFormValues(existingInvoice)
-    : invoiceDefaultValues;
+    : { ...invoiceDefaultValues, branding: { ...invoiceDefaultValues.branding, accentColor: initialAccentColor ?? invoiceDefaultValues.branding.accentColor } };
   const defaultValues = initialTemplateId && !existingInvoice
     ? { ...baseValues, templateId: initialTemplateId as InvoiceTemplateId }
     : baseValues;
