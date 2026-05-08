@@ -73,13 +73,13 @@ export function ModernCardVoucherTemplate({
             "linear-gradient(135deg, var(--voucher-accent), color-mix(in srgb, var(--voucher-accent) 78%, #000))",
         }}
       >
-        <p className="text-[0.65rem] font-semibold uppercase tracking-[0.3em] text-white/60">
+        <p className="text-[0.65rem] font-semibold uppercase tracking-[0.3em] text-white">
           Amount
         </p>
         <p className="mt-3 text-4xl font-bold text-white">
           {document.amountFormatted}
         </p>
-        <p className="mt-3 text-sm italic leading-6 text-white/75">
+        <p className="mt-3 text-sm italic leading-6 text-white">
           {document.amountInWords}
         </p>
       </section>
@@ -234,9 +234,9 @@ function ModernCardEditor() {
             "linear-gradient(135deg, var(--voucher-accent), color-mix(in srgb, var(--voucher-accent) 78%, #000))",
         }}
       >
-        <p className="text-[0.65rem] font-semibold uppercase tracking-[0.3em] text-white/60">Amount</p>
+        <p className="text-[0.65rem] font-semibold uppercase tracking-[0.3em] text-white">Amount</p>
         <p className="mt-3 text-4xl font-bold text-white">{doc.amountFormatted}</p>
-        <p className="mt-3 text-sm italic leading-6 text-white/75">{doc.amountInWords}</p>
+        <p className="mt-3 text-sm italic leading-6 text-white">{doc.amountInWords}</p>
       </section>
 
       {/* Details grid */}

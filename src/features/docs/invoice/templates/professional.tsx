@@ -86,9 +86,9 @@ function ProfessionalEditor({ document }: { document: InvoiceDocument }) {
             </div>
           </div>
           <div className="rounded-[1.4rem] p-5 text-white" style={{ backgroundColor: "var(--voucher-accent)" }}>
-            <p className="text-[0.68rem] uppercase tracking-[0.25em] text-white/72">Grand total</p>
-            <p className="mt-3 text-3xl font-medium">{doc.grandTotalFormatted}</p>
-            <p className="mt-4 text-sm leading-7 text-white/82">{doc.amountInWords}</p>
+            <p className="text-[0.68rem] uppercase tracking-[0.25em] text-white">Grand total</p>
+            <p className="mt-3 text-3xl font-medium text-white">{doc.grandTotalFormatted}</p>
+            <p className="mt-4 text-sm leading-7 text-white">{doc.amountInWords}</p>
           </div>
         </div>
       </section>
@@ -295,9 +295,9 @@ export function ProfessionalInvoiceTemplate({
             </div>
           </div>
           <div className="rounded-[1.4rem] p-5 text-white" style={{ backgroundColor: "var(--voucher-accent)" }}>
-            <p className="text-[0.68rem] uppercase tracking-[0.25em] text-white/72">Grand total</p>
-            <p className="mt-3 text-3xl font-medium">{document.grandTotalFormatted}</p>
-            <p className="mt-4 text-sm leading-7 text-white/82">{document.amountInWords}</p>
+            <p className="text-[0.68rem] uppercase tracking-[0.25em] text-white">Grand total</p>
+            <p className="mt-3 text-3xl font-medium text-white">{document.grandTotalFormatted}</p>
+            <p className="mt-4 text-sm leading-7 text-white">{document.amountInWords}</p>
           </div>
         </div>
       </section>

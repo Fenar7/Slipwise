@@ -1,6 +1,6 @@
 # Slipwise Mailbox Platform PRD
 
-**Document Version:** 3.0  
+**Document Version:** 4.0  
 **Date:** May 2026  
 **Product:** Slipwise  
 **Prepared by:** Product / Engineering Planning  
@@ -1333,7 +1333,98 @@ Expected fields:
 - `degradedState`
 - `watchExpiry`
 
-### 22.8 UI-facing shapes
+### 22.8 MailboxDraft
+
+Represents a persisted compose or reply draft.
+
+Expected fields:
+
+- `id`
+- `orgId`
+- `mailboxConnectionId`
+- `threadId`
+- `mode`
+- `fromIdentity`
+- `to`
+- `cc`
+- `bcc`
+- `subject`
+- `htmlBody`
+- `textBody`
+- `attachmentRefs`
+- `status`
+- `lastAutosavedAt`
+- `createdBy`
+- `createdAt`
+- `updatedAt`
+
+### 22.9 MailboxAssignment
+
+Represents ownership and workflow responsibility for a thread.
+
+Expected fields:
+
+- `id`
+- `orgId`
+- `threadId`
+- `assigneeId`
+- `assignedBy`
+- `status`
+- `assignedAt`
+- `updatedAt`
+
+### 22.10 MailboxAuditEvent
+
+Represents mailbox-specific operational audit history.
+
+Expected fields:
+
+- `id`
+- `orgId`
+- `mailboxConnectionId`
+- `threadId`
+- `messageId`
+- `actorId`
+- `action`
+- `summary`
+- `metadata`
+- `createdAt`
+
+### 22.11 MailboxProviderCursor
+
+Represents provider-specific sync checkpoints.
+
+Expected fields:
+
+- `id`
+- `orgId`
+- `mailboxConnectionId`
+- `provider`
+- `cursorType`
+- `cursorValue`
+- `expiresAt`
+- `lastAdvancedAt`
+- `createdAt`
+- `updatedAt`
+
+### 22.12 Provider interfaces
+
+The mailbox subsystem must later define stable provider-facing contracts for:
+
+- `connectMailbox`
+- `refreshMailboxAuthorization`
+- `listMailboxFoldersOrViews`
+- `syncMailboxDelta`
+- `fetchThreadDetail`
+- `fetchAttachmentMetadata`
+- `sendMessage`
+- `replyToThread`
+- `forwardMessage`
+- `disconnectMailbox`
+
+The product should never directly depend on raw Gmail-specific payload shapes beyond the provider adapter layer.
+
+### 22.13 UI-facing shapes
 
 The UI will later need stable shapes for:
 
@@ -1342,6 +1433,8 @@ The UI will later need stable shapes for:
 - `MailboxThreadDetail`
 - `MailboxComposerState`
 - `MailboxSearchState`
+- `MailboxHealthState`
+- `MailboxDiagnosticsSummary`
 
 The Phase 1 design should anticipate these stable interface boundaries.
 
@@ -1388,6 +1481,15 @@ The mailbox platform will later require:
 - scheduled reconciliation
 - watch/subscription renewal
 
+The implementation sequence should explicitly separate:
+
+- connection establishment
+- initial thread/message ingestion
+- provider checkpoint advancement
+- backfill continuation
+- attachment metadata hydration
+- reconciliation and replay tooling
+
 ### 24.2 Reliability requirements
 
 The platform must later be:
@@ -1418,6 +1520,17 @@ Send/reply flows must later account for:
 - send failures
 
 Phase 1 should reflect these realities in error-state planning.
+
+### 24.5 Sync model rule
+
+Gmail should be treated as a mailbox provider with:
+
+- API-driven initial sync
+- incremental checkpoint-based refresh
+- scheduled reconciliation safety pass
+- explicit degraded/reconnect-needed states
+
+The PRD should not assume a single always-live webhook path is sufficient for operational reliability.
 
 ---
 
@@ -1487,6 +1600,21 @@ The product should reserve later admin surfaces for:
 
 These should exist, but not clutter the main inbox experience.
 
+### 26.4 Telemetry and launch observability
+
+The later implementation phases must also track:
+
+- mailbox connect success/failure
+- sync lag
+- sync error classes
+- send success/failure
+- reply latency
+- mailbox count per org
+- thread volume by mailbox
+- operator recovery usage
+
+This telemetry is required for launch readiness and cannot be left as an afterthought.
+
 ---
 
 ## 27. Delivery Workflow: Branches, Phases, and Sprints
@@ -1502,10 +1630,13 @@ The mailbox initiative should use a dedicated root branch:
 Recommended phase branches:
 
 - `feature/mailbox-platform-phase-1-static-design`
-- `feature/mailbox-platform-phase-2-gmail-foundation`
-- `feature/mailbox-platform-phase-3-inbox-functionality`
-- `feature/mailbox-platform-phase-4-compose-linking`
-- `feature/mailbox-platform-phase-5-hardening-provider-extensibility`
+- `feature/mailbox-platform-phase-2-domain-gmail-connection`
+- `feature/mailbox-platform-phase-3-sync-ingestion-mailbox-state`
+- `feature/mailbox-platform-phase-4-real-inbox-workspace`
+- `feature/mailbox-platform-phase-5-compose-send-attachments`
+- `feature/mailbox-platform-phase-6-linking-assignment-smart-views`
+- `feature/mailbox-platform-phase-7-admin-permissions-diagnostics`
+- `feature/mailbox-platform-phase-8-hardening-provider-extensibility`
 
 ### 27.3 Sprint branch naming
 
@@ -1517,6 +1648,9 @@ Examples:
 - `feature/mailbox-platform-phase-1-sprint-2-thread-list-detail`
 - `feature/mailbox-platform-phase-1-sprint-3-compose-flows`
 - `feature/mailbox-platform-phase-1-sprint-4-settings-admin`
+- `feature/mailbox-platform-phase-2-sprint-1-schema-provider-contracts`
+- `feature/mailbox-platform-phase-3-sprint-2-delta-sync-cursors`
+- `feature/mailbox-platform-phase-5-sprint-4-send-reconciliation`
 
 ### 27.4 Review and merge workflow
 
@@ -1652,62 +1786,633 @@ Acceptance:
 - mailbox module looks complete in all major states
 - stakeholder signoff possible before backend work starts
 
-## Phase 2 — Gmail Foundation
+### Phase 1 completion gate
+
+Phase 1 is complete only when:
+
+- all six sprint PRs are merged into the phase branch
+- major mailbox screens exist as believable product surfaces
+- the shell, navigation, compose, thread list, settings, smart views, and edge states are all represented
+- the static product no longer has missing IA decisions that would block backend engineering
+
+## Phase 2 — Domain Model and Gmail Connection Backbone
 
 ### Goal
 
-Build the provider and mailbox-domain backbone needed to support the designed UI.
+Build the real mailbox schema, provider abstraction, and Gmail connection lifecycle the later phases depend on.
 
-Likely sprint themes:
+### Deliverable standard
 
-- Gmail OAuth and mailbox connection model
-- mailbox registry and persistence
-- provider abstraction
-- sync state model
-- attachment metadata foundation
+Phase 2 must result in:
 
-## Phase 3 — Inbox Functionality
+- real mailbox Prisma models and migrations
+- a provider-neutral mailbox service layer
+- Gmail OAuth connect/refresh/disconnect flows
+- mailbox registry and identity persistence
+- server-enforced admin governance for mailbox connections
+- tests for connection lifecycle and org scoping
+
+### Sprint 2.1 — Schema and provider contracts
+
+Scope:
+
+- add mailbox domain models to Prisma
+- define mailbox provider interfaces
+- define stable UI-facing read shapes
+- add mailbox audit event model
+- add draft, assignment, and provider cursor models
+
+Acceptance:
+
+- mailbox schema is coherent and migration-ready
+- provider adapter boundaries are explicit
+- future phases do not need to invent mailbox core models ad hoc
+
+### Sprint 2.2 — Gmail OAuth and token lifecycle
+
+Scope:
+
+- Gmail OAuth connect callback flow
+- token encryption/reference strategy
+- refresh token lifecycle
+- reconnect-needed state contract
+- mailbox identity capture from Gmail account
+
+Acceptance:
+
+- Gmail connect flow can persist mailbox authorization safely
+- reconnect-needed state is explicit and testable
+- token handling aligns with existing security patterns
+
+### Sprint 2.3 — Mailbox registry and connection administration
+
+Scope:
+
+- mailbox connection persistence
+- connection list/read models
+- connect/disconnect governance actions
+- connection status and health fields
+- admin connection management UX contract
+
+Acceptance:
+
+- orgs can have multiple registered mailbox connections
+- connection administration is clearly admin-scoped
+- the mailbox registry is stable enough for sync work
+
+### Sprint 2.4 — Connection permissions and org-scoped visibility
+
+Scope:
+
+- mailbox visibility model
+- mailbox access rules by org member role/policy
+- server-side enforcement contract
+- restricted mailbox shape for UI consumers
+- audit events for connect/disconnect/governance actions
+
+Acceptance:
+
+- mailbox access rules are defined before inbox data work starts
+- restricted visibility is supported without leaking metadata
+- governance actions are auditable and org-scoped
+
+### Phase 2 completion gate
+
+Phase 2 is complete only when:
+
+- mailbox schema and provider contracts are merged
+- Gmail mailbox connections can be securely created and governed
+- mailbox visibility and access rules are locked
+- downstream sync phases can rely on stable mailbox identifiers and auth lifecycle
+
+## Phase 3 — Sync, Ingestion, and Mailbox State
 
 ### Goal
 
-Back the workspace with real mailbox data and core inbox operations.
+Ingest Gmail mailbox data into Slipwise reliably enough to power real inbox experiences.
 
-Likely sprint themes:
+### Deliverable standard
 
-- thread list from real data
-- thread detail rendering
-- mailbox switching
-- unread/read and basic actions
-- assignment/status support
-- search/filter basics
+Phase 3 must result in:
 
-## Phase 4 — Compose, Attachments, and Linking
+- initial mailbox backfill capability
+- incremental sync with stable checkpoints
+- normalized thread/message/participant ingestion
+- sync status, degraded state, and retry/recovery model
+- attachment metadata ingestion foundation
+
+### Sprint 3.1 — Initial sync pipeline
+
+Scope:
+
+- mailbox bootstrap sync
+- provider fetch orchestration
+- raw-to-normalized ingestion path
+- initial thread/message creation
+- sync bookkeeping for first load
+
+Acceptance:
+
+- a newly connected mailbox can produce normalized mailbox data
+- ingestion is idempotent enough for rerun safety
+- first-sync state is observable
+
+### Sprint 3.2 — Incremental sync and provider cursors
+
+Scope:
+
+- delta sync model
+- provider cursor persistence
+- mailbox-scoped sync advancement
+- watch/subscription renewal contract
+- sync scheduling hooks
+
+Acceptance:
+
+- mailbox sync can advance incrementally without full reimport
+- cursor expiration and renewal are modeled explicitly
+- concurrent mailbox sync behavior is mailbox-scoped
+
+### Sprint 3.3 — Thread/message normalization and participant extraction
+
+Scope:
+
+- participant extraction
+- thread grouping rules
+- message direction classification
+- snippet/body metadata normalization
+- attachment metadata extraction
+
+Acceptance:
+
+- normalized mailbox records are UI-usable
+- participants and directionality are stable and testable
+- attachment counts and metadata are available for thread views
+
+### Sprint 3.4 — Degraded state, retry, and recovery model
+
+Scope:
+
+- sync failure classes
+- degraded/reconnect-needed states
+- retry and replay rules
+- manual support recovery actions contract
+- mailbox health summary shape
+
+Acceptance:
+
+- sync failure handling is designed as product behavior, not just logs
+- degraded mailbox states are explicit
+- later UI/admin work has stable health and recovery primitives
+
+### Phase 3 completion gate
+
+Phase 3 is complete only when:
+
+- normalized mailbox data can be ingested and refreshed
+- mailbox sync state is explicit and supportable
+- failure/recovery states are modeled clearly
+- the inbox UI can safely consume real mailbox data next
+
+## Phase 4 — Real Inbox Workspace and Core Thread Operations
 
 ### Goal
 
-Make mailbox operationally complete for real work.
+Replace static mailbox surfaces with real inbox behavior for reading, triaging, and switching mailboxes.
 
-Likely sprint themes:
+### Deliverable standard
 
-- send/reply/reply-all/forward via Gmail
-- attachment upload/download
-- outbound reconciliation
-- linked record actions
-- context panel backed by real data
+Phase 4 must result in:
 
-## Phase 5 — Hardening and Provider Extensibility
+- thread list backed by live mailbox data
+- thread detail/message stack rendering
+- mailbox switching and all-inboxes views on real data
+- read/unread/archive/basic thread actions
+- baseline search and filter behavior
+
+### Sprint 4.1 — Thread list from real data
+
+Scope:
+
+- live thread list queries
+- all-inboxes and single-mailbox query paths
+- unread/selected sorting behavior
+- mailbox counts and summary pills
+- pagination or windowing strategy
+
+Acceptance:
+
+- mailbox thread list is no longer static
+- mailbox switching uses real data cleanly
+- unread and recency behavior is trustworthy
+
+### Sprint 4.2 — Thread detail and message stack rendering
+
+Scope:
+
+- live thread detail fetch
+- message stack rendering from normalized messages
+- participant headers
+- quoted reply rendering rules
+- no-thread and missing-thread states
+
+Acceptance:
+
+- users can read a full thread inside Slipwise
+- the reading pane behaves like a real operational mailbox
+- detail rendering is stable across common thread shapes
+
+### Sprint 4.3 — Core thread actions
+
+Scope:
+
+- mark read/unread
+- archive/unarchive if supported in product model
+- flag/star model if retained
+- basic thread status persistence
+- audit emission for core thread actions
+
+Acceptance:
+
+- common triage actions are available from real data
+- action semantics are auditable
+- mailbox state remains consistent after actions
+
+### Sprint 4.4 — Search and filter basics
+
+Scope:
+
+- basic mailbox search inputs
+- filter chips on live data
+- mailbox/status/assignment filters where available
+- empty-result states
+- query-state contract for later smart views
+
+Acceptance:
+
+- users can narrow thread views meaningfully
+- search/filter state is stable enough for saved views later
+- no major mismatch exists between visible filters and data reality
+
+### Phase 4 completion gate
+
+Phase 4 is complete only when:
+
+- users can browse and read real threads
+- core inbox operations work on live mailbox data
+- mailbox switching is stable
+- the product is credible as a real inbox, not just connected infrastructure
+
+## Phase 5 — Compose, Send, Drafts, and Attachments
 
 ### Goal
 
-Make mailbox durable, supportable, and ready for future providers.
+Make mailbox usable for actual outbound communication work.
 
-Likely sprint themes:
+### Deliverable standard
 
-- diagnostics and recovery
-- reconciliation hardening
-- audit/security completion
-- rate-limit/retry behavior
-- Zoho-ready provider cleanup
+Phase 5 must result in:
+
+- draft persistence
+- reply/reply-all/forward/send via Gmail
+- correct mailbox identity handling
+- attachment upload/download contract
+- send reconciliation and failure behavior
+
+### Sprint 5.1 — Composer backend and draft persistence
+
+Scope:
+
+- mailbox draft model usage
+- autosave contract
+- reply/forward draft initialization
+- discard/restore rules
+- draft permission checks
+
+Acceptance:
+
+- compose flows persist meaningfully
+- drafts are modeled as first-class product data
+- users do not lose compose state trivially
+
+### Sprint 5.2 — Send, reply, reply-all, and forward
+
+Scope:
+
+- Gmail send path
+- reply/reply-all/forward semantics
+- sender identity selection rules
+- server-side permission enforcement
+- outbound audit events
+
+Acceptance:
+
+- users can send and reply fully inside Slipwise
+- the correct mailbox identity is always used
+- outbound actions are auditable and role-safe
+
+### Sprint 5.3 — Attachment handling
+
+Scope:
+
+- attachment metadata to UI
+- outbound attachment upload contract
+- download access rules
+- inline versus file attachment behavior
+- attachment failure states
+
+Acceptance:
+
+- attachments behave like a real email client feature
+- storage and access rules are explicit
+- common attachment workflows are supported
+
+### Sprint 5.4 — Send reconciliation and failure handling
+
+Scope:
+
+- duplicate-protection rules
+- send failure/retry states
+- provider reconciliation after send
+- thread update after outbound message
+- support diagnostics for failed sends
+
+Acceptance:
+
+- send reliability is production-minded
+- failed or ambiguous sends do not create silent trust gaps
+- outbound reconciliation is explicit
+
+### Phase 5 completion gate
+
+Phase 5 is complete only when:
+
+- users can compose, reply, forward, and send inside Slipwise
+- drafts and attachments are first-class
+- outbound reliability and identity rules are trustworthy
+
+## Phase 6 — Linking, Assignment, Workflow State, and Smart Views
+
+### Goal
+
+Make mailbox Slipwise-native by tying conversations into records, ownership, and operational workflows.
+
+### Deliverable standard
+
+Phase 6 must result in:
+
+- thread linking to customers and business records
+- thread assignment and workflow status
+- smart mailbox views backed by real filters
+- contextual side panel with real linked data
+
+### Sprint 6.1 — Thread linking to customers and documents
+
+Scope:
+
+- link/unlink actions
+- suggested-link model
+- primary-link designation
+- link audit semantics
+- record summary blocks for linked entities
+
+Acceptance:
+
+- threads can be connected to Slipwise records intentionally
+- linked context is useful and not decorative
+- link state is auditable and stable
+
+### Sprint 6.2 — Assignment and workflow state
+
+Scope:
+
+- assignee model usage
+- open/pending/closed or equivalent workflow states
+- assignment change actions
+- assignment/status visibility in list and detail
+- permission-aware ownership changes
+
+Acceptance:
+
+- mailbox supports real team triage workflows
+- thread ownership is obvious
+- status and assignment are first-class product concepts
+
+### Sprint 6.3 — Smart views and saved operational filters
+
+Scope:
+
+- all inboxes smart views
+- assignment/status-based views
+- filter persistence contract
+- saved view model if retained
+- stable route/query restoration
+
+Acceptance:
+
+- high-frequency operational views are easy to reopen
+- smart views reflect live thread state
+- mailbox usage feels operational rather than generic
+
+### Sprint 6.4 — Real linked context panel
+
+Scope:
+
+- customer summary
+- invoice/voucher/quote context blocks
+- linked/unlinked suggestions
+- navigation from mailbox to related Slipwise records
+- missing or stale record handling
+
+Acceptance:
+
+- the context panel is backed by real business data
+- mailbox feels integrated into Slipwise rather than isolated
+- stale-link and missing-record states are handled gracefully
+
+### Phase 6 completion gate
+
+Phase 6 is complete only when:
+
+- mailbox is usable as a shared operational inbox
+- ownership, status, linking, and smart views all work together
+- the product materially benefits from Slipwise business context
+
+## Phase 7 — Admin, Permissions, Diagnostics, and Recovery
+
+### Goal
+
+Make mailbox governable, supportable, and safe for real organizations.
+
+### Deliverable standard
+
+Phase 7 must result in:
+
+- mailbox admin settings backed by real data
+- permission-scoped mailbox access
+- connection health and sync diagnostics
+- operator recovery and reconnect flows
+- support-quality audit surfaces
+
+### Sprint 7.1 — Admin mailbox settings and governance
+
+Scope:
+
+- mailbox connection admin screens
+- mailbox display/visibility settings
+- mailbox governance actions
+- reconnect/disconnect confirmations
+- mailbox-level policy surfaces
+
+Acceptance:
+
+- admins can govern mailbox connections safely
+- mailbox settings feel production-grade
+- dangerous actions are clearly intentional
+
+### Sprint 7.2 — Permission-scoped visibility and actions
+
+Scope:
+
+- mailbox-level access enforcement
+- restricted mailbox hiding or partial redaction rules
+- action-level permission checks
+- server-side enforcement for admin and operator actions
+- testable permission matrix
+
+Acceptance:
+
+- mailbox visibility respects org permissions
+- users cannot access or mutate out-of-scope mailboxes
+- the mailbox subsystem aligns with existing auth patterns
+
+### Sprint 7.3 — Diagnostics and recovery tooling
+
+Scope:
+
+- mailbox health views
+- last sync / sync lag / error surfaces
+- reconnect guidance
+- manual sync or replay-safe support actions
+- degraded mailbox guidance
+
+Acceptance:
+
+- operators can diagnose mailbox issues from inside Slipwise
+- degraded and reconnect-required states are actionable
+- support teams are not forced into raw provider logs
+
+### Sprint 7.4 — Audit and support workflows
+
+Scope:
+
+- mailbox-specific audit visibility
+- support event summaries
+- admin-safe debug views
+- safe exposure of provider error detail
+- supportability documentation expectations
+
+Acceptance:
+
+- mailbox actions are operationally traceable
+- support surfaces are useful without leaking unsafe detail
+- admin workflows are ready for production use
+
+### Phase 7 completion gate
+
+Phase 7 is complete only when:
+
+- mailbox operations are governable and supportable
+- permissions are enforced throughout the subsystem
+- degraded and recovery states are practical for real teams
+
+## Phase 8 — Hardening, Provider Extensibility, and Release Readiness
+
+### Goal
+
+Make the mailbox subsystem durable, launchable, and cleanly extensible to future providers.
+
+### Deliverable standard
+
+Phase 8 must result in:
+
+- rate-limit-safe sync/send behavior
+- retry and idempotency hardening
+- provider-neutral cleanup for future Zoho support
+- end-to-end QA, docs, telemetry, and release assets
+
+### Sprint 8.1 — Reliability hardening
+
+Scope:
+
+- retry/backoff rules
+- idempotency guards
+- concurrency and race-condition review
+- attachment/send/sync failure hardening
+- mailbox-scoped lock strategy if needed
+
+Acceptance:
+
+- common operational failure modes are handled safely
+- retries do not create duplicate trust failures
+- the subsystem is stable under realistic load
+
+### Sprint 8.2 — Provider extensibility cleanup
+
+Scope:
+
+- Gmail-specific leakage review
+- provider adapter cleanup
+- neutral naming and interface review
+- Zoho-readiness architecture pass
+- provider-specific assumptions documented explicitly
+
+Acceptance:
+
+- the mailbox subsystem is not trapped in Gmail-only internal design
+- a future second provider can be added without structural rework
+
+### Sprint 8.3 — QA, telemetry, docs, and launch readiness
+
+Scope:
+
+- mailbox telemetry
+- QA scenarios
+- support/runbook docs
+- release checklist
+- adoption and health metrics
+
+Acceptance:
+
+- the team has the assets needed to verify and support launch
+- telemetry is meaningful and low-noise
+- release-readiness is evidence-backed
+
+### Sprint 8.4 — Final end-to-end acceptance
+
+Scope:
+
+- integrated verification across all phases
+- multi-mailbox org validation
+- reconnect/degraded/recovery validation
+- permission and audit validation
+- final acceptance report
+
+Acceptance:
+
+- the full initiative meets the PRD’s operational bar
+- mailbox is ready to merge as a production-grade subsystem
+- no major product or architecture gaps remain unresolved
+
+### Phase 8 completion gate
+
+Phase 8 is complete only when:
+
+- all previous phase gates remain satisfied
+- the subsystem has passed launch-level QA
+- diagnostics, telemetry, audit, and recovery behaviors are complete
+- provider extensibility is structurally believable
+- the mailbox initiative is ready for full product release
 
 ---
 
@@ -1726,7 +2431,18 @@ Phase 1 is accepted only when:
 - edge states are accounted for
 - responsive direction is defined
 
-### 29.2 Full initiative acceptance
+### 29.2 Cross-phase acceptance rules
+
+Every phase and sprint must explicitly satisfy:
+
+- org scoping on all mailbox data and mutations
+- permission-scoped visibility and action enforcement
+- auditability for sensitive operational actions
+- degraded/reconnect-required state handling
+- multi-mailbox clarity in both data and UI models
+- no Gmail-only leakage in the core internal model where avoidable
+
+### 29.3 Full initiative acceptance
 
 The full mailbox initiative is accepted only when:
 
@@ -1737,12 +2453,14 @@ The full mailbox initiative is accepted only when:
 - linked records are surfaced clearly
 - security and audit expectations are satisfied
 - provider architecture is not trapped in Gmail-specific assumptions
+- diagnostics and recovery tooling are practical for operators
+- teams can remain in Slipwise for day-to-day customer email work without falling back to Gmail for core flows
 
 ---
 
 ## 30. Test Plan
 
-### 30.1 Phase 1 static review scenarios
+### 30.1 Static product review scenarios
 
 Required scenarios:
 
@@ -1761,11 +2479,38 @@ Required scenarios:
 - floating composer open
 - expanded composer open
 
-### 30.2 Functional test scenarios for later phases
+### 30.2 Domain and provider contract tests
+
+Required test areas:
+
+- mailbox connection lifecycle
+- provider adapter contract compliance
+- OAuth token refresh and reconnect-needed transitions
+- sync cursor persistence
+- draft persistence and recovery
+- assignment/status state transitions
+- record link/unlink semantics
+
+### 30.3 Sync and ingestion tests
+
+Required scenarios:
+
+- initial mailbox sync
+- incremental delta sync
+- repeated sync idempotency
+- participant extraction correctness
+- attachment metadata ingestion
+- degraded sync and retry behavior
+- reconnect-required mailbox after auth expiry
+
+### 30.4 Real inbox functional tests
 
 - connect/disconnect Gmail
 - switch between multiple mailboxes
+- read thread and message stack
 - read thread and attachment metadata
+- mark thread read/unread
+- archive/basic triage actions
 - reply from correct mailbox identity
 - forward mail
 - assign/unassign thread
@@ -1774,7 +2519,30 @@ Required scenarios:
 - degraded mailbox handling
 - permission-scoped mailbox visibility
 
-### 30.3 UX validation questions
+### 30.5 Compose and send reliability tests
+
+Required scenarios:
+
+- create new draft
+- autosave draft
+- restore draft after navigation
+- send new message
+- reply/reply-all/forward
+- send with attachments
+- send failure and retry-safe handling
+- duplicate protection on ambiguous send outcomes
+
+### 30.6 Admin, permissions, and diagnostics tests
+
+Required scenarios:
+
+- mailbox visibility differs by org member permission
+- admin-only governance actions are blocked for unauthorized users
+- reconnect/disconnect flows are audited
+- degraded mailbox surfaces expose actionable recovery information
+- support diagnostics do not leak unsafe provider data
+
+### 30.7 UX validation questions
 
 Mailbox should be judged successful if reviewers can answer yes to:
 
@@ -1783,6 +2551,7 @@ Mailbox should be judged successful if reviewers can answer yes to:
 - are common actions easy to find?
 - does it look like a trustworthy operational tool?
 - can users understand who owns a thread and what it is linked to?
+- can operators understand mailbox health without specialist knowledge?
 
 ---
 

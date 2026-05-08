@@ -6,14 +6,30 @@ import { motion } from "motion/react";
 import { getNavigationContext } from "./navigation-context";
 import { NotificationBell } from "@/features/flow/components/notification-bell";
 import { ProxyBanner } from "@/features/access/components/proxy-banner";
+import { useWorkspaceTopBar } from "./workspace-topbar-context";
+import { cn } from "@/lib/utils";
+import { FileText, ScrollText } from "lucide-react";
 
 interface AppTopbarProps {
   orgName?: string;
 }
 
+function actionClassName(variant: "primary" | "secondary" | "subtle") {
+  switch (variant) {
+    case "primary":
+      return "bg-[var(--brand-cta)] text-white hover:bg-[#B91C1C]";
+    case "secondary":
+      return "border border-[var(--border-default)] bg-white text-[var(--text-primary)] hover:bg-[var(--surface-subtle)]";
+    case "subtle":
+    default:
+      return "bg-transparent text-[var(--text-muted)] hover:text-[var(--text-primary)]";
+  }
+}
+
 export function AppTopbar({ orgName }: AppTopbarProps) {
   const pathname = usePathname();
-  const { breadcrumbs, pageTitle, suiteLabel } = getNavigationContext(pathname);
+  const { breadcrumbs, pageTitle } = getNavigationContext(pathname);
+  const { actions, headerContent, viewToggle } = useWorkspaceTopBar();
 
   return (
     <>
@@ -55,8 +71,75 @@ export function AppTopbar({ orgName }: AppTopbarProps) {
             ))}
           </nav>
 
-          {/* Right: just notification bell */}
-          <div className="flex items-center gap-2 shrink-0">
+          {/* Right: workspace actions + notification bell */}
+          <div className="flex items-center gap-3 shrink-0">
+            {/* Workspace header content (e.g. tags) */}
+            {headerContent}
+
+            {/* Workspace actions */}
+            {actions.length > 0 && (
+              <div className="flex items-center gap-1">
+                {actions.map((action) => {
+                  const className = cn(
+                    "inline-flex items-center justify-center rounded-md px-3 py-1.5 text-xs font-medium transition-all disabled:cursor-wait disabled:opacity-65",
+                    actionClassName(action.variant),
+                  );
+                  return action.href ? (
+                    <Link key={action.id} href={action.href} className={className}>
+                      {action.label}
+                    </Link>
+                  ) : (
+                    <button
+                      key={action.id}
+                      type="button"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        action.onClick?.();
+                      }}
+                      disabled={action.disabled}
+                      className={className}
+                    >
+                      {action.label}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* View toggle (Form/Document) */}
+            {viewToggle && (
+              <div className="flex gap-0.5 rounded-md bg-[var(--surface-subtle)] p-0.5">
+                <button
+                  type="button"
+                  onClick={() => viewToggle.onChange("form")}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded px-2 py-1.5 text-xs font-medium transition-colors",
+                    viewToggle.mode === "form"
+                      ? "bg-white text-[var(--text-primary)] shadow-sm"
+                      : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]",
+                  )}
+                >
+                  <FileText className="h-3.5 w-3.5" />
+                  Form
+                </button>
+                <button
+                  type="button"
+                  onClick={() => viewToggle.onChange("document")}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded px-2 py-1.5 text-xs font-medium transition-colors",
+                    viewToggle.mode === "document"
+                      ? "bg-white text-[var(--text-primary)] shadow-sm"
+                      : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]",
+                  )}
+                >
+                  <ScrollText className="h-3.5 w-3.5" />
+                  Document
+                </button>
+              </div>
+            )}
+
             <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
               <NotificationBell />
             </motion.div>
