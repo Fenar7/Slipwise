@@ -8,15 +8,17 @@ import { MailboxThreadList, MOCK_THREADS } from "./mailbox-thread-list";
 import { MailboxReadingPaneEmpty } from "./mailbox-reading-pane-empty";
 import { GLOBAL_SMART_VIEWS, MOCK_CONNECTIONS } from "./mock-data";
 
-function resolveViewLabel(pathname: string): string {
+export function resolveViewLabel(pathname: string): string {
   const smartView = GLOBAL_SMART_VIEWS.find(
-    (v) => pathname === v.href || pathname.startsWith(`${v.href}/`)
+    (v) =>
+      v.href === "/app/mailbox"
+        ? pathname === v.href
+        : pathname === v.href || pathname.startsWith(`${v.href}/`)
   );
   if (smartView) return smartView.label;
 
   for (const conn of MOCK_CONNECTIONS) {
-    const prefix = conn.displayName.toLowerCase();
-    if (pathname.includes(`/${prefix}/`)) {
+    if (pathname.includes(`/${conn.slug}/`)) {
       const folder = pathname.split("/").pop() ?? "Inbox";
       return `${conn.displayName} · ${folder.charAt(0).toUpperCase()}${folder.slice(1)}`;
     }

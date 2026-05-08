@@ -11,7 +11,7 @@ import { MailboxLeftRail } from "../mailbox-left-rail";
 import { MailboxCommandBar } from "../mailbox-command-bar";
 import { MailboxThreadList } from "../mailbox-thread-list";
 import { MailboxReadingPaneEmpty } from "../mailbox-reading-pane-empty";
-import { MailboxWorkspace } from "../mailbox-workspace";
+import { MailboxWorkspace, resolveViewLabel } from "../mailbox-workspace";
 import { GLOBAL_SMART_VIEWS, MOCK_CONNECTIONS, MOCK_MAILBOX_GROUPS } from "../mock-data";
 
 // ─── Mock data integrity ────────────────────────────────────────────────────
@@ -40,6 +40,15 @@ describe("Mailbox mock data", () => {
     for (const group of MOCK_MAILBOX_GROUPS) {
       expect(group.items.length).toBeGreaterThan(0);
     }
+  });
+
+  it("uses stable slugs for mailbox route construction", () => {
+    expect(MOCK_CONNECTIONS.every((connection) => connection.slug.length > 0)).toBe(true);
+    expect(MOCK_CONNECTIONS.map((connection) => connection.slug)).toEqual([
+      "billing",
+      "support",
+      "accounts",
+    ]);
   });
 });
 
@@ -200,6 +209,11 @@ describe("MailboxReadingPaneEmpty", () => {
 // ─── MailboxWorkspace (integration) ────────────────────────────────────────
 
 describe("MailboxWorkspace", () => {
+  it("resolves mailbox-specific folder labels from stable slugs", () => {
+    expect(resolveViewLabel("/app/mailbox/billing/inbox")).toBe("Billing · Inbox");
+    expect(resolveViewLabel("/app/mailbox/support/sent")).toBe("Support · Sent");
+  });
+
   it("renders the workspace container", () => {
     render(<MailboxWorkspace />);
     expect(screen.getByTestId("mailbox-workspace")).toBeInTheDocument();

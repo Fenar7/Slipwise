@@ -15,6 +15,7 @@ export interface MailboxConnection {
   id: string;
   orgId: string;
   provider: MailboxProvider;
+  slug: string;
   emailAddress: string;
   displayName: string;
   status: MailboxConnectionStatus;

@@ -5,6 +5,7 @@ export const MOCK_CONNECTIONS: MailboxConnection[] = [
     id: "conn_billing",
     orgId: "org_1",
     provider: "gmail",
+    slug: "billing",
     emailAddress: "billing@acmecorp.com",
     displayName: "Billing",
     status: "connected",
@@ -17,6 +18,7 @@ export const MOCK_CONNECTIONS: MailboxConnection[] = [
     id: "conn_support",
     orgId: "org_1",
     provider: "gmail",
+    slug: "support",
     emailAddress: "support@acmecorp.com",
     displayName: "Support",
     status: "connected",
@@ -29,6 +31,7 @@ export const MOCK_CONNECTIONS: MailboxConnection[] = [
     id: "conn_accounts",
     orgId: "org_1",
     provider: "gmail",
+    slug: "accounts",
     emailAddress: "accounts@acmecorp.com",
     displayName: "Accounts",
     status: "reconnect_required",
@@ -131,5 +134,5 @@ function mailboxFolders(connectionId: string, prefix: string): MailboxTreeItem[]
 
 export const MOCK_MAILBOX_GROUPS: MailboxGroup[] = MOCK_CONNECTIONS.map((conn) => ({
   connection: conn,
-  items: mailboxFolders(conn.id, conn.displayName.toLowerCase()),
+  items: mailboxFolders(conn.id, conn.slug),
 }));
