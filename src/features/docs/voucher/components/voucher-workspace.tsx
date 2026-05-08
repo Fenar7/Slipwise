@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
+import { Settings, Palette, FileText, CheckCircle, Eye, Tag } from "lucide-react";
 import {
   FormProvider,
   useForm,
@@ -341,13 +342,6 @@ function VoucherPanel({
   return (
     <>
       <DocumentWorkspaceLayout
-        eyebrow="Voucher workspace"
-        title={isEditing ? "Edit Voucher" : "Voucher Generator"}
-        description={
-          isEditing
-            ? "Update the voucher details and export when ready."
-            : "Create payment and receipt vouchers in a cleaner workspace with live preview, structured input, and export actions that stay close to the document."
-        }
         actions={[
           { id: "home", label: "Back to vault", href: "/app/docs/vouchers", variant: "secondary" },
           {
@@ -412,26 +406,33 @@ function VoucherPanel({
                 } satisfies WorkspaceExportDialog)
               : undefined
         }
-        builderEyebrow="Voucher controls"
-        builderTitle="Build the document"
-        builderDescription="Move from setup to core details, approvals, and visibility without losing the live preview on the right."
         sections={voucherWorkspaceSections}
-        previewEyebrow="Preview"
-        previewTitle="Live A4 document"
-        previewDescription="Review the final voucher while you edit. Template, branding, and field visibility update immediately."
+        headerContent={
+          <div className="flex items-center gap-2">
+            <div className="w-56">
+              <TagPicker
+                selectedIds={tagIds}
+                onChange={setTagIds}
+                placeholder="Tags..."
+                allowCreate
+              />
+            </div>
+          </div>
+        }
         builderContent={
           <>
             <div id="voucher-setup" className="scroll-mt-28">
                 <FormSection
-                  eyebrow="Template"
+                  icon={<Settings className="h-4 w-4" />}
+
                   title="Template and voucher mode"
                   description="Switch layouts or voucher type without losing the entered form state."
                 >
                   {/* Type indicator banner */}
-                  <div className={cn("rounded-lg border px-3 py-2 text-sm font-medium", typeBannerClass)}>
+                  <div className={cn("rounded-md px-3 py-2 text-sm font-medium", typeBannerClass)}>
                     {isPayment
-                      ? "💸 Payment Voucher — money going out"
-                      : "💰 Receipt Voucher — money coming in"}
+                      ? "Payment Voucher — money going out"
+                      : "Receipt Voucher — money coming in"}
                   </div>
 
                   <FieldShell label="Voucher template">
@@ -453,16 +454,16 @@ function VoucherPanel({
                               });
                             }}
                             className={cn(
-                              "rounded-[1.05rem] border px-4 py-3 text-left shadow-[0_12px_28px_rgba(34,34,34,0.04)] transition-colors",
+                              "rounded-md px-4 py-3 text-left transition-colors",
                               active
-                                ? "border-[var(--accent)] bg-white"
-                                : "border-[var(--border-soft)] bg-white/88 hover:bg-white",
+                                ? "bg-[var(--surface-subtle)]"
+                                : "hover:bg-[var(--surface-subtle)]",
                             )}
                           >
                             <span className="block text-sm font-medium text-[var(--foreground)]">
                               {template.name}
                             </span>
-                            <span className="mt-1 block text-xs leading-6 text-[var(--muted-foreground)]">
+                            <span className="mt-1 block text-xs text-[var(--muted-foreground)]">
                               {template.description}
                             </span>
                           </button>
@@ -470,13 +471,6 @@ function VoucherPanel({
                       })}
                     </div>
                   </FieldShell>
-                  <div className="rounded-[1rem] border border-[var(--border-soft)] bg-white px-4 py-3 text-sm leading-7 text-[var(--muted-foreground)]">
-                    {
-                      voucherTemplateOptions.find(
-                        (template) => template.id === selectedTemplateId,
-                      )?.description
-                    }
-                  </div>
                   <SelectField<VoucherFormValues>
                     name="voucherType"
                     label="Voucher type"
@@ -491,7 +485,8 @@ function VoucherPanel({
 
             <div id="voucher-branding" className="scroll-mt-28">
                 <FormSection
-                  eyebrow="Branding"
+                  icon={<Palette className="h-4 w-4" />}
+
                   title="Business identity"
                   description="Logo and accent color apply instantly to the live preview."
                 >
@@ -534,7 +529,8 @@ function VoucherPanel({
 
             <div id="voucher-details" className="scroll-mt-28">
                 <FormSection
-                  eyebrow="Voucher details"
+                  icon={<FileText className="h-4 w-4" />}
+
                   title="Core voucher information"
                   description="These fields drive the document content and validation."
                 >
@@ -669,7 +665,8 @@ function VoucherPanel({
 
             <div id="voucher-tags" className="scroll-mt-28">
               <FormSection
-                eyebrow="Tags"
+                icon={<Tag className="h-4 w-4" />}
+
                 title="Document Tags"
                 description="Categorise this voucher for reporting and analytics."
               >
@@ -703,7 +700,8 @@ function VoucherPanel({
 
             <div id="voucher-approvals" className="scroll-mt-28">
                 <FormSection
-                  eyebrow="Approvals"
+                  icon={<CheckCircle className="h-4 w-4" />}
+
                   title="Signature and authorization"
                   description="Only the enabled blocks appear in the preview."
                 >
@@ -726,7 +724,8 @@ function VoucherPanel({
 
             <div id="voucher-visibility" className="scroll-mt-28">
                 <FormSection
-                  eyebrow="Visibility"
+                  icon={<Eye className="h-4 w-4" />}
+
                   title="Show or hide optional fields"
                   description="These toggles immediately rebalance the preview layout."
                 >

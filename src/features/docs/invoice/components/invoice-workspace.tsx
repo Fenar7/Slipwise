@@ -4,6 +4,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { FormProvider, useFieldArray, useForm, useFormContext, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { Palette, User, FileText, Calculator, StickyNote, Eye, Tag } from "lucide-react";
 import {
   DocumentWorkspaceLayout,
   type WorkspaceExportDialog,
@@ -347,9 +348,6 @@ function InvoicePanel({ customers = [], inventoryItems = [], tagIds = [], setTag
 
   return (
     <DocumentWorkspaceLayout
-      eyebrow="Invoice workspace"
-      title="Invoice Generator"
-      description="Build client-ready invoices in a cleaner billing workspace with structured details, live preview, and export actions that stay easy to reach."
       actions={[
         { id: "home", label: "Back to home", href: "/", variant: "secondary" },
         {
@@ -414,18 +412,25 @@ function InvoicePanel({ customers = [], inventoryItems = [], tagIds = [], setTag
               } satisfies WorkspaceExportDialog)
             : undefined
       }
-      builderEyebrow="Invoice controls"
-      builderTitle="Build the invoice"
-      builderDescription="Move from setup through client details, billing rows, and footer controls while keeping the live document visible."
       sections={invoiceWorkspaceSections}
-      previewEyebrow="Preview"
-      previewTitle="Live A4 document"
-      previewDescription="Review the invoice while you edit. Branding, line items, taxes, and payment summary update immediately."
+      headerContent={
+        <div className="flex items-center gap-2">
+          <div className="w-56">
+            <TagPicker
+              selectedIds={tagIds}
+              onChange={setTagIds}
+              placeholder="Tags..."
+              allowCreate
+            />
+          </div>
+        </div>
+      }
       builderContent={
         <>
           <div id="invoice-setup" className="scroll-mt-28">
               <FormSection
-                eyebrow="Template"
+                icon={<Palette className="h-4 w-4" />}
+
                 title="Template and branding"
                 description="Switch invoice layouts without resetting the form or recalculating totals incorrectly."
               >
@@ -448,10 +453,10 @@ function InvoicePanel({ customers = [], inventoryItems = [], tagIds = [], setTag
                             });
                           }}
                           className={cn(
-                            "rounded-[1.05rem] border px-4 py-3 text-left shadow-[0_12px_28px_rgba(34,34,34,0.04)] transition-colors",
+                            "w-full rounded-lg border px-4 py-3 text-left transition-all",
                             active
-                              ? "border-[var(--accent)] bg-white"
-                              : "border-[var(--border-soft)] bg-white/88 hover:bg-white",
+                              ? "border-[var(--brand-cta)] bg-[var(--surface-subtle)]"
+                              : "border-[var(--border-default)] bg-white hover:border-[var(--border-default)] hover:bg-[var(--surface-subtle)]",
                           )}
                         >
                           <span className="block text-sm font-medium text-[var(--foreground)]">
@@ -516,7 +521,8 @@ function InvoicePanel({ customers = [], inventoryItems = [], tagIds = [], setTag
 
           <div id="invoice-client" className="scroll-mt-28">
               <FormSection
-                eyebrow="Client"
+                icon={<User className="h-4 w-4" />}
+
                 title="Client details"
                 description="Control how the client block appears in the invoice preview."
               >
@@ -561,7 +567,9 @@ function InvoicePanel({ customers = [], inventoryItems = [], tagIds = [], setTag
 
           <div id="invoice-tags" className="scroll-mt-28">
             <FormSection
-              eyebrow="Tags"
+              icon={<Tag className="h-4 w-4" />}
+
+
               title="Document Tags"
               description="Categorise this invoice for reporting and analytics."
             >
@@ -595,7 +603,8 @@ function InvoicePanel({ customers = [], inventoryItems = [], tagIds = [], setTag
 
           <div id="invoice-meta" className="scroll-mt-28">
               <FormSection
-                eyebrow="Meta"
+                icon={<FileText className="h-4 w-4" />}
+
                 title="Invoice metadata"
                 description="Dates and payment tracking stay separate from the line-item math."
               >
@@ -635,7 +644,8 @@ function InvoicePanel({ customers = [], inventoryItems = [], tagIds = [], setTag
 
           <div id="invoice-billing" className="scroll-mt-28">
               <FormSection
-                eyebrow="Billing"
+                icon={<Calculator className="h-4 w-4" />}
+
                 title="Line items and totals"
                 description="Each line supports quantity, discount, and tax without leaving the form."
               >
@@ -659,7 +669,8 @@ function InvoicePanel({ customers = [], inventoryItems = [], tagIds = [], setTag
 
           <div id="invoice-footer" className="scroll-mt-28">
               <FormSection
-                eyebrow="Footer"
+                icon={<StickyNote className="h-4 w-4" />}
+
                 title="Notes, terms, bank details, and signature"
                 description="Optional payment and approval information stays grouped here."
               >
@@ -704,7 +715,8 @@ function InvoicePanel({ customers = [], inventoryItems = [], tagIds = [], setTag
 
           <div id="invoice-visibility" className="scroll-mt-28">
               <FormSection
-                eyebrow="Visibility"
+                icon={<Eye className="h-4 w-4" />}
+
                 title="Optional sections"
                 description="Hide optional business, client, and footer blocks without affecting totals."
               >
