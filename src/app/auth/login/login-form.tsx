@@ -251,14 +251,14 @@ export function LoginForm({
               checked={rememberMe}
               onChange={(e) => setRememberMe(e.target.checked)}
               className="h-4 w-4 rounded"
-              style={{ accentColor: "#DC2626" }}
+              style={{ accentColor: "#C05092" }}
             />
             Remember me
           </label>
           <Link
             href="/auth/forgot-password"
             className="text-sm font-medium hover:underline"
-            style={{ color: "#DC2626" }}
+            style={{ color: "#C05092" }}
           >
             Forgot password?
           </Link>
@@ -378,7 +378,7 @@ export function LoginForm({
 
       <p className="mt-6 text-center text-sm" style={{ color: "#79747E" }}>
         Don&apos;t have an account?{" "}
-        <Link href="/auth/signup" className="font-medium hover:underline" style={{ color: "#DC2626" }}>
+        <Link href="/auth/signup" className="font-medium hover:underline" style={{ color: "#C05092" }}>
           Sign up
         </Link>
       </p>

@@ -69,7 +69,7 @@ function VerifyEmailContent() {
         <Link
           href="/auth/login"
           className="block text-sm font-medium hover:underline"
-          style={{ color: "#DC2626" }}
+          style={{ color: "#C05092" }}
         >
           Back to sign in
         </Link>

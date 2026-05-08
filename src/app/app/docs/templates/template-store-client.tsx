@@ -10,6 +10,7 @@ import { CATEGORY_LABELS, DOCTYPE_LABELS } from "@/lib/docs/templates/registry";
 import { TemplateCard } from "@/components/templates/template-card";
 import { TemplatePreviewModal } from "@/components/templates/template-preview-modal";
 import { LayoutGrid, SlidersHorizontal, Settings } from "lucide-react";
+import { ReportDataTable } from "@/features/intel/components/report-data-table";
 
 interface TemplateStoreClientProps {
   templates: TemplateDefinition[];
@@ -295,6 +296,7 @@ function TemplateListRow({
 
   const effectiveId = template.templateIdByDocType?.[activeDocType] ?? template.templateId;
   const isDefault = currentDefaults[activeDocType] === effectiveId;
+
 
   const handleUseOnce = () => {
     const path = {

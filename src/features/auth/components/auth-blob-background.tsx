@@ -41,15 +41,15 @@ export function AuthBlobBackground() {
     ) => {
       const gradient = context.createLinearGradient(0, yBase - amplitude - thickness, 0, yBase + amplitude + thickness);
       gradient.addColorStop(0, "rgba(255,255,255,0)");
-      gradient.addColorStop(0.25, `rgba(254,226,226,${alpha * 0.5})`);
-      gradient.addColorStop(0.5, `rgba(220,38,38,${alpha})`);
-      gradient.addColorStop(0.75, `rgba(254,226,226,${alpha * 0.5})`);
+      gradient.addColorStop(0.25, `rgba(243,210,230,${alpha * 0.5})`);
+      gradient.addColorStop(0.5, `rgba(192,80,146,${alpha})`);
+      gradient.addColorStop(0.75, `rgba(243,210,230,${alpha * 0.5})`);
       gradient.addColorStop(1, "rgba(255,255,255,0)");
 
       context.save();
       context.globalAlpha = 1;
       context.shadowBlur = 18;
-      context.shadowColor = `rgba(220,38,38,${alpha * 0.35})`;
+      context.shadowColor = `rgba(192,80,146,${alpha * 0.35})`;
       context.fillStyle = gradient;
       context.beginPath();
 
@@ -94,14 +94,14 @@ export function AuthBlobBackground() {
         yBase + diagLen * sinA * 0.3,
       );
       gradient.addColorStop(0, "rgba(255,255,255,0)");
-      gradient.addColorStop(0.3, `rgba(252,165,165,${alpha * 0.55})`);
-      gradient.addColorStop(0.5, `rgba(220,38,38,${alpha})`);
-      gradient.addColorStop(0.7, `rgba(252,165,165,${alpha * 0.55})`);
+      gradient.addColorStop(0.3, `rgba(232,165,200,${alpha * 0.55})`);
+      gradient.addColorStop(0.5, `rgba(192,80,146,${alpha})`);
+      gradient.addColorStop(0.7, `rgba(232,165,200,${alpha * 0.55})`);
       gradient.addColorStop(1, "rgba(255,255,255,0)");
 
       context.save();
       context.shadowBlur = 20;
-      context.shadowColor = `rgba(220,38,38,${alpha * 0.3})`;
+      context.shadowColor = `rgba(192,80,146,${alpha * 0.3})`;
       context.fillStyle = gradient;
       context.beginPath();
 
@@ -147,13 +147,13 @@ export function AuthBlobBackground() {
       }
 
       const gradient = context.createRadialGradient(cx - rx * 0.1, cy - ry * 0.1, 0, cx, cy, Math.max(rx, ry));
-      gradient.addColorStop(0, `rgba(255,245,245,${alpha})`);
-      gradient.addColorStop(0.5, `rgba(248,113,113,${alpha * 0.8})`);
-      gradient.addColorStop(1, "rgba(220,38,38,0)");
+      gradient.addColorStop(0, `rgba(252,240,247,${alpha})`);
+      gradient.addColorStop(0.5, `rgba(220,130,180,${alpha * 0.8})`);
+      gradient.addColorStop(1, "rgba(192,80,146,0)");
 
       context.save();
       context.shadowBlur = 16;
-      context.shadowColor = `rgba(220,38,38,${alpha * 0.25})`;
+      context.shadowColor = `rgba(192,80,146,${alpha * 0.25})`;
       context.fillStyle = gradient;
       context.beginPath();
       context.moveTo(points[0]!.x, points[0]!.y);

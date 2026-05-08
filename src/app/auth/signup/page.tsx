@@ -145,7 +145,7 @@ export default function SignupPage() {
 
       <p className="mt-6 text-center text-sm" style={{ color: "#79747E" }}>
         Already have an account?{" "}
-        <Link href="/auth/login" className="font-medium hover:underline" style={{ color: "#DC2626" }}>
+        <Link href="/auth/login" className="font-medium hover:underline" style={{ color: "#C05092" }}>
           Sign in
         </Link>
       </p>

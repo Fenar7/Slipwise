@@ -18,13 +18,13 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         className={cn(
           "inline-flex items-center justify-center font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50",
           {
-            "bg-[var(--brand-cta)] text-white hover:bg-[#B91C1C] shadow-[0_1px_3px_rgba(220,38,38,0.25)]":
+            "bg-[var(--brand-cta)] text-white hover:bg-[#A03D74] shadow-[0_1px_3px_rgba(192,80,146,0.25)]":
               variant === "primary",
             "border border-[var(--border-default)] bg-white text-[var(--text-primary)] hover:bg-[var(--surface-subtle)]":
               variant === "secondary",
             "text-[var(--text-primary)] hover:bg-[var(--surface-subtle)]":
               variant === "ghost",
-            "bg-[var(--state-danger)] text-white hover:bg-[#B91C1C]": variant === "danger",
+            "bg-[var(--state-danger)] text-white hover:bg-[#A03D74]": variant === "danger",
           },
           {
             "h-8 rounded-lg px-3 text-xs": size === "sm",

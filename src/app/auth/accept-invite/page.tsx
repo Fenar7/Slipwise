@@ -64,7 +64,7 @@ function AcceptInviteContent() {
             className="mx-auto h-12 w-12 rounded-full flex items-center justify-center"
             style={{ background: "#F9DEDC" }}
           >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#B3261E" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#C05092" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M18 6 6 18" />
               <path d="m6 6 12 12" />
             </svg>
@@ -134,7 +134,7 @@ function AcceptInviteContent() {
           className="mx-auto h-12 w-12 rounded-full flex items-center justify-center mb-4"
           style={{ background: "#FFDAD6" }}
         >
-          <span className="text-lg font-bold" style={{ color: "#DC2626" }}>S</span>
+          <span className="text-lg font-bold" style={{ color: "#C05092" }}>S</span>
         </div>
       </div>
 

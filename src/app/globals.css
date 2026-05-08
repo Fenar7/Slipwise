@@ -20,7 +20,7 @@
      ---------------------------------------------------------------------- */
   --brand-primary: var(--slipwise-navy);
   --brand-secondary: var(--slipwise-purple);
-  --brand-cta: var(--slipwise-cta-red);
+  --brand-cta: var(--slipwise-purple);
 
   /* ----------------------------------------------------------------------
      Surface Tokens
