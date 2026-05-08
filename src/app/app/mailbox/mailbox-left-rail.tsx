@@ -80,7 +80,10 @@ function HealthBadge({ status }: { status: MailboxConnection["status"] }) {
 
 function NavItem({ item, depth = 0 }: { item: MailboxTreeItem; depth?: number }) {
   const pathname = usePathname();
-  const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
+  const isActive =
+    item.href === "/app/mailbox"
+      ? pathname === item.href
+      : pathname === item.href || pathname.startsWith(`${item.href}/`);
   const Icon = item.icon ? ICON_MAP[item.icon] : null;
 
   return (

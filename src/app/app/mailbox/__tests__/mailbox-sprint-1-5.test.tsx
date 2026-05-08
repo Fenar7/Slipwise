@@ -5,8 +5,10 @@
 import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
+let mockPathname = "/app/mailbox";
+
 vi.mock("next/navigation", () => ({
-  usePathname: () => "/app/mailbox",
+  usePathname: () => mockPathname,
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }),
 }));
 
@@ -16,21 +18,26 @@ import { MailboxWorkspace } from "../mailbox-workspace";
 import { MOCK_LINKED_CONTEXT, SMART_VIEW_DEFS, MOCK_CONNECTIONS } from "../mock-data";
 import type { LinkedContextState, ActiveFilterState } from "../types";
 
+function renderWorkspaceAtPath(pathname = "/app/mailbox") {
+  mockPathname = pathname;
+  return render(<MailboxWorkspace />);
+}
+
 // ─── Sprint 1.1–1.4 regression ───────────────────────────────────────────────
 
 describe("Sprint 1.1–1.4 regression", () => {
   it("workspace still renders", () => {
-    render(<MailboxWorkspace />);
+    renderWorkspaceAtPath();
     expect(screen.getByTestId("mailbox-workspace")).toBeInTheDocument();
   });
 
   it("left rail still renders", () => {
-    render(<MailboxWorkspace />);
+    renderWorkspaceAtPath();
     expect(screen.getByRole("complementary", { name: /mailbox navigation/i })).toBeInTheDocument();
   });
 
   it("thread list pane still renders", () => {
-    render(<MailboxWorkspace />);
+    renderWorkspaceAtPath();
     expect(screen.getByTestId("mailbox-thread-list-pane")).toBeInTheDocument();
   });
 });
@@ -386,42 +393,86 @@ describe("FilterChipsBar", () => {
 // ─── Workspace filter integration ────────────────────────────────────────────
 
 describe("MailboxWorkspace — Sprint 1.5 filter integration", () => {
-  it("filter chips bar is not shown initially", () => {
-    render(<MailboxWorkspace />);
-    expect(screen.queryByTestId("filter-chips-bar")).not.toBeInTheDocument();
+  it("filter chips bar is shown initially so filters are reachable", () => {
+    renderWorkspaceAtPath();
+    expect(screen.getByTestId("filter-chips-bar")).toBeInTheDocument();
   });
 
   it("context panel container renders", () => {
-    render(<MailboxWorkspace />);
+    renderWorkspaceAtPath();
     expect(screen.getByTestId("mailbox-context-panel-container")).toBeInTheDocument();
   });
 
   it("context panel empty state shown when no thread selected", () => {
-    render(<MailboxWorkspace />);
+    renderWorkspaceAtPath();
     expect(screen.getByTestId("context-panel-empty")).toBeInTheDocument();
   });
 
   it("selecting a thread shows context panel", () => {
-    render(<MailboxWorkspace />);
+    renderWorkspaceAtPath();
     const options = screen.getAllByRole("option");
     fireEvent.click(options[0]); // t1
     expect(screen.getByTestId("context-panel")).toBeInTheDocument();
   });
 
   it("context panel shows linked records for selected thread", () => {
-    render(<MailboxWorkspace />);
+    renderWorkspaceAtPath();
     const options = screen.getAllByRole("option");
     fireEvent.click(options[0]); // t1 — has invoice link
     expect(screen.getByTestId("link-card-lnk_t1_inv")).toBeInTheDocument();
   });
 
   it("left rail includes Linked smart view", () => {
-    render(<MailboxWorkspace />);
+    renderWorkspaceAtPath();
     expect(screen.getByRole("link", { name: /^linked$/i })).toBeInTheDocument();
   });
 
   it("left rail includes Unlinked smart view", () => {
-    render(<MailboxWorkspace />);
+    renderWorkspaceAtPath();
     expect(screen.getByRole("link", { name: /^unlinked$/i })).toBeInTheDocument();
+  });
+
+  it("workspace search filters visible thread rows", () => {
+    renderWorkspaceAtPath();
+    fireEvent.change(screen.getByRole("textbox", { name: /search mailbox threads/i }), {
+      target: { value: "Sunita" },
+    });
+    expect(screen.getByText("Sunita Rao")).toBeInTheDocument();
+    expect(screen.queryByText("Priya Sharma")).not.toBeInTheDocument();
+    expect(screen.getAllByRole("option")).toHaveLength(1);
+  });
+
+  it("clearing search restores the current result set", () => {
+    renderWorkspaceAtPath();
+    const searchInput = screen.getByRole("textbox", { name: /search mailbox threads/i });
+    fireEvent.change(searchInput, { target: { value: "Sunita" } });
+    fireEvent.click(screen.getByRole("button", { name: /clear search/i }));
+    expect(screen.getByText("Sunita Rao")).toBeInTheDocument();
+    expect(screen.getByText("Priya Sharma")).toBeInTheDocument();
+    expect(screen.getAllByRole("option")).toHaveLength(6);
+  });
+
+  it("quick filters are usable from the real workspace zero state", () => {
+    renderWorkspaceAtPath();
+    fireEvent.click(screen.getByTestId("filter-chip-linked-false"));
+    expect(screen.getByText("Sunita Rao")).toBeInTheDocument();
+    expect(screen.queryByText("Priya Sharma")).not.toBeInTheDocument();
+    expect(screen.getByTestId("clear-filters-btn")).toBeInTheDocument();
+  });
+
+  it("linked route marks linked active without also marking all inboxes active", () => {
+    renderWorkspaceAtPath("/app/mailbox/linked");
+    const linked = screen.getByRole("link", { name: /^linked$/i });
+    const allInboxes = screen.getByRole("link", { name: /^all inboxes/i });
+    expect(linked.className).toContain("bg-red-50");
+    expect(allInboxes.className).not.toContain("bg-red-50");
+  });
+
+  it("unlinked route marks unlinked active without also marking all inboxes active", () => {
+    renderWorkspaceAtPath("/app/mailbox/unlinked");
+    const unlinked = screen.getByRole("link", { name: /^unlinked$/i });
+    const allInboxes = screen.getByRole("link", { name: /^all inboxes/i });
+    expect(unlinked.className).toContain("bg-red-50");
+    expect(allInboxes.className).not.toContain("bg-red-50");
   });
 });

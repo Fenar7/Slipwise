@@ -10,6 +10,9 @@ interface MailboxCommandBarProps {
   totalCount?: number;
   unreadCount?: number;
   onCompose?: () => void;
+  searchQuery?: string;
+  onSearchQueryChange?: (query: string) => void;
+  onClearSearch?: () => void;
   filterState?: ActiveFilterState;
   onAddFilter?: (filter: ActiveFilter) => void;
   onRemoveFilter?: (field: string, value: string) => void;
@@ -21,16 +24,18 @@ export function MailboxCommandBar({
   totalCount,
   unreadCount,
   onCompose,
+  searchQuery = "",
+  onSearchQueryChange,
+  onClearSearch,
   filterState,
   onAddFilter,
   onRemoveFilter,
   onClearFilters,
 }: MailboxCommandBarProps) {
-  const [query, setQuery] = useState("");
   const [focused, setFocused] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const isSearching = query.length > 0;
+  const isSearching = searchQuery.length > 0;
 
   return (
     <div
@@ -72,8 +77,8 @@ export function MailboxCommandBar({
         <input
           ref={inputRef}
           type="text"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          value={searchQuery}
+          onChange={(e) => onSearchQueryChange?.(e.target.value)}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
           placeholder="Search threads…"
@@ -83,7 +88,7 @@ export function MailboxCommandBar({
         {isSearching && (
           <button
             onClick={() => {
-              setQuery("");
+              onClearSearch?.();
               inputRef.current?.focus();
             }}
             className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-[#E2E5EA] transition-colors hover:bg-[#D1D5DB]"

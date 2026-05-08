@@ -242,7 +242,9 @@ export function MailboxWorkspace() {
     setFilterState({ filters: [], searchQuery: "" });
   }, []);
 
-  const hasActiveFilters = filterState.filters.length > 0;
+  const clearSearch = useCallback(() => {
+    setFilterState((prev) => ({ ...prev, searchQuery: "" }));
+  }, []);
 
   return (
     <div
@@ -261,21 +263,24 @@ export function MailboxWorkspace() {
           totalCount={totalCount}
           unreadCount={unreadCount}
           onCompose={openNewCompose}
+          searchQuery={filterState.searchQuery}
+          onSearchQueryChange={(query) =>
+            setFilterState((prev) => ({ ...prev, searchQuery: query }))
+          }
+          onClearSearch={clearSearch}
           filterState={filterState}
           onAddFilter={addFilter}
           onRemoveFilter={removeFilter}
           onClearFilters={clearFilters}
         />
 
-        {/* Filter chips bar — shown when filters are active */}
-        {hasActiveFilters && (
-          <FilterChipsBar
-            filterState={filterState}
-            onAddFilter={addFilter}
-            onRemoveFilter={removeFilter}
-            onClearAll={clearFilters}
-          />
-        )}
+        {/* Filter chips bar — always visible so filters are reachable from zero state */}
+        <FilterChipsBar
+          filterState={filterState}
+          onAddFilter={addFilter}
+          onRemoveFilter={removeFilter}
+          onClearAll={clearFilters}
+        />
 
         {/* Thread list + reading pane + context panel */}
         <div className="flex min-h-0 flex-1 overflow-hidden">
