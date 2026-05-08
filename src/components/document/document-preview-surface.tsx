@@ -19,7 +19,9 @@ export function DocumentPreviewSurface({
   children,
 }: DocumentPreviewSurfaceProps) {
   const viewportRef = useRef<HTMLDivElement | null>(null);
+  const contentRef = useRef<HTMLDivElement | null>(null);
   const [viewportWidth, setViewportWidth] = useState(800);
+  const [contentHeight, setContentHeight] = useState(A4_DOCUMENT_HEIGHT);
   const [zoom, setZoom] = useState<number | "fit">("fit");
 
   useEffect(() => {
@@ -38,12 +40,28 @@ export function DocumentPreviewSurface({
     return () => viewportObserver.disconnect();
   }, []);
 
+  useEffect(() => {
+    const content = contentRef.current;
+    if (!content) return;
+
+    const updateContentHeight = () => {
+      setContentHeight(content.scrollHeight);
+    };
+
+    updateContentHeight();
+
+    const contentObserver = new ResizeObserver(updateContentHeight);
+    contentObserver.observe(content);
+
+    return () => contentObserver.disconnect();
+  }, [children]);
+
   const fitZoom = Math.min(1, viewportWidth / PREVIEW_DOCUMENT_FRAME_WIDTH);
   const currentZoom = zoom === "fit" ? fitZoom : zoom / 100;
   const displayZoom = Math.round(currentZoom * 100);
 
   const scaledWidth = PREVIEW_DOCUMENT_FRAME_WIDTH * currentZoom;
-  const scaledHeight = A4_DOCUMENT_HEIGHT * currentZoom;
+  const scaledHeight = contentHeight * currentZoom;
 
   const zoomOut = () => {
     if (zoom === "fit") {
@@ -124,9 +142,9 @@ export function DocumentPreviewSurface({
             }}
           >
             <div
+              ref={contentRef}
               style={{
                 width: `${PREVIEW_DOCUMENT_FRAME_WIDTH}px`,
-                height: `${A4_DOCUMENT_HEIGHT}px`,
                 transform: `scale(${currentZoom})`,
                 transformOrigin: "top left",
               }}
