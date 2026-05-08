@@ -97,6 +97,7 @@ export interface MailboxMessageItem {
 
 export interface MailboxThreadDetail {
   threadId: string;
+  mailboxConnectionId: string;
   subject: string;
   status: ThreadStatus;
   assignee: string | null;

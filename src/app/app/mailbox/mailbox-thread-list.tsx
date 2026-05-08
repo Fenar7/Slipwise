@@ -15,6 +15,7 @@ import {
 
 export interface ThreadRowData {
   id: string;
+  mailboxConnectionId: string;
   subject: string;
   snippet: string;
   from: string;
@@ -33,6 +34,7 @@ export interface ThreadRowData {
 export const MOCK_THREADS: ThreadRowData[] = [
   {
     id: "t1",
+    mailboxConnectionId: "conn_billing",
     subject: "Invoice #INV-2026-0412 — Payment overdue",
     snippet: "Hi, I wanted to follow up on the invoice we sent last week. Could you confirm the payment status?",
     from: "Priya Sharma",
@@ -49,6 +51,7 @@ export const MOCK_THREADS: ThreadRowData[] = [
   },
   {
     id: "t2",
+    mailboxConnectionId: "conn_billing",
     subject: "Re: Quote QT-2026-0089 — Revised pricing",
     snippet: "Thanks for the revised quote. We've reviewed it internally and have a few questions before we proceed.",
     from: "Arjun Mehta",
@@ -64,6 +67,7 @@ export const MOCK_THREADS: ThreadRowData[] = [
   },
   {
     id: "t3",
+    mailboxConnectionId: "conn_accounts",
     subject: "Voucher VCH-2026-0031 — Approval needed",
     snippet: "Please find attached the voucher for the March services. Kindly approve at your earliest convenience.",
     from: "Neha Kapoor",
@@ -79,6 +83,7 @@ export const MOCK_THREADS: ThreadRowData[] = [
   },
   {
     id: "t4",
+    mailboxConnectionId: "conn_billing",
     subject: "Statement of account — April 2026",
     snippet: "Please find the attached statement of account for April 2026. Let us know if you have any queries.",
     from: "Ravi Nair",
@@ -95,6 +100,7 @@ export const MOCK_THREADS: ThreadRowData[] = [
   },
   {
     id: "t5",
+    mailboxConnectionId: "conn_support",
     subject: "Support: Unable to download invoice PDF",
     snippet: "Hi team, I'm trying to download the invoice PDF from the portal but keep getting an error. Can you help?",
     from: "Sunita Rao",
@@ -110,6 +116,7 @@ export const MOCK_THREADS: ThreadRowData[] = [
   },
   {
     id: "t6",
+    mailboxConnectionId: "conn_accounts",
     subject: "Re: TDS certificate for FY 2025-26",
     snippet: "We've processed the TDS certificate. Please find it attached. Let us know if you need any corrections.",
     from: "Vikram Joshi",
@@ -134,7 +141,7 @@ const STATUS_STYLES: Record<ThreadRowData["status"], string> = {
 function QuickActions({ threadId }: { threadId: string }) {
   return (
     <div
-      className="absolute right-3 top-1/2 hidden -translate-y-1/2 items-center gap-0.5 rounded-lg border border-[#E2E5EA] bg-white p-0.5 shadow-sm group-hover:flex"
+      className="absolute right-3 top-1/2 hidden -translate-y-1/2 items-center gap-0.5 rounded-lg border border-[#E2E5EA] bg-white p-0.5 shadow-sm group-hover:flex group-focus-within:flex"
       role="toolbar"
       aria-label={`Quick actions for thread ${threadId}`}
       // Stop click from propagating to the row button
@@ -191,7 +198,13 @@ function ThreadRow({
   return (
     <div
       onClick={onClick}
-      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick(); } }}
+      onKeyDown={(e) => {
+        if (e.target !== e.currentTarget) return;
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onClick();
+        }
+      }}
       role="option"
       aria-selected={isSelected}
       tabIndex={0}
@@ -294,11 +307,16 @@ function ThreadRow({
 }
 
 interface MailboxThreadListProps {
+  threads?: ThreadRowData[];
   selectedThreadId: string | null;
   onSelectThread: (id: string) => void;
 }
 
-export function MailboxThreadList({ selectedThreadId, onSelectThread }: MailboxThreadListProps) {
+export function MailboxThreadList({
+  threads = MOCK_THREADS,
+  selectedThreadId,
+  onSelectThread,
+}: MailboxThreadListProps) {
   return (
     <div
       className="flex h-full flex-col overflow-hidden border-r bg-white"
@@ -308,7 +326,7 @@ export function MailboxThreadList({ selectedThreadId, onSelectThread }: MailboxT
       aria-multiselectable="false"
     >
       <div className="flex-1 overflow-y-auto">
-        {MOCK_THREADS.map((thread) => (
+        {threads.map((thread) => (
           <ThreadRow
             key={thread.id}
             thread={thread}

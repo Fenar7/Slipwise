@@ -369,7 +369,12 @@ export function MailboxReadingPane({
               onClick={() => handleOpenReply("reply")}
               role="button"
               tabIndex={0}
-              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") handleOpenReply("reply"); }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  handleOpenReply("reply");
+                }
+              }}
               aria-label="Click to reply"
               data-testid="reply-prompt"
             >

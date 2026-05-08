@@ -2,11 +2,13 @@
  * Sprint 1.3 tests — Compose, reply, and forward flows.
  * Extends Sprint 1.1/1.2 coverage; does not replace them.
  */
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
+let mockPathname = "/app/mailbox";
+
 vi.mock("next/navigation", () => ({
-  usePathname: () => "/app/mailbox",
+  usePathname: () => mockPathname,
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }),
 }));
 
@@ -15,8 +17,14 @@ import { ExpandedComposer } from "../mailbox-expanded-composer";
 import { InlineReply } from "../mailbox-inline-reply";
 import { MailboxReadingPane } from "../mailbox-reading-pane";
 import { MailboxWorkspace } from "../mailbox-workspace";
+import { MailboxThreadList } from "../mailbox-thread-list";
 import { MOCK_THREAD_DETAILS } from "../mock-data";
 import type { MailboxComposerState } from "../types";
+
+function renderWorkspaceAtPath(pathname = "/app/mailbox") {
+  mockPathname = pathname;
+  return render(<MailboxWorkspace />);
+}
 
 // ─── Shared test fixture ──────────────────────────────────────────────────────
 
@@ -47,17 +55,17 @@ function makeComposer(overrides: Partial<MailboxComposerState> = {}): MailboxCom
 
 describe("Sprint 1.1/1.2 regression", () => {
   it("workspace still renders", () => {
-    render(<MailboxWorkspace />);
+    renderWorkspaceAtPath();
     expect(screen.getByTestId("mailbox-workspace")).toBeInTheDocument();
   });
 
   it("thread list pane still renders", () => {
-    render(<MailboxWorkspace />);
+    renderWorkspaceAtPath();
     expect(screen.getByTestId("mailbox-thread-list-pane")).toBeInTheDocument();
   });
 
   it("reading pane still renders", () => {
-    render(<MailboxWorkspace />);
+    renderWorkspaceAtPath();
     expect(screen.getByTestId("mailbox-reading-pane")).toBeInTheDocument();
   });
 });
@@ -617,11 +625,28 @@ describe("MailboxReadingPane — Sprint 1.3 compose integration", () => {
     );
   });
 
+  it("pressing space on reply-prompt opens reply once without default scrolling behavior", () => {
+    const onOpenReply = vi.fn();
+    render(
+      <MailboxReadingPane
+        detail={detail}
+        composerState={null}
+        onOpenReply={onOpenReply}
+        onCloseReply={vi.fn()}
+        onExpandReply={vi.fn()}
+        onPatchComposer={vi.fn()}
+      />
+    );
+    const replyPrompt = screen.getByTestId("reply-prompt");
+    fireEvent.keyDown(replyPrompt, { key: " " });
+    expect(onOpenReply).toHaveBeenCalledOnce();
+  });
+
   it("shows inline reply when composerState is open for this thread", () => {
     render(
       <MailboxReadingPane
         detail={detail}
-        composerState={makeComposer({ mode: "reply", threadId: "t1", layout: "floating" })}
+        composerState={makeComposer({ mode: "reply", threadId: "t1", layout: "inline" })}
         onOpenReply={vi.fn()}
         onCloseReply={vi.fn()}
         onExpandReply={vi.fn()}
@@ -664,12 +689,12 @@ describe("MailboxReadingPane — Sprint 1.3 compose integration", () => {
 
 describe("MailboxWorkspace — Sprint 1.3 compose integration", () => {
   it("no floating composer visible initially", () => {
-    render(<MailboxWorkspace />);
+    renderWorkspaceAtPath();
     expect(screen.queryByTestId("floating-composer")).not.toBeInTheDocument();
   });
 
   it("clicking Compose button opens floating composer", () => {
-    render(<MailboxWorkspace />);
+    renderWorkspaceAtPath();
     // Command bar compose button (last one — left rail has a + button too)
     const composeBtns = screen.getAllByRole("button", { name: /compose new message/i });
     fireEvent.click(composeBtns[composeBtns.length - 1]);
@@ -677,14 +702,14 @@ describe("MailboxWorkspace — Sprint 1.3 compose integration", () => {
   });
 
   it("floating composer shows New message title", () => {
-    render(<MailboxWorkspace />);
+    renderWorkspaceAtPath();
     const composeBtns = screen.getAllByRole("button", { name: /compose new message/i });
     fireEvent.click(composeBtns[composeBtns.length - 1]);
     expect(screen.getByText("New message")).toBeInTheDocument();
   });
 
   it("closing floating composer removes it", () => {
-    render(<MailboxWorkspace />);
+    renderWorkspaceAtPath();
     const composeBtns = screen.getAllByRole("button", { name: /compose new message/i });
     fireEvent.click(composeBtns[composeBtns.length - 1]);
     fireEvent.click(screen.getByRole("button", { name: /close composer/i }));
@@ -692,22 +717,79 @@ describe("MailboxWorkspace — Sprint 1.3 compose integration", () => {
   });
 
   it("no expanded composer visible initially", () => {
-    render(<MailboxWorkspace />);
+    renderWorkspaceAtPath();
     expect(screen.queryByTestId("expanded-composer")).not.toBeInTheDocument();
   });
 
   it("selecting a thread shows reply-prompt in reading pane", () => {
-    render(<MailboxWorkspace />);
+    renderWorkspaceAtPath();
     const options = screen.getAllByRole("option");
     fireEvent.click(options[0]);
     expect(screen.getByTestId("reply-prompt")).toBeInTheDocument();
   });
 
   it("clicking reply-prompt opens inline reply", () => {
-    render(<MailboxWorkspace />);
+    renderWorkspaceAtPath();
     const options = screen.getAllByRole("option");
     fireEvent.click(options[0]);
     fireEvent.click(screen.getByTestId("reply-prompt"));
     expect(screen.getByTestId("inline-reply")).toBeInTheDocument();
+  });
+
+  it("compose from a mailbox-specific route uses that mailbox identity", () => {
+    renderWorkspaceAtPath("/app/mailbox/support/inbox");
+    const composeButtons = screen.getAllByRole("button", { name: /compose new message/i });
+    fireEvent.click(composeButtons[composeButtons.length - 1]);
+    const composer = screen.getByTestId("floating-composer");
+    expect(within(composer).getByText("Support")).toBeInTheDocument();
+    expect(within(composer).getByText("support@acmecorp.com")).toBeInTheDocument();
+  });
+
+  it("filters the thread list to the active mailbox route", () => {
+    renderWorkspaceAtPath("/app/mailbox/support/inbox");
+    expect(screen.getByText("Sunita Rao")).toBeInTheDocument();
+    expect(screen.queryByText("Priya Sharma")).not.toBeInTheDocument();
+    expect(screen.getByText(/1 thread/i)).toBeInTheDocument();
+  });
+
+  it("clears a stale selected thread when route changes to a different mailbox", () => {
+    const { rerender } = renderWorkspaceAtPath("/app/mailbox");
+    fireEvent.click(screen.getAllByRole("option")[0]);
+    expect(screen.getByLabelText(/thread: invoice #inv-2026-0412/i)).toBeInTheDocument();
+
+    mockPathname = "/app/mailbox/support/inbox";
+    rerender(<MailboxWorkspace />);
+
+    expect(screen.queryByLabelText(/thread: invoice #inv-2026-0412/i)).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/no thread selected/i)).toBeInTheDocument();
+  });
+
+  it("collapsed expanded inline reply returns to inline instead of disappearing", () => {
+    renderWorkspaceAtPath();
+    fireEvent.click(screen.getAllByRole("option")[0]);
+    fireEvent.click(screen.getByTestId("reply-prompt"));
+    fireEvent.click(screen.getByRole("button", { name: /expand composer/i }));
+    expect(screen.getByTestId("expanded-composer")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /collapse to floating/i }));
+
+    expect(screen.queryByTestId("expanded-composer")).not.toBeInTheDocument();
+    expect(screen.getByTestId("inline-reply")).toBeInTheDocument();
+  });
+
+  it("focused thread rows expose quick actions without selecting the row", () => {
+    const onSelect = vi.fn();
+    const { container } = render(
+      <MailboxThreadList selectedThreadId={null} onSelectThread={onSelect} />
+    );
+    const firstRow = screen.getAllByRole("option")[0];
+    firstRow.focus();
+    const toolbar = container.querySelector('[aria-label="Quick actions for thread t1"]');
+    expect(toolbar?.className).toContain("group-focus-within:flex");
+
+    fireEvent.keyDown(screen.getAllByRole("button", { name: /^archive$/i })[0], {
+      key: "Enter",
+    });
+    expect(onSelect).not.toHaveBeenCalled();
   });
 });
