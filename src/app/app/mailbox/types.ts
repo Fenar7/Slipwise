@@ -114,6 +114,7 @@ export interface MailboxThreadDetail {
 export type ComposeMode = "new" | "reply" | "reply-all" | "forward";
 export type ComposeLayout = "floating" | "expanded" | "inline";
 export type ComposeSendState = "idle" | "sending" | "sent" | "failed";
+export type ComposeDeliveryMode = "send_now" | "schedule_send";
 
 export interface ComposeDraftAttachment {
   id: string;
@@ -139,6 +140,10 @@ export interface MailboxComposerState {
   bodyHtml: string;
   attachments: ComposeDraftAttachment[];
   sendState: ComposeSendState;
+  deliveryMode: ComposeDeliveryMode;
+  scheduledSendAt: string | null;
+  scheduleLabel: string | null;
+  schedulePanelOpen: boolean;
   /** threadId being replied to / forwarded, null for new message */
   threadId: string | null;
   /** messageId being replied to, null for new/forward */
@@ -250,4 +255,74 @@ export interface ActiveFilter {
 export interface ActiveFilterState {
   filters: ActiveFilter[];
   searchQuery: string;
+}
+
+// ─── Sprint 1.6 additions ────────────────────────────────────────────────────
+
+/**
+ * Coarse loading state for major mailbox surfaces.
+ * Later phases plug real async state into these shapes.
+ */
+export type MailboxLoadingTarget =
+  | "shell"
+  | "thread-list"
+  | "reading-pane"
+  | "settings"
+  | "linked-context";
+
+export interface MailboxLoadingState {
+  target: MailboxLoadingTarget;
+  isLoading: boolean;
+}
+
+/**
+ * Why a mailbox or surface is restricted.
+ * Distinguishes permission scope from absence of data.
+ */
+export type MailboxRestrictedReason =
+  | "no_permission"       // user lacks read access to this mailbox
+  | "admin_only"          // surface is admin-only; user is not admin
+  | "mailbox_not_visible" // mailbox exists but is not visible to this user's role
+  | "org_suspended";      // org-level suspension
+
+export interface MailboxRestrictedState {
+  reason: MailboxRestrictedReason;
+  /** Human-readable explanation for the user */
+  message: string;
+  /** Optional: who to contact or what action to take */
+  guidance: string | null;
+}
+
+/**
+ * Degraded mailbox health — distinct from reconnect_required.
+ * Reconnect = auth expired. Degraded = sync is running but unreliable.
+ */
+export type MailboxDegradedReason =
+  | "sync_lag"          // sync is running but significantly behind
+  | "partial_failure"   // some messages failed to ingest
+  | "watch_expired"     // push subscription expired; falling back to polling
+  | "rate_limited";     // provider rate-limited; sync is throttled
+
+export interface MailboxDegradedState {
+  connectionId: string;
+  reason: MailboxDegradedReason;
+  /** Human-readable impact summary */
+  impactSummary: string;
+  /** ISO timestamp of when degraded state was first detected */
+  detectedAt: string;
+  /** Whether an admin action is required to resolve */
+  requiresAdminAction: boolean;
+}
+
+/**
+ * Responsive layout mode — drives mobile/tablet navigation state.
+ * Desktop always shows full 3-pane layout.
+ */
+export type MailboxResponsivePanel = "rail" | "thread-list" | "reading-pane" | "context";
+
+export interface MailboxResponsiveState {
+  /** Which panel is currently visible on narrow viewports */
+  activePanel: MailboxResponsivePanel;
+  /** Whether the left rail drawer is open on tablet/mobile */
+  isRailOpen: boolean;
 }

@@ -45,6 +45,10 @@ function makeComposer(overrides: Partial<MailboxComposerState> = {}): MailboxCom
     bodyHtml: "",
     attachments: [],
     sendState: "idle",
+    deliveryMode: "send_now",
+    scheduledSendAt: null,
+    scheduleLabel: null,
+    schedulePanelOpen: false,
     threadId: null,
     replyToMessageId: null,
     ...overrides,
@@ -182,6 +186,85 @@ describe("FloatingComposer", () => {
       />
     );
     expect(screen.getByRole("button", { name: /^send$/i })).toBeInTheDocument();
+  });
+
+  it("uses a larger floating composer footprint", () => {
+    render(
+      <FloatingComposer
+        state={makeComposer()}
+        onClose={vi.fn()}
+        onExpand={vi.fn()}
+        onChange={vi.fn()}
+      />
+    );
+    expect(screen.getByTestId("floating-composer").className).toContain("w-[680px]");
+    expect(screen.getByTestId("floating-composer").className).toContain("h-[560px]");
+  });
+
+  it("renders schedule send action", () => {
+    render(
+      <FloatingComposer
+        state={makeComposer()}
+        onClose={vi.fn()}
+        onExpand={vi.fn()}
+        onChange={vi.fn()}
+      />
+    );
+    expect(screen.getByRole("button", { name: /schedule send/i })).toBeInTheDocument();
+  });
+
+  it("shows schedule send panel when toggled open", () => {
+    render(
+      <FloatingComposer
+        state={makeComposer({ schedulePanelOpen: true })}
+        onClose={vi.fn()}
+        onExpand={vi.fn()}
+        onChange={vi.fn()}
+      />
+    );
+    expect(screen.getByTestId("schedule-send-panel")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /later today/i })).toBeInTheDocument();
+    expect(screen.getByLabelText(/schedule date/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/schedule time/i)).toBeInTheDocument();
+  });
+
+  it("shows scheduled summary when a send time has been chosen", () => {
+    render(
+      <FloatingComposer
+        state={makeComposer({
+          deliveryMode: "schedule_send",
+          scheduledSendAt: "2026-05-10T09:00:00+05:30",
+          scheduleLabel: "Tomorrow morning · 9:00 AM IST",
+        })}
+        onClose={vi.fn()}
+        onExpand={vi.fn()}
+        onChange={vi.fn()}
+      />
+    );
+    expect(screen.getByTestId("scheduled-send-summary")).toBeInTheDocument();
+    expect(screen.getByText(/tomorrow morning/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^send$/i })).toHaveTextContent("Send now");
+  });
+
+  it("applies a quick schedule preset through onChange", () => {
+    const onChange = vi.fn();
+    render(
+      <FloatingComposer
+        state={makeComposer({ schedulePanelOpen: true })}
+        onClose={vi.fn()}
+        onExpand={vi.fn()}
+        onChange={onChange}
+      />
+    );
+    fireEvent.click(screen.getByRole("button", { name: /tomorrow morning/i }));
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        deliveryMode: "schedule_send",
+        scheduledSendAt: "2026-05-10T09:00:00+05:30",
+        scheduleLabel: "Tomorrow morning · 9:00 AM IST",
+        schedulePanelOpen: false,
+      })
+    );
   });
 
   it("renders Discard button", () => {
@@ -400,6 +483,18 @@ describe("ExpandedComposer", () => {
     );
     expect(screen.getByRole("heading", { name: /forward/i })).toBeInTheDocument();
   });
+
+  it("renders schedule send action in expanded mode", () => {
+    render(
+      <ExpandedComposer
+        state={makeComposer({ layout: "expanded" })}
+        onClose={vi.fn()}
+        onCollapse={vi.fn()}
+        onChange={vi.fn()}
+      />
+    );
+    expect(screen.getByRole("button", { name: /schedule send/i })).toBeInTheDocument();
+  });
 });
 
 // ─── InlineReply ──────────────────────────────────────────────────────────────
@@ -566,6 +661,19 @@ describe("InlineReply", () => {
     );
     expect(screen.getByRole("button", { name: /^send$/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /discard draft/i })).toBeInTheDocument();
+  });
+
+  it("renders schedule send action for inline reply", () => {
+    render(
+      <InlineReply
+        state={makeComposer({ mode: "reply", threadId: "t1" })}
+        onClose={vi.fn()}
+        onExpand={vi.fn()}
+        onModeChange={vi.fn()}
+        onChange={vi.fn()}
+      />
+    );
+    expect(screen.getByRole("button", { name: /schedule send/i })).toBeInTheDocument();
   });
 
   it("calls onClose when close button clicked", () => {

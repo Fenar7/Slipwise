@@ -38,7 +38,7 @@ export function ExpandedComposer({ state, onClose, onCollapse, onChange }: Expan
       aria-modal="true"
     >
       <div
-        className="flex h-[80vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border bg-white shadow-2xl"
+        className="flex h-[86vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border bg-white shadow-2xl"
         style={{ borderColor: "#D1D5DB" }}
       >
         {/* Header */}
@@ -153,6 +153,27 @@ export function ExpandedComposer({ state, onClose, onCollapse, onChange }: Expan
         <SendBar
           sendState={state.sendState}
           onSend={() => onChange({ sendState: "sending" })}
+          deliveryMode={state.deliveryMode}
+          scheduledSendAt={state.scheduledSendAt}
+          scheduleLabel={state.scheduleLabel}
+          schedulePanelOpen={state.schedulePanelOpen}
+          onSchedulePanelToggle={() => onChange({ schedulePanelOpen: !state.schedulePanelOpen })}
+          onScheduleApply={({ iso, label }) =>
+            onChange({
+              deliveryMode: "schedule_send",
+              scheduledSendAt: iso,
+              scheduleLabel: label,
+              schedulePanelOpen: false,
+            })
+          }
+          onScheduleClear={() =>
+            onChange({
+              deliveryMode: "send_now",
+              scheduledSendAt: null,
+              scheduleLabel: null,
+              schedulePanelOpen: false,
+            })
+          }
           onDiscard={onClose}
         />
       </div>

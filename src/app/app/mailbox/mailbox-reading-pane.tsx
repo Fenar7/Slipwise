@@ -18,6 +18,7 @@ import {
   FileText,
   FileSpreadsheet,
   File,
+  PanelRightOpen,
 } from "lucide-react";
 import type { MailboxThreadDetail, MailboxMessageItem, MailboxAttachmentSummary } from "./types";
 
@@ -207,7 +208,13 @@ const STATUS_STYLES: Record<string, string> = {
   archived: "bg-gray-100 text-gray-400 border-gray-200",
 };
 
-function ThreadHeader({ detail }: { detail: MailboxThreadDetail }) {
+function ThreadHeader({
+  detail,
+  onOpenContext,
+}: {
+  detail: MailboxThreadDetail;
+  onOpenContext?: () => void;
+}) {
   return (
     <div
       className="flex shrink-0 flex-col gap-2 border-b bg-white px-5 py-3"
@@ -219,6 +226,16 @@ function ThreadHeader({ detail }: { detail: MailboxThreadDetail }) {
           {detail.subject}
         </h2>
         <div className="flex shrink-0 items-center gap-1">
+          {onOpenContext && (
+            <button
+              onClick={onOpenContext}
+              className="flex h-7 w-7 items-center justify-center rounded-lg text-[#64748B] transition-colors hover:bg-[#F1F3F7] hover:text-[#0F172A] xl:hidden"
+              title="View thread context"
+              aria-label="View thread context"
+            >
+              <PanelRightOpen className="h-4 w-4" />
+            </button>
+          )}
           <button
             className="flex h-7 w-7 items-center justify-center rounded-lg text-[#64748B] transition-colors hover:bg-[#F1F3F7] hover:text-[#0F172A]"
             title="Archive thread"
@@ -308,6 +325,7 @@ interface MailboxReadingPaneProps {
   onCloseReply: () => void;
   onExpandReply: () => void;
   onPatchComposer: (patch: Partial<MailboxComposerState>) => void;
+  onOpenContext?: () => void;
 }
 
 export function MailboxReadingPane({
@@ -317,6 +335,7 @@ export function MailboxReadingPane({
   onCloseReply,
   onExpandReply,
   onPatchComposer,
+  onOpenContext,
 }: MailboxReadingPaneProps) {
   const lastMessage = detail.messages[detail.messages.length - 1];
 
@@ -337,7 +356,7 @@ export function MailboxReadingPane({
       aria-label={`Thread: ${detail.subject}`}
     >
       {/* Thread header */}
-      <ThreadHeader detail={detail} />
+      <ThreadHeader detail={detail} onOpenContext={onOpenContext} />
 
       {/* Message stack + inline reply */}
       <div className="flex-1 overflow-y-auto px-5 py-4">

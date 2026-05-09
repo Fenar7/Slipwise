@@ -310,12 +310,18 @@ interface MailboxThreadListProps {
   threads?: ThreadRowData[];
   selectedThreadId: string | null;
   onSelectThread: (id: string) => void;
+  /** Shown as a banner above the list when a mailbox needs reconnection */
+  reconnectBanner?: React.ReactNode;
+  /** Shown when threads array is empty */
+  emptyState?: React.ReactNode;
 }
 
 export function MailboxThreadList({
   threads = MOCK_THREADS,
   selectedThreadId,
   onSelectThread,
+  reconnectBanner,
+  emptyState,
 }: MailboxThreadListProps) {
   return (
     <div
@@ -325,15 +331,20 @@ export function MailboxThreadList({
       aria-label="Thread list"
       aria-multiselectable="false"
     >
+      {reconnectBanner}
       <div className="flex-1 overflow-y-auto">
-        {threads.map((thread) => (
-          <ThreadRow
-            key={thread.id}
-            thread={thread}
-            isSelected={selectedThreadId === thread.id}
-            onClick={() => onSelectThread(thread.id)}
-          />
-        ))}
+        {threads.length === 0 && emptyState ? (
+          emptyState
+        ) : (
+          threads.map((thread) => (
+            <ThreadRow
+              key={thread.id}
+              thread={thread}
+              isSelected={selectedThreadId === thread.id}
+              onClick={() => onSelectThread(thread.id)}
+            />
+          ))
+        )}
       </div>
     </div>
   );
