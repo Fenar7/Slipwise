@@ -147,12 +147,12 @@ export function MessagingWorkspace() {
              * [conversation list ~280px] [reading workspace flex-1]
              */
             <div
-              className="flex flex-1 overflow-hidden"
+              className="flex flex-1 flex-col overflow-hidden md:flex-row"
               data-testid="messaging-workspace-pane"
             >
               {/* Conversation list column */}
               <div
-                className="hidden md:flex md:flex-col md:w-72 md:shrink-0 border-r overflow-hidden"
+                className="flex min-h-[18rem] shrink-0 flex-col overflow-hidden border-b md:min-h-0 md:w-72 md:border-b-0 md:border-r md:shrink-0"
                 style={{ borderColor: "#E0E0E0" }}
                 data-testid="conversation-list-column"
               >
@@ -177,16 +177,18 @@ export function MessagingWorkspace() {
               </div>
 
               {/* Reading workspace */}
-              <MessagingReadingWorkspace
-                conversation={activeConversation}
-                sectionKind={
-                  state.activeSection === "channels"
-                    ? "channel"
-                    : state.activeSection === "dms"
-                    ? "dm"
-                    : "group"
-                }
-              />
+              <div className="flex min-h-0 flex-1 overflow-hidden">
+                <MessagingReadingWorkspace
+                  conversation={activeConversation}
+                  sectionKind={
+                    state.activeSection === "channels"
+                      ? "channel"
+                      : state.activeSection === "dms"
+                      ? "dm"
+                      : "group"
+                  }
+                />
+              </div>
             </div>
           ) : (
             /* Sprint 1.1 pane for tasks / meetings / files / admin */

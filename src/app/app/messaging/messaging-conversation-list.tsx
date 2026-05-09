@@ -447,6 +447,7 @@ export function GroupConversationList({ activeConversationId, onSelect }: GroupL
       name: grp.name,
       subtitle: `${grp.isPrivate ? "Private group" : "Group"} · ${grp.memberCount} members`,
       groupMemberCount: grp.memberCount,
+      groupIsPrivate: grp.isPrivate,
       isAccessible: true,
       threadOpen: false,
       threadAnchorMessageId: null,
