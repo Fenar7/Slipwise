@@ -81,4 +81,9 @@ export const RATE_LIMITS = {
   voucherApprove: { maxRequests: 30, window: "60 s" },
   // Phase 7/Sprint 7.2: Diagnostics tooling
   diagnostics: { maxRequests: 10, window: "60 s" },
+  // Mailbox Phase 2 Sprint 2.2: Gmail OAuth auth surfaces
+  mailboxConnect: { maxRequests: 5, window: "60 s" },
+  mailboxDisconnect: { maxRequests: 5, window: "60 s" },
+  mailboxReconnect: { maxRequests: 5, window: "60 s" },
+  mailboxTokenRefresh: { maxRequests: 10, window: "60 s" },
 } as const;
