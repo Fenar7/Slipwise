@@ -1,5 +1,5 @@
 /**
- * Messaging module — static mock data for Sprint 1.1.
+ * Messaging module — static mock data for Sprint 1.1 + Sprint 1.2.
  *
  * Realistic enough to communicate product intent. Later phases replace these
  * with real API/realtime data without changing the shape.
@@ -14,6 +14,8 @@ import type {
   MessagingFile,
   AdminEntry,
   MessagingParticipant,
+  ConversationMessage,
+  ActiveConversation,
 } from "./types";
 
 // ─── Participants ─────────────────────────────────────────────────────────────
@@ -277,4 +279,290 @@ export const MOCK_UNREAD_SUMMARY = {
   groups: MOCK_GROUPS.reduce((sum, g) => sum + g.unreadCount, 0),
   tasks: MOCK_TASKS.filter((t) => t.status === "open" || t.status === "overdue").length,
   meetings: MOCK_MEETINGS.filter((m) => m.status === "upcoming").length,
+};
+
+// ─── Sprint 1.2 — Static message threads ─────────────────────────────────────
+
+/**
+ * Static messages for the #finance-ops channel reading workspace.
+ */
+export const MOCK_MESSAGES_CHANNEL_FINANCE: ConversationMessage[] = [
+  {
+    id: "msg-ch-f-1",
+    authorId: "u1",
+    authorName: "Priya Sharma",
+    authorInitials: "PS",
+    authorRole: "owner",
+    body: "Q2 reconciliation draft is ready for review. I've attached the spreadsheet — please check the vendor line items before EOD.",
+    sentAt: "2026-05-09T08:15:00Z",
+    hasThread: true,
+    threadReplyCount: 4,
+    reactions: [{ emoji: "👍", count: 3 }, { emoji: "✅", count: 2 }],
+    attachmentRef: "Q2-Reconciliation-Draft.xlsx",
+    mentionsCurrentUser: false,
+  },
+  {
+    id: "msg-ch-f-2",
+    authorId: "u2",
+    authorName: "Arjun Mehta",
+    authorInitials: "AM",
+    authorRole: "admin",
+    body: "Reviewed the vendor section. Found a discrepancy on the Apex Supplies invoice — line 14 doesn't match the PO. @Priya Sharma can you confirm?",
+    sentAt: "2026-05-09T09:02:00Z",
+    hasThread: false,
+    threadReplyCount: 0,
+    reactions: [],
+    attachmentRef: null,
+    mentionsCurrentUser: true,
+  },
+  {
+    id: "msg-ch-f-3",
+    authorId: "u3",
+    authorName: "Kavya Nair",
+    authorInitials: "KN",
+    authorRole: "member",
+    body: "Payroll run for May is staged. Waiting on final headcount confirmation from HR before I submit.",
+    sentAt: "2026-05-09T09:45:00Z",
+    hasThread: true,
+    threadReplyCount: 2,
+    reactions: [{ emoji: "🕐", count: 1 }],
+    attachmentRef: null,
+    mentionsCurrentUser: false,
+  },
+  {
+    id: "msg-ch-f-4",
+    authorId: "u1",
+    authorName: "Priya Sharma",
+    authorInitials: "PS",
+    authorRole: "owner",
+    body: "Confirmed — Apex line 14 is a partial delivery. The PO was split. I'll update the reconciliation and re-share.",
+    sentAt: "2026-05-09T10:10:00Z",
+    hasThread: false,
+    threadReplyCount: 0,
+    reactions: [{ emoji: "👍", count: 2 }],
+    attachmentRef: null,
+    mentionsCurrentUser: false,
+  },
+  {
+    id: "msg-ch-f-5",
+    authorId: "u2",
+    authorName: "Arjun Mehta",
+    authorInitials: "AM",
+    authorRole: "admin",
+    body: "TDS filing deadline is May 15. @Kavya Nair please ensure the TDS certificates are ready by May 12.",
+    sentAt: "2026-05-09T10:30:00Z",
+    hasThread: false,
+    threadReplyCount: 0,
+    reactions: [],
+    attachmentRef: null,
+    mentionsCurrentUser: false,
+  },
+];
+
+/**
+ * Static messages for the DM with Arjun Mehta.
+ */
+export const MOCK_MESSAGES_DM_ARJUN: ConversationMessage[] = [
+  {
+    id: "msg-dm-a-1",
+    authorId: "u2",
+    authorName: "Arjun Mehta",
+    authorInitials: "AM",
+    authorRole: "admin",
+    body: "Hey — did you get a chance to look at the Q2 draft? I flagged the Apex line item in the channel but wanted to follow up directly.",
+    sentAt: "2026-05-09T10:20:00Z",
+    hasThread: false,
+    threadReplyCount: 0,
+    reactions: [],
+    attachmentRef: null,
+    mentionsCurrentUser: false,
+  },
+  {
+    id: "msg-dm-a-2",
+    authorId: "u1",
+    authorName: "Priya Sharma",
+    authorInitials: "PS",
+    authorRole: "owner",
+    body: "Yes, just replied in the channel. It's a split PO — I'll update the sheet and re-share within the hour.",
+    sentAt: "2026-05-09T10:35:00Z",
+    hasThread: false,
+    threadReplyCount: 0,
+    reactions: [{ emoji: "👍", count: 1 }],
+    attachmentRef: null,
+    mentionsCurrentUser: false,
+  },
+  {
+    id: "msg-dm-a-3",
+    authorId: "u2",
+    authorName: "Arjun Mehta",
+    authorInitials: "AM",
+    authorRole: "admin",
+    body: "Perfect. Also — the board wants a summary of the May payroll variance. Can we sync briefly before the 2pm call?",
+    sentAt: "2026-05-09T10:50:00Z",
+    hasThread: false,
+    threadReplyCount: 0,
+    reactions: [],
+    attachmentRef: null,
+    mentionsCurrentUser: true,
+  },
+];
+
+/**
+ * Static messages for the Q2 Close Team group.
+ */
+export const MOCK_MESSAGES_GROUP_Q2: ConversationMessage[] = [
+  {
+    id: "msg-grp-q2-1",
+    authorId: "u1",
+    authorName: "Priya Sharma",
+    authorInitials: "PS",
+    authorRole: "owner",
+    body: "Q2 close checklist is pinned above. We need all line items signed off by May 12. Please update your status in the sheet.",
+    sentAt: "2026-05-09T08:00:00Z",
+    hasThread: true,
+    threadReplyCount: 3,
+    reactions: [{ emoji: "✅", count: 4 }],
+    attachmentRef: "Q2-Reconciliation-Draft.xlsx",
+    mentionsCurrentUser: false,
+  },
+  {
+    id: "msg-grp-q2-2",
+    authorId: "u3",
+    authorName: "Kavya Nair",
+    authorInitials: "KN",
+    authorRole: "member",
+    body: "Payroll section is done. Vendor payments still pending — waiting on Rohan's sign-off.",
+    sentAt: "2026-05-09T09:15:00Z",
+    hasThread: false,
+    threadReplyCount: 0,
+    reactions: [],
+    attachmentRef: null,
+    mentionsCurrentUser: false,
+  },
+  {
+    id: "msg-grp-q2-3",
+    authorId: "u4",
+    authorName: "Rohan Desai",
+    authorInitials: "RD",
+    authorRole: "member",
+    body: "Vendor payments reviewed. Two items flagged — I've added comments in the sheet. @Priya Sharma needs to approve before I can release.",
+    sentAt: "2026-05-09T10:05:00Z",
+    hasThread: false,
+    threadReplyCount: 0,
+    reactions: [{ emoji: "👀", count: 2 }],
+    attachmentRef: null,
+    mentionsCurrentUser: true,
+  },
+  {
+    id: "msg-grp-q2-4",
+    authorId: "u5",
+    authorName: "Sneha Iyer",
+    authorInitials: "SI",
+    authorRole: "member",
+    body: "GST reconciliation is complete. Filing confirmation sent to compliance. All good on my end.",
+    sentAt: "2026-05-09T10:20:00Z",
+    hasThread: false,
+    threadReplyCount: 0,
+    reactions: [{ emoji: "✅", count: 3 }, { emoji: "🎉", count: 1 }],
+    attachmentRef: null,
+    mentionsCurrentUser: false,
+  },
+];
+
+/**
+ * Thread replies for the first message in #finance-ops (msg-ch-f-1).
+ */
+export const MOCK_THREAD_REPLIES_CH_F_1: ConversationMessage[] = [
+  {
+    id: "msg-ch-f-1-r1",
+    authorId: "u2",
+    authorName: "Arjun Mehta",
+    authorInitials: "AM",
+    authorRole: "admin",
+    body: "Checked vendor section — Apex and Meridian look fine. Flagging line 14 separately.",
+    sentAt: "2026-05-09T08:30:00Z",
+    hasThread: false,
+    threadReplyCount: 0,
+    reactions: [],
+    attachmentRef: null,
+    mentionsCurrentUser: false,
+  },
+  {
+    id: "msg-ch-f-1-r2",
+    authorId: "u3",
+    authorName: "Kavya Nair",
+    authorInitials: "KN",
+    authorRole: "member",
+    body: "Payroll section reviewed. No issues.",
+    sentAt: "2026-05-09T08:45:00Z",
+    hasThread: false,
+    threadReplyCount: 0,
+    reactions: [{ emoji: "✅", count: 1 }],
+    attachmentRef: null,
+    mentionsCurrentUser: false,
+  },
+  {
+    id: "msg-ch-f-1-r3",
+    authorId: "u5",
+    authorName: "Sneha Iyer",
+    authorInitials: "SI",
+    authorRole: "member",
+    body: "GST section looks correct. Approved.",
+    sentAt: "2026-05-09T09:00:00Z",
+    hasThread: false,
+    threadReplyCount: 0,
+    reactions: [],
+    attachmentRef: null,
+    mentionsCurrentUser: false,
+  },
+  {
+    id: "msg-ch-f-1-r4",
+    authorId: "u1",
+    authorName: "Priya Sharma",
+    authorInitials: "PS",
+    authorRole: "owner",
+    body: "Thanks all. Will finalize and share the updated version by noon.",
+    sentAt: "2026-05-09T09:10:00Z",
+    hasThread: false,
+    threadReplyCount: 0,
+    reactions: [{ emoji: "👍", count: 2 }],
+    attachmentRef: null,
+    mentionsCurrentUser: false,
+  },
+];
+
+/**
+ * Seed active conversation objects for each conversation kind.
+ */
+export const MOCK_ACTIVE_CHANNEL: ActiveConversation = {
+  id: "ch-finance",
+  kind: "channel",
+  name: "finance-ops",
+  subtitle: "Finance team coordination and approvals · 12 members",
+  channelVisibility: "private",
+  isAccessible: true,
+  threadOpen: false,
+  threadAnchorMessageId: null,
+};
+
+export const MOCK_ACTIVE_DM: ActiveConversation = {
+  id: "dm-1",
+  kind: "dm",
+  name: "Arjun Mehta",
+  subtitle: "Admin · Online",
+  dmParticipant: MOCK_PARTICIPANTS[1],
+  isAccessible: true,
+  threadOpen: false,
+  threadAnchorMessageId: null,
+};
+
+export const MOCK_ACTIVE_GROUP: ActiveConversation = {
+  id: "grp-q2-close",
+  kind: "group",
+  name: "Q2 Close Team",
+  subtitle: "Private group · 6 members",
+  groupMemberCount: 6,
+  isAccessible: true,
+  threadOpen: false,
+  threadAnchorMessageId: null,
 };

@@ -4,7 +4,17 @@ import React, { useState } from "react";
 import { MessagingLeftRail } from "./messaging-left-rail";
 import { MessagingCommandBar } from "./messaging-command-bar";
 import { MessagingWorkspacePane } from "./messaging-workspace-pane";
-import type { MessagingSection, MessagingWorkspaceState } from "./types";
+import {
+  ChannelConversationList,
+  DMConversationList,
+  GroupConversationList,
+} from "./messaging-conversation-list";
+import { MessagingReadingWorkspace } from "./messaging-reading-workspace";
+import type {
+  MessagingSection,
+  MessagingWorkspaceState,
+  ActiveConversation,
+} from "./types";
 import { cn } from "@/lib/utils";
 
 const MOBILE_SECTIONS: Array<{
@@ -22,15 +32,15 @@ const MOBILE_SECTIONS: Array<{
 ];
 
 /**
- * MessagingWorkspace — the top-level shell for the Messaging module.
+ * MessagingWorkspace — top-level shell for the Messaging module.
  *
- * Sprint 1.1 scope: workspace shell and navigation only.
- * - Left rail with all section entry points
- * - Top command/search bar
- * - Section workspace pane (static content per section)
- * - Responsive direction: desktop rail + compact mobile/tablet section switcher
+ * Sprint 1.1: workspace shell and navigation.
+ * Sprint 1.2: conversation list column + reading workspace for channels/DMs/groups.
  *
- * No realtime, no persistence, no message sending in this sprint.
+ * Sections that have a conversation model (channels, dms, groups) now render a
+ * two-column layout: conversation list on the left, reading workspace on the right.
+ * All other sections (tasks, meetings, files, admin) continue to use the Sprint 1.1
+ * workspace pane unchanged.
  */
 export function MessagingWorkspace() {
   const [state, setState] = useState<MessagingWorkspaceState>({
@@ -38,6 +48,12 @@ export function MessagingWorkspace() {
     searchQuery: "",
     commandBarOpen: false,
   });
+
+  // Sprint 1.2: active conversation per section, kept separate so switching
+  // sections preserves the last-selected conversation in each.
+  const [activeConversations, setActiveConversations] = useState<
+    Partial<Record<MessagingSection, ActiveConversation>>
+  >({});
 
   const setActiveSection = (section: MessagingSection) => {
     setState((prev) => ({ ...prev, activeSection: section }));
@@ -51,16 +67,28 @@ export function MessagingWorkspace() {
     setState((prev) => ({ ...prev, commandBarOpen: !prev.commandBarOpen }));
   };
 
+  const handleConversationSelect = (conv: ActiveConversation) => {
+    setActiveConversations((prev) => ({
+      ...prev,
+      [state.activeSection]: conv,
+    }));
+  };
+
+  const activeConversation = activeConversations[state.activeSection] ?? null;
+
+  // Sections that use the Sprint 1.2 two-column conversation layout
+  const isConversationSection =
+    state.activeSection === "channels" ||
+    state.activeSection === "dms" ||
+    state.activeSection === "groups";
+
   return (
     <div
       className="flex h-full w-full overflow-hidden"
       style={{ background: "#f8f9fc" }}
       data-testid="messaging-workspace"
     >
-      {/*
-       * Left rail — hidden on mobile (< lg), visible on desktop.
-       * Sprint 1.2+ will add a mobile drawer/bottom nav.
-       */}
+      {/* Left rail — hidden on mobile (< lg) */}
       <div className="hidden lg:flex lg:flex-shrink-0">
         <MessagingLeftRail
           activeSection={state.activeSection}
@@ -111,9 +139,59 @@ export function MessagingWorkspace() {
           })}
         </div>
 
-        {/* Section workspace pane */}
-        <div className="flex-1 overflow-hidden">
-          <MessagingWorkspacePane activeSection={state.activeSection} />
+        {/* Section workspace */}
+        <div className="flex flex-1 overflow-hidden">
+          {isConversationSection ? (
+            /*
+             * Sprint 1.2 two-column layout:
+             * [conversation list ~280px] [reading workspace flex-1]
+             */
+            <div
+              className="flex flex-1 overflow-hidden"
+              data-testid="messaging-workspace-pane"
+            >
+              {/* Conversation list column */}
+              <div
+                className="hidden md:flex md:flex-col md:w-72 md:shrink-0 border-r overflow-hidden"
+                style={{ borderColor: "#E0E0E0" }}
+                data-testid="conversation-list-column"
+              >
+                {state.activeSection === "channels" && (
+                  <ChannelConversationList
+                    activeConversationId={activeConversation?.id ?? null}
+                    onSelect={handleConversationSelect}
+                  />
+                )}
+                {state.activeSection === "dms" && (
+                  <DMConversationList
+                    activeConversationId={activeConversation?.id ?? null}
+                    onSelect={handleConversationSelect}
+                  />
+                )}
+                {state.activeSection === "groups" && (
+                  <GroupConversationList
+                    activeConversationId={activeConversation?.id ?? null}
+                    onSelect={handleConversationSelect}
+                  />
+                )}
+              </div>
+
+              {/* Reading workspace */}
+              <MessagingReadingWorkspace
+                conversation={activeConversation}
+                sectionKind={
+                  state.activeSection === "channels"
+                    ? "channel"
+                    : state.activeSection === "dms"
+                    ? "dm"
+                    : "group"
+                }
+              />
+            </div>
+          ) : (
+            /* Sprint 1.1 pane for tasks / meetings / files / admin */
+            <MessagingWorkspacePane activeSection={state.activeSection} />
+          )}
         </div>
       </div>
     </div>
