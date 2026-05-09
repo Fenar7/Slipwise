@@ -698,3 +698,52 @@ describe("deleteMailboxCursors", () => {
     });
   });
 });
+
+// ─── Schema ownership invariant ───────────────────────────────────────────────
+
+describe("composite org ownership invariants", () => {
+  it("cursor upsert where clause includes orgId (composite unique key)", async () => {
+    mockDb.mailboxProviderCursor.findFirst.mockResolvedValue(null);
+    mockDb.mailboxProviderCursor.upsert.mockResolvedValue(makeCursorRow());
+
+    await upsertMailboxCursor({
+      orgId: ORG_A, mailboxConnectionId: CONN_ID,
+      provider: "GMAIL", cursorType: "HISTORY_ID", cursorValue: "1", expiresAt: null,
+    });
+
+    const where = mockDb.mailboxProviderCursor.upsert.mock.calls[0][0].where
+      .orgId_mailboxConnectionId_cursorType;
+    expect(where.orgId).toBe(ORG_A);
+    expect(where.mailboxConnectionId).toBe(CONN_ID);
+  });
+
+  it("cursor create leg includes orgId so composite FK is satisfied", async () => {
+    mockDb.mailboxProviderCursor.findFirst.mockResolvedValue(null);
+    mockDb.mailboxProviderCursor.upsert.mockResolvedValue(makeCursorRow());
+
+    await upsertMailboxCursor({
+      orgId: ORG_A, mailboxConnectionId: CONN_ID,
+      provider: "GMAIL", cursorType: "PAGE_TOKEN", cursorValue: "tok-1", expiresAt: null,
+    });
+
+    const create = mockDb.mailboxProviderCursor.upsert.mock.calls[0][0].create;
+    expect(create.orgId).toBe(ORG_A);
+    expect(create.mailboxConnectionId).toBe(CONN_ID);
+  });
+
+  it("cursor upsert for ORG_B carries ORG_B in where clause (not ORG_A)", async () => {
+    // At DB level the composite FK MailboxConnection[id, orgId] would reject a row
+    // where orgId=ORG_B but the connection belongs to ORG_A.
+    mockDb.mailboxProviderCursor.findFirst.mockResolvedValue(null);
+    mockDb.mailboxProviderCursor.upsert.mockResolvedValue(makeCursorRow({ orgId: ORG_B }));
+
+    await upsertMailboxCursor({
+      orgId: ORG_B, mailboxConnectionId: CONN_ID,
+      provider: "GMAIL", cursorType: "HISTORY_ID", cursorValue: "1", expiresAt: null,
+    });
+
+    const where = mockDb.mailboxProviderCursor.upsert.mock.calls[0][0].where
+      .orgId_mailboxConnectionId_cursorType;
+    expect(where.orgId).toBe(ORG_B);
+  });
+});

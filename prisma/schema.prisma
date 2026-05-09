@@ -5980,6 +5980,9 @@ model MailboxConnection {
 
   /// One active connection per org per provider account.
   @@unique([orgId, provider, providerAccountId])
+  /// Composite surface used by child relations (MailboxDraft, MailboxProviderCursor)
+  /// to enforce that child rows cannot reference a connection from a different org.
+  @@unique([id, orgId])
   @@index([orgId, status])
   @@index([orgId, provider])
   @@map("mailbox_connection")
@@ -6030,7 +6033,9 @@ model MailboxDraft {
   updatedAt           DateTime           @updatedAt
 
   organization       Organization      @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  mailboxConnection  MailboxConnection @relation(fields: [mailboxConnectionId], references: [id], onDelete: Cascade)
+  /// Composite FK: references MailboxConnection[id, orgId] so a draft row cannot
+  /// reference a connection from a different org at the database level.
+  mailboxConnection  MailboxConnection @relation(fields: [mailboxConnectionId, orgId], references: [id, orgId], onDelete: Cascade)
 
   @@index([orgId, mailboxConnectionId, status])
   @@index([orgId, threadId])
@@ -6075,6 +6080,11 @@ model MailboxAuditEvent {
   createdAt           DateTime           @default(now())
 
   organization       Organization       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  /// Single-field FK retained for the nullable connection reference: Prisma does not
+  /// support nullable composite FKs cleanly. Org ownership is enforced by two
+  /// independent constraints: (1) the Organization FK on orgId guarantees the audit
+  /// event belongs to the correct org; (2) the service layer (logMailboxAuditTx)
+  /// only sets mailboxConnectionId after verifying org ownership via findFirst.
   mailboxConnection  MailboxConnection? @relation(fields: [mailboxConnectionId], references: [id], onDelete: SetNull)
 
   @@index([orgId, createdAt])
@@ -6098,7 +6108,9 @@ model MailboxProviderCursor {
   updatedAt           DateTime          @updatedAt
 
   organization      Organization      @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  mailboxConnection MailboxConnection @relation(fields: [mailboxConnectionId], references: [id], onDelete: Cascade)
+  /// Composite FK: references MailboxConnection[id, orgId] so a cursor row cannot
+  /// reference a connection from a different org at the database level.
+  mailboxConnection MailboxConnection @relation(fields: [mailboxConnectionId, orgId], references: [id, orgId], onDelete: Cascade)
 
   /// Org-safe unique key: upsert keys on this to prevent cross-org cursor mutation.
   @@unique([orgId, mailboxConnectionId, cursorType])
