@@ -159,7 +159,7 @@ describe("MailboxCommandBar", () => {
 describe("MailboxThreadList", () => {
   it("renders the thread list landmark", () => {
     render(<MailboxThreadList selectedThreadId={null} onSelectThread={vi.fn()} />);
-    expect(screen.getByRole("list", { name: /thread list/i })).toBeInTheDocument();
+    expect(screen.getByRole("listbox", { name: /thread list/i })).toBeInTheDocument();
   });
 
   it("renders thread rows with sender names", () => {
@@ -178,15 +178,15 @@ describe("MailboxThreadList", () => {
   it("calls onSelectThread when a row is clicked", () => {
     const onSelect = vi.fn();
     render(<MailboxThreadList selectedThreadId={null} onSelectThread={onSelect} />);
-    const firstRow = screen.getAllByRole("button")[0];
+    const firstRow = screen.getAllByRole("option")[0];
     fireEvent.click(firstRow);
     expect(onSelect).toHaveBeenCalledOnce();
   });
 
   it("marks selected thread with aria-selected", () => {
     render(<MailboxThreadList selectedThreadId="t1" onSelectThread={vi.fn()} />);
-    const selectedRow = screen.getAllByRole("button").find(
-      (btn) => btn.getAttribute("aria-selected") === "true"
+    const selectedRow = screen.getAllByRole("option").find(
+      (opt) => opt.getAttribute("aria-selected") === "true"
     );
     expect(selectedRow).toBeDefined();
   });

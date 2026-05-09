@@ -6,7 +6,8 @@ import { MailboxLeftRail } from "./mailbox-left-rail";
 import { MailboxCommandBar } from "./mailbox-command-bar";
 import { MailboxThreadList, MOCK_THREADS } from "./mailbox-thread-list";
 import { MailboxReadingPaneEmpty } from "./mailbox-reading-pane-empty";
-import { GLOBAL_SMART_VIEWS, MOCK_CONNECTIONS } from "./mock-data";
+import { MailboxReadingPane } from "./mailbox-reading-pane";
+import { GLOBAL_SMART_VIEWS, MOCK_CONNECTIONS, MOCK_THREAD_DETAILS } from "./mock-data";
 
 export function resolveViewLabel(pathname: string): string {
   const smartView = GLOBAL_SMART_VIEWS.find(
@@ -34,6 +35,8 @@ export function MailboxWorkspace() {
   const viewLabel = resolveViewLabel(pathname);
   const totalCount = MOCK_THREADS.length;
   const unreadCount = MOCK_THREADS.filter((t) => t.isUnread).length;
+
+  const selectedDetail = selectedThreadId ? MOCK_THREAD_DETAILS[selectedThreadId] ?? null : null;
 
   return (
     <div
@@ -66,12 +69,16 @@ export function MailboxWorkspace() {
             />
           </div>
 
-          {/* Reading pane — hidden on mobile until thread selected */}
+          {/* Reading pane */}
           <div
             className="hidden min-w-0 flex-1 overflow-hidden md:flex md:flex-col"
             data-testid="mailbox-reading-pane"
           >
-            <MailboxReadingPaneEmpty />
+            {selectedDetail ? (
+              <MailboxReadingPane detail={selectedDetail} />
+            ) : (
+              <MailboxReadingPaneEmpty />
+            )}
           </div>
         </div>
       </div>
