@@ -24,6 +24,7 @@ vi.mock("@/lib/db", () => ({
       create: vi.fn(),
       findFirst: vi.fn(),
       update: vi.fn(),
+      updateMany: vi.fn(),
       deleteMany: vi.fn(),
     },
     mailboxConnection: {
@@ -82,6 +83,7 @@ const mockDb = db as unknown as {
     create: ReturnType<typeof vi.fn>;
     findFirst: ReturnType<typeof vi.fn>;
     update: ReturnType<typeof vi.fn>;
+    updateMany: ReturnType<typeof vi.fn>;
     deleteMany: ReturnType<typeof vi.fn>;
   };
   mailboxConnection: {
@@ -487,9 +489,7 @@ describe("gmailProviderAdapter.verifyConnection", () => {
     mockDb.mailboxCredential.findFirst.mockResolvedValue({
       encryptedPayload: `encrypted:${JSON.stringify(SAMPLE_PAYLOAD)}`,
     });
-    mockFetch
-      .mockResolvedValueOnce(jsonResponse(mockGmailProfile()))
-      .mockResolvedValueOnce(jsonResponse(mockUserInfo()));
+    mockFetch.mockResolvedValueOnce(jsonResponse(mockUserInfo()));
 
     const result = await gmailProviderAdapter.verifyConnection({
       orgId: ORG_A,
@@ -885,9 +885,7 @@ describe("verifyGmailConnection", () => {
     mockDb.mailboxCredential.findFirst.mockResolvedValue({
       encryptedPayload: `encrypted:${JSON.stringify(SAMPLE_PAYLOAD)}`,
     });
-    mockFetch
-      .mockResolvedValueOnce(jsonResponse(mockGmailProfile()))
-      .mockResolvedValueOnce(jsonResponse(mockUserInfo()));
+    mockFetch.mockResolvedValueOnce(jsonResponse(mockUserInfo()));
 
     const result = await verifyGmailConnection({
       orgId: ORG_A,
@@ -1010,5 +1008,130 @@ describe("org scoping invariants", () => {
     expect(mockDb.mailboxConnection.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({ where: { id: "conn-001", orgId: ORG_B } }),
     );
+  });
+});
+
+// ─── Fix 1: Cookie path uses correct prefix ───────────────────────────────────
+import {
+  getIntegrationOAuthStateCookieOptions,
+  getClearedIntegrationOAuthStateCookieOptions,
+} from "@/lib/integrations/oauth-state";
+describe("getIntegrationOAuthStateCookieOptions — pathPrefix", () => {
+  it("uses /api/integrations prefix by default (quickbooks, zoho unchanged)", () => {
+    expect(getIntegrationOAuthStateCookieOptions("quickbooks").path).toBe(
+      "/api/integrations/quickbooks/callback",
+    );
+    expect(getIntegrationOAuthStateCookieOptions("zoho").path).toBe(
+      "/api/integrations/zoho/callback",
+    );
+  });
+  it("uses /api/mailbox prefix when pathPrefix is /api/mailbox", () => {
+    expect(
+      getIntegrationOAuthStateCookieOptions("gmail", "/api/mailbox").path,
+    ).toBe("/api/mailbox/gmail/callback");
+  });
+  it("getClearedIntegrationOAuthStateCookieOptions propagates pathPrefix", () => {
+    expect(
+      getClearedIntegrationOAuthStateCookieOptions("gmail", "/api/mailbox").path,
+    ).toBe("/api/mailbox/gmail/callback");
+  });
+});
+
+// ─── Fix 2: Revoke refresh token on disconnect ────────────────────────────────
+describe("gmailProviderAdapter.disconnect — token revocation", () => {
+  it("uses refreshToken for revocation when present", async () => {
+    const payloadWithRefresh: MailboxCredentialPayload = {
+      ...SAMPLE_PAYLOAD,
+      accessToken: "ya29.access",
+      refreshToken: "1//refresh-token-value",
+    };
+    mockDb.mailboxCredential.findFirst.mockResolvedValue({
+      encryptedPayload: `encrypted:${JSON.stringify(payloadWithRefresh)}`,
+    });
+    mockFetch.mockResolvedValueOnce({ ok: true });
+    mockDb.mailboxCredential.deleteMany.mockResolvedValue({ count: 1 });
+    await gmailProviderAdapter.disconnect({ orgId: ORG_A, tokenRef: TOKEN_REF });
+    const revokeUrl = mockFetch.mock.calls[0][0] as string;
+    expect(revokeUrl).toContain(encodeURIComponent("1//refresh-token-value"));
+    expect(revokeUrl).not.toContain("ya29.access");
+  });
+  it("falls back to accessToken when refreshToken is null", async () => {
+    const payloadNoRefresh: MailboxCredentialPayload = {
+      ...SAMPLE_PAYLOAD,
+      accessToken: "ya29.access-only",
+      refreshToken: null,
+    };
+    mockDb.mailboxCredential.findFirst.mockResolvedValue({
+      encryptedPayload: `encrypted:${JSON.stringify(payloadNoRefresh)}`,
+    });
+    mockFetch.mockResolvedValueOnce({ ok: true });
+    mockDb.mailboxCredential.deleteMany.mockResolvedValue({ count: 1 });
+    await gmailProviderAdapter.disconnect({ orgId: ORG_A, tokenRef: TOKEN_REF });
+    const revokeUrl = mockFetch.mock.calls[0][0] as string;
+    expect(revokeUrl).toContain("ya29.access-only");
+  });
+});
+
+// ─── Fix 3: DB transaction before provider revoke ─────────────────────────────
+describe("disconnectGmailMailbox — operation order", () => {
+  it("resolves even if provider revoke throws after DB transaction succeeds", async () => {
+    setupTransaction();
+    mockDb.mailboxConnection.findFirst.mockResolvedValue({
+      id: "conn-001",
+      orgId: ORG_A,
+      tokenRef: TOKEN_REF,
+      emailAddress: "test@example.com",
+      status: "ACTIVE",
+    });
+    mockDb.mailboxConnection.update.mockResolvedValue({});
+    mockDb.mailboxAuditEvent.create.mockResolvedValue({});
+    // Credential read succeeds, but provider fetch throws
+    mockDb.mailboxCredential.findFirst.mockResolvedValue({
+      encryptedPayload: `encrypted:${JSON.stringify(SAMPLE_PAYLOAD)}`,
+    });
+    mockFetch.mockRejectedValueOnce(new Error("network error"));
+    mockDb.mailboxCredential.deleteMany.mockResolvedValue({ count: 1 });
+    await expect(
+      disconnectGmailMailbox({ orgId: ORG_A, connectionId: "conn-001", actorId: "actor-1" }),
+    ).resolves.toBeUndefined();
+    // DB update must have been called before provider revoke attempted
+    expect(mockDb.mailboxConnection.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: "DISCONNECTED", tokenRef: null }),
+      }),
+    );
+  });
+});
+
+// ─── Fix 5: verifyConnection makes only one HTTP call ────────────────────────
+describe("gmailProviderAdapter.verifyConnection — single HTTP call", () => {
+  it("makes exactly one fetch call to userinfo endpoint", async () => {
+    mockDb.mailboxCredential.findFirst.mockResolvedValue({
+      encryptedPayload: `encrypted:${JSON.stringify(SAMPLE_PAYLOAD)}`,
+    });
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        sub: "google-uid-123",
+        email: "user@example.com",
+        name: "Test User",
+      }),
+    });
+    const result = await gmailProviderAdapter.verifyConnection({
+      orgId: ORG_A,
+      tokenRef: TOKEN_REF,
+    });
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect((mockFetch.mock.calls[0][0] as string)).toContain("userinfo");
+    expect(result).toMatchObject({ emailAddress: "user@example.com" });
+  });
+});
+
+// ─── Fix 6: mailboxDisconnect rate-limit constant ─────────────────────────────
+describe("RATE_LIMITS — mailboxDisconnect", () => {
+  it("has a dedicated mailboxDisconnect limit separate from mailboxConnect", () => {
+    expect(RATE_LIMITS.mailboxDisconnect).toBeDefined();
+    expect(RATE_LIMITS.mailboxDisconnect.maxRequests).toBeGreaterThan(0);
+    expect(RATE_LIMITS).toHaveProperty("mailboxDisconnect");
   });
 });

@@ -69,10 +69,11 @@ export interface MailboxCredentialPayload {
 export async function storeMailboxCredential(
   orgId: string,
   payload: MailboxCredentialPayload,
+  connectionId: string | null = null,
 ): Promise<string> {
   const encrypted = encryptGatewaySecret(JSON.stringify(payload));
   const row = await db.mailboxCredential.create({
-    data: { orgId, encryptedPayload: encrypted },
+    data: { orgId, connectionId, encryptedPayload: encrypted },
     select: { id: true },
   });
   return row.id;

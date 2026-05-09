@@ -149,6 +149,12 @@ export async function handleGmailCallback(params: {
       connectedBy: actorId,
     });
 
+    // Link the credential to the new connection (best-effort; non-fatal if it fails).
+    await db.mailboxCredential.update({
+      where: { id: identity.tokenRef },
+      data: { connectionId: connection.id },
+    }).catch(() => { /* non-fatal */ });
+
     return { ok: true, connection, isReconnect: false };
   } catch (error) {
     // If connection creation fails, clean up the stored credential to avoid orphans.
@@ -319,12 +325,7 @@ export async function disconnectGmailMailbox(params: {
     throw new Error(`MailboxConnection ${connectionId} not found for org ${orgId}`);
   }
 
-  // Revoke provider authorization and delete credential (best-effort).
-  if (connection.tokenRef) {
-    await gmailProviderAdapter.disconnect({ orgId, tokenRef: connection.tokenRef });
-  }
-
-  // Update connection status and emit audit event atomically.
+  // 2. Atomically update DB status and emit audit event FIRST.
   await db.$transaction(async (tx) => {
     await tx.mailboxConnection.update({
       where: { id: connection.id },
@@ -341,6 +342,11 @@ export async function disconnectGmailMailbox(params: {
       },
     });
   });
+
+  // 3. AFTER DB is consistent, revoke provider credentials (best-effort).
+  if (connection.tokenRef) {
+    await gmailProviderAdapter.disconnect({ orgId, tokenRef: connection.tokenRef });
+  }
 }
 
 // ─── Internal mapper ──────────────────────────────────────────────────────────

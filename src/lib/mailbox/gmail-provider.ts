@@ -339,17 +339,13 @@ export const gmailProviderAdapter: IMailboxProviderAdapter = {
       return { category: "auth_expired", safeMessage: "Credential not found for tokenRef", retryable: false };
     }
 
-    const profile = await fetchGmailProfile(credential.accessToken);
-    if (isProviderError(profile)) return profile;
-
-    // Also fetch display name from userinfo.
     const userInfo = await fetchGoogleUserInfo(credential.accessToken);
     if (isProviderError(userInfo)) return userInfo;
 
     return {
       providerAccountId: userInfo.sub,
-      emailAddress: profile.emailAddress,
-      displayName: userInfo.name ?? profile.emailAddress,
+      emailAddress: userInfo.email,
+      displayName: userInfo.name ?? userInfo.email,
       isAccessible: true,
     };
   },
@@ -395,7 +391,8 @@ export const gmailProviderAdapter: IMailboxProviderAdapter = {
       // Attempt to revoke the access token with Google.
       // Best-effort: we always clean up locally regardless of provider response.
       try {
-        await fetch(`${GMAIL_REVOKE_URL}?token=${encodeURIComponent(credential.accessToken)}`, {
+        const tokenToRevoke = credential.refreshToken ?? credential.accessToken;
+        await fetch(`${GMAIL_REVOKE_URL}?token=${encodeURIComponent(tokenToRevoke)}`, {
           method: "POST",
         });
       } catch {

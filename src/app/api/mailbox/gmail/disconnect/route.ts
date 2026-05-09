@@ -17,7 +17,7 @@ export async function POST(request: NextRequest) {
     const auth = await requireIntegrationAdminRoute();
     if (!auth.ok) return auth.response;
 
-    const rl = await rateLimitByOrg(auth.ctx.orgId, RATE_LIMITS.mailboxConnect);
+    const rl = await rateLimitByOrg(auth.ctx.orgId, RATE_LIMITS.mailboxDisconnect);
     if (!rl.success) {
       return NextResponse.json(
         { error: "Too many requests. Please wait before trying again." },

@@ -44,7 +44,7 @@ export async function GET() {
     response.cookies.set(
       getIntegrationOAuthStateCookieName("gmail"),
       cookieValue,
-      getIntegrationOAuthStateCookieOptions("gmail"),
+      getIntegrationOAuthStateCookieOptions("gmail", "/api/mailbox"),
     );
     return response;
   } catch (error) {

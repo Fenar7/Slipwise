@@ -5974,10 +5974,11 @@ model MailboxConnection {
   createdAt         DateTime                @default(now())
   updatedAt         DateTime                @updatedAt
 
-  organization      Organization            @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  drafts            MailboxDraft[]
-  auditEvents       MailboxAuditEvent[]
-  providerCursors   MailboxProviderCursor[]
+  organization       Organization            @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  drafts             MailboxDraft[]
+  auditEvents        MailboxAuditEvent[]
+  providerCursors    MailboxProviderCursor[]
+  mailboxCredentials MailboxCredential[]
 
   /// One active connection per org per provider account.
   @@unique([orgId, provider, providerAccountId])
@@ -6126,15 +6127,18 @@ model MailboxProviderCursor {
 ///
 /// Sprint 2.2: implements the tokenRef abstraction defined in Sprint 2.1.
 model MailboxCredential {
-  id               String   @id @default(cuid())
+  id               String             @id @default(cuid())
   orgId            String
+  connectionId     String?
   /// AES-256-GCM encrypted JSON payload. Format: v2:<iv>:<ciphertext>:<tag>
-  encryptedPayload String   @db.Text
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  encryptedPayload String             @db.Text
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
 
-  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  organization Organization          @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  connection   MailboxConnection?    @relation(fields: [connectionId], references: [id], onDelete: SetNull)
 
   @@index([orgId])
+  @@index([connectionId])
   @@map("mailbox_credential")
 }

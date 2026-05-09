@@ -23,7 +23,7 @@ function clearStateCookie(response: NextResponse): void {
   response.cookies.set(
     getIntegrationOAuthStateCookieName("gmail"),
     "",
-    getClearedIntegrationOAuthStateCookieOptions("gmail"),
+    getClearedIntegrationOAuthStateCookieOptions("gmail", "/api/mailbox"),
   );
 }
 
