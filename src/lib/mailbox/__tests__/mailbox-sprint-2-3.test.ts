@@ -50,7 +50,7 @@ import {
 import { toMailboxConnectionListItem } from "@/lib/mailbox/admin-shapes";
 
 import { GET as listConnections } from "@/app/api/mailbox/connections/route";
-import { GET as getConnection } from "@/app/api/mailbox/connections/[connectionId]/route";
+import { GET as getConnection, DELETE as deleteConnection } from "@/app/api/mailbox/connections/[connectionId]/route";
 import { PATCH as patchStatus } from "@/app/api/mailbox/connections/[connectionId]/status/route";
 import { NextRequest } from "next/server";
 
@@ -462,8 +462,9 @@ describe("PATCH /api/mailbox/connections/[id]/status", () => {
 
   it("returns 404 when connection not found", async () => {
     setupAdminAuth();
-    // First findFirst (existence check in route) returns null
-    mockDb.mailboxConnection.findFirst.mockResolvedValue(null);
+    mockDb.$transaction.mockImplementation(async () => {
+      throw new Error("MailboxConnection nonexistent not found for org org-aaa");
+    });
 
     const res = await patchStatus(makeRequest({ status: "DEGRADED" }), {
       params: Promise.resolve({ connectionId: "nonexistent" }),
@@ -472,5 +473,71 @@ describe("PATCH /api/mailbox/connections/[id]/status", () => {
 
     expect(res.status).toBe(404);
     expect(body.error).toBe("Connection not found");
+  });
+
+  it("returns 404 when updateMailboxConnectionStatus throws error containing 'not found'", async () => {
+    setupAdminAuth();
+    mockDb.$transaction.mockImplementation(async () => {
+      throw new Error("MailboxConnection xyz not found for org org-aaa");
+    });
+
+    const res = await patchStatus(makeRequest({ status: "DEGRADED" }), {
+      params: Promise.resolve({ connectionId: "xyz" }),
+    });
+    expect(res.status).toBe(404);
+  });
+});
+
+// ─── DELETE /api/mailbox/connections/[id] ────────────────────────────────────
+
+describe("DELETE /api/mailbox/connections/[id]", () => {
+  function makeRequest() {
+    return new NextRequest("http://localhost/api/mailbox/connections/" + CONN_ID, {
+      method: "DELETE",
+    });
+  }
+
+  it("returns 200 with disabled connection when admin calls DELETE on valid connectionId", async () => {
+    setupAdminAuth();
+    setupTransaction();
+    mockDb.mailboxConnection.findFirst.mockResolvedValue(makeDbRow());
+    mockDb.mailboxConnection.update.mockResolvedValue(
+      makeDbRow({ status: "DISCONNECTED", disabledAt: new Date() }),
+    );
+    mockDb.mailboxAuditEvent.create.mockResolvedValue({});
+
+    const res = await deleteConnection(makeRequest(), {
+      params: Promise.resolve({ connectionId: CONN_ID }),
+    });
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.ok).toBe(true);
+    expect(body.connection).toBeDefined();
+  });
+
+  it("returns 404 when disableMailboxConnection throws error containing 'not found'", async () => {
+    setupAdminAuth();
+    mockDb.$transaction.mockImplementation(async () => {
+      throw new Error("MailboxConnection nonexistent not found for org org-aaa");
+    });
+
+    const res = await deleteConnection(makeRequest(), {
+      params: Promise.resolve({ connectionId: "nonexistent" }),
+    });
+    const body = await res.json();
+
+    expect(res.status).toBe(404);
+    expect(body.error).toBe("Connection not found");
+  });
+
+  it("returns 401 when admin auth check fails", async () => {
+    vi.mocked(getOrgContext).mockResolvedValue(null);
+    vi.mocked(hasRole).mockReturnValue(false);
+
+    const res = await deleteConnection(makeRequest(), {
+      params: Promise.resolve({ connectionId: CONN_ID }),
+    });
+    expect(res.status).toBe(401);
   });
 });

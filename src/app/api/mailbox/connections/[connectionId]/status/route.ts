@@ -3,12 +3,9 @@ import "server-only";
 import { NextRequest, NextResponse } from "next/server";
 import { requireIntegrationAdminRoute } from "@/app/api/integrations/_auth";
 import { rateLimitByOrg, RATE_LIMITS } from "@/lib/rate-limit";
-import {
-  getMailboxConnection,
-  updateMailboxConnectionStatus,
-} from "@/lib/mailbox/connection-service";
+import { updateMailboxConnectionStatus } from "@/lib/mailbox/connection-service";
 import { toMailboxConnectionListItem } from "@/lib/mailbox/admin-shapes";
-import type { MailboxConnectionStatus } from "@/lib/mailbox/domain-types";
+import type { MailboxConnectionStatus, MailboxConnectionRecord } from "@/lib/mailbox/domain-types";
 
 const ALLOWED_ADMIN_STATUSES: MailboxConnectionStatus[] = ["DEGRADED", "DISCONNECTED"];
 
@@ -37,17 +34,20 @@ export async function PATCH(
 
     const status = body.status as MailboxConnectionStatus;
 
-    const existing = await getMailboxConnection(auth.ctx.orgId, connectionId);
-    if (!existing) {
-      return NextResponse.json({ error: "Connection not found" }, { status: 404 });
+    let updated: MailboxConnectionRecord;
+    try {
+      updated = await updateMailboxConnectionStatus({
+        orgId: auth.ctx.orgId,
+        connectionId,
+        status,
+        actorId: auth.ctx.userId,
+      });
+    } catch (err) {
+      if (err instanceof Error && err.message.toLowerCase().includes("not found")) {
+        return NextResponse.json({ error: "Connection not found" }, { status: 404 });
+      }
+      throw err;
     }
-
-    const updated = await updateMailboxConnectionStatus({
-      orgId: auth.ctx.orgId,
-      connectionId,
-      status,
-      actorId: auth.ctx.userId,
-    });
 
     return NextResponse.json({ ok: true, connection: toMailboxConnectionListItem(updated) });
   } catch (error) {

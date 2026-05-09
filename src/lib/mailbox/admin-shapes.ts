@@ -1,6 +1,6 @@
 import "server-only";
 
-import type { MailboxConnectionRecord } from "./domain-types";
+import type { MailboxConnectionRecord, MailboxConnectionStatus } from "./domain-types";
 import type { MailboxConnectionHealth } from "./health";
 import { deriveMailboxHealth } from "./health";
 
@@ -17,7 +17,7 @@ export interface MailboxConnectionListItem {
   provider: string;
   emailAddress: string;
   displayName: string;
-  status: string;
+  status: MailboxConnectionStatus;
   health: MailboxConnectionHealth;
   lastSyncAt: string | null;
   lastSyncError: string | null;

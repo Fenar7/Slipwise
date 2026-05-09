@@ -13,6 +13,11 @@
  *   They never call the database.
  */
 
+// Sprint 2.3 note: MailboxHealthSummary and MailboxAdminConnectionSummary are
+// deprecated in favour of MailboxConnectionHealth (health.ts) and
+// MailboxConnectionListItem (admin-shapes.ts) respectively.
+// Remove after Phase 4 migration is complete.
+
 import type {
   MailboxConnectionRecord,
   MailboxAssignmentRecord,
@@ -65,6 +70,9 @@ export function toMailboxConnectionSummary(
 // ─── Mailbox health summary ───────────────────────────────────────────────────
 
 /**
+ * @deprecated Use `MailboxConnectionHealth` from `./health` instead.
+ * This shape will be removed once all callers are migrated.
+ *
  * Health and reconnect-required summary for a mailbox connection.
  * Used in the mailbox workspace to show degraded/reconnect states.
  */
@@ -79,6 +87,9 @@ export interface MailboxHealthSummary {
   requiresAdminAction: boolean;
 }
 
+/**
+ * @deprecated Use `toMailboxConnectionListItem` from `./admin-shapes` instead.
+ */
 export function toMailboxHealthSummary(
   record: MailboxConnectionRecord,
 ): MailboxHealthSummary {
@@ -115,6 +126,9 @@ function resolveStatusMessage(
 // ─── Admin connection summary ─────────────────────────────────────────────────
 
 /**
+ * @deprecated Use `MailboxConnectionListItem` from `./admin-shapes` instead.
+ * This shape will be removed once all callers are migrated.
+ *
  * Full admin-facing connection summary.
  * Includes providerAccountId and connectedBy for governance.
  * Still excludes tokenRef and watchMetadata.
@@ -127,6 +141,9 @@ export interface MailboxAdminConnectionSummary extends MailboxConnectionSummary 
   updatedAt: string;
 }
 
+/**
+ * @deprecated Use `toMailboxConnectionListItem` from `./admin-shapes` instead.
+ */
 export function toMailboxAdminConnectionSummary(
   record: MailboxConnectionRecord,
 ): MailboxAdminConnectionSummary {
