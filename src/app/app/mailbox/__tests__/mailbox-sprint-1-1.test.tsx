@@ -69,7 +69,11 @@ describe("MailboxLeftRail", () => {
   it("renders all global smart views", () => {
     render(<MailboxLeftRail />);
     for (const view of GLOBAL_SMART_VIEWS) {
-      expect(screen.getByRole("link", { name: new RegExp(view.label, "i") })).toBeInTheDocument();
+      // Link text includes badge count, so use getAllByRole and check at least one matches
+      const links = screen.getAllByRole("link").filter((l) =>
+        l.textContent?.includes(view.label)
+      );
+      expect(links.length).toBeGreaterThan(0);
     }
   });
 
@@ -139,18 +143,28 @@ describe("MailboxCommandBar", () => {
   });
 
   it("shows clear button when search query is entered", () => {
-    render(<MailboxCommandBar activeViewLabel="All Inboxes" />);
-    const input = screen.getByRole("textbox", { name: /search mailbox threads/i });
-    fireEvent.change(input, { target: { value: "invoice" } });
+    const onSearchQueryChange = vi.fn();
+    render(
+      <MailboxCommandBar
+        activeViewLabel="All Inboxes"
+        searchQuery="invoice"
+        onSearchQueryChange={onSearchQueryChange}
+      />
+    );
     expect(screen.getByRole("button", { name: /clear search/i })).toBeInTheDocument();
   });
 
   it("clears search when clear button is clicked", () => {
-    render(<MailboxCommandBar activeViewLabel="All Inboxes" />);
-    const input = screen.getByRole("textbox", { name: /search mailbox threads/i });
-    fireEvent.change(input, { target: { value: "invoice" } });
+    const onClearSearch = vi.fn();
+    render(
+      <MailboxCommandBar
+        activeViewLabel="All Inboxes"
+        searchQuery="invoice"
+        onClearSearch={onClearSearch}
+      />
+    );
     fireEvent.click(screen.getByRole("button", { name: /clear search/i }));
-    expect(input).toHaveValue("");
+    expect(onClearSearch).toHaveBeenCalledOnce();
   });
 });
 

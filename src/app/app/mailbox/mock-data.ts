@@ -90,6 +90,20 @@ export const GLOBAL_SMART_VIEWS: MailboxTreeItem[] = [
     icon: "Clock",
     isSmartView: true,
   },
+  {
+    id: "linked",
+    label: "Linked",
+    href: "/app/mailbox/linked",
+    icon: "Link2",
+    isSmartView: true,
+  },
+  {
+    id: "unlinked",
+    label: "Unlinked",
+    href: "/app/mailbox/unlinked",
+    icon: "Link2Off",
+    isSmartView: true,
+  },
 ];
 
 function mailboxFolders(connectionId: string, prefix: string): MailboxTreeItem[] {
@@ -398,3 +412,198 @@ export const MOCK_ADMIN_SUMMARIES: MailboxAdminSummary[] = MOCK_CONNECTIONS.map(
   lastAdminActionAt: conn.status === "reconnect_required" ? "2026-05-07T09:15:00Z" : "2026-05-08T14:30:00Z",
   connectedBy: "Rahul Verma (Admin)",
 }));
+
+// ─── Sprint 1.5: Linked context mock data ────────────────────────────────────
+
+import type { LinkedContextState, SmartViewDef } from "./types";
+
+export const MOCK_LINKED_CONTEXT: Record<string, LinkedContextState> = {
+  t1: {
+    threadId: "t1",
+    links: [
+      {
+        id: "lnk_t1_inv",
+        threadId: "t1",
+        entityType: "invoice",
+        entityId: "inv_412",
+        entityLabel: "Invoice #INV-2026-0412",
+        entityRef: "INV-2026-0412",
+        entityMeta: "₹48,500 · Due 30 Apr 2026",
+        confidence: "confirmed",
+        isPrimary: true,
+      },
+      {
+        id: "lnk_t1_cust",
+        threadId: "t1",
+        entityType: "customer",
+        entityId: "cust_priya",
+        entityLabel: "Priya Sharma / ClientCo",
+        entityRef: "CUST-0091",
+        entityMeta: "Mumbai · Active",
+        confidence: "confirmed",
+        isPrimary: false,
+      },
+    ],
+    suggestions: [],
+    assignee: "You",
+    status: "open",
+    statusChangedAt: "2026-05-06T09:00:00Z",
+    internalNote: "",
+  },
+  t2: {
+    threadId: "t2",
+    links: [
+      {
+        id: "lnk_t2_quote",
+        threadId: "t2",
+        entityType: "quote",
+        entityId: "qt_089",
+        entityLabel: "Quote QT-2026-0089",
+        entityRef: "QT-2026-0089",
+        entityMeta: "₹1,20,000 · Valid until 31 May",
+        confidence: "confirmed",
+        isPrimary: true,
+      },
+    ],
+    suggestions: [
+      {
+        id: "sug_t2_cust",
+        threadId: "t2",
+        entityType: "customer",
+        entityId: "cust_arjun",
+        entityLabel: "Arjun Mehta / TechVentures",
+        entityRef: "CUST-0047",
+        entityMeta: "Bangalore · Active",
+        confidence: "suggested",
+        isPrimary: false,
+      },
+    ],
+    assignee: null,
+    status: "open",
+    statusChangedAt: "2026-05-07T14:30:00Z",
+    internalNote: "",
+  },
+  t3: {
+    threadId: "t3",
+    links: [
+      {
+        id: "lnk_t3_vch",
+        threadId: "t3",
+        entityType: "voucher",
+        entityId: "vch_031",
+        entityLabel: "Voucher VCH-2026-0031",
+        entityRef: "VCH-2026-0031",
+        entityMeta: "₹22,000 · Pending approval",
+        confidence: "confirmed",
+        isPrimary: true,
+      },
+    ],
+    suggestions: [],
+    assignee: null,
+    status: "pending",
+    statusChangedAt: "2026-05-07T11:00:00Z",
+    internalNote: "Waiting for finance team sign-off.",
+  },
+  t4: {
+    threadId: "t4",
+    links: [],
+    suggestions: [
+      {
+        id: "sug_t4_cust",
+        threadId: "t4",
+        entityType: "customer",
+        entityId: "cust_ravi",
+        entityLabel: "Ravi Nair / Global Retail",
+        entityRef: "CUST-0012",
+        entityMeta: "Chennai · Active",
+        confidence: "suggested",
+        isPrimary: false,
+      },
+    ],
+    assignee: "Meera",
+    status: "open",
+    statusChangedAt: "2026-05-07T16:45:00Z",
+    internalNote: "",
+  },
+  t5: {
+    threadId: "t5",
+    links: [],
+    suggestions: [],
+    assignee: null,
+    status: "open",
+    statusChangedAt: "2026-05-07T08:30:00Z",
+    internalNote: "",
+  },
+  t6: {
+    threadId: "t6",
+    links: [
+      {
+        id: "lnk_t6_cust",
+        threadId: "t6",
+        entityType: "customer",
+        entityId: "cust_vikram",
+        entityLabel: "Vikram Joshi / Enterprise Ltd",
+        entityRef: "CUST-0033",
+        entityMeta: "Delhi · Active",
+        confidence: "confirmed",
+        isPrimary: true,
+      },
+    ],
+    suggestions: [],
+    assignee: null,
+    status: "closed",
+    statusChangedAt: "2026-05-06T14:20:00Z",
+    internalNote: "TDS certificate issued and confirmed.",
+  },
+};
+
+export const SMART_VIEW_DEFS: SmartViewDef[] = [
+  {
+    id: "all-inboxes",
+    label: "All Inboxes",
+    href: "/app/mailbox",
+    description: "All threads across connected mailboxes",
+  },
+  {
+    id: "unread",
+    label: "Unread",
+    href: "/app/mailbox/unread",
+    description: "Threads with unread messages",
+  },
+  {
+    id: "assigned-to-me",
+    label: "Assigned to me",
+    href: "/app/mailbox/assigned",
+    description: "Threads assigned to you",
+  },
+  {
+    id: "unassigned",
+    label: "Unassigned",
+    href: "/app/mailbox/unassigned",
+    description: "Threads with no assignee",
+  },
+  {
+    id: "flagged",
+    label: "Flagged",
+    href: "/app/mailbox/flagged",
+    description: "Threads you have flagged for follow-up",
+  },
+  {
+    id: "waiting",
+    label: "Waiting",
+    href: "/app/mailbox/waiting",
+    description: "Threads in pending / waiting state",
+  },
+  {
+    id: "linked",
+    label: "Linked",
+    href: "/app/mailbox/linked",
+    description: "Threads linked to a Slipwise record",
+  },
+  {
+    id: "unlinked",
+    label: "Unlinked",
+    href: "/app/mailbox/unlinked",
+    description: "Threads with no linked record",
+  },
+];
