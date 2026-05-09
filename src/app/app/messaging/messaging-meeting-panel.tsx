@@ -8,8 +8,14 @@ import { MessagingMeetingSchedule } from "./messaging-meeting-schedule";
 import { MOCK_MEETINGS } from "./mock-data";
 import type { CalendarConnection, MeetingTab } from "./types";
 
+interface CalendarGridProps {
+  meetings: typeof MOCK_MEETINGS;
+  now?: Date;
+}
+
 interface MessagingMeetingPanelProps {
   calendarConnection: CalendarConnection;
+  now?: Date;
 }
 
 const TAB_OPTIONS = [
@@ -33,8 +39,7 @@ function buildCalendarGrid(year: number, month: number) {
   return cells;
 }
 
-function CalendarGrid({ meetings }: { meetings: typeof MOCK_MEETINGS }) {
-  const now = new Date();
+function CalendarGrid({ meetings, now = new Date() }: CalendarGridProps) {
   const year = now.getFullYear();
   const month = now.getMonth();
   const today = now.getDate();
@@ -77,6 +82,7 @@ function CalendarGrid({ meetings }: { meetings: typeof MOCK_MEETINGS }) {
                     "flex h-7 w-7 items-center justify-center rounded-full text-xs",
                     day === today ? "bg-[#DC2626] text-white font-bold" : "text-[#1C1B1F]"
                   )}
+                  {...(day === today ? { "aria-current": "date" as const } : {})}
                 >
                   {day}
                 </span>
@@ -109,7 +115,7 @@ function CalendarGrid({ meetings }: { meetings: typeof MOCK_MEETINGS }) {
   );
 }
 
-export function MessagingMeetingPanel({ calendarConnection }: MessagingMeetingPanelProps) {
+export function MessagingMeetingPanel({ calendarConnection, now = new Date() }: MessagingMeetingPanelProps) {
   const [tab, setTab] = useState<MeetingTab>("upcoming");
   const [showSchedule, setShowSchedule] = useState(false);
 
@@ -255,7 +261,7 @@ export function MessagingMeetingPanel({ calendarConnection }: MessagingMeetingPa
         )}
 
         {tab === "calendar" && (
-          <CalendarGrid meetings={MOCK_MEETINGS} />
+          <CalendarGrid meetings={MOCK_MEETINGS} now={now} />
         )}
       </div>
 

@@ -166,8 +166,18 @@ export function MessagingTaskPanel() {
 
   const overdue = listTasks.filter((t) => t.status === "overdue").length;
   // For detail view, look up in MOCK_TASK_DETAILS; fall back to a minimal detail shape
+  const baseTask = listTasks.find((t) => t.id === selectedTaskId);
   const selectedTask: MessagingTaskDetail | null = selectedTaskId
-    ? (MOCK_TASK_DETAILS.find((t) => t.id === selectedTaskId) ?? null)
+    ? (MOCK_TASK_DETAILS.find((t) => t.id === selectedTaskId) ??
+        (baseTask
+          ? {
+              ...baseTask,
+              priority: "medium" as const,
+              description: null,
+              createdAt: new Date().toISOString(),
+              createdBy: "Unknown",
+            }
+          : null))
     : null;
 
   if (selectedTask) {

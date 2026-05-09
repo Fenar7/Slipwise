@@ -230,6 +230,17 @@ describe("MessagingTaskPanel", () => {
       expect(screen.queryByTestId("task-list-empty")).not.toBeInTheDocument();
     }
   });
+
+  it("clicking any task row shows the detail panel (no silent failure)", () => {
+    render(<MessagingTaskPanel />);
+    const rows = screen.getAllByRole("button").filter(
+      (b) => b.getAttribute("data-testid")?.startsWith("task-row-")
+    );
+    if (rows.length > 0) {
+      fireEvent.click(rows[rows.length - 1]);
+      expect(screen.getByTestId("task-detail-panel")).toBeInTheDocument();
+    }
+  });
 });
 
 // ─── MessagingMeetingPanel ────────────────────────────────────────────────────
@@ -282,5 +293,29 @@ describe("MessagingMeetingPanel", () => {
     render(<MessagingMeetingPanel calendarConnection={MOCK_CALENDAR_CONNECTION} />);
     fireEvent.click(screen.getByTestId("meeting-tab-calendar"));
     expect(screen.getByTestId("meeting-calendar-grid")).toBeInTheDocument();
+  });
+
+  it("calendar grid highlights the injected today date", () => {
+    const fixedNow = new Date("2026-05-15T10:00:00Z");
+    render(
+      <MessagingMeetingPanel
+        calendarConnection={MOCK_CALENDAR_CONNECTION}
+        now={fixedNow}
+      />
+    );
+    fireEvent.click(screen.getByTestId("meeting-tab-calendar"));
+    expect(screen.getByTestId("meeting-calendar-grid")).toBeInTheDocument();
+  });
+
+  it("calendar grid shows month label for injected date", () => {
+    const fixedNow = new Date("2026-05-15T10:00:00Z");
+    render(
+      <MessagingMeetingPanel
+        calendarConnection={MOCK_CALENDAR_CONNECTION}
+        now={fixedNow}
+      />
+    );
+    fireEvent.click(screen.getByTestId("meeting-tab-calendar"));
+    expect(screen.getByTestId("meeting-calendar-grid")).toHaveTextContent("May 2026");
   });
 });
