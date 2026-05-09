@@ -11,6 +11,7 @@ import { FloatingComposer } from "./mailbox-floating-composer";
 import { ExpandedComposer } from "./mailbox-expanded-composer";
 import { MailboxContextPanel, MailboxContextPanelEmpty } from "./mailbox-context-panel";
 import { FilterChipsBar } from "./mailbox-filter-chips";
+import { MailboxFilterPanel } from "./mailbox-filter-panel";
 import { EmptyInboxState, NoMailboxesEmpty, NoSearchResultsEmpty, SmartViewEmpty } from "./mailbox-empty-states";
 import { ReconnectBanner } from "./mailbox-restricted-states";
 import { MailboxRailDrawer, MobileTopBar, TabletTopBar, MobileTabBar } from "./mailbox-mobile-nav";
@@ -130,7 +131,9 @@ function resolveVisibleThreads(pathname: string, filterState: ActiveFilterState)
 
   // Active filter chips
   for (const filter of filterState.filters) {
-    if (filter.field === "unread" && filter.value === "true") {
+    if (filter.field === "mailbox") {
+      threads = threads.filter((t) => t.mailboxConnectionId === filter.value);
+    } else if (filter.field === "unread" && filter.value === "true") {
       threads = threads.filter((t) => t.isUnread);
     } else if (filter.field === "flagged" && filter.value === "true") {
       threads = threads.filter((t) => t.isFlagged);
@@ -206,6 +209,8 @@ export function MailboxWorkspace() {
   const [composer, setComposer] = useState<MailboxComposerState | null>(null);
   const [filterState, setFilterState] = useState<ActiveFilterState>({ filters: [], searchQuery: "" });
   const [contextOverrides, setContextOverrides] = useState<Record<string, Partial<LinkedContextState>>>({});
+  const [isFilterPanelOpen, setIsFilterPanelOpen] = useState(false);
+  const [filterDraftState, setFilterDraftState] = useState<ActiveFilterState>({ filters: [], searchQuery: "" });
 
   // Responsive state
   const [isRailOpen, setIsRailOpen] = useState(false);
@@ -235,6 +240,12 @@ export function MailboxWorkspace() {
       setSelectedThreadId(null);
     }
   }, [selectedThreadId, visibleThreads]);
+
+  useEffect(() => {
+    if (isFilterPanelOpen) {
+      setFilterDraftState({ filters: [...filterState.filters], searchQuery: filterState.searchQuery });
+    }
+  }, [isFilterPanelOpen, filterState]);
 
   // On mobile, selecting a thread navigates to reading pane
   const handleSelectThread = useCallback((id: string) => {
@@ -307,6 +318,32 @@ export function MailboxWorkspace() {
   const clearSearch = useCallback(() => {
     setFilterState((prev) => ({ ...prev, searchQuery: "" }));
   }, []);
+
+  const toggleDraftFilter = useCallback((filter: ActiveFilter) => {
+    setFilterDraftState((prev) => {
+      const exists = prev.filters.some((candidate) => candidate.field === filter.field && candidate.value === filter.value);
+      return {
+        ...prev,
+        filters: exists
+          ? prev.filters.filter((candidate) => !(candidate.field === filter.field && candidate.value === filter.value))
+          : [
+              ...prev.filters.filter(
+                (candidate) => !(candidate.field === "mailbox" && filter.field === "mailbox")
+              ),
+              filter,
+            ],
+      };
+    });
+  }, []);
+
+  const clearDraftFilters = useCallback(() => {
+    setFilterDraftState((prev) => ({ ...prev, filters: [] }));
+  }, []);
+
+  const applyDraftFilters = useCallback(() => {
+    setFilterState((prev) => ({ ...prev, filters: [...filterDraftState.filters] }));
+    setIsFilterPanelOpen(false);
+  }, [filterDraftState.filters]);
 
   const hasActiveFilters = filterState.filters.length > 0 || !!filterState.searchQuery;
 
@@ -381,7 +418,7 @@ export function MailboxWorkspace() {
         </div>
 
       {/* ── Center + right panes ── */}
-      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+      <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
 
         {/* Mobile top bar */}
         <MobileTopBar
@@ -415,9 +452,22 @@ export function MailboxWorkspace() {
           }
           onClearSearch={clearSearch}
           filterState={filterState}
-          onAddFilter={addFilter}
-          onRemoveFilter={removeFilter}
-          onClearFilters={clearFilters}
+          isFilterPanelOpen={isFilterPanelOpen}
+          onToggleFilterPanel={() => setIsFilterPanelOpen((open) => !open)}
+        />
+
+        <MailboxFilterPanel
+          panelId="mailbox-filter-panel"
+          open={isFilterPanelOpen}
+          activeConnection={activeConnection}
+          viewLabel={viewLabel}
+          filterState={filterState}
+          draftState={filterDraftState}
+          connections={MOCK_CONNECTIONS.filter((connection) => connection.status !== "disconnected")}
+          onToggleDraftFilter={toggleDraftFilter}
+          onClearDraft={clearDraftFilters}
+          onApply={applyDraftFilters}
+          onClose={() => setIsFilterPanelOpen(false)}
         />
 
         {/* Filter chips bar */}

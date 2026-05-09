@@ -14,9 +14,8 @@ interface MailboxCommandBarProps {
   onSearchQueryChange?: (query: string) => void;
   onClearSearch?: () => void;
   filterState?: ActiveFilterState;
-  onAddFilter?: (filter: ActiveFilter) => void;
-  onRemoveFilter?: (field: string, value: string) => void;
-  onClearFilters?: () => void;
+  isFilterPanelOpen?: boolean;
+  onToggleFilterPanel?: () => void;
 }
 
 export function MailboxCommandBar({
@@ -28,9 +27,8 @@ export function MailboxCommandBar({
   onSearchQueryChange,
   onClearSearch,
   filterState,
-  onAddFilter,
-  onRemoveFilter,
-  onClearFilters,
+  isFilterPanelOpen = false,
+  onToggleFilterPanel,
 }: MailboxCommandBarProps) {
   const [focused, setFocused] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -101,15 +99,21 @@ export function MailboxCommandBar({
 
       {/* Filter button */}
       <button
+        type="button"
+        onClick={onToggleFilterPanel}
         className={cn(
           "relative flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border transition-colors",
-          filterState && filterState.filters.length > 0
+          isFilterPanelOpen
+            ? "border-[#16294D] bg-[#0F172A] text-white ring-2 ring-[rgba(22,41,77,0.12)]"
+            : filterState && filterState.filters.length > 0
             ? "border-[#16294D] bg-[#16294D] text-white"
             : "border-[#E2E5EA] bg-white text-[#64748B] hover:border-[#D1D5DB] hover:bg-[#F7F8FB]"
         )}
         title="Filter threads"
         aria-label="Filter threads"
         aria-pressed={filterState ? filterState.filters.length > 0 : false}
+        aria-expanded={isFilterPanelOpen}
+        aria-controls="mailbox-filter-panel"
       >
         <SlidersHorizontal className="h-3.5 w-3.5" />
         {filterState && filterState.filters.length > 0 && (

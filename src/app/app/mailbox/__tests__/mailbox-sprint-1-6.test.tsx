@@ -727,6 +727,49 @@ describe("MailboxWorkspace Sprint 1.6 integration", () => {
     expect(screen.getByTestId("reconnect-banner-conn_accounts")).toBeInTheDocument();
   });
 
+  it("opens the filter panel from the command bar", () => {
+    renderWorkspaceAtPath("/app/mailbox");
+    const filterButton = screen.getByRole("button", { name: /filter threads/i });
+    fireEvent.click(filterButton);
+
+    expect(screen.getByTestId("mailbox-filter-panel")).toBeInTheDocument();
+    expect(filterButton).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("closes the filter panel on backdrop click", () => {
+    renderWorkspaceAtPath("/app/mailbox");
+    fireEvent.click(screen.getByRole("button", { name: /filter threads/i }));
+    fireEvent.click(screen.getByTestId("mailbox-filter-panel-backdrop"));
+
+    expect(screen.queryByTestId("mailbox-filter-panel")).not.toBeInTheDocument();
+  });
+
+  it("applies mailbox filter selections from the panel", () => {
+    renderWorkspaceAtPath("/app/mailbox");
+    fireEvent.click(screen.getByRole("button", { name: /filter threads/i }));
+    fireEvent.click(screen.getByTestId("filter-option-mailbox-support"));
+    fireEvent.click(screen.getByRole("button", { name: /apply filters/i }));
+
+    expect(screen.getByText("Sunita Rao")).toBeInTheDocument();
+    expect(screen.queryByText("Priya Sharma")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /filter threads/i })).toHaveTextContent("1");
+  });
+
+  it("shows mailbox scope as fixed on mailbox-specific routes", () => {
+    renderWorkspaceAtPath("/app/mailbox/billing/inbox");
+    fireEvent.click(screen.getByRole("button", { name: /filter threads/i }));
+
+    expect(screen.getByText(/mailbox scope is fixed by this route/i)).toBeInTheDocument();
+    expect(screen.getByTestId("filter-option-mailbox-fixed")).toBeDisabled();
+  });
+
+  it("shows current smart view context inside the filter panel", () => {
+    renderWorkspaceAtPath("/app/mailbox/linked");
+    fireEvent.click(screen.getByRole("button", { name: /filter threads/i }));
+
+    expect(screen.getByText(/refine linked without leaving the current mailbox view/i)).toBeInTheDocument();
+  });
+
   it("shows a mailbox empty state for drafts routes instead of a blank list", () => {
     renderWorkspaceAtPath("/app/mailbox/billing/drafts");
     expect(screen.getByText(/billing · drafts is empty/i)).toBeInTheDocument();
