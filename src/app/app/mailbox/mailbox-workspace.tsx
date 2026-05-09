@@ -418,7 +418,7 @@ export function MailboxWorkspace() {
         </div>
 
       {/* ── Center + right panes ── */}
-      <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
+      <div className="relative flex min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-visible">
 
         {/* Mobile top bar */}
         <MobileTopBar
@@ -440,35 +440,37 @@ export function MailboxWorkspace() {
           onCompose={openNewCompose}
         />
 
-        {/* Command bar — single instance for all viewports */}
-        <MailboxCommandBar
-          activeViewLabel={viewLabel}
-          totalCount={totalCount}
-          unreadCount={unreadCount}
-          onCompose={openNewCompose}
-          searchQuery={filterState.searchQuery}
-          onSearchQueryChange={(query) =>
-            setFilterState((prev) => ({ ...prev, searchQuery: query }))
-          }
-          onClearSearch={clearSearch}
-          filterState={filterState}
-          isFilterPanelOpen={isFilterPanelOpen}
-          onToggleFilterPanel={() => setIsFilterPanelOpen((open) => !open)}
-        />
+        <div className="relative z-20 shrink-0 overflow-visible">
+          {/* Command bar — single instance for all viewports */}
+          <MailboxCommandBar
+            activeViewLabel={viewLabel}
+            totalCount={totalCount}
+            unreadCount={unreadCount}
+            onCompose={openNewCompose}
+            searchQuery={filterState.searchQuery}
+            onSearchQueryChange={(query) =>
+              setFilterState((prev) => ({ ...prev, searchQuery: query }))
+            }
+            onClearSearch={clearSearch}
+            filterState={filterState}
+            isFilterPanelOpen={isFilterPanelOpen}
+            onToggleFilterPanel={() => setIsFilterPanelOpen((open) => !open)}
+          />
 
-        <MailboxFilterPanel
-          panelId="mailbox-filter-panel"
-          open={isFilterPanelOpen}
-          activeConnection={activeConnection}
-          viewLabel={viewLabel}
-          filterState={filterState}
-          draftState={filterDraftState}
-          connections={MOCK_CONNECTIONS.filter((connection) => connection.status !== "disconnected")}
-          onToggleDraftFilter={toggleDraftFilter}
-          onClearDraft={clearDraftFilters}
-          onApply={applyDraftFilters}
-          onClose={() => setIsFilterPanelOpen(false)}
-        />
+          <MailboxFilterPanel
+            panelId="mailbox-filter-panel"
+            open={isFilterPanelOpen}
+            activeConnection={activeConnection}
+            viewLabel={viewLabel}
+            filterState={filterState}
+            draftState={filterDraftState}
+            connections={MOCK_CONNECTIONS.filter((connection) => connection.status !== "disconnected")}
+            onToggleDraftFilter={toggleDraftFilter}
+            onClearDraft={clearDraftFilters}
+            onApply={applyDraftFilters}
+            onClose={() => setIsFilterPanelOpen(false)}
+          />
+        </div>
 
         {/* Filter chips bar */}
         <FilterChipsBar
