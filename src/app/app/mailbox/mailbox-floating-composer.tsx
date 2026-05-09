@@ -29,7 +29,7 @@ export function FloatingComposer({ state, onClose, onExpand, onChange }: Floatin
   return (
     <div
       className={cn(
-        "fixed bottom-0 right-6 z-50 flex w-[680px] max-w-[calc(100vw-48px)] flex-col overflow-hidden rounded-t-xl border border-b-0 bg-white shadow-xl transition-all",
+        "fixed bottom-6 right-6 z-50 flex w-[680px] max-w-[calc(100vw-48px)] flex-col overflow-hidden rounded-xl border bg-white shadow-xl transition-all",
         minimized ? "h-10" : "h-[560px]"
       )}
       style={{ borderColor: "#D1D5DB" }}
