@@ -44,7 +44,7 @@ export function SalarySlipBrandingWrapper({
         } as React.CSSProperties
       }
     >
-      <SalarySlipWorkspace employees={employees} presets={presets} initialTemplateId={initialTemplateId} />
+      <SalarySlipWorkspace employees={employees} presets={presets} initialTemplateId={initialTemplateId} initialAccentColor={branding.accentColor} />
     </div>
   );
 }

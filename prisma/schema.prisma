@@ -251,6 +251,13 @@ model Organization {
   customRoles                  CustomRole[]
   dataResidencyConfig          DataResidencyConfig?
   webhookDeadLetters           WebhookDeadLetter[]
+  // Mailbox Platform — Phase 2
+  mailboxConnections           MailboxConnection[]
+  mailboxThreadLinks           MailboxThreadLink[]
+  mailboxDrafts                MailboxDraft[]
+  mailboxAssignments           MailboxAssignment[]
+  mailboxAuditEvents           MailboxAuditEvent[]
+  mailboxProviderCursors       MailboxProviderCursor[]
 
   @@index([entityGroupId])
   @@map("organization")
@@ -5835,4 +5842,278 @@ model WebhookDeadLetter {
   @@index([orgId, status])
   @@index([endpointId])
   @@map("webhook_dead_letter")
+}
+
+// ─── Mailbox Platform — Phase 2 Domain Models ────────────────────────────────
+// Sprint 2.1: Schema and provider contracts
+//
+// Security decisions locked here:
+// - tokenRef stores an opaque reference to an encrypted credential store, never
+//   a raw token. Sprint 2.2 will implement the encrypted store behind this ref.
+// - All models carry orgId for strict org isolation.
+// - MailboxAuditEvent is a dedicated append-only table, separate from the
+//   general AuditLog, to support mailbox-specific governance queries.
+// - MailboxProviderCursor is provider-scoped so Gmail and future providers
+//   maintain independent checkpoint state.
+// - No Gmail-specific fields leak into core models; provider-specific data
+//   lives in watchMetadata (Json) or providerMetadata (Json).
+
+enum MailboxProvider {
+  GMAIL
+  ZOHO
+
+  @@map("mailbox_provider")
+}
+
+enum MailboxConnectionStatus {
+  ACTIVE
+  RECONNECT_REQUIRED
+  DEGRADED
+  DISCONNECTED
+
+  @@map("mailbox_connection_status")
+}
+
+enum MailboxThreadStatus {
+  OPEN
+  PENDING
+  CLOSED
+  ARCHIVED
+
+  @@map("mailbox_thread_status")
+}
+
+enum MailboxDraftMode {
+  NEW
+  REPLY
+  REPLY_ALL
+  FORWARD
+
+  @@map("mailbox_draft_mode")
+}
+
+enum MailboxDraftStatus {
+  ACTIVE
+  DISCARDED
+  SENT
+
+  @@map("mailbox_draft_status")
+}
+
+enum MailboxAssignmentStatus {
+  ACTIVE
+  RESOLVED
+  REASSIGNED
+
+  @@map("mailbox_assignment_status")
+}
+
+enum MailboxAuditAction {
+  CONNECTION_CREATED
+  CONNECTION_DISCONNECTED
+  CONNECTION_RECONNECTED
+  CONNECTION_DEGRADED
+  CONNECTION_PERMISSION_CHANGED
+  THREAD_ASSIGNED
+  THREAD_UNASSIGNED
+  THREAD_STATUS_CHANGED
+  THREAD_LINKED
+  THREAD_UNLINKED
+  MESSAGE_SENT
+  MESSAGE_REPLIED
+  MESSAGE_FORWARDED
+  DRAFT_CREATED
+  DRAFT_DISCARDED
+  SYNC_MANUAL_TRIGGERED
+  ADMIN_SUPPORT_ACTION
+
+  @@map("mailbox_audit_action")
+}
+
+enum MailboxCursorType {
+  HISTORY_ID       // Gmail history-based incremental sync
+  PAGE_TOKEN       // page-token-based list cursor
+  WATCH_EXPIRY     // push-subscription renewal checkpoint
+
+  @@map("mailbox_cursor_type")
+}
+
+enum MailboxThreadLinkEntityType {
+  CUSTOMER
+  INVOICE
+  VOUCHER
+  QUOTE
+
+  @@map("mailbox_thread_link_entity_type")
+}
+
+/// A connected mailbox account for an organization.
+/// tokenRef is an opaque reference to an encrypted credential store (Sprint 2.2).
+/// Never store raw tokens here.
+model MailboxConnection {
+  id                String                  @id @default(cuid())
+  orgId             String
+  provider          MailboxProvider
+  providerAccountId String                  // provider-side account identifier (e.g. Gmail user ID)
+  emailAddress      String
+  displayName       String
+  status            MailboxConnectionStatus @default(ACTIVE)
+  /// Opaque reference to encrypted token store. Sprint 2.2 implements the store.
+  tokenRef          String?
+  tokenExpiry       DateTime?
+  /// Provider-specific watch/subscription metadata (e.g. Gmail push subscription).
+  /// Stored as JSON so no Gmail-specific columns leak into the core model.
+  watchMetadata     Json?
+  lastSyncAt        DateTime?
+  lastSyncError     String?
+  /// Soft-disable: when set, the connection is treated as inactive without deletion.
+  disabledAt        DateTime?
+  /// Who connected this mailbox (org member userId).
+  connectedBy       String                  @db.Uuid
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
+
+  organization      Organization            @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  drafts            MailboxDraft[]
+  auditEvents       MailboxAuditEvent[]
+  providerCursors   MailboxProviderCursor[]
+
+  /// One active connection per org per provider account.
+  @@unique([orgId, provider, providerAccountId])
+  /// Composite surface used by child relations (MailboxDraft, MailboxProviderCursor)
+  /// to enforce that child rows cannot reference a connection from a different org.
+  @@unique([id, orgId])
+  @@index([orgId, status])
+  @@index([orgId, provider])
+  @@map("mailbox_connection")
+}
+
+/// Thread-to-business-record link. Supports multiple links per thread;
+/// exactly one may be marked isPrimary.
+model MailboxThreadLink {
+  id         String                       @id @default(cuid())
+  orgId      String
+  threadId   String                       // references MailboxThread.id (added Phase 3)
+  entityType MailboxThreadLinkEntityType
+  entityId   String
+  isPrimary  Boolean                      @default(false)
+  createdBy  String                       @db.Uuid
+  createdAt  DateTime                     @default(now())
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([threadId, entityType, entityId])
+  @@index([orgId, threadId])
+  @@index([orgId, entityType, entityId])
+  @@map("mailbox_thread_link")
+}
+
+/// Persisted compose/reply/forward draft.
+/// attachmentRefs stores opaque storage references, not raw file data.
+model MailboxDraft {
+  id                  String             @id @default(cuid())
+  orgId               String
+  mailboxConnectionId String
+  /// threadId is nullable: null for new-message drafts.
+  threadId            String?
+  mode                MailboxDraftMode
+  fromIdentity        String             // email address the draft sends from
+  toRecipients        Json               // string[]
+  ccRecipients        Json               @default("[]") // string[]
+  bccRecipients       Json               @default("[]") // string[]
+  subject             String
+  htmlBody            String             @db.Text
+  textBody            String?            @db.Text
+  /// Opaque storage references for attachments. Never raw file content.
+  attachmentRefs      Json               @default("[]")
+  status              MailboxDraftStatus @default(ACTIVE)
+  lastAutosavedAt     DateTime?
+  createdBy           String             @db.Uuid
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+
+  organization       Organization      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  /// Composite FK: references MailboxConnection[id, orgId] so a draft row cannot
+  /// reference a connection from a different org at the database level.
+  mailboxConnection  MailboxConnection @relation(fields: [mailboxConnectionId, orgId], references: [id, orgId], onDelete: Cascade)
+
+  @@index([orgId, mailboxConnectionId, status])
+  @@index([orgId, threadId])
+  @@map("mailbox_draft")
+}
+
+/// Thread assignment — one active assignment per thread at a time.
+/// Historical assignments are preserved (status = REASSIGNED | RESOLVED).
+model MailboxAssignment {
+  id         String                  @id @default(cuid())
+  orgId      String
+  threadId   String                  // references MailboxThread.id (added Phase 3)
+  assigneeId String                  @db.Uuid
+  assignedBy String                  @db.Uuid
+  status     MailboxAssignmentStatus @default(ACTIVE)
+  assignedAt DateTime                @default(now())
+  updatedAt  DateTime                @updatedAt
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, threadId, status])
+  @@index([orgId, assigneeId, status])
+  @@map("mailbox_assignment")
+}
+
+/// Append-only mailbox-specific audit event log.
+/// Separate from the general AuditLog to support mailbox governance queries
+/// without polluting the org-wide audit stream.
+model MailboxAuditEvent {
+  id                  String             @id @default(cuid())
+  orgId               String
+  mailboxConnectionId String?
+  /// threadId / messageId are nullable: not all events are thread-scoped.
+  threadId            String?
+  messageId           String?
+  actorId             String             @db.Uuid
+  action              MailboxAuditAction
+  /// Human-readable summary for display in governance views.
+  summary             String
+  /// Structured metadata. Must not contain raw tokens or secrets.
+  metadata            Json?
+  createdAt           DateTime           @default(now())
+
+  organization       Organization       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  /// Single-field FK retained for the nullable connection reference: Prisma does not
+  /// support nullable composite FKs cleanly. Org ownership is enforced by two
+  /// independent constraints: (1) the Organization FK on orgId guarantees the audit
+  /// event belongs to the correct org; (2) the service layer (logMailboxAuditTx)
+  /// only sets mailboxConnectionId after verifying org ownership via findFirst.
+  mailboxConnection  MailboxConnection? @relation(fields: [mailboxConnectionId], references: [id], onDelete: SetNull)
+
+  @@index([orgId, createdAt])
+  @@index([orgId, mailboxConnectionId, createdAt])
+  @@index([orgId, action, createdAt])
+  @@map("mailbox_audit_event")
+}
+
+/// Provider-specific sync checkpoint. One row per (connection, cursorType).
+/// Allows Gmail and future providers to maintain independent cursor state.
+model MailboxProviderCursor {
+  id                  String            @id @default(cuid())
+  orgId               String
+  mailboxConnectionId String
+  provider            MailboxProvider
+  cursorType          MailboxCursorType
+  cursorValue         String
+  expiresAt           DateTime?
+  lastAdvancedAt      DateTime?
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+
+  organization      Organization      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  /// Composite FK: references MailboxConnection[id, orgId] so a cursor row cannot
+  /// reference a connection from a different org at the database level.
+  mailboxConnection MailboxConnection @relation(fields: [mailboxConnectionId, orgId], references: [id, orgId], onDelete: Cascade)
+
+  /// Org-safe unique key: upsert keys on this to prevent cross-org cursor mutation.
+  @@unique([orgId, mailboxConnectionId, cursorType])
+  @@index([orgId, mailboxConnectionId])
+  @@map("mailbox_provider_cursor")
 }

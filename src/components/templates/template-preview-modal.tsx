@@ -179,7 +179,7 @@ export function TemplatePreviewModal({
                 className="relative mx-auto overflow-hidden rounded-lg bg-white shadow-xl ring-1 ring-black/5"
                 style={{
                   "--voucher-ink": "#1d1710",
-                  "--voucher-accent": SAMPLE_INVOICE_DOCUMENT.branding.accentColor || "#2563eb",
+                  "--voucher-accent": SAMPLE_INVOICE_DOCUMENT.branding.accentColor || "#dc2626",
                 } as React.CSSProperties}
               >
                 <div className="p-8 text-[13px]">{preview}</div>

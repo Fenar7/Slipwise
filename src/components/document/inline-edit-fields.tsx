@@ -113,7 +113,7 @@ export function DocumentEditorRoot({
       style={
         {
           "--voucher-ink": "#1d1710",
-          "--voucher-accent": branding.accentColor || "var(--accent)",
+          "--voucher-accent": branding.accentColor || "#dc2626",
         } as CSSProperties
       }
     >
