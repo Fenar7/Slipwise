@@ -5,30 +5,25 @@ import {
   Hash,
   MessageSquare,
   Users,
-  CheckSquare,
-  Calendar,
   Paperclip,
   ShieldAlert,
   Lock,
-  Circle,
-  Clock,
-  AlertTriangle,
-  CalendarCheck,
   FileText,
   FileSpreadsheet,
   Image,
 } from "lucide-react";
-import type { MessagingSection, TaskStatus, FileCategory, PresenceStatus } from "./types";
+import type { MessagingSection, FileCategory, PresenceStatus } from "./types";
 import {
   MOCK_CHANNELS,
   MOCK_DMS,
   MOCK_GROUPS,
-  MOCK_TASKS,
-  MOCK_MEETINGS,
   MOCK_FILES,
   MOCK_ADMIN_ENTRIES,
+  MOCK_CALENDAR_CONNECTION,
 } from "./mock-data";
 import { MessagingAdminPanel } from "./messaging-admin-panel";
+import { MessagingTaskPanel } from "./messaging-task-panel";
+import { MessagingMeetingPanel } from "./messaging-meeting-panel";
 
 interface MessagingWorkspacePaneProps {
   activeSection: MessagingSection;
@@ -38,15 +33,6 @@ const CARD_BUTTON_CLASS =
   "flex w-full text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626] focus-visible:ring-offset-2";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function taskStatusLabel(status: TaskStatus) {
-  switch (status) {
-    case "open": return { label: "Open", color: "text-[#49454F]", bg: "bg-gray-100" };
-    case "in-progress": return { label: "In Progress", color: "text-blue-700", bg: "bg-blue-50" };
-    case "done": return { label: "Done", color: "text-emerald-700", bg: "bg-emerald-50" };
-    case "overdue": return { label: "Overdue", color: "text-[#DC2626]", bg: "bg-red-50" };
-  }
-}
 
 function fileCategoryIcon(category: FileCategory) {
   switch (category) {
@@ -255,179 +241,6 @@ function GroupsPane() {
   );
 }
 
-// ─── Section: Tasks ───────────────────────────────────────────────────────────
-
-function TasksPane() {
-  const overdueTasks = MOCK_TASKS.filter((t) => t.status === "overdue");
-  const openTasks = MOCK_TASKS.filter((t) => t.status === "open");
-  const inProgressTasks = MOCK_TASKS.filter((t) => t.status === "in-progress");
-
-  return (
-    <div className="flex flex-col h-full" data-testid="messaging-pane-tasks">
-      <div className="flex items-center justify-between border-b px-6 py-4" style={{ borderColor: "#E0E0E0" }}>
-        <div>
-          <h2 className="text-base font-bold" style={{ color: "#1C1B1F" }}>Tasks</h2>
-          <p className="text-xs mt-0.5" style={{ color: "#79747E" }}>
-            {MOCK_TASKS.length} tasks · {overdueTasks.length} overdue
-          </p>
-        </div>
-        <button
-          className="rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors hover:bg-red-50 hover:text-[#DC2626] hover:border-[#DC2626]"
-          style={{ borderColor: "#E0E0E0", color: "#49454F" }}
-        >
-          + New Task
-        </button>
-      </div>
-
-      {overdueTasks.length > 0 && (
-        <div className="mx-6 mt-4 flex items-center gap-2 rounded-lg bg-red-50 border border-red-100 px-3 py-2">
-          <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-[#DC2626]" />
-          <span className="text-xs font-semibold text-[#DC2626]">
-            {overdueTasks.length} overdue task{overdueTasks.length > 1 ? "s" : ""} need attention
-          </span>
-        </div>
-      )}
-
-      <div className="flex-1 overflow-y-auto px-6 py-4 space-y-2">
-        {MOCK_TASKS.map((task) => {
-          const { label, color, bg } = taskStatusLabel(task.status);
-          return (
-            <button
-              type="button"
-              key={task.id}
-              className={cn(
-                CARD_BUTTON_CLASS,
-                "items-start gap-3 rounded-xl border p-4 hover:border-[#DC2626] hover:bg-red-50/30"
-              )}
-              style={{ borderColor: task.status === "overdue" ? "#FCA5A5" : "#F0F0F0" }}
-              aria-label={task.title}
-            >
-              <Circle className={cn("h-4 w-4 mt-0.5 shrink-0", task.status === "overdue" ? "text-[#DC2626]" : "text-[#79747E]")} />
-              <div className="flex-1 min-w-0">
-                <p className={cn("text-sm font-semibold", task.status === "overdue" && "text-[#DC2626]")} style={{ color: task.status === "overdue" ? undefined : "#1C1B1F" }}>
-                  {task.title}
-                </p>
-                <div className="flex items-center gap-2 mt-1.5">
-                  <span className={cn("rounded-full px-1.5 py-0.5 text-[10px] font-semibold", bg, color)}>
-                    {label}
-                  </span>
-                  {task.assignee && (
-                    <span className="text-[10px]" style={{ color: "#79747E" }}>
-                      → {task.assignee.name}
-                    </span>
-                  )}
-                  {task.dueDate && (
-                    <span className="flex items-center gap-0.5 text-[10px]" style={{ color: "#79747E" }}>
-                      <Clock className="h-2.5 w-2.5" />
-                      {task.dueDate}
-                    </span>
-                  )}
-                </div>
-              </div>
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-// ─── Section: Meetings ────────────────────────────────────────────────────────
-
-function MeetingsPane() {
-  const upcoming = MOCK_MEETINGS.filter((m) => m.status === "upcoming");
-  const past = MOCK_MEETINGS.filter((m) => m.status === "ended");
-
-  return (
-    <div className="flex flex-col h-full" data-testid="messaging-pane-meetings">
-      <div className="flex items-center justify-between border-b px-6 py-4" style={{ borderColor: "#E0E0E0" }}>
-        <div>
-          <h2 className="text-base font-bold" style={{ color: "#1C1B1F" }}>Meetings</h2>
-          <p className="text-xs mt-0.5" style={{ color: "#79747E" }}>
-            {upcoming.length} upcoming · Calendar not connected
-          </p>
-        </div>
-        <button
-          className="rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors hover:bg-red-50 hover:text-[#DC2626] hover:border-[#DC2626]"
-          style={{ borderColor: "#E0E0E0", color: "#49454F" }}
-        >
-          + Schedule
-        </button>
-      </div>
-
-      {/* Calendar not connected hint */}
-      <div className="mx-6 mt-4 flex items-center gap-2 rounded-lg border border-dashed px-3 py-2.5" style={{ borderColor: "#E0E0E0" }}>
-        <CalendarCheck className="h-3.5 w-3.5 shrink-0 text-[#79747E]" />
-        <span className="text-xs" style={{ color: "#79747E" }}>
-          Connect Google Calendar to sync meetings automatically
-        </span>
-        <button className="ml-auto text-xs font-semibold text-[#DC2626] hover:underline">Connect</button>
-      </div>
-
-      <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
-        {upcoming.length > 0 && (
-          <div>
-            <p className="text-[10px] font-semibold uppercase tracking-wide mb-2" style={{ color: "#79747E" }}>Upcoming</p>
-            <div className="space-y-2">
-              {upcoming.map((meet) => (
-                <button
-                  type="button"
-                  key={meet.id}
-                  className={cn(
-                    CARD_BUTTON_CLASS,
-                    "items-start gap-3 rounded-xl border p-4 hover:border-[#DC2626] hover:bg-red-50/30"
-                  )}
-                  style={{ borderColor: "#F0F0F0" }}
-                  aria-label={meet.title}
-                >
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-50">
-                    <Calendar className="h-4 w-4 text-blue-600" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold" style={{ color: "#1C1B1F" }}>{meet.title}</p>
-                    <p className="text-xs mt-0.5" style={{ color: "#79747E" }}>
-                      {meet.participantCount} participants · {meet.durationMinutes} min
-                    </p>
-                  </div>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-        {past.length > 0 && (
-          <div>
-            <p className="text-[10px] font-semibold uppercase tracking-wide mb-2" style={{ color: "#79747E" }}>Past</p>
-            <div className="space-y-2">
-              {past.map((meet) => (
-                <button
-                  type="button"
-                  key={meet.id}
-                  className={cn(
-                    CARD_BUTTON_CLASS,
-                    "items-start gap-3 rounded-xl border p-4 opacity-60"
-                  )}
-                  style={{ borderColor: "#F0F0F0" }}
-                  aria-label={meet.title}
-                >
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gray-100">
-                    <Calendar className="h-4 w-4 text-[#79747E]" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold" style={{ color: "#1C1B1F" }}>{meet.title}</p>
-                    <p className="text-xs mt-0.5" style={{ color: "#79747E" }}>
-                      {meet.participantCount} participants · Ended
-                    </p>
-                  </div>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
 // ─── Section: Files ───────────────────────────────────────────────────────────
 
 function FilesPane() {
@@ -551,8 +364,10 @@ export function MessagingWorkspacePane({ activeSection }: MessagingWorkspacePane
       {activeSection === "channels" && <ChannelsPane />}
       {activeSection === "dms" && <DirectMessagesPane />}
       {activeSection === "groups" && <GroupsPane />}
-      {activeSection === "tasks" && <TasksPane />}
-      {activeSection === "meetings" && <MeetingsPane />}
+      {activeSection === "tasks" && <MessagingTaskPanel />}
+      {activeSection === "meetings" && (
+        <MessagingMeetingPanel calendarConnection={MOCK_CALENDAR_CONNECTION} />
+      )}
       {activeSection === "files" && <FilesPane />}
       {activeSection === "admin" && <MessagingAdminPanel />}
     </div>

@@ -831,3 +831,63 @@ export const MOCK_AUDIT_LOG: AuditLogEntry[] = [
   { id: "al-5", actorName: "Arjun Mehta", action: "CHANNEL_ARCHIVED",
     summary: "Archived #onboarding-q3 channel", occurredAt: "2025-11-20T10:45:00Z" },
 ];
+
+// ─── Sprint 1.5 mock data ─────────────────────────────────────────────────────
+
+import type { MessagingTaskDetail, CalendarConnection } from "./types";
+
+export const MOCK_TASK_DETAILS: MessagingTaskDetail[] = [
+  {
+    id: "task-1", title: "Send Q2 salary slips to all employees",
+    assignee: { id: "p-1", name: "Arjun Mehta", avatarInitials: "AM",
+      role: "owner", presence: "online" },
+    dueDate: "2026-05-15", status: "in-progress", conversationRef: "conv-payroll",
+    priority: "high", description: "Generate and distribute via the salary slip module.",
+    createdAt: "2026-05-01T09:00:00Z", createdBy: "Priya Sharma",
+  },
+  {
+    id: "task-2", title: "Follow up on unpaid invoice #INV-2089",
+    assignee: { id: "p-2", name: "Priya Sharma", avatarInitials: "PS",
+      role: "admin", presence: "online" },
+    dueDate: "2026-05-10", status: "overdue", conversationRef: "conv-invoices",
+    priority: "critical", description: null,
+    createdAt: "2026-04-28T10:00:00Z", createdBy: "Arjun Mehta",
+  },
+  {
+    id: "task-3", title: "Review GST filing for April",
+    assignee: null, dueDate: "2026-05-20", status: "open",
+    conversationRef: "conv-compliance",
+    priority: "medium", description: "Cross-check with accountant before submission.",
+    createdAt: "2026-05-02T11:00:00Z", createdBy: "Rohan Gupta",
+  },
+  {
+    id: "task-4", title: "Archive Q1 vouchers",
+    assignee: { id: "p-3", name: "Rohan Gupta", avatarInitials: "RG",
+      role: "member", presence: "away" },
+    dueDate: null, status: "done", conversationRef: null,
+    priority: "low", description: null,
+    createdAt: "2026-04-15T08:00:00Z", createdBy: "Priya Sharma",
+  },
+  {
+    id: "task-5", title: "Onboard new finance staff to Slipwise",
+    assignee: { id: "p-2", name: "Priya Sharma", avatarInitials: "PS",
+      role: "admin", presence: "online" },
+    dueDate: "2026-05-25", status: "open", conversationRef: null,
+    priority: "medium", description: "Cover payslip, invoice, and mailbox modules.",
+    createdAt: "2026-05-05T14:00:00Z", createdBy: "Arjun Mehta",
+  },
+];
+
+export const MOCK_CALENDAR_CONNECTION: CalendarConnection = {
+  provider: null,
+  status: "not_connected",
+  connectedEmail: null,
+  connectedAt: null,
+};
+
+export const MOCK_CALENDAR_CONNECTION_ACTIVE: CalendarConnection = {
+  provider: "google",
+  status: "connected",
+  connectedEmail: "ops@slipwise.in",
+  connectedAt: "2026-04-01T09:00:00Z",
+};

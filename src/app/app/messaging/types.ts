@@ -272,3 +272,33 @@ export interface AuditLogEntry {
   summary: string;
   occurredAt: string;
 }
+
+// ─── Sprint 1.5 — Tasks, Meetings, and Calendar UX ────────────────────────────
+
+export type TaskPriority = "low" | "medium" | "high" | "critical";
+
+/**
+ * Extends the base MessagingTask with priority and description for the
+ * full task detail view.
+ */
+export interface MessagingTaskDetail extends MessagingTask {
+  priority: TaskPriority;
+  description: string | null;
+  createdAt: string; // ISO
+  createdBy: string; // participant name
+}
+
+export type CalendarConnectionStatus =
+  | "not_connected"  // no calendar linked
+  | "connected"      // Google Calendar linked and active
+  | "needs_reauth";  // previously connected, token expired
+
+export interface CalendarConnection {
+  provider: "google" | null;
+  status: CalendarConnectionStatus;
+  connectedEmail: string | null; // the Google account email, if connected
+  connectedAt: string | null;    // ISO
+}
+
+export type MeetingTab = "upcoming" | "past" | "calendar";
+export type TaskFilterStatus = "all" | "open" | "in-progress" | "done" | "overdue";
