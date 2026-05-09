@@ -6100,7 +6100,8 @@ model MailboxProviderCursor {
   organization      Organization      @relation(fields: [orgId], references: [id], onDelete: Cascade)
   mailboxConnection MailboxConnection @relation(fields: [mailboxConnectionId], references: [id], onDelete: Cascade)
 
-  @@unique([mailboxConnectionId, cursorType])
+  /// Org-safe unique key: upsert keys on this to prevent cross-org cursor mutation.
+  @@unique([orgId, mailboxConnectionId, cursorType])
   @@index([orgId, mailboxConnectionId])
   @@map("mailbox_provider_cursor")
 }

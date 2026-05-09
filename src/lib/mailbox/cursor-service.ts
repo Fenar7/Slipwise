@@ -22,6 +22,15 @@ export async function getMailboxCursor(
 /**
  * Upsert a provider cursor. Creates if absent, updates if present.
  * Called after each successful sync delta to advance the checkpoint.
+ *
+ * Org safety: keyed on (orgId, mailboxConnectionId, cursorType) — the schema
+ * unique constraint includes orgId, so the update leg cannot touch a cursor
+ * belonging to a different org.
+ *
+ * Provider mismatch guard: if a cursor row already exists for this key, the
+ * update does not change the provider field. If the caller passes a different
+ * provider than what was stored, this function throws to surface the mismatch
+ * rather than silently overwriting it.
  */
 export async function upsertMailboxCursor(params: {
   orgId: string;
@@ -31,9 +40,25 @@ export async function upsertMailboxCursor(params: {
   cursorValue: string;
   expiresAt: Date | null;
 }): Promise<MailboxProviderCursorRecord> {
+  // Check for provider mismatch before upsert.
+  const existing = await db.mailboxProviderCursor.findFirst({
+    where: {
+      orgId: params.orgId,
+      mailboxConnectionId: params.mailboxConnectionId,
+      cursorType: params.cursorType,
+    },
+    select: { provider: true },
+  });
+  if (existing && existing.provider !== params.provider) {
+    throw new Error(
+      `Provider mismatch on cursor upsert: stored=${existing.provider}, requested=${params.provider}`,
+    );
+  }
+
   const row = await db.mailboxProviderCursor.upsert({
     where: {
-      mailboxConnectionId_cursorType: {
+      orgId_mailboxConnectionId_cursorType: {
+        orgId: params.orgId,
         mailboxConnectionId: params.mailboxConnectionId,
         cursorType: params.cursorType,
       },

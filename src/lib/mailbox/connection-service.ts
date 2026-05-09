@@ -2,8 +2,9 @@ import "server-only";
 
 import { db } from "@/lib/db";
 import type { Prisma } from "@/generated/prisma/client";
-import type { MailboxConnectionRecord } from "./domain-types";
+import type { MailboxConnectionRecord, MailboxConnectionStatus } from "./domain-types";
 import { logMailboxAuditTx } from "./audit";
+import type { MailboxAuditAction } from "./domain-types";
 
 // ─── Org-scoped connection queries ────────────────────────────────────────────
 
@@ -110,21 +111,38 @@ export async function createMailboxConnection(
 export interface UpdateMailboxConnectionStatusInput {
   orgId: string;
   connectionId: string;
-  status: MailboxConnectionRecord["status"];
+  status: MailboxConnectionStatus;
   lastSyncError?: string | null;
   actorId: string;
 }
 
 /**
  * Update the status of a mailbox connection.
- * Emits an audit event for governance-relevant status transitions.
+ *
+ * Org safety: loads the existing row inside the transaction with
+ * `findFirst({ where: { id, orgId } })` before mutating. If the row does not
+ * exist for this org the function throws — cross-org mutation is impossible.
+ *
+ * Audit semantics: derives the audit action from (previousStatus, nextStatus)
+ * so CONNECTION_RECONNECTED is only emitted when a broken connection recovers.
  */
 export async function updateMailboxConnectionStatus(
   input: UpdateMailboxConnectionStatusInput,
 ): Promise<MailboxConnectionRecord> {
   const result = await db.$transaction(async (tx: Prisma.TransactionClient) => {
-    const row = await tx.mailboxConnection.update({
+    // Org-safe load: verifies ownership before any mutation.
+    const existing = await tx.mailboxConnection.findFirst({
       where: { id: input.connectionId, orgId: input.orgId },
+      select: { id: true, status: true },
+    });
+    if (!existing) {
+      throw new Error(
+        `MailboxConnection ${input.connectionId} not found for org ${input.orgId}`,
+      );
+    }
+
+    const row = await tx.mailboxConnection.update({
+      where: { id: existing.id },
       data: {
         status: input.status,
         lastSyncError: input.lastSyncError ?? null,
@@ -132,15 +150,21 @@ export async function updateMailboxConnectionStatus(
       },
     });
 
-    const auditAction = resolveStatusAuditAction(input.status);
+    const auditAction = resolveStatusTransitionAuditAction(
+      existing.status,
+      input.status,
+    );
     if (auditAction) {
       await logMailboxAuditTx(tx, {
         orgId: input.orgId,
         actorId: input.actorId,
         action: auditAction,
         summary: `Mailbox connection status changed to ${input.status}`,
-        mailboxConnectionId: input.connectionId,
-        metadata: { status: input.status },
+        mailboxConnectionId: existing.id,
+        metadata: {
+          previousStatus: existing.status,
+          newStatus: input.status,
+        },
       });
     }
 
@@ -150,21 +174,33 @@ export async function updateMailboxConnectionStatus(
   return toConnectionRecord(result);
 }
 
-function resolveStatusAuditAction(
-  status: MailboxConnectionRecord["status"],
-): MailboxConnectionRecord["status"] extends "RECONNECT_REQUIRED"
-  ? "CONNECTION_RECONNECTED"
-  : "CONNECTION_DEGRADED" | "CONNECTION_DISCONNECTED" | null {
-  switch (status) {
-    case "RECONNECT_REQUIRED":
-      return "CONNECTION_RECONNECTED" as never;
-    case "DEGRADED":
-      return "CONNECTION_DEGRADED" as never;
-    case "DISCONNECTED":
-      return "CONNECTION_DISCONNECTED" as never;
-    default:
-      return null as never;
+/**
+ * Derive the audit action from a status transition.
+ *
+ * Rules:
+ * - ACTIVE after a broken/degraded state → CONNECTION_RECONNECTED
+ * - ACTIVE after ACTIVE (no-op) → null (no audit noise)
+ * - → RECONNECT_REQUIRED → null (not a reconnection; Sprint 2.2 emits this
+ *   when the OAuth token expires, which is a separate governance event)
+ * - → DEGRADED → CONNECTION_DEGRADED
+ * - → DISCONNECTED → CONNECTION_DISCONNECTED
+ */
+function resolveStatusTransitionAuditAction(
+  previousStatus: MailboxConnectionStatus,
+  nextStatus: MailboxConnectionStatus,
+): MailboxAuditAction | null {
+  if (nextStatus === "ACTIVE") {
+    const wasRecovering =
+      previousStatus === "RECONNECT_REQUIRED" ||
+      previousStatus === "DEGRADED" ||
+      previousStatus === "DISCONNECTED";
+    return wasRecovering ? "CONNECTION_RECONNECTED" : null;
   }
+  if (nextStatus === "DEGRADED") return "CONNECTION_DEGRADED";
+  if (nextStatus === "DISCONNECTED") return "CONNECTION_DISCONNECTED";
+  // RECONNECT_REQUIRED: not a reconnection event; caller emits its own audit
+  // event when appropriate (e.g. token expiry detected during sync).
+  return null;
 }
 
 // ─── Soft-disable ─────────────────────────────────────────────────────────────
@@ -172,6 +208,8 @@ function resolveStatusAuditAction(
 /**
  * Soft-disable a mailbox connection (admin governance action).
  * Sets disabledAt and status = DISCONNECTED. Emits audit event.
+ *
+ * Org safety: same findFirst+guard pattern as updateMailboxConnectionStatus.
  */
 export async function disableMailboxConnection(
   orgId: string,
@@ -179,8 +217,18 @@ export async function disableMailboxConnection(
   actorId: string,
 ): Promise<MailboxConnectionRecord> {
   const result = await db.$transaction(async (tx: Prisma.TransactionClient) => {
-    const row = await tx.mailboxConnection.update({
+    const existing = await tx.mailboxConnection.findFirst({
       where: { id: connectionId, orgId },
+      select: { id: true },
+    });
+    if (!existing) {
+      throw new Error(
+        `MailboxConnection ${connectionId} not found for org ${orgId}`,
+      );
+    }
+
+    const row = await tx.mailboxConnection.update({
+      where: { id: existing.id },
       data: {
         status: "DISCONNECTED",
         disabledAt: new Date(),
@@ -192,7 +240,7 @@ export async function disableMailboxConnection(
       actorId,
       action: "CONNECTION_DISCONNECTED",
       summary: "Mailbox connection disabled by admin",
-      mailboxConnectionId: connectionId,
+      mailboxConnectionId: existing.id,
     });
 
     return row;
