@@ -62,6 +62,7 @@ export function VoucherBrandingWrapper({
         initialValues={initialValues}
         vendors={vendors}
         initialTemplateId={initialTemplateId}
+        initialAccentColor={branding.accentColor}
       />
     </div>
   );

@@ -30,7 +30,7 @@ export function VoucherDocumentFrame({
           width: `${VOUCHER_DOCUMENT_WIDTH}px`,
           minHeight: `${VOUCHER_DOCUMENT_HEIGHT}px`,
           "--voucher-ink": "#1d1710",
-          "--voucher-accent": document.branding.accentColor || "var(--accent)",
+          "--voucher-accent": document.branding.accentColor || "#dc2626",
         } as CSSProperties
       }
     >
