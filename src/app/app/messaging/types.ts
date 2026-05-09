@@ -157,7 +157,7 @@ export interface ConversationMessage {
   hasThread: boolean;
   threadReplyCount: number;
   /** Reaction chips — static display only in Phase 1 */
-  reactions: Array<{ emoji: string; count: number }>;
+  reactions: MessageReaction[];
   /** Attachment hint — no real upload in Phase 1 */
   attachmentRef: string | null;
   /** Whether the current viewer is mentioned */
@@ -200,3 +200,40 @@ export interface ActiveConversation {
 export interface ConversationWorkspaceState {
   activeConversation: ActiveConversation | null;
 }
+
+// ─── Sprint 1.3 ──────────────────────────────────────────────────────────────
+
+export interface MessageReaction {
+  emoji: string;
+  count: number;
+  reactedByCurrentUser: boolean;
+}
+
+export interface EditState {
+  messageId: string;
+  draftBody: string;
+}
+
+export interface AttachedFile {
+  id: string;
+  name: string;
+  sizeLabel: string;
+  mimeCategory: "document" | "spreadsheet" | "image" | "other";
+}
+
+export interface MentionSuggestion {
+  userId: string;
+  name: string;
+  avatarInitials: string;
+  role: "owner" | "admin" | "member";
+  presence: PresenceStatus;
+}
+
+export interface SlashCommand {
+  command: string;
+  label: string;
+  description: string;
+  iconName: "CheckSquare" | "Video" | "FileText" | "AtSign" | "Hash";
+}
+
+export type ComposerState = "empty" | "has-content" | "mention-popover" | "slash-popover";

@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * MessagingReadingWorkspace — Sprint 1.2
+ * MessagingReadingWorkspace — Sprint 1.3
  *
  * The main conversation reading area. Renders distinct workspace cues for
  * channels, DMs, and groups. Includes no-selection state, restricted state,
@@ -17,7 +17,6 @@ import {
   Lock,
   Users,
   MessageSquare,
-  Paperclip,
   AtSign,
   MoreHorizontal,
   ChevronRight,
@@ -34,6 +33,8 @@ import {
   getMessagesForConversation,
   getThreadRepliesForMessage,
 } from "./mock-data";
+import { MessagingComposer } from "./messaging-composer";
+import { MessagingThreadPanel } from "./messaging-thread-panel";
 
 // ─── Shared primitives ────────────────────────────────────────────────────────
 
@@ -257,70 +258,6 @@ function WorkspaceHeader({ conversation, threadOpen, onToggleThread }: Workspace
         </button>
       </div>
     </header>
-  );
-}
-
-// ─── Composer shell (static — no send in Phase 1) ─────────────────────────────
-
-function ComposerShell({ placeholder }: { placeholder: string }) {
-  return (
-    <div
-      className="shrink-0 border-t bg-white px-4 py-3"
-      style={{ borderColor: "#E0E0E0" }}
-      data-testid="reading-workspace-composer"
-    >
-      <div
-        className="flex flex-col rounded-xl border bg-white"
-        style={{ borderColor: "#E0E0E0" }}
-      >
-        {/* Text area placeholder */}
-        <div className="px-3 py-2.5 min-h-[2.5rem]">
-          <p className="text-sm" style={{ color: "#C4C4C4" }}>
-            {placeholder}
-          </p>
-        </div>
-        {/* Toolbar */}
-        <div
-          className="flex items-center gap-1 border-t px-2 py-1.5"
-          style={{ borderColor: "#F0F0F0" }}
-        >
-          <button
-            type="button"
-            className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#DC2626]"
-            aria-label="Attach file"
-          >
-            <Paperclip className="h-3.5 w-3.5" style={{ color: "#79747E" }} />
-          </button>
-          <button
-            type="button"
-            className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#DC2626]"
-            aria-label="Mention someone"
-          >
-            <AtSign className="h-3.5 w-3.5" style={{ color: "#79747E" }} />
-          </button>
-          <button
-            type="button"
-            className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#DC2626]"
-            aria-label="Add emoji"
-          >
-            <Smile className="h-3.5 w-3.5" style={{ color: "#79747E" }} />
-          </button>
-          <div className="flex-1" />
-          <button
-            type="button"
-            className="rounded-lg bg-[#DC2626] px-3 py-1 text-xs font-semibold text-white opacity-40 cursor-not-allowed"
-            disabled
-            aria-label="Send message (not available in static preview)"
-            title="Sending available in a later sprint"
-          >
-            Send
-          </button>
-        </div>
-      </div>
-      <p className="mt-1.5 text-[10px] text-center" style={{ color: "#C4C4C4" }}>
-        Message sending is not available in this preview sprint
-      </p>
-    </div>
   );
 }
 
@@ -552,130 +489,6 @@ function MessageFeed({ messages, threadAnchorMessageId, onOpenThread }: MessageF
   );
 }
 
-// ─── Thread panel (static shell) ─────────────────────────────────────────────
-
-interface ThreadPanelProps {
-  anchorMessage: ConversationMessage;
-  replies: ConversationMessage[];
-  onClose: () => void;
-}
-
-function ThreadPanel({ anchorMessage, replies, onClose }: ThreadPanelProps) {
-  return (
-    <div
-      className="flex flex-col h-full w-80 shrink-0 border-l bg-white overflow-hidden"
-      style={{ borderColor: "#E0E0E0" }}
-      data-testid="thread-panel"
-    >
-      {/* Thread header */}
-      <div
-        className="flex h-12 shrink-0 items-center justify-between border-b px-4"
-        style={{ borderColor: "#E0E0E0" }}
-      >
-        <div className="flex items-center gap-2">
-          <MessageSquare className="h-4 w-4" style={{ color: "#79747E" }} />
-          <span className="text-sm font-bold" style={{ color: "#1C1B1F" }}>
-            Thread
-          </span>
-          <span className="text-xs" style={{ color: "#79747E" }}>
-            {replies.length} {replies.length === 1 ? "reply" : "replies"}
-          </span>
-        </div>
-        <button
-          type="button"
-          className="flex h-7 w-7 items-center justify-center rounded-lg transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]"
-          aria-label="Close thread panel"
-          onClick={onClose}
-          data-testid="thread-panel-close"
-        >
-          <X className="h-4 w-4" style={{ color: "#79747E" }} />
-        </button>
-      </div>
-
-      {/* Anchor message */}
-      <div
-        className="shrink-0 border-b px-4 py-3"
-        style={{ borderColor: "#F0F0F0", background: "#FAFAFA" }}
-        data-testid="thread-anchor-message"
-      >
-        <div className="flex gap-2.5">
-          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gray-200 text-xs font-bold" style={{ color: "#49454F" }}>
-            {anchorMessage.authorInitials}
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-baseline gap-2">
-              <span className="text-xs font-bold" style={{ color: "#1C1B1F" }}>
-                {anchorMessage.authorName}
-              </span>
-              <span className="text-[10px]" style={{ color: "#79747E" }}>
-                {formatTime(anchorMessage.sentAt)}
-              </span>
-            </div>
-            <p className="mt-0.5 text-xs leading-relaxed" style={{ color: "#49454F" }}>
-              {anchorMessage.body}
-            </p>
-            {anchorMessage.attachmentRef && (
-              <AttachmentChip name={anchorMessage.attachmentRef} />
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Thread replies */}
-      <div className="flex-1 overflow-y-auto py-2">
-        <div className="px-4 pb-2">
-          <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: "#79747E" }}>
-            {replies.length} {replies.length === 1 ? "reply" : "replies"}
-          </p>
-        </div>
-        {replies.map((reply) => (
-          <div
-            key={reply.id}
-            className="flex gap-2.5 px-4 py-2 hover:bg-gray-50 transition-colors"
-            data-testid={`thread-reply-${reply.id}`}
-          >
-            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gray-200 text-xs font-bold" style={{ color: "#49454F" }}>
-              {reply.authorInitials}
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-baseline gap-2">
-                <span className="text-xs font-bold" style={{ color: "#1C1B1F" }}>
-                  {reply.authorName}
-                </span>
-                <span className="text-[10px]" style={{ color: "#79747E" }}>
-                  {formatTime(reply.sentAt)}
-                </span>
-              </div>
-              <p className="mt-0.5 text-xs leading-relaxed" style={{ color: "#1C1B1F" }}>
-                {reply.body}
-              </p>
-              <ReactionChips reactions={reply.reactions} />
-            </div>
-          </div>
-        ))}
-        <div className="h-2" />
-      </div>
-
-      {/* Thread composer shell */}
-      <div
-        className="shrink-0 border-t px-3 py-2.5"
-        style={{ borderColor: "#E0E0E0" }}
-        data-testid="thread-composer"
-      >
-        <div
-          className="flex items-center gap-2 rounded-lg border bg-[#f8f9fc] px-3 py-2"
-          style={{ borderColor: "#E0E0E0" }}
-        >
-          <p className="flex-1 text-xs" style={{ color: "#C4C4C4" }}>
-            Reply in thread…
-          </p>
-          <Paperclip className="h-3.5 w-3.5 shrink-0" style={{ color: "#C4C4C4" }} />
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ─── Channel workspace ────────────────────────────────────────────────────────
 
 function ChannelWorkspace({
@@ -719,12 +532,12 @@ function ChannelWorkspace({
           threadAnchorMessageId={threadAnchorMessageId}
           onOpenThread={onOpenThread}
         />
-        <ComposerShell placeholder={`Message #${conversation.name}`} />
+        <MessagingComposer placeholder={`Message #${conversation.name}`} isAccessible={true} />
       </div>
 
       {/* Thread panel */}
       {threadOpen && (anchorMsg ? (
-          <ThreadPanel
+          <MessagingThreadPanel
             anchorMessage={anchorMsg}
             replies={threadReplies}
             onClose={onCloseThread}
@@ -808,7 +621,7 @@ function DMWorkspace({
           threadAnchorMessageId={threadAnchorMessageId}
           onOpenThread={onOpenThread}
         />
-        <ComposerShell placeholder={`Message ${conversation.name}`} />
+        <MessagingComposer placeholder={`Message ${conversation.name}`} isAccessible={true} />
       </div>
       {threadOpen && (
         <div
@@ -879,10 +692,10 @@ function GroupWorkspace({
           threadAnchorMessageId={threadAnchorMessageId}
           onOpenThread={onOpenThread}
         />
-        <ComposerShell placeholder={`Message ${conversation.name}`} />
+        <MessagingComposer placeholder={`Message ${conversation.name}`} isAccessible={true} />
       </div>
       {threadOpen && anchorMsg && (
-        <ThreadPanel
+        <MessagingThreadPanel
           anchorMessage={anchorMsg}
           replies={threadReplies}
           onClose={onCloseThread}
