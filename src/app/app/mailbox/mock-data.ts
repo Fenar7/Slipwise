@@ -142,6 +142,7 @@ export const MOCK_MAILBOX_GROUPS: MailboxGroup[] = MOCK_CONNECTIONS.map((conn) =
 export const MOCK_THREAD_DETAILS: Record<string, MailboxThreadDetail> = {
   t1: {
     threadId: "t1",
+    mailboxConnectionId: "conn_billing",
     subject: "Invoice #INV-2026-0412 — Payment overdue",
     status: "open",
     assignee: "You",
@@ -186,6 +187,7 @@ export const MOCK_THREAD_DETAILS: Record<string, MailboxThreadDetail> = {
   },
   t2: {
     threadId: "t2",
+    mailboxConnectionId: "conn_billing",
     subject: "Re: Quote QT-2026-0089 — Revised pricing",
     status: "open",
     assignee: null,
@@ -231,6 +233,7 @@ export const MOCK_THREAD_DETAILS: Record<string, MailboxThreadDetail> = {
   },
   t3: {
     threadId: "t3",
+    mailboxConnectionId: "conn_accounts",
     subject: "Voucher VCH-2026-0031 — Approval needed",
     status: "pending",
     assignee: null,
@@ -260,6 +263,7 @@ export const MOCK_THREAD_DETAILS: Record<string, MailboxThreadDetail> = {
   },
   t4: {
     threadId: "t4",
+    mailboxConnectionId: "conn_billing",
     subject: "Statement of account — April 2026",
     status: "open",
     assignee: "Meera",
@@ -289,6 +293,7 @@ export const MOCK_THREAD_DETAILS: Record<string, MailboxThreadDetail> = {
   },
   t5: {
     threadId: "t5",
+    mailboxConnectionId: "conn_support",
     subject: "Support: Unable to download invoice PDF",
     status: "open",
     assignee: null,
@@ -316,6 +321,7 @@ export const MOCK_THREAD_DETAILS: Record<string, MailboxThreadDetail> = {
   },
   t6: {
     threadId: "t6",
+    mailboxConnectionId: "conn_accounts",
     subject: "Re: TDS certificate for FY 2025-26",
     status: "closed",
     assignee: null,

@@ -62,7 +62,7 @@ function formatSentAt(iso: string): string {
   });
 }
 
-function MessageItem({ message }: { message: MailboxMessageItem }) {
+function MessageItem({ message, onReply }: { message: MailboxMessageItem; onReply?: (mode: "reply" | "reply-all" | "forward") => void }) {
   const [collapsed, setCollapsed] = useState(message.isCollapsed);
   const isOutbound = message.direction === "outbound";
 
@@ -167,6 +167,7 @@ function MessageItem({ message }: { message: MailboxMessageItem }) {
           >
             <div className="flex items-center gap-2">
               <button
+                onClick={() => onReply?.("reply")}
                 className="flex items-center gap-1.5 rounded-lg border border-[#E2E5EA] bg-white px-3 py-1.5 text-xs font-semibold text-[#334155] transition-colors hover:border-[#D1D5DB] hover:bg-[#F7F8FB]"
                 aria-label="Reply to this message"
               >
@@ -174,6 +175,7 @@ function MessageItem({ message }: { message: MailboxMessageItem }) {
                 Reply
               </button>
               <button
+                onClick={() => onReply?.("reply-all")}
                 className="flex items-center gap-1.5 rounded-lg border border-[#E2E5EA] bg-white px-3 py-1.5 text-xs font-semibold text-[#334155] transition-colors hover:border-[#D1D5DB] hover:bg-[#F7F8FB]"
                 aria-label="Reply all"
               >
@@ -181,6 +183,7 @@ function MessageItem({ message }: { message: MailboxMessageItem }) {
                 Reply all
               </button>
               <button
+                onClick={() => onReply?.("forward")}
                 className="flex items-center gap-1.5 rounded-lg border border-[#E2E5EA] bg-white px-3 py-1.5 text-xs font-semibold text-[#334155] transition-colors hover:border-[#D1D5DB] hover:bg-[#F7F8FB]"
                 aria-label="Forward"
               >
@@ -295,11 +298,38 @@ function ThreadHeader({ detail }: { detail: MailboxThreadDetail }) {
 
 // ─── Reading pane ─────────────────────────────────────────────────────────────
 
+import { InlineReply } from "./mailbox-inline-reply";
+import type { MailboxComposerState, ComposeMode } from "./types";
+
 interface MailboxReadingPaneProps {
   detail: MailboxThreadDetail;
+  composerState: MailboxComposerState | null;
+  onOpenReply: (mode: ComposeMode, threadId: string, messageId: string, subject: string, to: string[]) => void;
+  onCloseReply: () => void;
+  onExpandReply: () => void;
+  onPatchComposer: (patch: Partial<MailboxComposerState>) => void;
 }
 
-export function MailboxReadingPane({ detail }: MailboxReadingPaneProps) {
+export function MailboxReadingPane({
+  detail,
+  composerState,
+  onOpenReply,
+  onCloseReply,
+  onExpandReply,
+  onPatchComposer,
+}: MailboxReadingPaneProps) {
+  const lastMessage = detail.messages[detail.messages.length - 1];
+
+  const handleOpenReply = (mode: ComposeMode) => {
+    const to = mode === "forward" ? [] : lastMessage.to;
+    onOpenReply(mode, detail.threadId, lastMessage.id, detail.subject, to);
+  };
+
+  const showInlineReply =
+    composerState?.isOpen &&
+    composerState.layout !== "expanded" &&
+    composerState.threadId === detail.threadId;
+
   return (
     <div
       className="flex h-full flex-col overflow-hidden bg-[#F7F8FB]"
@@ -309,12 +339,48 @@ export function MailboxReadingPane({ detail }: MailboxReadingPaneProps) {
       {/* Thread header */}
       <ThreadHeader detail={detail} />
 
-      {/* Message stack */}
+      {/* Message stack + inline reply */}
       <div className="flex-1 overflow-y-auto px-5 py-4">
         <div className="mx-auto max-w-3xl space-y-3">
           {detail.messages.map((msg) => (
-            <MessageItem key={msg.id} message={msg} />
+            <MessageItem
+              key={msg.id}
+              message={msg}
+              onReply={(mode) => handleOpenReply(mode)}
+            />
           ))}
+
+          {/* Inline reply — rendered below message stack */}
+          {showInlineReply && composerState ? (
+            <InlineReply
+              state={composerState}
+              onClose={onCloseReply}
+              onExpand={onExpandReply}
+              onModeChange={(mode) => {
+                const to = mode === "forward" ? [] : lastMessage.to;
+                onPatchComposer({ mode, to });
+              }}
+              onChange={onPatchComposer}
+            />
+          ) : (
+            /* Quick-reply prompt when no inline reply is open */
+            <div
+              className="flex items-center gap-2 rounded-xl border border-dashed border-[#D1D5DB] bg-white px-4 py-3 text-sm text-[#94A3B8] cursor-pointer hover:border-[#16294D] hover:text-[#16294D] transition-colors"
+              onClick={() => handleOpenReply("reply")}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  handleOpenReply("reply");
+                }
+              }}
+              aria-label="Click to reply"
+              data-testid="reply-prompt"
+            >
+              <span className="text-xs">Click to reply…</span>
+            </div>
+          )}
         </div>
       </div>
     </div>
