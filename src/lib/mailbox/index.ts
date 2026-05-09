@@ -105,3 +105,24 @@ export {
   upsertMailboxCursor,
   deleteMailboxCursors,
 } from "./cursor-service";
+
+// Sprint 2.2: Gmail OAuth and token lifecycle
+export type { MailboxCredentialPayload } from "./credential-store";
+export {
+  storeMailboxCredential,
+  readMailboxCredential,
+  rotateMailboxCredential,
+  revokeMailboxCredential,
+} from "./credential-store";
+
+export type { GmailCallbackResult, GmailRefreshResult, GmailVerifyResult } from "./gmail-oauth-service";
+export {
+  initiateGmailConnect,
+  handleGmailCallback,
+  refreshGmailAuthorization,
+  markConnectionReconnectRequired,
+  verifyGmailConnection,
+  disconnectGmailMailbox,
+} from "./gmail-oauth-service";
+
+export { gmailProviderAdapter, buildGmailAuthUrl, GMAIL_OAUTH_SCOPES } from "./gmail-provider";

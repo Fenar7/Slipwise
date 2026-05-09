@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 
-export type IntegrationOAuthProvider = "quickbooks" | "zoho";
+export type IntegrationOAuthProvider = "quickbooks" | "zoho" | "gmail";
 
 interface IntegrationOAuthStatePayload {
   provider: IntegrationOAuthProvider;

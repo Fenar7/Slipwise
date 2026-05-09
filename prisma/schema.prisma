@@ -258,6 +258,7 @@ model Organization {
   mailboxAssignments           MailboxAssignment[]
   mailboxAuditEvents           MailboxAuditEvent[]
   mailboxProviderCursors       MailboxProviderCursor[]
+  mailboxCredentials           MailboxCredential[]
 
   @@index([entityGroupId])
   @@map("organization")
@@ -6116,4 +6117,24 @@ model MailboxProviderCursor {
   @@unique([orgId, mailboxConnectionId, cursorType])
   @@index([orgId, mailboxConnectionId])
   @@map("mailbox_provider_cursor")
+}
+
+/// Encrypted OAuth credential store for mailbox connections.
+/// Raw access/refresh tokens are NEVER stored in MailboxConnection rows.
+/// Instead, MailboxConnection.tokenRef holds the id of a row in this table.
+/// The encryptedPayload is AES-256-GCM encrypted JSON (MailboxCredentialPayload).
+///
+/// Sprint 2.2: implements the tokenRef abstraction defined in Sprint 2.1.
+model MailboxCredential {
+  id               String   @id @default(cuid())
+  orgId            String
+  /// AES-256-GCM encrypted JSON payload. Format: v2:<iv>:<ciphertext>:<tag>
+  encryptedPayload String   @db.Text
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@map("mailbox_credential")
 }
