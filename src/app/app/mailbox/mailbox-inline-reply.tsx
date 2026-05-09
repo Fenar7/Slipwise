@@ -172,6 +172,27 @@ export function InlineReply({ state, onClose, onExpand, onModeChange, onChange }
       <SendBar
         sendState={state.sendState}
         onSend={() => onChange({ sendState: "sending" })}
+        deliveryMode={state.deliveryMode}
+        scheduledSendAt={state.scheduledSendAt}
+        scheduleLabel={state.scheduleLabel}
+        schedulePanelOpen={state.schedulePanelOpen}
+        onSchedulePanelToggle={() => onChange({ schedulePanelOpen: !state.schedulePanelOpen })}
+        onScheduleApply={({ iso, label }) =>
+          onChange({
+            deliveryMode: "schedule_send",
+            scheduledSendAt: iso,
+            scheduleLabel: label,
+            schedulePanelOpen: false,
+          })
+        }
+        onScheduleClear={() =>
+          onChange({
+            deliveryMode: "send_now",
+            scheduledSendAt: null,
+            scheduleLabel: null,
+            schedulePanelOpen: false,
+          })
+        }
         onDiscard={onClose}
         onExpand={onExpand}
         showExpand

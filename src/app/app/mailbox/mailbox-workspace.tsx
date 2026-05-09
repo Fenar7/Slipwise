@@ -75,6 +75,10 @@ function makeComposerState(
     bodyHtml: "",
     attachments: [],
     sendState: "idle",
+    deliveryMode: "send_now",
+    scheduledSendAt: null,
+    scheduleLabel: null,
+    schedulePanelOpen: false,
     threadId,
     replyToMessageId,
   };

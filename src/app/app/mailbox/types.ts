@@ -114,6 +114,7 @@ export interface MailboxThreadDetail {
 export type ComposeMode = "new" | "reply" | "reply-all" | "forward";
 export type ComposeLayout = "floating" | "expanded" | "inline";
 export type ComposeSendState = "idle" | "sending" | "sent" | "failed";
+export type ComposeDeliveryMode = "send_now" | "schedule_send";
 
 export interface ComposeDraftAttachment {
   id: string;
@@ -139,6 +140,10 @@ export interface MailboxComposerState {
   bodyHtml: string;
   attachments: ComposeDraftAttachment[];
   sendState: ComposeSendState;
+  deliveryMode: ComposeDeliveryMode;
+  scheduledSendAt: string | null;
+  scheduleLabel: string | null;
+  schedulePanelOpen: boolean;
   /** threadId being replied to / forwarded, null for new message */
   threadId: string | null;
   /** messageId being replied to, null for new/forward */

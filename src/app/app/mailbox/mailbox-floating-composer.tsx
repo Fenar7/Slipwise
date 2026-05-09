@@ -29,8 +29,8 @@ export function FloatingComposer({ state, onClose, onExpand, onChange }: Floatin
   return (
     <div
       className={cn(
-        "fixed bottom-0 right-6 z-50 flex w-[480px] flex-col overflow-hidden rounded-t-xl border border-b-0 bg-white shadow-xl transition-all",
-        minimized ? "h-10" : "h-[420px]"
+        "fixed bottom-0 right-6 z-50 flex w-[680px] max-w-[calc(100vw-48px)] flex-col overflow-hidden rounded-t-xl border border-b-0 bg-white shadow-xl transition-all",
+        minimized ? "h-10" : "h-[560px]"
       )}
       style={{ borderColor: "#D1D5DB" }}
       data-testid="floating-composer"
@@ -155,7 +155,7 @@ export function FloatingComposer({ state, onClose, onExpand, onChange }: Floatin
           <BodyArea
             value={state.bodyHtml}
             onChange={(v) => onChange({ bodyHtml: v })}
-            minRows={5}
+            minRows={8}
             className="flex-1"
           />
 
@@ -167,6 +167,27 @@ export function FloatingComposer({ state, onClose, onExpand, onChange }: Floatin
           <SendBar
             sendState={state.sendState}
             onSend={() => onChange({ sendState: "sending" })}
+            deliveryMode={state.deliveryMode}
+            scheduledSendAt={state.scheduledSendAt}
+            scheduleLabel={state.scheduleLabel}
+            schedulePanelOpen={state.schedulePanelOpen}
+            onSchedulePanelToggle={() => onChange({ schedulePanelOpen: !state.schedulePanelOpen })}
+            onScheduleApply={({ iso, label }) =>
+              onChange({
+                deliveryMode: "schedule_send",
+                scheduledSendAt: iso,
+                scheduleLabel: label,
+                schedulePanelOpen: false,
+              })
+            }
+            onScheduleClear={() =>
+              onChange({
+                deliveryMode: "send_now",
+                scheduledSendAt: null,
+                scheduleLabel: null,
+                schedulePanelOpen: false,
+              })
+            }
             onDiscard={onClose}
             onExpand={onExpand}
             showExpand
