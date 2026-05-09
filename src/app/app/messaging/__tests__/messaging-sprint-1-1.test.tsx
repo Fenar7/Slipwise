@@ -112,14 +112,17 @@ describe("MessagingWorkspace", () => {
 
   it("defaults to channels section", () => {
     render(<MessagingWorkspace />);
-    expect(screen.getByTestId("messaging-pane-channels")).toBeInTheDocument();
+    // Sprint 1.2: channels section now renders the two-column conversation layout
+    expect(screen.getByTestId("messaging-workspace-pane")).toBeInTheDocument();
+    expect(screen.getByTestId("conv-list-channels")).toBeInTheDocument();
   });
 
   it("switches section when left rail item is clicked", () => {
     render(<MessagingWorkspace />);
     const dmSection = screen.getByTestId("messaging-section-dms");
     fireEvent.click(dmSection);
-    expect(screen.getByTestId("messaging-pane-dms")).toBeInTheDocument();
+    // Sprint 1.2: DMs section now renders the two-column conversation layout
+    expect(screen.getByTestId("conv-list-dms")).toBeInTheDocument();
   });
 
   it("switches to tasks section", () => {
@@ -436,7 +439,8 @@ describe("MessagingWorkspace keyboard navigation", () => {
     const dmSection = screen.getByTestId("messaging-section-dms");
     dmSection.focus();
     fireEvent.keyDown(dmSection, { key: "Enter" });
-    expect(screen.getByTestId("messaging-pane-dms")).toBeInTheDocument();
+    // Sprint 1.2: DMs section now renders the two-column conversation layout
+    expect(screen.getByTestId("conv-list-dms")).toBeInTheDocument();
   });
 
   it("Space switches sections from the left rail", async () => {
