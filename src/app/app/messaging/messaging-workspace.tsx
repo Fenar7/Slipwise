@@ -5,6 +5,21 @@ import { MessagingLeftRail } from "./messaging-left-rail";
 import { MessagingCommandBar } from "./messaging-command-bar";
 import { MessagingWorkspacePane } from "./messaging-workspace-pane";
 import type { MessagingSection, MessagingWorkspaceState } from "./types";
+import { cn } from "@/lib/utils";
+
+const MOBILE_SECTIONS: Array<{
+  section: MessagingSection;
+  label: string;
+  adminOnly?: boolean;
+}> = [
+  { section: "channels", label: "Channels" },
+  { section: "dms", label: "DMs" },
+  { section: "groups", label: "Groups" },
+  { section: "tasks", label: "Tasks" },
+  { section: "meetings", label: "Meetings" },
+  { section: "files", label: "Files" },
+  { section: "admin", label: "Admin", adminOnly: true },
+];
 
 /**
  * MessagingWorkspace — the top-level shell for the Messaging module.
@@ -13,7 +28,7 @@ import type { MessagingSection, MessagingWorkspaceState } from "./types";
  * - Left rail with all section entry points
  * - Top command/search bar
  * - Section workspace pane (static content per section)
- * - Responsive direction: left rail hidden on mobile (future sprint extends this)
+ * - Responsive direction: desktop rail + compact mobile/tablet section switcher
  *
  * No realtime, no persistence, no message sending in this sprint.
  */
@@ -62,6 +77,39 @@ export function MessagingWorkspace() {
           commandBarOpen={state.commandBarOpen}
           onCommandBarToggle={toggleCommandBar}
         />
+
+        {/* Mobile / tablet section switcher */}
+        <div
+          className="flex shrink-0 gap-2 overflow-x-auto border-b bg-[#f8f9fc] px-4 py-3 lg:hidden"
+          style={{ borderColor: "#E0E0E0" }}
+          data-testid="messaging-mobile-nav"
+        >
+          {MOBILE_SECTIONS.map(({ section, label, adminOnly }) => {
+            const isActive = state.activeSection === section;
+            return (
+              <button
+                key={section}
+                type="button"
+                className={cn(
+                  "shrink-0 rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2",
+                  adminOnly
+                    ? isActive
+                      ? "border-amber-300 bg-amber-50 text-amber-800 focus-visible:ring-amber-400"
+                      : "border-[#E0E0E0] bg-white text-amber-700 hover:border-amber-300 hover:bg-amber-50 focus-visible:ring-amber-400"
+                    : isActive
+                      ? "border-[#DC2626] bg-red-50 text-[#DC2626] focus-visible:ring-[#DC2626]"
+                      : "border-[#E0E0E0] bg-white text-[#49454F] hover:border-gray-300 hover:bg-gray-50 focus-visible:ring-[#DC2626]"
+                )}
+                aria-pressed={isActive}
+                aria-label={adminOnly ? `${label} section, admin only` : `${label} section`}
+                data-testid={`messaging-mobile-section-${section}`}
+                onClick={() => setActiveSection(section)}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
 
         {/* Section workspace pane */}
         <div className="flex-1 overflow-hidden">

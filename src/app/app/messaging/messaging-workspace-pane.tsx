@@ -33,6 +33,9 @@ interface MessagingWorkspacePaneProps {
   activeSection: MessagingSection;
 }
 
+const CARD_BUTTON_CLASS =
+  "flex w-full text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626] focus-visible:ring-offset-2";
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function taskStatusLabel(status: TaskStatus) {
@@ -90,11 +93,14 @@ function ChannelsPane() {
       </div>
       <div className="flex-1 overflow-y-auto px-6 py-4 space-y-2">
         {MOCK_CHANNELS.map((ch) => (
-          <div
+          <button
+            type="button"
             key={ch.id}
-            className="flex items-start gap-3 rounded-xl border p-4 cursor-pointer transition-colors hover:border-[#DC2626] hover:bg-red-50/30"
+            className={cn(
+              CARD_BUTTON_CLASS,
+              "items-start gap-3 rounded-xl border p-4 hover:border-[#DC2626] hover:bg-red-50/30"
+            )}
             style={{ borderColor: "#F0F0F0" }}
-            role="button"
             aria-label={`Open ${ch.name} channel`}
           >
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gray-100">
@@ -123,7 +129,7 @@ function ChannelsPane() {
                 {ch.unreadCount}
               </span>
             )}
-          </div>
+          </button>
         ))}
       </div>
     </div>
@@ -151,11 +157,14 @@ function DirectMessagesPane() {
       </div>
       <div className="flex-1 overflow-y-auto px-6 py-4 space-y-2">
         {MOCK_DMS.map((dm) => (
-          <div
+          <button
+            type="button"
             key={dm.id}
-            className="flex items-center gap-3 rounded-xl border p-4 cursor-pointer transition-colors hover:border-[#DC2626] hover:bg-red-50/30"
+            className={cn(
+              CARD_BUTTON_CLASS,
+              "items-center gap-3 rounded-xl border p-4 hover:border-[#DC2626] hover:bg-red-50/30"
+            )}
             style={{ borderColor: "#F0F0F0" }}
-            role="button"
             aria-label={`Open DM with ${dm.participant.name}`}
           >
             <div className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gray-200 text-sm font-bold" style={{ color: "#49454F" }}>
@@ -178,7 +187,7 @@ function DirectMessagesPane() {
                 {dm.unreadCount}
               </span>
             )}
-          </div>
+          </button>
         ))}
       </div>
     </div>
@@ -206,11 +215,14 @@ function GroupsPane() {
       </div>
       <div className="flex-1 overflow-y-auto px-6 py-4 space-y-2">
         {MOCK_GROUPS.map((grp) => (
-          <div
+          <button
+            type="button"
             key={grp.id}
-            className="flex items-start gap-3 rounded-xl border p-4 cursor-pointer transition-colors hover:border-[#DC2626] hover:bg-red-50/30"
+            className={cn(
+              CARD_BUTTON_CLASS,
+              "items-start gap-3 rounded-xl border p-4 hover:border-[#DC2626] hover:bg-red-50/30"
+            )}
             style={{ borderColor: "#F0F0F0" }}
-            role="button"
             aria-label={`Open ${grp.name} group`}
           >
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gray-100">
@@ -235,7 +247,7 @@ function GroupsPane() {
                 {grp.unreadCount}
               </span>
             )}
-          </div>
+          </button>
         ))}
       </div>
     </div>
@@ -279,11 +291,14 @@ function TasksPane() {
         {MOCK_TASKS.map((task) => {
           const { label, color, bg } = taskStatusLabel(task.status);
           return (
-            <div
+            <button
+              type="button"
               key={task.id}
-              className="flex items-start gap-3 rounded-xl border p-4 cursor-pointer transition-colors hover:border-[#DC2626] hover:bg-red-50/30"
+              className={cn(
+                CARD_BUTTON_CLASS,
+                "items-start gap-3 rounded-xl border p-4 hover:border-[#DC2626] hover:bg-red-50/30"
+              )}
               style={{ borderColor: task.status === "overdue" ? "#FCA5A5" : "#F0F0F0" }}
-              role="button"
               aria-label={task.title}
             >
               <Circle className={cn("h-4 w-4 mt-0.5 shrink-0", task.status === "overdue" ? "text-[#DC2626]" : "text-[#79747E]")} />
@@ -308,7 +323,7 @@ function TasksPane() {
                   )}
                 </div>
               </div>
-            </div>
+            </button>
           );
         })}
       </div>
@@ -354,11 +369,14 @@ function MeetingsPane() {
             <p className="text-[10px] font-semibold uppercase tracking-wide mb-2" style={{ color: "#79747E" }}>Upcoming</p>
             <div className="space-y-2">
               {upcoming.map((meet) => (
-                <div
+                <button
+                  type="button"
                   key={meet.id}
-                  className="flex items-start gap-3 rounded-xl border p-4 cursor-pointer transition-colors hover:border-[#DC2626] hover:bg-red-50/30"
+                  className={cn(
+                    CARD_BUTTON_CLASS,
+                    "items-start gap-3 rounded-xl border p-4 hover:border-[#DC2626] hover:bg-red-50/30"
+                  )}
                   style={{ borderColor: "#F0F0F0" }}
-                  role="button"
                   aria-label={meet.title}
                 >
                   <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-50">
@@ -370,7 +388,7 @@ function MeetingsPane() {
                       {meet.participantCount} participants · {meet.durationMinutes} min
                     </p>
                   </div>
-                </div>
+                </button>
               ))}
             </div>
           </div>
@@ -380,11 +398,14 @@ function MeetingsPane() {
             <p className="text-[10px] font-semibold uppercase tracking-wide mb-2" style={{ color: "#79747E" }}>Past</p>
             <div className="space-y-2">
               {past.map((meet) => (
-                <div
+                <button
+                  type="button"
                   key={meet.id}
-                  className="flex items-start gap-3 rounded-xl border p-4 opacity-60 cursor-pointer"
+                  className={cn(
+                    CARD_BUTTON_CLASS,
+                    "items-start gap-3 rounded-xl border p-4 opacity-60"
+                  )}
                   style={{ borderColor: "#F0F0F0" }}
-                  role="button"
                   aria-label={meet.title}
                 >
                   <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gray-100">
@@ -396,7 +417,7 @@ function MeetingsPane() {
                       {meet.participantCount} participants · Ended
                     </p>
                   </div>
-                </div>
+                </button>
               ))}
             </div>
           </div>
@@ -423,11 +444,14 @@ function FilesPane() {
         {MOCK_FILES.map((file) => {
           const FileIcon = fileCategoryIcon(file.category);
           return (
-            <div
+            <button
+              type="button"
               key={file.id}
-              className="flex items-center gap-3 rounded-xl border p-4 cursor-pointer transition-colors hover:border-[#DC2626] hover:bg-red-50/30"
+              className={cn(
+                CARD_BUTTON_CLASS,
+                "items-center gap-3 rounded-xl border p-4 hover:border-[#DC2626] hover:bg-red-50/30"
+              )}
               style={{ borderColor: "#F0F0F0" }}
-              role="button"
               aria-label={file.name}
             >
               <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gray-100">
@@ -439,7 +463,7 @@ function FilesPane() {
                   {file.sizeLabel} · {file.uploadedBy}
                 </p>
               </div>
-            </div>
+            </button>
           );
         })}
       </div>
@@ -472,11 +496,14 @@ function AdminPane() {
 
       <div className="flex-1 overflow-y-auto px-6 py-4 space-y-2">
         {MOCK_ADMIN_ENTRIES.map((entry) => (
-          <div
+          <button
+            type="button"
             key={entry.area}
-            className="flex items-start gap-3 rounded-xl border p-4 cursor-pointer transition-colors hover:border-amber-300 hover:bg-amber-50/50"
+            className={cn(
+              CARD_BUTTON_CLASS,
+              "items-start gap-3 rounded-xl border p-4 hover:border-amber-300 hover:bg-amber-50/50 focus-visible:ring-amber-400"
+            )}
             style={{ borderColor: "#F0F0F0" }}
-            role="button"
             aria-label={entry.label}
             data-testid={`admin-pane-entry-${entry.area}`}
           >
@@ -492,7 +519,7 @@ function AdminPane() {
               </div>
               <p className="text-xs mt-0.5" style={{ color: "#79747E" }}>{entry.description}</p>
             </div>
-          </div>
+          </button>
         ))}
       </div>
     </div>

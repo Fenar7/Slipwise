@@ -1,5 +1,6 @@
 "use client";
 
+import React from "react";
 import { cn } from "@/lib/utils";
 import {
   Hash,
@@ -29,6 +30,9 @@ interface MessagingLeftRailProps {
   activeSection: MessagingSection;
   onSectionChange: (section: MessagingSection) => void;
 }
+
+const ROW_BUTTON_CLASS =
+  "flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626] focus-visible:ring-offset-1";
 
 // ─── Presence dot ─────────────────────────────────────────────────────────────
 
@@ -86,20 +90,27 @@ function SectionHeader({
   adminOnly = false,
 }: SectionHeaderProps) {
   const isActive = activeSection === section;
+  const handleActivate = () => {
+    onSelect(section);
+    onToggle();
+  };
 
   return (
-    <div
+    <button
+      type="button"
       className={cn(
-        "group flex items-center gap-2 rounded-lg px-2 py-1.5 cursor-pointer select-none transition-colors",
+        "group flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626] focus-visible:ring-offset-1",
         isActive
           ? "bg-red-50 text-[#DC2626]"
           : "text-[#49454F] hover:bg-gray-50 hover:text-[#1C1B1F]"
       )}
-      onClick={() => {
-        onSelect(section);
-        onToggle();
+      onClick={handleActivate}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          handleActivate();
+        }
       }}
-      role="button"
       aria-expanded={isExpanded}
       aria-label={`${label} section`}
       data-testid={`messaging-section-${section}`}
@@ -122,7 +133,7 @@ function SectionHeader({
       ) : (
         <ChevronRight className="h-3 w-3 shrink-0 text-[#79747E]" />
       )}
-    </div>
+    </button>
   );
 }
 
@@ -187,9 +198,12 @@ export function MessagingLeftRail({ activeSection, onSectionChange }: MessagingL
           <ul className="ml-4 space-y-0.5 border-l pl-2" style={{ borderColor: "#F0F0F0" }}>
             {MOCK_CHANNELS.map((ch) => (
               <li key={ch.id}>
-                <div
-                  className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-[#49454F] hover:bg-gray-50 hover:text-[#1C1B1F] cursor-pointer transition-colors"
-                  role="button"
+                <button
+                  type="button"
+                  className={cn(
+                    ROW_BUTTON_CLASS,
+                    "text-[#49454F] hover:bg-gray-50 hover:text-[#1C1B1F]"
+                  )}
                   aria-label={`${ch.name} channel`}
                 >
                   {ch.visibility === "private" ? (
@@ -201,17 +215,20 @@ export function MessagingLeftRail({ activeSection, onSectionChange }: MessagingL
                     {ch.name}
                   </span>
                   <UnreadBadge count={ch.unreadCount} />
-                </div>
+                </button>
               </li>
             ))}
             <li>
-              <div
-                className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-[#79747E] hover:text-[#DC2626] cursor-pointer transition-colors"
-                role="button"
+              <button
+                type="button"
+                className={cn(
+                  ROW_BUTTON_CLASS,
+                  "text-[#79747E] hover:text-[#DC2626]"
+                )}
                 aria-label="Browse all channels"
               >
                 <span className="font-medium">Browse channels…</span>
-              </div>
+              </button>
             </li>
           </ul>
         )}
@@ -231,9 +248,12 @@ export function MessagingLeftRail({ activeSection, onSectionChange }: MessagingL
           <ul className="ml-4 space-y-0.5 border-l pl-2" style={{ borderColor: "#F0F0F0" }}>
             {MOCK_DMS.map((dm) => (
               <li key={dm.id}>
-                <div
-                  className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-[#49454F] hover:bg-gray-50 hover:text-[#1C1B1F] cursor-pointer transition-colors"
-                  role="button"
+                <button
+                  type="button"
+                  className={cn(
+                    ROW_BUTTON_CLASS,
+                    "text-[#49454F] hover:bg-gray-50 hover:text-[#1C1B1F]"
+                  )}
                   aria-label={`DM with ${dm.participant.name}`}
                 >
                   <PresenceDot status={dm.participant.presence} />
@@ -241,17 +261,20 @@ export function MessagingLeftRail({ activeSection, onSectionChange }: MessagingL
                     {dm.participant.name}
                   </span>
                   <UnreadBadge count={dm.unreadCount} />
-                </div>
+                </button>
               </li>
             ))}
             <li>
-              <div
-                className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-[#79747E] hover:text-[#DC2626] cursor-pointer transition-colors"
-                role="button"
+              <button
+                type="button"
+                className={cn(
+                  ROW_BUTTON_CLASS,
+                  "text-[#79747E] hover:text-[#DC2626]"
+                )}
                 aria-label="New direct message"
               >
                 <span className="font-medium">New message…</span>
-              </div>
+              </button>
             </li>
           </ul>
         )}
@@ -271,9 +294,12 @@ export function MessagingLeftRail({ activeSection, onSectionChange }: MessagingL
           <ul className="ml-4 space-y-0.5 border-l pl-2" style={{ borderColor: "#F0F0F0" }}>
             {MOCK_GROUPS.map((grp) => (
               <li key={grp.id}>
-                <div
-                  className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-[#49454F] hover:bg-gray-50 hover:text-[#1C1B1F] cursor-pointer transition-colors"
-                  role="button"
+                <button
+                  type="button"
+                  className={cn(
+                    ROW_BUTTON_CLASS,
+                    "text-[#49454F] hover:bg-gray-50 hover:text-[#1C1B1F]"
+                  )}
                   aria-label={`${grp.name} group`}
                 >
                   {grp.isPrivate ? (
@@ -285,7 +311,7 @@ export function MessagingLeftRail({ activeSection, onSectionChange }: MessagingL
                     {grp.name}
                   </span>
                   <UnreadBadge count={grp.unreadCount} />
-                </div>
+                </button>
               </li>
             ))}
           </ul>
@@ -306,9 +332,12 @@ export function MessagingLeftRail({ activeSection, onSectionChange }: MessagingL
           <ul className="ml-4 space-y-0.5 border-l pl-2" style={{ borderColor: "#F0F0F0" }}>
             {MOCK_TASKS.slice(0, 3).map((task) => (
               <li key={task.id}>
-                <div
-                  className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-[#49454F] hover:bg-gray-50 cursor-pointer transition-colors"
-                  role="button"
+                <button
+                  type="button"
+                  className={cn(
+                    ROW_BUTTON_CLASS,
+                    "text-[#49454F] hover:bg-gray-50"
+                  )}
                   aria-label={task.title}
                 >
                   <Circle
@@ -320,16 +349,19 @@ export function MessagingLeftRail({ activeSection, onSectionChange }: MessagingL
                   <span className={cn("flex-1 truncate font-medium", task.status === "overdue" && "text-[#DC2626]")}>
                     {task.title}
                   </span>
-                </div>
+                </button>
               </li>
             ))}
             <li>
-              <div
-                className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-[#79747E] hover:text-[#DC2626] cursor-pointer transition-colors"
-                role="button"
+              <button
+                type="button"
+                className={cn(
+                  ROW_BUTTON_CLASS,
+                  "text-[#79747E] hover:text-[#DC2626]"
+                )}
               >
                 <span className="font-medium">View all tasks…</span>
-              </div>
+              </button>
             </li>
           </ul>
         )}
@@ -349,23 +381,29 @@ export function MessagingLeftRail({ activeSection, onSectionChange }: MessagingL
           <ul className="ml-4 space-y-0.5 border-l pl-2" style={{ borderColor: "#F0F0F0" }}>
             {MOCK_MEETINGS.filter((m) => m.status === "upcoming").map((meet) => (
               <li key={meet.id}>
-                <div
-                  className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-[#49454F] hover:bg-gray-50 cursor-pointer transition-colors"
-                  role="button"
+                <button
+                  type="button"
+                  className={cn(
+                    ROW_BUTTON_CLASS,
+                    "text-[#49454F] hover:bg-gray-50"
+                  )}
                   aria-label={meet.title}
                 >
                   <Calendar className="h-3 w-3 shrink-0 text-[#79747E]" />
                   <span className="flex-1 truncate font-medium">{meet.title}</span>
-                </div>
+                </button>
               </li>
             ))}
             <li>
-              <div
-                className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-[#79747E] hover:text-[#DC2626] cursor-pointer transition-colors"
-                role="button"
+              <button
+                type="button"
+                className={cn(
+                  ROW_BUTTON_CLASS,
+                  "text-[#79747E] hover:text-[#DC2626]"
+                )}
               >
                 <span className="font-medium">Schedule meeting…</span>
-              </div>
+              </button>
             </li>
           </ul>
         )}
@@ -384,23 +422,29 @@ export function MessagingLeftRail({ activeSection, onSectionChange }: MessagingL
           <ul className="ml-4 space-y-0.5 border-l pl-2" style={{ borderColor: "#F0F0F0" }}>
             {MOCK_FILES.slice(0, 3).map((file) => (
               <li key={file.id}>
-                <div
-                  className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-[#49454F] hover:bg-gray-50 cursor-pointer transition-colors"
-                  role="button"
+                <button
+                  type="button"
+                  className={cn(
+                    ROW_BUTTON_CLASS,
+                    "text-[#49454F] hover:bg-gray-50"
+                  )}
                   aria-label={file.name}
                 >
                   <Paperclip className="h-3 w-3 shrink-0 text-[#79747E]" />
                   <span className="flex-1 truncate font-medium">{file.name}</span>
-                </div>
+                </button>
               </li>
             ))}
             <li>
-              <div
-                className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-[#79747E] hover:text-[#DC2626] cursor-pointer transition-colors"
-                role="button"
+              <button
+                type="button"
+                className={cn(
+                  ROW_BUTTON_CLASS,
+                  "text-[#79747E] hover:text-[#DC2626]"
+                )}
               >
                 <span className="font-medium">Browse all files…</span>
-              </div>
+              </button>
             </li>
           </ul>
         )}
@@ -427,15 +471,18 @@ export function MessagingLeftRail({ activeSection, onSectionChange }: MessagingL
                 { label: "Member Governance", href: "#member-governance" },
               ].map((entry) => (
                 <li key={entry.href}>
-                  <div
-                    className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-[#49454F] hover:bg-amber-50 hover:text-amber-700 cursor-pointer transition-colors"
-                    role="button"
+                  <button
+                    type="button"
+                    className={cn(
+                      ROW_BUTTON_CLASS,
+                      "text-[#49454F] hover:bg-amber-50 hover:text-amber-700"
+                    )}
                     aria-label={entry.label}
                     data-testid={`admin-entry-${entry.href.replace("#", "")}`}
                   >
                     <ShieldAlert className="h-3 w-3 shrink-0 text-amber-500" />
                     <span className="font-medium">{entry.label}</span>
-                  </div>
+                  </button>
                 </li>
               ))}
             </ul>
@@ -445,6 +492,3 @@ export function MessagingLeftRail({ activeSection, onSectionChange }: MessagingL
     </aside>
   );
 }
-
-// React import needed for useState
-import React from "react";

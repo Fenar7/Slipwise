@@ -145,6 +145,19 @@ describe("MessagingWorkspace", () => {
     fireEvent.click(screen.getByTestId("messaging-section-admin"));
     expect(screen.getByTestId("messaging-pane-admin")).toBeInTheDocument();
   });
+
+  it("renders the mobile/tablet fallback navigation", () => {
+    render(<MessagingWorkspace />);
+    expect(screen.getByTestId("messaging-mobile-nav")).toBeInTheDocument();
+    expect(screen.getByTestId("messaging-mobile-section-channels")).toBeInTheDocument();
+    expect(screen.getByTestId("messaging-mobile-section-admin")).toBeInTheDocument();
+  });
+
+  it("switches section from the mobile/tablet fallback navigation", () => {
+    render(<MessagingWorkspace />);
+    fireEvent.click(screen.getByTestId("messaging-mobile-section-admin"));
+    expect(screen.getByTestId("messaging-pane-admin")).toBeInTheDocument();
+  });
 });
 
 // ─── MessagingLeftRail ────────────────────────────────────────────────────────
@@ -205,6 +218,18 @@ describe("MessagingLeftRail", () => {
     );
     fireEvent.click(screen.getByTestId("messaging-section-dms"));
     expect(onSectionChange).toHaveBeenCalledWith("dms");
+  });
+
+  it("section headers use semantic buttons", () => {
+    renderLeftRail("channels");
+    expect(screen.getByTestId("messaging-section-channels").tagName).toBe("BUTTON");
+    expect(screen.getByTestId("messaging-section-admin").tagName).toBe("BUTTON");
+  });
+
+  it("section rows use semantic buttons", () => {
+    renderLeftRail("channels");
+    expect(screen.getByLabelText("general channel").tagName).toBe("BUTTON");
+    expect(screen.getByLabelText("Browse all channels").tagName).toBe("BUTTON");
   });
 });
 
@@ -281,6 +306,14 @@ describe("MessagingWorkspacePane — Channels", () => {
   it("shows New Channel button", () => {
     render(<MessagingWorkspacePane activeSection="channels" />);
     expect(screen.getByText("+ New Channel")).toBeInTheDocument();
+  });
+
+  it("channel cards are keyboard-focusable buttons", async () => {
+    render(<MessagingWorkspacePane activeSection="channels" />);
+    const channelButton = screen.getByLabelText("Open general channel");
+    channelButton.focus();
+    expect(channelButton.tagName).toBe("BUTTON");
+    expect(channelButton).toHaveFocus();
   });
 });
 
@@ -388,6 +421,30 @@ describe("MessagingWorkspacePane — Admin / Governance", () => {
     // At least one entry should show "admin" or "owner" badge
     const adminBadges = screen.getAllByText(/admin|owner/i);
     expect(adminBadges.length).toBeGreaterThan(0);
+  });
+
+  it("keeps admin reachable from the mobile/tablet fallback nav", () => {
+    render(<MessagingWorkspace />);
+    fireEvent.click(screen.getByTestId("messaging-mobile-section-admin"));
+    expect(screen.getByText(/Restricted to org admins and owners/i)).toBeInTheDocument();
+  });
+});
+
+describe("MessagingWorkspace keyboard navigation", () => {
+  it("Enter switches sections from the left rail", async () => {
+    render(<MessagingWorkspace />);
+    const dmSection = screen.getByTestId("messaging-section-dms");
+    dmSection.focus();
+    fireEvent.keyDown(dmSection, { key: "Enter" });
+    expect(screen.getByTestId("messaging-pane-dms")).toBeInTheDocument();
+  });
+
+  it("Space switches sections from the left rail", async () => {
+    render(<MessagingWorkspace />);
+    const tasksSection = screen.getByTestId("messaging-section-tasks");
+    tasksSection.focus();
+    fireEvent.keyDown(tasksSection, { key: " " });
+    expect(screen.getByTestId("messaging-pane-tasks")).toBeInTheDocument();
   });
 });
 
