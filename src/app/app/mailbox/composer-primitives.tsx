@@ -291,16 +291,16 @@ export function SendBar({
   return (
     <div
       className={cn(
-        "relative flex shrink-0 items-center gap-2 border-t",
-        compact ? "px-2 py-1.5" : "px-3 py-2"
+        "shrink-0 border-t",
+        compact ? "px-2 py-2" : "px-3 py-3"
       )}
       style={{ borderColor: "#E2E5EA" }}
     >
       {deliveryMode === "schedule_send" && scheduleLabel && (
         <div
           className={cn(
-            "absolute left-3 right-3 top-0 -translate-y-full rounded-xl border bg-[#F8FAFC] shadow-sm",
-            compact ? "px-2.5 py-2" : "px-3 py-2.5"
+            "mb-2 rounded-2xl border bg-[#F8FAFC] shadow-sm",
+            compact ? "px-3 py-2.5" : "px-4 py-3"
           )}
           style={{ borderColor: "#D8E2F0" }}
           data-testid="scheduled-send-summary"
@@ -314,7 +314,7 @@ export function SendBar({
             <button
               type="button"
               onClick={onScheduleClear}
-              className="rounded px-1.5 py-0.5 text-[11px] font-semibold text-[#64748B] transition-colors hover:bg-[#E2E8F0] hover:text-[#0F172A]"
+              className="rounded-lg px-2 py-1 text-[11px] font-semibold text-[#64748B] transition-colors hover:bg-[#E2E8F0] hover:text-[#0F172A]"
               aria-label="Remove scheduled send"
             >
               Clear
@@ -323,165 +323,173 @@ export function SendBar({
         </div>
       )}
 
-      {schedulePanelOpen && (
-        <div
-          className={cn(
-            "absolute bottom-full right-0 z-20 mb-2 w-[320px] rounded-2xl border bg-white shadow-xl",
-            compact && "w-[300px]"
-          )}
-          style={{ borderColor: "#D1D5DB" }}
-          role="dialog"
-          aria-label="Schedule send"
-          data-testid="schedule-send-panel"
-        >
-          <div className="border-b px-4 py-3" style={{ borderColor: "#E2E5EA" }}>
-            <div className="flex items-center gap-2">
-              <CalendarClock className="h-4 w-4 text-[#16294D]" aria-hidden="true" />
-              <h4 className="text-sm font-bold text-[#0F172A]">Schedule send</h4>
-            </div>
-            <p className="mt-1 text-xs text-[#64748B]">Choose when this draft should be sent from your organization mailbox.</p>
-          </div>
-
-          <div className="space-y-4 px-4 py-4">
-            <div className="space-y-2">
-              <p className="text-[10px] font-semibold uppercase tracking-wide text-[#94A3B8]">Quick picks</p>
-              <div className="flex flex-wrap gap-1.5">
-                {QUICK_SCHEDULES.map((preset) => (
-                  <button
-                    key={preset.id}
-                    type="button"
-                    onClick={() => handleScheduleApply(preset.date, preset.time, preset.label)}
-                    className="rounded-full border border-[#E2E5EA] bg-white px-2.5 py-1 text-[11px] font-semibold text-[#64748B] transition-colors hover:border-[#16294D] hover:text-[#0F172A]"
-                  >
-                    {preset.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <label className="space-y-1">
-                <span className="text-[10px] font-semibold uppercase tracking-wide text-[#94A3B8]">Date</span>
-                <input
-                  ref={scheduleDateRef}
-                  type="date"
-                  defaultValue={defaultSchedule.date}
-                  className="w-full rounded-lg border border-[#D1D5DB] px-2.5 py-2 text-xs text-[#0F172A] outline-none focus:border-[#16294D] focus:ring-2 focus:ring-[rgba(22,41,77,0.12)]"
-                  aria-label="Schedule date"
-                />
-              </label>
-              <label className="space-y-1">
-                <span className="text-[10px] font-semibold uppercase tracking-wide text-[#94A3B8]">Time</span>
-                <input
-                  ref={scheduleTimeRef}
-                  type="time"
-                  defaultValue={defaultSchedule.time}
-                  className="w-full rounded-lg border border-[#D1D5DB] px-2.5 py-2 text-xs text-[#0F172A] outline-none focus:border-[#16294D] focus:ring-2 focus:ring-[rgba(22,41,77,0.12)]"
-                  aria-label="Schedule time"
-                />
-              </label>
-            </div>
-
-            <div className="rounded-xl border border-[#E2E5EA] bg-[#F8FAFC] px-3 py-2">
-              <div className="flex items-center gap-2 text-[11px] text-[#64748B]">
-                <Clock3 className="h-3.5 w-3.5 text-[#94A3B8]" aria-hidden="true" />
-                <span>Timezone: India Standard Time (IST)</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex items-center justify-end gap-2 border-t px-4 py-3" style={{ borderColor: "#E2E5EA" }}>
-            <button
-              type="button"
-              onClick={onSchedulePanelToggle}
-              className="rounded-lg border border-[#E2E5EA] px-3 py-1.5 text-xs font-semibold text-[#64748B] transition-colors hover:bg-[#F7F8FB]"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                const date = scheduleDateRef.current?.value || defaultSchedule.date;
-                const time = scheduleTimeRef.current?.value || defaultSchedule.time;
-                handleScheduleApply(date, time, `${date} · ${time} IST`);
-              }}
-              className="rounded-lg bg-[#16294D] px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:opacity-90"
-            >
-              Schedule
-            </button>
-          </div>
-        </div>
-      )}
-
-      <button
-        type="button"
-        onClick={onSend}
-        disabled={sendState === "sending" || sendState === "sent"}
-        className={cn(
-          "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition-colors",
-          sendState === "sending" && "opacity-60 cursor-not-allowed",
-          sendState === "sent" && "bg-green-600",
-          sendState === "failed" && "bg-red-600",
-          sendState === "idle" && "hover:opacity-90"
-        )}
-        style={sendState === "idle" || sendState === "sending" ? { background: "#16294D" } : undefined}
-        aria-label={
-          sendState === "sending" ? "Sending…" :
-          sendState === "sent" ? "Sent" :
-          sendState === "failed" ? "Send failed — retry" :
-          "Send"
-        }
-      >
-        {sendState === "sending" ? "Sending…" :
-         sendState === "sent" ? "Sent ✓" :
-         sendState === "failed" ? "Retry send" :
-         deliveryMode === "schedule_send" ? "Send now" :
-         "Send"}
-      </button>
-
-      <button
-        type="button"
-        onClick={onSchedulePanelToggle}
-        className={cn(
-          "flex items-center gap-1 rounded-lg border px-2.5 text-xs font-semibold transition-colors",
-          compact ? "h-7" : "h-8",
-          schedulePanelOpen || deliveryMode === "schedule_send"
-            ? "border-[#16294D] bg-[#F8FAFC] text-[#16294D]"
-            : "border-[#E2E5EA] text-[#64748B] hover:bg-[#F7F8FB] hover:text-[#0F172A]"
-        )}
-        aria-label="Schedule send"
-        aria-expanded={schedulePanelOpen}
-      >
-        <CalendarClock className="h-3.5 w-3.5" />
-        <span>Schedule</span>
-        <ChevronDown className={cn("h-3 w-3 transition-transform", schedulePanelOpen && "rotate-180")} />
-      </button>
-
-      {showExpand && onExpand && (
+      <div className="flex items-center gap-2">
         <button
           type="button"
-          onClick={onExpand}
-          className="flex h-7 w-7 items-center justify-center rounded-lg border border-[#E2E5EA] text-[#64748B] transition-colors hover:bg-[#F1F3F7]"
-          title="Expand composer"
-          aria-label="Expand composer"
+          onClick={onSend}
+          disabled={sendState === "sending" || sendState === "sent"}
+          className={cn(
+            "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition-colors",
+            sendState === "sending" && "opacity-60 cursor-not-allowed",
+            sendState === "sent" && "bg-green-600",
+            sendState === "failed" && "bg-red-600",
+            sendState === "idle" && "hover:opacity-90"
+          )}
+          style={sendState === "idle" || sendState === "sending" ? { background: "#16294D" } : undefined}
+          aria-label={
+            sendState === "sending" ? "Sending…" :
+            sendState === "sent" ? "Sent" :
+            sendState === "failed" ? "Send failed — retry" :
+            "Send"
+          }
         >
-          <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-            <path d="M2 10v4h4M14 6V2h-4M10 6l4-4M6 10l-4 4" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
+          {sendState === "sending" ? "Sending…" :
+           sendState === "sent" ? "Sent ✓" :
+           sendState === "failed" ? "Retry send" :
+           deliveryMode === "schedule_send" ? "Send now" :
+           "Send"}
         </button>
-      )}
 
-      <div className="flex-1" />
+        <div className="relative shrink-0">
+          {schedulePanelOpen && (
+            <div
+              className={cn(
+                "absolute bottom-[calc(100%+12px)] left-0 z-20 rounded-2xl border bg-white shadow-2xl",
+                compact
+                  ? "w-[340px] max-w-[min(340px,calc(100vw-64px))]"
+                  : "w-[380px] max-w-[min(380px,calc(100vw-64px))]"
+              )}
+              style={{ borderColor: "#D1D5DB" }}
+              role="dialog"
+              aria-label="Schedule send"
+              data-testid="schedule-send-panel"
+            >
+              <div className="border-b px-4 py-3" style={{ borderColor: "#E2E5EA" }}>
+                <div className="flex items-center gap-2">
+                  <CalendarClock className="h-4 w-4 text-[#16294D]" aria-hidden="true" />
+                  <h4 className="text-sm font-bold text-[#0F172A]">Schedule send</h4>
+                </div>
+                <p className="mt-1 text-xs leading-5 text-[#64748B]">
+                  Choose when this draft should be sent from your organization mailbox.
+                </p>
+              </div>
 
-      <button
-        type="button"
-        onClick={onDiscard}
-        className="flex h-7 w-7 items-center justify-center rounded-lg text-[#94A3B8] transition-colors hover:bg-red-50 hover:text-[#DC2626]"
-        title="Discard draft"
-        aria-label="Discard draft"
-      >
-        <X className="h-4 w-4" />
-      </button>
+              <div className="space-y-4 px-4 py-4">
+                <div className="space-y-2">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-[#94A3B8]">Quick picks</p>
+                  <div className="flex flex-col gap-1.5">
+                    {QUICK_SCHEDULES.map((preset) => (
+                      <button
+                        key={preset.id}
+                        type="button"
+                        onClick={() => handleScheduleApply(preset.date, preset.time, preset.label)}
+                        className="rounded-full border border-[#E2E5EA] bg-white px-3 py-1.5 text-left text-[11px] font-semibold text-[#64748B] transition-colors hover:border-[#16294D] hover:text-[#0F172A]"
+                      >
+                        {preset.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="space-y-1">
+                    <span className="text-[10px] font-semibold uppercase tracking-wide text-[#94A3B8]">Date</span>
+                    <input
+                      ref={scheduleDateRef}
+                      type="date"
+                      defaultValue={defaultSchedule.date}
+                      className="w-full rounded-lg border border-[#D1D5DB] px-2.5 py-2 text-xs text-[#0F172A] outline-none focus:border-[#16294D] focus:ring-2 focus:ring-[rgba(22,41,77,0.12)]"
+                      aria-label="Schedule date"
+                    />
+                  </label>
+                  <label className="space-y-1">
+                    <span className="text-[10px] font-semibold uppercase tracking-wide text-[#94A3B8]">Time</span>
+                    <input
+                      ref={scheduleTimeRef}
+                      type="time"
+                      defaultValue={defaultSchedule.time}
+                      className="w-full rounded-lg border border-[#D1D5DB] px-2.5 py-2 text-xs text-[#0F172A] outline-none focus:border-[#16294D] focus:ring-2 focus:ring-[rgba(22,41,77,0.12)]"
+                      aria-label="Schedule time"
+                    />
+                  </label>
+                </div>
+
+                <div className="rounded-xl border border-[#E2E5EA] bg-[#F8FAFC] px-3 py-2">
+                  <div className="flex items-center gap-2 text-[11px] text-[#64748B]">
+                    <Clock3 className="h-3.5 w-3.5 text-[#94A3B8]" aria-hidden="true" />
+                    <span>Timezone: India Standard Time (IST)</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 border-t px-4 py-3" style={{ borderColor: "#E2E5EA" }}>
+                <button
+                  type="button"
+                  onClick={onSchedulePanelToggle}
+                  className="rounded-lg border border-[#E2E5EA] px-3 py-1.5 text-xs font-semibold text-[#64748B] transition-colors hover:bg-[#F7F8FB]"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const date = scheduleDateRef.current?.value || defaultSchedule.date;
+                    const time = scheduleTimeRef.current?.value || defaultSchedule.time;
+                    handleScheduleApply(date, time, `${date} · ${time} IST`);
+                  }}
+                  className="rounded-lg bg-[#16294D] px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:opacity-90"
+                >
+                  Schedule
+                </button>
+              </div>
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={onSchedulePanelToggle}
+            className={cn(
+              "flex items-center gap-1 rounded-lg border px-2.5 text-xs font-semibold transition-colors",
+              compact ? "h-7" : "h-8",
+              schedulePanelOpen || deliveryMode === "schedule_send"
+                ? "border-[#16294D] bg-[#F8FAFC] text-[#16294D]"
+                : "border-[#E2E5EA] text-[#64748B] hover:bg-[#F7F8FB] hover:text-[#0F172A]"
+            )}
+            aria-label="Schedule send"
+            aria-expanded={schedulePanelOpen}
+          >
+            <CalendarClock className="h-3.5 w-3.5" />
+            <span>Schedule</span>
+            <ChevronDown className={cn("h-3 w-3 transition-transform", schedulePanelOpen && "rotate-180")} />
+          </button>
+        </div>
+
+        {showExpand && onExpand && (
+          <button
+            type="button"
+            onClick={onExpand}
+            className="flex h-7 w-7 items-center justify-center rounded-lg border border-[#E2E5EA] text-[#64748B] transition-colors hover:bg-[#F1F3F7]"
+            title="Expand composer"
+            aria-label="Expand composer"
+          >
+            <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <path d="M2 10v4h4M14 6V2h-4M10 6l4-4M6 10l-4 4" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+        )}
+
+        <div className="flex-1" />
+
+        <button
+          type="button"
+          onClick={onDiscard}
+          className="flex h-7 w-7 items-center justify-center rounded-lg text-[#94A3B8] transition-colors hover:bg-red-50 hover:text-[#DC2626]"
+          title="Discard draft"
+          aria-label="Discard draft"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
     </div>
   );
 }
