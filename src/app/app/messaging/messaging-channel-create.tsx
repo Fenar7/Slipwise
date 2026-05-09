@@ -29,6 +29,14 @@ export function MessagingChannelCreate({ onClose }: MessagingChannelCreateProps)
   const [addedMemberIds, setAddedMemberIds] = React.useState<string[]>([]);
   const [dropdownOpen, setDropdownOpen] = React.useState(false);
 
+  React.useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
   const hasContent = channelName.trim().length > 0;
 
   const filteredMembers = PICKER_MEMBERS.filter(

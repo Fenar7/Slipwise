@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import type { ActiveConversation, GroupPanelTab, ChannelMember } from "./types";
 import { MOCK_CHANNEL_MEMBERS } from "./mock-data";
+import { RadioPill } from "./messaging-ui-primitives";
 
 // ─── Shared primitives ────────────────────────────────────────────────────────
 
@@ -43,40 +44,6 @@ function formatDate(iso: string): string {
     month: "short",
     day: "numeric",
   });
-}
-
-// ─── Radio pill toggle ────────────────────────────────────────────────────────
-
-interface RadioPillProps {
-  options: { value: string; label: string }[];
-  value: string;
-  onChange: (v: string) => void;
-  name: string;
-}
-
-function RadioPill({ options, value, onChange, name }: RadioPillProps) {
-  return (
-    <div className="flex rounded-lg border p-0.5 gap-0.5" style={{ borderColor: "#E0E0E0" }}>
-      {options.map((opt) => (
-        <button
-          key={opt.value}
-          type="button"
-          role="radio"
-          aria-checked={value === opt.value}
-          onClick={() => onChange(opt.value)}
-          className={cn(
-            "flex-1 rounded-md px-3 py-1.5 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]",
-            value === opt.value
-              ? "bg-[#DC2626] text-white"
-              : "text-[#79747E] hover:bg-gray-100"
-          )}
-          data-testid={`${name}-${opt.value}`}
-        >
-          {opt.label}
-        </button>
-      ))}
-    </div>
-  );
 }
 
 // ─── GroupDetailHeader ────────────────────────────────────────────────────────
@@ -119,7 +86,7 @@ function GroupDetailHeader({
           <X className="h-4 w-4" style={{ color: "#79747E" }} />
         </button>
       </div>
-      <div className="flex border-t" style={{ borderColor: "#F0F0F0" }}>
+      <div className="flex border-t" role="tablist" aria-label="Group detail tabs" style={{ borderColor: "#F0F0F0" }}>
         {tabs.map((tab) => (
           <button
             key={tab.id}

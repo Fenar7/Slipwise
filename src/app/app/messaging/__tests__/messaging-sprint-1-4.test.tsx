@@ -211,6 +211,13 @@ describe("MessagingChannelCreate", () => {
     fireEvent.click(screen.getByTestId("channel-create-cancel"));
     expect(onClose).toHaveBeenCalledOnce();
   });
+
+  it("pressing Escape calls onClose", () => {
+    const onClose = vi.fn();
+    render(<MessagingChannelCreate onClose={onClose} />);
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(onClose).toHaveBeenCalled();
+  });
 });
 
 // ─── MessagingGroupCreate ─────────────────────────────────────────────────────
@@ -246,7 +253,17 @@ describe("MessagingGroupCreate", () => {
     fireEvent.click(screen.getByTestId("group-create-cancel"));
     expect(onClose).toHaveBeenCalledOnce();
   });
+
+  it("pressing Escape calls onClose", () => {
+    const onClose = vi.fn();
+    render(<MessagingGroupCreate onClose={onClose} />);
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(onClose).toHaveBeenCalled();
+  });
 });
+
+// Mutual exclusion (threadOpen/detailOpen) is enforced in
+// MessagingReadingWorkspace state handlers. Integration-tested in E2E.
 
 // ─── MessagingAdminPanel ──────────────────────────────────────────────────────
 

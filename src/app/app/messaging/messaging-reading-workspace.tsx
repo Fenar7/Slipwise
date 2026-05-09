@@ -779,6 +779,7 @@ export function MessagingReadingWorkspace({
   function handleOpenThread(msgId: string) {
     setThreadAnchorMessageId(msgId);
     setThreadOpen(true);
+    setDetailOpen(false);
   }
 
   function handleCloseThread() {
@@ -790,8 +791,8 @@ export function MessagingReadingWorkspace({
     if (threadOpen) {
       handleCloseThread();
     } else {
-      // Open thread panel without a specific anchor (general thread view)
       setThreadOpen(true);
+      setDetailOpen(false);
     }
   }
 
@@ -825,7 +826,15 @@ export function MessagingReadingWorkspace({
     onCloseThread: handleCloseThread,
     onToggleThread: handleToggleThread,
     detailOpen,
-    onToggleDetail: () => setDetailOpen((o) => !o),
+    onToggleDetail: () => {
+      setDetailOpen((o) => {
+        if (!o) {
+          setThreadOpen(false);
+          setThreadAnchorMessageId(null);
+        }
+        return !o;
+      });
+    },
     onCloseDetail: () => setDetailOpen(false),
   };
 
