@@ -285,6 +285,7 @@ export const MOCK_UNREAD_SUMMARY = {
 
 /**
  * Static messages for the #finance-ops channel reading workspace.
+ * Realistic enough to communicate product intent; no realtime in Phase 1.
  */
 export const MOCK_MESSAGES_CHANNEL_FINANCE: ConversationMessage[] = [
   {
@@ -469,8 +470,159 @@ export const MOCK_MESSAGES_GROUP_Q2: ConversationMessage[] = [
   },
 ];
 
+export const MOCK_MESSAGES_CHANNEL_GENERAL: ConversationMessage[] = [
+  {
+    id: "msg-ch-g-1",
+    authorId: "u1",
+    authorName: "Priya Sharma",
+    authorInitials: "PS",
+    authorRole: "owner",
+    body: "Quick reminder: company town hall is scheduled for 4 PM. Please drop final agenda items in the planning doc before lunch.",
+    sentAt: "2026-05-09T07:45:00Z",
+    hasThread: false,
+    threadReplyCount: 0,
+    reactions: [{ emoji: "📌", count: 2 }],
+    attachmentRef: null,
+    mentionsCurrentUser: false,
+  },
+  {
+    id: "msg-ch-g-2",
+    authorId: "u5",
+    authorName: "Sneha Iyer",
+    authorInitials: "SI",
+    authorRole: "member",
+    body: "Shared the updated onboarding deck with the customer success team. Please flag anything that needs legal review.",
+    sentAt: "2026-05-09T10:05:00Z",
+    hasThread: false,
+    threadReplyCount: 0,
+    reactions: [{ emoji: "👀", count: 3 }],
+    attachmentRef: "Onboarding-Deck-v3.pdf",
+    mentionsCurrentUser: false,
+  },
+];
+
+export const MOCK_MESSAGES_CHANNEL_INVOICES: ConversationMessage[] = [
+  {
+    id: "msg-ch-i-1",
+    authorId: "u2",
+    authorName: "Arjun Mehta",
+    authorInitials: "AM",
+    authorRole: "admin",
+    body: "Invoice alerts are healthy. Two reminders are queued for today’s collections run.",
+    sentAt: "2026-05-09T09:10:00Z",
+    hasThread: false,
+    threadReplyCount: 0,
+    reactions: [],
+    attachmentRef: null,
+    mentionsCurrentUser: false,
+  },
+];
+
+export const MOCK_MESSAGES_CHANNEL_PAYROLL: ConversationMessage[] = [
+  {
+    id: "msg-ch-p-1",
+    authorId: "u3",
+    authorName: "Kavya Nair",
+    authorInitials: "KN",
+    authorRole: "member",
+    body: "May payroll staging is ready. Waiting on final approval before the bank file is released.",
+    sentAt: "2026-05-08T17:05:00Z",
+    hasThread: false,
+    threadReplyCount: 0,
+    reactions: [{ emoji: "🕐", count: 1 }],
+    attachmentRef: "May-Payroll-Summary.pdf",
+    mentionsCurrentUser: false,
+  },
+];
+
+export const MOCK_MESSAGES_CHANNEL_COMPLIANCE: ConversationMessage[] = [
+  {
+    id: "msg-ch-c-1",
+    authorId: "u5",
+    authorName: "Sneha Iyer",
+    authorInitials: "SI",
+    authorRole: "member",
+    body: "GST filing checklist is complete. Final TDS certificate review remains open for tomorrow morning.",
+    sentAt: "2026-05-08T14:30:00Z",
+    hasThread: false,
+    threadReplyCount: 0,
+    reactions: [{ emoji: "✅", count: 2 }],
+    attachmentRef: null,
+    mentionsCurrentUser: false,
+  },
+];
+
+export const MOCK_MESSAGES_DM_KAVYA: ConversationMessage[] = [
+  {
+    id: "msg-dm-k-1",
+    authorId: "u3",
+    authorName: "Kavya Nair",
+    authorInitials: "KN",
+    authorRole: "member",
+    body: "I’ve updated the payroll variance notes. Can you take a look before I send them to Arjun?",
+    sentAt: "2026-05-09T08:55:00Z",
+    hasThread: false,
+    threadReplyCount: 0,
+    reactions: [],
+    attachmentRef: null,
+    mentionsCurrentUser: false,
+  },
+];
+
+export const MOCK_MESSAGES_DM_SNEHA: ConversationMessage[] = [
+  {
+    id: "msg-dm-s-1",
+    authorId: "u5",
+    authorName: "Sneha Iyer",
+    authorInitials: "SI",
+    authorRole: "member",
+    body: "Legal cleared the Apex contract. I dropped the final PDF into the vendor onboarding group.",
+    sentAt: "2026-05-08T18:35:00Z",
+    hasThread: false,
+    threadReplyCount: 0,
+    reactions: [{ emoji: "👍", count: 1 }],
+    attachmentRef: "Vendor-Contract-Apex.pdf",
+    mentionsCurrentUser: false,
+  },
+];
+
+export const MOCK_MESSAGES_GROUP_VENDOR: ConversationMessage[] = [
+  {
+    id: "msg-grp-v-1",
+    authorId: "u5",
+    authorName: "Sneha Iyer",
+    authorInitials: "SI",
+    authorRole: "member",
+    body: "Vendor onboarding packet is complete. Waiting on tax docs from Apex before finance review.",
+    sentAt: "2026-05-08T16:50:00Z",
+    hasThread: false,
+    threadReplyCount: 0,
+    reactions: [{ emoji: "📎", count: 1 }],
+    attachmentRef: "Vendor-Contract-Apex.pdf",
+    mentionsCurrentUser: false,
+  },
+];
+
+export const MOCK_MESSAGES_GROUP_AUDIT: ConversationMessage[] = [
+  {
+    id: "msg-grp-a-1",
+    authorId: "u4",
+    authorName: "Rohan Desai",
+    authorInitials: "RD",
+    authorRole: "member",
+    body: "Audit preparation tracker is updated with the latest request list from the external team.",
+    sentAt: "2026-05-08T11:10:00Z",
+    hasThread: false,
+    threadReplyCount: 0,
+    reactions: [{ emoji: "🗂️", count: 2 }],
+    attachmentRef: null,
+    mentionsCurrentUser: false,
+  },
+];
+
 /**
  * Thread replies for the first message in #finance-ops (msg-ch-f-1).
+ * Represents the static thread-open state for Sprint 1.2.
  */
 export const MOCK_THREAD_REPLIES_CH_F_1: ConversationMessage[] = [
   {
@@ -531,8 +683,81 @@ export const MOCK_THREAD_REPLIES_CH_F_1: ConversationMessage[] = [
   },
 ];
 
+export const MOCK_THREAD_REPLIES_GROUP_Q2_1: ConversationMessage[] = [
+  {
+    id: "msg-grp-q2-1-r1",
+    authorId: "u2",
+    authorName: "Arjun Mehta",
+    authorInitials: "AM",
+    authorRole: "admin",
+    body: "Collections tracker is done. I’ll upload the revised variance summary before the sync.",
+    sentAt: "2026-05-09T08:20:00Z",
+    hasThread: false,
+    threadReplyCount: 0,
+    reactions: [],
+    attachmentRef: null,
+    mentionsCurrentUser: false,
+  },
+  {
+    id: "msg-grp-q2-1-r2",
+    authorId: "u5",
+    authorName: "Sneha Iyer",
+    authorInitials: "SI",
+    authorRole: "member",
+    body: "Compliance side is green. Filing evidence is already attached in the checklist.",
+    sentAt: "2026-05-09T08:35:00Z",
+    hasThread: false,
+    threadReplyCount: 0,
+    reactions: [{ emoji: "✅", count: 1 }],
+    attachmentRef: null,
+    mentionsCurrentUser: false,
+  },
+  {
+    id: "msg-grp-q2-1-r3",
+    authorId: "u1",
+    authorName: "Priya Sharma",
+    authorInitials: "PS",
+    authorRole: "owner",
+    body: "Great. Keep the tracker current so we can close the remaining dependencies by tomorrow morning.",
+    sentAt: "2026-05-09T08:50:00Z",
+    hasThread: false,
+    threadReplyCount: 0,
+    reactions: [],
+    attachmentRef: null,
+    mentionsCurrentUser: false,
+  },
+];
+
+export const MOCK_MESSAGES_BY_CONVERSATION_ID: Record<string, ConversationMessage[]> = {
+  "ch-general": MOCK_MESSAGES_CHANNEL_GENERAL,
+  "ch-finance": MOCK_MESSAGES_CHANNEL_FINANCE,
+  "ch-invoices": MOCK_MESSAGES_CHANNEL_INVOICES,
+  "ch-payroll": MOCK_MESSAGES_CHANNEL_PAYROLL,
+  "ch-compliance": MOCK_MESSAGES_CHANNEL_COMPLIANCE,
+  "dm-1": MOCK_MESSAGES_DM_ARJUN,
+  "dm-2": MOCK_MESSAGES_DM_KAVYA,
+  "dm-3": MOCK_MESSAGES_DM_SNEHA,
+  "grp-q2-close": MOCK_MESSAGES_GROUP_Q2,
+  "grp-vendor-onboard": MOCK_MESSAGES_GROUP_VENDOR,
+  "grp-audit-prep": MOCK_MESSAGES_GROUP_AUDIT,
+};
+
+export const MOCK_THREAD_REPLIES_BY_MESSAGE_ID: Record<string, ConversationMessage[]> = {
+  "msg-ch-f-1": MOCK_THREAD_REPLIES_CH_F_1,
+  "msg-grp-q2-1": MOCK_THREAD_REPLIES_GROUP_Q2_1,
+};
+
+export function getMessagesForConversation(conversationId: string): ConversationMessage[] {
+  return MOCK_MESSAGES_BY_CONVERSATION_ID[conversationId] ?? [];
+}
+
+export function getThreadRepliesForMessage(messageId: string): ConversationMessage[] {
+  return MOCK_THREAD_REPLIES_BY_MESSAGE_ID[messageId] ?? [];
+}
+
 /**
  * Seed active conversation objects for each conversation kind.
+ * Used by the reading workspace to initialize with a believable default state.
  */
 export const MOCK_ACTIVE_CHANNEL: ActiveConversation = {
   id: "ch-finance",
@@ -562,6 +787,7 @@ export const MOCK_ACTIVE_GROUP: ActiveConversation = {
   name: "Q2 Close Team",
   subtitle: "Private group · 6 members",
   groupMemberCount: 6,
+  groupIsPrivate: true,
   isAccessible: true,
   threadOpen: false,
   threadAnchorMessageId: null,

@@ -54,8 +54,11 @@ import {
   MOCK_DMS,
   MOCK_GROUPS,
   MOCK_MESSAGES_CHANNEL_FINANCE,
+  MOCK_MESSAGES_CHANNEL_GENERAL,
   MOCK_MESSAGES_DM_ARJUN,
+  MOCK_MESSAGES_DM_SNEHA,
   MOCK_MESSAGES_GROUP_Q2,
+  MOCK_MESSAGES_GROUP_VENDOR,
   MOCK_THREAD_REPLIES_CH_F_1,
   MOCK_ACTIVE_CHANNEL,
   MOCK_ACTIVE_DM,
@@ -165,6 +168,13 @@ describe("MessagingWorkspace — Sprint 1.2 two-column layout", () => {
     expect(screen.getByTestId("conversation-list-column")).toBeInTheDocument();
   });
 
+  it("keeps the conversation list available below md for mobile/tablet direction", () => {
+    render(<MessagingWorkspace />);
+    const column = screen.getByTestId("conversation-list-column");
+    expect(column.className).not.toContain("hidden md:flex");
+    expect(column.className).toContain("flex");
+  });
+
   it("renders the reading workspace for channels section", () => {
     render(<MessagingWorkspace />);
     expect(screen.getByTestId("reading-workspace")).toBeInTheDocument();
@@ -208,6 +218,13 @@ describe("MessagingWorkspace — Sprint 1.2 two-column layout", () => {
     const groupRow = screen.getByTestId("conv-row-group-grp-q2-close");
     fireEvent.click(groupRow);
     expect(screen.getByTestId("group-workspace")).toBeInTheDocument();
+  });
+
+  it("mobile/tablet users can select a conversation and open the reading workspace", () => {
+    render(<MessagingWorkspace />);
+    fireEvent.click(screen.getByTestId("conv-row-channel-ch-general"));
+    expect(screen.getByTestId("channel-workspace")).toBeInTheDocument();
+    expect(screen.getByText(MOCK_MESSAGES_CHANNEL_GENERAL[0].body)).toBeInTheDocument();
   });
 });
 
@@ -480,6 +497,25 @@ describe("MessagingReadingWorkspace — channel workspace", () => {
     expect(screen.getByText("#finance-ops")).toBeInTheDocument();
   });
 
+  it("renders the selected channel's own message feed", () => {
+    render(
+      <MessagingReadingWorkspace
+        conversation={{
+          id: "ch-general",
+          kind: "channel",
+          name: "general",
+          subtitle: "Company-wide announcements and updates · 48 members",
+          channelVisibility: "public",
+          isAccessible: true,
+          threadOpen: false,
+          threadAnchorMessageId: null,
+        }}
+      />
+    );
+    expect(screen.getByText(MOCK_MESSAGES_CHANNEL_GENERAL[0].body)).toBeInTheDocument();
+    expect(screen.queryByText(MOCK_MESSAGES_CHANNEL_FINANCE[0].body)).not.toBeInTheDocument();
+  });
+
   it("thread panel is not visible by default", () => {
     renderReadingWorkspace(MOCK_ACTIVE_CHANNEL);
     expect(screen.queryByTestId("thread-panel")).not.toBeInTheDocument();
@@ -569,6 +605,31 @@ describe("MessagingReadingWorkspace — DM workspace", () => {
     const matches = screen.getAllByText("Arjun Mehta");
     expect(matches.length).toBeGreaterThan(0);
   });
+
+  it("renders the selected DM's own message feed", () => {
+    render(
+      <MessagingReadingWorkspace
+        conversation={{
+          id: "dm-3",
+          kind: "dm",
+          name: "Sneha Iyer",
+          subtitle: "Member · Online",
+          dmParticipant: {
+            id: "u5",
+            name: "Sneha Iyer",
+            avatarInitials: "SI",
+            role: "member",
+            presence: "online",
+          },
+          isAccessible: true,
+          threadOpen: false,
+          threadAnchorMessageId: null,
+        }}
+      />
+    );
+    expect(screen.getByText(MOCK_MESSAGES_DM_SNEHA[0].body)).toBeInTheDocument();
+    expect(screen.queryByText(MOCK_MESSAGES_DM_ARJUN[0].body)).not.toBeInTheDocument();
+  });
 });
 
 // ─── MessagingReadingWorkspace — group workspace ──────────────────────────────
@@ -594,6 +655,46 @@ describe("MessagingReadingWorkspace — group workspace", () => {
   it("group name appears in the header", () => {
     renderReadingWorkspace(MOCK_ACTIVE_GROUP);
     expect(screen.getByText("Q2 Close Team")).toBeInTheDocument();
+  });
+
+  it("renders the selected group's own message feed", () => {
+    render(
+      <MessagingReadingWorkspace
+        conversation={{
+          id: "grp-vendor-onboard",
+          kind: "group",
+          name: "Vendor Onboarding",
+          subtitle: "Group · 4 members",
+          groupMemberCount: 4,
+          groupIsPrivate: false,
+          isAccessible: true,
+          threadOpen: false,
+          threadAnchorMessageId: null,
+        }}
+      />
+    );
+    expect(screen.getByText(MOCK_MESSAGES_GROUP_VENDOR[0].body)).toBeInTheDocument();
+    expect(screen.queryByText(MOCK_MESSAGES_GROUP_Q2[0].body)).not.toBeInTheDocument();
+  });
+
+  it("public groups do not render private-group cues in the header", () => {
+    render(
+      <MessagingReadingWorkspace
+        conversation={{
+          id: "grp-vendor-onboard",
+          kind: "group",
+          name: "Vendor Onboarding",
+          subtitle: "Group · 4 members",
+          groupMemberCount: 4,
+          groupIsPrivate: false,
+          isAccessible: true,
+          threadOpen: false,
+          threadAnchorMessageId: null,
+        }}
+      />
+    );
+    expect(screen.getAllByText("Group · 4 members").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Private group · 4 members")).not.toBeInTheDocument();
   });
 });
 

@@ -132,3 +132,71 @@ export interface MessagingWorkspaceState {
   searchQuery: string;
   commandBarOpen: boolean;
 }
+
+// ─── Sprint 1.2 — Conversation reading workspace ─────────────────────────────
+
+/**
+ * The type of conversation currently open in the reading workspace.
+ * Drives distinct workspace cues per conversation kind.
+ */
+export type ConversationKind = "channel" | "dm" | "group";
+
+/**
+ * A single static message in the reading pane.
+ * Shape is forward-compatible with ConversationMessage in the full domain model.
+ */
+export interface ConversationMessage {
+  id: string;
+  authorId: string;
+  authorName: string;
+  authorInitials: string;
+  authorRole: "owner" | "admin" | "member";
+  body: string;
+  sentAt: string; // ISO string
+  /** True when this message has an open thread with replies */
+  hasThread: boolean;
+  threadReplyCount: number;
+  /** Reaction chips — static display only in Phase 1 */
+  reactions: Array<{ emoji: string; count: number }>;
+  /** Attachment hint — no real upload in Phase 1 */
+  attachmentRef: string | null;
+  /** Whether the current viewer is mentioned */
+  mentionsCurrentUser: boolean;
+}
+
+/**
+ * The identity of the currently selected conversation.
+ * Null means no conversation is selected (no-selection state).
+ */
+export interface ActiveConversation {
+  id: string;
+  kind: ConversationKind;
+  /** Display name: channel name, participant name, or group name */
+  name: string;
+  /** Subtitle shown in the workspace header */
+  subtitle: string;
+  /** For channels: public/private visibility */
+  channelVisibility?: "public" | "private";
+  /** For DMs: the other participant */
+  dmParticipant?: MessagingParticipant;
+  /** For groups: member count */
+  groupMemberCount?: number;
+  /** For groups: privacy/access cue */
+  groupIsPrivate?: boolean;
+  /** Whether the current user has access (false = restricted state) */
+  isAccessible: boolean;
+  /** Hint for restricted state messaging */
+  restrictedReason?: string;
+  /** Whether a thread is currently open in the right panel */
+  threadOpen: boolean;
+  /** The message ID whose thread is open, if any */
+  threadAnchorMessageId: string | null;
+}
+
+/**
+ * State for the Sprint 1.2 reading workspace layer.
+ * Extends MessagingWorkspaceState without replacing it.
+ */
+export interface ConversationWorkspaceState {
+  activeConversation: ActiveConversation | null;
+}

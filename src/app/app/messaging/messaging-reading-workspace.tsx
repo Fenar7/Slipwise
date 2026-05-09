@@ -31,10 +31,8 @@ import {
 } from "lucide-react";
 import type { ActiveConversation, ConversationMessage, PresenceStatus } from "./types";
 import {
-  MOCK_MESSAGES_CHANNEL_FINANCE,
-  MOCK_MESSAGES_DM_ARJUN,
-  MOCK_MESSAGES_GROUP_Q2,
-  MOCK_THREAD_REPLIES_CH_F_1,
+  getMessagesForConversation,
+  getThreadRepliesForMessage,
 } from "./mock-data";
 
 // ─── Shared primitives ────────────────────────────────────────────────────────
@@ -147,12 +145,13 @@ interface WorkspaceHeaderProps {
 
 function WorkspaceHeader({ conversation, threadOpen, onToggleThread }: WorkspaceHeaderProps) {
   const { kind, name, channelVisibility, dmParticipant, groupMemberCount } = conversation;
+  const isPrivateGroup = kind === "group" && conversation.groupIsPrivate;
 
   const Icon =
     kind === "dm"
       ? MessageSquare
       : kind === "group"
-      ? channelVisibility === "private" || conversation.groupMemberCount
+      ? isPrivateGroup
         ? Lock
         : Users
       : channelVisibility === "private"
@@ -199,7 +198,7 @@ function WorkspaceHeader({ conversation, threadOpen, onToggleThread }: Workspace
         )}
         {kind === "group" && (
           <span className="shrink-0 rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-[#79747E]">
-            {groupMemberCount} members
+            {isPrivateGroup ? "Private group" : "Group"} · {groupMemberCount} members
           </span>
         )}
         {kind === "dm" && dmParticipant && (
@@ -687,9 +686,13 @@ function ChannelWorkspace({
   onCloseThread,
   onToggleThread,
 }: WorkspaceBodyProps) {
+  const channelMessages = getMessagesForConversation(conversation.id);
   const anchorMsg = threadAnchorMessageId
-    ? MOCK_MESSAGES_CHANNEL_FINANCE.find((m) => m.id === threadAnchorMessageId) ?? null
+    ? channelMessages.find((m) => m.id === threadAnchorMessageId) ?? null
     : null;
+  const threadReplies = threadAnchorMessageId
+    ? getThreadRepliesForMessage(threadAnchorMessageId)
+    : [];
 
   return (
     <div className="flex flex-1 overflow-hidden" data-testid="channel-workspace">
@@ -712,7 +715,7 @@ function ChannelWorkspace({
           </p>
         </div>
         <MessageFeed
-          messages={MOCK_MESSAGES_CHANNEL_FINANCE}
+          messages={channelMessages}
           threadAnchorMessageId={threadAnchorMessageId}
           onOpenThread={onOpenThread}
         />
@@ -721,12 +724,12 @@ function ChannelWorkspace({
 
       {/* Thread panel */}
       {threadOpen && (anchorMsg ? (
-        <ThreadPanel
-          anchorMessage={anchorMsg}
-          replies={MOCK_THREAD_REPLIES_CH_F_1}
-          onClose={onCloseThread}
-        />
-      ) : (
+          <ThreadPanel
+            anchorMessage={anchorMsg}
+            replies={threadReplies}
+            onClose={onCloseThread}
+          />
+        ) : (
         <div
           className="flex flex-col h-full w-80 shrink-0 border-l bg-white overflow-hidden"
           style={{ borderColor: "#E0E0E0" }}
@@ -765,6 +768,7 @@ function DMWorkspace({
   onCloseThread,
   onToggleThread,
 }: WorkspaceBodyProps) {
+  const dmMessages = getMessagesForConversation(conversation.id);
   return (
     <div className="flex flex-1 overflow-hidden" data-testid="dm-workspace">
       <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
@@ -800,7 +804,7 @@ function DMWorkspace({
           </div>
         )}
         <MessageFeed
-          messages={MOCK_MESSAGES_DM_ARJUN}
+          messages={dmMessages}
           threadAnchorMessageId={threadAnchorMessageId}
           onOpenThread={onOpenThread}
         />
@@ -843,9 +847,13 @@ function GroupWorkspace({
   onCloseThread,
   onToggleThread,
 }: WorkspaceBodyProps) {
+  const groupMessages = getMessagesForConversation(conversation.id);
   const anchorMsg = threadAnchorMessageId
-    ? MOCK_MESSAGES_GROUP_Q2.find((m) => m.id === threadAnchorMessageId) ?? null
+    ? groupMessages.find((m) => m.id === threadAnchorMessageId) ?? null
     : null;
+  const threadReplies = threadAnchorMessageId
+    ? getThreadRepliesForMessage(threadAnchorMessageId)
+    : [];
 
   return (
     <div className="flex flex-1 overflow-hidden" data-testid="group-workspace">
@@ -867,7 +875,7 @@ function GroupWorkspace({
           </p>
         </div>
         <MessageFeed
-          messages={MOCK_MESSAGES_GROUP_Q2}
+          messages={groupMessages}
           threadAnchorMessageId={threadAnchorMessageId}
           onOpenThread={onOpenThread}
         />
@@ -876,7 +884,7 @@ function GroupWorkspace({
       {threadOpen && anchorMsg && (
         <ThreadPanel
           anchorMessage={anchorMsg}
-          replies={MOCK_THREAD_REPLIES_CH_F_1.slice(0, 3)}
+          replies={threadReplies}
           onClose={onCloseThread}
         />
       )}
