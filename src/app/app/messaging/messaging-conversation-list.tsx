@@ -35,6 +35,8 @@ import {
   MOCK_DMS,
   MOCK_GROUPS,
 } from "./mock-data";
+import { MessagingChannelCreate } from "./messaging-channel-create";
+import { MessagingGroupCreate } from "./messaging-group-create";
 
 // ─── Shared primitives ────────────────────────────────────────────────────────
 
@@ -153,6 +155,7 @@ export function ChannelConversationList({
   onSelect,
 }: ChannelListProps) {
   const [search, setSearch] = React.useState("");
+  const [showCreate, setShowCreate] = React.useState(false);
 
   const filtered = MOCK_CHANNELS.filter((ch) =>
     ch.name.toLowerCase().includes(search.toLowerCase())
@@ -183,7 +186,7 @@ export function ChannelConversationList({
         title="Channels"
         subtitle={`${MOCK_CHANNELS.length} channels · ${MOCK_CHANNELS.filter((c) => c.visibility === "private").length} private`}
         actionLabel="New channel"
-        onAction={() => {}}
+        onAction={() => setShowCreate(true)}
         searchPlaceholder="Find a channel…"
         searchValue={search}
         onSearchChange={setSearch}
@@ -224,6 +227,7 @@ export function ChannelConversationList({
           </button>
         </div>
       </div>
+      {showCreate && <MessagingChannelCreate onClose={() => setShowCreate(false)} />}
     </div>
   );
 }
@@ -435,6 +439,7 @@ interface GroupListProps {
 
 export function GroupConversationList({ activeConversationId, onSelect }: GroupListProps) {
   const [search, setSearch] = React.useState("");
+  const [showCreate, setShowCreate] = React.useState(false);
 
   const filtered = MOCK_GROUPS.filter((grp) =>
     grp.name.toLowerCase().includes(search.toLowerCase())
@@ -463,7 +468,7 @@ export function GroupConversationList({ activeConversationId, onSelect }: GroupL
         title="Groups"
         subtitle={`${MOCK_GROUPS.length} groups · ${MOCK_GROUPS.filter((g) => g.isPrivate).length} private`}
         actionLabel="New group"
-        onAction={() => {}}
+        onAction={() => setShowCreate(true)}
         searchPlaceholder="Find a group…"
         searchValue={search}
         onSearchChange={setSearch}
@@ -481,6 +486,7 @@ export function GroupConversationList({ activeConversationId, onSelect }: GroupL
           <EmptySearch label="No groups match your search." />
         )}
       </div>
+      {showCreate && <MessagingGroupCreate onClose={() => setShowCreate(false)} />}
     </div>
   );
 }
