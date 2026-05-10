@@ -23,7 +23,11 @@ export async function PATCH(
     }
 
     const { connectionId } = await params;
-    const body = (await request.json()) as { status?: unknown };
+    const rawBody = await request.json();
+    const body =
+      typeof rawBody === "object" && rawBody !== null
+        ? (rawBody as { status?: unknown })
+        : {};
 
     if (
       typeof body.status !== "string" ||

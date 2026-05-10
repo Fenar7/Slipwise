@@ -1,3 +1,5 @@
+import "server-only";
+
 /**
  * Mailbox provider-neutral contracts.
  *

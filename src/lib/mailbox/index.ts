@@ -1,3 +1,5 @@
+import "server-only";
+
 /**
  * Mailbox service module — public API surface.
  *

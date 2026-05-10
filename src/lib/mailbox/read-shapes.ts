@@ -1,3 +1,5 @@
+import "server-only";
+
 /**
  * Mailbox UI-facing read shapes and mappers.
  *

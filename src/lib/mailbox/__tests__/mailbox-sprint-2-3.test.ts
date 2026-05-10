@@ -380,6 +380,33 @@ describe("GET /api/mailbox/connections/[id]", () => {
     expect(res.status).toBe(404);
     expect(body.error).toBe("Connection not found");
   });
+
+  it("returns 401 when not authenticated", async () => {
+    vi.mocked(getOrgContext).mockResolvedValue(null);
+    vi.mocked(hasRole).mockReturnValue(false);
+
+    const res = await getConnection(makeRequest(), {
+      params: Promise.resolve({ connectionId: CONN_ID }),
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 403 when user is not admin", async () => {
+    vi.mocked(getOrgContext).mockResolvedValue({
+      orgId: ORG_A,
+      userId: ACTOR,
+      role: "member",
+      representedId: null,
+      proxyGrantId: null,
+      proxyScope: [],
+    } as never);
+    vi.mocked(hasRole).mockReturnValue(false);
+
+    const res = await getConnection(makeRequest(), {
+      params: Promise.resolve({ connectionId: CONN_ID }),
+    });
+    expect(res.status).toBe(403);
+  });
 });
 
 // ─── PATCH /api/mailbox/connections/[id]/status ───────────────────────────────
@@ -458,6 +485,27 @@ describe("PATCH /api/mailbox/connections/[id]/status", () => {
       params: Promise.resolve({ connectionId: CONN_ID }),
     });
     expect(res.status).toBe(400);
+  });
+
+  it("returns 400 when request body is null", async () => {
+    setupAdminAuth();
+
+    const req = new NextRequest(
+      "http://localhost/api/mailbox/connections/" + CONN_ID + "/status",
+      {
+        method: "PATCH",
+        body: "null",
+        headers: { "content-type": "application/json" },
+      },
+    );
+
+    const res = await patchStatus(req, {
+      params: Promise.resolve({ connectionId: CONN_ID }),
+    });
+    const body = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(body.error).toBe("Invalid status value");
   });
 
   it("returns 404 when connection not found", async () => {
