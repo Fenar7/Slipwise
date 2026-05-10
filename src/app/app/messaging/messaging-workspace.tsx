@@ -16,7 +16,9 @@ import type {
   MessagingSection,
   MessagingWorkspaceState,
   ActiveConversation,
+  MessagingNotification,
 } from "./types";
+import { MOCK_NOTIFICATIONS } from "./mock-data";
 import { cn } from "@/lib/utils";
 
 const MOBILE_SECTIONS: Array<{
@@ -63,10 +65,14 @@ export function MessagingWorkspace() {
 
   const [notifOpen, setNotifOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [notifications, setNotifications] = useState<MessagingNotification[]>(MOCK_NOTIFICATIONS);
+
+  const unreadCount = notifications.filter((n) => !n.read).length;
 
   function handleSearchChange(q: string) {
     setState((prev) => ({ ...prev, searchQuery: q }));
     setSearchOpen(q.length > 0);
+    if (q.length > 0) setNotifOpen(false);
   }
 
   const toggleCommandBar = () => {
@@ -111,9 +117,15 @@ export function MessagingWorkspace() {
           commandBarOpen={state.commandBarOpen}
           onCommandBarToggle={toggleCommandBar}
           notifOpen={notifOpen}
-          onNotifToggle={() => setNotifOpen((o) => !o)}
-          onSearchFocus={() => setSearchOpen(true)}
-          unreadCount={2}
+          onNotifToggle={() => {
+            setNotifOpen((o) => !o);
+            setSearchOpen(false);
+          }}
+          onSearchFocus={() => {
+            setSearchOpen(true);
+            setNotifOpen(false);
+          }}
+          unreadCount={unreadCount}
         />
 
         {searchOpen && (
@@ -218,7 +230,18 @@ export function MessagingWorkspace() {
         </div>
 
         {notifOpen && (
-          <MessagingNotificationsPanel onClose={() => setNotifOpen(false)} />
+          <MessagingNotificationsPanel
+            onClose={() => setNotifOpen(false)}
+            notifications={notifications}
+            onMarkAllRead={() =>
+              setNotifications((prev) => prev.map((n) => ({ ...n, read: true })))
+            }
+            onToggleRead={(id) =>
+              setNotifications((prev) =>
+                prev.map((n) => (n.id === id ? { ...n, read: !n.read } : n))
+              )
+            }
+          />
         )}
       </div>
     </div>

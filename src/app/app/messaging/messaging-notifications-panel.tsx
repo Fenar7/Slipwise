@@ -11,12 +11,14 @@ import {
   Hash,
 } from "lucide-react";
 import type { MessagingNotification, NotificationFilterKind } from "./types";
-import { MOCK_NOTIFICATIONS } from "./mock-data";
 import { RadioPill } from "./messaging-ui-primitives";
 import { MessagingNotificationPreferences } from "./messaging-notification-preferences";
 
 interface MessagingNotificationsPanelProps {
   onClose: () => void;
+  notifications: MessagingNotification[];
+  onMarkAllRead: () => void;
+  onToggleRead: (id: string) => void;
 }
 
 const FILTER_OPTIONS: { value: NotificationFilterKind; label: string }[] = [
@@ -50,8 +52,12 @@ function timeAgoLabel(occurredAt: string): string {
   return `${days}d ago`;
 }
 
-export function MessagingNotificationsPanel({ onClose }: MessagingNotificationsPanelProps) {
-  const [notifications, setNotifications] = React.useState<MessagingNotification[]>(MOCK_NOTIFICATIONS);
+export function MessagingNotificationsPanel({
+  onClose,
+  notifications,
+  onMarkAllRead,
+  onToggleRead,
+}: MessagingNotificationsPanelProps) {
   const [filter, setFilter] = React.useState<NotificationFilterKind>("all");
   const [prefsOpen, setPrefsOpen] = React.useState(false);
 
@@ -76,13 +82,11 @@ export function MessagingNotificationsPanel({ onClose }: MessagingNotificationsP
   }, [notifications, filter]);
 
   function markAllRead() {
-    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+    onMarkAllRead();
   }
 
   function toggleRead(id: string) {
-    setNotifications((prev) =>
-      prev.map((n) => (n.id === id ? { ...n, read: !n.read } : n))
-    );
+    onToggleRead(id);
   }
 
   return (

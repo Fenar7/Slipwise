@@ -22,6 +22,8 @@ export interface RadioPillProps {
 export function RadioPill({ options, value, onChange, name }: RadioPillProps) {
   return (
     <div
+      role="radiogroup"
+      aria-label={name}
       className="flex rounded-lg border p-0.5 gap-0.5"
       style={{ borderColor: "#E0E0E0" }}
     >

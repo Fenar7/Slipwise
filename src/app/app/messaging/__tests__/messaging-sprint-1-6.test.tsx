@@ -165,9 +165,16 @@ describe("MessagingFilesPanel", () => {
 
 // ─── MessagingNotificationsPanel ───────────────────────────────────────────────
 
+const defaultNotifProps = {
+  notifications: MOCK_NOTIFICATIONS,
+  onMarkAllRead: vi.fn() as () => void,
+  onToggleRead: vi.fn() as (id: string) => void,
+  onClose: vi.fn() as () => void,
+};
+
 describe("MessagingNotificationsPanel", () => {
-  function render_np(onClose = vi.fn()) {
-    return render(<MessagingNotificationsPanel onClose={onClose} />);
+  function render_np(props = defaultNotifProps) {
+    return render(<MessagingNotificationsPanel {...props} />);
   }
 
   it("renders data-testid=notifications-panel", () => {
@@ -177,14 +184,14 @@ describe("MessagingNotificationsPanel", () => {
 
   it("close button calls onClose", () => {
     const onClose = vi.fn();
-    render_np(onClose);
+    render_np({ ...defaultNotifProps, onClose });
     fireEvent.click(screen.getByTestId("notif-panel-close"));
     expect(onClose).toHaveBeenCalledOnce();
   });
 
   it("pressing Escape calls onClose", () => {
     const onClose = vi.fn();
-    render_np(onClose);
+    render_np({ ...defaultNotifProps, onClose });
     fireEvent.keyDown(document, { key: "Escape" });
     expect(onClose).toHaveBeenCalled();
   });
@@ -232,6 +239,14 @@ describe("MessagingNotificationsPanel", () => {
     render_np();
     fireEvent.click(screen.getByTestId("notif-preferences-link"));
     expect(screen.getByTestId("notif-preferences-modal")).toBeInTheDocument();
+  });
+
+  it("unread badge count updates to 0 after all notifications are read", () => {
+    const allRead = MOCK_NOTIFICATIONS.map((n) => ({ ...n, read: true }));
+    render_np({ ...defaultNotifProps, notifications: allRead });
+    const unreadFilter = screen.getByTestId("notif-filter-unread");
+    fireEvent.click(unreadFilter);
+    expect(screen.getByTestId("notif-list-empty")).toBeInTheDocument();
   });
 });
 
