@@ -5915,6 +5915,7 @@ enum MailboxAuditAction {
   CONNECTION_RECONNECTED
   CONNECTION_DEGRADED
   CONNECTION_PERMISSION_CHANGED
+  CONNECTION_POLICY_UPDATED
   THREAD_ASSIGNED
   THREAD_UNASSIGNED
   THREAD_STATUS_CHANGED
@@ -5959,6 +5960,7 @@ model MailboxConnection {
   emailAddress      String
   displayName       String
   status            MailboxConnectionStatus @default(ACTIVE)
+  visibilityPolicy  String                  @default("org_shared")
   /// Opaque reference to encrypted token store. Sprint 2.2 implements the store.
   tokenRef          String?
   tokenExpiry       DateTime?

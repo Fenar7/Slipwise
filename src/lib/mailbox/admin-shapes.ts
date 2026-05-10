@@ -18,6 +18,7 @@ export interface MailboxConnectionListItem {
   emailAddress: string;
   displayName: string;
   status: MailboxConnectionStatus;
+  visibilityPolicy: string;
   health: MailboxConnectionHealth;
   lastSyncAt: string | null;
   lastSyncError: string | null;
@@ -41,6 +42,7 @@ export function toMailboxConnectionListItem(
     emailAddress: record.emailAddress,
     displayName: record.displayName,
     status: record.status,
+    visibilityPolicy: record.visibilityPolicy,
     health: deriveMailboxHealth(record, now),
     lastSyncAt: record.lastSyncAt?.toISOString() ?? null,
     lastSyncError: record.lastSyncError,
