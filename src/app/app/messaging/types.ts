@@ -302,3 +302,41 @@ export interface CalendarConnection {
 
 export type MeetingTab = "upcoming" | "past" | "calendar";
 export type TaskFilterStatus = "all" | "open" | "in-progress" | "done" | "overdue";
+
+// ─── Sprint 1.6 — Search, Files, Notifications, and Final Polish ─────────────
+
+export type SearchResultKind = "message" | "channel" | "person" | "file";
+
+export interface MessagingSearchResult {
+  id: string;
+  kind: SearchResultKind;
+  title: string;
+  subtitle: string;
+  avatarInitials?: string;
+  timestamp?: string;
+  conversationRef?: string;
+}
+
+export type NotificationKind =
+  | "mention"
+  | "reply"
+  | "task_reminder"
+  | "meeting_reminder"
+  | "channel_invite";
+
+export interface MessagingNotification {
+  id: string;
+  kind: NotificationKind;
+  actorName: string;
+  actorInitials: string;
+  body: string;
+  conversationRef: string | null;
+  occurredAt: string;
+  read: boolean;
+}
+
+export type NotificationFilterKind = "all" | "mentions" | "unread";
+
+export type FileFilterCategory = "all" | FileCategory;
+
+export type FileSortOrder = "newest" | "oldest" | "name";

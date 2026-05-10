@@ -5,25 +5,21 @@ import {
   Hash,
   MessageSquare,
   Users,
-  Paperclip,
   ShieldAlert,
   Lock,
-  FileText,
-  FileSpreadsheet,
-  Image,
 } from "lucide-react";
-import type { MessagingSection, FileCategory, PresenceStatus } from "./types";
+import type { MessagingSection, PresenceStatus } from "./types";
 import {
   MOCK_CHANNELS,
   MOCK_DMS,
   MOCK_GROUPS,
-  MOCK_FILES,
   MOCK_ADMIN_ENTRIES,
   MOCK_CALENDAR_CONNECTION,
 } from "./mock-data";
 import { MessagingAdminPanel } from "./messaging-admin-panel";
 import { MessagingTaskPanel } from "./messaging-task-panel";
 import { MessagingMeetingPanel } from "./messaging-meeting-panel";
+import { MessagingFilesPanel } from "./messaging-files-panel";
 
 interface MessagingWorkspacePaneProps {
   activeSection: MessagingSection;
@@ -33,15 +29,6 @@ const CARD_BUTTON_CLASS =
   "flex w-full text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626] focus-visible:ring-offset-2";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function fileCategoryIcon(category: FileCategory) {
-  switch (category) {
-    case "document": return FileText;
-    case "spreadsheet": return FileSpreadsheet;
-    case "image": return Image;
-    default: return Paperclip;
-  }
-}
 
 function presenceLabel(status: PresenceStatus) {
   switch (status) {
@@ -243,48 +230,6 @@ function GroupsPane() {
 
 // ─── Section: Files ───────────────────────────────────────────────────────────
 
-function FilesPane() {
-  return (
-    <div className="flex flex-col h-full" data-testid="messaging-pane-files">
-      <div className="flex items-center justify-between border-b px-6 py-4" style={{ borderColor: "#E0E0E0" }}>
-        <div>
-          <h2 className="text-base font-bold" style={{ color: "#1C1B1F" }}>Files</h2>
-          <p className="text-xs mt-0.5" style={{ color: "#79747E" }}>
-            {MOCK_FILES.length} shared files
-          </p>
-        </div>
-      </div>
-      <div className="flex-1 overflow-y-auto px-6 py-4 space-y-2">
-        {MOCK_FILES.map((file) => {
-          const FileIcon = fileCategoryIcon(file.category);
-          return (
-            <button
-              type="button"
-              key={file.id}
-              className={cn(
-                CARD_BUTTON_CLASS,
-                "items-center gap-3 rounded-xl border p-4 hover:border-[#DC2626] hover:bg-red-50/30"
-              )}
-              style={{ borderColor: "#F0F0F0" }}
-              aria-label={file.name}
-            >
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gray-100">
-                <FileIcon className="h-4 w-4 text-[#79747E]" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold truncate" style={{ color: "#1C1B1F" }}>{file.name}</p>
-                <p className="text-xs mt-0.5" style={{ color: "#79747E" }}>
-                  {file.sizeLabel} · {file.uploadedBy}
-                </p>
-              </div>
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
 // ─── Section: Admin / Governance ─────────────────────────────────────────────
 
 function AdminPane() {
@@ -368,7 +313,7 @@ export function MessagingWorkspacePane({ activeSection }: MessagingWorkspacePane
       {activeSection === "meetings" && (
         <MessagingMeetingPanel calendarConnection={MOCK_CALENDAR_CONNECTION} />
       )}
-      {activeSection === "files" && <FilesPane />}
+      {activeSection === "files" && <MessagingFilesPanel />}
       {activeSection === "admin" && <MessagingAdminPanel />}
     </div>
   );

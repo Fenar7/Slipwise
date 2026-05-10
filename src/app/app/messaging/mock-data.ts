@@ -891,3 +891,109 @@ export const MOCK_CALENDAR_CONNECTION_ACTIVE: CalendarConnection = {
   connectedEmail: "ops@slipwise.in",
   connectedAt: "2026-04-01T09:00:00Z",
 };
+
+// ─── Sprint 1.6 mock data ────────────────────────────────────────────────────
+
+import type { MessagingSearchResult, MessagingNotification } from "./types";
+
+export const MOCK_SEARCH_RESULTS: MessagingSearchResult[] = [
+  {
+    id: "sr-msg-1",
+    kind: "message",
+    title: "May payroll staging is ready",
+    subtitle: "in #payroll · Kavya Nair",
+    timestamp: "2026-05-10T09:15:00Z",
+    conversationRef: "ch-payroll",
+  },
+  {
+    id: "sr-msg-2",
+    kind: "message",
+    title: "GST filing checklist is complete",
+    subtitle: "in #payroll · Sneha Iyer",
+    timestamp: "2026-05-10T08:30:00Z",
+    conversationRef: "ch-payroll",
+  },
+  {
+    id: "sr-ch-1",
+    kind: "channel",
+    title: "#compliance",
+    subtitle: "Public · 31 members",
+    conversationRef: "ch-compliance",
+  },
+  {
+    id: "sr-ch-2",
+    kind: "channel",
+    title: "#onboarding",
+    subtitle: "Private · 8 members",
+    conversationRef: "ch-onboarding",
+  },
+  {
+    id: "sr-person-1",
+    kind: "person",
+    title: "Priya Sharma",
+    subtitle: "Admin · Online",
+    avatarInitials: "PS",
+    conversationRef: "dm-1",
+  },
+  {
+    id: "sr-file-1",
+    kind: "file",
+    title: "Q1-GST-Filing.pdf",
+    subtitle: "3.2 MB · Uploaded by Arjun Mehta",
+    timestamp: "2026-05-09T14:00:00Z",
+    conversationRef: "ch-compliance",
+  },
+];
+
+export const MOCK_NOTIFICATIONS: MessagingNotification[] = [
+  {
+    id: "notif-1",
+    kind: "mention",
+    actorName: "Arjun Mehta",
+    actorInitials: "AM",
+    body: "Mentioned you in #payroll",
+    conversationRef: "ch-payroll",
+    occurredAt: "2026-05-10T08:00:00Z",
+    read: false,
+  },
+  {
+    id: "notif-2",
+    kind: "reply",
+    actorName: "Priya Sharma",
+    actorInitials: "PS",
+    body: "Replied to your message in #compliance",
+    conversationRef: "ch-compliance",
+    occurredAt: "2026-05-10T07:30:00Z",
+    read: false,
+  },
+  {
+    id: "notif-3",
+    kind: "task_reminder",
+    actorName: "Rohan Gupta",
+    actorInitials: "RG",
+    body: "Task reminder: Review Q2 invoice reconciliation report",
+    conversationRef: "ch-finance",
+    occurredAt: "2026-05-09T18:00:00Z",
+    read: true,
+  },
+  {
+    id: "notif-4",
+    kind: "meeting_reminder",
+    actorName: "Rohan Gupta",
+    actorInitials: "RG",
+    body: "Meeting reminder: Q2 Close Sync in 15 minutes",
+    conversationRef: "meet-1",
+    occurredAt: "2026-05-09T13:45:00Z",
+    read: true,
+  },
+  {
+    id: "notif-5",
+    kind: "channel_invite",
+    actorName: "Rohan Gupta",
+    actorInitials: "RG",
+    body: "Invited you to join #vendor-alerts",
+    conversationRef: "ch-vendor-alerts",
+    occurredAt: "2026-05-08T10:00:00Z",
+    read: true,
+  },
+];

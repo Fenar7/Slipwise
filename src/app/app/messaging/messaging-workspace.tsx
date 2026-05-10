@@ -10,6 +10,8 @@ import {
   GroupConversationList,
 } from "./messaging-conversation-list";
 import { MessagingReadingWorkspace } from "./messaging-reading-workspace";
+import { MessagingSearchPanel } from "./messaging-search-panel";
+import { MessagingNotificationsPanel } from "./messaging-notifications-panel";
 import type {
   MessagingSection,
   MessagingWorkspaceState,
@@ -59,9 +61,13 @@ export function MessagingWorkspace() {
     setState((prev) => ({ ...prev, activeSection: section }));
   };
 
-  const setSearchQuery = (q: string) => {
+  const [notifOpen, setNotifOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+
+  function handleSearchChange(q: string) {
     setState((prev) => ({ ...prev, searchQuery: q }));
-  };
+    setSearchOpen(q.length > 0);
+  }
 
   const toggleCommandBar = () => {
     setState((prev) => ({ ...prev, commandBarOpen: !prev.commandBarOpen }));
@@ -101,10 +107,24 @@ export function MessagingWorkspace() {
         {/* Top command/search bar */}
         <MessagingCommandBar
           searchQuery={state.searchQuery}
-          onSearchChange={setSearchQuery}
+          onSearchChange={handleSearchChange}
           commandBarOpen={state.commandBarOpen}
           onCommandBarToggle={toggleCommandBar}
+          notifOpen={notifOpen}
+          onNotifToggle={() => setNotifOpen((o) => !o)}
+          onSearchFocus={() => setSearchOpen(true)}
+          unreadCount={2}
         />
+
+        {searchOpen && (
+          <MessagingSearchPanel
+            query={state.searchQuery}
+            onClose={() => {
+              setSearchOpen(false);
+              setState((prev) => ({ ...prev, searchQuery: "" }));
+            }}
+          />
+        )}
 
         {/* Mobile / tablet section switcher */}
         <div
@@ -187,6 +207,7 @@ export function MessagingWorkspace() {
                       ? "dm"
                       : "group"
                   }
+                  degraded={false}
                 />
               </div>
             </div>
@@ -195,6 +216,10 @@ export function MessagingWorkspace() {
             <MessagingWorkspacePane activeSection={state.activeSection} />
           )}
         </div>
+
+        {notifOpen && (
+          <MessagingNotificationsPanel onClose={() => setNotifOpen(false)} />
+        )}
       </div>
     </div>
   );
