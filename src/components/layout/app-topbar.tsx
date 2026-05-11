@@ -104,9 +104,9 @@ function isMessagingRoute(pathname: string) {
 export function AppTopbar({ orgName }: AppTopbarProps) {
   const pathname = usePathname();
   const { breadcrumbs, pageTitle, suiteLabel } = getNavigationContext(pathname);
-  const { actions: workspaceActions, headerContent, viewToggle } = useWorkspaceTopBar();
+  const { actions: workspaceActions, headerContent, viewToggle, tabs } = useWorkspaceTopBar();
   const pageActions = getPageActions(pathname);
-  const messagingRoute = isMessagingRoute(pathname);
+  const hasTabs = tabs.length > 0;
 
   return (
     <>
@@ -118,19 +118,77 @@ export function AppTopbar({ orgName }: AppTopbarProps) {
         className="sticky top-0 z-20 border-b bg-white"
         style={{ borderColor: "#E0E0E0" }}
       >
-        {messagingRoute ? (
-          /* Minimal top bar for Messaging — module provides its own command bar */
-          <div className="flex h-10 items-center justify-between px-5">
-            <Link
-              href="/app/home"
-              className="text-[11px] font-bold uppercase tracking-widest transition-colors hover:opacity-80"
-              style={{ color: "#DC2626" }}
-            >
-              Slipwise
-            </Link>
-            <span className="text-[11px] font-medium" style={{ color: "#79747E" }}>
-              {orgName ?? "Workspace"}
-            </span>
+        {hasTabs ? (
+          /* ── Contextual tab bar (e.g. Messaging) ── */
+          <div className="flex h-12 items-center gap-4 px-5">
+            {/* Left: Slipwise wordmark + tabs */}
+            <div className="flex items-center gap-4 min-w-0 flex-1">
+              <Link
+                href="/app/home"
+                className="shrink-0 text-[11px] font-bold uppercase tracking-widest transition-colors hover:opacity-80"
+                style={{ color: "#DC2626" }}
+              >
+                Slipwise
+              </Link>
+              <div className="h-5 w-px shrink-0" style={{ background: "#E0E0E0" }} />
+              <nav className="flex items-center gap-1 overflow-x-auto" role="tablist">
+                {tabs.map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={tab.active}
+                    onClick={tab.onClick}
+                    className={cn(
+                      "shrink-0 rounded-md px-3 py-1.5 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]",
+                      tab.active
+                        ? "bg-[#DC2626] text-white"
+                        : "text-[#79747E] hover:text-[#1C1B1F] hover:bg-gray-50"
+                    )}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </nav>
+            </div>
+
+            {/* Right: workspace actions + org name */}
+            <div className="flex items-center gap-2 shrink-0">
+              {headerContent}
+              {workspaceActions.length > 0 && (
+                <div className="flex items-center gap-1">
+                  {workspaceActions.map((action) => {
+                    const className = cn(
+                      "inline-flex items-center justify-center rounded-md px-3 py-1.5 text-xs font-medium transition-all disabled:cursor-wait disabled:opacity-65",
+                      actionClassName(action.variant),
+                    );
+                    return action.href ? (
+                      <Link key={action.id} href={action.href} className={className}>
+                        {action.label}
+                      </Link>
+                    ) : (
+                      <button
+                        key={action.id}
+                        type="button"
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          action.onClick?.();
+                        }}
+                        disabled={action.disabled}
+                        className={className}
+                      >
+                        {action.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              <span className="text-[11px] font-medium" style={{ color: "#79747E" }}>
+                {orgName ?? "Workspace"}
+              </span>
+            </div>
           </div>
         ) : (
           <div className="flex h-16 items-center gap-4 px-5">
