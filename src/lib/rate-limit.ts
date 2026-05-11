@@ -86,4 +86,6 @@ export const RATE_LIMITS = {
   mailboxDisconnect: { maxRequests: 5, window: "60 s" },
   mailboxReconnect: { maxRequests: 5, window: "60 s" },
   mailboxTokenRefresh: { maxRequests: 10, window: "60 s" },
+  // Mailbox Phase 2 Sprint 2.4: Visibility policy governance
+  mailboxPolicyUpdate: { maxRequests: 10, window: "60 s" },
 } as const;

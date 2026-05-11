@@ -16,6 +16,7 @@ export const MAILBOX_AUDIT_ACTION_LABELS: Record<MailboxAuditAction, string> = {
   CONNECTION_RECONNECTED: "Reconnected mailbox",
   CONNECTION_DEGRADED: "Mailbox connection degraded",
   CONNECTION_PERMISSION_CHANGED: "Changed mailbox permissions",
+  CONNECTION_POLICY_UPDATED: "Updated mailbox visibility policy",
   THREAD_ASSIGNED: "Assigned thread",
   THREAD_UNASSIGNED: "Unassigned thread",
   THREAD_STATUS_CHANGED: "Changed thread status",

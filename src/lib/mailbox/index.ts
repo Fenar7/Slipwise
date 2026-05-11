@@ -136,3 +136,19 @@ export {
 } from "./gmail-oauth-service";
 
 export { gmailProviderAdapter, buildGmailAuthUrl, GMAIL_OAUTH_SCOPES } from "./gmail-provider";
+
+// Sprint 2.4: Connection permissions and org-scoped visibility
+export type {
+  MailboxVisibilityPolicy,
+  MailboxAccessLevel,
+  MailboxAccessResolution,
+} from "./domain-types";
+export {
+  resolveMailboxAccessLevel,
+  canAccessMailbox,
+} from "./domain-types";
+export {
+  getMailboxAccessResolution,
+  listMailboxConnectionsForMember,
+  setMailboxVisibilityPolicy,
+} from "./visibility-service";
