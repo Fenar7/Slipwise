@@ -8,6 +8,10 @@ interface MessagingCommandBarProps {
   onSearchChange: (q: string) => void;
   commandBarOpen: boolean;
   onCommandBarToggle: () => void;
+  notifOpen: boolean;
+  onNotifToggle: () => void;
+  onSearchFocus: () => void;
+  unreadCount: number;
 }
 
 export function MessagingCommandBar({
@@ -15,6 +19,10 @@ export function MessagingCommandBar({
   onSearchChange,
   commandBarOpen,
   onCommandBarToggle,
+  notifOpen,
+  onNotifToggle,
+  onSearchFocus,
+  unreadCount,
 }: MessagingCommandBarProps) {
   return (
     <header
@@ -41,6 +49,7 @@ export function MessagingCommandBar({
           placeholder="Search messages, channels, people…"
           value={searchQuery}
           onChange={(e) => onSearchChange(e.target.value)}
+          onFocus={onSearchFocus}
           className="flex-1 bg-transparent text-sm outline-none placeholder:text-[#79747E]"
           style={{ color: "#1C1B1F" }}
           aria-label="Search messaging"
@@ -59,11 +68,20 @@ export function MessagingCommandBar({
 
       {/* Notification bell */}
       <button
-        className="flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-gray-100"
+        className={cn(
+          "relative flex h-8 w-8 items-center justify-center rounded-lg transition-colors",
+          notifOpen ? "bg-red-50 text-[#DC2626]" : "hover:bg-gray-100"
+        )}
         aria-label="Notifications"
         title="Notifications"
+        aria-pressed={notifOpen}
+        onClick={onNotifToggle}
+        data-testid="notif-bell-button"
       >
-        <Bell className="h-4 w-4" style={{ color: "#79747E" }} />
+        <Bell className="h-4 w-4" style={notifOpen ? undefined : { color: "#79747E" }} />
+        {unreadCount > 0 && (
+          <span className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-[#DC2626] ring-2 ring-white" />
+        )}
       </button>
 
       {/* Messaging settings */}

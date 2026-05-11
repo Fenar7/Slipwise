@@ -27,6 +27,7 @@ import {
   FileText,
   FileSpreadsheet,
   Smile,
+  AlertTriangle,
 } from "lucide-react";
 import type { ActiveConversation, ConversationMessage, PresenceStatus } from "./types";
 import {
@@ -39,6 +40,29 @@ import { MessagingChannelDetail } from "./messaging-channel-detail";
 import { MessagingGroupDetail } from "./messaging-group-detail";
 
 // ─── Shared primitives ────────────────────────────────────────────────────────
+
+function DegradedBanner() {
+  return (
+    <div
+      className="flex items-center gap-2 border-b bg-amber-50 px-4 py-2 shrink-0"
+      style={{ borderColor: "#FCD34D" }}
+      data-testid="workspace-degraded-banner"
+      role="alert"
+      aria-live="polite"
+    >
+      <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-600" />
+      <span className="text-xs text-amber-700">
+        Connection interrupted. Messages may be delayed.
+      </span>
+      <button
+        className="ml-auto text-xs font-semibold text-amber-700 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
+        aria-label="Retry connection"
+      >
+        Retry
+      </button>
+    </div>
+  );
+}
 
 function PresenceDot({ status }: { status: PresenceStatus }) {
   return (
@@ -759,11 +783,13 @@ interface WorkspaceBodyProps {
 interface MessagingReadingWorkspaceProps {
   conversation: ActiveConversation | null;
   sectionKind?: "channel" | "dm" | "group";
+  degraded?: boolean;
 }
 
 export function MessagingReadingWorkspace({
   conversation,
   sectionKind,
+  degraded,
 }: MessagingReadingWorkspaceProps) {
   const [threadAnchorMessageId, setThreadAnchorMessageId] = React.useState<string | null>(null);
   const [threadOpen, setThreadOpen] = React.useState(false);
@@ -802,6 +828,7 @@ export function MessagingReadingWorkspace({
         className="flex flex-1 overflow-hidden bg-white"
         data-testid="reading-workspace"
       >
+        {degraded && <DegradedBanner />}
         <NoConversationSelected kind={sectionKind} />
       </div>
     );
@@ -813,6 +840,7 @@ export function MessagingReadingWorkspace({
         className="flex flex-1 overflow-hidden bg-white"
         data-testid="reading-workspace"
       >
+        {degraded && <DegradedBanner />}
         <RestrictedWorkspace conversation={conversation} />
       </div>
     );
@@ -843,6 +871,7 @@ export function MessagingReadingWorkspace({
       className="flex flex-1 overflow-hidden bg-white"
       data-testid="reading-workspace"
     >
+        {degraded && <DegradedBanner />}
       {conversation.kind === "channel" && <ChannelWorkspace {...bodyProps} />}
       {conversation.kind === "dm" && <DMWorkspace {...bodyProps} />}
       {conversation.kind === "group" && <GroupWorkspace {...bodyProps} />}
