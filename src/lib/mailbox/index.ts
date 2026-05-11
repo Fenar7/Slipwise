@@ -1,3 +1,5 @@
+import "server-only";
+
 /**
  * Mailbox service module — public API surface.
  *
@@ -105,6 +107,14 @@ export {
   upsertMailboxCursor,
   deleteMailboxCursors,
 } from "./cursor-service";
+
+// Health derivation
+export type { MailboxHealthStatus, MailboxConnectionHealth } from "./health";
+export { deriveMailboxHealth, EXPIRING_SOON_THRESHOLD_MS } from "./health";
+
+// Admin shapes
+export type { MailboxConnectionListItem } from "./admin-shapes";
+export { toMailboxConnectionListItem } from "./admin-shapes";
 
 // Sprint 2.2: Gmail OAuth and token lifecycle
 export type { MailboxCredentialPayload } from "./credential-store";
