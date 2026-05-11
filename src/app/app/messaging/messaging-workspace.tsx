@@ -20,7 +20,6 @@ import type {
 } from "./types";
 import { MOCK_NOTIFICATIONS } from "./mock-data";
 import { cn } from "@/lib/utils";
-import { useWorkspaceTopBar } from "@/components/layout/workspace-topbar-context";
 
 const MOBILE_SECTIONS: Array<{
   section: MessagingSection;
@@ -95,30 +94,6 @@ export function MessagingWorkspace() {
     state.activeSection === "dms" ||
     state.activeSection === "groups";
 
-  // Register workspace actions in global top bar
-  const { registerActions, clear } = useWorkspaceTopBar();
-  React.useEffect(() => {
-    registerActions([
-      {
-        id: "new-message",
-        label: "New Message",
-        variant: "primary",
-        onClick: () => {
-          setActiveSection("dms");
-        },
-      },
-      {
-        id: "new-channel",
-        label: "New Channel",
-        variant: "secondary",
-        onClick: () => {
-          setActiveSection("channels");
-        },
-      },
-    ]);
-    return () => clear();
-  }, [registerActions, clear, setActiveSection]);
-
   return (
     <div
       className="flex h-full w-full overflow-hidden"
@@ -151,6 +126,7 @@ export function MessagingWorkspace() {
             setNotifOpen(false);
           }}
           unreadCount={unreadCount}
+          activeSectionLabel={state.activeSection}
         />
 
         {searchOpen && (

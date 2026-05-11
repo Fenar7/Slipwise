@@ -38,9 +38,6 @@ interface PageAction {
 }
 
 function getPageActions(pathname: string): PageAction[] {
-  if (pathname === "/app/messaging" || pathname === "/app/messaging/") {
-    return [{ label: "New Message", href: "#", icon: Plus }];
-  }
   if (pathname === "/app/docs/invoices" || pathname === "/app/docs/invoices/") {
     return [{ label: "New Invoice", href: "/app/docs/invoices/new", icon: Plus }];
   }

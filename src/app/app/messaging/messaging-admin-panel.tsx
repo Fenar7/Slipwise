@@ -126,68 +126,64 @@ function AdminPanelHeader({ activeTab, onTabChange }: AdminPanelHeaderProps) {
 // ─── ChannelPolicyTab ─────────────────────────────────────────────────────────
 
 function ChannelPolicyTab() {
-  const [defaultVisibility, setDefaultVisibility] = React.useState("public-default");
-  const [createChannels, setCreateChannels] = React.useState("all-members");
-  const [createGroups, setCreateGroups] = React.useState("all-members");
+  const [publicDefault, setPublicDefault] = React.useState(true);
+  const [allMembersChannels, setAllMembersChannels] = React.useState(true);
+  const [allMembersGroups, setAllMembersGroups] = React.useState(true);
 
   return (
-    <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6" data-testid="admin-channel-policy-tab">
+    <div className="flex-1 overflow-y-auto px-6 py-5 space-y-1" data-testid="admin-channel-policy-tab">
       {/* Default channel visibility */}
-      <div className="space-y-2">
-        <label className="text-xs font-semibold" style={{ color: "#49454F" }}>
-          Default channel visibility
-        </label>
-        <RadioPill
-          name="admin-default-visibility"
-          options={[
-            { value: "public-default", label: "Public default" },
-            { value: "private-default", label: "Private default" },
-          ]}
-          value={defaultVisibility}
-          onChange={setDefaultVisibility}
+      <div className="flex items-center justify-between py-3 border-b" style={{ borderColor: "#F0F0F0" }}>
+        <div>
+          <p className="text-xs font-semibold" style={{ color: "#49454F" }}>Public channels by default</p>
+          <p className="text-[10px] mt-0.5" style={{ color: "#79747E" }}>New channels are visible to everyone.</p>
+        </div>
+        <ToggleSwitch
+          checked={publicDefault}
+          onChange={setPublicDefault}
+          label="Public channels by default"
+          testId="admin-public-default-toggle"
         />
       </div>
 
       {/* Who can create channels */}
-      <div className="space-y-2">
-        <label className="text-xs font-semibold" style={{ color: "#49454F" }}>
-          Who can create channels
-        </label>
-        <RadioPill
-          name="admin-create-channels"
-          options={[
-            { value: "all-members", label: "All members" },
-            { value: "admins-only", label: "Admins only" },
-          ]}
-          value={createChannels}
-          onChange={setCreateChannels}
+      <div className="flex items-center justify-between py-3 border-b" style={{ borderColor: "#F0F0F0" }}>
+        <div>
+          <p className="text-xs font-semibold" style={{ color: "#49454F" }}>All members can create channels</p>
+          <p className="text-[10px] mt-0.5" style={{ color: "#79747E" }}>Admins only when off.</p>
+        </div>
+        <ToggleSwitch
+          checked={allMembersChannels}
+          onChange={setAllMembersChannels}
+          label="All members can create channels"
+          testId="admin-create-channels-toggle"
         />
       </div>
 
       {/* Who can create groups */}
-      <div className="space-y-2">
-        <label className="text-xs font-semibold" style={{ color: "#49454F" }}>
-          Who can create groups
-        </label>
-        <RadioPill
-          name="admin-create-groups"
-          options={[
-            { value: "all-members", label: "All members" },
-            { value: "admins-only", label: "Admins only" },
-          ]}
-          value={createGroups}
-          onChange={setCreateGroups}
+      <div className="flex items-center justify-between py-3 border-b" style={{ borderColor: "#F0F0F0" }}>
+        <div>
+          <p className="text-xs font-semibold" style={{ color: "#49454F" }}>All members can create groups</p>
+          <p className="text-[10px] mt-0.5" style={{ color: "#79747E" }}>Admins only when off.</p>
+        </div>
+        <ToggleSwitch
+          checked={allMembersGroups}
+          onChange={setAllMembersGroups}
+          label="All members can create groups"
+          testId="admin-create-groups-toggle"
         />
       </div>
 
       {/* Save */}
-      <button
-        type="button"
-        className="rounded-lg bg-[#DC2626] px-5 py-2 text-xs font-semibold text-white hover:bg-red-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]"
-        data-testid="admin-channel-policy-save"
-      >
-        Save changes
-      </button>
+      <div className="pt-4">
+        <button
+          type="button"
+          className="rounded-lg bg-[#DC2626] px-5 py-2 text-xs font-semibold text-white hover:bg-red-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]"
+          data-testid="admin-channel-policy-save"
+        >
+          Save changes
+        </button>
+      </div>
     </div>
   );
 }

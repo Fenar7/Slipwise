@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { AlertTriangle, Clock, Link, MoreHorizontal, ArrowLeft, Trash2, Pencil } from "lucide-react";
+import { AlertTriangle, Clock, Link, MoreHorizontal, ArrowLeft, Trash2, Pencil, Plus, CheckSquare } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { RadioPill } from "./messaging-ui-primitives";
 import { MessagingTaskCreate } from "./messaging-task-create";
@@ -193,49 +193,56 @@ export function MessagingTaskPanel() {
   return (
     <div data-testid="messaging-pane-tasks" className="flex flex-col h-full">
     <div data-testid="task-panel" className="flex flex-col h-full">
-      {/* Header */}
+      {/* Header — metric strip */}
       <div className="flex items-center justify-between border-b px-6 py-4" style={{ borderColor: "#E0E0E0" }}>
-        <div>
-          <h2 className="text-base font-bold" style={{ color: "#1C1B1F" }}>Tasks</h2>
-          <p className="text-xs mt-0.5" style={{ color: "#79747E" }}>
-            {listTasks.length} tasks · {overdue} overdue
-          </p>
+        <div className="flex items-center gap-6">
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: "#79747E" }}>Total</p>
+            <p className="text-lg font-bold" style={{ color: "#1C1B1F" }}>{listTasks.length}</p>
+          </div>
+          <div className="h-8 w-px" style={{ background: "#F0F0F0" }} />
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: "#79747E" }}>Overdue</p>
+            <p className={cn("text-lg font-bold", overdue > 0 ? "text-[#DC2626]" : "text-[#1C1B1F]")}>{overdue}</p>
+          </div>
+          <div className="h-8 w-px" style={{ background: "#F0F0F0" }} />
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: "#79747E" }}>Open</p>
+            <p className="text-lg font-bold" style={{ color: "#1C1B1F" }}>{listTasks.filter((t) => t.status === "open").length}</p>
+          </div>
         </div>
         <button
           type="button"
           data-testid="task-panel-new-btn"
           onClick={() => setShowCreate(true)}
-          className="rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors hover:bg-red-50 hover:text-[#DC2626] hover:border-[#DC2626] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]"
+          className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]"
           style={{ borderColor: "#E0E0E0", color: "#49454F" }}
         >
-          + New Task
+          <Plus className="h-3.5 w-3.5" /> New
         </button>
       </div>
 
-      {/* Overdue warning banner */}
-      {overdue > 0 && (
-        <div className="mx-6 mt-3 flex items-center gap-2 rounded-lg bg-red-50 border border-red-100 px-3 py-2">
-          <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-[#DC2626]" />
-          <span className="text-xs font-semibold text-[#DC2626]">
-            {overdue} overdue task{overdue > 1 ? "s" : ""} need attention
-          </span>
-        </div>
-      )}
-
-      {/* Filter bar */}
-      <div className="px-6 py-3 border-b" style={{ borderColor: "#E0E0E0" }}>
+      {/* Filter bar — cleaner, less red */}
+      <div className="px-6 py-2 border-b flex items-center gap-3" style={{ borderColor: "#E0E0E0" }}>
         <RadioPill
           name="task-filter"
           options={FILTER_OPTIONS}
           value={filter}
           onChange={(v) => setFilter(v as TaskFilterStatus)}
         />
+        {overdue > 0 && (
+          <span className="flex items-center gap-1 text-[10px] font-medium text-[#DC2626]">
+            <AlertTriangle className="h-3 w-3" />
+            {overdue} overdue
+          </span>
+        )}
       </div>
 
       {/* Task list */}
       <div className="flex-1 overflow-y-auto px-6 py-4 space-y-2">
         {filtered.length === 0 ? (
           <div data-testid="task-list-empty" className="flex flex-col items-center justify-center py-12 text-center">
+            <CheckSquare className="h-8 w-8 mb-2" style={{ color: "#E0E0E0" }} />
             <p className="text-sm" style={{ color: "#79747E" }}>No tasks match this filter.</p>
           </div>
         ) : (
@@ -248,20 +255,25 @@ export function MessagingTaskPanel() {
                 data-testid={`task-row-${task.id}`}
                 aria-label={task.title}
                 onClick={() => setSelectedTaskId(task.id)}
-                className="relative flex w-full text-left items-start gap-3 rounded-xl border overflow-hidden hover:border-[#DC2626] hover:bg-red-50/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626] focus-visible:ring-offset-2 transition-colors"
+                className="group relative flex w-full text-left items-start gap-3 rounded-lg border bg-white overflow-hidden hover:border-[#C0C0C0] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626] focus-visible:ring-offset-2 transition-colors"
                 style={{ borderColor: task.status === "overdue" ? "#FCA5A5" : "#F0F0F0" }}
               >
                 {/* Priority strip */}
                 <span className={cn("absolute left-0 top-0 bottom-0 w-[3px]", priorityStrip(("priority" in task ? task.priority : "medium") as TaskPriority))} />
                 <div className="flex-1 min-w-0 pl-4 pr-2 py-3">
-                  <p className={cn("text-sm font-semibold", task.status === "overdue" && "text-[#DC2626]")} style={{ color: task.status === "overdue" ? undefined : "#1C1B1F" }}>
-                    {task.title}
-                  </p>
-                  <div className="flex flex-wrap items-center gap-2 mt-1.5">
-                    <span className={cn("rounded-full px-1.5 py-0.5 text-[10px] font-semibold", cls)}>{label}</span>
+                  <div className="flex items-center gap-2">
+                    <p className={cn("text-sm font-semibold", task.status === "overdue" && "text-[#DC2626]")} style={{ color: task.status === "overdue" ? undefined : "#1C1B1F" }}>
+                      {task.title}
+                    </p>
+                    {task.status === "overdue" && (
+                      <AlertTriangle className="h-3 w-3 text-[#DC2626]" />
+                    )}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-3 mt-2">
+                    <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-semibold", cls)}>{label}</span>
                     {task.assignee && (
-                      <span className="flex items-center gap-1 text-[10px]" style={{ color: "#79747E" }}>
-                        <span className="flex h-4 w-4 items-center justify-center rounded-full bg-gray-200 text-[8px] font-bold">{task.assignee.avatarInitials}</span>
+                      <span className="flex items-center gap-1.5 text-[10px]" style={{ color: "#79747E" }}>
+                        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-gray-100 text-[9px] font-bold" style={{ color: "#49454F" }}>{task.assignee.avatarInitials}</span>
                         {task.assignee.name}
                       </span>
                     )}
@@ -270,9 +282,6 @@ export function MessagingTaskPanel() {
                         <Clock className="h-2.5 w-2.5" />{task.dueDate}
                       </span>
                     )}
-                    {task.status === "overdue" && (
-                      <AlertTriangle className="h-3 w-3 text-[#DC2626]" />
-                    )}
                   </div>
                 </div>
                 <button
@@ -280,7 +289,7 @@ export function MessagingTaskPanel() {
                   data-testid={`task-actions-${task.id}`}
                   aria-label="Task options"
                   onClick={(e) => e.stopPropagation()}
-                  className="shrink-0 rounded-lg p-2 hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626] self-center mr-2"
+                  className="shrink-0 rounded-lg p-2 opacity-0 group-hover:opacity-100 hover:bg-gray-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626] self-center mr-2 transition-opacity"
                 >
                   <MoreHorizontal className="h-4 w-4" style={{ color: "#79747E" }} />
                 </button>
