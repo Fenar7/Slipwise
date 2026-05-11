@@ -38,6 +38,9 @@ import { MessagingComposer } from "./messaging-composer";
 import { MessagingThreadPanel } from "./messaging-thread-panel";
 import { MessagingChannelDetail } from "./messaging-channel-detail";
 import { MessagingGroupDetail } from "./messaging-group-detail";
+import { MentionText } from "./messaging-mention-text";
+import { MessagingMessageActions } from "./messaging-message-actions";
+import { MessagingEmojiPicker } from "./messaging-emoji-picker";
 
 // ─── Shared primitives ────────────────────────────────────────────────────────
 
@@ -113,17 +116,17 @@ export function NoConversationSelected({ kind }: { kind?: "channel" | "dm" | "gr
 
   return (
     <div
-      className="flex flex-col items-center justify-center h-full gap-4 px-10 text-center"
+      className="flex flex-col items-center justify-center gap-5 px-10 text-center"
       data-testid="reading-workspace-no-selection"
     >
-      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gray-100">
-        <Icon className="h-7 w-7" style={{ color: "#C4C4C4" }} />
+      <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#f8f9fc] border" style={{ borderColor: "#F0F0F0" }}>
+        <Icon className="h-5 w-5" style={{ color: "#C4C4C4" }} />
       </div>
-      <div className="space-y-1.5">
-        <p className="text-sm font-semibold" style={{ color: "#49454F" }}>
+      <div className="space-y-1">
+        <p className="text-sm font-semibold" style={{ color: "#1C1B1F" }}>
           {heading}
         </p>
-        <p className="text-xs leading-relaxed max-w-xs" style={{ color: "#79747E" }}>
+        <p className="text-xs leading-relaxed max-w-[14rem]" style={{ color: "#79747E" }}>
           {body}
         </p>
       </div>
@@ -136,24 +139,24 @@ export function NoConversationSelected({ kind }: { kind?: "channel" | "dm" | "gr
 function RestrictedWorkspace({ conversation }: { conversation: ActiveConversation }) {
   return (
     <div
-      className="flex flex-col items-center justify-center h-full gap-4 px-10 text-center"
+      className="flex flex-col items-center justify-center gap-5 px-10 text-center"
       data-testid="reading-workspace-restricted"
     >
-      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-50">
-        <Lock className="h-7 w-7 text-amber-500" />
+      <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-amber-50 border border-amber-100">
+        <Lock className="h-5 w-5 text-amber-500" />
       </div>
-      <div className="space-y-1.5">
-        <p className="text-sm font-semibold" style={{ color: "#49454F" }}>
+      <div className="space-y-1">
+        <p className="text-sm font-semibold" style={{ color: "#1C1B1F" }}>
           Access restricted
         </p>
-        <p className="text-xs leading-relaxed max-w-xs" style={{ color: "#79747E" }}>
+        <p className="text-xs leading-relaxed max-w-[14rem]" style={{ color: "#79747E" }}>
           {conversation.restrictedReason ??
             "You don't have permission to view this conversation. Contact an admin if you believe this is an error."}
         </p>
       </div>
       <button
         type="button"
-        className="rounded-lg border px-4 py-2 text-xs font-semibold transition-colors hover:bg-amber-50 hover:border-amber-300 hover:text-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
+        className="rounded-lg border px-4 py-2 text-xs font-semibold transition-colors hover:bg-amber-50 hover:border-amber-200 hover:text-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
         style={{ borderColor: "#E0E0E0", color: "#49454F" }}
       >
         Request access
@@ -401,6 +404,9 @@ interface MessageRowProps {
 }
 
 function MessageRow({ message, isThreadAnchor, onOpenThread }: MessageRowProps) {
+  const [emojiOpen, setEmojiOpen] = React.useState(false);
+  const [actionsOpen, setActionsOpen] = React.useState(false);
+
   return (
     <div
       className={cn(
@@ -439,7 +445,7 @@ function MessageRow({ message, isThreadAnchor, onOpenThread }: MessageRowProps) 
 
         {/* Message text */}
         <p className="mt-0.5 text-sm leading-relaxed" style={{ color: "#1C1B1F" }}>
-          {message.body}
+          <MentionText text={message.body} />
         </p>
 
         {/* Attachment */}
@@ -458,15 +464,24 @@ function MessageRow({ message, isThreadAnchor, onOpenThread }: MessageRowProps) 
         )}
       </div>
 
-      {/* Hover actions — static shell */}
-      <div className="hidden group-hover:flex items-center gap-0.5 shrink-0 self-start mt-0.5">
-        <button
-          type="button"
-          className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-gray-200 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#DC2626]"
-          aria-label="React to message"
-        >
-          <Smile className="h-3 w-3" style={{ color: "#79747E" }} />
-        </button>
+      {/* Hover actions */}
+      <div className="hidden group-hover:flex items-center gap-0.5 shrink-0 self-start mt-0.5 relative">
+        <div className="relative">
+          <button
+            type="button"
+            className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-gray-200 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#DC2626]"
+            aria-label="React to message"
+            onClick={() => setEmojiOpen((o) => !o)}
+            data-testid="msg-action-react-btn"
+          >
+            <Smile className="h-3 w-3" style={{ color: "#79747E" }} />
+          </button>
+          {emojiOpen && (
+            <div className="absolute right-0 top-7">
+              <MessagingEmojiPicker onClose={() => setEmojiOpen(false)} />
+            </div>
+          )}
+        </div>
         <button
           type="button"
           className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-gray-200 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#DC2626]"
@@ -475,13 +490,22 @@ function MessageRow({ message, isThreadAnchor, onOpenThread }: MessageRowProps) 
         >
           <MessageSquare className="h-3 w-3" style={{ color: "#79747E" }} />
         </button>
-        <button
-          type="button"
-          className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-gray-200 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#DC2626]"
-          aria-label="More message actions"
-        >
-          <MoreHorizontal className="h-3 w-3" style={{ color: "#79747E" }} />
-        </button>
+        <div className="relative">
+          <button
+            type="button"
+            className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-gray-200 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#DC2626]"
+            aria-label="More message actions"
+            onClick={() => setActionsOpen((o) => !o)}
+            data-testid="msg-action-more-btn"
+          >
+            <MoreHorizontal className="h-3 w-3" style={{ color: "#79747E" }} />
+          </button>
+          {actionsOpen && (
+            <div className="absolute right-0 top-7">
+              <MessagingMessageActions onClose={() => setActionsOpen(false)} />
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -825,7 +849,7 @@ export function MessagingReadingWorkspace({
   if (!conversation) {
     return (
       <div
-        className="flex flex-1 overflow-hidden bg-white"
+        className="flex flex-1 flex-col items-center justify-center overflow-hidden bg-white"
         data-testid="reading-workspace"
       >
         {degraded && <DegradedBanner />}
@@ -837,7 +861,7 @@ export function MessagingReadingWorkspace({
   if (!conversation.isAccessible) {
     return (
       <div
-        className="flex flex-1 overflow-hidden bg-white"
+        className="flex flex-1 flex-col items-center justify-center overflow-hidden bg-white"
         data-testid="reading-workspace"
       >
         {degraded && <DegradedBanner />}

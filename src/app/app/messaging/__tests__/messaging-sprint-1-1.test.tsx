@@ -182,9 +182,9 @@ describe("MessagingLeftRail", () => {
     expect(screen.getByTestId("messaging-section-admin")).toBeInTheDocument();
   });
 
-  it("shows Messaging label in the rail header", () => {
+  it("shows Messages label in the rail header", () => {
     renderLeftRail();
-    expect(screen.getByText("Messaging")).toBeInTheDocument();
+    expect(screen.getByText("Messages")).toBeInTheDocument();
   });
 
   it("shows channel names when channels section is expanded", () => {
@@ -246,6 +246,10 @@ describe("MessagingCommandBar", () => {
         onSearchChange={vi.fn()}
         commandBarOpen={false}
         onCommandBarToggle={vi.fn()}
+        notifOpen={false}
+        onNotifToggle={vi.fn()}
+        onSearchFocus={vi.fn()}
+        unreadCount={0}
         {...overrides}
       />
     );
@@ -263,7 +267,7 @@ describe("MessagingCommandBar", () => {
 
   it("renders the search placeholder text", () => {
     renderBar();
-    expect(screen.getByPlaceholderText("Search messages, channels, people…")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Search…")).toBeInTheDocument();
   });
 
   it("renders the notifications button", () => {
@@ -279,7 +283,7 @@ describe("MessagingCommandBar", () => {
   it("calls onSearchChange when typing", () => {
     const onSearchChange = vi.fn();
     renderBar({ onSearchChange });
-    const input = screen.getByPlaceholderText("Search messages, channels, people…");
+    const input = screen.getByPlaceholderText("Search…");
     fireEvent.change(input, { target: { value: "finance" } });
     expect(onSearchChange).toHaveBeenCalledWith("finance");
   });
@@ -358,7 +362,7 @@ describe("MessagingWorkspacePane — Tasks", () => {
     render(<MessagingWorkspacePane activeSection="tasks" />);
     const overdue = MOCK_TASKS.filter((t) => t.status === "overdue");
     if (overdue.length > 0) {
-      expect(screen.getByText(/overdue task/i)).toBeInTheDocument();
+      expect(screen.getByText(`${overdue.length} overdue`)).toBeInTheDocument();
     }
   });
 

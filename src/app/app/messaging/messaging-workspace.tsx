@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { MessagingLeftRail } from "./messaging-left-rail";
 import { MessagingCommandBar } from "./messaging-command-bar";
 import { MessagingWorkspacePane } from "./messaging-workspace-pane";
@@ -19,6 +19,7 @@ import type {
   MessagingNotification,
 } from "./types";
 import { MOCK_NOTIFICATIONS } from "./mock-data";
+import { useWorkspaceTopBar } from "@/components/layout/workspace-topbar-context";
 import { cn } from "@/lib/utils";
 
 const MOBILE_SECTIONS: Array<{
@@ -68,6 +69,37 @@ export function MessagingWorkspace() {
   const [notifications, setNotifications] = useState<MessagingNotification[]>(MOCK_NOTIFICATIONS);
 
   const unreadCount = notifications.filter((n) => !n.read).length;
+
+  // Register contextual tabs and action buttons in the global top bar
+  const { registerTabs, registerActions, clear } = useWorkspaceTopBar();
+  useEffect(() => {
+    registerTabs(
+      MOBILE_SECTIONS.map(({ section, label }) => ({
+        id: section,
+        label,
+        active: state.activeSection === section,
+        onClick: () => setActiveSection(section),
+      }))
+    );
+    registerActions([
+      {
+        id: "new-message",
+        label: "+ New",
+        variant: "primary",
+        onClick: () => toggleCommandBar(),
+      },
+      {
+        id: "search",
+        label: "Search",
+        variant: "subtle",
+        onClick: () => {
+          setSearchOpen(true);
+          setNotifOpen(false);
+        },
+      },
+    ]);
+    return () => clear();
+  }, [state.activeSection, registerTabs, registerActions, clear]);
 
   function handleSearchChange(q: string) {
     setState((prev) => ({ ...prev, searchQuery: q }));
@@ -126,6 +158,7 @@ export function MessagingWorkspace() {
             setNotifOpen(false);
           }}
           unreadCount={unreadCount}
+          activeSectionLabel={state.activeSection}
         />
 
         {searchOpen && (

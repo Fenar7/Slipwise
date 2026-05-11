@@ -1,6 +1,17 @@
 "use client";
 
-import { Search, Command, Bell, Settings } from "lucide-react";
+import React from "react";
+import {
+  Search,
+  Command,
+  Bell,
+  Settings,
+  Plus,
+  Hash,
+  MessageSquare,
+  Users,
+  ChevronDown,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface MessagingCommandBarProps {
@@ -12,7 +23,14 @@ interface MessagingCommandBarProps {
   onNotifToggle: () => void;
   onSearchFocus: () => void;
   unreadCount: number;
+  activeSectionLabel?: string;
 }
+
+const NEW_ACTIONS = [
+  { label: "New message", icon: MessageSquare, testId: "cmd-new-message" },
+  { label: "New channel", icon: Hash, testId: "cmd-new-channel" },
+  { label: "New group", icon: Users, testId: "cmd-new-group" },
+];
 
 export function MessagingCommandBar({
   searchQuery,
@@ -23,20 +41,71 @@ export function MessagingCommandBar({
   onNotifToggle,
   onSearchFocus,
   unreadCount,
+  activeSectionLabel = "Messages",
 }: MessagingCommandBarProps) {
+  const [newOpen, setNewOpen] = React.useState(false);
+
   return (
     <header
       className="flex h-12 shrink-0 items-center gap-3 border-b bg-white px-4"
       style={{ borderColor: "#E0E0E0" }}
       data-testid="messaging-command-bar"
     >
-      {/* Search / command input */}
+      {/* Context label */}
+      <div className="hidden md:flex shrink-0 items-center">
+        <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: "#79747E" }}>
+          {activeSectionLabel}
+        </span>
+      </div>
+
+      <div className="h-5 w-px hidden md:block" style={{ background: "#E0E0E0" }} />
+
+      {/* New action dropdown — subtle, not screaming red */}
+      <div className="relative shrink-0">
+        <button
+          type="button"
+          className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626] focus-visible:ring-offset-2"
+          style={{ borderColor: "#E0E0E0", color: "#49454F" }}
+          onClick={() => setNewOpen((o) => !o)}
+          data-testid="cmd-new-dropdown"
+        >
+          <Plus className="h-3.5 w-3.5" />
+          <span className="hidden sm:inline">New</span>
+          <ChevronDown className="h-3 w-3" />
+        </button>
+        {newOpen && (
+          <div
+            className="absolute left-0 top-10 z-30 w-48 rounded-lg border bg-white py-1 shadow-lg"
+            style={{ borderColor: "#E0E0E0" }}
+            data-testid="cmd-new-menu"
+          >
+            {NEW_ACTIONS.map((action) => {
+              const Icon = action.icon;
+              return (
+                <button
+                  key={action.testId}
+                  type="button"
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors hover:bg-gray-50 focus-visible:outline-none focus-visible:bg-gray-50"
+                  style={{ color: "#49454F" }}
+                  data-testid={action.testId}
+                  onClick={() => setNewOpen(false)}
+                >
+                  <Icon className="h-3.5 w-3.5 shrink-0" />
+                  {action.label}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Search / command input — cleaner, less boxed */}
       <div
         className={cn(
           "flex flex-1 items-center gap-2 rounded-lg border px-3 py-1.5 transition-colors cursor-text",
           commandBarOpen
             ? "border-[#DC2626] bg-red-50"
-            : "border-[#E0E0E0] bg-[#f8f9fc] hover:border-gray-300"
+            : "border-transparent bg-[#f8f9fc] hover:border-[#E0E0E0]"
         )}
         onClick={onCommandBarToggle}
         role="button"
@@ -46,7 +115,7 @@ export function MessagingCommandBar({
         <Search className="h-3.5 w-3.5 shrink-0 text-[#79747E]" />
         <input
           type="text"
-          placeholder="Search messages, channels, people…"
+          placeholder="Search…"
           value={searchQuery}
           onChange={(e) => onSearchChange(e.target.value)}
           onFocus={onSearchFocus}
@@ -66,33 +135,36 @@ export function MessagingCommandBar({
         </div>
       </div>
 
-      {/* Notification bell */}
-      <button
-        className={cn(
-          "relative flex h-8 w-8 items-center justify-center rounded-lg transition-colors",
-          notifOpen ? "bg-red-50 text-[#DC2626]" : "hover:bg-gray-100"
-        )}
-        aria-label="Notifications"
-        title="Notifications"
-        aria-pressed={notifOpen}
-        onClick={onNotifToggle}
-        data-testid="notif-bell-button"
-      >
-        <Bell className="h-4 w-4" style={notifOpen ? undefined : { color: "#79747E" }} />
-        {unreadCount > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-[#DC2626] ring-2 ring-white" />
-        )}
-      </button>
+      {/* Right controls — uniform h-8 w-8 icon buttons */}
+      <div className="flex items-center gap-1 shrink-0">
+        <button
+          className={cn(
+            "relative flex h-8 w-8 items-center justify-center rounded-lg transition-colors",
+            notifOpen ? "bg-gray-100 text-[#1C1B1F]" : "hover:bg-gray-100"
+          )}
+          aria-label="Notifications"
+          title="Notifications"
+          aria-pressed={notifOpen}
+          onClick={onNotifToggle}
+          data-testid="notif-bell-button"
+        >
+          <Bell className="h-4 w-4" style={{ color: "#79747E" }} />
+          {unreadCount > 0 && (
+            <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-[#DC2626] px-1 text-[9px] font-bold text-white ring-2 ring-white">
+              {unreadCount > 9 ? "9+" : unreadCount}
+            </span>
+          )}
+        </button>
 
-      {/* Messaging settings */}
-      <button
-        className="flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-gray-100"
-        aria-label="Messaging settings"
-        title="Messaging settings"
-        data-testid="messaging-settings-button"
-      >
-        <Settings className="h-4 w-4" style={{ color: "#79747E" }} />
-      </button>
+        <button
+          className="flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-gray-100"
+          aria-label="Messaging settings"
+          title="Messaging settings"
+          data-testid="messaging-settings-button"
+        >
+          <Settings className="h-4 w-4" style={{ color: "#79747E" }} />
+        </button>
+      </div>
     </header>
   );
 }

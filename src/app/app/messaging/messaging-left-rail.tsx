@@ -14,6 +14,7 @@ import {
   ChevronRight,
   Lock,
   Circle,
+  Inbox,
 } from "lucide-react";
 import type { MessagingSection, PresenceStatus } from "./types";
 import {
@@ -164,20 +165,27 @@ export function MessagingLeftRail({ activeSection, onSectionChange }: MessagingL
       aria-label="Messaging navigation"
       data-testid="messaging-left-rail"
     >
-      {/* Rail header */}
+      {/* Rail header — contextual workspace identity */}
       <div
-        className="flex h-12 shrink-0 items-center border-b px-4"
+        className="flex h-12 shrink-0 items-center justify-between border-b px-4"
         style={{ borderColor: "#E0E0E0" }}
       >
-        <span className="text-sm font-bold" style={{ color: "#1C1B1F" }}>
-          Messaging
-        </span>
-        <span
-          className="ml-2 rounded-full bg-[#DC2626] px-1.5 py-0.5 text-[10px] font-bold text-white"
-          aria-label="Total unread"
-        >
+        <div className="flex items-center gap-2">
+          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#f8f9fc] border" style={{ borderColor: "#E0E0E0" }}>
+            <Inbox className="h-3.5 w-3.5 text-[#79747E]" />
+          </div>
+          <div>
+            <span className="text-xs font-semibold" style={{ color: "#1C1B1F" }}>
+              Messages
+            </span>
+            <span className="ml-1.5 text-[10px] font-medium" style={{ color: "#79747E" }}>
+              {MOCK_UNREAD_SUMMARY.channels + MOCK_UNREAD_SUMMARY.dms + MOCK_UNREAD_SUMMARY.groups} unread
+            </span>
+          </div>
+        </div>
+        <div className="flex h-5 w-5 items-center justify-center rounded-full bg-[#DC2626] text-[9px] font-bold text-white">
           {MOCK_UNREAD_SUMMARY.channels + MOCK_UNREAD_SUMMARY.dms + MOCK_UNREAD_SUMMARY.groups}
-        </span>
+        </div>
       </div>
 
       {/* Scrollable nav */}
