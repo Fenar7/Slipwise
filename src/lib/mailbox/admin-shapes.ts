@@ -18,6 +18,12 @@ export interface MailboxConnectionListItem {
   emailAddress: string;
   displayName: string;
   status: MailboxConnectionStatus;
+  /**
+   * Typed as `string` (not `MailboxVisibilityPolicy`) intentionally for schema
+   * evolution safety. The Prisma schema stores this as a plain string, which
+   * allows new policy values to be added without a breaking type change here.
+   * Callers that need strict typing should cast via `as MailboxVisibilityPolicy`.
+   */
   visibilityPolicy: string;
   health: MailboxConnectionHealth;
   lastSyncAt: string | null;

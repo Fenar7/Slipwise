@@ -20,7 +20,7 @@ export async function PATCH(
     const auth = await requireIntegrationAdminRoute();
     if (!auth.ok) return auth.response;
 
-    const rl = await rateLimitByOrg(auth.ctx.orgId, RATE_LIMITS.api);
+    const rl = await rateLimitByOrg(auth.ctx.orgId, RATE_LIMITS.mailboxPolicyUpdate);
     if (!rl.success) {
       return NextResponse.json({ error: "Too many requests" }, { status: 429 });
     }

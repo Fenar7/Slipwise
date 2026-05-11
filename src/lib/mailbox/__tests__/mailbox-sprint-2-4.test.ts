@@ -357,10 +357,10 @@ describe("listMailboxConnectionsForMember", () => {
 describe("setMailboxVisibilityPolicy", () => {
   it("updates policy and returns MailboxConnectionListItem with updated visibilityPolicy", async () => {
     setupTransaction();
-    mockDb.mailboxConnection.findFirst.mockResolvedValue(makeDbRow());
-    mockDb.mailboxConnection.update.mockResolvedValue(
+    mockDb.mailboxConnection.findFirst.mockResolvedValue(
       makeDbRow({ visibilityPolicy: "restricted" }),
     );
+    mockDb.mailboxConnection.update.mockResolvedValue({});
     mockDb.mailboxAuditEvent.create.mockResolvedValue({});
 
     const result = await setMailboxVisibilityPolicy(
@@ -385,10 +385,10 @@ describe("setMailboxVisibilityPolicy", () => {
 
   it("emits CONNECTION_POLICY_UPDATED audit event inside transaction", async () => {
     setupTransaction();
-    mockDb.mailboxConnection.findFirst.mockResolvedValue(makeDbRow());
-    mockDb.mailboxConnection.update.mockResolvedValue(
+    mockDb.mailboxConnection.findFirst.mockResolvedValue(
       makeDbRow({ visibilityPolicy: "admin_only" }),
     );
+    mockDb.mailboxConnection.update.mockResolvedValue({});
     mockDb.mailboxAuditEvent.create.mockResolvedValue({});
 
     await setMailboxVisibilityPolicy(ORG_A, CONN_ID, "admin_only", ACTOR);

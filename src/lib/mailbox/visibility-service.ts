@@ -108,7 +108,7 @@ export async function setMailboxVisibilityPolicy(
   policy: MailboxVisibilityPolicy,
   actorId: string,
 ): Promise<MailboxConnectionListItem> {
-  const result = await db.$transaction(async (tx: Prisma.TransactionClient) => {
+  await db.$transaction(async (tx: Prisma.TransactionClient) => {
     const existing = await tx.mailboxConnection.findFirst({
       where: { id: connectionId, orgId },
       select: { id: true },
@@ -119,7 +119,7 @@ export async function setMailboxVisibilityPolicy(
       );
     }
 
-    const row = await tx.mailboxConnection.update({
+    await tx.mailboxConnection.update({
       where: { id: existing.id },
       data: {
         visibilityPolicy: policy,
@@ -134,9 +134,14 @@ export async function setMailboxVisibilityPolicy(
       mailboxConnectionId: existing.id,
       metadata: { policy },
     });
-
-    return row;
   });
 
-  return toMailboxConnectionListItem(result as never);
+  const updated = await getMailboxConnection(orgId, connectionId);
+  if (!updated) {
+    throw new Error(
+      `MailboxConnection ${connectionId} not found for org ${orgId} after policy update`,
+    );
+  }
+
+  return toMailboxConnectionListItem(updated);
 }
