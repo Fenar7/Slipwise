@@ -28,6 +28,10 @@ export type {
   MailboxAssignmentRecord,
   MailboxAuditEventRecord,
   MailboxProviderCursorRecord,
+  MailboxThreadRecord,
+  MailboxMessageRecord,
+  MailboxAttachmentRecord,
+  MailboxSyncRunRecord,
   MailboxProvider,
   MailboxConnectionStatus,
   MailboxThreadStatus,
@@ -37,11 +41,14 @@ export type {
   MailboxAuditAction,
   MailboxCursorType,
   MailboxThreadLinkEntityType,
+  MailboxSyncRunStatus,
+  MailboxMessageDirection,
 } from "./domain-types";
 export {
   connectionRequiresReconnect,
   connectionIsDegraded,
   connectionIsOperational,
+  mailboxCanSync,
   cursorIsExpired,
 } from "./domain-types";
 
@@ -54,6 +61,7 @@ export type {
   MailboxSyncCursor,
   MailboxThreadEnvelope,
   MailboxMessageEnvelope,
+  MailboxAttachmentEnvelope,
   MailboxParticipantRef,
   MailboxProviderErrorCategory,
   MailboxProviderError,
@@ -152,3 +160,17 @@ export {
   listMailboxConnectionsForMember,
   setMailboxVisibilityPolicy,
 } from "./visibility-service";
+
+// Sprint 3.1: Provider registry
+export { getMailboxProviderAdapter, mailboxProviderRegistry } from "./provider-registry";
+
+// Sprint 3.1: Ingestion service
+export {
+  upsertMailboxThread,
+  upsertMailboxMessage,
+  upsertMailboxAttachment,
+} from "./ingestion-service";
+
+// Sprint 3.1: Sync orchestration
+export type { RunMailboxSyncParams, RunMailboxSyncResult } from "./mailbox-sync-service";
+export { runMailboxSync } from "./mailbox-sync-service";

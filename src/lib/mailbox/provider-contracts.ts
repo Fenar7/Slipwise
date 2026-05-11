@@ -111,6 +111,14 @@ export interface MailboxThreadEnvelope {
  * Body content is not included here — it is fetched separately via
  * fetchThreadDetail to avoid loading large payloads during list sync.
  */
+export interface MailboxAttachmentEnvelope {
+  providerAttachmentId: string;
+  filename: string;
+  mimeType: string;
+  size: number;
+  isInline: boolean;
+}
+
 export interface MailboxMessageEnvelope {
   /** Provider-side message identifier. */
   providerMessageId: string;
@@ -120,6 +128,7 @@ export interface MailboxMessageEnvelope {
   from: MailboxParticipantRef;
   to: MailboxParticipantRef[];
   cc: MailboxParticipantRef[];
+  bcc: MailboxParticipantRef[];
   subject: string;
   /** Short preview snippet (plain text, safe to display). */
   snippet: string;
@@ -127,6 +136,7 @@ export interface MailboxMessageEnvelope {
   receivedAt: string | null;
   attachmentCount: number;
   providerMetadata: Record<string, unknown>;
+  attachments?: MailboxAttachmentEnvelope[];
 }
 
 export interface MailboxParticipantRef {
