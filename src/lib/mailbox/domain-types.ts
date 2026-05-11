@@ -1,3 +1,5 @@
+import "server-only";
+
 /**
  * Mailbox domain types.
  *
@@ -51,6 +53,7 @@ export interface MailboxConnectionRecord {
   emailAddress: string;
   displayName: string;
   status: MailboxConnectionStatus;
+  visibilityPolicy: string;
   tokenRef: string | null;
   tokenExpiry: Date | null;
   watchMetadata: Record<string, unknown> | null;
@@ -178,4 +181,150 @@ export function connectionIsOperational(
 export function cursorIsExpired(cursor: MailboxProviderCursorRecord): boolean {
   if (!cursor.expiresAt) return false;
   return cursor.expiresAt <= new Date();
+}
+
+// ─── Sprint 2.4 — Connection permissions and org-scoped visibility ──────────────
+
+/**
+ * The visibility policy for a mailbox connection.
+ *
+ * - "org_shared"    — all authenticated org members can see the mailbox inbox
+ *                     (read-only unless also assigned)
+ * - "restricted"    — only admins and explicitly assigned members can access
+ * - "admin_only"    — only org admins and owners can see and access
+ */
+export type MailboxVisibilityPolicy =
+  | "org_shared"
+  | "restricted"
+  | "admin_only";
+
+/**
+ * The effective access level a specific org member has for a given connection.
+ *
+ * - "full"       — can read threads, compose, assign
+ * - "read_only"  — can read threads only, cannot compose or assign
+ * - "none"       — no access; receives MailboxRestrictedSummary only
+ */
+export type MailboxAccessLevel = "full" | "read_only" | "none";
+
+/**
+ * Result of evaluating a member's access to a specific mailbox connection.
+ * Returned by resolveMailboxAccessLevel().
+ */
+export interface MailboxAccessResolution {
+  connectionId: string;
+  orgId: string;
+  userId: string;
+  role: "owner" | "admin" | "member";
+  visibilityPolicy: MailboxVisibilityPolicy;
+  accessLevel: MailboxAccessLevel;
+  /** Human-readable reason for the access level, for admin audit use. */
+  reason: string;
+}
+
+/**
+ * Resolve the effective access level for a given member on a given mailbox.
+ *
+ * Rules (evaluated in order — first match wins):
+ * 1. If connection.status === "DISCONNECTED" → accessLevel: "none",
+ *    reason: "mailbox_disabled"
+ * 2. If role === "owner" or role === "admin" → accessLevel: "full",
+ *    reason: "admin_override"
+ * 3. If visibilityPolicy === "admin_only" → accessLevel: "none",
+ *    reason: "policy_admin_only"
+ * 4. If visibilityPolicy === "restricted" → accessLevel: "none",
+ *    reason: "policy_restricted"
+ * 5. If visibilityPolicy === "org_shared" → accessLevel: "read_only",
+ *    reason: "org_shared_read"
+ * 6. Fallback → accessLevel: "none", reason: "unknown"
+ */
+export function resolveMailboxAccessLevel(
+  params: {
+    connectionId: string;
+    orgId: string;
+    userId: string;
+    role: "owner" | "admin" | "member";
+    connectionStatus: MailboxConnectionStatus;
+    visibilityPolicy: MailboxVisibilityPolicy;
+  },
+): MailboxAccessResolution {
+  const { connectionId, orgId, userId, role, connectionStatus, visibilityPolicy } =
+    params;
+
+  if (connectionStatus === "DISCONNECTED") {
+    return {
+      connectionId,
+      orgId,
+      userId,
+      role,
+      visibilityPolicy,
+      accessLevel: "none",
+      reason: "mailbox_disabled",
+    };
+  }
+
+  if (role === "owner" || role === "admin") {
+    return {
+      connectionId,
+      orgId,
+      userId,
+      role,
+      visibilityPolicy,
+      accessLevel: "full",
+      reason: "admin_override",
+    };
+  }
+
+  if (visibilityPolicy === "admin_only") {
+    return {
+      connectionId,
+      orgId,
+      userId,
+      role,
+      visibilityPolicy,
+      accessLevel: "none",
+      reason: "policy_admin_only",
+    };
+  }
+
+  if (visibilityPolicy === "restricted") {
+    return {
+      connectionId,
+      orgId,
+      userId,
+      role,
+      visibilityPolicy,
+      accessLevel: "none",
+      reason: "policy_restricted",
+    };
+  }
+
+  if (visibilityPolicy === "org_shared") {
+    return {
+      connectionId,
+      orgId,
+      userId,
+      role,
+      visibilityPolicy,
+      accessLevel: "read_only",
+      reason: "org_shared_read",
+    };
+  }
+
+  return {
+    connectionId,
+    orgId,
+    userId,
+    role,
+    visibilityPolicy,
+    accessLevel: "none",
+    reason: "unknown",
+  };
+}
+
+/**
+ * Returns true if the resolved access level is not "none".
+ */
+export function canAccessMailbox(resolution: MailboxAccessResolution): boolean {
+  return resolution.accessLevel !== "none";
 }

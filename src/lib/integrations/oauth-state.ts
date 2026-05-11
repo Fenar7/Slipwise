@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 
-export type IntegrationOAuthProvider = "quickbooks" | "zoho";
+export type IntegrationOAuthProvider = "quickbooks" | "zoho" | "gmail";
 
 interface IntegrationOAuthStatePayload {
   provider: IntegrationOAuthProvider;
@@ -27,21 +27,23 @@ export function getIntegrationOAuthStateCookieName(
 
 export function getIntegrationOAuthStateCookieOptions(
   provider: IntegrationOAuthProvider,
+  pathPrefix = "/api/integrations",
 ) {
   return {
     httpOnly: true,
     sameSite: "lax" as const,
     secure: process.env.NODE_ENV === "production",
-    path: `/api/integrations/${provider}/callback`,
+    path: `${pathPrefix}/${provider}/callback`,
     maxAge: INTEGRATION_OAUTH_STATE_TTL_SECONDS,
   };
 }
 
 export function getClearedIntegrationOAuthStateCookieOptions(
   provider: IntegrationOAuthProvider,
+  pathPrefix = "/api/integrations",
 ) {
   return {
-    ...getIntegrationOAuthStateCookieOptions(provider),
+    ...getIntegrationOAuthStateCookieOptions(provider, pathPrefix),
     maxAge: 0,
   };
 }

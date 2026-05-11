@@ -172,6 +172,8 @@ describe("Delivery Engine — in_app channel", () => {
     const inAppStatus: DeliveryStatus = "DELIVERED";
     expect(canReplay(inAppStatus)).toBe(false);
   });
+
+
 });
 
 describe("Delivery Engine — retry schedule invariants", () => {
@@ -192,6 +194,8 @@ describe("Delivery Engine — retry schedule invariants", () => {
   it("maxAttempts defaults to 3", () => {
     expect(MAX_DELIVERY_ATTEMPTS).toBe(3);
   });
+
+
 });
 
 describe("Delivery templates", () => {

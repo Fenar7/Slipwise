@@ -262,6 +262,7 @@ function toConnectionRecord(
     emailAddress: row.emailAddress,
     displayName: row.displayName,
     status: row.status,
+    visibilityPolicy: row.visibilityPolicy,
     tokenRef: row.tokenRef,
     tokenExpiry: row.tokenExpiry,
     watchMetadata:
