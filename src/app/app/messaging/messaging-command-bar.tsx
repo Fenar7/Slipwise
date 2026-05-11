@@ -1,6 +1,17 @@
 "use client";
 
-import { Search, Command, Bell, Settings } from "lucide-react";
+import React from "react";
+import {
+  Search,
+  Command,
+  Bell,
+  Settings,
+  Plus,
+  Hash,
+  MessageSquare,
+  Users,
+  ChevronDown,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface MessagingCommandBarProps {
@@ -14,6 +25,12 @@ interface MessagingCommandBarProps {
   unreadCount: number;
 }
 
+const NEW_ACTIONS = [
+  { label: "New message", icon: MessageSquare, testId: "cmd-new-message" },
+  { label: "New channel", icon: Hash, testId: "cmd-new-channel" },
+  { label: "New group", icon: Users, testId: "cmd-new-group" },
+];
+
 export function MessagingCommandBar({
   searchQuery,
   onSearchChange,
@@ -24,12 +41,52 @@ export function MessagingCommandBar({
   onSearchFocus,
   unreadCount,
 }: MessagingCommandBarProps) {
+  const [newOpen, setNewOpen] = React.useState(false);
+
   return (
     <header
       className="flex h-12 shrink-0 items-center gap-3 border-b bg-white px-4"
       style={{ borderColor: "#E0E0E0" }}
       data-testid="messaging-command-bar"
     >
+      {/* New action dropdown */}
+      <div className="relative shrink-0">
+        <button
+          type="button"
+          className="inline-flex items-center gap-1.5 rounded-lg bg-[#DC2626] px-3 py-1.5 text-xs font-bold text-white transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626] focus-visible:ring-offset-2"
+          onClick={() => setNewOpen((o) => !o)}
+          data-testid="cmd-new-dropdown"
+        >
+          <Plus className="h-3.5 w-3.5" />
+          <span className="hidden sm:inline">New</span>
+          <ChevronDown className="h-3 w-3" />
+        </button>
+        {newOpen && (
+          <div
+            className="absolute left-0 top-10 z-30 w-48 rounded-lg border bg-white py-1 shadow-lg"
+            style={{ borderColor: "#E0E0E0" }}
+            data-testid="cmd-new-menu"
+          >
+            {NEW_ACTIONS.map((action) => {
+              const Icon = action.icon;
+              return (
+                <button
+                  key={action.testId}
+                  type="button"
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors hover:bg-gray-50 focus-visible:outline-none focus-visible:bg-gray-50"
+                  style={{ color: "#49454F" }}
+                  data-testid={action.testId}
+                  onClick={() => setNewOpen(false)}
+                >
+                  <Icon className="h-3.5 w-3.5 shrink-0" />
+                  {action.label}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
       {/* Search / command input */}
       <div
         className={cn(
@@ -80,7 +137,9 @@ export function MessagingCommandBar({
       >
         <Bell className="h-4 w-4" style={notifOpen ? undefined : { color: "#79747E" }} />
         {unreadCount > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-[#DC2626] ring-2 ring-white" />
+          <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-[#DC2626] px-1 text-[9px] font-bold text-white ring-2 ring-white">
+            {unreadCount > 9 ? "9+" : unreadCount}
+          </span>
         )}
       </button>
 

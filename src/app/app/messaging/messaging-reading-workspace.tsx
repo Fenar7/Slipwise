@@ -38,6 +38,9 @@ import { MessagingComposer } from "./messaging-composer";
 import { MessagingThreadPanel } from "./messaging-thread-panel";
 import { MessagingChannelDetail } from "./messaging-channel-detail";
 import { MessagingGroupDetail } from "./messaging-group-detail";
+import { MentionText } from "./messaging-mention-text";
+import { MessagingMessageActions } from "./messaging-message-actions";
+import { MessagingEmojiPicker } from "./messaging-emoji-picker";
 
 // ─── Shared primitives ────────────────────────────────────────────────────────
 
@@ -401,6 +404,9 @@ interface MessageRowProps {
 }
 
 function MessageRow({ message, isThreadAnchor, onOpenThread }: MessageRowProps) {
+  const [emojiOpen, setEmojiOpen] = React.useState(false);
+  const [actionsOpen, setActionsOpen] = React.useState(false);
+
   return (
     <div
       className={cn(
@@ -439,7 +445,7 @@ function MessageRow({ message, isThreadAnchor, onOpenThread }: MessageRowProps) 
 
         {/* Message text */}
         <p className="mt-0.5 text-sm leading-relaxed" style={{ color: "#1C1B1F" }}>
-          {message.body}
+          <MentionText text={message.body} />
         </p>
 
         {/* Attachment */}
@@ -458,15 +464,24 @@ function MessageRow({ message, isThreadAnchor, onOpenThread }: MessageRowProps) 
         )}
       </div>
 
-      {/* Hover actions — static shell */}
-      <div className="hidden group-hover:flex items-center gap-0.5 shrink-0 self-start mt-0.5">
-        <button
-          type="button"
-          className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-gray-200 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#DC2626]"
-          aria-label="React to message"
-        >
-          <Smile className="h-3 w-3" style={{ color: "#79747E" }} />
-        </button>
+      {/* Hover actions */}
+      <div className="hidden group-hover:flex items-center gap-0.5 shrink-0 self-start mt-0.5 relative">
+        <div className="relative">
+          <button
+            type="button"
+            className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-gray-200 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#DC2626]"
+            aria-label="React to message"
+            onClick={() => setEmojiOpen((o) => !o)}
+            data-testid="msg-action-react-btn"
+          >
+            <Smile className="h-3 w-3" style={{ color: "#79747E" }} />
+          </button>
+          {emojiOpen && (
+            <div className="absolute right-0 top-7">
+              <MessagingEmojiPicker onClose={() => setEmojiOpen(false)} />
+            </div>
+          )}
+        </div>
         <button
           type="button"
           className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-gray-200 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#DC2626]"
@@ -475,13 +490,22 @@ function MessageRow({ message, isThreadAnchor, onOpenThread }: MessageRowProps) 
         >
           <MessageSquare className="h-3 w-3" style={{ color: "#79747E" }} />
         </button>
-        <button
-          type="button"
-          className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-gray-200 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#DC2626]"
-          aria-label="More message actions"
-        >
-          <MoreHorizontal className="h-3 w-3" style={{ color: "#79747E" }} />
-        </button>
+        <div className="relative">
+          <button
+            type="button"
+            className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-gray-200 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#DC2626]"
+            aria-label="More message actions"
+            onClick={() => setActionsOpen((o) => !o)}
+            data-testid="msg-action-more-btn"
+          >
+            <MoreHorizontal className="h-3 w-3" style={{ color: "#79747E" }} />
+          </button>
+          {actionsOpen && (
+            <div className="absolute right-0 top-7">
+              <MessagingMessageActions onClose={() => setActionsOpen(false)} />
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
