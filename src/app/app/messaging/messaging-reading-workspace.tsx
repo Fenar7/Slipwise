@@ -35,6 +35,8 @@ import {
 } from "./mock-data";
 import { MessagingComposer } from "./messaging-composer";
 import { MessagingThreadPanel } from "./messaging-thread-panel";
+import { MessagingChannelDetail } from "./messaging-channel-detail";
+import { MessagingGroupDetail } from "./messaging-group-detail";
 
 // ─── Shared primitives ────────────────────────────────────────────────────────
 
@@ -142,9 +144,11 @@ interface WorkspaceHeaderProps {
   conversation: ActiveConversation;
   threadOpen: boolean;
   onToggleThread: () => void;
+  detailOpen: boolean;
+  onToggleDetail: () => void;
 }
 
-function WorkspaceHeader({ conversation, threadOpen, onToggleThread }: WorkspaceHeaderProps) {
+function WorkspaceHeader({ conversation, threadOpen, onToggleThread, detailOpen, onToggleDetail }: WorkspaceHeaderProps) {
   const { kind, name, channelVisibility, dmParticipant, groupMemberCount } = conversation;
   const isPrivateGroup = kind === "group" && conversation.groupIsPrivate;
 
@@ -243,11 +247,20 @@ function WorkspaceHeader({ conversation, threadOpen, onToggleThread }: Workspace
         </button>
         <button
           type="button"
-          className="flex h-7 w-7 items-center justify-center rounded-lg transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]"
+          className={cn(
+            "flex h-7 w-7 items-center justify-center rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]",
+            detailOpen ? "bg-red-50 text-[#DC2626]" : "hover:bg-gray-100"
+          )}
           aria-label="Conversation info"
+          aria-pressed={detailOpen}
           title="Info"
+          onClick={onToggleDetail}
+          data-testid="info-panel-toggle"
         >
-          <Info className="h-3.5 w-3.5" style={{ color: "#79747E" }} />
+          <Info
+            className={cn("h-3.5 w-3.5", detailOpen ? "text-[#DC2626]" : "")}
+            style={detailOpen ? undefined : { color: "#79747E" }}
+          />
         </button>
         <button
           type="button"
@@ -498,6 +511,9 @@ function ChannelWorkspace({
   onOpenThread,
   onCloseThread,
   onToggleThread,
+  detailOpen,
+  onToggleDetail,
+  onCloseDetail,
 }: WorkspaceBodyProps) {
   const channelMessages = getMessagesForConversation(conversation.id);
   const anchorMsg = threadAnchorMessageId
@@ -515,6 +531,8 @@ function ChannelWorkspace({
           conversation={conversation}
           threadOpen={threadOpen}
           onToggleThread={onToggleThread}
+          detailOpen={detailOpen}
+          onToggleDetail={onToggleDetail}
         />
         {/* Channel context bar */}
         <div
@@ -567,6 +585,11 @@ function ChannelWorkspace({
           </div>
         </div>
       ))}
+
+      {/* Detail panel */}
+      {detailOpen && (
+        <MessagingChannelDetail conversation={conversation} onClose={onCloseDetail} />
+      )}
     </div>
   );
 }
@@ -580,6 +603,8 @@ function DMWorkspace({
   onOpenThread,
   onCloseThread,
   onToggleThread,
+  detailOpen,
+  onToggleDetail,
 }: WorkspaceBodyProps) {
   const dmMessages = getMessagesForConversation(conversation.id);
   return (
@@ -589,6 +614,8 @@ function DMWorkspace({
           conversation={conversation}
           threadOpen={threadOpen}
           onToggleThread={onToggleThread}
+          detailOpen={detailOpen}
+          onToggleDetail={onToggleDetail}
         />
         {/* DM context bar — person-focused */}
         {conversation.dmParticipant && (
@@ -659,6 +686,9 @@ function GroupWorkspace({
   onOpenThread,
   onCloseThread,
   onToggleThread,
+  detailOpen,
+  onToggleDetail,
+  onCloseDetail,
 }: WorkspaceBodyProps) {
   const groupMessages = getMessagesForConversation(conversation.id);
   const anchorMsg = threadAnchorMessageId
@@ -675,6 +705,8 @@ function GroupWorkspace({
           conversation={conversation}
           threadOpen={threadOpen}
           onToggleThread={onToggleThread}
+          detailOpen={detailOpen}
+          onToggleDetail={onToggleDetail}
         />
         {/* Group context bar */}
         <div
@@ -701,6 +733,9 @@ function GroupWorkspace({
           onClose={onCloseThread}
         />
       )}
+      {detailOpen && (
+        <MessagingGroupDetail conversation={conversation} onClose={onCloseDetail} />
+      )}
     </div>
   );
 }
@@ -714,6 +749,9 @@ interface WorkspaceBodyProps {
   onOpenThread: (msgId: string) => void;
   onCloseThread: () => void;
   onToggleThread: () => void;
+  detailOpen: boolean;
+  onToggleDetail: () => void;
+  onCloseDetail: () => void;
 }
 
 // ─── Main export ──────────────────────────────────────────────────────────────
@@ -729,16 +767,19 @@ export function MessagingReadingWorkspace({
 }: MessagingReadingWorkspaceProps) {
   const [threadAnchorMessageId, setThreadAnchorMessageId] = React.useState<string | null>(null);
   const [threadOpen, setThreadOpen] = React.useState(false);
+  const [detailOpen, setDetailOpen] = React.useState(false);
 
-  // Reset thread state when conversation changes
+  // Reset thread and detail state when conversation changes
   React.useEffect(() => {
     setThreadOpen(false);
     setThreadAnchorMessageId(null);
+    setDetailOpen(false);
   }, [conversation?.id]);
 
   function handleOpenThread(msgId: string) {
     setThreadAnchorMessageId(msgId);
     setThreadOpen(true);
+    setDetailOpen(false);
   }
 
   function handleCloseThread() {
@@ -750,8 +791,8 @@ export function MessagingReadingWorkspace({
     if (threadOpen) {
       handleCloseThread();
     } else {
-      // Open thread panel without a specific anchor (general thread view)
       setThreadOpen(true);
+      setDetailOpen(false);
     }
   }
 
@@ -784,6 +825,17 @@ export function MessagingReadingWorkspace({
     onOpenThread: handleOpenThread,
     onCloseThread: handleCloseThread,
     onToggleThread: handleToggleThread,
+    detailOpen,
+    onToggleDetail: () => {
+      setDetailOpen((o) => {
+        if (!o) {
+          setThreadOpen(false);
+          setThreadAnchorMessageId(null);
+        }
+        return !o;
+      });
+    },
+    onCloseDetail: () => setDetailOpen(false),
   };
 
   return (

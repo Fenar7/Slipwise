@@ -792,3 +792,42 @@ export const MOCK_ACTIVE_GROUP: ActiveConversation = {
   threadOpen: false,
   threadAnchorMessageId: null,
 };
+
+// ─── Sprint 1.4 mock data ─────────────────────────────────────────────────────
+
+import type { ChannelMember, PinnedMessage, AuditLogEntry } from "./types";
+
+export const MOCK_CHANNEL_MEMBERS: ChannelMember[] = [
+  { id: "mem-1", name: "Arjun Mehta", avatarInitials: "AM", role: "owner",
+    presence: "online", joinedAt: "2025-11-01T09:00:00Z" },
+  { id: "mem-2", name: "Priya Sharma", avatarInitials: "PS", role: "admin",
+    presence: "online", joinedAt: "2025-11-02T10:00:00Z" },
+  { id: "mem-3", name: "Rohan Gupta", avatarInitials: "RG", role: "member",
+    presence: "away", joinedAt: "2025-11-03T11:00:00Z" },
+  { id: "mem-4", name: "Sneha Patel", avatarInitials: "SP", role: "member",
+    presence: "offline", joinedAt: "2025-11-04T12:00:00Z" },
+  { id: "mem-5", name: "Karan Joshi", avatarInitials: "KJ", role: "member",
+    presence: "online", joinedAt: "2025-11-05T13:00:00Z" },
+];
+
+export const MOCK_PINNED_MESSAGES: PinnedMessage[] = [
+  { id: "pin-1", authorName: "Arjun Mehta",
+    body: "Q2 salary slip run scheduled for 15th. All managers please confirm headcount.",
+    pinnedAt: "2025-12-01T08:30:00Z" },
+  { id: "pin-2", authorName: "Priya Sharma",
+    body: "Reminder: GST filing deadline is the 20th. Upload supporting docs to #compliance.",
+    pinnedAt: "2025-12-05T09:15:00Z" },
+];
+
+export const MOCK_AUDIT_LOG: AuditLogEntry[] = [
+  { id: "al-1", actorName: "Arjun Mehta", action: "CHANNEL_CREATED",
+    summary: "Created #payroll channel", occurredAt: "2025-11-01T09:05:00Z" },
+  { id: "al-2", actorName: "Priya Sharma", action: "MEMBER_ADDED",
+    summary: "Added Rohan Gupta to #compliance", occurredAt: "2025-11-03T11:10:00Z" },
+  { id: "al-3", actorName: "Arjun Mehta", action: "RETENTION_UPDATED",
+    summary: "Retention period changed to 1 year", occurredAt: "2025-11-10T14:00:00Z" },
+  { id: "al-4", actorName: "Priya Sharma", action: "MEMBER_REMOVED",
+    summary: "Removed Karan Joshi from #invoices", occurredAt: "2025-11-15T16:30:00Z" },
+  { id: "al-5", actorName: "Arjun Mehta", action: "CHANNEL_ARCHIVED",
+    summary: "Archived #onboarding-q3 channel", occurredAt: "2025-11-20T10:45:00Z" },
+];

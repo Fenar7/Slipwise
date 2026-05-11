@@ -28,6 +28,7 @@ import {
   MOCK_FILES,
   MOCK_ADMIN_ENTRIES,
 } from "./mock-data";
+import { MessagingAdminPanel } from "./messaging-admin-panel";
 
 interface MessagingWorkspacePaneProps {
   activeSection: MessagingSection;
@@ -553,7 +554,7 @@ export function MessagingWorkspacePane({ activeSection }: MessagingWorkspacePane
       {activeSection === "tasks" && <TasksPane />}
       {activeSection === "meetings" && <MeetingsPane />}
       {activeSection === "files" && <FilesPane />}
-      {activeSection === "admin" && <AdminPane />}
+      {activeSection === "admin" && <MessagingAdminPanel />}
     </div>
   );
 }

@@ -237,3 +237,38 @@ export interface SlashCommand {
 }
 
 export type ComposerState = "empty" | "has-content" | "mention-popover" | "slash-popover";
+
+// ─── Sprint 1.4 — Channels, Groups, and Admin UX ─────────────────────────────
+
+export type ChannelPanelTab = "info" | "members" | "pinned" | "settings";
+export type GroupPanelTab = "info" | "members" | "settings";
+export type AdminPanelTab =
+  | "channel-policy"
+  | "retention"
+  | "moderation"
+  | "audit-log"
+  | "member-governance";
+
+export interface ChannelMember {
+  id: string;
+  name: string;
+  avatarInitials: string;
+  role: "owner" | "admin" | "member";
+  presence: PresenceStatus;
+  joinedAt: string; // ISO
+}
+
+export interface PinnedMessage {
+  id: string;
+  authorName: string;
+  body: string;
+  pinnedAt: string;
+}
+
+export interface AuditLogEntry {
+  id: string;
+  actorName: string;
+  action: string;
+  summary: string;
+  occurredAt: string;
+}
