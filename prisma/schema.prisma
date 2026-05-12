@@ -258,6 +258,22 @@ model Organization {
   mailboxAssignments           MailboxAssignment[]
   mailboxAuditEvents           MailboxAuditEvent[]
   mailboxProviderCursors       MailboxProviderCursor[]
+  // Internal Messaging Platform — Phase 2
+  conversations                Conversation[]
+  conversationParticipants     ConversationParticipant[]
+  conversationMessages         ConversationMessage[]
+  conversationThreads          ConversationThread[]
+  messageReactions             MessageReaction[]
+  messageMentions              MessageMention[]
+  conversationReadStates       ConversationReadState[]
+  presenceSessions             PresenceSession[]
+  typingSessions               TypingSession[]
+  conversationAttachments      ConversationAttachment[]
+  messagingTasks               MessagingTask[]
+  conversationMeetings         ConversationMeeting[]
+  calendarConnections          CalendarConnection[]
+  messagingAuditEvents         MessagingAuditEvent[]
+  retentionPolicies            RetentionPolicy[]
 
   @@index([entityGroupId])
   @@map("organization")
@@ -6116,4 +6132,597 @@ model MailboxProviderCursor {
   @@unique([orgId, mailboxConnectionId, cursorType])
   @@index([orgId, mailboxConnectionId])
   @@map("mailbox_provider_cursor")
+}
+
+// ─── Internal Messaging Platform — Phase 2 Domain Models ────────────────────
+// Sprint 2.1: Schema and service contracts
+//
+// Design decisions locked here:
+// - Unified conversation model: channels, DMs, and groups share one table
+//   with explicit type and visibility distinctions.
+// - Threads are first-class: ConversationThread owns reply messages;
+//   anchorMessageId links back to the originating message.
+// - Membership is explicit: ConversationParticipant is the source of truth
+//   for who can see and interact with a conversation.
+// - Read state is explicit: ConversationReadState per participant per conversation.
+// - Presence and typing are modeled as transient sessions, not implemented now.
+// - Attachments are secure references (storageRef), never raw blob fields.
+// - MessagingAuditEvent is a dedicated append-only table, separate from general
+//   AuditLog, to support messaging-specific governance queries.
+// - RetentionPolicy shape exists now so later compliance phases do not require
+//   redesign.
+// - All models carry orgId for strict org isolation.
+
+enum ConversationType {
+  CHANNEL
+  DM
+  GROUP
+
+  @@map("conversation_type")
+}
+
+enum ConversationVisibility {
+  PUBLIC
+  PRIVATE
+
+  @@map("conversation_visibility")
+}
+
+enum ConversationMessageStatus {
+  ACTIVE
+  EDITED
+  DELETED
+
+  @@map("conversation_message_status")
+}
+
+enum ConversationParticipantRole {
+  OWNER
+  ADMIN
+  MEMBER
+
+  @@map("conversation_participant_role")
+}
+
+enum MessageReactionType {
+  EMOJI
+  CUSTOM
+
+  @@map("message_reaction_type")
+}
+
+enum PresenceStatus {
+  ONLINE
+  AWAY
+  OFFLINE
+
+  @@map("presence_status")
+}
+
+enum TypingStatus {
+  TYPING
+  STOPPED
+
+  @@map("typing_status")
+}
+
+enum AttachmentScanStatus {
+  PENDING @map("pending")
+  CLEAN   @map("clean")
+  BLOCKED @map("blocked")
+
+  @@map("attachment_scan_status")
+}
+
+enum MessagingTaskStatus {
+  OPEN
+  IN_PROGRESS
+  DONE
+  OVERDUE
+  CANCELLED
+
+  @@map("messaging_task_status")
+}
+
+enum MeetingStatus {
+  UPCOMING
+  LIVE
+  ENDED
+  CANCELLED
+
+  @@map("meeting_status")
+}
+
+enum CalendarProvider {
+  GOOGLE
+  OUTLOOK
+
+  @@map("calendar_provider")
+}
+
+enum CalendarConnectionStatus {
+  ACTIVE             @map("active")
+  RECONNECT_REQUIRED @map("reconnect_required")
+  DISCONNECTED       @map("disconnected")
+
+  @@map("calendar_connection_status")
+}
+
+enum MessagingAuditAction {
+  CONVERSATION_CREATED
+  CONVERSATION_ARCHIVED
+  CONVERSATION_DELETED
+  CONVERSATION_RENAMED
+  CONVERSATION_VISIBILITY_CHANGED
+  PARTICIPANT_ADDED
+  PARTICIPANT_REMOVED
+  PARTICIPANT_ROLE_CHANGED
+  MESSAGE_SENT
+  MESSAGE_EDITED
+  MESSAGE_DELETED
+  THREAD_CREATED
+  THREAD_REPLIED
+  REACTION_ADDED
+  REACTION_REMOVED
+  MENTION_CREATED
+  READ_STATE_UPDATED
+  TASK_CREATED
+  TASK_UPDATED
+  TASK_ASSIGNED
+  TASK_COMPLETED
+  MEETING_SCHEDULED
+  MEETING_UPDATED
+  MEETING_CANCELLED
+  ATTACHMENT_UPLOADED
+  ATTACHMENT_DELETED
+  RETENTION_POLICY_CREATED
+  RETENTION_POLICY_UPDATED
+  ADMIN_SUPPORT_ACTION
+
+  @@map("messaging_audit_action")
+}
+
+enum RetentionPolicyType {
+  ORG_DEFAULT
+  CHANNEL_SPECIFIC
+  GROUP_SPECIFIC
+  DM_SPECIFIC
+
+  @@map("retention_policy_type")
+}
+
+enum RetentionAction {
+  ARCHIVE
+  DELETE
+  FLAG
+
+  @@map("retention_action")
+}
+
+/// Unified conversation table for channels, DMs, and groups.
+/// DMs do not use visibility — they are inherently private.
+model Conversation {
+  id          String                  @id @default(cuid())
+  orgId       String
+  type        ConversationType
+  /// Channel/group name. For DMs, may be null (display name derived from participants).
+  name        String?
+  description String?
+  /// Only applies to CHANNEL and GROUP. DMs are always private.
+  visibility  ConversationVisibility?
+  /// For DMs: stores the other participant userId when 1:1 (legacy seam for quick lookup).
+  /// For channels/groups: null.
+  dmPeerId    String?                 @db.Uuid
+  /// Soft-delete: when set, the conversation is hidden but data is retained per policy.
+  archivedAt  DateTime?
+  archivedBy  String?                 @db.Uuid
+  /// When set, the conversation is frozen and no new messages may be sent.
+  lockedAt    DateTime?
+  lockedBy    String?                 @db.Uuid
+  lockReason  String?
+  createdBy   String                  @db.Uuid
+  createdAt   DateTime                @default(now())
+  updatedAt   DateTime                @updatedAt
+
+  organization          Organization            @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  participants          ConversationParticipant[]
+  messages              ConversationMessage[]
+  threads               ConversationThread[]
+  typingSessions        TypingSession[]
+  activePresenceSessions PresenceSession[]      @relation("ActivePresenceConversation")
+  readStates            ConversationReadState[]
+  tasks                 MessagingTask[]
+  meetings              ConversationMeeting[]
+  auditEvents           MessagingAuditEvent[]
+
+  /// Composite unique for org-safe child relations.
+  @@unique([id, orgId])
+  @@index([orgId, type, dmPeerId])
+  @@index([orgId, type, visibility])
+  @@index([orgId, archivedAt])
+  @@index([orgId, createdAt])
+  @@map("conversation")
+}
+
+/// Explicit participant membership. Source of truth for who can access a conversation.
+model ConversationParticipant {
+  id             String                     @id @default(cuid())
+  orgId          String
+  conversationId String
+  userId         String                     @db.Uuid
+  role           ConversationParticipantRole @default(MEMBER)
+  /// When the user last left. Re-joining reactivates this record by clearing leftAt.
+  leftAt         DateTime?
+  /// When the user muted this conversation.
+  mutedUntil     DateTime?
+  /// User-specific display name override for this conversation (e.g., DM nicknames).
+  displayName    String?
+  /// Whether the participant has pinned this conversation to their personal list.
+  isPinned       Boolean                    @default(false)
+  joinedAt       DateTime                   @default(now())
+  updatedAt      DateTime                   @updatedAt
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  conversation Conversation @relation(fields: [conversationId, orgId], references: [id, orgId], onDelete: Cascade)
+
+  /// One membership record per user per conversation.
+  @@unique([conversationId, userId])
+  @@index([orgId, userId, leftAt])
+  @@index([orgId, conversationId, leftAt])
+  @@map("conversation_participant")
+}
+
+/// A message in a conversation. threadId is null for top-level messages;
+/// set to a ConversationThread.id for replies inside a thread.
+model ConversationMessage {
+  id           String                     @id @default(cuid())
+  orgId        String
+  conversationId String
+  threadId     String?
+  /// The user who sent this message (may be a system actor in later phases).
+  authorId     String                     @db.Uuid
+  /// Message body (plain text or rich text serialized format).
+  body         String                     @db.Text
+  /// Serialized rich content metadata (blocks, formatting, etc.).
+  contentMeta  Json?
+  status       ConversationMessageStatus  @default(ACTIVE)
+  /// When the message was edited. Null if never edited.
+  editedAt     DateTime?
+  /// When the message was soft-deleted. Null if active.
+  deletedAt    DateTime?
+  /// Participant count at the time of send (for analytics / replay integrity).
+  participantCountAtSend Int                @default(0)
+  createdAt    DateTime                   @default(now())
+  updatedAt    DateTime                   @updatedAt
+
+  organization Organization           @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  conversation Conversation           @relation(fields: [conversationId, orgId], references: [id, orgId], onDelete: Cascade)
+  thread       ConversationThread?    @relation(fields: [threadId, orgId], references: [id, orgId], onDelete: Cascade)
+  anchoredThread ConversationThread?  @relation("ThreadAnchor")
+  reactions    MessageReaction[]
+  mentions     MessageMention[]
+  attachments  ConversationAttachment[]
+
+  /// Composite unique for org-safe child relations.
+  @@unique([id, orgId])
+  @@unique([id, conversationId, orgId])
+  @@index([orgId, conversationId, createdAt])
+  @@index([orgId, conversationId, threadId, createdAt])
+  @@index([orgId, authorId, createdAt])
+  @@index([orgId, status, createdAt])
+  @@map("conversation_message")
+}
+
+/// First-class thread model. A thread belongs to a conversation and has an anchor message.
+/// replyCount is maintained by the service layer (or by a later side-effect worker).
+model ConversationThread {
+  id            String   @id @default(cuid())
+  orgId         String
+  conversationId String
+  /// The message that started this thread.
+  anchorMessageId String
+  /// Human-readable context/title for the thread (auto-generated or user-set).
+  title         String?
+  replyCount    Int      @default(0)
+  /// When the thread was resolved/archived.
+  resolvedAt    DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  organization Organization          @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  conversation Conversation          @relation(fields: [conversationId, orgId], references: [id, orgId], onDelete: Cascade)
+  anchorMessage ConversationMessage  @relation("ThreadAnchor", fields: [anchorMessageId, conversationId, orgId], references: [id, conversationId, orgId], onDelete: Cascade)
+  replies      ConversationMessage[]
+
+  /// Composite unique for org-safe child relations.
+  @@unique([id, orgId])
+  @@unique([anchorMessageId, conversationId, orgId])
+  @@index([orgId, conversationId, createdAt])
+  @@map("conversation_thread")
+}
+
+/// A reaction (emoji or custom) on a message.
+model MessageReaction {
+  id        String             @id @default(cuid())
+  orgId     String
+  messageId String
+  userId    String             @db.Uuid
+  type      MessageReactionType @default(EMOJI)
+  /// The emoji unicode string or custom reaction identifier.
+  value     String
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+
+  organization Organization        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  message      ConversationMessage @relation(fields: [messageId, orgId], references: [id, orgId], onDelete: Cascade)
+
+  /// One reaction per user per message per value (idempotent).
+  @@unique([messageId, userId, value])
+  @@index([orgId, messageId])
+  @@index([orgId, userId])
+  @@map("message_reaction")
+}
+
+/// A mention of a user inside a message body.
+model MessageMention {
+  id           String   @id @default(cuid())
+  orgId        String
+  messageId    String
+  mentionedUserId String @db.Uuid
+  /// The offset range inside the message body where the mention occurs.
+  offsetStart  Int
+  offsetEnd    Int
+  /// Whether the mention has been acknowledged (read) by the mentioned user.
+  acknowledged Boolean  @default(false)
+  acknowledgedAt DateTime?
+  createdAt    DateTime @default(now())
+
+  organization Organization        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  message      ConversationMessage @relation(fields: [messageId, orgId], references: [id, orgId], onDelete: Cascade)
+
+  @@unique([messageId, mentionedUserId, offsetStart])
+  @@index([orgId, mentionedUserId, acknowledged])
+  @@index([orgId, messageId])
+  @@map("message_mention")
+}
+
+/// Explicit read-state per participant per conversation.
+/// lastReadMessageId is the newest message the participant has seen.
+/// unreadCount is maintained by the service layer / side-effect worker.
+model ConversationReadState {
+  id                String    @id @default(cuid())
+  orgId             String
+  conversationId    String
+  userId            String    @db.Uuid
+  lastReadMessageId String?
+  /// The timestamp of the last read message (for reconnect/replay safety).
+  lastReadAt        DateTime?
+  unreadCount       Int       @default(0)
+  /// Whether the conversation is muted for this user.
+  isMuted           Boolean   @default(false)
+  updatedAt         DateTime  @updatedAt
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  conversation Conversation @relation(fields: [conversationId, orgId], references: [id, orgId], onDelete: Cascade)
+
+  @@unique([conversationId, userId])
+  @@index([orgId, userId, unreadCount])
+  @@index([orgId, conversationId, updatedAt])
+  @@map("conversation_read_state")
+}
+
+/// Presence session for a user within an org.
+/// Transient by design: sessions expire and are replaced, not updated in place.
+model PresenceSession {
+  id         String         @id @default(cuid())
+  orgId      String
+  userId     String         @db.Uuid
+  status     PresenceStatus @default(OFFLINE)
+  /// The last known activity timestamp (e.g., last message read, last keypress).
+  lastActivityAt DateTime   @default(now())
+  /// When this presence record is considered stale and should be refreshed.
+  expiresAt  DateTime?
+  /// Optional: the specific conversation the user is currently viewing.
+  activeConversationId String?
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+
+  organization       Organization  @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  activeConversation Conversation? @relation("ActivePresenceConversation", fields: [activeConversationId, orgId], references: [id, orgId])
+
+  @@unique([orgId, userId])
+  @@index([orgId, status, lastActivityAt])
+  @@index([orgId, expiresAt])
+  @@map("presence_session")
+}
+
+/// Typing session for a user in a conversation.
+/// Transient by design: rows are inserted on typing.start and deleted on typing.stop.
+model TypingSession {
+  id             String      @id @default(cuid())
+  orgId          String
+  conversationId String
+  userId         String      @db.Uuid
+  status         TypingStatus @default(TYPING)
+  /// When this typing indicator should auto-expire (client disconnect safety).
+  expiresAt      DateTime
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  conversation Conversation @relation(fields: [conversationId, orgId], references: [id, orgId], onDelete: Cascade)
+
+  @@unique([conversationId, userId])
+  @@index([orgId, conversationId, expiresAt])
+  @@index([orgId, userId, expiresAt])
+  @@map("typing_session")
+}
+
+/// Secure attachment reference for a message.
+/// No raw blob data — only opaque storage reference and metadata.
+model ConversationAttachment {
+  id           String   @id @default(cuid())
+  orgId        String
+  messageId    String
+  /// Opaque storage reference (S3 key, vault ID, etc.).
+  storageRef   String
+  fileName     String
+  mimeType     String
+  sizeBytes    Int
+  /// Optional preview/thumbnail reference.
+  thumbnailRef String?
+  /// Virus-scan or content-policy status.
+  scanStatus   AttachmentScanStatus @default(PENDING)
+  scannedAt    DateTime?
+  createdAt    DateTime @default(now())
+
+  organization Organization        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  message      ConversationMessage @relation(fields: [messageId, orgId], references: [id, orgId], onDelete: Cascade)
+
+  @@index([orgId, messageId])
+  @@index([orgId, scanStatus])
+  @@map("conversation_attachment")
+}
+
+/// A task created from or linked to a conversation.
+model MessagingTask {
+  id             String              @id @default(cuid())
+  orgId          String
+  conversationId String
+  /// The message that originated this task (nullable for manually created tasks).
+  originatingMessageId String?
+  title          String
+  description    String?
+  status         MessagingTaskStatus @default(OPEN)
+  priority       Int                 @default(0)
+  /// The user this task is assigned to.
+  assigneeId     String?             @db.Uuid
+  dueDate        DateTime?
+  completedAt    DateTime?
+  completedBy    String?             @db.Uuid
+  createdBy      String              @db.Uuid
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  conversation Conversation @relation(fields: [conversationId, orgId], references: [id, orgId], onDelete: Cascade)
+
+  @@index([orgId, conversationId, status])
+  @@index([orgId, assigneeId, status])
+  @@index([orgId, status, dueDate])
+  @@map("messaging_task")
+}
+
+/// A meeting scheduled inside a conversation.
+model ConversationMeeting {
+  id             String          @id @default(cuid())
+  orgId          String
+  conversationId String
+  title          String
+  description    String?
+  scheduledAt    DateTime
+  durationMinutes Int            @default(30)
+  status         MeetingStatus   @default(UPCOMING)
+  /// The calendar provider event ID (opaque).
+  providerEventId String?
+  /// The user who scheduled the meeting.
+  scheduledBy    String          @db.Uuid
+  cancelledAt    DateTime?
+  cancelledBy    String?         @db.Uuid
+  cancelReason   String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  conversation Conversation @relation(fields: [conversationId, orgId], references: [id, orgId], onDelete: Cascade)
+
+  @@index([orgId, conversationId, scheduledAt])
+  @@index([orgId, status, scheduledAt])
+  @@map("conversation_meeting")
+}
+
+/// A connected calendar account for an org (provider-safe).
+/// One active connection per provider per org at the service layer.
+model CalendarConnection {
+  id                String           @id @default(cuid())
+  orgId             String
+  provider          CalendarProvider
+  providerAccountId String           // provider-side account identifier
+  emailAddress      String
+  displayName       String?
+  /// Opaque reference to encrypted token store (Sprint 2.2 pattern).
+  tokenRef          String?
+  tokenExpiry       DateTime?
+  status            CalendarConnectionStatus @default(ACTIVE)
+  lastSyncAt        DateTime?
+  lastSyncError     String?
+  disconnectedAt    DateTime?
+  connectedBy       String           @db.Uuid
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, provider, providerAccountId])
+  @@index([orgId, status])
+  @@map("calendar_connection")
+}
+
+/// Append-only messaging-specific audit event log.
+/// Separate from general AuditLog to support messaging governance queries
+/// without polluting the org-wide audit stream.
+model MessagingAuditEvent {
+  id             String              @id @default(cuid())
+  orgId          String
+  conversationId String?
+  messageId      String?
+  threadId       String?
+  taskId         String?
+  meetingId      String?
+  actorId        String              @db.Uuid
+  action         MessagingAuditAction
+  /// Human-readable summary for display in governance views.
+  summary        String
+  /// Structured metadata. Must not contain raw tokens or secrets.
+  metadata       Json?
+  createdAt      DateTime            @default(now())
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  conversation Conversation?  @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+
+  @@index([orgId, createdAt])
+  @@index([orgId, conversationId, createdAt])
+  @@index([orgId, action, createdAt])
+  @@index([orgId, actorId, createdAt])
+  @@map("messaging_audit_event")
+}
+
+/// Retention policy configuration for an org.
+/// One ORG_DEFAULT per org; additional rows may be CHANNEL_SPECIFIC or GROUP_SPECIFIC.
+/// retentionDays = null means "retain indefinitely".
+model RetentionPolicy {
+  id             String             @id @default(cuid())
+  orgId          String
+  type           RetentionPolicyType @default(ORG_DEFAULT)
+  /// The specific conversation this policy applies to (null for org-wide defaults).
+  conversationId String?
+  /// Number of days to retain messages before the retention action is applied.
+  /// Null = retain indefinitely.
+  retentionDays  Int?
+  /// What happens when retention period is exceeded.
+  action         RetentionAction    @default(ARCHIVE)
+  /// Whether the policy is currently active.
+  isActive       Boolean            @default(true)
+  /// Last time the policy was applied (for scheduled sweep tracking).
+  lastAppliedAt  DateTime?
+  createdBy      String             @db.Uuid
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  /// One policy per conversation; one org_default per org.
+  @@unique([orgId, type, conversationId])
+  @@index([orgId, isActive, lastAppliedAt])
+  @@map("retention_policy")
 }
