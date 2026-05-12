@@ -14,8 +14,6 @@ import "server-only";
  * - Single-id lookups for models without composite FK still require orgId.
  */
 
-import { db } from "@/lib/db";
-
 // ─── Conversation helpers ─────────────────────────────────────────────────────
 
 export function conversationOrgSafeWhere(orgId: string, conversationId: string) {
@@ -89,8 +87,15 @@ export function presenceOrgSafeWhere(orgId: string, userId: string) {
   return { orgId, userId };
 }
 
-export function typingOrgSafeWhere(orgId: string, conversationId: string) {
-  return { orgId, conversationId };
+export function typingOrgSafeWhere(orgId: string, conversationId: string, userId?: string) {
+  const where: { orgId: string; conversationId: string; userId?: string } = {
+    orgId,
+    conversationId,
+  };
+  if (userId !== undefined) {
+    where.userId = userId;
+  }
+  return where;
 }
 
 // ─── Task / Meeting helpers ───────────────────────────────────────────────────

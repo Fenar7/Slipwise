@@ -59,6 +59,8 @@ import {
   isValidConversationVisibility,
   isValidParticipantRole,
   isValidCalendarProvider,
+  isValidCalendarConnectionStatus,
+  isValidAttachmentScanStatus,
   isValidRetentionAction,
 } from "@/lib/messaging/service-contracts";
 
@@ -264,7 +266,7 @@ function makeAttachmentRow(overrides: Partial<Record<string, unknown>> = {}) {
     mimeType: "application/pdf",
     sizeBytes: 1024,
     thumbnailRef: null,
-    scanStatus: "pending",
+    scanStatus: "PENDING",
     scannedAt: null,
     createdAt: new Date("2026-01-02T00:00:00Z"),
     ...overrides,
@@ -323,7 +325,7 @@ function makeCalendarConnectionRow(overrides: Partial<Record<string, unknown>> =
     displayName: "Ops Calendar",
     tokenRef: "encrypted-ref-abc",
     tokenExpiry: new Date("2026-06-01T00:00:00Z"),
-    status: "active",
+    status: "ACTIVE",
     lastSyncAt: new Date("2026-05-01T10:00:00Z"),
     lastSyncError: null,
     disconnectedAt: null,
@@ -548,11 +550,11 @@ describe("typingIsExpired", () => {
 // ─── Domain type helpers — Attachment ───────────────────────────────────────
 
 describe("attachmentIsScanned", () => {
-  it("returns true for scanned status", () => {
-    expect(attachmentIsScanned(makeAttachmentRow({ scanStatus: "scanned" }) as never)).toBe(true);
-  });
   it("returns true for clean status", () => {
-    expect(attachmentIsScanned(makeAttachmentRow({ scanStatus: "clean" }) as never)).toBe(true);
+    expect(attachmentIsScanned(makeAttachmentRow({ scanStatus: "CLEAN" }) as never)).toBe(true);
+  });
+  it("returns true for blocked status", () => {
+    expect(attachmentIsScanned(makeAttachmentRow({ scanStatus: "BLOCKED" }) as never)).toBe(true);
   });
   it("returns false for pending status", () => {
     expect(attachmentIsScanned(makeAttachmentRow() as never)).toBe(false);
@@ -563,8 +565,8 @@ describe("attachmentIsPendingScan", () => {
   it("returns true for pending status", () => {
     expect(attachmentIsPendingScan(makeAttachmentRow() as never)).toBe(true);
   });
-  it("returns false for scanned status", () => {
-    expect(attachmentIsPendingScan(makeAttachmentRow({ scanStatus: "scanned" }) as never)).toBe(
+  it("returns false for clean status", () => {
+    expect(attachmentIsPendingScan(makeAttachmentRow({ scanStatus: "CLEAN" }) as never)).toBe(
       false,
     );
   });
@@ -637,14 +639,14 @@ describe("calendarConnectionIsActive", () => {
   it("returns false for reconnect_required status", () => {
     expect(
       calendarConnectionIsActive(
-        makeCalendarConnectionRow({ status: "reconnect_required" }) as never,
+        makeCalendarConnectionRow({ status: "RECONNECT_REQUIRED" }) as never,
       ),
     ).toBe(false);
   });
   it("returns false when disconnectedAt is set", () => {
     expect(
       calendarConnectionIsActive(
-        makeCalendarConnectionRow({ disconnectedAt: new Date() }) as never,
+        makeCalendarConnectionRow({ status: "DISCONNECTED", disconnectedAt: new Date() }) as never,
       ),
     ).toBe(false);
   });
@@ -654,14 +656,14 @@ describe("calendarConnectionRequiresReconnect", () => {
   it("returns true for reconnect_required status", () => {
     expect(
       calendarConnectionRequiresReconnect(
-        makeCalendarConnectionRow({ status: "reconnect_required" }) as never,
+        makeCalendarConnectionRow({ status: "RECONNECT_REQUIRED" }) as never,
       ),
     ).toBe(true);
   });
-  it("returns true when disconnectedAt is set", () => {
+  it("returns true for disconnected status", () => {
     expect(
       calendarConnectionRequiresReconnect(
-        makeCalendarConnectionRow({ disconnectedAt: new Date() }) as never,
+        makeCalendarConnectionRow({ status: "DISCONNECTED", disconnectedAt: new Date() }) as never,
       ),
     ).toBe(true);
   });
@@ -711,6 +713,24 @@ describe("isValidCalendarProvider", () => {
   it("returns true for GOOGLE", () => expect(isValidCalendarProvider("GOOGLE")).toBe(true));
   it("returns true for OUTLOOK", () => expect(isValidCalendarProvider("OUTLOOK")).toBe(true));
   it("returns false for invalid", () => expect(isValidCalendarProvider("INVALID")).toBe(false));
+});
+
+describe("isValidCalendarConnectionStatus", () => {
+  it("returns true for ACTIVE", () => expect(isValidCalendarConnectionStatus("ACTIVE")).toBe(true));
+  it("returns true for RECONNECT_REQUIRED", () =>
+    expect(isValidCalendarConnectionStatus("RECONNECT_REQUIRED")).toBe(true));
+  it("returns true for DISCONNECTED", () =>
+    expect(isValidCalendarConnectionStatus("DISCONNECTED")).toBe(true));
+  it("returns false for invalid", () =>
+    expect(isValidCalendarConnectionStatus("INVALID")).toBe(false));
+});
+
+describe("isValidAttachmentScanStatus", () => {
+  it("returns true for PENDING", () => expect(isValidAttachmentScanStatus("PENDING")).toBe(true));
+  it("returns true for CLEAN", () => expect(isValidAttachmentScanStatus("CLEAN")).toBe(true));
+  it("returns true for BLOCKED", () => expect(isValidAttachmentScanStatus("BLOCKED")).toBe(true));
+  it("returns false for invalid", () =>
+    expect(isValidAttachmentScanStatus("INVALID")).toBe(false));
 });
 
 describe("isValidRetentionAction", () => {
@@ -883,7 +903,7 @@ describe("toAttachmentRecord", () => {
   it("maps storageRef and scan status", () => {
     const r = toAttachmentRecord(makeAttachmentRow() as never);
     expect(r.storageRef).toBe("s3://bucket/key");
-    expect(r.scanStatus).toBe("pending");
+    expect(r.scanStatus).toBe("PENDING");
     expect(r.thumbnailRef).toBeNull();
   });
   it("does not include raw blob data", () => {
@@ -1014,6 +1034,13 @@ describe("typingOrgSafeWhere", () => {
     expect(typingOrgSafeWhere(ORG_A, CONV_ID)).toEqual({
       orgId: ORG_A,
       conversationId: CONV_ID,
+    });
+  });
+  it("includes userId when provided", () => {
+    expect(typingOrgSafeWhere(ORG_A, CONV_ID, USER_1)).toEqual({
+      orgId: ORG_A,
+      conversationId: CONV_ID,
+      userId: USER_1,
     });
   });
 });

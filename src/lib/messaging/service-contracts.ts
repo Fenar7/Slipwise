@@ -33,12 +33,14 @@ import type {
   ConversationVisibility,
   ConversationParticipantRole,
   ConversationMessageStatus,
+  AttachmentScanStatus,
   MessagingTaskStatus,
   MeetingStatus,
   CalendarProvider,
+  CalendarConnectionStatus,
   RetentionPolicyType,
   RetentionAction,
-  MessagingAuditAction,
+  PresenceStatus,
 } from "./domain-types";
 
 // ─── Org-safe query primitives ────────────────────────────────────────────────
@@ -227,7 +229,7 @@ export interface MarkConversationReadInput {
 export interface UpdatePresenceInput {
   orgId: string;
   userId: string;
-  status: "ONLINE" | "AWAY" | "OFFLINE";
+  status: PresenceStatus;
   /** Optional: the conversation the user is currently viewing. */
   activeConversationId?: string | null;
   /** When this presence record should be considered stale. */
@@ -427,6 +429,22 @@ export function isValidParticipantRole(value: unknown): value is ConversationPar
  */
 export function isValidCalendarProvider(value: unknown): value is CalendarProvider {
   return value === "GOOGLE" || value === "OUTLOOK";
+}
+
+/**
+ * Type guard: checks whether an input is a valid CalendarConnectionStatus.
+ */
+export function isValidCalendarConnectionStatus(
+  value: unknown,
+): value is CalendarConnectionStatus {
+  return value === "ACTIVE" || value === "RECONNECT_REQUIRED" || value === "DISCONNECTED";
+}
+
+/**
+ * Type guard: checks whether an input is a valid AttachmentScanStatus.
+ */
+export function isValidAttachmentScanStatus(value: unknown): value is AttachmentScanStatus {
+  return value === "PENDING" || value === "CLEAN" || value === "BLOCKED";
 }
 
 /**

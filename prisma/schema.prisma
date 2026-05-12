@@ -6206,6 +6206,14 @@ enum TypingStatus {
   @@map("typing_status")
 }
 
+enum AttachmentScanStatus {
+  PENDING @map("pending")
+  CLEAN   @map("clean")
+  BLOCKED @map("blocked")
+
+  @@map("attachment_scan_status")
+}
+
 enum MessagingTaskStatus {
   OPEN
   IN_PROGRESS
@@ -6230,6 +6238,14 @@ enum CalendarProvider {
   OUTLOOK
 
   @@map("calendar_provider")
+}
+
+enum CalendarConnectionStatus {
+  ACTIVE             @map("active")
+  RECONNECT_REQUIRED @map("reconnect_required")
+  DISCONNECTED       @map("disconnected")
+
+  @@map("calendar_connection_status")
 }
 
 enum MessagingAuditAction {
@@ -6312,6 +6328,8 @@ model Conversation {
   participants          ConversationParticipant[]
   messages              ConversationMessage[]
   threads               ConversationThread[]
+  typingSessions        TypingSession[]
+  activePresenceSessions PresenceSession[]      @relation("ActivePresenceConversation")
   readStates            ConversationReadState[]
   tasks                 MessagingTask[]
   meetings              ConversationMeeting[]
@@ -6333,7 +6351,7 @@ model ConversationParticipant {
   conversationId String
   userId         String                     @db.Uuid
   role           ConversationParticipantRole @default(MEMBER)
-  /// When the user last left (re-joining creates a new record).
+  /// When the user last left. Re-joining reactivates this record by clearing leftAt.
   leftAt         DateTime?
   /// When the user muted this conversation.
   mutedUntil     DateTime?
@@ -6380,12 +6398,14 @@ model ConversationMessage {
   organization Organization           @relation(fields: [orgId], references: [id], onDelete: Cascade)
   conversation Conversation           @relation(fields: [conversationId, orgId], references: [id, orgId], onDelete: Cascade)
   thread       ConversationThread?    @relation(fields: [threadId, orgId], references: [id, orgId], onDelete: Cascade)
+  anchoredThread ConversationThread?  @relation("ThreadAnchor")
   reactions    MessageReaction[]
   mentions     MessageMention[]
   attachments  ConversationAttachment[]
 
   /// Composite unique for org-safe child relations.
   @@unique([id, orgId])
+  @@unique([id, conversationId, orgId])
   @@index([orgId, conversationId, createdAt])
   @@index([orgId, conversationId, threadId, createdAt])
   @@index([orgId, authorId, createdAt])
@@ -6411,11 +6431,12 @@ model ConversationThread {
 
   organization Organization          @relation(fields: [orgId], references: [id], onDelete: Cascade)
   conversation Conversation          @relation(fields: [conversationId, orgId], references: [id, orgId], onDelete: Cascade)
+  anchorMessage ConversationMessage  @relation("ThreadAnchor", fields: [anchorMessageId, conversationId, orgId], references: [id, conversationId, orgId], onDelete: Cascade)
   replies      ConversationMessage[]
 
   /// Composite unique for org-safe child relations.
   @@unique([id, orgId])
-  @@unique([conversationId, anchorMessageId])
+  @@unique([anchorMessageId, conversationId, orgId])
   @@index([orgId, conversationId, createdAt])
   @@map("conversation_thread")
 }
@@ -6506,7 +6527,8 @@ model PresenceSession {
   createdAt  DateTime       @default(now())
   updatedAt  DateTime       @updatedAt
 
-  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  organization       Organization  @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  activeConversation Conversation? @relation("ActivePresenceConversation", fields: [activeConversationId, orgId], references: [id, orgId])
 
   @@unique([orgId, userId])
   @@index([orgId, status, lastActivityAt])
@@ -6528,6 +6550,7 @@ model TypingSession {
   updatedAt      DateTime    @updatedAt
 
   organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  conversation Conversation @relation(fields: [conversationId, orgId], references: [id, orgId], onDelete: Cascade)
 
   @@unique([conversationId, userId])
   @@index([orgId, conversationId, expiresAt])
@@ -6549,7 +6572,7 @@ model ConversationAttachment {
   /// Optional preview/thumbnail reference.
   thumbnailRef String?
   /// Virus-scan or content-policy status.
-  scanStatus   String   @default("pending")
+  scanStatus   AttachmentScanStatus @default(PENDING)
   scannedAt    DateTime?
   createdAt    DateTime @default(now())
 
@@ -6630,7 +6653,7 @@ model CalendarConnection {
   /// Opaque reference to encrypted token store (Sprint 2.2 pattern).
   tokenRef          String?
   tokenExpiry       DateTime?
-  status            String           @default("active")
+  status            CalendarConnectionStatus @default(ACTIVE)
   lastSyncAt        DateTime?
   lastSyncError     String?
   disconnectedAt    DateTime?

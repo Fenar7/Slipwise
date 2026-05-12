@@ -20,6 +20,9 @@ CREATE TYPE "presence_status" AS ENUM ('ONLINE', 'AWAY', 'OFFLINE');
 CREATE TYPE "typing_status" AS ENUM ('TYPING', 'STOPPED');
 
 -- CreateEnum
+CREATE TYPE "attachment_scan_status" AS ENUM ('pending', 'clean', 'blocked');
+
+-- CreateEnum
 CREATE TYPE "messaging_task_status" AS ENUM ('OPEN', 'IN_PROGRESS', 'DONE', 'OVERDUE', 'CANCELLED');
 
 -- CreateEnum
@@ -29,6 +32,9 @@ CREATE TYPE "meeting_status" AS ENUM ('UPCOMING', 'LIVE', 'ENDED', 'CANCELLED');
 CREATE TYPE "calendar_provider" AS ENUM ('GOOGLE', 'OUTLOOK');
 
 -- CreateEnum
+CREATE TYPE "calendar_connection_status" AS ENUM ('active', 'reconnect_required', 'disconnected');
+
+-- CreateEnum
 CREATE TYPE "messaging_audit_action" AS ENUM ('CONVERSATION_CREATED', 'CONVERSATION_ARCHIVED', 'CONVERSATION_DELETED', 'CONVERSATION_RENAMED', 'CONVERSATION_VISIBILITY_CHANGED', 'PARTICIPANT_ADDED', 'PARTICIPANT_REMOVED', 'PARTICIPANT_ROLE_CHANGED', 'MESSAGE_SENT', 'MESSAGE_EDITED', 'MESSAGE_DELETED', 'THREAD_CREATED', 'THREAD_REPLIED', 'REACTION_ADDED', 'REACTION_REMOVED', 'MENTION_CREATED', 'READ_STATE_UPDATED', 'TASK_CREATED', 'TASK_UPDATED', 'TASK_ASSIGNED', 'TASK_COMPLETED', 'MEETING_SCHEDULED', 'MEETING_UPDATED', 'MEETING_CANCELLED', 'ATTACHMENT_UPLOADED', 'ATTACHMENT_DELETED', 'RETENTION_POLICY_CREATED', 'RETENTION_POLICY_UPDATED', 'ADMIN_SUPPORT_ACTION');
 
 -- CreateEnum
@@ -36,9 +42,6 @@ CREATE TYPE "retention_policy_type" AS ENUM ('ORG_DEFAULT', 'CHANNEL_SPECIFIC', 
 
 -- CreateEnum
 CREATE TYPE "retention_action" AS ENUM ('ARCHIVE', 'DELETE', 'FLAG');
-
--- AlterTable
-ALTER TABLE "e_invoice_request" ALTER COLUMN "status" SET DEFAULT 'PENDING';
 
 -- CreateTable
 CREATE TABLE "conversation" (
@@ -195,7 +198,7 @@ CREATE TABLE "conversation_attachment" (
     "mimeType" TEXT NOT NULL,
     "sizeBytes" INTEGER NOT NULL,
     "thumbnailRef" TEXT,
-    "scanStatus" TEXT NOT NULL DEFAULT 'pending',
+    "scanStatus" "attachment_scan_status" NOT NULL DEFAULT 'pending',
     "scannedAt" TIMESTAMP(3),
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
@@ -254,7 +257,7 @@ CREATE TABLE "calendar_connection" (
     "displayName" TEXT,
     "tokenRef" TEXT,
     "tokenExpiry" TIMESTAMP(3),
-    "status" TEXT NOT NULL DEFAULT 'active',
+    "status" "calendar_connection_status" NOT NULL DEFAULT 'active',
     "lastSyncAt" TIMESTAMP(3),
     "lastSyncError" TEXT,
     "disconnectedAt" TIMESTAMP(3),
@@ -340,13 +343,16 @@ CREATE INDEX "conversation_message_orgId_status_createdAt_idx" ON "conversation_
 CREATE UNIQUE INDEX "conversation_message_id_orgId_key" ON "conversation_message"("id", "orgId");
 
 -- CreateIndex
+CREATE UNIQUE INDEX "conversation_message_id_conversationId_orgId_key" ON "conversation_message"("id", "conversationId", "orgId");
+
+-- CreateIndex
 CREATE INDEX "conversation_thread_orgId_conversationId_createdAt_idx" ON "conversation_thread"("orgId", "conversationId", "createdAt");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "conversation_thread_id_orgId_key" ON "conversation_thread"("id", "orgId");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "conversation_thread_conversationId_anchorMessageId_key" ON "conversation_thread"("conversationId", "anchorMessageId");
+CREATE UNIQUE INDEX "conversation_thread_anchorMessageId_conversationId_orgId_key" ON "conversation_thread"("anchorMessageId", "conversationId", "orgId");
 
 -- CreateIndex
 CREATE INDEX "message_reaction_orgId_messageId_idx" ON "message_reaction"("orgId", "messageId");
@@ -463,6 +469,9 @@ ALTER TABLE "conversation_thread" ADD CONSTRAINT "conversation_thread_orgId_fkey
 ALTER TABLE "conversation_thread" ADD CONSTRAINT "conversation_thread_conversationId_orgId_fkey" FOREIGN KEY ("conversationId", "orgId") REFERENCES "conversation"("id", "orgId") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "conversation_thread" ADD CONSTRAINT "conversation_thread_anchorMessageId_conversationId_orgId_fkey" FOREIGN KEY ("anchorMessageId", "conversationId", "orgId") REFERENCES "conversation_message"("id", "conversationId", "orgId") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "message_reaction" ADD CONSTRAINT "message_reaction_orgId_fkey" FOREIGN KEY ("orgId") REFERENCES "organization"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
@@ -484,7 +493,13 @@ ALTER TABLE "conversation_read_state" ADD CONSTRAINT "conversation_read_state_co
 ALTER TABLE "presence_session" ADD CONSTRAINT "presence_session_orgId_fkey" FOREIGN KEY ("orgId") REFERENCES "organization"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "presence_session" ADD CONSTRAINT "presence_session_activeConversationId_orgId_fkey" FOREIGN KEY ("activeConversationId", "orgId") REFERENCES "conversation"("id", "orgId") ON DELETE NO ACTION ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "typing_session" ADD CONSTRAINT "typing_session_orgId_fkey" FOREIGN KEY ("orgId") REFERENCES "organization"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "typing_session" ADD CONSTRAINT "typing_session_conversationId_orgId_fkey" FOREIGN KEY ("conversationId", "orgId") REFERENCES "conversation"("id", "orgId") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "conversation_attachment" ADD CONSTRAINT "conversation_attachment_orgId_fkey" FOREIGN KEY ("orgId") REFERENCES "organization"("id") ON DELETE CASCADE ON UPDATE CASCADE;

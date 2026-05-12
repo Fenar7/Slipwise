@@ -20,9 +20,11 @@ import type {
   MessageReactionType,
   PresenceStatus,
   TypingStatus,
+  AttachmentScanStatus,
   MessagingTaskStatus,
   MeetingStatus,
   CalendarProvider,
+  CalendarConnectionStatus,
   MessagingAuditAction,
   RetentionPolicyType,
   RetentionAction,
@@ -37,9 +39,11 @@ export type {
   MessageReactionType,
   PresenceStatus,
   TypingStatus,
+  AttachmentScanStatus,
   MessagingTaskStatus,
   MeetingStatus,
   CalendarProvider,
+  CalendarConnectionStatus,
   MessagingAuditAction,
   RetentionPolicyType,
   RetentionAction,
@@ -266,7 +270,7 @@ export interface ConversationAttachmentRecord {
   mimeType: string;
   sizeBytes: number;
   thumbnailRef: string | null;
-  scanStatus: string;
+  scanStatus: AttachmentScanStatus;
   scannedAt: Date | null;
   createdAt: Date;
 }
@@ -274,13 +278,13 @@ export interface ConversationAttachmentRecord {
 export function attachmentIsScanned(
   record: ConversationAttachmentRecord,
 ): boolean {
-  return record.scanStatus === "scanned" || record.scanStatus === "clean";
+  return record.scanStatus === "CLEAN" || record.scanStatus === "BLOCKED";
 }
 
 export function attachmentIsPendingScan(
   record: ConversationAttachmentRecord,
 ): boolean {
-  return record.scanStatus === "pending";
+  return record.scanStatus === "PENDING";
 }
 
 // ─── Task ─────────────────────────────────────────────────────────────────────
@@ -356,7 +360,7 @@ export interface CalendarConnectionRecord {
   displayName: string | null;
   tokenRef: string | null;
   tokenExpiry: Date | null;
-  status: string;
+  status: CalendarConnectionStatus;
   lastSyncAt: Date | null;
   lastSyncError: string | null;
   disconnectedAt: Date | null;
@@ -368,13 +372,13 @@ export interface CalendarConnectionRecord {
 export function calendarConnectionIsActive(
   record: CalendarConnectionRecord,
 ): boolean {
-  return record.status === "active" && record.disconnectedAt === null;
+  return record.status === "ACTIVE" && record.disconnectedAt === null;
 }
 
 export function calendarConnectionRequiresReconnect(
   record: CalendarConnectionRecord,
 ): boolean {
-  return record.status === "reconnect_required" || record.disconnectedAt !== null;
+  return record.status === "RECONNECT_REQUIRED" || record.status === "DISCONNECTED";
 }
 
 // ─── Audit Event ─────────────────────────────────────────────────────────────

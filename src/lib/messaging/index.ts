@@ -42,9 +42,11 @@ export type {
   MessageReactionType,
   PresenceStatus,
   TypingStatus,
+  AttachmentScanStatus,
   MessagingTaskStatus,
   MeetingStatus,
   CalendarProvider,
+  CalendarConnectionStatus,
   MessagingAuditAction,
   RetentionPolicyType,
   RetentionAction,
@@ -120,6 +122,8 @@ export {
   isValidConversationVisibility,
   isValidParticipantRole,
   isValidCalendarProvider,
+  isValidCalendarConnectionStatus,
+  isValidAttachmentScanStatus,
   isValidRetentionAction,
 } from "./service-contracts";
 
