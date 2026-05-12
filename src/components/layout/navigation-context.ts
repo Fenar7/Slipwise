@@ -47,7 +47,7 @@ function titleizeSegment(segment: string) {
   if (segment === "new") return "New";
   if (segment === "edit") return "Edit";
   if (segment === "home") return "Home";
-  if (segment === "app") return "Slipwise One";
+  if (segment === "app") return "Slipwise";
   if (isIdentifierSegment(segment)) return "Details";
 
   return segment
@@ -67,7 +67,7 @@ export function getNavigationContext(pathname: string): NavigationContext {
     suiteNavItems.find((item) => matchHref(cleanPath, item.href) || cleanPath.startsWith(`/app/${item.suite}`)) ??
     suiteNavItems[0];
 
-  const breadcrumbs: BreadcrumbItem[] = [{ href: "/app/home", label: "Slipwise One" }];
+  const breadcrumbs: BreadcrumbItem[] = [{ href: "/app/home", label: "Slipwise" }];
 
   if (cleanPath === "/app/home") {
     return {

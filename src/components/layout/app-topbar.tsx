@@ -1,132 +1,323 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import { useSupabaseSession } from "@/hooks/use-supabase-session";
-import { signOutSupabaseBrowser } from "@/lib/supabase/client";
-import { Avatar } from "@/components/ui/avatar";
-import { cn } from "@/lib/utils";
-
+import { usePathname } from "next/navigation";
+import { motion } from "motion/react";
+import { getNavigationContext } from "./navigation-context";
 import { NotificationBell } from "@/features/flow/components/notification-bell";
 import { ProxyBanner } from "@/features/access/components/proxy-banner";
-import { getNavigationContext } from "./navigation-context";
+import { useWorkspaceTopBar } from "./workspace-topbar-context";
+import { cn } from "@/lib/utils";
+import {
+  Plus, Upload, Users, Building2, Settings, BarChart3, BookOpen,
+  FileText, Receipt, CreditCard, FileSpreadsheet, ScrollText,
+} from "lucide-react";
 
 interface AppTopbarProps {
   orgName?: string;
-  initialUser?: {
-    name?: string | null;
-    email?: string | null;
-    avatarUrl?: string | null;
-  };
 }
 
-export function AppTopbar({ orgName, initialUser }: AppTopbarProps) {
-  const { user, isPending } = useSupabaseSession();
-  const router = useRouter();
-  const pathname = usePathname();
-  const { breadcrumbs, pageTitle, suiteLabel, switcherItems } = getNavigationContext(pathname);
-  const resolvedName = user?.user_metadata.name ?? initialUser?.name ?? initialUser?.email ?? undefined;
-  const resolvedAvatar =
-    user?.user_metadata.avatar_url ?? initialUser?.avatarUrl ?? undefined;
-  const hasAuthenticatedUser = Boolean(user || initialUser);
+function actionClassName(variant: "primary" | "secondary" | "subtle") {
+  switch (variant) {
+    case "primary":
+      return "bg-[var(--brand-cta)] text-white hover:bg-[#B91C1C]";
+    case "secondary":
+      return "border border-[var(--border-default)] bg-white text-[var(--text-primary)] hover:bg-[var(--surface-subtle)]";
+    case "subtle":
+    default:
+      return "bg-transparent text-[var(--text-muted)] hover:text-[var(--text-primary)]";
+  }
+}
 
-  const handleSignOut = async () => {
-    await signOutSupabaseBrowser();
-    router.push("/");
-  };
+/* ── Page actions based on route ─────────────────────────────────────────── */
+
+interface PageAction {
+  label: string;
+  href: string;
+  icon: React.ElementType;
+}
+
+function getPageActions(pathname: string): PageAction[] {
+  if (pathname === "/app/docs/invoices" || pathname === "/app/docs/invoices/") {
+    return [{ label: "New Invoice", href: "/app/docs/invoices/new", icon: Plus }];
+  }
+  if (pathname.startsWith("/app/docs/invoices/")) {
+    return [{ label: "Invoices", href: "/app/docs/invoices", icon: FileText }];
+  }
+  if (pathname === "/app/docs/vouchers" || pathname === "/app/docs/vouchers/") {
+    return [{ label: "New Voucher", href: "/app/docs/vouchers/new", icon: Plus }];
+  }
+  if (pathname.startsWith("/app/docs/vouchers/")) {
+    return [{ label: "Vouchers", href: "/app/docs/vouchers", icon: Receipt }];
+  }
+  if (pathname === "/app/docs/salary-slips" || pathname === "/app/docs/salary-slips/") {
+    return [{ label: "New Salary Slip", href: "/app/docs/salary-slips/new", icon: Plus }];
+  }
+  if (pathname.startsWith("/app/docs/salary-slips/")) {
+    return [{ label: "Salary Slips", href: "/app/docs/salary-slips", icon: CreditCard }];
+  }
+  if (pathname === "/app/docs/quotes" || pathname === "/app/docs/quotes/") {
+    return [{ label: "New Quote", href: "/app/docs/quotes/new", icon: Plus }];
+  }
+  if (pathname.startsWith("/app/docs/quotes/")) {
+    return [{ label: "Quotes", href: "/app/docs/quotes", icon: FileSpreadsheet }];
+  }
+  if (pathname.startsWith("/app/docs/vault")) {
+    return [{ label: "Upload", href: "/app/docs/vault/upload", icon: Upload }];
+  }
+  if (pathname === "/app/data" || pathname === "/app/data/") {
+    return [
+      { label: "Add Customer", href: "/app/data/customers/new", icon: Users },
+      { label: "Add Vendor", href: "/app/data/vendors/new", icon: Building2 },
+    ];
+  }
+  if (pathname.startsWith("/app/data/customers")) {
+    return [{ label: "Add Customer", href: "/app/data/customers/new", icon: Plus }];
+  }
+  if (pathname.startsWith("/app/data/vendors")) {
+    return [{ label: "Add Vendor", href: "/app/data/vendors/new", icon: Plus }];
+  }
+  if (pathname.startsWith("/app/settings")) {
+    return [{ label: "Organization", href: "/app/settings/organization", icon: Settings }];
+  }
+  if (pathname.startsWith("/app/intel")) {
+    return [{ label: "Reports", href: "/app/intel/reports", icon: BarChart3 }];
+  }
+  if (pathname.startsWith("/app/books")) {
+    return [{ label: "New Entry", href: "/app/books/new", icon: BookOpen }];
+  }
+  if (pathname.startsWith("/app/pay")) {
+    return [{ label: "Payments", href: "/app/pay", icon: CreditCard }];
+  }
+  if (pathname.startsWith("/app/compliance")) {
+    return [{ label: "Compliance", href: "/app/compliance", icon: FileText }];
+  }
+  return [];
+}
+
+const MESSAGING_PATH = "/app/messaging";
+
+function isMessagingRoute(pathname: string) {
+  return pathname === MESSAGING_PATH || pathname.startsWith(`${MESSAGING_PATH}/`);
+}
+
+export function AppTopbar({ orgName }: AppTopbarProps) {
+  const pathname = usePathname();
+  const { breadcrumbs, pageTitle, suiteLabel } = getNavigationContext(pathname);
+  const { actions: workspaceActions, headerContent, viewToggle, tabs } = useWorkspaceTopBar();
+  const pageActions = getPageActions(pathname);
+  const hasTabs = tabs.length > 0;
 
   return (
     <>
       <ProxyBanner />
-      <header className="sticky top-0 z-20 border-b border-[var(--border-soft)] bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/85">
-        <div className="flex min-h-14 items-start gap-4 px-4 py-4 sm:px-6">
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-[0.7rem] font-semibold uppercase tracking-[0.28em] text-[var(--muted-foreground)]">
-                {suiteLabel === "Home" ? "Slipwise One" : `SW> ${suiteLabel}`}
-              </span>
-              {orgName ? (
-                <span className="slipwise-chip px-2.5 py-1 text-[0.7rem] font-medium">
-                  {orgName}
-                </span>
-              ) : null}
+      <motion.header
+        initial={{ opacity: 0, y: -4 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.25, ease: "easeOut" }}
+        className="sticky top-0 z-20 border-b bg-white"
+        style={{ borderColor: "#E0E0E0" }}
+      >
+        {hasTabs ? (
+          /* ── Contextual tab bar (e.g. Messaging) ── */
+          <div className="flex h-12 items-center gap-4 px-5">
+            {/* Left: Slipwise wordmark + tabs */}
+            <div className="flex items-center gap-4 min-w-0 flex-1">
+              <Link
+                href="/app/home"
+                className="shrink-0 text-[11px] font-bold uppercase tracking-widest transition-colors hover:opacity-80"
+                style={{ color: "#DC2626" }}
+              >
+                Slipwise
+              </Link>
+              <div className="h-5 w-px shrink-0" style={{ background: "#E0E0E0" }} />
+              <nav className="flex items-center gap-1 overflow-x-auto" role="tablist">
+                {tabs.map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={tab.active}
+                    onClick={tab.onClick}
+                    className={cn(
+                      "shrink-0 rounded-md px-3 py-1.5 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]",
+                      tab.active
+                        ? "bg-[#DC2626] text-white"
+                        : "text-[#79747E] hover:text-[#1C1B1F] hover:bg-gray-50"
+                    )}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </nav>
             </div>
-            <h1 className="mt-2 truncate text-lg font-semibold text-[var(--foreground)] sm:text-xl">
-              {pageTitle}
-            </h1>
-            <nav className="mt-2 flex flex-wrap items-center gap-2 text-xs text-[var(--muted-foreground)]">
+
+            {/* Right: workspace actions + org name */}
+            <div className="flex items-center gap-2 shrink-0">
+              {headerContent}
+              {workspaceActions.length > 0 && (
+                <div className="flex items-center gap-1">
+                  {workspaceActions.map((action) => {
+                    const className = cn(
+                      "inline-flex items-center justify-center rounded-md px-3 py-1.5 text-xs font-medium transition-all disabled:cursor-wait disabled:opacity-65",
+                      actionClassName(action.variant),
+                    );
+                    return action.href ? (
+                      <Link key={action.id} href={action.href} className={className}>
+                        {action.label}
+                      </Link>
+                    ) : (
+                      <button
+                        key={action.id}
+                        type="button"
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          action.onClick?.();
+                        }}
+                        disabled={action.disabled}
+                        className={className}
+                      >
+                        {action.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              <span className="text-[11px] font-medium" style={{ color: "#79747E" }}>
+                {orgName ?? "Workspace"}
+              </span>
+            </div>
+          </div>
+        ) : (
+          <div className="flex h-16 items-center gap-4 px-5">
+            {/* Left: Page title */}
+            <div className="min-w-0 flex-shrink-0">
+              <span className="text-[11px] font-bold uppercase tracking-widest" style={{ color: "#DC2626" }}>
+                {suiteLabel === "Home" ? "Slipwise" : suiteLabel}
+              </span>
+              <h1 className="truncate text-lg font-bold" style={{ color: "#1C1B1F" }}>
+                {pageTitle}
+              </h1>
+            </div>
+
+            {/* Center: breadcrumbs */}
+            <nav className="hidden xl:flex flex-wrap items-center gap-2 text-sm min-w-0 flex-1 px-6" style={{ color: "#79747E" }}>
               {breadcrumbs.map((crumb, index) => (
-                <div key={`${crumb.label}-${index}`} className="flex items-center gap-2">
+                <div key={`${crumb.label}-${index}`} className="flex items-center gap-2 shrink-0">
                   {crumb.href ? (
                     <Link
                       href={crumb.href}
-                      className="transition-colors hover:text-[var(--foreground)]"
+                      className="transition-colors hover:text-[#1C1B1F] font-medium"
+                      style={{ color: "#79747E" }}
                     >
                       {crumb.label}
                     </Link>
                   ) : (
-                    <span className="text-[var(--foreground-soft)]">{crumb.label}</span>
+                    <span className="font-semibold" style={{ color: "#1C1B1F" }}>{crumb.label}</span>
                   )}
-                  {index < breadcrumbs.length - 1 ? <span>/</span> : null}
+                  {index < breadcrumbs.length - 1 ? (
+                    <span style={{ color: "#E0E0E0" }}>/</span>
+                  ) : null}
                 </div>
               ))}
             </nav>
-          </div>
 
-          <div className="flex items-center gap-3 self-start">
-            <NotificationBell />
-            {isPending ? (
-              <div className="h-9 w-9 animate-pulse rounded-full border border-[var(--border-soft)] bg-[var(--surface-soft)]" />
-            ) : hasAuthenticatedUser ? (
-              <div className="flex items-center gap-2">
-                <Avatar
-                  name={resolvedName}
-                  imageUrl={resolvedAvatar}
-                  size="sm"
-                />
-                <span className="hidden text-sm font-medium text-[var(--foreground)] sm:block">
-                  {resolvedName}
-                </span>
-                <button
-                  onClick={handleSignOut}
-                  className="ml-1 rounded-xl border border-[var(--border-strong)] bg-white px-3 py-1 text-xs font-medium text-[var(--foreground)] transition-colors hover:bg-[var(--surface-soft)]"
-                >
-                  Sign out
-                </button>
-              </div>
-            ) : (
-              <Link
-                href="/auth/login"
-                className="rounded-xl border border-[var(--border-strong)] bg-white px-4 py-1.5 text-sm font-medium text-[var(--foreground)] transition-colors hover:bg-[var(--surface-soft)]"
-              >
-                Sign in
-              </Link>
-            )}
-          </div>
-        </div>
+            {/* Right: workspace actions + page actions + notification */}
+            <div className="flex items-center gap-2 shrink-0">
+              {/* Workspace header content (e.g. tags) */}
+              {headerContent}
 
-        <nav
-          aria-label="Suite switcher"
-          className="border-t border-[var(--border-soft)] px-3 py-2 lg:hidden"
-        >
-          <div className="flex gap-2 overflow-x-auto pb-1">
-            {switcherItems.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={cn(
-                  "shrink-0 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
-                  item.isActive
-                    ? "border-[var(--accent)] bg-[var(--surface-accent)] text-[var(--accent)]"
-                    : "border-[var(--border-soft)] bg-white text-[var(--foreground-soft)] hover:text-[var(--foreground)]"
-                )}
-              >
-                {item.label}
-              </Link>
-            ))}
+              {/* Workspace actions */}
+              {workspaceActions.length > 0 && (
+                <div className="flex items-center gap-1">
+                  {workspaceActions.map((action) => {
+                    const className = cn(
+                      "inline-flex items-center justify-center rounded-md px-3 py-1.5 text-xs font-medium transition-all disabled:cursor-wait disabled:opacity-65",
+                      actionClassName(action.variant),
+                    );
+                    return action.href ? (
+                      <Link key={action.id} href={action.href} className={className}>
+                        {action.label}
+                      </Link>
+                    ) : (
+                      <button
+                        key={action.id}
+                        type="button"
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          action.onClick?.();
+                        }}
+                        disabled={action.disabled}
+                        className={className}
+                      >
+                        {action.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* View toggle (Form/Document) */}
+              {viewToggle && (
+                <div className="flex gap-0.5 rounded-md bg-[var(--surface-subtle)] p-0.5">
+                  <button
+                    type="button"
+                    onClick={() => viewToggle.onChange("form")}
+                    className={cn(
+                      "inline-flex items-center gap-1.5 rounded px-2 py-1.5 text-xs font-medium transition-colors",
+                      viewToggle.mode === "form"
+                        ? "bg-white text-[var(--text-primary)] shadow-sm"
+                        : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]",
+                    )}
+                  >
+                    <FileText className="h-3.5 w-3.5" />
+                    Form
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => viewToggle.onChange("document")}
+                    className={cn(
+                      "inline-flex items-center gap-1.5 rounded px-2 py-1.5 text-xs font-medium transition-colors",
+                      viewToggle.mode === "document"
+                        ? "bg-white text-[var(--text-primary)] shadow-sm"
+                        : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]",
+                    )}
+                  >
+                    <ScrollText className="h-3.5 w-3.5" />
+                    Document
+                  </button>
+                </div>
+              )}
+
+              {/* Page actions */}
+              {pageActions.map((action) => {
+                const Icon = action.icon;
+                return (
+                  <Link
+                    key={action.href}
+                    href={action.href}
+                    className="inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-bold transition-opacity hover:opacity-90"
+                    style={{ background: "#DC2626", color: "#fff" }}
+                  >
+                    <Icon className="h-4 w-4" />
+                    <span className="hidden sm:inline">{action.label}</span>
+                  </Link>
+                );
+              })}
+
+              <div className="h-6 w-px mx-1" style={{ background: "#E0E0E0" }} />
+
+              <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+                <NotificationBell />
+              </motion.div>
+            </div>
           </div>
-        </nav>
-      </header>
+        )}
+      </motion.header>
     </>
   );
 }

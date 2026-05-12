@@ -88,9 +88,9 @@ export function CorporateCleanSalarySlipTemplate({
             </div>
           </div>
           <div className="rounded-[1.25rem] px-5 py-4 text-white" style={{ backgroundColor: "var(--voucher-accent)" }}>
-            <p className="text-[0.68rem] uppercase tracking-[0.25em] text-white/72">Net salary</p>
-            <p className="mt-3 text-3xl font-medium">{document.netSalaryFormatted}</p>
-            <p className="mt-2 max-w-[13rem] text-xs leading-6 text-white/82">
+            <p className="text-[0.68rem] uppercase tracking-[0.25em] text-white">Net salary</p>
+            <p className="mt-3 text-3xl font-medium text-white">{document.netSalaryFormatted}</p>
+            <p className="mt-2 max-w-[13rem] text-xs leading-6 text-white">
               {document.netSalaryInWords}
             </p>
           </div>
@@ -295,9 +295,9 @@ function CorporateCleanEditor() {
             </div>
           </div>
           <div className="rounded-[1.25rem] px-5 py-4 text-white" style={{ backgroundColor: "var(--voucher-accent)" }}>
-            <p className="text-[0.68rem] uppercase tracking-[0.25em] text-white/72">Net salary</p>
-            <p className="mt-3 text-3xl font-medium">{doc.netSalaryFormatted}</p>
-            <p className="mt-2 max-w-[13rem] text-xs leading-6 text-white/82">
+            <p className="text-[0.68rem] uppercase tracking-[0.25em] text-white">Net salary</p>
+            <p className="mt-3 text-3xl font-medium text-white">{doc.netSalaryFormatted}</p>
+            <p className="mt-2 max-w-[13rem] text-xs leading-6 text-white">
               {doc.netSalaryInWords}
             </p>
           </div>

@@ -3,7 +3,12 @@
 import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardHeader, CardContent } from "@/components/ui/card";
+import {
+  SettingsCard,
+  SettingsCardHeader,
+  SettingsCardContent,
+} from "@/components/settings/settings-primitives";
+import { KeyRound } from "lucide-react";
 
 type ApiKeyItem = {
   id: string;
@@ -128,8 +133,8 @@ export default function ApiKeysPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-xl font-semibold text-[#1a1a1a]">API Keys</h2>
-          <p className="text-sm text-[#666] mt-1">
+          <h2 className="text-base font-semibold text-[var(--text-primary)]">API Keys</h2>
+          <p className="mt-0.5 text-sm text-[var(--text-muted)]">
             Manage API keys for programmatic access to Slipwise.
           </p>
         </div>
@@ -145,7 +150,7 @@ export default function ApiKeysPage() {
       </div>
 
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+        <div className="rounded-lg border border-[var(--state-danger)]/20 bg-[var(--state-danger-soft)] text-[var(--state-danger)] px-4 py-3 text-sm">
           {error}
           <button onClick={() => setError(null)} className="ml-2 font-medium">
             ✕
@@ -155,11 +160,11 @@ export default function ApiKeysPage() {
 
       {/* Created Key Display */}
       {createdKey && (
-        <Card>
-          <CardContent>
-            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-              <p className="text-sm font-medium text-yellow-800 mb-2">
-                🔑 Your API key has been created. Copy it now — you won&apos;t be able to see it again.
+        <SettingsCard>
+          <SettingsCardContent>
+            <div className="bg-[var(--state-warning-soft)] border border-[var(--state-warning)]/20 rounded-lg p-4">
+              <p className="text-sm font-medium text-[var(--state-warning)] mb-2">
+                Your API key has been created. Copy it now — you won&apos;t be able to see it again.
               </p>
               <div className="flex items-center gap-2">
                 <code className="flex-1 bg-white px-3 py-2 rounded border text-sm font-mono break-all">
@@ -174,31 +179,34 @@ export default function ApiKeysPage() {
                 </Button>
               </div>
             </div>
-          </CardContent>
-        </Card>
+          </SettingsCardContent>
+        </SettingsCard>
       )}
 
       {/* Create Dialog */}
       {showCreate && !createdKey && (
-        <Card>
-          <CardHeader>
-            <h3 className="text-lg font-medium">Create New API Key</h3>
-          </CardHeader>
-          <CardContent>
+        <SettingsCard>
+          <SettingsCardHeader>
+            <div className="flex items-center gap-2.5">
+              <KeyRound className="h-4 w-4 text-[var(--brand-primary)]" />
+              <h3 className="text-base font-semibold text-[var(--text-primary)]">Create New API Key</h3>
+            </div>
+          </SettingsCardHeader>
+          <SettingsCardContent>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-[#1a1a1a] mb-1">
+                <label className="block text-sm font-medium text-[var(--text-primary)] mb-1">
                   Key Name
                 </label>
                 <Input
-                  placeholder="e.g., Production Integration"
+                  placeholder="e.g. Production Integration"
                   value={newKeyName}
                   onChange={(e) => setNewKeyName(e.target.value)}
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-[#1a1a1a] mb-2">
+                <label className="block text-sm font-medium text-[var(--text-primary)] mb-2">
                   Scopes
                 </label>
                 <div className="grid grid-cols-2 gap-2">
@@ -208,25 +216,25 @@ export default function ApiKeysPage() {
                         type="checkbox"
                         checked={selectedScopes.includes(scope)}
                         onChange={() => toggleScope(scope)}
-                        className="rounded"
+                        className="rounded border-[var(--border-soft)]"
                       />
                       <code className="text-xs">{scope}</code>
                     </label>
                   ))}
                 </div>
-                <p className="text-xs text-[#999] mt-1">
+                <p className="text-xs text-[var(--text-muted)] mt-1">
                   Leave empty for full access (*).
                 </p>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-[#1a1a1a] mb-1">
+                <label className="block text-sm font-medium text-[var(--text-primary)] mb-1">
                   Expiry
                 </label>
                 <select
                   value={expiryDays}
                   onChange={(e) => setExpiryDays(e.target.value)}
-                  className="w-full rounded-lg border border-[#e5e5e5] px-3 py-2 text-sm"
+                  className="w-full rounded-lg border border-[var(--border-soft)] px-3 py-2 text-sm bg-white"
                 >
                   {EXPIRY_OPTIONS.map((opt) => (
                     <option key={opt.value} value={opt.value}>
@@ -245,38 +253,38 @@ export default function ApiKeysPage() {
                 </Button>
               </div>
             </div>
-          </CardContent>
-        </Card>
+          </SettingsCardContent>
+        </SettingsCard>
       )}
 
       {/* Keys List */}
-      <Card>
-        <CardContent>
+      <SettingsCard>
+        <SettingsCardContent>
           {loading ? (
-            <p className="text-sm text-[#999] py-8 text-center">Loading...</p>
+            <p className="text-sm text-[var(--text-muted)] py-8 text-center">Loading...</p>
           ) : keys.length === 0 ? (
-            <p className="text-sm text-[#999] py-8 text-center">
+            <p className="text-sm text-[var(--text-muted)] py-8 text-center">
               No API keys yet. Create one to get started.
             </p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b text-left text-[#666]">
-                    <th className="pb-2 font-medium">Name</th>
-                    <th className="pb-2 font-medium">Key</th>
-                    <th className="pb-2 font-medium">Scopes</th>
-                    <th className="pb-2 font-medium">Last Used</th>
-                    <th className="pb-2 font-medium">Status</th>
-                    <th className="pb-2 font-medium"></th>
+                  <tr className="border-b border-[var(--border-soft)]">
+                    <th className="text-left pb-2 font-medium text-xs text-[var(--text-muted)] uppercase tracking-wider">Name</th>
+                    <th className="text-left pb-2 font-medium text-xs text-[var(--text-muted)] uppercase tracking-wider">Key</th>
+                    <th className="text-left pb-2 font-medium text-xs text-[var(--text-muted)] uppercase tracking-wider">Scopes</th>
+                    <th className="text-left pb-2 font-medium text-xs text-[var(--text-muted)] uppercase tracking-wider">Last Used</th>
+                    <th className="text-left pb-2 font-medium text-xs text-[var(--text-muted)] uppercase tracking-wider">Status</th>
+                    <th className="text-right pb-2 font-medium text-xs text-[var(--text-muted)] uppercase tracking-wider"></th>
                   </tr>
                 </thead>
                 <tbody>
                   {keys.map((key) => (
-                    <tr key={key.id} className="border-b last:border-0">
-                      <td className="py-3 font-medium">{key.name}</td>
+                    <tr key={key.id} className="border-b border-[var(--border-soft)] last:border-0 hover:bg-[var(--surface-subtle)]/50 transition-colors">
+                      <td className="py-3 font-medium text-[var(--text-primary)]">{key.name}</td>
                       <td className="py-3">
-                        <code className="text-xs bg-[#f5f5f5] px-2 py-1 rounded">
+                        <code className="text-xs bg-[var(--surface-subtle)] px-2 py-1 rounded">
                           {key.keyPrefix}...
                         </code>
                       </td>
@@ -285,39 +293,39 @@ export default function ApiKeysPage() {
                           {key.scopes.slice(0, 3).map((s) => (
                             <span
                               key={s}
-                              className="text-xs bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded"
+                              className="text-xs bg-[var(--surface-selected)] text-[var(--brand-primary)] px-1.5 py-0.5 rounded"
                             >
                               {s}
                             </span>
                           ))}
                           {key.scopes.length > 3 && (
-                            <span className="text-xs text-[#999]">
+                            <span className="text-xs text-[var(--text-muted)]">
                               +{key.scopes.length - 3}
                             </span>
                           )}
                         </div>
                       </td>
-                      <td className="py-3 text-[#666]">
+                      <td className="py-3 text-[var(--text-muted)]">
                         {key.lastUsedAt
                           ? new Date(key.lastUsedAt).toLocaleDateString()
                           : "Never"}
                       </td>
                       <td className="py-3">
                         {key.isActive ? (
-                          <span className="text-xs bg-green-50 text-green-700 px-2 py-0.5 rounded-full">
+                          <span className="text-xs bg-[var(--state-success-soft)] text-[var(--state-success)] px-2 py-0.5 rounded-full">
                             Active
                           </span>
                         ) : (
-                          <span className="text-xs bg-red-50 text-red-700 px-2 py-0.5 rounded-full">
+                          <span className="text-xs bg-[var(--state-danger-soft)] text-[var(--state-danger)] px-2 py-0.5 rounded-full">
                             Revoked
                           </span>
                         )}
                       </td>
-                      <td className="py-3">
+                      <td className="py-3 text-right">
                         {key.isActive && (
                           <>
                             {revokeId === key.id ? (
-                              <div className="flex gap-1">
+                              <div className="flex gap-1 justify-end">
                                 <Button
                                   variant="danger"
                                   size="sm"
@@ -351,8 +359,8 @@ export default function ApiKeysPage() {
               </table>
             </div>
           )}
-        </CardContent>
-      </Card>
+        </SettingsCardContent>
+      </SettingsCard>
     </div>
   );
 }

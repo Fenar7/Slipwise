@@ -13,7 +13,7 @@ const nextConfig: NextConfig = {
     networkInterfaces: networkInterfaces(),
   }),
   output: "standalone",
-  serverExternalPackages: ["@sparticuz/chromium", "playwright-core", "ioredis"],
+  serverExternalPackages: ["@sparticuz/chromium", "playwright-core", "ioredis", "pg", "@prisma/adapter-pg"],
 
   // Performance: Aggressive static asset caching
   headers: async () => [

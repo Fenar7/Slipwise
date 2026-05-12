@@ -50,7 +50,7 @@ export async function getPublicInvoice(token: string) {
       data: {
         invoice: {
           id: invoice.id,
-          invoiceNumber: invoice.invoiceNumber,
+          invoiceNumber: invoice.invoiceNumber ?? "",
           invoiceDate: formatIsoDate(invoice.invoiceDate),
           dueDate: invoice.dueDate ? formatIsoDate(invoice.dueDate) : null,
           status: paymentProof.status,

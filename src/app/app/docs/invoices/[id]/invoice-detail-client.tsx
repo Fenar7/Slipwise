@@ -10,6 +10,9 @@ import {
   recordPayment,
 } from "../actions";
 import { createPaymentLink, cancelPaymentLink } from "../payment-link-actions";
+import { DocumentActionRail } from "@/components/docs/document-action-bar";
+import type { DocAction } from "@/components/docs/document-action-bar";
+import { cn } from "@/lib/utils";
 
 function formatCurrency(amount: number) {
   return new Intl.NumberFormat("en-IN", {
@@ -74,37 +77,42 @@ const SOURCE_LABELS: Record<string, string> = {
 };
 
 const PAYMENT_STATUS_COLORS: Record<string, string> = {
-  SETTLED: "bg-green-100 text-green-700",
-  PENDING_REVIEW: "bg-yellow-100 text-yellow-700",
-  REJECTED: "bg-red-100 text-red-700",
-  OVERPAID_REVIEW: "bg-orange-100 text-orange-700",
+  SETTLED: "bg-[var(--state-success-soft)] text-[var(--state-success)]",
+  PENDING_REVIEW: "bg-[var(--state-warning-soft)] text-[var(--state-warning)]",
+  REJECTED: "bg-[var(--state-danger-soft)] text-[var(--state-danger)]",
+  OVERPAID_REVIEW: "bg-[var(--state-warning-soft)] text-[var(--state-warning)]",
 };
 
-const ACTION_CONFIG: Record<string, { label: string; allowedFrom: string[]; color: string }> = {
+const ACTION_CONFIG: Record<string, { label: string; allowedFrom: string[]; variant: DocAction["variant"]; icon: DocAction["icon"] }> = {
   ISSUE: {
     label: "Issue Invoice",
     allowedFrom: ["DRAFT"],
-    color: "bg-blue-600 hover:bg-blue-700 text-white",
+    variant: "primary",
+    icon: "confirm",
   },
   PAID: {
     label: "Mark Paid",
     allowedFrom: ["ISSUED", "VIEWED", "DUE", "PARTIALLY_PAID", "OVERDUE"],
-    color: "bg-green-600 hover:bg-green-700 text-white",
+    variant: "primary",
+    icon: "confirm",
   },
   CANCEL: {
     label: "Cancel",
     allowedFrom: ["DRAFT", "ISSUED", "VIEWED", "DUE", "PARTIALLY_PAID", "OVERDUE", "DISPUTED"],
-    color: "bg-slate-600 hover:bg-slate-700 text-white",
+    variant: "danger",
+    icon: "cancel",
   },
   DISPUTE: {
     label: "Dispute",
     allowedFrom: ["ISSUED", "VIEWED", "DUE", "PARTIALLY_PAID", "PAID", "OVERDUE"],
-    color: "bg-amber-600 hover:bg-amber-700 text-white",
+    variant: "danger",
+    icon: "cancel",
   },
   RECORD_PAYMENT: {
     label: "Record Payment",
     allowedFrom: ["ISSUED", "VIEWED", "DUE", "PARTIALLY_PAID", "OVERDUE"],
-    color: "bg-emerald-600 hover:bg-emerald-700 text-white",
+    variant: "primary",
+    icon: "confirm",
   },
 };
 
@@ -187,43 +195,43 @@ export function InvoiceDetailClient({
     ([, config]) => config.allowedFrom.includes(status)
   );
 
+  const actionItems: DocAction[] = availableActions.map(([key, config]) => ({
+    id: key,
+    label: config.label,
+    variant: config.variant,
+    icon: config.icon,
+    onClick: () => handleAction(key),
+    disabled: isPending,
+  }));
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {/* Action Buttons */}
-      {availableActions.length > 0 && (
+      {actionItems.length > 0 && (
         <div>
-          <h3 className="mb-2 text-sm font-medium text-slate-700">Actions</h3>
-          <div className="flex flex-wrap gap-2">
-            {availableActions.map(([key, config]) => (
-              <button
-                key={key}
-                onClick={() => handleAction(key)}
-                disabled={isPending}
-                className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors disabled:opacity-50 ${config.color}`}
-              >
-                {config.label}
-              </button>
-            ))}
-          </div>
+          <h3 className="mb-2.5 text-[0.68rem] font-semibold uppercase tracking-[0.24em] text-[var(--text-muted)]">
+            Lifecycle Actions
+          </h3>
+          <DocumentActionRail actions={actionItems} />
         </div>
       )}
 
       {error && (
-        <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+        <div className="rounded-xl border border-[var(--state-danger)]/20 bg-[var(--state-danger-soft)] px-4 py-3 text-sm text-[var(--state-danger)]">
           {error}
         </div>
       )}
 
       {/* Reason Input Modal */}
       {showReasonInput && (
-        <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-          <label className="mb-1 block text-sm font-medium text-slate-700">
+        <div className="rounded-xl border border-[var(--border-default)] bg-white p-4 shadow-[var(--shadow-card)]">
+          <label className="mb-1.5 block text-sm font-medium text-[var(--text-primary)]">
             {showReasonInput === "cancel" ? "Cancellation Reason" : "Dispute Reason"}
           </label>
           <textarea
             value={reason}
             onChange={(e) => setReason(e.target.value)}
-            className="mb-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-red-400 focus:outline-none focus:ring-1 focus:ring-red-400"
+            className="mb-3 w-full rounded-lg border border-[var(--border-soft)] bg-white px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--brand-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--focus-ring)]"
             rows={2}
             placeholder="Enter reason..."
           />
@@ -231,7 +239,7 @@ export function InvoiceDetailClient({
             <button
               onClick={submitReason}
               disabled={isPending || !reason.trim()}
-              className="rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+              className="rounded-full bg-[var(--brand-cta)] px-4 py-2 text-sm font-medium text-white transition-all hover:bg-[#B91C1C] disabled:opacity-50"
             >
               Confirm
             </button>
@@ -240,7 +248,7 @@ export function InvoiceDetailClient({
                 setShowReasonInput(null);
                 setReason("");
               }}
-              className="rounded-lg bg-slate-100 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-200"
+              className="rounded-full border border-[var(--border-default)] bg-white px-4 py-2 text-sm font-medium text-[var(--text-primary)] transition-colors hover:bg-[var(--surface-subtle)]"
             >
               Cancel
             </button>
@@ -250,28 +258,28 @@ export function InvoiceDetailClient({
 
       {/* Payment Input */}
       {showPaymentInput && (
-        <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-          <h4 className="mb-2 text-sm font-medium text-slate-700">Record Payment</h4>
-          <div className="mb-2 grid grid-cols-2 gap-2">
+        <div className="rounded-xl border border-[var(--border-default)] bg-white p-4 shadow-[var(--shadow-card)]">
+          <h4 className="mb-3 text-sm font-medium text-[var(--text-primary)]">Record Payment</h4>
+          <div className="mb-3 grid grid-cols-2 gap-3">
             <div>
-              <label className="mb-1 block text-xs text-slate-500">Amount</label>
+              <label className="mb-1 block text-xs font-medium text-[var(--text-muted)]">Amount</label>
               <input
                 type="number"
                 value={paymentAmount}
                 onChange={(e) => setPaymentAmount(e.target.value)}
-                className="w-full rounded-lg border border-slate-200 px-3 py-1.5 text-sm focus:border-red-400 focus:outline-none focus:ring-1 focus:ring-red-400"
+                className="w-full rounded-lg border border-[var(--border-soft)] bg-white px-3 py-2 text-sm text-[var(--text-primary)] focus:border-[var(--brand-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--focus-ring)]"
                 placeholder="0.00"
                 step="0.01"
                 min="0"
               />
             </div>
             <div>
-              <label className="mb-1 block text-xs text-slate-500">Method</label>
+              <label className="mb-1 block text-xs font-medium text-[var(--text-muted)]">Method</label>
               <input
                 type="text"
                 value={paymentMethod}
                 onChange={(e) => setPaymentMethod(e.target.value)}
-                className="w-full rounded-lg border border-slate-200 px-3 py-1.5 text-sm focus:border-red-400 focus:outline-none focus:ring-1 focus:ring-red-400"
+                className="w-full rounded-lg border border-[var(--border-soft)] bg-white px-3 py-2 text-sm text-[var(--text-primary)] focus:border-[var(--brand-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--focus-ring)]"
                 placeholder="e.g. UPI, NEFT"
               />
             </div>
@@ -280,7 +288,7 @@ export function InvoiceDetailClient({
             <button
               onClick={submitPayment}
               disabled={isPending || !paymentAmount}
-              className="rounded-lg bg-green-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50"
+              className="rounded-full bg-[var(--state-success)] px-4 py-2 text-sm font-medium text-white transition-all hover:opacity-90 disabled:opacity-50"
             >
               Record
             </button>
@@ -290,7 +298,7 @@ export function InvoiceDetailClient({
                 setPaymentAmount("");
                 setPaymentMethod("");
               }}
-              className="rounded-lg bg-slate-100 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-200"
+              className="rounded-full border border-[var(--border-default)] bg-white px-4 py-2 text-sm font-medium text-[var(--text-primary)] transition-colors hover:bg-[var(--surface-subtle)]"
             >
               Cancel
             </button>
@@ -301,26 +309,28 @@ export function InvoiceDetailClient({
       {/* Payment Summary */}
       {invoiceSummary && (
         <div>
-          <h3 className="mb-2 text-sm font-medium text-slate-700">Payment Summary</h3>
-          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-1.5 text-sm">
+          <h3 className="mb-2.5 text-[0.68rem] font-semibold uppercase tracking-[0.24em] text-[var(--text-muted)]">
+            Payment Summary
+          </h3>
+          <div className="rounded-xl border border-[var(--border-default)] bg-[var(--surface-subtle)] p-4 space-y-2 text-sm">
             <div className="flex justify-between">
-              <span className="text-slate-500">Total</span>
-              <span className="font-medium text-slate-900">{formatCurrency(invoiceSummary.totalAmount)}</span>
+              <span className="text-[var(--text-muted)]">Total</span>
+              <span className="font-medium text-[var(--text-primary)]">{formatCurrency(invoiceSummary.totalAmount)}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-slate-500">Paid</span>
-              <span className="font-medium text-green-700">{formatCurrency(invoiceSummary.amountPaid)}</span>
+              <span className="text-[var(--text-muted)]">Paid</span>
+              <span className="font-medium text-[var(--state-success)]">{formatCurrency(invoiceSummary.amountPaid)}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-slate-500">Remaining</span>
-              <span className={`font-medium ${invoiceSummary.remainingAmount > 0 ? "text-orange-700" : "text-slate-500"}`}>
+              <span className="text-[var(--text-muted)]">Remaining</span>
+              <span className={cn("font-medium", invoiceSummary.remainingAmount > 0 ? "text-[var(--state-warning)]" : "text-[var(--text-muted)]")}>
                 {invoiceSummary.remainingAmount > 0 ? formatCurrency(invoiceSummary.remainingAmount) : "—"}
               </span>
             </div>
             {invoiceSummary.lastPaymentAt && (
-              <div className="flex justify-between pt-1 border-t border-slate-200">
-                <span className="text-slate-500">Last payment</span>
-                <span className="text-slate-700 text-xs">
+              <div className="flex justify-between pt-2 border-t border-[var(--border-soft)]">
+                <span className="text-[var(--text-muted)]">Last payment</span>
+                <span className="text-[var(--text-secondary)] text-xs">
                   {new Date(invoiceSummary.lastPaymentAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
                   {invoiceSummary.lastPaymentMethod && ` via ${invoiceSummary.lastPaymentMethod}`}
                 </span>
@@ -328,8 +338,8 @@ export function InvoiceDetailClient({
             )}
             {invoiceSummary.paymentPromiseDate && (
               <div className="flex justify-between">
-                <span className="text-slate-500">Next promised</span>
-                <span className="text-slate-700">{invoiceSummary.paymentPromiseDate}</span>
+                <span className="text-[var(--text-muted)]">Next promised</span>
+                <span className="text-[var(--text-secondary)]">{invoiceSummary.paymentPromiseDate}</span>
               </div>
             )}
           </div>
@@ -339,27 +349,32 @@ export function InvoiceDetailClient({
       {/* Payment Ledger */}
       {payments.length > 0 && (
         <div>
-          <h3 className="mb-2 text-sm font-medium text-slate-700">Payment Ledger</h3>
-          <div className="rounded-lg border border-slate-200 overflow-hidden">
+          <h3 className="mb-2.5 text-[0.68rem] font-semibold uppercase tracking-[0.24em] text-[var(--text-muted)]">
+            Payment Ledger
+          </h3>
+          <div className="rounded-xl border border-[var(--border-default)] overflow-hidden">
             <table className="w-full text-xs">
               <thead>
-                <tr className="border-b border-slate-200 bg-slate-50">
-                  <th className="px-2 py-2 text-left font-medium text-slate-500">Date</th>
-                  <th className="px-2 py-2 text-right font-medium text-slate-500">Amount</th>
-                  <th className="px-2 py-2 text-left font-medium text-slate-500">Source</th>
-                  <th className="px-2 py-2 text-left font-medium text-slate-500">Status</th>
+                <tr className="border-b border-[var(--border-soft)] bg-[var(--surface-subtle)]">
+                  <th className="px-3 py-2.5 text-left font-semibold text-[var(--text-muted)] uppercase tracking-wider">Date</th>
+                  <th className="px-3 py-2.5 text-right font-semibold text-[var(--text-muted)] uppercase tracking-wider">Amount</th>
+                  <th className="px-3 py-2.5 text-left font-semibold text-[var(--text-muted)] uppercase tracking-wider">Source</th>
+                  <th className="px-3 py-2.5 text-left font-semibold text-[var(--text-muted)] uppercase tracking-wider">Status</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-[var(--border-soft)]">
                 {payments.map((p) => (
-                  <tr key={p.id} className="hover:bg-slate-50">
-                    <td className="px-2 py-2 text-slate-600">
+                  <tr key={p.id} className="hover:bg-[var(--surface-subtle)] transition-colors">
+                    <td className="px-3 py-2.5 text-[var(--text-secondary)]">
                       {new Date(p.paidAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
                     </td>
-                    <td className="px-2 py-2 text-right font-medium text-slate-900">{formatCurrency(p.amount)}</td>
-                    <td className="px-2 py-2 text-slate-600">{SOURCE_LABELS[p.source] ?? p.source}</td>
-                    <td className="px-2 py-2">
-                      <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-xs font-medium ${PAYMENT_STATUS_COLORS[p.status] ?? "bg-slate-100 text-slate-700"}`}>
+                    <td className="px-3 py-2.5 text-right font-medium text-[var(--text-primary)]">{formatCurrency(p.amount)}</td>
+                    <td className="px-3 py-2.5 text-[var(--text-secondary)]">{SOURCE_LABELS[p.source] ?? p.source}</td>
+                    <td className="px-3 py-2.5">
+                      <span className={cn(
+                        "inline-flex items-center rounded-full px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wider",
+                        PAYMENT_STATUS_COLORS[p.status] ?? "bg-[var(--surface-subtle)] text-[var(--text-muted)]"
+                      )}>
                         {p.status.replace("_", " ")}
                       </span>
                     </td>
@@ -374,20 +389,22 @@ export function InvoiceDetailClient({
       {/* Payment Link Card */}
       {invoiceSummary?.razorpayPaymentLinkUrl && (
         <div>
-          <h3 className="mb-2 text-sm font-medium text-slate-700">Payment Link</h3>
-          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2 text-sm">
+          <h3 className="mb-2.5 text-[0.68rem] font-semibold uppercase tracking-[0.24em] text-[var(--text-muted)]">
+            Payment Link
+          </h3>
+          <div className="rounded-xl border border-[var(--border-default)] bg-[var(--surface-subtle)] p-4 space-y-2.5 text-sm">
             {invoiceSummary.paymentLinkStatus && (
               <div className="flex justify-between items-center">
-                <span className="text-slate-500">Status</span>
+                <span className="text-[var(--text-muted)]">Status</span>
                 <span
-                  className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
+                  className={cn(
+                    "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
                     invoiceSummary.paymentLinkStatus === "paid"
-                      ? "bg-green-100 text-green-700"
-                      : invoiceSummary.paymentLinkStatus === "expired" ||
-                        invoiceSummary.paymentLinkStatus === "cancelled"
-                      ? "bg-slate-100 text-slate-500"
-                      : "bg-blue-100 text-blue-700"
-                  }`}
+                      ? "bg-[var(--state-success-soft)] text-[var(--state-success)]"
+                      : invoiceSummary.paymentLinkStatus === "expired" || invoiceSummary.paymentLinkStatus === "cancelled"
+                      ? "bg-[var(--surface-subtle)] text-[var(--text-muted)]"
+                      : "bg-[var(--state-info-soft)] text-[var(--state-info)]"
+                  )}
                 >
                   {invoiceSummary.paymentLinkStatus}
                 </span>
@@ -395,23 +412,23 @@ export function InvoiceDetailClient({
             )}
             {invoiceSummary.paymentLinkExpiresAt && (
               <div className="flex justify-between">
-                <span className="text-slate-500">Expires</span>
-                <span className="text-slate-700">{new Date(invoiceSummary.paymentLinkExpiresAt).toLocaleDateString("en-IN")}</span>
+                <span className="text-[var(--text-muted)]">Expires</span>
+                <span className="text-[var(--text-secondary)]">{new Date(invoiceSummary.paymentLinkExpiresAt).toLocaleDateString("en-IN")}</span>
               </div>
             )}
             {invoiceSummary.paymentLinkLastEventAt && (
               <div className="flex justify-between">
-                <span className="text-slate-500">Last event</span>
-                <span className="text-slate-700">{new Date(invoiceSummary.paymentLinkLastEventAt).toLocaleDateString("en-IN")}</span>
+                <span className="text-[var(--text-muted)]">Last event</span>
+                <span className="text-[var(--text-secondary)]">{new Date(invoiceSummary.paymentLinkLastEventAt).toLocaleDateString("en-IN")}</span>
               </div>
             )}
-            <div className="pt-1 border-t border-slate-200 space-y-2">
-              <p className="text-xs text-slate-500 truncate">{invoiceSummary.razorpayPaymentLinkUrl}</p>
-              <div className="flex gap-2">
+            <div className="pt-2 border-t border-[var(--border-soft)] space-y-2.5">
+              <p className="text-xs text-[var(--text-muted)] truncate">{invoiceSummary.razorpayPaymentLinkUrl}</p>
+              <div className="flex gap-3">
                 <button
                   type="button"
                   onClick={() => navigator.clipboard.writeText(invoiceSummary.razorpayPaymentLinkUrl!)}
-                  className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                  className="text-xs font-medium text-[var(--brand-primary)] hover:text-[#0F1D36] transition-colors"
                 >
                   Copy Link
                 </button>
@@ -439,7 +456,9 @@ export function InvoiceDetailClient({
 
       {/* Timeline */}
       <div>
-        <h3 className="mb-3 text-sm font-medium text-slate-700">Timeline</h3>
+        <h3 className="mb-3 text-[0.68rem] font-semibold uppercase tracking-[0.24em] text-[var(--text-muted)]">
+          Timeline
+        </h3>
         <InvoiceTimeline events={events} />
       </div>
     </div>
@@ -488,7 +507,7 @@ function GatewayLinkActions({
           type="button"
           onClick={handleCreate}
           disabled={isPending}
-          className="inline-flex items-center rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+          className="inline-flex items-center rounded-full bg-[var(--brand-primary)] px-3 py-1.5 text-xs font-medium text-white transition-all hover:bg-[#0F1D36] disabled:opacity-50"
         >
           {isPending ? "Creating…" : "Create Payment Link"}
         </button>
@@ -497,13 +516,13 @@ function GatewayLinkActions({
           type="button"
           onClick={handleCancel}
           disabled={isPending}
-          className="text-xs text-red-600 hover:text-red-800 font-medium disabled:opacity-50"
+          className="text-xs font-medium text-[var(--state-danger)] hover:text-[#B91C1C] transition-colors disabled:opacity-50"
         >
           {isPending ? "Cancelling…" : "Cancel Link"}
         </button>
       )}
       {result && !result.ok && (
-        <span className="text-xs text-red-600">{result.message}</span>
+        <span className="text-xs text-[var(--state-danger)]">{result.message}</span>
       )}
     </span>
   );

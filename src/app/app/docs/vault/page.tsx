@@ -2,9 +2,13 @@ import { Suspense } from "react";
 import Link from "next/link";
 import { queryVault } from "@/lib/docs-vault";
 import type { DocType, VaultRow } from "@/lib/docs-vault";
+import { StatusBadge } from "@/components/dashboard/status-badge";
+import { cn } from "@/lib/utils";
+import { Search, ArrowRight, FileText, Receipt, Banknote, FileCheck } from "lucide-react";
+import { TagFilterChips } from "@/components/tags/tag-filter-chips";
 
 export const metadata = {
-  title: "Document Vault | SW Docs | Slipwise",
+  title: "Document Vault | Slipwise",
   description: "Unified view of all invoices, vouchers, salary slips, and quotes across your organisation.",
 };
 
@@ -27,46 +31,6 @@ function formatDate(d: Date | string) {
   });
 }
 
-// ─── Badge maps ───────────────────────────────────────────────────────────────
-
-const DOC_TYPE_COLORS: Record<string, string> = {
-  invoice: "bg-blue-50 text-blue-700 ring-1 ring-blue-200",
-  voucher: "bg-violet-50 text-violet-700 ring-1 ring-violet-200",
-  salary_slip: "bg-amber-50 text-amber-700 ring-1 ring-amber-200",
-  quote: "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200",
-};
-
-const DOC_TYPE_LABELS: Record<string, string> = {
-  invoice: "Invoice",
-  voucher: "Voucher",
-  salary_slip: "Salary Slip",
-  quote: "Quote",
-};
-
-const STATUS_COLORS: Record<string, string> = {
-  // invoice
-  DRAFT: "bg-slate-100 text-slate-600",
-  ISSUED: "bg-blue-100 text-blue-700",
-  VIEWED: "bg-purple-100 text-purple-700",
-  DUE: "bg-yellow-100 text-yellow-700",
-  PARTIALLY_PAID: "bg-orange-100 text-orange-700",
-  PAID: "bg-green-100 text-green-700",
-  OVERDUE: "bg-red-100 text-red-700",
-  DISPUTED: "bg-pink-100 text-pink-700",
-  CANCELLED: "bg-slate-200 text-slate-500",
-  REISSUED: "bg-indigo-100 text-indigo-700",
-  // voucher / salary
-  draft: "bg-slate-100 text-slate-600",
-  approved: "bg-green-100 text-green-700",
-  released: "bg-blue-100 text-blue-700",
-  // quote
-  SENT: "bg-cyan-100 text-cyan-700",
-  ACCEPTED: "bg-green-100 text-green-700",
-  DECLINED: "bg-red-100 text-red-700",
-  EXPIRED: "bg-slate-200 text-slate-500",
-  CONVERTED: "bg-indigo-100 text-indigo-700",
-};
-
 function getDetailHref(row: VaultRow): string {
   switch (row.docType as DocType) {
     case "invoice": return `/app/docs/invoices/${row.documentId}`;
@@ -77,69 +41,101 @@ function getDetailHref(row: VaultRow): string {
   }
 }
 
+// ─── Type + Status maps ──────────────────────────────────────────────────────
+
+const DOC_TYPE_CONFIG: Record<string, { label: string; icon: typeof FileText; variant: Parameters<typeof StatusBadge>[0]["variant"] }> = {
+  invoice: { label: "Invoice", icon: FileText, variant: "info" },
+  voucher: { label: "Voucher", icon: Receipt, variant: "default" },
+  salary_slip: { label: "Salary Slip", icon: Banknote, variant: "warning" },
+  quote: { label: "Quote", icon: FileCheck, variant: "success" },
+};
+
+const STATUS_VARIANTS: Record<string, Parameters<typeof StatusBadge>[0]["variant"]> = {
+  DRAFT: "neutral",
+  ISSUED: "info",
+  VIEWED: "info",
+  DUE: "warning",
+  PARTIALLY_PAID: "warning",
+  PAID: "success",
+  OVERDUE: "danger",
+  DISPUTED: "danger",
+  CANCELLED: "neutral",
+  REISSUED: "info",
+  SENT: "info",
+  ACCEPTED: "success",
+  DECLINED: "danger",
+  EXPIRED: "neutral",
+  CONVERTED: "success",
+  draft: "neutral",
+  approved: "success",
+  released: "info",
+};
+
 // ─── Row component ────────────────────────────────────────────────────────────
 
 function VaultTableRow({ row }: { row: VaultRow }) {
-  const statusCls =
-    STATUS_COLORS[row.status] ?? "bg-slate-100 text-slate-600";
-  const typeCls = DOC_TYPE_COLORS[row.docType] ?? "bg-slate-100 text-slate-600";
+  const typeConfig = DOC_TYPE_CONFIG[row.docType] ?? { label: row.docType, icon: FileText, variant: "neutral" };
+  const statusVariant = STATUS_VARIANTS[row.status] ?? "neutral";
+  const TypeIcon = typeConfig.icon;
 
   return (
-    <tr className="group hover:bg-slate-50 transition-colors">
-      <td className="px-4 py-3 whitespace-nowrap">
-        <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium ${typeCls}`}>
-          {DOC_TYPE_LABELS[row.docType] ?? row.docType}
-        </span>
+    <tr className="group transition-colors hover:bg-[var(--surface-subtle)]">
+      <td className="px-4 py-3.5 whitespace-nowrap">
+        <div className="flex items-center gap-2">
+          <span className="flex h-7 w-7 items-center justify-center rounded-md bg-[var(--surface-subtle)] text-[var(--text-muted)] transition-colors group-hover:bg-[var(--surface-selected)] group-hover:text-[var(--brand-primary)]">
+            <TypeIcon className="h-3.5 w-3.5" />
+          </span>
+          <StatusBadge variant={typeConfig.variant}>{typeConfig.label}</StatusBadge>
+        </div>
       </td>
-      <td className="px-4 py-3">
+      <td className="px-4 py-3.5">
         <Link
           href={getDetailHref(row)}
-          className="font-medium text-blue-600 hover:text-blue-800 hover:underline text-sm"
+          className="text-sm font-semibold text-[var(--brand-primary)] hover:underline transition-colors"
         >
           {row.documentNumber}
         </Link>
       </td>
-      <td className="px-4 py-3 text-sm text-slate-900 max-w-xs truncate">
+      <td className="px-4 py-3.5 text-sm text-[var(--text-secondary)] max-w-xs truncate">
         {row.titleOrSummary}
       </td>
-      <td className="px-4 py-3 text-sm text-slate-600">
+      <td className="px-4 py-3.5 text-sm text-[var(--text-muted)]">
         {row.counterpartyLabel ?? "—"}
       </td>
-      <td className="px-4 py-3 whitespace-nowrap">
+      <td className="px-4 py-3.5 whitespace-nowrap">
         <div className="flex flex-col gap-1.5">
-          <span className={`inline-flex w-fit items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${statusCls}`}>
-            {row.status.replace(/_/g, " ")}
-          </span>
+          <StatusBadge variant={statusVariant}>{row.status.replace(/_/g, " ")}</StatusBadge>
           {row.operationalBadges?.map((badge) => (
             <Link
               key={`${row.documentId}-${badge.kind}`}
               href={badge.href}
-              className={`inline-flex w-fit items-center rounded-full px-2.5 py-0.5 text-xs font-medium hover:underline ${
+              className={cn(
+                "inline-flex w-fit items-center rounded-full px-2 py-0.5 text-[0.65rem] font-medium uppercase tracking-wider transition-colors",
                 badge.kind === "pending_proof"
-                  ? "bg-amber-100 text-amber-700"
-                  : "bg-blue-100 text-blue-700"
-              }`}
+                  ? "bg-[var(--state-warning-soft)] text-[var(--state-warning)]"
+                  : "bg-[var(--state-info-soft)] text-[var(--state-info)]"
+              )}
             >
               {badge.label}
             </Link>
           ))}
         </div>
       </td>
-      <td className="px-4 py-3 text-sm text-slate-600 whitespace-nowrap">
+      <td className="px-4 py-3.5 text-sm text-[var(--text-muted)] whitespace-nowrap">
         {formatDate(row.primaryDate)}
       </td>
-      <td className="px-4 py-3 text-sm text-right font-medium text-slate-900 whitespace-nowrap">
+      <td className="px-4 py-3.5 text-sm text-right font-semibold text-[var(--text-primary)] whitespace-nowrap">
         {row.amount > 0 ? formatCurrency(row.amount, row.currency) : "—"}
       </td>
-      <td className="px-4 py-3 text-sm text-slate-500 whitespace-nowrap">
+      <td className="px-4 py-3.5 text-sm text-[var(--text-muted)] whitespace-nowrap">
         {formatDate(row.updatedAt)}
       </td>
-      <td className="px-4 py-3 text-right">
+      <td className="px-4 py-3.5 text-right">
         <Link
           href={getDetailHref(row)}
-          className="text-xs text-slate-500 hover:text-blue-600 hover:underline"
+          className="inline-flex items-center gap-1 text-xs font-medium text-[var(--text-muted)] hover:text-[var(--brand-primary)] transition-colors"
         >
-          Open →
+          Open <ArrowRight className="h-3 w-3" />
         </Link>
       </td>
     </tr>
@@ -156,6 +152,7 @@ async function VaultTable({
   sortBy,
   sortDir,
   page,
+  tagIds,
 }: {
   docType?: string;
   status?: string;
@@ -164,6 +161,7 @@ async function VaultTable({
   sortBy?: string;
   sortDir?: string;
   page: number;
+  tagIds?: string[];
 }) {
   const result = await queryVault({
     docType: (docType as DocType) || "all",
@@ -174,21 +172,19 @@ async function VaultTable({
     sortDir: (sortDir as "asc" | "desc") || "desc",
     page,
     limit: 25,
+    tagIds,
   });
 
   const { rows, total, totalPages } = result;
 
   if (rows.length === 0) {
     return (
-      <div className="rounded-xl border border-dashed border-slate-300 bg-white p-16 text-center">
-        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-slate-100">
-          <svg className="h-7 w-7 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-              d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-          </svg>
+      <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-[var(--border-default)] bg-[var(--surface-subtle)] px-6 py-16 text-center">
+        <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-[var(--surface-subtle)]">
+          <FileText className="h-7 w-7 text-[var(--text-muted)]" />
         </div>
-        <h3 className="text-base font-semibold text-slate-900">No documents found</h3>
-        <p className="mt-1 text-sm text-slate-500">
+        <h3 className="text-base font-semibold text-[var(--text-primary)]">No documents found</h3>
+        <p className="mt-1 text-sm text-[var(--text-muted)]">
           {search ? `No results for "${search}". Try different search terms.` :
             archived === "archived" ? "No archived documents." :
             "Create an invoice, voucher, salary slip, or quote to see it here."}
@@ -196,13 +192,13 @@ async function VaultTable({
         <div className="mt-6 flex items-center justify-center gap-3">
           <Link
             href="/app/docs/invoices/new"
-            className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
+            className="rounded-lg bg-[var(--brand-cta)] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#B91C1C]"
           >
             New Invoice
           </Link>
           <Link
             href="/app/docs/quotes/new"
-            className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+            className="rounded-lg border border-[var(--border-default)] bg-white px-4 py-2 text-sm font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--surface-subtle)]"
           >
             New Quote
           </Link>
@@ -212,23 +208,23 @@ async function VaultTable({
   }
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white overflow-hidden shadow-sm">
+    <div className="slipwise-panel overflow-hidden">
       <div className="overflow-x-auto">
         <table className="w-full min-w-[900px]">
           <thead>
-            <tr className="border-b border-slate-200 bg-slate-50">
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">Type</th>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">Number</th>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">Title / Summary</th>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">Counterparty</th>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">Status</th>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">Date</th>
-              <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-slate-500">Amount</th>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">Updated</th>
+            <tr className="border-b border-[var(--border-soft)] bg-[var(--surface-subtle)] text-left">
+              <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">Type</th>
+              <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">Number</th>
+              <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">Title / Summary</th>
+              <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">Counterparty</th>
+              <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">Status</th>
+              <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">Date</th>
+              <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">Amount</th>
+              <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">Updated</th>
               <th className="px-4 py-3" />
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100">
+          <tbody className="divide-y divide-[var(--border-soft)]">
             {rows.map((row) => (
               <VaultTableRow key={`${row.docType}-${row.documentId}`} row={row} />
             ))}
@@ -238,26 +234,26 @@ async function VaultTable({
 
       {/* Pagination */}
       {totalPages > 1 && (
-        <div className="flex items-center justify-between border-t border-slate-200 px-4 py-3 bg-slate-50">
-          <p className="text-sm text-slate-500">
+        <div className="flex items-center justify-between border-t border-[var(--border-soft)] bg-[var(--surface-subtle)] px-4 py-3">
+          <p className="text-xs text-[var(--text-muted)]">
             {total} document{total !== 1 ? "s" : ""}
           </p>
-          <div className="flex gap-2">
+          <div className="flex items-center gap-1">
             {page > 1 && (
               <Link
                 href={`?page=${page - 1}`}
-                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50 transition-colors"
+                className="rounded-lg border border-[var(--border-default)] bg-white px-3 py-1.5 text-xs font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--surface-subtle)]"
               >
                 ← Previous
               </Link>
             )}
-            <span className="flex items-center px-3 text-sm text-slate-500">
+            <span className="flex items-center px-3 text-xs font-medium text-[var(--text-muted)]">
               {page} / {totalPages}
             </span>
             {page < totalPages && (
               <Link
                 href={`?page=${page + 1}`}
-                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50 transition-colors"
+                className="rounded-lg border border-[var(--border-default)] bg-white px-3 py-1.5 text-xs font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--surface-subtle)]"
               >
                 Next →
               </Link>
@@ -271,16 +267,20 @@ async function VaultTable({
 
 // ─── Filter chips ─────────────────────────────────────────────────────────────
 
-function buildUrl(params: Record<string, string>, overrides: Record<string, string>) {
+function buildUrl(params: Record<string, string>, overrides: Record<string, string>, extraTags?: string[]) {
   const merged = { ...params, ...overrides, page: "1" };
   const qs = Object.entries(merged)
     .filter(([, v]) => v && v !== "all" && v !== "")
     .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
     .join("&");
-  return qs ? `?${qs}` : "?";
+  const tagStr = extraTags && extraTags.length > 0
+    ? extraTags.map((t) => `tagId=${encodeURIComponent(t)}`).join("&")
+    : "";
+  const combined = [qs, tagStr].filter(Boolean).join("&");
+  return combined ? `?${combined}` : "?";
 }
 
-function TypeFilter({ current, params }: { current: string; params: Record<string, string> }) {
+function TypeFilter({ current, params, tagIds }: { current: string; params: Record<string, string>; tagIds?: string[] }) {
   const types = [
     { value: "all", label: "All Types" },
     { value: "invoice", label: "Invoices" },
@@ -295,12 +295,13 @@ function TypeFilter({ current, params }: { current: string; params: Record<strin
         return (
           <Link
             key={t.value}
-            href={buildUrl(params, { docType: t.value })}
-            className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+            href={buildUrl(params, { docType: t.value }, tagIds)}
+            className={cn(
+              "rounded-full px-3 py-1 text-xs font-medium transition-colors",
               active
-                ? "bg-slate-900 text-white"
-                : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-            }`}
+                ? "bg-[var(--brand-primary)] text-white"
+                : "bg-[var(--surface-subtle)] text-[var(--text-secondary)] hover:bg-[var(--surface-selected)]"
+            )}
           >
             {t.label}
           </Link>
@@ -310,23 +311,24 @@ function TypeFilter({ current, params }: { current: string; params: Record<strin
   );
 }
 
-function ArchivedFilter({ current, params }: { current: string; params: Record<string, string> }) {
+function ArchivedFilter({ current, params, tagIds }: { current: string; params: Record<string, string>; tagIds?: string[] }) {
   const options = [
     { value: "active", label: "Active" },
     { value: "all", label: "All" },
-    { value: "archived", label: "Archived only" },
+    { value: "archived", label: "Archived" },
   ];
   return (
-    <div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white p-1">
+    <div className="flex items-center gap-1 rounded-lg border border-[var(--border-soft)] bg-[var(--surface-panel)] p-1">
       {options.map((o) => {
         const active = current === o.value || (!current && o.value === "active");
         return (
           <Link
             key={o.value}
-            href={buildUrl(params, { archived: o.value })}
-            className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
-              active ? "bg-slate-900 text-white" : "text-slate-600 hover:text-slate-900"
-            }`}
+            href={buildUrl(params, { archived: o.value }, tagIds)}
+            className={cn(
+              "rounded-md px-3 py-1 text-xs font-medium transition-colors",
+              active ? "bg-[var(--brand-primary)] text-white" : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+            )}
           >
             {o.label}
           </Link>
@@ -336,7 +338,7 @@ function ArchivedFilter({ current, params }: { current: string; params: Record<s
   );
 }
 
-function SortSelect({ params }: { params: Record<string, string> }) {
+function SortSelect({ params, tagIds }: { params: Record<string, string>; tagIds?: string[] }) {
   const sorts = [
     { value: "updatedAt", label: "Recently updated" },
     { value: "createdAt", label: "Recently created" },
@@ -346,7 +348,7 @@ function SortSelect({ params }: { params: Record<string, string> }) {
   const current = params.sortBy ?? "updatedAt";
   return (
     <div className="flex items-center gap-2">
-      <span className="text-xs text-slate-500">Sort:</span>
+      <span className="text-xs text-[var(--text-muted)]">Sort:</span>
       <div className="flex flex-wrap gap-1">
         {sorts.map((s) => (
           <Link
@@ -354,12 +356,13 @@ function SortSelect({ params }: { params: Record<string, string> }) {
             href={buildUrl(params, {
               sortBy: s.value,
               sortDir: s.value === "amount" ? "desc" : "desc",
-            })}
-            className={`rounded px-2.5 py-1 text-xs font-medium transition-colors ${
+            }, tagIds)}
+            className={cn(
+              "rounded px-2.5 py-1 text-xs font-medium transition-colors",
               current === s.value
-                ? "bg-blue-100 text-blue-700"
-                : "text-slate-500 hover:text-slate-700 hover:bg-slate-100"
-            }`}
+                ? "bg-[var(--surface-selected)] text-[var(--brand-primary)]"
+                : "text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-subtle)]"
+            )}
           >
             {s.label}
           </Link>
@@ -385,115 +388,107 @@ export default async function VaultPage({
   const sortBy = params.sortBy ?? "updatedAt";
   const sortDir = params.sortDir ?? "desc";
   const status = params.status ?? "all";
+  const tagIdStr = params.tagId;
+  const tagIds = tagIdStr ? (Array.isArray(tagIdStr) ? tagIdStr : [tagIdStr]) : undefined;
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <div className="mx-auto max-w-screen-xl px-4 py-8">
-
-        {/* ── Header ───────────────────────────────── */}
-        <div className="mb-6 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <nav className="mb-1 flex items-center gap-1.5 text-xs text-slate-500">
-              <Link href="/app/docs" className="hover:text-slate-700">SW Docs</Link>
-              <span>›</span>
-              <span className="text-slate-700 font-medium">Vault</span>
-            </nav>
-            <h1 className="text-2xl font-bold text-slate-900">Document Vault</h1>
-            <p className="mt-0.5 text-sm text-slate-500">
-              Unified view of invoices, vouchers, salary slips, and quotes
-            </p>
-          </div>
-          <div className="flex items-center gap-2 mt-3 sm:mt-0">
-            <Link
-              href="/app/docs/invoices/new"
-              className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
-            >
-              + Invoice
-            </Link>
-            <Link
-              href="/app/docs/vouchers/new"
-              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
-            >
-              + Voucher
-            </Link>
-            <Link
-              href="/app/docs/quotes/new"
-              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
-            >
-              + Quote
-            </Link>
-          </div>
+    <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6">
+      {/* Header */}
+      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <nav className="mb-1 flex items-center gap-1.5 text-xs text-[var(--text-muted)]">
+            <Link href="/app/docs" className="hover:text-[var(--text-primary)] transition-colors">Docs</Link>
+            <span>/</span>
+            <span className="font-medium text-[var(--text-secondary)]">Vault</span>
+          </nav>
+          <h1 className="text-xl font-semibold text-[var(--text-primary)]">Document Vault</h1>
+          <p className="mt-0.5 text-sm text-[var(--text-muted)]">
+            Unified view of invoices, vouchers, salary slips, and quotes
+          </p>
         </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Link
+            href="/app/docs/invoices/new"
+            className="rounded-lg bg-[var(--brand-cta)] px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-[#B91C1C]"
+          >
+            + Invoice
+          </Link>
+          <Link
+            href="/app/docs/vouchers/new"
+            className="rounded-lg border border-[var(--border-default)] bg-white px-3 py-2 text-sm font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--surface-subtle)]"
+          >
+            + Voucher
+          </Link>
+          <Link
+            href="/app/docs/quotes/new"
+            className="rounded-lg border border-[var(--border-default)] bg-white px-3 py-2 text-sm font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--surface-subtle)]"
+          >
+            + Quote
+          </Link>
+        </div>
+      </div>
 
-        {/* ── Controls ─────────────────────────────── */}
-        <div className="mb-4 flex flex-col gap-3">
+      {/* Controls */}
+      <div className="mb-4 flex flex-col gap-3">
+        {/* Search */}
+        <form method="GET" className="flex-1">
+          {params.docType && <input type="hidden" name="docType" value={params.docType} />}
+          {params.archived && <input type="hidden" name="archived" value={params.archived} />}
+          {params.sortBy && <input type="hidden" name="sortBy" value={params.sortBy} />}
+          {params.sortDir && <input type="hidden" name="sortDir" value={params.sortDir} />}
+          {tagIds && tagIds.map((tid) => <input type="hidden" key={tid} name="tagId" value={tid} />)}
 
-          {/* Row 1: search */}
-          <form method="GET" className="flex-1">
-            {/* Preserve existing filter params in hidden inputs */}
-            {params.docType && <input type="hidden" name="docType" value={params.docType} />}
-            {params.archived && <input type="hidden" name="archived" value={params.archived} />}
-            {params.sortBy && <input type="hidden" name="sortBy" value={params.sortBy} />}
-            {params.sortDir && <input type="hidden" name="sortDir" value={params.sortDir} />}
+          <div className="relative max-w-md">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-muted)]" />
+            <input
+              type="text"
+              name="search"
+              defaultValue={search}
+              placeholder="Search number, counterparty, title…"
+              className="w-full rounded-lg border border-[var(--border-default)] bg-white py-2 pl-9 pr-4 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] transition-colors focus:border-[var(--brand-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--focus-ring)]"
+            />
+          </div>
+        </form>
 
-            <div className="relative max-w-md">
-              <svg
-                className="absolute left-3 top-2.5 h-4 w-4 text-slate-400"
-                fill="none" viewBox="0 0 24 24" stroke="currentColor"
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
-              <input
-                type="text"
-                name="search"
-                defaultValue={search}
-                placeholder="Search number, counterparty, title…"
-                className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-4 text-sm text-slate-700 placeholder-slate-400 focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-400"
-              />
-            </div>
-          </form>
-
-          {/* Row 2: type filter + archived toggle + sort */}
-          <div className="flex flex-wrap items-center gap-3">
-            <TypeFilter current={docType} params={params} />
-            <div className="ml-auto flex flex-wrap items-center gap-3">
-              <ArchivedFilter current={archived} params={params} />
-              <SortSelect params={params} />
-            </div>
+        {/* Filters */}
+        <div className="flex flex-wrap items-center gap-3">
+          <TypeFilter current={docType} params={params} tagIds={tagIds} />
+          <Suspense fallback={null}>
+            <TagFilterChips />
+          </Suspense>
+          <div className="ml-auto flex flex-wrap items-center gap-3">
+            <ArchivedFilter current={archived} params={params} tagIds={tagIds} />
+            <SortSelect params={params} tagIds={tagIds} />
           </div>
         </div>
+      </div>
 
-        {/* ── Vault table ─────────────────────────── */}
-        <Suspense
-          fallback={
-            <div className="flex items-center justify-center py-20 text-slate-400">
-              <svg className="mr-2 h-5 w-5 animate-spin" viewBox="0 0 24 24" fill="none">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor"
-                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-              </svg>
-              Loading vault…
-            </div>
-          }
-        >
-          <VaultTable
-            docType={docType}
-            status={status}
-            archived={archived}
-            search={search}
-            sortBy={sortBy}
-            sortDir={sortDir}
-            page={page}
-          />
-        </Suspense>
+      {/* Vault table */}
+      <Suspense
+        fallback={
+          <div className="flex items-center justify-center py-20 text-[var(--text-muted)]">
+            <div className="mr-2 h-5 w-5 animate-spin rounded-full border-2 border-[var(--border-soft)] border-t-[var(--brand-primary)]" />
+            Loading vault…
+          </div>
+        }
+      >
+        <VaultTable
+          docType={docType}
+          status={status}
+          archived={archived}
+          search={search}
+          sortBy={sortBy}
+          sortDir={sortDir}
+          page={page}
+          tagIds={tagIds}
+        />
+      </Suspense>
 
-        {/* ── Footer nav ─────────────────────────── */}
-        <div className="mt-8 flex flex-wrap gap-4 text-sm text-slate-500">
-          <Link href="/app/docs" className="hover:text-slate-700">← Back to SW Docs</Link>
-          <Link href="/app/docs/templates" className="hover:text-slate-700">Templates</Link>
-          <Link href="/app/docs/pdf-studio" className="hover:text-slate-700">PDF Studio</Link>
-        </div>
+      {/* Footer nav */}
+      <div className="mt-8 flex flex-wrap gap-4 text-sm text-[var(--text-muted)]">
+        <Link href="/app/docs" className="hover:text-[var(--text-primary)] transition-colors">← Back to Docs</Link>
+        <Link href="/app/docs/templates" className="hover:text-[var(--text-primary)] transition-colors">Templates</Link>
+        <Link href="/app/docs/pdf-studio" className="hover:text-[var(--text-primary)] transition-colors">PDF Studio</Link>
       </div>
     </div>
   );

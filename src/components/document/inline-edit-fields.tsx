@@ -7,7 +7,6 @@ import type { BrandingConfig } from "@/lib/branding";
 
 const baseClass =
   "bg-transparent border-0 border-b border-transparent w-full rounded-none px-0 py-0.5 transition-all outline-none " +
-  "text-[var(--voucher-ink)] " +
   "placeholder:text-[rgba(29,23,16,0.3)] " +
   "hover:border-b-[rgba(29,23,16,0.25)] hover:bg-[rgba(29,23,16,0.025)] " +
   "focus:border-b-[var(--voucher-accent)] focus:bg-transparent";
@@ -114,7 +113,7 @@ export function DocumentEditorRoot({
       style={
         {
           "--voucher-ink": "#1d1710",
-          "--voucher-accent": branding.accentColor || "var(--accent)",
+          "--voucher-accent": branding.accentColor || "#dc2626",
         } as CSSProperties
       }
     >

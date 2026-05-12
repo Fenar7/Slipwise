@@ -101,6 +101,8 @@ async function InvoiceTable({
   sequenceId,
   amountMin,
   amountMax,
+  tagIds,
+  hasTags,
 }: {
   status?: InvoiceStatus;
   search?: string;
@@ -110,10 +112,12 @@ async function InvoiceTable({
   sequenceId?: string;
   amountMin?: number;
   amountMax?: number;
+  tagIds?: string[];
+  hasTags?: boolean;
 }) {
   const { invoices, total, totalPages } = await listInvoices({
     status, search, page, limit: 20,
-    dateFrom, dateTo, sequenceId, amountMin, amountMax,
+    dateFrom, dateTo, sequenceId, amountMin, amountMax, tagIds, hasTags,
   });
 
   if (invoices.length === 0) {
@@ -175,8 +179,8 @@ async function InvoiceTable({
         <div className="flex items-center justify-between border-t border-slate-200 px-4 py-3">
           <p className="text-sm text-slate-500">Showing {(page - 1) * 20 + 1} to {Math.min(page * 20, total)} of {total}</p>
           <div className="flex gap-2">
-            {page > 1 && <Link href={`?${buildQuery({ status, search, page: page - 1, dateFrom, dateTo, sequenceId, amountMin, amountMax })}`} className="rounded px-3 py-1 text-sm text-slate-600 hover:bg-slate-100">Previous</Link>}
-            {page < totalPages && <Link href={`?${buildQuery({ status, search, page: page + 1, dateFrom, dateTo, sequenceId, amountMin, amountMax })}`} className="rounded px-3 py-1 text-sm text-slate-600 hover:bg-slate-100">Next</Link>}
+            {page > 1 && <Link href={`?${buildQuery({ status, search, page: page - 1, dateFrom, dateTo, sequenceId, amountMin, amountMax, tagIds: tagIds?.join(","), tagged: hasTags ? "1" : undefined })}`} className="rounded px-3 py-1 text-sm text-slate-600 hover:bg-slate-100">Previous</Link>}
+            {page < totalPages && <Link href={`?${buildQuery({ status, search, page: page + 1, dateFrom, dateTo, sequenceId, amountMin, amountMax, tagIds: tagIds?.join(","), tagged: hasTags ? "1" : undefined })}`} className="rounded px-3 py-1 text-sm text-slate-600 hover:bg-slate-100">Next</Link>}
           </div>
         </div>
       )}
@@ -447,7 +451,7 @@ function InvoiceActions({ invoiceId, status, token }: { invoiceId: string; statu
 export default async function InvoicesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string; search?: string; page?: string; view?: string; dateFrom?: string; dateTo?: string; amountMin?: string; amountMax?: string; sequenceId?: string; filters?: string }>;
+  searchParams: Promise<{ status?: string; search?: string; page?: string; view?: string; dateFrom?: string; dateTo?: string; amountMin?: string; amountMax?: string; sequenceId?: string; tagIds?: string; tagged?: string; filters?: string }>;
 }) {
   const params = await searchParams;
   const page = parseInt(params.page || "1", 10);
@@ -458,6 +462,8 @@ export default async function InvoicesPage({
   const amountMin = params.amountMin ? parseFloat(params.amountMin) : undefined;
   const amountMax = params.amountMax ? parseFloat(params.amountMax) : undefined;
   const sequenceId = params.sequenceId;
+  const tagIds = params.tagIds ? params.tagIds.split(",").filter(Boolean) : undefined;
+  const hasTags = params.tagged === "1";
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -483,7 +489,7 @@ export default async function InvoicesPage({
           {/* Tab bar */}
           <div className="flex items-center rounded-xl bg-white p-1 shadow-sm border border-slate-200">
             <Link
-              href={`/app/docs/invoices?${buildQuery({ search: params.search || undefined })}`}
+              href={`/app/docs/invoices?${buildQuery({ search: params.search || undefined, tagIds: params.tagIds || undefined, tagged: params.tagged || undefined })}`}
               className={`flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-medium transition-all ${
                 view === "list"
                   ? "bg-slate-900 text-white shadow-sm"
@@ -494,7 +500,7 @@ export default async function InvoicesPage({
               List
             </Link>
             <Link
-              href={`/app/docs/invoices?${buildQuery({ view: "sequence", search: params.search || undefined })}`}
+              href={`/app/docs/invoices?${buildQuery({ view: "sequence", search: params.search || undefined, tagIds: params.tagIds || undefined, tagged: params.tagged || undefined })}`}
               className={`flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-medium transition-all ${
                 view === "sequence"
                   ? "bg-slate-900 text-white shadow-sm"
@@ -508,12 +514,14 @@ export default async function InvoicesPage({
 
           {/* Search */}
           <form method="GET" className="relative flex-1 max-w-xs">
-            {status && status !== "undefined" && <input type="hidden" name="status" value={status} />}
+            {status && (status as string) !== "undefined" && <input type="hidden" name="status" value={status} />}
             {view !== "list" && <input type="hidden" name="view" value={view} />}
             {dateFrom && dateFrom !== "undefined" && <input type="hidden" name="dateFrom" value={dateFrom} />}
             {dateTo && dateTo !== "undefined" && <input type="hidden" name="dateTo" value={dateTo} />}
             {params.amountMin && params.amountMin !== "undefined" && <input type="hidden" name="amountMin" value={params.amountMin} />}
             {params.amountMax && params.amountMax !== "undefined" && <input type="hidden" name="amountMax" value={params.amountMax} />}
+            {params.tagIds && params.tagIds !== "undefined" && <input type="hidden" name="tagIds" value={params.tagIds} />}
+            {params.tagged === "1" && <input type="hidden" name="tagged" value="1" />}
             <input
               type="text" name="search" defaultValue={params.search || ""} placeholder="Search invoices..."
               className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 pl-9 text-sm text-slate-700 placeholder-slate-400 focus:border-red-400 focus:outline-none focus:ring-1 focus:ring-red-400"
@@ -524,9 +532,9 @@ export default async function InvoicesPage({
           {/* Filter button */}
           <AdvancedFilters
             current={{ dateFrom, dateTo, amountMin: params.amountMin, amountMax: params.amountMax, sequenceId }}
-            extraParams={{ status: status || undefined, search: params.search || undefined, view }}
+            extraParams={{ status: status || undefined, search: params.search || undefined, view, tagIds: params.tagIds || undefined, tagged: params.tagged || undefined }}
             show={params.filters === "open"}
-            toggle={buildQuery({ status: status || undefined, search: params.search || undefined, view, filters: "open" })}
+            toggle={buildQuery({ status: status || undefined, search: params.search || undefined, view, tagIds: params.tagIds || undefined, tagged: params.tagged || undefined, filters: "open" })}
           />
         </div>
 
@@ -535,7 +543,7 @@ export default async function InvoicesPage({
         {/* Status filter chips (list view only) */}
         {view === "list" && (
           <div className="mb-4">
-            <StatusFilterChips currentStatus={status} extraParams={{ view: params.view, search: params.search || undefined }} />
+            <StatusFilterChips currentStatus={status} extraParams={{ view: params.view, search: params.search || undefined, tagIds: params.tagIds || undefined, tagged: params.tagged || undefined }} />
           </div>
         )}
 
@@ -544,7 +552,7 @@ export default async function InvoicesPage({
           {view === "sequence" ? (
             <InvoiceSequenceView search={params.search} />
           ) : (
-            <InvoiceTable status={status} search={params.search} page={page} dateFrom={dateFrom} dateTo={dateTo} sequenceId={sequenceId} amountMin={amountMin} amountMax={amountMax} />
+            <InvoiceTable status={status} search={params.search} page={page} dateFrom={dateFrom} dateTo={dateTo} sequenceId={sequenceId} amountMin={amountMin} amountMax={amountMax} tagIds={tagIds} hasTags={hasTags} />
           )}
         </Suspense>
       </div>

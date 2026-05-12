@@ -54,11 +54,11 @@ export function ClassicFormalSalarySlipTemplate({
         >
           <div className="flex items-center justify-center gap-3">
             <DocumentBrandMark branding={document.branding} />
-            <h1 className="text-xl font-bold uppercase tracking-wide">
+            <h1 className="text-xl font-bold uppercase tracking-wide text-white">
               {document.branding.companyName || "Slipwise"}
             </h1>
           </div>
-          <div className="mt-1 space-y-0.5 text-xs text-white/80">
+          <div className="mt-1 space-y-0.5 text-xs text-white">
             {document.visibility.showAddress && document.branding.address ? (
               <p>{document.branding.address}</p>
             ) : null}
@@ -71,7 +71,7 @@ export function ClassicFormalSalarySlipTemplate({
               ) : null}
             </p>
           </div>
-          <p className="mt-2 text-sm font-semibold uppercase tracking-[0.3em]">
+          <p className="mt-2 text-sm font-semibold uppercase tracking-[0.3em] text-white">
             Salary Slip
           </p>
         </div>
@@ -194,10 +194,10 @@ export function ClassicFormalSalarySlipTemplate({
           style={{ backgroundColor: "var(--voucher-accent)" }}
         >
           <div className="flex items-center justify-between px-4 py-3">
-            <p className="text-sm font-bold uppercase tracking-wide">Net Salary</p>
-            <p className="text-xl font-bold">{document.netSalaryFormatted}</p>
+            <p className="text-sm font-bold uppercase tracking-wide text-white">Net Salary</p>
+            <p className="text-xl font-bold text-white">{document.netSalaryFormatted}</p>
           </div>
-          <p className="border-t border-white/20 px-4 py-2 text-xs text-white/80">
+          <p className="border-t border-white/20 px-4 py-2 text-xs text-white">
             {document.netSalaryInWords}
           </p>
         </div>
@@ -394,26 +394,26 @@ function ClassicFormalEditor() {
         >
           <div className="flex items-center justify-center gap-3">
             <DocumentBrandMark branding={doc.branding} />
-            <h1 className="text-xl font-bold uppercase tracking-wide">
-              <InlineTextField name="branding.companyName" placeholder="Company name" className="text-white placeholder:text-white/50" />
+            <h1 className="text-xl font-bold uppercase tracking-wide text-white">
+              <InlineTextField name="branding.companyName" placeholder="Company name" className="text-white placeholder:text-white" />
             </h1>
           </div>
-          <div className="mt-1 space-y-0.5 text-xs text-white/80">
+          <div className="mt-1 space-y-0.5 text-xs text-white">
             {doc.visibility.showAddress ? (
               <div className="mx-auto max-w-sm">
-                <InlineTextArea name="branding.address" placeholder="Address" className="text-center text-white placeholder:text-white/50" />
+                <InlineTextArea name="branding.address" placeholder="Address" className="text-center text-white placeholder:text-white" />
               </div>
             ) : null}
             <p className="flex items-center justify-center gap-3">
               {doc.visibility.showEmail ? (
-                <InlineTextField name="branding.email" placeholder="Email" className="text-white placeholder:text-white/50" />
+                <InlineTextField name="branding.email" placeholder="Email" className="text-white placeholder:text-white" />
               ) : null}
               {doc.visibility.showPhone ? (
-                <InlineTextField name="branding.phone" placeholder="Phone" className="text-white placeholder:text-white/50" />
+                <InlineTextField name="branding.phone" placeholder="Phone" className="text-white placeholder:text-white" />
               ) : null}
             </p>
           </div>
-          <p className="mt-2 text-sm font-semibold uppercase tracking-[0.3em]">Salary Slip</p>
+          <p className="mt-2 text-sm font-semibold uppercase tracking-[0.3em] text-white">Salary Slip</p>
         </div>
 
         {/* Employee details table */}
@@ -555,10 +555,10 @@ function ClassicFormalEditor() {
           style={{ backgroundColor: "var(--voucher-accent)" }}
         >
           <div className="flex items-center justify-between px-4 py-3">
-            <p className="text-sm font-bold uppercase tracking-wide">Net Salary</p>
-            <p className="text-xl font-bold">{doc.netSalaryFormatted}</p>
+            <p className="text-sm font-bold uppercase tracking-wide text-white">Net Salary</p>
+            <p className="text-xl font-bold text-white">{doc.netSalaryFormatted}</p>
           </div>
-          <p className="border-t border-white/20 px-4 py-2 text-xs text-white/80">
+          <p className="border-t border-white/20 px-4 py-2 text-xs text-white">
             {doc.netSalaryInWords}
           </p>
         </div>

@@ -5,7 +5,7 @@ export const metadata = { title: "Two-Factor Authentication" };
 
 export default function TwoChallengePageWrapper() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-[var(--surface)]" />}>
+    <Suspense fallback={<div className="py-20" />}>
       <TwoChallengeForm />
     </Suspense>
   );

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { getBooksReconciliationWorkspace } from "../../actions";
 import { WorkbenchClient } from "./workbench-client";
 
@@ -17,7 +18,7 @@ export default async function ReconciliationWorkbenchPage() {
   if (!result.success) {
     return (
       <div className="mx-auto max-w-6xl">
-        <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
+        <div className="rounded-xl bg-[var(--state-danger-soft)] px-4 py-3 text-sm text-[var(--state-danger)]">
           {result.error}
         </div>
       </div>
@@ -26,7 +27,7 @@ export default async function ReconciliationWorkbenchPage() {
   if (!suggestedResult.success) {
     return (
       <div className="mx-auto max-w-6xl">
-        <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
+        <div className="rounded-xl bg-[var(--state-danger-soft)] px-4 py-3 text-sm text-[var(--state-danger)]">
           {suggestedResult.error}
         </div>
       </div>
@@ -43,20 +44,32 @@ export default async function ReconciliationWorkbenchPage() {
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 px-4 py-6">
-      <div>
-        <h1 className="text-xl font-semibold text-slate-900">Reconciliation Workbench</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          Review unmatched bank transactions and confirm or reject suggested matches.
-        </p>
-      </div>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <Link
+            href="/app/books/reconciliation"
+            className="text-sm font-medium text-[var(--brand-primary)] hover:underline"
+          >
+            ← Back to Reconciliation
+          </Link>
+          <h1 className="mt-2 text-xl font-semibold text-[var(--text-primary)]">
+            Reconciliation Workbench
+          </h1>
+          <p className="mt-1 text-sm text-[var(--text-muted)]">
+            Review unmatched bank transactions and confirm or reject suggested matches.
+          </p>
+        </div>
 
-      <div className="flex gap-3 text-sm">
-        <span className="rounded-full bg-amber-100 px-3 py-1 font-medium text-amber-800">
-          {unmatched.length} Unmatched
-        </span>
-        <span className="rounded-full bg-blue-100 px-3 py-1 font-medium text-blue-800">
-          {suggested.length} Suggested
-        </span>
+        <div className="flex gap-3 text-sm">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--state-danger-soft)] px-3 py-1 font-medium text-[var(--state-danger)]">
+            <span className="h-1.5 w-1.5 rounded-full bg-[var(--state-danger)]" />
+            {unmatched.length} Unmatched
+          </span>
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--surface-subtle)] px-3 py-1 font-medium text-[var(--text-secondary)]">
+            <span className="h-1.5 w-1.5 rounded-full bg-[var(--brand-secondary)]" />
+            {suggested.length} Suggested
+          </span>
+        </div>
       </div>
 
       <WorkbenchClient transactions={allPending} />

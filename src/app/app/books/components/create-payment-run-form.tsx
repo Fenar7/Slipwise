@@ -2,7 +2,9 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { FormField, FormGrid, FormSection, FormActions, financeInputClassName } from "@/components/forms/form-primitives";
 import { createBooksPaymentRun } from "../actions";
 
 interface CreatePaymentRunFormProps {
@@ -97,68 +99,71 @@ export function CreatePaymentRunForm({ bills }: CreatePaymentRunFormProps) {
   }
 
   return (
-    <div className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5">
+    <div className="space-y-4 rounded-2xl border border-[var(--border-soft)] bg-[var(--surface-panel)] p-5 shadow-[var(--shadow-card)]">
       <div>
-        <h2 className="text-lg font-semibold text-slate-900">Create payment run</h2>
-        <p className="mt-1 text-sm text-slate-500">
+        <h2 className="text-base font-semibold text-[var(--text-primary)]">Create payment run</h2>
+        <p className="mt-1 text-sm text-[var(--text-muted)]">
           Select approved or overdue bills, set payout amounts, and generate a batch ready for approval.
         </p>
       </div>
 
-      {error && <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
+      {error && (
+        <div className="rounded-xl bg-[var(--state-danger-soft)] px-4 py-3 text-sm text-[var(--state-danger)]">
+          {error}
+        </div>
+      )}
 
-      <div className="grid gap-4 md:grid-cols-2">
-        <label className="block text-sm">
-          <span className="mb-1 block font-medium text-slate-700">Scheduled date</span>
+      <FormGrid columns={2}>
+        <FormField label="Scheduled date">
           <input
             type="date"
             value={scheduledDate}
             onChange={(event) => setScheduledDate(event.target.value)}
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            className={financeInputClassName}
           />
-        </label>
+        </FormField>
 
-        <label className="block text-sm">
-          <span className="mb-1 block font-medium text-slate-700">Notes</span>
+        <FormField label="Notes">
           <input
             value={notes}
             onChange={(event) => setNotes(event.target.value)}
             placeholder="Optional payout instructions"
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            className={financeInputClassName}
           />
-        </label>
-      </div>
+        </FormField>
+      </FormGrid>
 
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-slate-900">Eligible bills</h3>
-          <span className="text-sm text-slate-500">{selectedCount} selected</span>
-        </div>
-
+      <FormSection
+        title="Eligible bills"
+        description={`${selectedCount} of ${bills.length} selected`}
+      >
         <div className="space-y-3">
           {bills.length === 0 ? (
-            <div className="rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-500">
+            <div className="rounded-xl bg-[var(--surface-subtle)] px-4 py-3 text-sm text-[var(--text-muted)]">
               No approved or overdue vendor bills are ready for payment.
             </div>
           ) : (
             bills.map((bill) => (
-              <div key={bill.id} className="grid gap-3 rounded-xl border border-slate-200 p-4 md:grid-cols-[auto_1.6fr_1fr_1fr]">
+              <div
+                key={bill.id}
+                className="grid gap-3 rounded-xl border border-[var(--border-soft)] bg-[var(--surface-panel)] p-4 md:grid-cols-[auto_1.6fr_1fr_1fr]"
+              >
                 <label className="flex items-start gap-3 pt-1">
                   <input
                     type="checkbox"
                     checked={selectedBills[bill.id]?.checked ?? false}
                     onChange={(event) => toggleBill(bill.id, event.target.checked)}
-                    className="mt-1 h-4 w-4 rounded border-slate-300"
+                    className="mt-1 h-4 w-4 rounded border-[var(--border-default)]"
                   />
                   <span className="sr-only">Select {bill.billNumber}</span>
                 </label>
 
                 <div>
-                  <p className="font-medium text-slate-900">{bill.billNumber}</p>
-                  <p className="text-sm text-slate-500">
+                  <p className="font-medium text-[var(--text-primary)]">{bill.billNumber}</p>
+                  <p className="text-sm text-[var(--text-muted)]">
                     {bill.vendorName ?? "Unassigned vendor"} • {bill.status.replaceAll("_", " ")}
                   </p>
-                  <p className="text-xs text-slate-500">
+                  <p className="text-xs text-[var(--text-muted)] tabular-nums">
                     Due {bill.dueDate ?? "Not set"} • Remaining{" "}
                     {bill.remainingAmount.toLocaleString("en-IN", {
                       minimumFractionDigits: 2,
@@ -167,8 +172,7 @@ export function CreatePaymentRunForm({ bills }: CreatePaymentRunFormProps) {
                   </p>
                 </div>
 
-                <label className="block text-sm">
-                  <span className="mb-1 block font-medium text-slate-700">Payout amount</span>
+                <FormField label="Payout amount">
                   <input
                     type="number"
                     min="0"
@@ -176,28 +180,30 @@ export function CreatePaymentRunForm({ bills }: CreatePaymentRunFormProps) {
                     step="0.01"
                     value={selectedBills[bill.id]?.amount ?? bill.remainingAmount.toFixed(2)}
                     onChange={(event) => updateAmount(bill.id, event.target.value)}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                    className={cn(financeInputClassName, "text-right")}
                   />
-                </label>
+                </FormField>
 
-                <div className="text-sm text-slate-600">
-                  <span className="mb-1 block font-medium text-slate-700">Remaining</span>
-                  {bill.remainingAmount.toLocaleString("en-IN", {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })}
+                <div className="text-sm text-[var(--text-secondary)]">
+                  <span className="mb-1 block font-medium text-[var(--text-primary)]">Remaining</span>
+                  <span className="tabular-nums">
+                    {bill.remainingAmount.toLocaleString("en-IN", {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
+                  </span>
                 </div>
               </div>
             ))
           )}
         </div>
-      </div>
+      </FormSection>
 
-      <div className="flex justify-end">
+      <FormActions>
         <Button type="button" onClick={submit} disabled={isPending || bills.length === 0}>
           {isPending ? "Creating..." : "Create Payment Run"}
         </Button>
-      </div>
+      </FormActions>
     </div>
   );
 }

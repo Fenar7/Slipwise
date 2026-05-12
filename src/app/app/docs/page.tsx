@@ -2,10 +2,24 @@ import { Suspense } from "react";
 import Link from "next/link";
 import { getDocsSummary } from "@/lib/docs-vault";
 import type { DocsSummary, VaultRow } from "@/lib/docs-vault";
+import { ActivityItem, ActivityList, StatusBadge } from "@/components/dashboard";
+import {
+  FileText,
+  Receipt,
+  Banknote,
+  FileCheck,
+  LayoutGrid,
+  Layers,
+  FileImage,
+  Plus,
+  ArrowRight,
+  Sparkles,
+  TrendingUp,
+} from "lucide-react";
 
 export const metadata = {
-  title: "SW> Docs | Slipwise One",
-  description: "SW Docs — document operations hub. Manage invoices, vouchers, salary slips, and quotes.",
+  title: "Docs | Slipwise",
+  description: "Document operations hub. Manage invoices, vouchers, salary slips, and quotes.",
 };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -44,263 +58,229 @@ const DOC_TYPE_LABELS: Record<string, string> = {
   quote: "Quote",
 };
 
-const DOC_TYPE_COLORS: Record<string, string> = {
-  invoice: "bg-blue-50 text-blue-700",
-  voucher: "bg-violet-50 text-violet-700",
-  salary_slip: "bg-amber-50 text-amber-700",
-  quote: "bg-emerald-50 text-emerald-700",
+const DOC_TYPE_VARIANTS: Record<string, "default" | "success" | "warning" | "info" | "neutral"> = {
+  invoice: "info",
+  voucher: "default",
+  salary_slip: "warning",
+  quote: "success",
 };
-
-// ─── Summary cards ────────────────────────────────────────────────────────────
 
 const SUITE_CARDS = [
   {
     type: "invoice" as const,
     label: "Invoices",
-    icon: (
-      <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-          d="M9 12h6m-6 4h6M5 3h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2z" />
-      </svg>
-    ),
+    icon: FileText,
     href: "/app/docs/invoices",
     newHref: "/app/docs/invoices/new",
-    bg: "bg-blue-50",
-    ring: "ring-blue-200",
-    iconColor: "text-blue-600",
-    countColor: "text-blue-700",
+    description: "Create and manage customer invoices",
+    iconBg: "#EFF6FF",
+    iconColor: "#2563EB",
   },
   {
     type: "voucher" as const,
     label: "Vouchers",
-    icon: (
-      <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-          d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2z" />
-      </svg>
-    ),
+    icon: Receipt,
     href: "/app/docs/vouchers",
     newHref: "/app/docs/vouchers/new",
-    bg: "bg-violet-50",
-    ring: "ring-violet-200",
-    iconColor: "text-violet-600",
-    countColor: "text-violet-700",
+    description: "Payment and receipt vouchers",
+    iconBg: "#F5F5F5",
+    iconColor: "#49454F",
   },
   {
     type: "salary_slip" as const,
     label: "Salary Slips",
-    icon: (
-      <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-          d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
-      </svg>
-    ),
+    icon: Banknote,
     href: "/app/docs/salary-slips",
     newHref: "/app/docs/salary-slips/new",
-    bg: "bg-amber-50",
-    ring: "ring-amber-200",
-    iconColor: "text-amber-600",
-    countColor: "text-amber-700",
+    description: "Generate employee payslips",
+    iconBg: "#FFFBEB",
+    iconColor: "#D97706",
   },
   {
     type: "quote" as const,
     label: "Quotes",
-    icon: (
-      <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-          d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-      </svg>
-    ),
+    icon: FileCheck,
     href: "/app/docs/quotes",
     newHref: "/app/docs/quotes/new",
-    bg: "bg-emerald-50",
-    ring: "ring-emerald-200",
-    iconColor: "text-emerald-600",
-    countColor: "text-emerald-700",
+    description: "Send estimates and proposals",
+    iconBg: "#ECFDF5",
+    iconColor: "#16A34A",
   },
 ];
-
-// ─── Action tiles ─────────────────────────────────────────────────────────────
-
-const ACTION_TILES = [
-  {
-    href: "/app/docs/vault",
-    label: "Document Vault",
-    desc: "Unified view of all documents",
-    icon: (
-      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-          d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
-      </svg>
-    ),
-    color: "bg-slate-900 text-white hover:bg-slate-800",
-    featured: true,
-  },
-  {
-    href: "/app/docs/templates",
-    label: "Templates",
-    desc: "Browse and manage document templates",
-    icon: (
-      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-          d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
-      </svg>
-    ),
-    color: "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50",
-    featured: false,
-  },
-  {
-    href: "/app/docs/pdf-studio",
-    label: "PDF Studio",
-    desc: "Preview, export, and print documents",
-    icon: (
-      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-          d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-      </svg>
-    ),
-    color: "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50",
-    featured: false,
-  },
-];
-
-// ─── Recent documents component ───────────────────────────────────────────────
-
-function RecentDocRow({ row }: { row: VaultRow }) {
-  const typeCls = DOC_TYPE_COLORS[row.docType] ?? "bg-slate-100 text-slate-600";
-  return (
-    <Link
-      href={getDetailHref(row)}
-      className="flex items-center justify-between rounded-lg p-3 hover:bg-slate-50 transition-colors group"
-    >
-      <div className="flex items-center gap-3 min-w-0">
-        <span className={`inline-flex shrink-0 items-center rounded-md px-2 py-0.5 text-xs font-medium ${typeCls}`}>
-          {DOC_TYPE_LABELS[row.docType] ?? row.docType}
-        </span>
-        <div className="min-w-0">
-          <p className="text-sm font-medium text-slate-900 group-hover:text-blue-600 truncate">
-            {row.documentNumber}
-          </p>
-          <p className="text-xs text-slate-500 truncate">{row.titleOrSummary}</p>
-        </div>
-      </div>
-      <div className="flex flex-col items-end shrink-0 ml-4">
-        {row.amount > 0 && (
-          <p className="text-sm font-medium text-slate-900">
-            {formatCurrency(row.amount, row.currency)}
-          </p>
-        )}
-        <p className="text-xs text-slate-400">{formatDate(row.updatedAt)}</p>
-      </div>
-    </Link>
-  );
-}
 
 // ─── Server-rendered body ─────────────────────────────────────────────────────
 
 async function DocsHomeBody() {
   const summary: DocsSummary = await getDocsSummary();
 
+  const totalDocs = Object.values(summary.counts).reduce((a, b) => a + b, 0);
+  const recentCount = summary.recentDocuments.length;
+
   return (
     <>
-      {/* ── Stats grid ───────────────────────────── */}
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+      {/* KPI row */}
+      <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
         {SUITE_CARDS.map((card) => (
-          <div
+          <Link
             key={card.type}
-            className={`rounded-xl p-5 ring-1 ${card.bg} ${card.ring} flex flex-col gap-3`}
+            href={card.href}
+            className="flex items-center gap-3 rounded-2xl border bg-white p-4 transition-colors hover:border-[#DC2626]"
+            style={{ borderColor: "#E0E0E0" }}
           >
-            <div className="flex items-center justify-between">
-              <div className={`${card.iconColor}`}>{card.icon}</div>
-              <Link
-                href={card.newHref}
-                className={`text-xs font-medium ${card.iconColor} hover:underline`}
-              >
-                + New
-              </Link>
+            <div
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl"
+              style={{ background: card.iconBg, color: card.iconColor }}
+            >
+              <card.icon className="h-5 w-5" />
             </div>
-            <div>
-              <p className={`text-3xl font-bold ${card.countColor}`}>
+            <div className="min-w-0">
+              <p className="text-[11px] font-medium" style={{ color: "#79747E" }}>{card.label}</p>
+              <p className="text-lg font-bold tracking-tight" style={{ color: "#1C1B1F" }}>
                 {summary.counts[card.type]}
               </p>
-              <p className="text-xs font-medium text-slate-500 mt-0.5">{card.label}</p>
             </div>
-            <Link
-              href={card.href}
-              className={`mt-auto text-xs font-medium ${card.iconColor} hover:underline flex items-center gap-1`}
-            >
-              View all <span aria-hidden>→</span>
-            </Link>
-          </div>
+          </Link>
         ))}
       </div>
 
-      {/* ── Action tiles + Recent documents ──────── */}
-      <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
-
-        {/* Recent documents (2/3) */}
-        <div className="lg:col-span-2 rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-          <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3">
-            <h2 className="text-sm font-semibold text-slate-900">Recently Updated</h2>
-            <Link
-              href="/app/docs/vault"
-              className="text-xs text-blue-600 hover:underline"
-            >
-              Open Vault →
-            </Link>
-          </div>
-          <div className="divide-y divide-slate-50 px-2 py-1">
-            {summary.recentDocuments.length === 0 ? (
-              <div className="py-12 text-center text-sm text-slate-500">
-                No documents yet.{" "}
-                <Link href="/app/docs/invoices/new" className="text-blue-600 hover:underline">
-                  Create your first invoice
-                </Link>
+      {/* Main grid */}
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+        {/* Left 2/3: Recent docs + Create New */}
+        <div className="flex flex-col gap-3 lg:col-span-2">
+          {/* Recently Updated */}
+          <div
+            className="rounded-2xl border bg-white"
+            style={{ borderColor: "#E0E0E0" }}
+          >
+            <div className="flex items-center justify-between border-b px-4 py-3" style={{ borderColor: "#E0E0E0" }}>
+              <div className="flex items-center gap-2">
+                <TrendingUp className="h-4 w-4" style={{ color: "#79747E" }} />
+                <h2 className="text-sm font-semibold" style={{ color: "#1C1B1F" }}>Recently Updated</h2>
+                {recentCount > 0 && (
+                  <span
+                    className="rounded-full px-2 py-0.5 text-[0.65rem] font-semibold"
+                    style={{ background: "#F5F5F5", color: "#79747E" }}
+                  >
+                    {recentCount}
+                  </span>
+                )}
               </div>
-            ) : (
-              summary.recentDocuments.map((row) => (
-                <RecentDocRow key={`${row.docType}-${row.documentId}`} row={row} />
-              ))
-            )}
+              <Link
+                href="/app/docs/vault"
+                className="inline-flex items-center text-xs font-medium hover:underline"
+                style={{ color: "#DC2626" }}
+              >
+                Open Vault <ArrowRight className="ml-1 h-3 w-3" />
+              </Link>
+            </div>
+            <ActivityList
+              emptyMessage="No documents yet"
+              emptyDescription="Create your first invoice, voucher, quote, or salary slip to get started."
+              className="px-2 py-1"
+            >
+              {summary.recentDocuments.map((row) => (
+                <ActivityItem
+                  key={`${row.docType}-${row.documentId}`}
+                  href={getDetailHref(row)}
+                  title={row.documentNumber}
+                  detail={row.titleOrSummary}
+                  badge={
+                    <StatusBadge variant={DOC_TYPE_VARIANTS[row.docType] ?? "neutral"}>
+                      {DOC_TYPE_LABELS[row.docType] ?? row.docType}
+                    </StatusBadge>
+                  }
+                  rightText={row.amount > 0 ? formatCurrency(row.amount, row.currency) : undefined}
+                  rightSubtext={formatDate(row.updatedAt)}
+                />
+              ))}
+            </ActivityList>
+          </div>
+
+          {/* Create New */}
+          <div
+            className="rounded-2xl border bg-white p-4"
+            style={{ borderColor: "#E0E0E0" }}
+          >
+            <h2 className="mb-3 text-sm font-semibold" style={{ color: "#1C1B1F" }}>Create New</h2>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              {SUITE_CARDS.map((card) => (
+                <Link
+                  key={card.type}
+                  href={card.newHref}
+                  className="group flex flex-col items-center gap-2 rounded-xl border p-4 text-center transition-all hover:-translate-y-0.5 hover:border-[#DC2626] hover:shadow-sm"
+                  style={{ borderColor: "#E0E0E0" }}
+                >
+                  <div
+                    className="flex h-10 w-10 items-center justify-center rounded-xl transition-colors group-hover:bg-[#DC2626] group-hover:text-white"
+                    style={{ background: card.iconBg, color: card.iconColor }}
+                  >
+                    <Plus className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold" style={{ color: "#1C1B1F" }}>{card.label}</p>
+                    <p className="mt-0.5 text-[0.7rem]" style={{ color: "#79747E" }}>{card.description}</p>
+                  </div>
+                </Link>
+              ))}
+            </div>
           </div>
         </div>
 
-        {/* Quick actions (1/3) */}
-        <div className="flex flex-col gap-4">
-          <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-5">
-            <h2 className="mb-3 text-sm font-semibold text-slate-900">Quick Actions</h2>
-            <div className="flex flex-col gap-2">
-              {ACTION_TILES.map((tile) => (
+        {/* Right 1/3: Quick Actions */}
+        <div className="flex flex-col gap-3">
+          <div
+            className="rounded-2xl border bg-white p-4"
+            style={{ borderColor: "#E0E0E0" }}
+          >
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-sm font-semibold" style={{ color: "#1C1B1F" }}>Quick Actions</h2>
+            </div>
+            <div className="space-y-2">
+              {[
+                { href: "/app/docs/vault", label: "Document Vault", description: `Browse all ${totalDocs} documents`, icon: LayoutGrid, iconBg: "#EFF6FF", iconColor: "#2563EB" },
+                { href: "/app/docs/templates", label: "Templates", description: "Browse and manage document templates", icon: Layers, iconBg: "#F5F5F5", iconColor: "#49454F" },
+                { href: "/app/docs/pdf-studio", label: "PDF Studio", description: "Preview, export, and print documents", icon: FileImage, iconBg: "#F5F5F5", iconColor: "#49454F" },
+              ].map((action) => (
                 <Link
-                  key={tile.href}
-                  href={tile.href}
-                  className={`flex items-center gap-3 rounded-lg px-4 py-3 text-sm font-medium transition-colors ${tile.color}`}
+                  key={action.href}
+                  href={action.href}
+                  className="flex items-center gap-2.5 rounded-xl border p-2.5 transition-colors hover:border-[#DC2626]"
+                  style={{ borderColor: "#F0F0F0" }}
                 >
-                  <span className="shrink-0">{tile.icon}</span>
-                  <div>
-                    <p className="font-medium leading-tight">{tile.label}</p>
-                    <p className="text-xs opacity-70 leading-tight mt-0.5">{tile.desc}</p>
+                  <div
+                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg"
+                    style={{ background: action.iconBg, color: action.iconColor }}
+                  >
+                    <action.icon className="h-3.5 w-3.5" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs font-medium" style={{ color: "#1C1B1F" }}>{action.label}</p>
+                    <p className="text-[11px]" style={{ color: "#79747E" }}>{action.description}</p>
                   </div>
                 </Link>
               ))}
             </div>
           </div>
 
-          {/* Create shortcuts */}
-          <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-5">
-            <h2 className="mb-3 text-sm font-semibold text-slate-900">Create</h2>
-            <div className="grid grid-cols-2 gap-2">
-              {SUITE_CARDS.map((card) => (
-                <Link
-                  key={card.type}
-                  href={card.newHref}
-                  className={`flex flex-col items-center justify-center rounded-lg p-3 text-xs font-medium transition-colors ring-1 ${card.bg} ${card.ring} ${card.iconColor} hover:opacity-80`}
-                >
-                  <span className="mb-1">{card.icon}</span>
-                  {card.label.replace("Salary Slips", "Salary Slip")}
-                </Link>
-              ))}
+          {/* Templates promo */}
+          <div
+            className="rounded-2xl border bg-white p-4"
+            style={{ borderColor: "#E0E0E0" }}
+          >
+            <div className="mb-2 flex items-center gap-2">
+              <Sparkles className="h-4 w-4" style={{ color: "#D97706" }} />
+              <h2 className="text-sm font-semibold" style={{ color: "#1C1B1F" }}>Templates</h2>
             </div>
+            <p className="mb-3 text-xs" style={{ color: "#79747E" }}>
+              Start faster with pre-built templates for your organisation.
+            </p>
+            <Link
+              href="/app/docs/templates"
+              className="inline-flex items-center text-xs font-medium hover:underline"
+              style={{ color: "#DC2626" }}
+            >
+              Browse templates <ArrowRight className="ml-1 h-3 w-3" />
+            </Link>
           </div>
         </div>
       </div>
@@ -312,33 +292,25 @@ async function DocsHomeBody() {
 
 export default function DocsPage() {
   return (
-    <div className="min-h-screen bg-slate-50">
-      <div className="mx-auto max-w-screen-xl px-4 py-8">
-
+    <div className="min-h-screen px-3 py-4 sm:px-4 lg:px-5" style={{ background: "#f8f9fc" }}>
+      <div className="mx-auto max-w-[1440px]">
         {/* Header */}
-        <div className="mb-6">
-          <div className="flex items-center gap-2 mb-1">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-900 text-white">
-              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-                  d="M9 12h6m-6 4h6M5 3h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2z" />
-              </svg>
-            </div>
-            <h1 className="text-2xl font-bold text-slate-900">SW Docs</h1>
+        <div className="mb-4 flex items-end justify-between">
+          <div>
+            <h1 className="text-lg font-semibold" style={{ color: "#1C1B1F" }}>Docs</h1>
+            <p className="text-xs" style={{ color: "#79747E" }}>
+              Document operations hub — invoices, vouchers, salary slips, and quotes
+            </p>
           </div>
-          <p className="text-sm text-slate-500 ml-10">
-            Document operations hub — invoices, vouchers, salary slips, and quotes
-          </p>
         </div>
 
         <Suspense
           fallback={
-            <div className="flex items-center justify-center py-24 text-slate-400">
-              <svg className="mr-2 h-5 w-5 animate-spin" viewBox="0 0 24 24" fill="none">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor"
-                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-              </svg>
+            <div className="flex items-center justify-center py-24" style={{ color: "#79747E" }}>
+              <div
+                className="mr-2 h-5 w-5 animate-spin rounded-full border-2"
+                style={{ borderColor: "#E0E0E0", borderTopColor: "#DC2626" }}
+              />
               Loading…
             </div>
           }

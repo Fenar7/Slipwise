@@ -2,6 +2,15 @@ import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import {
+  FinanceTable,
+  FinanceTableHeader,
+  FinanceTableHead,
+  FinanceTableBody,
+  FinanceTableRow,
+  FinanceTableCell,
+  FinanceTableEmpty,
+} from "@/components/ui/finance-table";
 import { getBooksPaymentRunOptions, getBooksPaymentRuns } from "../actions";
 import { CreatePaymentRunForm } from "../components/create-payment-run-form";
 import { booksStatusBadgeVariant, formatBooksDate, formatBooksMoney } from "../view-helpers";
@@ -30,7 +39,9 @@ export default async function PaymentRunsPage({ searchParams }: PaymentRunsPageP
   if (!runsResult.success) {
     return (
       <div className="mx-auto max-w-6xl">
-        <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{runsResult.error}</div>
+        <div className="rounded-xl bg-[var(--state-danger-soft)] px-4 py-3 text-sm text-[var(--state-danger)]">
+          {runsResult.error}
+        </div>
       </div>
     );
   }
@@ -38,7 +49,9 @@ export default async function PaymentRunsPage({ searchParams }: PaymentRunsPageP
   if (!optionsResult.success) {
     return (
       <div className="mx-auto max-w-6xl">
-        <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{optionsResult.error}</div>
+        <div className="rounded-xl bg-[var(--state-danger-soft)] px-4 py-3 text-sm text-[var(--state-danger)]">
+          {optionsResult.error}
+        </div>
       </div>
     );
   }
@@ -53,8 +66,8 @@ export default async function PaymentRunsPage({ searchParams }: PaymentRunsPageP
     <div className="mx-auto max-w-7xl space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Payment Runs</h1>
-          <p className="mt-1 text-sm text-slate-500">
+          <h1 className="text-2xl font-semibold text-[var(--text-primary)]">Payment Runs</h1>
+          <p className="mt-1 text-sm text-[var(--text-muted)]">
             Batch approved payables, route approvals, and track payout execution outcomes.
           </p>
         </div>
@@ -66,7 +79,7 @@ export default async function PaymentRunsPage({ searchParams }: PaymentRunsPageP
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         {[
           { label: "Runs in View", value: String(runs.length) },
           { label: "Pending Approval", value: String(pendingApprovalCount) },
@@ -75,10 +88,10 @@ export default async function PaymentRunsPage({ searchParams }: PaymentRunsPageP
         ].map((item) => (
           <Card key={item.label}>
             <CardHeader>
-              <p className="text-xs uppercase tracking-[0.18em] text-slate-500">{item.label}</p>
+              <p className="text-xs uppercase tracking-[0.12em] text-[var(--text-muted)]">{item.label}</p>
             </CardHeader>
             <CardContent>
-              <p className="text-xl font-semibold text-slate-900">{item.value}</p>
+              <p className="text-xl font-semibold text-[var(--text-primary)] tabular-nums">{item.value}</p>
             </CardContent>
           </Card>
         ))}
@@ -88,19 +101,19 @@ export default async function PaymentRunsPage({ searchParams }: PaymentRunsPageP
 
       <Card>
         <CardHeader>
-          <h2 className="text-lg font-semibold text-slate-900">Filter payment runs</h2>
-          <p className="mt-1 text-sm text-slate-500">
+          <h2 className="text-base font-semibold text-[var(--text-primary)]">Filter payment runs</h2>
+          <p className="mt-1 text-sm text-[var(--text-muted)]">
             Review batches by lifecycle state and audit what is still waiting to be released.
           </p>
         </CardHeader>
         <CardContent>
           <form className="flex flex-col gap-4 md:flex-row md:items-end">
             <label className="block text-sm">
-              <span className="mb-1 block font-medium text-slate-700">Status</span>
+              <span className="mb-1 block font-medium text-[var(--text-primary)]">Status</span>
               <select
                 name="status"
                 defaultValue={params.status ?? ""}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                className="w-full rounded-lg border border-[var(--border-default)] bg-white px-3 py-2 text-sm text-[var(--text-primary)] transition-colors focus:border-[var(--brand-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--focus-ring)]"
               >
                 <option value="">All statuses</option>
                 {[
@@ -123,7 +136,10 @@ export default async function PaymentRunsPage({ searchParams }: PaymentRunsPageP
               <Button type="submit" variant="secondary">
                 Apply
               </Button>
-              <Link href="/app/books/payment-runs" className="text-sm font-medium text-slate-600 hover:underline">
+              <Link
+                href="/app/books/payment-runs"
+                className="text-sm font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:underline transition-colors"
+              >
                 Reset
               </Link>
             </div>
@@ -134,68 +150,64 @@ export default async function PaymentRunsPage({ searchParams }: PaymentRunsPageP
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
-            <h2 className="text-lg font-semibold text-slate-900">Run history</h2>
-            <p className="mt-1 text-sm text-slate-500">
+            <h2 className="text-base font-semibold text-[var(--text-primary)]">Run history</h2>
+            <p className="mt-1 text-sm text-[var(--text-muted)]">
               {total} payment run{total === 1 ? "" : "s"} across {totalPages} page{totalPages === 1 ? "" : "s"}.
             </p>
           </div>
           <Badge variant="default">Page {page}</Badge>
         </CardHeader>
         <CardContent className="px-0 py-0">
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-                  <th className="px-6 py-3">Run</th>
-                  <th className="px-6 py-3">Schedule</th>
-                  <th className="px-6 py-3">Items</th>
-                  <th className="px-6 py-3">Amount</th>
-                  <th className="px-6 py-3">Status</th>
-                  <th className="px-6 py-3 text-right">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200">
-                {runs.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} className="px-6 py-10 text-center text-sm text-slate-500">
-                      No payment runs found for the current filter.
-                    </td>
-                  </tr>
-                ) : (
-                  runs.map((run) => (
-                    <tr key={run.id}>
-                      <td className="px-6 py-4">
-                        <div className="font-medium text-slate-900">{run.runNumber}</div>
-                        <div className="text-xs text-slate-500">
-                          {run.approvalRequests.length} pending approval request
-                          {run.approvalRequests.length === 1 ? "" : "s"}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 text-sm text-slate-700">
-                        <div>{formatBooksDate(run.scheduledDate)}</div>
-                        <div className="text-xs text-slate-500">Created {formatBooksDate(run.createdAt)}</div>
-                      </td>
-                      <td className="px-6 py-4 text-sm text-slate-700">
-                        {run.items.length} bill{run.items.length === 1 ? "" : "s"}
-                      </td>
-                      <td className="px-6 py-4 text-sm text-slate-700">{formatBooksMoney(run.totalAmount)}</td>
-                      <td className="px-6 py-4">
-                        <Badge variant={booksStatusBadgeVariant(run.status)}>{run.status.replaceAll("_", " ")}</Badge>
-                      </td>
-                      <td className="px-6 py-4 text-right">
-                        <Link
-                          href={`/app/books/payment-runs/${run.id}`}
-                          className="text-sm font-medium text-blue-600 hover:underline"
-                        >
-                          View Detail
-                        </Link>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+          <FinanceTable>
+            <FinanceTableHeader>
+              <FinanceTableHead>Run</FinanceTableHead>
+              <FinanceTableHead>Schedule</FinanceTableHead>
+              <FinanceTableHead align="right">Items</FinanceTableHead>
+              <FinanceTableHead align="right">Amount</FinanceTableHead>
+              <FinanceTableHead>Status</FinanceTableHead>
+              <FinanceTableHead align="right">Action</FinanceTableHead>
+            </FinanceTableHeader>
+            <FinanceTableBody>
+              {runs.length === 0 ? (
+                <FinanceTableEmpty colSpan={6} message="No payment runs found for the current filter." />
+              ) : (
+                runs.map((run) => (
+                  <FinanceTableRow key={run.id}>
+                    <FinanceTableCell variant="primary">
+                      <div className="font-medium">{run.runNumber}</div>
+                      <div className="text-xs text-[var(--text-muted)]">
+                        {run.approvalRequests.length} pending approval request
+                        {run.approvalRequests.length === 1 ? "" : "s"}
+                      </div>
+                    </FinanceTableCell>
+                    <FinanceTableCell>
+                      <div>{formatBooksDate(run.scheduledDate)}</div>
+                      <div className="text-xs text-[var(--text-muted)]">Created {formatBooksDate(run.createdAt)}</div>
+                    </FinanceTableCell>
+                    <FinanceTableCell align="right">
+                      {run.items.length} bill{run.items.length === 1 ? "" : "s"}
+                    </FinanceTableCell>
+                    <FinanceTableCell align="right" variant="numeric">
+                      {formatBooksMoney(run.totalAmount)}
+                    </FinanceTableCell>
+                    <FinanceTableCell>
+                      <Badge variant={booksStatusBadgeVariant(run.status)}>
+                        {run.status.replaceAll("_", " ")}
+                      </Badge>
+                    </FinanceTableCell>
+                    <FinanceTableCell align="right">
+                      <Link
+                        href={`/app/books/payment-runs/${run.id}`}
+                        className="text-sm font-medium text-[var(--brand-primary)] hover:underline"
+                      >
+                        View Detail
+                      </Link>
+                    </FinanceTableCell>
+                  </FinanceTableRow>
+                ))
+              )}
+            </FinanceTableBody>
+          </FinanceTable>
         </CardContent>
       </Card>
 
@@ -207,7 +219,7 @@ export default async function PaymentRunsPage({ searchParams }: PaymentRunsPageP
                 ...(params.status ? { status: params.status } : {}),
                 page: String(page - 1),
               }).toString()}`}
-              className="font-medium text-blue-600 hover:underline"
+              className="font-medium text-[var(--brand-primary)] hover:underline"
             >
               ← Previous
             </Link>
@@ -218,7 +230,7 @@ export default async function PaymentRunsPage({ searchParams }: PaymentRunsPageP
                 ...(params.status ? { status: params.status } : {}),
                 page: String(page + 1),
               }).toString()}`}
-              className="font-medium text-blue-600 hover:underline"
+              className="font-medium text-[var(--brand-primary)] hover:underline"
             >
               Next →
             </Link>

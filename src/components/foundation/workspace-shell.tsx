@@ -20,7 +20,7 @@ export function WorkspaceShell({
   return (
     <main className="relative isolate overflow-hidden">
       <div className="mx-auto flex w-full max-w-[var(--container-shell)] flex-col gap-8 px-4 py-8 sm:px-5 lg:px-6 lg:py-12">
-        <div className="flex flex-col gap-6 rounded-2xl border border-[var(--border-strong)] bg-white p-6 shadow-[var(--shadow-card)] lg:flex-row lg:items-end lg:justify-between">
+        <div className="flex flex-col gap-6 rounded-xl border border-[var(--border-strong)] bg-white p-6 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-3xl">
             <p className="text-[0.68rem] font-semibold uppercase tracking-[0.34em] text-[var(--muted-foreground)]">
               {eyebrow}
@@ -35,18 +35,18 @@ export function WorkspaceShell({
           <div className="flex flex-wrap gap-3">
             <Link
               href="/"
-              className="inline-flex items-center justify-center rounded-full border border-[var(--border-strong)] bg-white px-4 py-2 text-sm font-medium text-[var(--foreground)] shadow-[0_10px_24px_rgba(15,23,42,0.04)] transition-colors hover:bg-[var(--surface-accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--background)]"
+              className="inline-flex items-center justify-center rounded-lg border border-[var(--border-strong)] bg-white px-4 py-2 text-sm font-medium text-[var(--foreground)] transition-colors hover:bg-[var(--surface-accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--background)]"
             >
               Back to home
             </Link>
-            <span className="inline-flex items-center justify-center rounded-full bg-[linear-gradient(135deg,var(--accent),var(--accent-strong))] px-4 py-2 text-sm font-medium text-white shadow-[0_16px_32px_rgba(34,34,34,0.10)]">
+            <span className="inline-flex items-center justify-center rounded-lg border border-[var(--border-strong)] bg-[var(--surface-soft)] px-4 py-2 text-sm font-medium text-[var(--foreground)]">
               {slipwiseBrand.shellStatus}
             </span>
           </div>
         </div>
 
         <div className="grid gap-6 xl:grid-cols-[minmax(22rem,29rem)_minmax(0,1fr)]">
-          <section className="rounded-[2.25rem] border border-[var(--border-strong)] bg-[linear-gradient(180deg,rgba(255,255,255,0.94),rgba(246,240,234,0.96))] p-5 shadow-[var(--shadow-soft)]">
+          <section className="rounded-xl border border-[var(--border-strong)] bg-white p-5">
             <div className="mb-6 flex items-center justify-between">
               <div>
                 <p className="text-[0.68rem] font-semibold uppercase tracking-[0.34em] text-[var(--muted-foreground)]">
@@ -56,7 +56,7 @@ export function WorkspaceShell({
                   Form and controls shell
                 </h2>
               </div>
-              <span className="rounded-full border border-[var(--border-soft)] bg-white px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.24em] text-[var(--muted-foreground)] shadow-[0_8px_18px_rgba(15,23,42,0.04)]">
+              <span className="rounded-lg border border-[var(--border-soft)] bg-[var(--surface-soft)] px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.24em] text-[var(--muted-foreground)]">
                 Slipwise
               </span>
             </div>
@@ -65,7 +65,7 @@ export function WorkspaceShell({
               {configurationSections.map((section) => (
                 <article
                   key={section}
-                  className="rounded-[1.5rem] border border-[var(--border-soft)] bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.03)]"
+                  className="rounded-lg border border-[var(--border-soft)] bg-white p-4"
                 >
                   <div className="flex items-center justify-between gap-4">
                     <div>
@@ -76,7 +76,7 @@ export function WorkspaceShell({
                         This section belongs to the Slipwise product shell.
                       </p>
                     </div>
-                    <span className="h-10 w-10 rounded-xl border border-[var(--border-soft)] bg-[var(--surface-soft)]" />
+                    <span className="h-10 w-10 rounded-lg border border-[var(--border-soft)] bg-[var(--surface-soft)]" />
                   </div>
                 </article>
               ))}

@@ -1,5 +1,4 @@
 "use client";
-import { Button } from "@/components/ui/button";
 import {
   clearSupabaseBrowserSessionStorage,
   createSupabaseBrowser,
@@ -20,14 +19,13 @@ export function GoogleButton({ callbackURL = "/onboarding" }: { callbackURL?: st
   };
 
   return (
-    <Button
-      variant="secondary"
-      className="w-full"
-      onClick={() => {
-        void handleGoogleSignIn();
-      }}
+    <button
+      type="button"
+      onClick={() => void handleGoogleSignIn()}
+      className="inline-flex h-11 w-full items-center justify-center gap-3 rounded-xl border bg-white px-4 text-sm font-medium transition-colors hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] focus-visible:ring-offset-2"
+      style={{ borderColor: "#E0E0E0", color: "#1C1B1F" }}
     >
-      <svg className="w-4 h-4 mr-2" viewBox="0 0 24 24">
+      <svg className="h-5 w-5 shrink-0" viewBox="0 0 24 24">
         <path
           fill="#4285F4"
           d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
@@ -46,6 +44,6 @@ export function GoogleButton({ callbackURL = "/onboarding" }: { callbackURL?: st
         />
       </svg>
       Continue with Google
-    </Button>
+    </button>
   );
 }

@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { Eye, EyeOff } from "lucide-react";
 import { AuthCard } from "@/features/auth/components/auth-card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,7 +10,9 @@ import { createSupabaseBrowser } from "@/lib/supabase/client";
 function ResetPasswordContent() {
   const router = useRouter();
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [confirm, setConfirm] = useState("");
+  const [showConfirm, setShowConfirm] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -43,23 +46,51 @@ function ResetPasswordContent() {
   return (
     <AuthCard title="Set new password" subtitle="Choose a strong password for your account">
       <form onSubmit={handleSubmit} className="space-y-4">
-        <Input
-          label="New password"
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-          autoComplete="new-password"
-        />
-        <Input
-          label="Confirm new password"
-          type="password"
-          value={confirm}
-          onChange={(e) => setConfirm(e.target.value)}
-          required
-          autoComplete="new-password"
-        />
-        {error && <p className="text-sm text-red-600">{error}</p>}
+        <div className="relative">
+          <Input
+            label="New password"
+            type={showPassword ? "text" : "password"}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+            autoComplete="new-password"
+            placeholder="••••••••"
+          />
+          <button
+            type="button"
+            onClick={() => setShowPassword((s) => !s)}
+            className="absolute right-3 top-[2.05rem] transition-colors"
+            style={{ color: "#79747E" }}
+            tabIndex={-1}
+          >
+            {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+          </button>
+        </div>
+        <div className="relative">
+          <Input
+            label="Confirm new password"
+            type={showConfirm ? "text" : "password"}
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value)}
+            required
+            autoComplete="new-password"
+            placeholder="••••••••"
+          />
+          <button
+            type="button"
+            onClick={() => setShowConfirm((s) => !s)}
+            className="absolute right-3 top-[2.05rem] transition-colors"
+            style={{ color: "#79747E" }}
+            tabIndex={-1}
+          >
+            {showConfirm ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+          </button>
+        </div>
+        {error && (
+          <div className="rounded-lg border p-3 text-sm" style={{ background: "#F9DEDC", borderColor: "#F2B8B5", color: "#410E0B" }}>
+            {error}
+          </div>
+        )}
         <Button type="submit" className="w-full" disabled={loading}>
           {loading ? "Saving…" : "Save new password"}
         </Button>

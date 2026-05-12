@@ -139,13 +139,12 @@ export async function getDashboardKPIs(
       }),
 
       // PAY — Paid This Month
-      db.invoice.aggregate({
+      db.invoicePayment.aggregate({
         where: {
-          organizationId: orgId,
-          status: "PAID",
+          orgId,
           paidAt: { gte: from, lte: to },
         },
-        _sum: { totalAmount: true },
+        _sum: { amount: true },
       }),
 
       // VOUCHER — Spend
@@ -213,7 +212,7 @@ export async function getDashboardKPIs(
             invoicesIssued,
             totalDue: toAccountingNumber(totalDue._sum.totalAmount ?? 0),
             overdue: toAccountingNumber(overdue._sum.totalAmount ?? 0),
-            paidThisMonth: toAccountingNumber(paidThisMonth._sum.totalAmount ?? 0),
+            paidThisMonth: toAccountingNumber(paidThisMonth._sum.amount ?? 0),
           },
           voucher: {
             voucherSpend: toAccountingNumber(voucherSpend._sum.totalAmount ?? 0),
@@ -265,17 +264,16 @@ export async function getRevenueTrendData(): Promise<
             },
             _sum: { totalAmount: true },
           }),
-          db.invoice.aggregate({
+          db.invoicePayment.aggregate({
             where: {
-              organizationId: orgId,
-              status: "PAID",
+              orgId,
               paidAt: { gte: start, lte: end },
             },
-            _sum: { totalAmount: true },
+            _sum: { amount: true },
           }),
         ]).then(([invoiced, paid]) => {
           months[idx].invoiced = toAccountingNumber(invoiced._sum.totalAmount ?? 0);
-          months[idx].paid = toAccountingNumber(paid._sum.totalAmount ?? 0);
+          months[idx].paid = toAccountingNumber(paid._sum.amount ?? 0);
         })
       );
     }

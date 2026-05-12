@@ -6,6 +6,7 @@ import {
   getIntegrationOAuthStateCookieOptions,
 } from "@/lib/integrations/oauth-state";
 import { requireIntegrationAdminRoute } from "../../_auth";
+import { responseCookiesToRequestCookies } from "next/dist/server/web/spec-extension/adapters/request-cookies";
 
 export async function GET() {
   try {
@@ -32,5 +33,6 @@ export async function GET() {
       { error: "Failed to initiate connection" },
       { status: 500 }
     );
+
   }
 }

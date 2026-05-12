@@ -154,7 +154,7 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
 
     dispatchEvent(auth.orgId, "invoice.deleted", {
       id: invoice.id,
-      invoiceNumber: invoice.invoiceNumber,
+      invoiceNumber: invoice.invoiceNumber ?? "",
     }).catch(() => {});
 
     const resp = apiResponse({ id, deleted: true });

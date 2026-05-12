@@ -332,9 +332,16 @@ export default function SecuritySettingsPage() {
 
   return (
     <div className="space-y-6">
+      <div>
+        <h2 className="text-base font-semibold text-[var(--text-primary)]">Security</h2>
+        <p className="mt-0.5 text-sm text-[var(--text-muted)]">
+          Manage your password, multi-factor authentication, and active sessions.
+        </p>
+      </div>
+
       <Card>
         <CardHeader>
-          <h2 className="text-lg font-semibold text-[#1a1a1a]">Change password</h2>
+          <h2 className="text-base font-semibold text-[var(--text-primary)]">Change password</h2>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleChangePassword} className="max-w-md space-y-4">
@@ -355,9 +362,9 @@ export default function SecuritySettingsPage() {
               autoComplete="new-password"
             />
             {success && (
-              <p className="text-sm text-green-600">&#10003; Password changed successfully.</p>
+              <p className="text-sm text-[var(--state-success)]">&#10003; Password changed successfully.</p>
             )}
-            {error && <p className="text-sm text-red-600">{error}</p>}
+            {error && <p className="text-sm text-[var(--state-danger)]">{error}</p>}
             <Button type="submit" disabled={saving}>
               {saving ? "Saving&#8230;" : "Change password"}
             </Button>
@@ -370,22 +377,22 @@ export default function SecuritySettingsPage() {
         <CardHeader>
           <div className="flex items-center gap-2">
             {anyMfaEnabled
-              ? <ShieldCheck className="h-4 w-4 text-green-600" />
-              : <ShieldOff className="h-4 w-4 text-slate-400" />
+              ? <ShieldCheck className="h-4 w-4 text-[var(--state-success)]" />
+              : <ShieldOff className="h-4 w-4 text-[var(--text-muted)]" />
             }
-            <h2 className="text-lg font-semibold text-[#1a1a1a]">Multi-factor authentication</h2>
+            <h2 className="text-base font-semibold text-[var(--text-primary)]">Multi-factor authentication</h2>
             {anyMfaEnabled && (
-              <span className="ml-2 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">
+              <span className="ml-2 rounded-full bg-[var(--state-success-soft)] px-2 py-0.5 text-xs font-medium text-[var(--state-success)]">
                 Enabled
               </span>
             )}
             {twoFaEnforced && !anyMfaEnabled && (
-              <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+              <span className="ml-2 rounded-full bg-[var(--state-warning-soft)] px-2 py-0.5 text-xs font-medium text-[var(--state-warning)]">
                 Required by org
               </span>
             )}
           </div>
-          <p className="text-sm text-[#666]">
+          <p className="text-sm text-[var(--text-muted)]">
             Passkeys are the preferred second factor. Authenticator app and recovery codes remain available as fallback.
           </p>
         </CardHeader>
@@ -395,12 +402,12 @@ export default function SecuritySettingsPage() {
           {twoFaError && <p className="text-sm text-red-600">{twoFaError}</p>}
 
           {/* ── Passkeys ── */}
-          <div className="rounded-lg border border-blue-200 bg-blue-50/60 p-4">
+          <div className="rounded-lg border border-[var(--border-brand)] bg-[var(--surface-selected)] p-4">
             <div className="mb-3 flex items-start gap-3">
-              <Fingerprint className="mt-0.5 h-4 w-4 text-blue-700" />
+              <Fingerprint className="mt-0.5 h-4 w-4 text-[var(--brand-primary)]" />
               <div>
-                <h3 className="text-sm font-semibold text-[#1a1a1a]">Passkeys</h3>
-                <p className="mt-1 text-sm text-slate-600">
+                <h3 className="text-sm font-semibold text-[var(--text-primary)]">Passkeys</h3>
+                <p className="mt-1 text-sm text-[var(--text-secondary)]">
                   Use Face ID, Touch ID, Windows Hello, Android fingerprint, or a security key after sign-in.
                 </p>
               </div>
@@ -712,8 +719,8 @@ export default function SecuritySettingsPage() {
 
       <Card>
         <CardHeader>
-          <h2 className="text-lg font-semibold text-[#1a1a1a]">Sessions</h2>
-          <p className="text-sm text-[#666]">Sign out of all active sessions on all devices</p>
+          <h2 className="text-base font-semibold text-[var(--text-primary)]">Sessions</h2>
+          <p className="text-sm text-[var(--text-muted)]">Sign out of all active sessions on all devices</p>
         </CardHeader>
         <CardContent>
           <Button variant="danger" onClick={handleSignOutAll}>

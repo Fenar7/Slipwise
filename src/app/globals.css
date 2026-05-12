@@ -1,106 +1,362 @@
 @import "tailwindcss";
 
+/* ======================================================================
+   Slipwise Design Token System — Phase 1 Foundation
+   ====================================================================== */
+
 :root {
-  --background: #fdfcfb;
-  --foreground: #1a1a1a;
-  --foreground-soft: #6b7280;
-  --muted-foreground: #9ca3af;
-  --surface-elevated: #ffffff;
-  --surface-panel: #ffffff;
-  --surface-soft: #f5f5f4;
-  --surface-accent: #fef2f2;
-  --surface-accent-strong: #fee2e2;
-  --paper: #f0f0ef;
-  --border-soft: #e5e5e5;
-  --border-strong: #d4d4d4;
-  --accent: #dc2626;
-  --accent-strong: #b91c1c;
-  --accent-soft: rgba(220, 38, 38, 0.08);
-  --accent-warm: rgba(220, 38, 38, 0.12);
-  --ring: rgba(220, 38, 38, 0.25);
-  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
-  --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.04);
-  --shadow-lift: 0 4px 12px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.04);
-  --ink-soft: #d1d5db;
-  --danger: #dc2626;
-  --success: #16a34a;
-  --font-sans-stack: var(--font-lato), "Lato", "Helvetica Neue", "Segoe UI", Arial, sans-serif;
-  --font-display-stack: var(--font-lato), "Lato", "Helvetica Neue", "Segoe UI", Arial, sans-serif;
-  --brand-glow: rgba(220, 38, 38, 0.07);
-  --brand-glow-soft: rgba(0, 0, 0, 0.03);
-  --brand-glow-mint: rgba(107, 114, 128, 0.04);
-  --container-shell: 92rem;
+  /* ----------------------------------------------------------------------
+     Brand Palette (canonical)
+     ---------------------------------------------------------------------- */
+  --slipwise-navy: #16294D;
+  --slipwise-purple: #C05092;
+  --slipwise-cta-red: #DC2626;
+  --slipwise-surface-blue: #E2E6EF;
+  --slipwise-black: #000000;
+  --slipwise-white: #FFFFFF;
 
-  /* Sidebar */
+  /* ----------------------------------------------------------------------
+     Semantic Brand Tokens
+     ---------------------------------------------------------------------- */
+  --brand-primary: var(--slipwise-navy);
+  --brand-secondary: var(--slipwise-purple);
+  --brand-cta: var(--slipwise-cta-red);
+
+  /* ----------------------------------------------------------------------
+     Surface Tokens
+     ---------------------------------------------------------------------- */
+  --surface-base: #F7F8FB;
+  --surface-page: #F7F8FB;
+  --surface-panel: #FFFFFF;
+  --surface-elevated: #FFFFFF;
+  --surface-subtle: #F1F3F7;
+  --surface-selected: rgba(22, 41, 77, 0.06);
+  --surface-accent: rgba(192, 80, 146, 0.06);
+  --surface-accent-strong: rgba(192, 80, 146, 0.12);
+  --surface-cta-soft: rgba(220, 38, 38, 0.06);
+  --surface-cta-strong: rgba(220, 38, 38, 0.10);
+  --surface-auth: #FFFFFF;
+  --surface-light-blue: var(--slipwise-surface-blue);
+
+  /* ----------------------------------------------------------------------
+     Text Tokens
+     ---------------------------------------------------------------------- */
+  --text-primary: #0F172A;
+  --text-secondary: #334155;
+  --text-muted: #64748B;
+  --text-inverse: #FFFFFF;
+  --text-brand: var(--slipwise-navy);
+  --text-accent: var(--slipwise-purple);
+  --text-cta: var(--slipwise-cta-red);
+
+  /* ----------------------------------------------------------------------
+     Border Tokens
+     ---------------------------------------------------------------------- */
+  --border-default: #D1D5DB;
+  --border-soft: #E2E5EA;
+  --border-strong: #9CA3AF;
+  --border-brand: rgba(22, 41, 77, 0.15);
+
+  /* ----------------------------------------------------------------------
+     Focus & Interaction Tokens
+     ---------------------------------------------------------------------- */
+  --focus-ring: rgba(22, 41, 77, 0.25);
+  --focus-ring-accent: rgba(192, 80, 146, 0.3);
+  --focus-ring-cta: rgba(220, 38, 38, 0.25);
+
+  /* ----------------------------------------------------------------------
+     State Tokens
+     ---------------------------------------------------------------------- */
+  --state-success: #16A34A;
+  --state-success-soft: rgba(22, 163, 74, 0.08);
+  --state-warning: #D97706;
+  --state-warning-soft: rgba(217, 119, 6, 0.08);
+  --state-danger: var(--slipwise-cta-red);
+  --state-danger-soft: rgba(220, 38, 38, 0.08);
+  --state-info: #2563EB;
+  --state-info-soft: rgba(37, 99, 235, 0.08);
+
+  /* ----------------------------------------------------------------------
+     Chart Palette
+     ---------------------------------------------------------------------- */
+  --chart-series-1: var(--slipwise-navy);
+  --chart-series-2: var(--slipwise-purple);
+  --chart-series-3: #3B82F6;
+  --chart-series-4: #10B981;
+  --chart-neutral: #94A3B8;
+
+  /* ----------------------------------------------------------------------
+     Sidebar Tokens
+     ---------------------------------------------------------------------- */
   --sidebar-width: 240px;
-  --sidebar-bg: #1a1a1a;
+  --sidebar-width-collapsed: 64px;
+  --sidebar-bg: var(--slipwise-white);
+  --sidebar-border: var(--border-soft);
+  --sidebar-text: var(--text-secondary);
+  --sidebar-text-muted: var(--text-muted);
+  --sidebar-text-active: var(--text-primary);
+  --sidebar-surface-active: var(--surface-selected);
+  --sidebar-surface-hover: rgba(22, 41, 77, 0.04);
+  --sidebar-accent-indicator: var(--slipwise-navy);
 
-  /* Auth surfaces */
-  --surface-auth: #ffffff;
+  /* ----------------------------------------------------------------------
+     Topbar Tokens
+     ---------------------------------------------------------------------- */
+  --topbar-bg: rgba(255, 255, 255, 0.92);
+  --topbar-border: var(--border-soft);
+  --topbar-backdrop: blur(14px);
+  --topbar-height: 56px;
+
+  /* ----------------------------------------------------------------------
+     Elevation & Shadow Tokens
+     ---------------------------------------------------------------------- */
+  --shadow-xs: 0 0 0 1px rgba(15, 23, 42, 0.02);
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.03);
+  --shadow-md: 0 2px 6px rgba(15, 23, 42, 0.04);
+  --shadow-lg: 0 8px 20px rgba(15, 23, 42, 0.06);
+  --shadow-xl: 0 14px 34px rgba(15, 23, 42, 0.08);
+  --shadow-card: none;
+  --shadow-lift: var(--shadow-md);
+  --shadow-soft: none;
+
+  /* ----------------------------------------------------------------------
+     Radius Tokens
+     ---------------------------------------------------------------------- */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-2xl: 16px;
+  --radius-full: 9999px;
+
+  /* ----------------------------------------------------------------------
+     Spacing Tokens (complementing Tailwind)
+     ---------------------------------------------------------------------- */
+  --space-page-x: 1.5rem;
+  --space-page-y: 1.5rem;
+  --space-panel: 1.25rem;
+  --space-section: 2rem;
+  --space-gap: 1rem;
+
+  /* ----------------------------------------------------------------------
+     Container Tokens
+     ---------------------------------------------------------------------- */
+  --container-shell: 92rem;
+  --container-content: 80rem;
+  --container-narrow: 48rem;
+
+  /* ----------------------------------------------------------------------
+     Typography Tokens
+     ---------------------------------------------------------------------- */
+  --font-sans-stack: var(--font-inter), "Inter", "Helvetica Neue", "Segoe UI", system-ui, sans-serif;
+  --font-display-stack: var(--font-manrope), "Manrope", "Inter", system-ui, sans-serif;
+
+  /* ----------------------------------------------------------------------
+     Motion Tokens
+     ---------------------------------------------------------------------- */
+  --transition-base: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow: 250ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-fast: 100ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-bounce: 300ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  --motion-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --motion-ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* ----------------------------------------------------------------------
+     Legacy compatibility aliases (to avoid breaking existing components)
+     These map old variable names to new semantic names.
+     ---------------------------------------------------------------------- */
+  --background: var(--surface-base);
+  --foreground: var(--text-primary);
+  --foreground-soft: var(--text-secondary);
+  --muted-foreground: var(--text-muted);
+  --surface-soft: var(--surface-subtle);
+  --surface-accent: var(--surface-cta-soft);
+  --surface-accent-strong: var(--surface-cta-strong);
+  --paper: var(--surface-subtle);
+  --border-strong: var(--border-default);
+  --accent: var(--brand-cta);
+  --accent-strong: #B91C1C;
+  --accent-soft: var(--surface-cta-soft);
+  --accent-warm: var(--surface-cta-strong);
+  --ring: var(--focus-ring);
+  --ink-soft: var(--border-soft);
+  --danger: var(--state-danger);
+  --success: var(--state-success);
+  --brand-glow: rgba(22, 41, 77, 0.06);
+  --brand-glow-soft: rgba(15, 23, 42, 0.03);
+  --brand-glow-mint: rgba(100, 116, 139, 0.04);
 
   /* Form state tokens */
-  --input-border: var(--border-strong);
-  --input-border-focus: var(--accent);
-  --input-error: #dc2626;
-  --input-success: #16a34a;
-
-  /* Transition */
-  --transition-base: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --input-border: var(--border-default);
+  --input-border-focus: var(--brand-primary);
+  --input-error: var(--state-danger);
+  --input-success: var(--state-success);
 }
 
+/* ======================================================================
+   Tailwind v4 Theme Inline Mapping
+   ====================================================================== */
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-primary: var(--accent);
-  --color-primary-foreground: #ffffff;
-  --color-muted: var(--muted-foreground);
+  --color-background: var(--surface-base);
+  --color-foreground: var(--text-primary);
+  --color-primary: var(--brand-primary);
+  --color-primary-foreground: var(--text-inverse);
+  --color-muted: var(--text-muted);
   --color-border: var(--border-soft);
   --font-sans: var(--font-sans-stack);
   --font-display: var(--font-display-stack);
 }
 
+/* ======================================================================
+   Global Base Styles
+   ====================================================================== */
 * {
   box-sizing: border-box;
 }
 
 html {
   scroll-behavior: smooth;
-  background: var(--background);
+  background: var(--surface-base);
   color-scheme: light;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
+  background: var(--surface-base);
+  color: var(--text-primary);
   font-family: var(--font-sans-stack);
-  font-size: 1rem;
+  font-size: 0.9375rem;
   line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-h1,
-h2,
-h3 {
+/* ----------------------------------------------------------------------
+   Typography Hierarchy
+   ---------------------------------------------------------------------- */
+h1, h2, h3, h4, h5, h6 {
   font-family: var(--font-display-stack);
-  font-weight: 500;
-  letter-spacing: -0.03em;
-  line-height: 1.1;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: -0.02em;
+  line-height: 1.2;
 }
 
 h1 {
+  font-size: 1.75rem;
+  line-height: 1.15;
   letter-spacing: -0.03em;
 }
 
+h2 {
+  font-size: 1.375rem;
+  line-height: 1.25;
+}
+
+h3 {
+  font-size: 1.125rem;
+  line-height: 1.3;
+}
+
+h4 {
+  font-size: 1rem;
+  line-height: 1.35;
+  font-weight: 600;
+}
+
+h5 {
+  font-size: 0.875rem;
+  line-height: 1.4;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+h6 {
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+p {
+  color: var(--text-secondary);
+}
+
+small, .text-small {
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+
+.label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.caption {
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+/* ----------------------------------------------------------------------
+   Interactive Element Transitions
+   ---------------------------------------------------------------------- */
 a,
 button,
 input,
 textarea,
 select {
   transition:
-    background-color 180ms ease,
-    color 180ms ease,
-    border-color 180ms ease,
-    transform 180ms ease,
-    box-shadow 180ms ease;
+    background-color var(--transition-base),
+    color var(--transition-base),
+    border-color var(--transition-base),
+    transform var(--transition-base),
+    box-shadow var(--transition-base);
+}
+
+/* Smooth hover lift for interactive cards and panels */
+.hover-lift {
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.hover-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+/* Subtle press feedback */
+.press-feedback:active {
+  transform: scale(0.98);
+  transition-duration: 0.08s;
+}
+
+/* Smooth image zoom on hover */
+.img-zoom {
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.img-zoom:hover {
+  transform: scale(1.03);
+}
+
+/* Stagger animation helpers */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 button:not(:disabled),
@@ -108,146 +364,170 @@ button:not(:disabled),
   cursor: pointer;
 }
 
+/* ----------------------------------------------------------------------
+   Selection & Focus
+   ---------------------------------------------------------------------- */
 ::selection {
-  background: rgba(220, 38, 38, 0.15);
+  background: rgba(22, 41, 77, 0.12);
 }
 
 :focus-visible {
-  outline: 2px solid var(--ring);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 3px;
 }
 
+/* ======================================================================
+   Slipwise Shared Component Primitives
+   ====================================================================== */
+
 .slipwise-shell-bg {
-  background: var(--background);
+  background: var(--surface-base);
 }
 
 .slipwise-glass {
-  background: var(--surface-elevated);
-  backdrop-filter: blur(14px);
+  background: var(--topbar-bg);
+  backdrop-filter: var(--topbar-backdrop);
 }
 
 .slipwise-panel {
-  background: #ffffff;
-  border: 1px solid var(--border-strong);
-  box-shadow: var(--shadow-card);
+  background: var(--surface-panel);
+  border: 1px solid var(--border-soft);
+  box-shadow: none;
+  border-radius: var(--radius-lg);
 }
 
 .slipwise-soft-panel {
-  background: #ffffff;
+  background: var(--surface-panel);
   border: 1px solid var(--border-soft);
-  box-shadow: var(--shadow-soft);
+  box-shadow: none;
+  border-radius: var(--radius-md);
 }
 
 .slipwise-dark-panel {
-  background: linear-gradient(180deg, rgba(34, 34, 34, 0.98), rgba(50, 50, 50, 0.96));
-  color: white;
-  box-shadow: var(--shadow-lift);
+  background: linear-gradient(180deg, rgba(22, 41, 77, 0.98), rgba(15, 23, 42, 0.96));
+  color: var(--text-inverse);
+  box-shadow: var(--shadow-md);
+  border-radius: var(--radius-lg);
 }
 
 .slipwise-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 9999px;
-  font-size: 0.95rem;
+  border-radius: var(--radius-md);
+  font-size: 0.875rem;
   font-weight: 500;
   transition:
-    background-color 180ms ease,
-    color 180ms ease,
-    border-color 180ms ease,
-    box-shadow 180ms ease,
-    transform 180ms ease;
+    background-color var(--transition-base),
+    color var(--transition-base),
+    border-color var(--transition-base),
+    box-shadow var(--transition-base),
+    transform var(--transition-base);
 }
 
 .slipwise-btn-primary {
-  background: var(--accent);
-  color: white;
+  background: var(--brand-cta);
+  color: var(--text-inverse);
   box-shadow: none;
 }
 
 .slipwise-btn-primary:hover {
-  background: var(--accent-strong);
+  background: #B91C1C;
   box-shadow: none;
 }
 
 .slipwise-btn-secondary {
-  border: 1px solid var(--border-strong);
+  border: 1px solid var(--border-default);
   background: rgba(255, 255, 255, 0.94);
-  color: var(--foreground);
-  box-shadow: 0 10px 24px rgba(34, 34, 34, 0.04);
+  color: var(--text-primary);
+  box-shadow: none;
 }
 
 .slipwise-btn-secondary:hover {
-  background: var(--surface-soft);
-}
-
-.slipwise-state-shell {
-  position: relative;
-  overflow: hidden;
-  border-radius: 1.25rem;
-  border: 1px solid var(--border-strong);
-  background: #ffffff;
-  box-shadow: var(--shadow-card);
-}
-
-.slipwise-state-panel {
-  border-radius: 1.4rem;
-  border: 1px solid var(--border-soft);
-  background: rgba(255, 255, 255, 0.88);
-  box-shadow: var(--shadow-soft);
+  background: var(--surface-subtle);
+  border-color: var(--border-strong);
 }
 
 .slipwise-btn-subtle {
   border: 1px solid var(--border-soft);
-  background: var(--surface-soft);
-  color: var(--foreground-soft);
+  background: var(--surface-subtle);
+  color: var(--text-secondary);
   box-shadow: none;
 }
 
 .slipwise-btn-subtle:hover {
-  background: #ebebea;
+  background: #E8EBF0;
 }
 
 .slipwise-chip {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 9999px;
+  border-radius: var(--radius-md);
   border: 1px solid var(--border-soft);
-  background: var(--surface-soft);
-  color: var(--foreground-soft);
+  background: var(--surface-subtle);
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  font-weight: 500;
+  padding: 0.125rem 0.625rem;
 }
 
 .slipwise-surface-card {
-  background: #ffffff;
+  background: var(--surface-panel);
   border: 1px solid var(--border-soft);
-  box-shadow: var(--shadow-soft);
+  box-shadow: none;
+  border-radius: var(--radius-md);
 }
 
 .slipwise-empty-state {
-  border: 1px solid var(--border-strong);
-  background: #ffffff;
-  box-shadow: var(--shadow-card);
+  border: 1px solid var(--border-soft);
+  background: var(--surface-panel);
+  box-shadow: none;
+  border-radius: var(--radius-lg);
 }
 
 .slipwise-link-inline {
-  color: var(--accent);
+  color: var(--brand-primary);
   text-decoration: underline;
-  text-decoration-color: rgba(220, 38, 38, 0.3);
+  text-decoration-color: rgba(22, 41, 77, 0.3);
   text-underline-offset: 0.22em;
 }
 
+.slipwise-link-inline:hover {
+  color: #0F1D36;
+  text-decoration-color: rgba(22, 41, 77, 0.6);
+}
+
 .slipwise-btn-inline-muted {
-  border: 1px solid var(--border-strong);
+  border: 1px solid var(--border-default);
   background: rgba(255, 255, 255, 0.94);
-  color: var(--foreground);
-  box-shadow: 0 10px 24px rgba(34, 34, 34, 0.04);
+  color: var(--text-primary);
+  box-shadow: none;
 }
 
 .slipwise-btn-inline-muted:hover {
-  background: var(--surface-soft);
+  background: var(--surface-subtle);
 }
 
+.slipwise-state-shell {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--border-soft);
+  background: var(--surface-panel);
+  box-shadow: none;
+}
+
+.slipwise-state-panel {
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--border-soft);
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: none;
+}
+
+/* ======================================================================
+   Document & Print Styles
+   ====================================================================== */
 @page {
   size: A4;
   margin: 12mm 0 0 0;
@@ -278,11 +558,13 @@ button:not(:disabled),
   display: none;
   -webkit-appearance: none;
 }
+
 .document-inline-number::-webkit-outer-spin-button,
 .document-inline-number::-webkit-inner-spin-button {
   -webkit-appearance: none;
   margin: 0;
 }
+
 .document-inline-number {
   -moz-appearance: textfield;
 }
@@ -292,5 +574,22 @@ button:not(:disabled),
   body {
     background: white !important;
     background-image: none !important;
+  }
+}
+
+/* ======================================================================
+   Reduced Motion
+   ====================================================================== */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  html {
+    scroll-behavior: auto;
   }
 }

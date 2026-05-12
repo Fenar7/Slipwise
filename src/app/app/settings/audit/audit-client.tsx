@@ -3,11 +3,16 @@
 import { useEffect, useState, useCallback } from "react";
 import { Button, Badge } from "@/components/ui";
 import {
+  SettingsCard,
+  SettingsCardContent,
+} from "@/components/settings/settings-primitives";
+import {
   getAuditLogs,
   exportAuditLogsCSV,
   getAuditActors,
   type AuditLogRow,
 } from "./actions";
+import { Download } from "lucide-react";
 
 type Actor = { id: string; name: string; email: string };
 
@@ -104,10 +109,8 @@ export function AuditClient() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-semibold text-[var(--foreground)]">
-            Audit Log
-          </h2>
-          <p className="text-sm text-[var(--muted-foreground)]">
+          <h2 className="text-base font-semibold text-[var(--text-primary)]">Audit Log</h2>
+          <p className="mt-0.5 text-sm text-[var(--text-muted)]">
             Track all actions taken across your organization.
           </p>
         </div>
@@ -117,107 +120,110 @@ export function AuditClient() {
           onClick={handleExport}
           disabled={exporting}
         >
+          <Download className="mr-1.5 h-3.5 w-3.5" />
           {exporting ? "Exporting…" : "Export CSV"}
         </Button>
       </div>
 
       {/* Filters */}
-      <div className="rounded-xl border border-[var(--border-soft)] bg-white shadow-sm p-4">
-        <div className="flex flex-wrap gap-3 items-end">
-          <div>
-            <label className="block text-xs font-medium text-[var(--muted-foreground)] mb-1">
-              From
+      <SettingsCard>
+        <SettingsCardContent>
+          <div className="flex flex-wrap gap-3 items-end">
+            <div>
+              <label className="block text-xs font-medium text-[var(--text-muted)] uppercase tracking-wider mb-1">
+                From
+              </label>
+              <input
+                type="date"
+                value={dateFrom}
+                onChange={(e) => setDateFrom(e.target.value)}
+                className="rounded-lg border border-[var(--border-soft)] bg-white px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--focus-ring)]"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-[var(--text-muted)] uppercase tracking-wider mb-1">
+                To
+              </label>
+              <input
+                type="date"
+                value={dateTo}
+                onChange={(e) => setDateTo(e.target.value)}
+                className="rounded-lg border border-[var(--border-soft)] bg-white px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--focus-ring)]"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-[var(--text-muted)] uppercase tracking-wider mb-1">
+                Actor
+              </label>
+              <select
+                value={actorId}
+                onChange={(e) => setActorId(e.target.value)}
+                className="rounded-lg border border-[var(--border-soft)] bg-white px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--focus-ring)]"
+              >
+                <option value="">All users</option>
+                {actors.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-[var(--text-muted)] uppercase tracking-wider mb-1">
+                Category
+              </label>
+              <select
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+                className="rounded-lg border border-[var(--border-soft)] bg-white px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--focus-ring)]"
+              >
+                {CATEGORIES.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <label className="inline-flex items-center gap-1.5 text-sm text-[var(--text-primary)] cursor-pointer pb-0.5">
+              <input
+                type="checkbox"
+                checked={proxyOnly}
+                onChange={(e) => setProxyOnly(e.target.checked)}
+                className="rounded border-[var(--border-soft)] accent-[var(--brand-primary)]"
+              />
+              Proxy only
             </label>
-            <input
-              type="date"
-              value={dateFrom}
-              onChange={(e) => setDateFrom(e.target.value)}
-              className="rounded-lg border border-[var(--border-strong)] bg-white px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--ring)]"
-            />
           </div>
-          <div>
-            <label className="block text-xs font-medium text-[var(--muted-foreground)] mb-1">
-              To
-            </label>
-            <input
-              type="date"
-              value={dateTo}
-              onChange={(e) => setDateTo(e.target.value)}
-              className="rounded-lg border border-[var(--border-strong)] bg-white px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--ring)]"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-[var(--muted-foreground)] mb-1">
-              Actor
-            </label>
-            <select
-              value={actorId}
-              onChange={(e) => setActorId(e.target.value)}
-              className="rounded-lg border border-[var(--border-strong)] bg-white px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--ring)]"
-            >
-              <option value="">All users</option>
-              {actors.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-[var(--muted-foreground)] mb-1">
-              Category
-            </label>
-            <select
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
-              className="rounded-lg border border-[var(--border-strong)] bg-white px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--ring)]"
-            >
-              {CATEGORIES.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
-          </div>
-          <label className="inline-flex items-center gap-1.5 text-sm text-[var(--foreground)] cursor-pointer pb-0.5">
-            <input
-              type="checkbox"
-              checked={proxyOnly}
-              onChange={(e) => setProxyOnly(e.target.checked)}
-              className="rounded border-[var(--border-strong)] accent-[var(--accent)]"
-            />
-            Proxy only
-          </label>
-        </div>
-      </div>
+        </SettingsCardContent>
+      </SettingsCard>
 
       {/* Table */}
-      <div className="rounded-xl border border-[var(--border-soft)] bg-white shadow-sm overflow-hidden">
+      <div className="slipwise-panel overflow-hidden">
         {loading ? (
-          <div className="p-8 text-center text-sm text-[var(--muted-foreground)]">
+          <div className="p-8 text-center text-sm text-[var(--text-muted)]">
             Loading…
           </div>
         ) : rows.length === 0 ? (
-          <div className="p-8 text-center text-sm text-[var(--muted-foreground)]">
+          <div className="p-8 text-center text-sm text-[var(--text-muted)]">
             No audit entries found.
           </div>
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-[var(--border-soft)] bg-[var(--surface-soft)]">
-                <th className="text-left px-4 py-3 font-medium text-[var(--muted-foreground)]">
+              <tr className="border-b border-[var(--border-soft)] bg-[var(--surface-subtle)]">
+                <th className="text-left px-4 py-3 font-medium text-xs text-[var(--text-muted)] uppercase tracking-wider">
                   Time
                 </th>
-                <th className="text-left px-4 py-3 font-medium text-[var(--muted-foreground)]">
+                <th className="text-left px-4 py-3 font-medium text-xs text-[var(--text-muted)] uppercase tracking-wider">
                   Actor
                 </th>
-                <th className="text-left px-4 py-3 font-medium text-[var(--muted-foreground)]">
+                <th className="text-left px-4 py-3 font-medium text-xs text-[var(--text-muted)] uppercase tracking-wider">
                   Action
                 </th>
-                <th className="text-left px-4 py-3 font-medium text-[var(--muted-foreground)]">
+                <th className="text-left px-4 py-3 font-medium text-xs text-[var(--text-muted)] uppercase tracking-wider">
                   Entity
                 </th>
-                <th className="text-left px-4 py-3 font-medium text-[var(--muted-foreground)]">
+                <th className="text-left px-4 py-3 font-medium text-xs text-[var(--text-muted)] uppercase tracking-wider">
                   IP
                 </th>
               </tr>
@@ -228,17 +234,17 @@ export function AuditClient() {
                 return (
                   <tr
                     key={r.id}
-                    className="border-b border-[var(--border-soft)] last:border-0 hover:bg-[var(--surface-soft)] transition-colors"
+                    className="border-b border-[var(--border-soft)] last:border-0 hover:bg-[var(--surface-subtle)]/50 transition-colors"
                   >
-                    <td className="px-4 py-3 text-[var(--muted-foreground)] whitespace-nowrap">
+                    <td className="px-4 py-3 text-[var(--text-muted)] whitespace-nowrap">
                       {new Date(r.createdAt).toLocaleString()}
                     </td>
                     <td className="px-4 py-3">
-                      <span className="font-medium text-[var(--foreground)]">
+                      <span className="font-medium text-[var(--text-primary)]">
                         {r.actorName}
                       </span>
                       {r.representedName && (
-                        <span className="text-[var(--muted-foreground)]">
+                        <span className="text-[var(--text-muted)]">
                           {" "}
                           (as{" "}
                           <span className="font-medium">
@@ -253,28 +259,28 @@ export function AuditClient() {
                         </Badge>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-[var(--foreground)]">
+                    <td className="px-4 py-3 text-[var(--text-primary)]">
                       {r.actionLabel}
                     </td>
                     <td className="px-4 py-3">
                       {link ? (
                         <a
                           href={link}
-                          className="text-[var(--accent)] hover:underline"
+                          className="text-[var(--brand-primary)] hover:underline"
                         >
                           {r.entityType}
                         </a>
                       ) : r.entityType ? (
-                        <span className="text-[var(--muted-foreground)]">
+                        <span className="text-[var(--text-muted)]">
                           {r.entityType}
                         </span>
                       ) : (
-                        <span className="text-[var(--muted-foreground)]">
+                        <span className="text-[var(--text-muted)]">
                           —
                         </span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-[var(--muted-foreground)]">
+                    <td className="px-4 py-3 text-[var(--text-muted)]">
                       <span title={r.ipAddress ?? ""}>
                         {formatIp(r.ipAddress)}
                       </span>
@@ -289,7 +295,7 @@ export function AuditClient() {
 
       {/* Pagination */}
       {totalPages > 1 && (
-        <div className="flex items-center justify-between text-sm text-[var(--muted-foreground)]">
+        <div className="flex items-center justify-between text-sm text-[var(--text-muted)]">
           <span>
             Showing {(page - 1) * 50 + 1}–{Math.min(page * 50, total)} of{" "}
             {total}

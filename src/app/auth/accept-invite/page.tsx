@@ -3,6 +3,7 @@
 import { Suspense, useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { AuthCard } from "@/features/auth/components/auth-card";
 import {
   getInvitationDetails,
   acceptInvitation,
@@ -49,73 +50,72 @@ function AcceptInviteContent() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#fafafa]">
-        <p className="text-sm text-[#666]">Loading invitation…</p>
+      <div className="flex items-center justify-center py-20">
+        <p className="text-sm" style={{ color: "#79747E" }}>Loading invitation…</p>
       </div>
     );
   }
 
   if (!token || !invitation) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#fafafa]">
-        <div className="bg-white rounded-xl shadow-sm border border-[#e5e5e5] p-8 w-full max-w-sm text-center">
-          <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center mx-auto mb-4">
-            <span className="text-red-600 text-xl">✕</span>
+      <AuthCard title="Invalid Invitation" subtitle="This invitation link is invalid or has been removed.">
+        <div className="text-center space-y-5">
+          <div
+            className="mx-auto h-12 w-12 rounded-full flex items-center justify-center"
+            style={{ background: "#F9DEDC" }}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#B3261E" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M18 6 6 18" />
+              <path d="m6 6 12 12" />
+            </svg>
           </div>
-          <h1 className="text-lg font-semibold text-[#1a1a1a] mb-2">
-            Invalid Invitation
-          </h1>
-          <p className="text-sm text-[#666] mb-6">
-            This invitation link is invalid or has been removed.
-          </p>
-          <Button variant="secondary" onClick={() => router.push("/auth/login")}>
+          <Button variant="secondary" className="w-full" onClick={() => router.push("/auth/login")}>
             Go to Login
           </Button>
         </div>
-      </div>
+      </AuthCard>
     );
   }
 
   if (invitation.status !== "pending") {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#fafafa]">
-        <div className="bg-white rounded-xl shadow-sm border border-[#e5e5e5] p-8 w-full max-w-sm text-center">
-          <div className="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center mx-auto mb-4">
-            <span className="text-blue-600 text-xl">✓</span>
+      <AuthCard title="Already Accepted" subtitle="This invitation has already been accepted.">
+        <div className="text-center space-y-5">
+          <div
+            className="mx-auto h-12 w-12 rounded-full flex items-center justify-center"
+            style={{ background: "#E8F5E9" }}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2E7D32" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+              <polyline points="22 4 12 14.01 9 11.01" />
+            </svg>
           </div>
-          <h1 className="text-lg font-semibold text-[#1a1a1a] mb-2">
-            Already Accepted
-          </h1>
-          <p className="text-sm text-[#666] mb-6">
-            This invitation has already been accepted.
-          </p>
-          <Button onClick={() => router.push("/app/home")}>
+          <Button className="w-full" onClick={() => router.push("/app/home")}>
             Go to Dashboard
           </Button>
         </div>
-      </div>
+      </AuthCard>
     );
   }
 
   if (invitation.expired) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#fafafa]">
-        <div className="bg-white rounded-xl shadow-sm border border-[#e5e5e5] p-8 w-full max-w-sm text-center">
-          <div className="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center mx-auto mb-4">
-            <span className="text-amber-600 text-xl">⏱</span>
+      <AuthCard title="Invitation Expired" subtitle="This invitation has expired. Please ask the team admin to send a new invitation.">
+        <div className="text-center space-y-5">
+          <div
+            className="mx-auto h-12 w-12 rounded-full flex items-center justify-center"
+            style={{ background: "#FFF8E1" }}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#F9A825" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10" />
+              <polyline points="12 6 12 12 16 14" />
+            </svg>
           </div>
-          <h1 className="text-lg font-semibold text-[#1a1a1a] mb-2">
-            Invitation Expired
-          </h1>
-          <p className="text-sm text-[#666] mb-6">
-            This invitation has expired. Please ask the team admin to send a new
-            invitation.
-          </p>
-          <Button variant="secondary" onClick={() => router.push("/auth/login")}>
+          <Button variant="secondary" className="w-full" onClick={() => router.push("/auth/login")}>
             Go to Login
           </Button>
         </div>
-      </div>
+      </AuthCard>
     );
   }
 
@@ -125,52 +125,49 @@ function AcceptInviteContent() {
     .join(" ");
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#fafafa]">
-      <div className="bg-white rounded-xl shadow-sm border border-[#e5e5e5] p-8 w-full max-w-sm">
-        <div className="text-center mb-6">
-          <div className="w-12 h-12 rounded-full bg-[#dc2626] flex items-center justify-center mx-auto mb-4">
-            <span className="text-white text-lg font-bold">S</span>
-          </div>
-          <h1 className="text-lg font-semibold text-[#1a1a1a] mb-2">
-            Join {invitation.orgName}
-          </h1>
-          <p className="text-sm text-[#666]">
-            You&apos;ve been invited to join as a{" "}
-            <span className="font-medium text-[#1a1a1a]">{roleLabel}</span>.
-          </p>
-        </div>
-
-        {error && (
-          <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 mb-4">
-            {error}
-          </div>
-        )}
-
-        <div className="space-y-3">
-          <Button
-            className="w-full"
-            onClick={handleAccept}
-            disabled={accepting}
-          >
-            {accepting ? "Joining…" : "Join Organization"}
-          </Button>
-          <Button
-            variant="secondary"
-            className="w-full"
-            onClick={() => router.push("/auth/login")}
-          >
-            Cancel
-          </Button>
+    <AuthCard
+      title={`Join ${invitation.orgName}`}
+      subtitle={`You've been invited to join as a ${roleLabel}.`}
+    >
+      <div className="text-center mb-6">
+        <div
+          className="mx-auto h-12 w-12 rounded-full flex items-center justify-center mb-4"
+          style={{ background: "#FFDAD6" }}
+        >
+          <span className="text-lg font-bold" style={{ color: "#DC2626" }}>S</span>
         </div>
       </div>
-    </div>
+
+      {error && (
+        <div className="rounded-lg border p-3 text-sm mb-4" style={{ background: "#F9DEDC", borderColor: "#F2B8B5", color: "#410E0B" }}>
+          {error}
+        </div>
+      )}
+
+      <div className="space-y-3">
+        <Button
+          className="w-full"
+          onClick={handleAccept}
+          disabled={accepting}
+        >
+          {accepting ? "Joining…" : "Join Organization"}
+        </Button>
+        <Button
+          variant="secondary"
+          className="w-full"
+          onClick={() => router.push("/auth/login")}
+        >
+          Cancel
+        </Button>
+      </div>
+    </AuthCard>
   );
 }
 
 function AcceptInviteFallback() {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#fafafa]">
-      <p className="text-sm text-[#666]">Loading invitation…</p>
+    <div className="flex items-center justify-center py-20">
+      <p className="text-sm" style={{ color: "#79747E" }}>Loading invitation…</p>
     </div>
   );
 }

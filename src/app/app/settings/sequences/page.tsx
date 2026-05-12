@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useActiveOrg } from "@/hooks/use-active-org";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -37,10 +36,13 @@ import type { SequenceDocumentType, HealthCheckReport, HealthCheckFailure } from
 export default function SequenceSettingsPage() {
   const { activeOrg, isLoading: isOrgLoading } = useActiveOrg();
   const [canEditSettings, setCanEditSettings] = useState<boolean | null>(null);
-  // Server-validated editability only. No client-side fallback to avoid
-  // split-brain when localStorage and server userOrgPreference drift.
-  const isOwner = canEditSettings === true;
-  const editabilityKnown = canEditSettings !== null;
+  // Derive owner status from server response first; fall back to client-side org
+  // role because the server-side canEdit check can be out of sync after role changes.
+  const isOwner =
+    canEditSettings === true ||
+    activeOrg?.role === "owner" ||
+    activeOrg?.role === "OWNER";
+  const editabilityKnown = canEditSettings !== null || activeOrg?.role != null;
 
   const [invoiceSettings, setInvoiceSettings] = useState<SequenceSettingsData | null>(null);
   const [voucherSettings, setVoucherSettings] = useState<SequenceSettingsData | null>(null);
@@ -136,7 +138,6 @@ export default function SequenceSettingsPage() {
     if (availableSeedDocTypes.length === 0) {
       return;
     }
-
     if (!availableSeedDocTypes.includes(seedDocType)) {
       setSeedDocType(availableSeedDocTypes[0]);
       setSeedNumber("");
@@ -155,8 +156,6 @@ export default function SequenceSettingsPage() {
         ? (invoiceAdvanced ? invoiceRawFormat : buildFormatString(invoiceBuilder))
         : (voucherAdvanced ? voucherRawFormat : buildFormatString(voucherBuilder));
       const formatString = rawOrBuilt;
-      // In advanced mode, derive periodicity from the actual format tokens
-      // so the saved periodicity always matches the format string.
       const periodicity = isAdvanced
         ? derivePeriodicityFromFormat(formatString)
         : (documentType === "INVOICE" ? invoiceBuilder.resetCycle : voucherBuilder.resetCycle);
@@ -235,218 +234,326 @@ export default function SequenceSettingsPage() {
     return settings?.formatString ?? (type === "INVOICE" ? "INV/{YYYY}/{NNNNN}" : "VCH/{YYYY}/{NNNNN}");
   };
 
-  if (isOrgLoading) {
+  if (isOrgLoading || loading) {
     return (
-      <div className="py-8">
-        <p className="text-[#666]">Loading organization...</p>
-      </div>
-    );
-  }
-
-  if (loading) {
-    return (
-      <div className="py-8">
-        <p className="text-[#666]">Loading sequence settings...</p>
+      <div className="space-y-6">
+        <div className="h-8 w-48 animate-pulse rounded-md bg-[var(--surface-subtle)]" />
+        <div className="h-32 animate-pulse rounded-md bg-[var(--surface-subtle)]" />
+        <div className="h-32 animate-pulse rounded-md bg-[var(--surface-subtle)]" />
       </div>
     );
   }
 
   return (
-    <div className="space-y-8">
-      <div>
-        <h2 className="text-xl font-semibold text-[#1a1a1a]">Document Numbering</h2>
-        <p className="text-sm text-[#666] mt-1">
-          Choose how invoice and voucher numbers look and behave.
-          {editabilityKnown && !isOwner ? " Only the owner can edit these settings." : ""}
+    <div className="space-y-10">
+      {editabilityKnown && !isOwner && (
+        <p className="text-sm text-[var(--text-muted)]">
+          Only the organization owner can edit these settings.
         </p>
-      </div>
+      )}
 
       {error && (
-        <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+        <div className="rounded-md border border-[var(--state-danger)]/20 bg-[var(--state-danger-soft)] px-4 py-3 text-sm text-[var(--state-danger)]">
           {error}
         </div>
       )}
       {success && (
-        <div className="rounded-lg bg-green-50 border border-green-200 px-4 py-3 text-sm text-green-700">
+        <div className="rounded-md border border-[var(--state-success)]/20 bg-[var(--state-success-soft)] px-4 py-3 text-sm text-[var(--state-success)]">
           {success}
         </div>
       )}
 
-      {/* ── A. Everyday setup ── */}
-      <section className="space-y-4">
-        <h3 className="text-sm font-semibold uppercase tracking-wider text-[#999]">
-          Everyday setup
-        </h3>
-
-        <div className="grid gap-6 md:grid-cols-2">
-          <SequenceConfigCard
-            documentType="INVOICE"
-            settings={invoiceSettings}
-            builderConfig={invoiceBuilder}
-            isEditing={editingType === "INVOICE"}
-            isOwner={isOwner}
-            saving={saving === "INVOICE"}
-            orgId={activeOrg?.id}
-            onInitializeDefault={() => handleInitialize("INVOICE", "defaults")}
-            onEdit={() => {
-              setEditingType("INVOICE");
-              setError(null);
-              setSuccess(null);
-            }}
-            onCancel={() => setEditingType(null)}
-            onSave={() =>
-              invoiceSettings
-                ? handleSave("INVOICE")
-                : handleInitialize("INVOICE", "custom")
-            }
-          >
-            {editingType === "INVOICE" && (
-              <div className="space-y-4">
-                <SequenceBuilder
-                  documentType="INVOICE"
-                  config={invoiceBuilder}
-                  onChange={setInvoiceBuilder}
-                  rawFormat={invoiceRawFormat}
-                  onRawFormatChange={setInvoiceRawFormat}
-                  advancedMode={invoiceAdvanced}
-                  onAdvancedModeChange={setInvoiceAdvanced}
-                />
-                {!invoiceSettings && (
-                  <div className="border-t border-[#e5e5e5] pt-4">
-                    <ContinuityBuilder
-                      documentType="INVOICE"
-                      formatString={invoiceAdvanced ? invoiceRawFormat : buildFormatString(invoiceBuilder)}
-                      lastUsedNumber={invoiceSetupSeed}
-                      onLastUsedNumberChange={setInvoiceSetupSeed}
-                      showAction={false}
-                    />
-                  </div>
-                )}
-              </div>
-            )}
-          </SequenceConfigCard>
-
-          <SequenceConfigCard
-            documentType="VOUCHER"
-            settings={voucherSettings}
-            builderConfig={voucherBuilder}
-            isEditing={editingType === "VOUCHER"}
-            isOwner={isOwner}
-            saving={saving === "VOUCHER"}
-            orgId={activeOrg?.id}
-            onInitializeDefault={() => handleInitialize("VOUCHER", "defaults")}
-            onEdit={() => {
-              setEditingType("VOUCHER");
-              setError(null);
-              setSuccess(null);
-            }}
-            onCancel={() => setEditingType(null)}
-            onSave={() =>
-              voucherSettings
-                ? handleSave("VOUCHER")
-                : handleInitialize("VOUCHER", "custom")
-            }
-          >
-            {editingType === "VOUCHER" && (
-              <div className="space-y-4">
-                <SequenceBuilder
-                  documentType="VOUCHER"
-                  config={voucherBuilder}
-                  onChange={setVoucherBuilder}
-                  rawFormat={voucherRawFormat}
-                  onRawFormatChange={setVoucherRawFormat}
-                  advancedMode={voucherAdvanced}
-                  onAdvancedModeChange={setVoucherAdvanced}
-                />
-                {!voucherSettings && (
-                  <div className="border-t border-[#e5e5e5] pt-4">
-                    <ContinuityBuilder
-                      documentType="VOUCHER"
-                      formatString={voucherAdvanced ? voucherRawFormat : buildFormatString(voucherBuilder)}
-                      lastUsedNumber={voucherSetupSeed}
-                      onLastUsedNumberChange={setVoucherSetupSeed}
-                      showAction={false}
-                    />
-                  </div>
-                )}
-              </div>
-            )}
-          </SequenceConfigCard>
+      {/* ── Invoice Numbering ── */}
+      <section className="space-y-5">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <h2 className="text-base font-semibold text-[var(--text-primary)]">Invoice Numbering</h2>
+            <p className="mt-0.5 text-sm text-[var(--text-muted)]">
+              {invoiceSettings
+                ? "Current invoice numbering configuration and next issued number."
+                : "Set up how invoice numbers are generated and formatted."}
+            </p>
+          </div>
+          {invoiceSettings && (
+            <Badge variant={invoiceSettings.isActive ? "success" : "warning"}>
+              {invoiceSettings.isActive ? "Active" : "Inactive"}
+            </Badge>
+          )}
         </div>
+
+        {editingType === "INVOICE" ? (
+          <div className="space-y-4">
+            <SequenceBuilder
+              documentType="INVOICE"
+              config={invoiceBuilder}
+              onChange={setInvoiceBuilder}
+              rawFormat={invoiceRawFormat}
+              onRawFormatChange={setInvoiceRawFormat}
+              advancedMode={invoiceAdvanced}
+              onAdvancedModeChange={setInvoiceAdvanced}
+            />
+            {!invoiceSettings && (
+              <div className="border-t border-[var(--border-soft)] pt-4">
+                <ContinuityBuilder
+                  documentType="INVOICE"
+                  formatString={invoiceAdvanced ? invoiceRawFormat : buildFormatString(invoiceBuilder)}
+                  lastUsedNumber={invoiceSetupSeed}
+                  onLastUsedNumberChange={setInvoiceSetupSeed}
+                  showAction={false}
+                />
+              </div>
+            )}
+            {isOwner && (
+              <div className="flex flex-wrap gap-2 pt-2">
+                <Button
+                  onClick={() =>
+                    invoiceSettings
+                      ? handleSave("INVOICE")
+                      : handleInitialize("INVOICE", "custom")
+                  }
+                  disabled={saving === "INVOICE"}
+                  variant="primary"
+                  size="sm"
+                >
+                  {saving === "INVOICE"
+                    ? "Saving…"
+                    : invoiceSettings
+                      ? "Save changes"
+                      : "Create numbering"}
+                </Button>
+                <Button
+                  onClick={() => setEditingType(null)}
+                  variant="ghost"
+                  size="sm"
+                >
+                  Cancel
+                </Button>
+              </div>
+            )}
+          </div>
+        ) : invoiceSettings ? (
+          <div className="space-y-4">
+            <SequenceSummary
+              documentType="INVOICE"
+              config={invoiceBuilder}
+              nextPreview={invoiceSettings.nextPreview}
+              latestIssuedNumber={invoiceSettings.currentCounter}
+              isActive={invoiceSettings.isActive}
+            />
+            {isOwner && (
+              <div className="flex flex-wrap gap-2">
+                <Button onClick={() => { setEditingType("INVOICE"); setError(null); setSuccess(null); }} variant="secondary" size="sm">
+                  Edit numbering
+                </Button>
+              </div>
+            )}
+            {invoiceSettings.sequenceId && activeOrg?.id && (
+              <details className="group">
+                <summary className="flex cursor-pointer items-center gap-2 text-xs font-medium text-[var(--text-muted)] hover:text-[var(--text-secondary)]">
+                  <svg className="h-3.5 w-3.5 transition-transform group-open:rotate-90" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="9 18 15 12 9 6" />
+                  </svg>
+                  Version History
+                </summary>
+                <div className="mt-3">
+                  <SequenceHistoryPanel orgId={activeOrg.id} sequenceId={invoiceSettings.sequenceId} />
+                </div>
+              </details>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <NotConfiguredState
+              documentType="INVOICE"
+              isOwner={isOwner}
+              saving={saving === "INVOICE"}
+              onUseDefaults={() => handleInitialize("INVOICE", "defaults")}
+              onCustomize={() => { setEditingType("INVOICE"); setError(null); setSuccess(null); }}
+            />
+          </div>
+        )}
       </section>
 
-      {/* ── B. Continue from existing numbers ── */}
-      {isOwner && availableSeedDocTypes.length > 0 && (
-        <section className="space-y-4">
-          <h3 className="text-sm font-semibold uppercase tracking-wider text-[#999]">
-            Continue from existing numbers
-          </h3>
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Continue from your last used number</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center gap-3">
-                <label className="text-sm text-[#666]">Document type:</label>
-                <select
-                  value={seedDocType}
-                  onChange={(e) => {
-                    setSeedDocType(e.target.value as SequenceDocumentType);
-                    setSeedNumber("");
-                  }}
-                  className="block w-40 rounded-xl border border-[#e5e5e5] bg-white px-3 py-2 text-sm text-[#1a1a1a] focus:outline-none focus:ring-2 focus:ring-[#dc2626]"
-                >
-                  {invoiceSettings ? <option value="INVOICE">Invoice</option> : null}
-                  {voucherSettings ? <option value="VOUCHER">Voucher</option> : null}
-                </select>
-              </div>
+      {/* ── Voucher Numbering ── */}
+      <section className="border-t border-[var(--border-soft)] pt-10 space-y-5">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <h2 className="text-base font-semibold text-[var(--text-primary)]">Voucher Numbering</h2>
+            <p className="mt-0.5 text-sm text-[var(--text-muted)]">
+              {voucherSettings
+                ? "Current voucher numbering configuration and next issued number."
+                : "Set up how voucher numbers are generated and formatted."}
+            </p>
+          </div>
+          {voucherSettings && (
+            <Badge variant={voucherSettings.isActive ? "success" : "warning"}>
+              {voucherSettings.isActive ? "Active" : "Inactive"}
+            </Badge>
+          )}
+        </div>
 
-              <ContinuityBuilder
-                documentType={seedDocType}
-                formatString={getFormatString(seedDocType)}
-                lastUsedNumber={seedNumber}
-                onLastUsedNumberChange={setSeedNumber}
-                loading={seedLoading}
-                onSeed={async () => {
-                  if (!activeOrg?.id) return;
-                  setSeedLoading(true);
-                  setError(null);
-                  setSuccess(null);
-                  try {
-                    const result = await seedSequenceSetting(activeOrg.id, {
-                      documentType: seedDocType,
-                      latestUsedNumber: seedNumber,
-                    });
-                    setSuccess(
-                      `${seedDocType === "INVOICE" ? "Invoice" : "Voucher"} continuity saved. Slipwise will next issue ${result.nextPreview}`
-                    );
-                    setSeedNumber("");
-                    await loadSettings();
-                  } catch (err) {
-                    setError(err instanceof Error ? err.message : "Failed to save continuity");
-                  } finally {
-                    setSeedLoading(false);
+        {editingType === "VOUCHER" ? (
+          <div className="space-y-4">
+            <SequenceBuilder
+              documentType="VOUCHER"
+              config={voucherBuilder}
+              onChange={setVoucherBuilder}
+              rawFormat={voucherRawFormat}
+              onRawFormatChange={setVoucherRawFormat}
+              advancedMode={voucherAdvanced}
+              onAdvancedModeChange={setVoucherAdvanced}
+            />
+            {!voucherSettings && (
+              <div className="border-t border-[var(--border-soft)] pt-4">
+                <ContinuityBuilder
+                  documentType="VOUCHER"
+                  formatString={voucherAdvanced ? voucherRawFormat : buildFormatString(voucherBuilder)}
+                  lastUsedNumber={voucherSetupSeed}
+                  onLastUsedNumberChange={setVoucherSetupSeed}
+                  showAction={false}
+                />
+              </div>
+            )}
+            {isOwner && (
+              <div className="flex flex-wrap gap-2 pt-2">
+                <Button
+                  onClick={() =>
+                    voucherSettings
+                      ? handleSave("VOUCHER")
+                      : handleInitialize("VOUCHER", "custom")
                   }
+                  disabled={saving === "VOUCHER"}
+                  variant="primary"
+                  size="sm"
+                >
+                  {saving === "VOUCHER"
+                    ? "Saving…"
+                    : voucherSettings
+                      ? "Save changes"
+                      : "Create numbering"}
+                </Button>
+                <Button
+                  onClick={() => setEditingType(null)}
+                  variant="ghost"
+                  size="sm"
+                >
+                  Cancel
+                </Button>
+              </div>
+            )}
+          </div>
+        ) : voucherSettings ? (
+          <div className="space-y-4">
+            <SequenceSummary
+              documentType="VOUCHER"
+              config={voucherBuilder}
+              nextPreview={voucherSettings.nextPreview}
+              latestIssuedNumber={voucherSettings.currentCounter}
+              isActive={voucherSettings.isActive}
+            />
+            {isOwner && (
+              <div className="flex flex-wrap gap-2">
+                <Button onClick={() => { setEditingType("VOUCHER"); setError(null); setSuccess(null); }} variant="secondary" size="sm">
+                  Edit numbering
+                </Button>
+              </div>
+            )}
+            {voucherSettings.sequenceId && activeOrg?.id && (
+              <details className="group">
+                <summary className="flex cursor-pointer items-center gap-2 text-xs font-medium text-[var(--text-muted)] hover:text-[var(--text-secondary)]">
+                  <svg className="h-3.5 w-3.5 transition-transform group-open:rotate-90" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="9 18 15 12 9 6" />
+                  </svg>
+                  Version History
+                </summary>
+                <div className="mt-3">
+                  <SequenceHistoryPanel orgId={activeOrg.id} sequenceId={voucherSettings.sequenceId} />
+                </div>
+              </details>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <NotConfiguredState
+              documentType="VOUCHER"
+              isOwner={isOwner}
+              saving={saving === "VOUCHER"}
+              onUseDefaults={() => handleInitialize("VOUCHER", "defaults")}
+              onCustomize={() => { setEditingType("VOUCHER"); setError(null); setSuccess(null); }}
+            />
+          </div>
+        )}
+      </section>
+
+      {/* ── Continue from existing numbers ── */}
+      {isOwner && availableSeedDocTypes.length > 0 && (
+        <section className="border-t border-[var(--border-soft)] pt-10 space-y-5">
+          <h2 className="text-base font-semibold text-[var(--text-primary)]">Continue from existing numbers</h2>
+          <p className="text-sm text-[var(--text-muted)]">
+            If you are migrating from another system, set the last used number so Slipwise continues from the right place.
+          </p>
+
+          <div className="space-y-4">
+            <div className="flex items-center gap-3">
+              <label className="text-sm font-medium text-[var(--text-primary)]">Document type:</label>
+              <select
+                value={seedDocType}
+                onChange={(e) => {
+                  setSeedDocType(e.target.value as SequenceDocumentType);
+                  setSeedNumber("");
                 }}
-              />
-            </CardContent>
-          </Card>
+                className="block w-40 rounded-md border border-[var(--border-soft)] bg-white px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--focus-ring)]"
+              >
+                {invoiceSettings ? <option value="INVOICE">Invoice</option> : null}
+                {voucherSettings ? <option value="VOUCHER">Voucher</option> : null}
+              </select>
+            </div>
+
+            <ContinuityBuilder
+              documentType={seedDocType}
+              formatString={getFormatString(seedDocType)}
+              lastUsedNumber={seedNumber}
+              onLastUsedNumberChange={setSeedNumber}
+              loading={seedLoading}
+              onSeed={async () => {
+                if (!activeOrg?.id) return;
+                setSeedLoading(true);
+                setError(null);
+                setSuccess(null);
+                try {
+                  const result = await seedSequenceSetting(activeOrg.id, {
+                    documentType: seedDocType,
+                    latestUsedNumber: seedNumber,
+                  });
+                  setSuccess(
+                    `${seedDocType === "INVOICE" ? "Invoice" : "Voucher"} continuity saved. Slipwise will next issue ${result.nextPreview}`
+                  );
+                  setSeedNumber("");
+                  await loadSettings();
+                } catch (err) {
+                  setError(err instanceof Error ? err.message : "Failed to save continuity");
+                } finally {
+                  setSeedLoading(false);
+                }
+              }}
+            />
+          </div>
         </section>
       )}
 
-      {/* ── C. History and troubleshooting ── */}
-      <section className="space-y-4">
+      {/* ── History and troubleshooting ── */}
+      <section className="border-t border-[var(--border-soft)] pt-10 space-y-5">
         <button
           type="button"
           onClick={() => setShowAdvancedSection((v) => !v)}
-          className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-[#999] hover:text-[#666] transition-colors"
+          className="flex items-center gap-2 text-sm font-semibold text-[var(--text-primary)] hover:text-[var(--text-secondary)] transition-colors"
         >
           <span>History and troubleshooting</span>
           <span className="text-lg leading-none">{showAdvancedSection ? "−" : "+"}</span>
         </button>
 
         {showAdvancedSection && (
-          <div className="space-y-6">
+          <div className="space-y-8">
             {isOwner && (
               <DiagnosticsSection
                 orgId={activeOrg?.id ?? ""}
@@ -494,171 +601,64 @@ export default function SequenceSettingsPage() {
 
 /* ─────────────────────────────────────────────────────────────────────────── */
 
-function SequenceConfigCard({
+function NotConfiguredState({
   documentType,
-  settings,
-  builderConfig,
-  isEditing,
   isOwner,
   saving,
-  orgId,
-  onInitializeDefault,
-  onEdit,
-  onCancel,
-  onSave,
-  children,
+  onUseDefaults,
+  onCustomize,
 }: {
   documentType: "INVOICE" | "VOUCHER";
-  settings: SequenceSettingsData | null;
-  builderConfig: SequenceBuilderConfig;
-  isEditing: boolean;
   isOwner: boolean;
   saving: boolean;
-  orgId?: string;
-  onInitializeDefault: () => void;
-  onEdit: () => void;
-  onCancel: () => void;
-  onSave: () => void;
-  children?: React.ReactNode;
+  onUseDefaults: () => void;
+  onCustomize: () => void;
 }) {
-  if (!settings) {
-    const recommended = getDefaultSequenceConfig(documentType);
-    const recommendedPreview = renderPreview(recommended.formatString, recommended.startCounter);
-
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">
-            {documentType === "INVOICE" ? "Invoice Numbering" : "Voucher Numbering"}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {!isEditing ? (
-            <>
-              <p className="text-sm text-[#666]">
-                {isOwner
-                  ? `This organization has not set up ${documentType === "INVOICE" ? "invoice" : "voucher"} numbering yet.`
-                  : `${documentType === "INVOICE" ? "Invoice" : "Voucher"} numbering has not been set up for this organization yet.`}
-              </p>
-              <div className="rounded-xl border border-[#e5e5e5] bg-[#fafafa] px-4 py-3 space-y-2">
-                <p className="text-xs font-semibold uppercase tracking-wide text-[#999]">
-                  Recommended default
-                </p>
-                <p className="text-sm text-[#1a1a1a]">
-                  {documentType === "INVOICE" ? "Invoices" : "Vouchers"} will start as{" "}
-                  <span className="rounded border border-[#e5e5e5] bg-white px-1.5 py-0.5 font-mono">
-                    {recommendedPreview ?? recommended.formatString}
-                  </span>{" "}
-                  and reset every year.
-                </p>
-                <p className="text-xs text-[#666]">
-                  You can keep this recommended setup or customize the prefix, reset cycle, and number length.
-                </p>
-              </div>
-              {isOwner ? (
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    onClick={onInitializeDefault}
-                    disabled={saving}
-                    variant="primary"
-                    size="sm"
-                  >
-                    {saving ? "Setting up…" : "Use recommended defaults"}
-                  </Button>
-                  <Button onClick={onEdit} variant="secondary" size="sm">
-                    Customize numbering
-                  </Button>
-                </div>
-              ) : null}
-            </>
-          ) : (
-            <>
-              {children}
-              <div className="flex gap-2 pt-2">
-                <Button onClick={onSave} disabled={saving} variant="primary" size="sm">
-                  {saving ? "Saving…" : "Create numbering"}
-                </Button>
-                <Button onClick={onCancel} variant="ghost" size="sm">
-                  Cancel
-                </Button>
-              </div>
-            </>
-          )}
-        </CardContent>
-      </Card>
-    );
-  }
+  const recommended = getDefaultSequenceConfig(documentType);
+  const recommendedPreview = renderPreview(recommended.formatString, recommended.startCounter);
+  const noun = documentType === "INVOICE" ? "Invoice" : "Voucher";
+  const nounPlural = documentType === "INVOICE" ? "Invoices" : "Vouchers";
 
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-base">
-            {documentType === "INVOICE" ? "Invoice Numbering" : "Voucher Numbering"}
-          </CardTitle>
-          <Badge variant={settings.isActive ? "success" : "warning"}>
-            {settings.isActive ? "Active" : "Inactive"}
-          </Badge>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {!isEditing ? (
-          <SequenceSummary
-            documentType={documentType}
-            config={builderConfig}
-            nextPreview={settings.nextPreview}
-            latestIssuedNumber={settings.currentCounter}
-          />
+    <div className="space-y-4">
+      <div className="rounded-md border border-[var(--border-soft)] bg-[var(--surface-subtle)]/40 p-4">
+        <p className="text-[0.7rem] font-semibold uppercase tracking-[0.12em] text-[var(--text-muted)]">
+          Recommended default
+        </p>
+        <p className="mt-2 text-sm text-[var(--text-primary)]">
+          {nounPlural} will start as{" "}
+          <span className="rounded border border-[var(--border-soft)] bg-white px-1.5 py-0.5 font-mono text-xs">
+            {recommendedPreview ?? recommended.formatString}
+          </span>{" "}
+          and reset every year.
+        </p>
+        <p className="mt-1 text-xs text-[var(--text-muted)]">
+          You can keep this recommended setup or customize the prefix, reset cycle, and number length.
+        </p>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-3">
+        {isOwner ? (
+          <>
+            <Button onClick={onUseDefaults} disabled={saving} variant="primary" size="sm">
+              {saving ? "Setting up…" : `Set up ${noun.toLowerCase()} numbering`}
+            </Button>
+            <Button onClick={onCustomize} variant="secondary" size="sm">
+              Customize
+            </Button>
+          </>
         ) : (
-          children
+          <>
+            <Button disabled variant="primary" size="sm">
+              Set up {noun.toLowerCase()} numbering
+            </Button>
+            <p className="text-xs text-[var(--text-muted)]">
+              Only the organization owner can configure numbering.
+            </p>
+          </>
         )}
-
-        {isOwner && (
-          <div className="flex gap-2 pt-2">
-            {!isEditing ? (
-              <Button onClick={onEdit} variant="secondary" size="sm">
-                Edit numbering
-              </Button>
-            ) : (
-              <>
-                <Button onClick={onSave} disabled={saving} variant="primary" size="sm">
-                  {saving ? "Saving…" : "Save changes"}
-                </Button>
-                <Button onClick={onCancel} variant="ghost" size="sm">
-                  Cancel
-                </Button>
-              </>
-            )}
-          </div>
-        )}
-
-        {/* History section */}
-        {!isEditing && settings.sequenceId && orgId && (
-          <details className="group mt-4 border-t border-slate-100 pt-4">
-            <summary className="flex cursor-pointer items-center gap-2 text-xs font-medium text-slate-500 hover:text-slate-700">
-              <svg
-                className="h-3.5 w-3.5 transition-transform group-open:rotate-90"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <polyline points="9 18 15 12 9 6" />
-              </svg>
-              Version History
-            </summary>
-            <div className="mt-3">
-              <SequenceHistoryPanel
-                orgId={orgId}
-                sequenceId={settings.sequenceId}
-              />
-            </div>
-          </details>
-        )}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
 
@@ -697,225 +697,221 @@ function DiagnosticsSection({
   onError: (v: string | null) => void;
 }) {
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-base">Diagnostics &amp; Support</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-6">
-        <p className="text-sm text-[#666]">
-          Investigate sequence health, current state, and irregularities.
-        </p>
+    <div className="space-y-5">
+      <h3 className="text-base font-semibold text-[var(--text-primary)]">Diagnostics &amp; Support</h3>
+      <p className="text-sm text-[var(--text-muted)]">
+        Investigate sequence health, current state, and irregularities.
+      </p>
 
-        <div className="flex items-center gap-2">
-          <label className="text-sm text-[#666]">Document type:</label>
-          <select
-            value={docType}
-            onChange={(e) => onDocTypeChange(e.target.value as SequenceDocumentType)}
-            className="block w-32 rounded-xl border border-[#e5e5e5] bg-white px-3 py-1.5 text-sm text-[#1a1a1a] focus:outline-none focus:ring-2 focus:ring-[#dc2626]"
-          >
-            <option value="INVOICE">Invoice</option>
-            <option value="VOUCHER">Voucher</option>
-          </select>
+      <div className="flex items-center gap-2">
+        <label className="text-sm text-[var(--text-muted)]">Document type:</label>
+        <select
+          value={docType}
+          onChange={(e) => onDocTypeChange(e.target.value as SequenceDocumentType)}
+          className="block w-32 rounded-md border border-[var(--border-soft)] bg-white px-3 py-1.5 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--focus-ring)]"
+        >
+          <option value="INVOICE">Invoice</option>
+          <option value="VOUCHER">Voucher</option>
+        </select>
+      </div>
+
+      <div className="flex flex-wrap gap-3">
+        <Button
+          variant="secondary"
+          size="sm"
+          disabled={loading !== null}
+          onClick={async () => {
+            onSetLoading("health");
+            onSetHealthReport(null);
+            onError(null);
+            try {
+              const report = await runSequenceHealthCheck(orgId, docType);
+              onSetHealthReport(report);
+            } catch (err) {
+              onError(err instanceof Error ? err.message : "Health check failed");
+            } finally {
+              onSetLoading(null);
+            }
+          }}
+        >
+          {loading === "health" ? "Running…" : "Run health check"}
+        </Button>
+
+        <Button
+          variant="secondary"
+          size="sm"
+          disabled={loading !== null}
+          onClick={async () => {
+            onSetLoading("overview");
+            onSetSupportOverview(null);
+            onSetDiagResult(null);
+            onError(null);
+            try {
+              const overview = await getSupportOverview(orgId, docType);
+              onSetSupportOverview(overview);
+            } catch (err) {
+              onError(err instanceof Error ? err.message : "Support overview failed");
+            } finally {
+              onSetLoading(null);
+            }
+          }}
+        >
+          {loading === "overview" ? "Loading…" : "Support overview"}
+        </Button>
+
+        <Button
+          variant="secondary"
+          size="sm"
+          disabled={loading !== null}
+          onClick={async () => {
+            onSetLoading("diagnostics");
+            onSetDiagResult(null);
+            onError(null);
+            try {
+              const now = new Date();
+              const start = new Date(now.getFullYear() - 2, 0, 1);
+              const result = await diagnoseSequenceHealth({
+                orgId,
+                documentType: docType,
+                startDate: start,
+                endDate: now,
+              });
+              onSetDiagResult(result.summary);
+            } catch (err) {
+              onError(err instanceof Error ? err.message : "Diagnostics failed");
+            } finally {
+              onSetLoading(null);
+            }
+          }}
+        >
+          {loading === "diagnostics" ? "Running…" : "Run diagnostics"}
+        </Button>
+      </div>
+
+      {/* Health Check Results */}
+      {healthReport && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <h4 className="text-sm font-medium text-[var(--text-primary)]">Health check</h4>
+            <Badge variant={healthReport.passed ? "success" : "warning"}>
+              {healthReport.passed ? "Passed" : "Failed"}
+            </Badge>
+          </div>
+          {healthReport.failures.length === 0 ? (
+            <p className="text-sm text-green-700">All checks passed.</p>
+          ) : (
+            <div className="space-y-2">
+              {healthReport.failures.map((f: HealthCheckFailure, i: number) => (
+                <div
+                  key={i}
+                  className={`rounded-md border px-3 py-2 text-sm ${SEVERITY_COLORS[f.severity] ?? "bg-gray-100 border-gray-200"}`}
+                >
+                  <span className="font-medium capitalize">{f.severity}</span>: {f.message}
+                  {f.count !== undefined && (
+                    <span className="ml-2 text-xs opacity-70">({f.count})</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
+      )}
 
-        <div className="flex flex-wrap gap-3">
-          <Button
-            variant="secondary"
-            size="sm"
-            disabled={loading !== null}
-            onClick={async () => {
-              onSetLoading("health");
-              onSetHealthReport(null);
-              onError(null);
-              try {
-                const report = await runSequenceHealthCheck(orgId, docType);
-                onSetHealthReport(report);
-              } catch (err) {
-                onError(err instanceof Error ? err.message : "Health check failed");
-              } finally {
-                onSetLoading(null);
-              }
-            }}
-          >
-            {loading === "health" ? "Running…" : "Run health check"}
-          </Button>
-
-          <Button
-            variant="secondary"
-            size="sm"
-            disabled={loading !== null}
-            onClick={async () => {
-              onSetLoading("overview");
-              onSetSupportOverview(null);
-              onSetDiagResult(null);
-              onError(null);
-              try {
-                const overview = await getSupportOverview(orgId, docType);
-                onSetSupportOverview(overview);
-              } catch (err) {
-                onError(err instanceof Error ? err.message : "Support overview failed");
-              } finally {
-                onSetLoading(null);
-              }
-            }}
-          >
-            {loading === "overview" ? "Loading…" : "Support overview"}
-          </Button>
-
-          <Button
-            variant="secondary"
-            size="sm"
-            disabled={loading !== null}
-            onClick={async () => {
-              onSetLoading("diagnostics");
-              onSetDiagResult(null);
-              onError(null);
-              try {
-                const now = new Date();
-                const start = new Date(now.getFullYear() - 2, 0, 1);
-                const result = await diagnoseSequenceHealth({
-                  orgId,
-                  documentType: docType,
-                  startDate: start,
-                  endDate: now,
-                });
-                onSetDiagResult(result.summary);
-              } catch (err) {
-                onError(err instanceof Error ? err.message : "Diagnostics failed");
-              } finally {
-                onSetLoading(null);
-              }
-            }}
-          >
-            {loading === "diagnostics" ? "Running…" : "Run diagnostics"}
-          </Button>
-        </div>
-
-        {/* Health Check Results */}
-        {healthReport && (
-          <div className="space-y-3">
-            <div className="flex items-center gap-2">
-              <h4 className="text-sm font-medium text-[#1a1a1a]">Health check</h4>
-              <Badge variant={healthReport.passed ? "success" : "warning"}>
-                {healthReport.passed ? "Passed" : "Failed"}
+      {/* Support Overview */}
+      {supportOverview && (
+        <div className="space-y-3">
+          <h4 className="text-sm font-medium text-[var(--text-primary)]">Support overview</h4>
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            <div>
+              <p className="text-[var(--text-muted)]">Sequence</p>
+              <p className="font-medium text-[var(--text-primary)]">{supportOverview.name}</p>
+            </div>
+            <div>
+              <p className="text-[var(--text-muted)]">Status</p>
+              <Badge variant={supportOverview.isActive ? "success" : "warning"}>
+                {supportOverview.isActive ? "Active" : "Inactive"}
               </Badge>
             </div>
-            {healthReport.failures.length === 0 ? (
-              <p className="text-sm text-green-700">All checks passed.</p>
-            ) : (
-              <div className="space-y-2">
-                {healthReport.failures.map((f: HealthCheckFailure, i: number) => (
-                  <div
-                    key={i}
-                    className={`rounded-lg border px-3 py-2 text-sm ${SEVERITY_COLORS[f.severity] ?? "bg-gray-100 border-gray-200"}`}
-                  >
-                    <span className="font-medium capitalize">{f.severity}</span>: {f.message}
-                    {f.count !== undefined && (
-                      <span className="ml-2 text-xs opacity-70">({f.count})</span>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Support Overview */}
-        {supportOverview && (
-          <div className="space-y-3">
-            <h4 className="text-sm font-medium text-[#1a1a1a]">Support overview</h4>
-            <div className="grid grid-cols-2 gap-3 text-sm">
-              <div>
-                <p className="text-[#666]">Sequence</p>
-                <p className="font-medium text-[#1a1a1a]">{supportOverview.name}</p>
-              </div>
-              <div>
-                <p className="text-[#666]">Status</p>
-                <Badge variant={supportOverview.isActive ? "success" : "warning"}>
-                  {supportOverview.isActive ? "Active" : "Inactive"}
-                </Badge>
-              </div>
-              <div>
-                <p className="text-[#666]">Next preview</p>
-                <p className="font-medium text-[#1a1a1a]">{supportOverview.nextPreview ?? "—"}</p>
-              </div>
-              <div>
-                <p className="text-[#666]">Finalized docs</p>
-                <p className="font-medium text-[#1a1a1a]">{supportOverview.totalFinalizedDocs}</p>
-              </div>
-              <div>
-                <p className="text-[#666]">Periods</p>
-                <p className="font-medium text-[#1a1a1a]">
-                  {supportOverview.periodCount} ({supportOverview.openPeriodCount} open, {supportOverview.closedPeriodCount} closed)
-                </p>
-              </div>
-              <div>
-                <p className="text-[#666]">Resequence</p>
-                <p className="font-medium text-[#1a1a1a]">
-                  {supportOverview.resequenceCount > 0
-                    ? `${supportOverview.resequenceCount} times (last: ${supportOverview.lastResequenceAt?.slice(0, 10) ?? "—"})`
-                    : "Never"}
-                </p>
-              </div>
+            <div>
+              <p className="text-[var(--text-muted)]">Next preview</p>
+              <p className="font-medium text-[var(--text-primary)]">{supportOverview.nextPreview ?? "—"}</p>
             </div>
-            {supportOverview.periods.length > 0 && (
-              <div className="mt-3">
-                <p className="text-sm text-[#666] mb-2">Recent periods</p>
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-[#e5e5e5]">
-                      <th className="text-left py-1 px-2 text-[#666] font-medium">Period</th>
-                      <th className="text-left py-1 px-2 text-[#666] font-medium">Status</th>
-                      <th className="text-left py-1 px-2 text-[#666] font-medium">Counter</th>
+            <div>
+              <p className="text-[var(--text-muted)]">Finalized docs</p>
+              <p className="font-medium text-[var(--text-primary)]">{supportOverview.totalFinalizedDocs}</p>
+            </div>
+            <div>
+              <p className="text-[var(--text-muted)]">Periods</p>
+              <p className="font-medium text-[var(--text-primary)]">
+                {supportOverview.periodCount} ({supportOverview.openPeriodCount} open, {supportOverview.closedPeriodCount} closed)
+              </p>
+            </div>
+            <div>
+              <p className="text-[var(--text-muted)]">Resequence</p>
+              <p className="font-medium text-[var(--text-primary)]">
+                {supportOverview.resequenceCount > 0
+                  ? `${supportOverview.resequenceCount} times (last: ${supportOverview.lastResequenceAt?.slice(0, 10) ?? "—"})`
+                  : "Never"}
+              </p>
+            </div>
+          </div>
+          {supportOverview.periods.length > 0 && (
+            <div className="mt-3">
+              <p className="text-sm text-[var(--text-muted)] mb-2">Recent periods</p>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-[var(--border-soft)]">
+                    <th className="text-left py-1 px-2 text-[var(--text-muted)] font-medium">Period</th>
+                    <th className="text-left py-1 px-2 text-[var(--text-muted)] font-medium">Status</th>
+                    <th className="text-left py-1 px-2 text-[var(--text-muted)] font-medium">Counter</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {supportOverview.periods.slice(0, 10).map((p) => (
+                    <tr key={p.periodId} className="border-b border-[var(--border-soft)]">
+                      <td className="py-1 px-2 text-[var(--text-primary)]">
+                        {p.startDate} – {p.endDate}
+                      </td>
+                      <td className="py-1 px-2">
+                        <Badge variant={p.status === "OPEN" ? "success" : "default"}>
+                          {p.status}
+                        </Badge>
+                      </td>
+                      <td className="py-1 px-2 text-[var(--text-primary)]">{p.currentCounter}</td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {supportOverview.periods.slice(0, 10).map((p) => (
-                      <tr key={p.periodId} className="border-b border-[#f5f5f5]">
-                        <td className="py-1 px-2 text-[#1a1a1a]">
-                          {p.startDate} – {p.endDate}
-                        </td>
-                        <td className="py-1 px-2">
-                          <Badge variant={p.status === "OPEN" ? "success" : "default"}>
-                            {p.status}
-                          </Badge>
-                        </td>
-                        <td className="py-1 px-2 text-[#1a1a1a]">{p.currentCounter}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        )}
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
 
-        {/* Diagnostics Result */}
-        {diagResult && (
-          <div className="space-y-3">
-            <h4 className="text-sm font-medium text-[#1a1a1a]">Gap &amp; irregularity diagnostics</h4>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-              <div className="bg-gray-50 rounded-lg p-3 text-center">
-                <p className="text-[#666]">Total docs</p>
-                <p className="font-bold text-[#1a1a1a] text-lg">{diagResult.irregularities + diagResult.warnings}</p>
-              </div>
-              <div className="bg-yellow-50 rounded-lg p-3 text-center">
-                <p className="text-[#666]">Gaps</p>
-                <p className="font-bold text-yellow-700 text-lg">{diagResult.gaps}</p>
-              </div>
-              <div className="bg-orange-50 rounded-lg p-3 text-center">
-                <p className="text-[#666]">Warnings</p>
-                <p className="font-bold text-orange-700 text-lg">{diagResult.warnings}</p>
-              </div>
-              <div className="bg-red-50 rounded-lg p-3 text-center">
-                <p className="text-[#666]">Criticals</p>
-                <p className="font-bold text-red-700 text-lg">{diagResult.criticals}</p>
-              </div>
+      {/* Diagnostics Result */}
+      {diagResult && (
+        <div className="space-y-3">
+          <h4 className="text-sm font-medium text-[var(--text-primary)]">Gap &amp; irregularity diagnostics</h4>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+            <div className="bg-gray-50 rounded-md p-3 text-center">
+              <p className="text-[var(--text-muted)]">Total docs</p>
+              <p className="font-bold text-[var(--text-primary)] text-lg">{diagResult.irregularities + diagResult.warnings}</p>
+            </div>
+            <div className="bg-yellow-50 rounded-md p-3 text-center">
+              <p className="text-[var(--text-muted)]">Gaps</p>
+              <p className="font-bold text-yellow-700 text-lg">{diagResult.gaps}</p>
+            </div>
+            <div className="bg-orange-50 rounded-md p-3 text-center">
+              <p className="text-[var(--text-muted)]">Warnings</p>
+              <p className="font-bold text-orange-700 text-lg">{diagResult.warnings}</p>
+            </div>
+            <div className="bg-red-50 rounded-md p-3 text-center">
+              <p className="text-[var(--text-muted)]">Criticals</p>
+              <p className="font-bold text-red-700 text-lg">{diagResult.criticals}</p>
             </div>
           </div>
-        )}
-      </CardContent>
-    </Card>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -952,69 +948,68 @@ function HistorySection({
   onLoad: () => void;
 }) {
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-base">Sequence history</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="flex items-center gap-4">
-          <label className="text-sm text-[#666]">Filter:</label>
-          <select
-            value={docType}
-            onChange={(e) => onDocTypeChange(e.target.value as SequenceDocumentType | "ALL")}
-            className="block w-40 rounded-xl border border-[#e5e5e5] bg-white px-3 py-2 text-sm text-[#1a1a1a] focus:outline-none focus:ring-2 focus:ring-[#dc2626]"
-          >
-            <option value="ALL">All</option>
-            <option value="INVOICE">Invoice</option>
-            <option value="VOUCHER">Voucher</option>
-          </select>
-          <Button
-            onClick={onLoad}
-            variant="secondary"
-            size="sm"
-          >
-            {loading ? "Loading…" : "Load history"}
-          </Button>
-        </div>
-        {loading && <p className="text-sm text-[#666]">Loading history…</p>}
-        {history.length > 0 && (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-[#e5e5e5]">
-                  <th className="text-left py-2 px-3 text-[#666] font-medium">Time</th>
-                  <th className="text-left py-2 px-3 text-[#666] font-medium">Action</th>
-                  <th className="text-left py-2 px-3 text-[#666] font-medium">Actor</th>
-                  <th className="text-left py-2 px-3 text-[#666] font-medium">Details</th>
+    <div className="space-y-4">
+      <h3 className="text-base font-semibold text-[var(--text-primary)]">Sequence history</h3>
+
+      <div className="flex items-center gap-4">
+        <label className="text-sm text-[var(--text-muted)]">Filter:</label>
+        <select
+          value={docType}
+          onChange={(e) => onDocTypeChange(e.target.value as SequenceDocumentType | "ALL")}
+          className="block w-40 rounded-md border border-[var(--border-soft)] bg-white px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--focus-ring)]"
+        >
+          <option value="ALL">All</option>
+          <option value="INVOICE">Invoice</option>
+          <option value="VOUCHER">Voucher</option>
+        </select>
+        <Button
+          onClick={onLoad}
+          variant="secondary"
+          size="sm"
+        >
+          {loading ? "Loading…" : "Load history"}
+        </Button>
+      </div>
+
+      {loading && <p className="text-sm text-[var(--text-muted)]">Loading history…</p>}
+
+      {history.length > 0 && (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-[var(--border-soft)]">
+                <th className="text-left py-2 px-3 text-[var(--text-muted)] font-medium">Time</th>
+                <th className="text-left py-2 px-3 text-[var(--text-muted)] font-medium">Action</th>
+                <th className="text-left py-2 px-3 text-[var(--text-muted)] font-medium">Actor</th>
+                <th className="text-left py-2 px-3 text-[var(--text-muted)] font-medium">Details</th>
+              </tr>
+            </thead>
+            <tbody>
+              {history.map((entry) => (
+                <tr key={entry.id} className="border-b border-[var(--border-soft)]">
+                  <td className="py-2 px-3 text-[var(--text-primary)] whitespace-nowrap">
+                    {new Date(entry.createdAt).toLocaleString()}
+                  </td>
+                  <td className="py-2 px-3">
+                    <Badge variant="default">
+                      {ACTION_LABELS[entry.action] ?? entry.action}
+                    </Badge>
+                  </td>
+                  <td className="py-2 px-3 text-[var(--text-primary)]">{entry.actor?.name ?? "System"}</td>
+                  <td className="py-2 px-3 text-[var(--text-muted)]">
+                    {entry.metadata && typeof entry.metadata === "object" && entry.metadata !== null
+                      ? Object.entries(entry.metadata as Record<string, unknown>)
+                          .filter(([k]) => !k.includes("Id"))
+                          .map(([k, v]) => `${k}: ${String(v)}`)
+                          .join(", ")
+                      : "—"}
+                  </td>
                 </tr>
-              </thead>
-              <tbody>
-                {history.map((entry) => (
-                  <tr key={entry.id} className="border-b border-[#f5f5f5]">
-                    <td className="py-2 px-3 text-[#1a1a1a] whitespace-nowrap">
-                      {new Date(entry.createdAt).toLocaleString()}
-                    </td>
-                    <td className="py-2 px-3">
-                      <Badge variant="default">
-                        {ACTION_LABELS[entry.action] ?? entry.action}
-                      </Badge>
-                    </td>
-                    <td className="py-2 px-3 text-[#1a1a1a]">{entry.actor?.name ?? "System"}</td>
-                    <td className="py-2 px-3 text-[#666]">
-                      {entry.metadata && typeof entry.metadata === "object" && entry.metadata !== null
-                        ? Object.entries(entry.metadata as Record<string, unknown>)
-                            .filter(([k]) => !k.includes("Id"))
-                            .map(([k, v]) => `${k}: ${String(v)}`)
-                            .join(", ")
-                        : "—"}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </CardContent>
-    </Card>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
   );
 }

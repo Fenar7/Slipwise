@@ -3,6 +3,7 @@
 import { db } from "@/lib/db";
 import { requireOrgContext } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
+import { setCustomerDefaultTags, setVendorDefaultTags } from "@/lib/tags/assignment-service";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -19,18 +20,25 @@ export interface CustomerInput {
   address?: string;
   taxId?: string;
   gstin?: string;
+  tagIds?: string[];
 }
 
 export async function createCustomer(input: CustomerInput): Promise<ActionResult<{ id: string }>> {
   try {
     const { orgId } = await requireOrgContext();
     
+    const { tagIds, ...customerData } = input;
+
     const customer = await db.customer.create({
       data: {
-        ...input,
+        ...customerData,
         organizationId: orgId,
       },
     });
+    
+    if (tagIds !== undefined) {
+      await setCustomerDefaultTags(customer.id, tagIds);
+    }
     
     revalidatePath("/app/data/customers");
     return { success: true, data: { id: customer.id } };
@@ -56,10 +64,18 @@ export async function updateCustomer(
       return { success: false, error: "Customer not found" };
     }
     
-    await db.customer.update({
-      where: { id },
-      data: input,
-    });
+    const { tagIds, ...customerData } = input;
+
+    if (Object.keys(customerData).length > 0) {
+      await db.customer.update({
+        where: { id },
+        data: customerData,
+      });
+    }
+
+    if (tagIds !== undefined) {
+      await setCustomerDefaultTags(id, tagIds);
+    }
     
     revalidatePath("/app/data/customers");
     revalidatePath(`/app/data/customers/${id}`);
@@ -147,18 +163,25 @@ export interface VendorInput {
   address?: string;
   taxId?: string;
   gstin?: string;
+  tagIds?: string[];
 }
 
 export async function createVendor(input: VendorInput): Promise<ActionResult<{ id: string }>> {
   try {
     const { orgId } = await requireOrgContext();
     
+    const { tagIds, ...vendorData } = input;
+
     const vendor = await db.vendor.create({
       data: {
-        ...input,
+        ...vendorData,
         organizationId: orgId,
       },
     });
+    
+    if (tagIds !== undefined) {
+      await setVendorDefaultTags(vendor.id, tagIds);
+    }
     
     revalidatePath("/app/data/vendors");
     return { success: true, data: { id: vendor.id } };
@@ -183,10 +206,18 @@ export async function updateVendor(
       return { success: false, error: "Vendor not found" };
     }
     
-    await db.vendor.update({
-      where: { id },
-      data: input,
-    });
+    const { tagIds, ...vendorData } = input;
+
+    if (Object.keys(vendorData).length > 0) {
+      await db.vendor.update({
+        where: { id },
+        data: vendorData,
+      });
+    }
+
+    if (tagIds !== undefined) {
+      await setVendorDefaultTags(id, tagIds);
+    }
     
     revalidatePath("/app/data/vendors");
     revalidatePath(`/app/data/vendors/${id}`);
@@ -394,4 +425,90 @@ export async function listEmployees(params?: {
     page,
     totalPages: Math.ceil(total / limit),
   };
+}
+
+// ─── Entity Workspaces (with relations) ───────────────────────────────────────
+
+export async function getCustomerWithRelations(id: string) {
+  const { orgId } = await requireOrgContext();
+
+  const customer = await db.customer.findFirst({
+    where: { id, organizationId: orgId },
+    include: {
+      _count: { select: { crmNotes: true, invoices: true, quotes: true } },
+      defaultTagAssignments: { include: { tag: { select: { id: true, name: true, slug: true, color: true, isArchived: true } } } },
+    },
+  });
+
+  if (!customer) return null;
+
+  const [recentInvoices, recentQuotes] = await Promise.all([
+    db.invoice.findMany({
+      where: { organizationId: orgId, customerId: id },
+      orderBy: { createdAt: "desc" },
+      take: 5,
+      select: { id: true, invoiceNumber: true, status: true, totalAmount: true, createdAt: true },
+    }),
+    db.quote.findMany({
+      where: { orgId: orgId, customerId: id },
+      orderBy: { createdAt: "desc" },
+      take: 5,
+      select: { id: true, quoteNumber: true, status: true, totalAmount: true, createdAt: true },
+    }),
+  ]);
+
+  return { customer, recentInvoices, recentQuotes };
+}
+
+export async function getVendorWithRelations(id: string) {
+  const { orgId } = await requireOrgContext();
+
+  const vendor = await db.vendor.findFirst({
+    where: { id, organizationId: orgId },
+    include: {
+      _count: { select: { crmNotes: true, bills: true, purchaseOrders: true } },
+      defaultTagAssignments: { include: { tag: { select: { id: true, name: true, slug: true, color: true, isArchived: true } } } },
+    },
+  });
+
+  if (!vendor) return null;
+
+  const [recentBills, recentPurchaseOrders] = await Promise.all([
+    db.vendorBill.findMany({
+      where: { orgId: orgId, vendorId: id },
+      orderBy: { createdAt: "desc" },
+      take: 5,
+      select: { id: true, billNumber: true, status: true, totalAmount: true, createdAt: true },
+    }),
+    db.purchaseOrder.findMany({
+      where: { orgId: orgId, vendorId: id },
+      orderBy: { createdAt: "desc" },
+      take: 5,
+      select: { id: true, poNumber: true, status: true, totalAmount: true, createdAt: true },
+    }),
+  ]);
+
+  return { vendor, recentBills, recentPurchaseOrders };
+}
+
+export async function getEmployeeWithRelations(id: string) {
+  const { orgId } = await requireOrgContext();
+
+  const employee = await db.employee.findFirst({
+    where: { id, organizationId: orgId },
+    include: {
+      _count: { select: { salarySlips: true } },
+    },
+  });
+
+  if (!employee) return null;
+
+  const recentSalarySlips = await db.salarySlip.findMany({
+    where: { organizationId: orgId, employeeId: id },
+    orderBy: { createdAt: "desc" },
+    take: 5,
+    select: { id: true, slipNumber: true, month: true, year: true, status: true, netPay: true, createdAt: true },
+  });
+
+  return { employee, recentSalarySlips };
 }

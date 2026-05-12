@@ -1,6 +1,16 @@
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import {
+  FinanceTable,
+  FinanceTableHeader,
+  FinanceTableHead,
+  FinanceTableBody,
+  FinanceTableRow,
+  FinanceTableCell,
+  FinanceTableEmpty,
+} from "@/components/ui/finance-table";
 import { BankTransactionActions } from "../components/bank-transaction-actions";
 import { ExportReconciliationButton } from "../components/export-reconciliation-button";
 import { RefreshReconciliationButton } from "../components/refresh-reconciliation-button";
@@ -50,31 +60,36 @@ export default async function BooksReconciliationPage({
   if (!result.success) {
     return (
       <div className="mx-auto max-w-6xl">
-        <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{result.error}</div>
+        <div className="rounded-xl bg-[var(--state-danger-soft)] px-4 py-3 text-sm text-[var(--state-danger)]">
+          {result.error}
+        </div>
       </div>
     );
   }
 
   const { bankAccounts, transactions, importHistory, manualAccounts } = result.data;
   const statusCounts = {
-    unmatched: transactions.filter((transaction) => transaction.status === "UNMATCHED").length,
-    suggested: transactions.filter((transaction) => transaction.status === "SUGGESTED").length,
-    partial: transactions.filter((transaction) => transaction.status === "PARTIALLY_MATCHED").length,
-    matched: transactions.filter((transaction) => transaction.status === "MATCHED").length,
+    unmatched: transactions.filter((t) => t.status === "UNMATCHED").length,
+    suggested: transactions.filter((t) => t.status === "SUGGESTED").length,
+    partial: transactions.filter((t) => t.status === "PARTIALLY_MATCHED").length,
+    matched: transactions.filter((t) => t.status === "MATCHED").length,
   };
 
   return (
     <div className="mx-auto max-w-7xl space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Bank Reconciliation</h1>
-          <p className="mt-1 text-sm text-slate-500">
+          <h1 className="text-2xl font-semibold text-[var(--text-primary)]">Bank Reconciliation</h1>
+          <p className="mt-1 text-sm text-[var(--text-muted)]">
             Import statements, review suggestions, split matches, and post adjusting journals for
             unmatched cash movement.
           </p>
         </div>
 
         <div className="flex flex-wrap gap-3">
+          <Link href="/app/books/reconciliation/workbench">
+            <Button variant="secondary">Open Workbench</Button>
+          </Link>
           <RefreshReconciliationButton
             bankAccountId={filters.bankAccountId}
             importId={filters.importId}
@@ -83,19 +98,19 @@ export default async function BooksReconciliationPage({
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         {[
-          { label: "Unmatched", value: statusCounts.unmatched.toString() },
-          { label: "Suggested", value: statusCounts.suggested.toString() },
-          { label: "Partial", value: statusCounts.partial.toString() },
-          { label: "Matched", value: statusCounts.matched.toString() },
+          { label: "Unmatched", value: statusCounts.unmatched.toString(), variant: "danger" as const },
+          { label: "Suggested", value: statusCounts.suggested.toString(), variant: "default" as const },
+          { label: "Partial", value: statusCounts.partial.toString(), variant: "warning" as const },
+          { label: "Matched", value: statusCounts.matched.toString(), variant: "success" as const },
         ].map((item) => (
           <Card key={item.label}>
             <CardHeader>
-              <p className="text-xs uppercase tracking-[0.18em] text-slate-500">{item.label}</p>
+              <p className="text-xs uppercase tracking-[0.12em] text-[var(--text-muted)]">{item.label}</p>
             </CardHeader>
             <CardContent>
-              <p className="text-xl font-semibold text-slate-900">{item.value}</p>
+              <p className="text-xl font-semibold text-[var(--text-primary)] tabular-nums">{item.value}</p>
             </CardContent>
           </Card>
         ))}
@@ -106,19 +121,19 @@ export default async function BooksReconciliationPage({
       <div className="grid gap-6 xl:grid-cols-[1.8fr_1fr]">
         <Card>
           <CardHeader>
-            <h2 className="text-lg font-semibold text-slate-900">Filter bank lines</h2>
-            <p className="mt-1 text-sm text-slate-500">
+            <h2 className="text-base font-semibold text-[var(--text-primary)]">Filter bank lines</h2>
+            <p className="mt-1 text-sm text-[var(--text-muted)]">
               Narrow the active reconciliation queue by account, status, date, and amount.
             </p>
           </CardHeader>
           <CardContent>
             <form className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
               <label className="block text-sm">
-                <span className="mb-1 block font-medium text-slate-700">Bank account</span>
+                <span className="mb-1 block font-medium text-[var(--text-primary)]">Bank account</span>
                 <select
                   name="bankAccountId"
                   defaultValue={params.bankAccountId ?? ""}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  className="w-full rounded-lg border border-[var(--border-default)] bg-white px-3 py-2 text-sm text-[var(--text-primary)] transition-colors focus:border-[var(--brand-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--focus-ring)]"
                 >
                   <option value="">All accounts</option>
                   {bankAccounts.map((account) => (
@@ -130,11 +145,11 @@ export default async function BooksReconciliationPage({
               </label>
 
               <label className="block text-sm">
-                <span className="mb-1 block font-medium text-slate-700">Status</span>
+                <span className="mb-1 block font-medium text-[var(--text-primary)]">Status</span>
                 <select
                   name="status"
                   defaultValue={params.status ?? ""}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  className="w-full rounded-lg border border-[var(--border-default)] bg-white px-3 py-2 text-sm text-[var(--text-primary)] transition-colors focus:border-[var(--brand-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--focus-ring)]"
                 >
                   <option value="">All statuses</option>
                   <option value="UNMATCHED">Unmatched</option>
@@ -146,53 +161,53 @@ export default async function BooksReconciliationPage({
               </label>
 
               <label className="block text-sm">
-                <span className="mb-1 block font-medium text-slate-700">Start date</span>
+                <span className="mb-1 block font-medium text-[var(--text-primary)]">Start date</span>
                 <input
                   type="date"
                   name="startDate"
                   defaultValue={params.startDate ?? ""}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  className="w-full rounded-lg border border-[var(--border-default)] bg-white px-3 py-2 text-sm text-[var(--text-primary)] transition-colors focus:border-[var(--brand-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--focus-ring)]"
                 />
               </label>
 
               <label className="block text-sm">
-                <span className="mb-1 block font-medium text-slate-700">End date</span>
+                <span className="mb-1 block font-medium text-[var(--text-primary)]">End date</span>
                 <input
                   type="date"
                   name="endDate"
                   defaultValue={params.endDate ?? ""}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  className="w-full rounded-lg border border-[var(--border-default)] bg-white px-3 py-2 text-sm text-[var(--text-primary)] transition-colors focus:border-[var(--brand-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--focus-ring)]"
                 />
               </label>
 
               <label className="block text-sm">
-                <span className="mb-1 block font-medium text-slate-700">Min amount</span>
+                <span className="mb-1 block font-medium text-[var(--text-primary)]">Min amount</span>
                 <input
                   type="number"
                   step="0.01"
                   name="minAmount"
                   defaultValue={params.minAmount ?? ""}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  className="w-full rounded-lg border border-[var(--border-default)] bg-white px-3 py-2 text-sm text-[var(--text-primary)] transition-colors focus:border-[var(--brand-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--focus-ring)]"
                 />
               </label>
 
               <label className="block text-sm">
-                <span className="mb-1 block font-medium text-slate-700">Max amount</span>
+                <span className="mb-1 block font-medium text-[var(--text-primary)]">Max amount</span>
                 <input
                   type="number"
                   step="0.01"
                   name="maxAmount"
                   defaultValue={params.maxAmount ?? ""}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  className="w-full rounded-lg border border-[var(--border-default)] bg-white px-3 py-2 text-sm text-[var(--text-primary)] transition-colors focus:border-[var(--brand-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--focus-ring)]"
                 />
               </label>
 
               <label className="block text-sm md:col-span-2 xl:col-span-2">
-                <span className="mb-1 block font-medium text-slate-700">Import</span>
+                <span className="mb-1 block font-medium text-[var(--text-primary)]">Import</span>
                 <select
                   name="importId"
                   defaultValue={params.importId ?? ""}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  className="w-full rounded-lg border border-[var(--border-default)] bg-white px-3 py-2 text-sm text-[var(--text-primary)] transition-colors focus:border-[var(--brand-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--focus-ring)]"
                 >
                   <option value="">All imports</option>
                   {importHistory.map((item) => (
@@ -204,13 +219,13 @@ export default async function BooksReconciliationPage({
               </label>
 
               <div className="flex items-end gap-3 md:col-span-2 xl:col-span-4">
-                <button
-                  type="submit"
-                  className="rounded-xl bg-[var(--accent)] px-4 py-2 text-sm font-medium text-white"
-                >
+                <Button type="submit" variant="secondary">
                   Apply filters
-                </button>
-                <Link href="/app/books/reconciliation" className="text-sm font-medium text-slate-600 hover:underline">
+                </Button>
+                <Link
+                  href="/app/books/reconciliation"
+                  className="text-sm font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:underline transition-colors"
+                >
                   Reset
                 </Link>
               </div>
@@ -220,14 +235,14 @@ export default async function BooksReconciliationPage({
 
         <Card>
           <CardHeader>
-            <h2 className="text-lg font-semibold text-slate-900">Import history</h2>
-            <p className="mt-1 text-sm text-slate-500">
+            <h2 className="text-base font-semibold text-[var(--text-primary)]">Import history</h2>
+            <p className="mt-1 text-sm text-[var(--text-muted)]">
               Review recent bank imports, failed rows, and generated suggestions.
             </p>
           </CardHeader>
           <CardContent className="space-y-3">
             {importHistory.length === 0 ? (
-              <div className="rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-500">
+              <div className="rounded-xl bg-[var(--surface-subtle)] px-4 py-3 text-sm text-[var(--text-muted)]">
                 No bank imports yet.
               </div>
             ) : (
@@ -235,12 +250,12 @@ export default async function BooksReconciliationPage({
                 <Link
                   key={item.id}
                   href={`/app/books/reconciliation/imports/${item.id}`}
-                  className="block rounded-xl border border-slate-200 px-4 py-3 hover:bg-slate-50"
+                  className="block rounded-xl border border-[var(--border-soft)] bg-[var(--surface-panel)] px-4 py-3 transition-colors hover:bg-[var(--surface-selected)] hover:border-[var(--border-default)]"
                 >
                   <div className="flex items-center justify-between gap-2">
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-slate-900">{item.fileName}</p>
-                      <p className="text-xs text-slate-500">
+                      <p className="truncate text-sm font-medium text-[var(--text-primary)]">{item.fileName}</p>
+                      <p className="text-xs text-[var(--text-muted)]">
                         {item.bankAccount.name} • {item.importedRows} imported / {item.failedRows} failed
                       </p>
                     </div>
@@ -265,96 +280,91 @@ export default async function BooksReconciliationPage({
 
       <Card>
         <CardHeader>
-          <h2 className="text-lg font-semibold text-slate-900">Reconciliation queue</h2>
-          <p className="mt-1 text-sm text-slate-500">
+          <h2 className="text-base font-semibold text-[var(--text-primary)]">Reconciliation queue</h2>
+          <p className="mt-1 text-sm text-[var(--text-muted)]">
             Confirm suggestions, split matches by editing the amount prompt, or post an adjusting
             journal for suspense and write-offs. Partially matched lines stay in review until the
             remaining balance is resolved or explicitly cleared.
           </p>
         </CardHeader>
         <CardContent className="px-0 py-0">
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-                  <th className="px-6 py-3">Transaction</th>
-                  <th className="px-6 py-3">Amount</th>
-                  <th className="px-6 py-3">Status</th>
-                  <th className="px-6 py-3">Matches & Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200">
-                {transactions.length === 0 ? (
-                  <tr>
-                    <td colSpan={4} className="px-6 py-10 text-center text-sm text-slate-500">
-                      No bank transactions match the current filters.
-                    </td>
-                  </tr>
-                ) : (
-                  transactions.map((transaction) => (
-                    <tr key={transaction.id}>
-                      <td className="px-6 py-4 align-top">
-                        <div className="font-medium text-slate-900">{transaction.bankAccount.name}</div>
-                        <div className="text-sm text-slate-700">
-                          {new Date(transaction.txnDate).toLocaleDateString()} •{" "}
-                          {transaction.reference ?? "No reference"}
+          <FinanceTable>
+            <FinanceTableHeader>
+              <FinanceTableHead>Transaction</FinanceTableHead>
+              <FinanceTableHead align="right">Amount</FinanceTableHead>
+              <FinanceTableHead>Status</FinanceTableHead>
+              <FinanceTableHead>Matches & Actions</FinanceTableHead>
+            </FinanceTableHeader>
+            <FinanceTableBody>
+              {transactions.length === 0 ? (
+                <FinanceTableEmpty
+                  colSpan={4}
+                  message="No bank transactions match the current filters."
+                />
+              ) : (
+                transactions.map((transaction) => (
+                  <FinanceTableRow key={transaction.id}>
+                    <FinanceTableCell variant="primary">
+                      <div className="font-medium">{transaction.bankAccount.name}</div>
+                      <div className="text-xs text-[var(--text-muted)]">
+                        {new Date(transaction.txnDate).toLocaleDateString()} •{" "}
+                        {transaction.reference ?? "No reference"}
+                      </div>
+                      <div className="mt-1 text-xs text-[var(--text-secondary)]">{transaction.description}</div>
+                      {transaction.import && (
+                        <div className="mt-2 text-xs text-[var(--text-muted)]">
+                          Import:{" "}
+                          <Link
+                            href={`/app/books/reconciliation/imports/${transaction.import.id}`}
+                            className="font-medium text-[var(--brand-primary)] hover:underline"
+                          >
+                            {transaction.import.fileName}
+                          </Link>
                         </div>
-                        <div className="mt-1 text-sm text-slate-500">{transaction.description}</div>
-                        {transaction.import && (
-                          <div className="mt-2 text-xs text-slate-500">
-                            Import:{" "}
-                            <Link
-                              href={`/app/books/reconciliation/imports/${transaction.import.id}`}
-                              className="font-medium text-blue-600 hover:underline"
-                            >
-                              {transaction.import.fileName}
-                            </Link>
-                          </div>
-                        )}
-                      </td>
-                      <td className="px-6 py-4 align-top text-sm text-slate-700">
-                        <div className="font-medium">
-                          {transaction.direction === "CREDIT" ? "+" : "-"}
-                          {transaction.amount.toLocaleString("en-IN", {
-                            minimumFractionDigits: 2,
-                            maximumFractionDigits: 2,
-                          })}
+                      )}
+                    </FinanceTableCell>
+                    <FinanceTableCell align="right">
+                      <div className="font-medium tabular-nums">
+                        {transaction.direction === "CREDIT" ? "+" : "-"}
+                        {transaction.amount.toLocaleString("en-IN", {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}
+                      </div>
+                      {transaction.runningBalance !== null && (
+                        <div className="mt-1 text-xs text-[var(--text-muted)] tabular-nums">
+                          Balance {transaction.runningBalance.toFixed(2)}
                         </div>
-                        {transaction.runningBalance !== null && (
-                          <div className="mt-1 text-xs text-slate-500">
-                            Balance {transaction.runningBalance.toFixed(2)}
-                          </div>
-                        )}
-                      </td>
-                      <td className="px-6 py-4 align-top">
-                        <Badge
-                          variant={
-                            transaction.status === "MATCHED"
-                              ? "success"
-                              : transaction.status === "PARTIALLY_MATCHED"
-                                ? "warning"
-                                : transaction.status === "IGNORED"
-                                  ? "default"
-                                  : "danger"
-                          }
-                        >
-                          {transaction.status.replaceAll("_", " ")}
-                        </Badge>
-                      </td>
-                      <td className="px-6 py-4 align-top">
-                        <BankTransactionActions
-                          transactionId={transaction.id}
-                          status={transaction.status}
-                          suggestions={transaction.matches}
-                          manualAccounts={manualAccounts}
-                        />
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+                      )}
+                    </FinanceTableCell>
+                    <FinanceTableCell>
+                      <Badge
+                        variant={
+                          transaction.status === "MATCHED"
+                            ? "success"
+                            : transaction.status === "PARTIALLY_MATCHED"
+                              ? "warning"
+                              : transaction.status === "IGNORED"
+                                ? "default"
+                                : "danger"
+                        }
+                      >
+                        {transaction.status.replaceAll("_", " ")}
+                      </Badge>
+                    </FinanceTableCell>
+                    <FinanceTableCell>
+                      <BankTransactionActions
+                        transactionId={transaction.id}
+                        status={transaction.status}
+                        suggestions={transaction.matches}
+                        manualAccounts={manualAccounts}
+                      />
+                    </FinanceTableCell>
+                  </FinanceTableRow>
+                ))
+              )}
+            </FinanceTableBody>
+          </FinanceTable>
         </CardContent>
       </Card>
     </div>

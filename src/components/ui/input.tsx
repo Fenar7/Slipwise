@@ -22,7 +22,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
           ref={ref}
           id={id}
           className={cn(
-            "w-full rounded-xl border bg-white px-3.5 py-2.5 text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] transition-colors",
+            "w-full rounded-lg border bg-white px-3.5 py-2.5 text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] transition-colors",
             "focus:outline-none focus:ring-2 focus:ring-[var(--ring)] focus:border-[var(--accent)]",
             error ? "border-red-500" : "border-[var(--border-strong)]",
             "disabled:bg-[var(--surface-soft)] disabled:cursor-not-allowed",
@@ -31,7 +31,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
           {...props}
         />
         {error && (
-          <p className="text-xs text-red-600">{error}</p>
+          <p className="text-xs text-[var(--state-danger)]">{error}</p>
         )}
       </div>
     );

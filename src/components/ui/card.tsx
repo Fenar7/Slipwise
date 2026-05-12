@@ -3,13 +3,15 @@ import { cn } from "@/lib/utils";
 interface CardProps {
   children: React.ReactNode;
   className?: string;
+  hover?: boolean;
 }
 
-export function Card({ children, className }: CardProps) {
+export function Card({ children, className, hover = false }: CardProps) {
   return (
     <div
       className={cn(
-        "rounded-2xl border border-[var(--border-strong)] bg-white shadow-[var(--shadow-card)]",
+        "rounded-xl border border-[var(--border-strong)] bg-white shadow-[var(--shadow-card)] transition-colors duration-200",
+        hover && "hover:border-[var(--border-brand)]",
         className
       )}
     >
@@ -31,5 +33,5 @@ export function CardContent({ children, className }: CardProps) {
 }
 
 export function CardTitle({ children, className }: CardProps) {
-  return <h3 className={cn("text-base font-semibold text-[#1a1a1a]", className)}>{children}</h3>;
+  return <h3 className={cn("text-base font-semibold text-[var(--foreground)]", className)}>{children}</h3>;
 }

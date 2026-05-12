@@ -94,7 +94,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
     dispatchEvent(auth.orgId, "invoice.payment_received", {
       invoiceId: id,
-      invoiceNumber: invoice.invoiceNumber,
+      invoiceNumber: invoice.invoiceNumber ?? "",
       paymentId: payment.id,
       amount: paymentAmount,
       status: reconciled.derivedStatus,

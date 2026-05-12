@@ -1,6 +1,15 @@
 "use client";
 
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { KpiCard } from "@/components/dashboard";
+import {
+  FinanceTable,
+  FinanceTableHeader,
+  FinanceTableHead,
+  FinanceTableBody,
+  FinanceTableRow,
+  FinanceTableCell,
+} from "@/components/ui/finance-table";
 import type { CashPositionSummary } from "../../actions";
 
 interface CashPositionClientProps {
@@ -24,143 +33,101 @@ function formatDate(date: Date | string | null): string {
   });
 }
 
-function MetricCard({
-  label,
-  value,
-  sub,
-  accent,
-}: {
-  label: string;
-  value: string;
-  sub?: string;
-  accent?: "green" | "red" | "amber" | "slate";
-}) {
-  const valueColors: Record<string, string> = {
-    green: "text-green-700",
-    red: "text-red-700",
-    amber: "text-amber-700",
-    slate: "text-slate-800",
-  };
-  const color = valueColors[accent ?? "slate"];
-
-  return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-      <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</p>
-      <p className={`mt-1 text-2xl font-bold ${color}`}>{value}</p>
-      {sub && <p className="mt-0.5 text-xs text-slate-400">{sub}</p>}
-    </div>
-  );
-}
-
 export function CashPositionClient({ data }: CashPositionClientProps) {
   const variance = data.totalBankBalance - data.unreconciledCreditAmount;
 
   return (
     <div className="space-y-6">
       {/* ── Top-line summary ── */}
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <MetricCard
-          label="Total Bank Balance"
-          value={formatINR(data.totalBankBalance)}
-          accent="green"
-        />
-        <MetricCard
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <KpiCard label="Total Bank Balance" value={formatINR(data.totalBankBalance)} />
+        <KpiCard
           label="Unreconciled Credits"
           value={formatINR(data.unreconciledCreditAmount)}
-          sub="Not yet matched to invoices"
-          accent="amber"
+          trend={{ value: "Not yet matched to invoices", direction: "neutral" }}
         />
-        <MetricCard
-          label="This Month — In"
-          value={formatINR(data.thisMonthCredits)}
-          accent="green"
-        />
-        <MetricCard
-          label="This Month — Out"
-          value={formatINR(data.thisMonthDebits)}
-          accent="red"
-        />
+        <KpiCard label="This Month — In" value={formatINR(data.thisMonthCredits)} />
+        <KpiCard label="This Month — Out" value={formatINR(data.thisMonthDebits)} />
       </div>
 
       {/* ── Receivables forecast ── */}
-      <div className="grid grid-cols-2 gap-4">
-        <MetricCard
+      <div className="grid grid-cols-2 gap-3">
+        <KpiCard
           label="Overdue / Due in 7 Days"
           value={formatINR(data.invoicesDueIn7Days.totalAmount)}
-          sub={`${data.invoicesDueIn7Days.count} invoice${data.invoicesDueIn7Days.count !== 1 ? "s" : ""}`}
-          accent={data.invoicesDueIn7Days.totalAmount > 0 ? "red" : "slate"}
+          trend={{
+            value: `${data.invoicesDueIn7Days.count} invoice${data.invoicesDueIn7Days.count !== 1 ? "s" : ""}`,
+            direction: data.invoicesDueIn7Days.totalAmount > 0 ? "down" : "neutral",
+          }}
         />
-        <MetricCard
+        <KpiCard
           label="Due in 30 Days"
           value={formatINR(data.invoicesDueIn30Days.totalAmount)}
-          sub={`${data.invoicesDueIn30Days.count} invoice${data.invoicesDueIn30Days.count !== 1 ? "s" : ""}`}
-          accent="slate"
+          trend={{
+            value: `${data.invoicesDueIn30Days.count} invoice${data.invoicesDueIn30Days.count !== 1 ? "s" : ""}`,
+            direction: "neutral",
+          }}
         />
       </div>
 
       {/* ── Per-account breakdown ── */}
       <Card>
-        <CardHeader className="border-b border-slate-100 pb-3 pt-4">
-          <h2 className="text-sm font-semibold text-slate-800">Account Balances</h2>
+        <CardHeader className="border-b border-[var(--border-soft)] pb-3 pt-4">
+          <h2 className="text-sm font-semibold text-[var(--text-primary)]">Account Balances</h2>
         </CardHeader>
         <CardContent className="p-0">
           {data.accounts.length === 0 ? (
-            <p className="px-4 py-6 text-center text-sm text-slate-500">
+            <p className="px-5 py-10 text-center text-sm text-[var(--text-muted)]">
               No active bank accounts found.
             </p>
           ) : (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-slate-100 text-xs font-medium uppercase tracking-wide text-slate-500">
-                  <th className="px-4 py-2 text-left">Account</th>
-                  <th className="px-4 py-2 text-left">Bank</th>
-                  <th className="px-4 py-2 text-right">Balance</th>
-                  <th className="px-4 py-2 text-right">Last Import</th>
-                </tr>
-              </thead>
-              <tbody>
+            <FinanceTable>
+              <FinanceTableHeader>
+                <FinanceTableHead>Account</FinanceTableHead>
+                <FinanceTableHead>Bank</FinanceTableHead>
+                <FinanceTableHead align="right">Balance</FinanceTableHead>
+                <FinanceTableHead align="right">Last Import</FinanceTableHead>
+              </FinanceTableHeader>
+              <FinanceTableBody>
                 {data.accounts.map((acc) => (
-                  <tr
-                    key={acc.id}
-                    className="border-b border-slate-50 last:border-0 hover:bg-slate-50"
-                  >
-                    <td className="px-4 py-3 font-medium text-slate-800">{acc.name}</td>
-                    <td className="px-4 py-3 text-slate-500">{acc.bankName ?? "—"}</td>
-                    <td className="px-4 py-3 text-right font-mono font-medium text-slate-800">
+                  <FinanceTableRow key={acc.id}>
+                    <FinanceTableCell variant="primary">{acc.name}</FinanceTableCell>
+                    <FinanceTableCell>{acc.bankName ?? "—"}</FinanceTableCell>
+                    <FinanceTableCell align="right" variant="numeric">
                       {acc.runningBalance !== null
                         ? formatINR(acc.runningBalance)
                         : formatINR(acc.openingBalance)}
                       {acc.runningBalance === null && (
-                        <span className="ml-1 text-xs text-slate-400">(opening)</span>
+                        <span className="ml-1 text-xs text-[var(--text-muted)]">(opening)</span>
                       )}
-                    </td>
-                    <td className="px-4 py-3 text-right text-slate-500">
+                    </FinanceTableCell>
+                    <FinanceTableCell align="right" className="text-[var(--text-muted)]">
                       {formatDate(acc.lastTxnDate)}
-                    </td>
-                  </tr>
+                    </FinanceTableCell>
+                  </FinanceTableRow>
                 ))}
-              </tbody>
+              </FinanceTableBody>
               <tfoot>
-                <tr className="border-t-2 border-slate-200 bg-slate-50">
-                  <td className="px-4 py-3 font-semibold text-slate-800" colSpan={2}>
+                <tr className="border-t-2 border-[var(--border-default)] bg-[var(--surface-subtle)]">
+                  <td className="px-5 py-3 font-semibold text-[var(--text-primary)]" colSpan={2}>
                     Total
                   </td>
-                  <td className="px-4 py-3 text-right font-mono font-bold text-slate-900">
+                  <td className="px-5 py-3 text-right font-bold text-[var(--text-primary)] tabular-nums">
                     {formatINR(data.totalBankBalance)}
                   </td>
                   <td />
                 </tr>
               </tfoot>
-            </table>
+            </FinanceTable>
           )}
         </CardContent>
       </Card>
 
       {/* ── Net cash position note ── */}
-      <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-        <span className="font-medium">Net available (estimated):</span>{" "}
-        <span className="font-mono font-semibold text-slate-800">{formatINR(variance)}</span>
-        <span className="ml-2 text-xs text-slate-400">
+      <div className="rounded-xl border border-[var(--border-soft)] bg-[var(--surface-subtle)] px-4 py-3 text-sm text-[var(--text-secondary)]">
+        <span className="font-medium text-[var(--text-primary)]">Net available (estimated):</span>{" "}
+        <span className="font-semibold text-[var(--text-primary)] tabular-nums">{formatINR(variance)}</span>
+        <span className="ml-2 text-xs text-[var(--text-muted)]">
           (total bank balance minus unreconciled credits)
         </span>
       </div>

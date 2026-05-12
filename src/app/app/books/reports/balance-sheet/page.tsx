@@ -1,6 +1,14 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import {
+  FinanceTable,
+  FinanceTableHeader,
+  FinanceTableHead,
+  FinanceTableBody,
+  FinanceTableRow,
+  FinanceTableCell,
+} from "@/components/ui/finance-table";
 import { getBooksBalanceSheet } from "../../actions";
 import { ExportBooksReportButton } from "../../components/export-books-report-button";
 import { formatBooksMoney } from "../../view-helpers";
@@ -33,37 +41,39 @@ function SectionTable({
   return (
     <Card>
       <CardHeader>
-        <h2 className="text-lg font-semibold text-slate-900">{title}</h2>
-        <p className="mt-1 text-sm text-slate-500">{subtitle}</p>
+        <h2 className="text-base font-semibold text-[var(--text-primary)]">{title}</h2>
+        <p className="mt-1 text-sm text-[var(--text-muted)]">{subtitle}</p>
       </CardHeader>
       <CardContent className="space-y-6">
         {sections.map((section) => (
           <div key={section.label}>
-            <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-500">{section.label}</h3>
-            <div className="mt-3 overflow-x-auto rounded-xl border border-slate-200">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-                    <th className="px-4 py-3">Code</th>
-                    <th className="px-4 py-3">Account</th>
-                    <th className="px-4 py-3 text-right">Amount</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200">
+            <h3 className="text-sm font-semibold uppercase tracking-[0.12em] text-[var(--text-muted)]">
+              {section.label}
+            </h3>
+            <div className="mt-3 overflow-x-auto rounded-xl border border-[var(--border-soft)]">
+              <FinanceTable>
+                <FinanceTableHeader>
+                  <FinanceTableHead>Code</FinanceTableHead>
+                  <FinanceTableHead>Account</FinanceTableHead>
+                  <FinanceTableHead align="right">Amount</FinanceTableHead>
+                </FinanceTableHeader>
+                <FinanceTableBody>
                   {section.rows.map((row) => (
-                    <tr key={`${section.label}-${row.id}`}>
-                      <td className="px-4 py-3 text-sm text-slate-700">{row.code}</td>
-                      <td className="px-4 py-3 text-sm text-slate-900">{row.name}</td>
-                      <td className="px-4 py-3 text-right text-sm text-slate-700">{formatBooksMoney(row.amount)}</td>
-                    </tr>
+                    <FinanceTableRow key={`${section.label}-${row.id}`}>
+                      <FinanceTableCell>{row.code}</FinanceTableCell>
+                      <FinanceTableCell variant="primary">{row.name}</FinanceTableCell>
+                      <FinanceTableCell align="right" variant="numeric">
+                        {formatBooksMoney(row.amount)}
+                      </FinanceTableCell>
+                    </FinanceTableRow>
                   ))}
-                </tbody>
-              </table>
+                </FinanceTableBody>
+              </FinanceTable>
             </div>
           </div>
         ))}
-        <div className="rounded-xl bg-slate-50 p-4 text-sm">
-          <span className="font-medium text-slate-900">Balance sheet variance:</span>{" "}
+        <div className="rounded-xl bg-[var(--surface-subtle)] p-4 text-sm">
+          <span className="font-medium text-[var(--text-primary)]">Balance sheet variance:</span>{" "}
           {formatBooksMoney(variance)}
         </div>
       </CardContent>
@@ -82,7 +92,9 @@ export default async function BalanceSheetPage({ searchParams }: BalanceSheetPag
   if (!result.success) {
     return (
       <div className="mx-auto max-w-6xl">
-        <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{result.error}</div>
+        <div className="rounded-xl bg-[var(--state-danger-soft)] px-4 py-3 text-sm text-[var(--state-danger)]">
+          {result.error}
+        </div>
       </div>
     );
   }
@@ -94,12 +106,12 @@ export default async function BalanceSheetPage({ searchParams }: BalanceSheetPag
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-semibold text-slate-900">Balance Sheet</h1>
+            <h1 className="text-2xl font-semibold text-[var(--text-primary)]">Balance Sheet</h1>
             <Badge variant={Math.abs(report.current.totals.variance) <= 0.01 ? "success" : "warning"}>
               {Math.abs(report.current.totals.variance) <= 0.01 ? "Balanced" : "Variance"}
             </Badge>
           </div>
-          <p className="mt-1 text-sm text-slate-500">
+          <p className="mt-1 text-sm text-[var(--text-muted)]">
             Assets, liabilities, and equity as of the selected reporting date.
           </p>
         </div>
@@ -114,17 +126,17 @@ export default async function BalanceSheetPage({ searchParams }: BalanceSheetPag
 
       <Card>
         <CardHeader>
-          <h2 className="text-lg font-semibold text-slate-900">Filters</h2>
+          <h2 className="text-base font-semibold text-[var(--text-primary)]">Filters</h2>
         </CardHeader>
         <CardContent>
           <form className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             <label className="block text-sm">
-              <span className="mb-1 block font-medium text-slate-700">As of date</span>
-              <input type="date" name="asOfDate" defaultValue={params.asOfDate ?? ""} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+              <span className="mb-1 block font-medium text-[var(--text-primary)]">As of date</span>
+              <input type="date" name="asOfDate" defaultValue={params.asOfDate ?? ""} className="w-full rounded-lg border border-[var(--border-default)] bg-white px-3 py-2 text-sm text-[var(--text-primary)] transition-colors focus:border-[var(--brand-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--focus-ring)]" />
             </label>
             <label className="block text-sm">
-              <span className="mb-1 block font-medium text-slate-700">Compare as of</span>
-              <input type="date" name="compareAsOfDate" defaultValue={params.compareAsOfDate ?? ""} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+              <span className="mb-1 block font-medium text-[var(--text-primary)]">Compare as of</span>
+              <input type="date" name="compareAsOfDate" defaultValue={params.compareAsOfDate ?? ""} className="w-full rounded-lg border border-[var(--border-default)] bg-white px-3 py-2 text-sm text-[var(--text-primary)] transition-colors focus:border-[var(--brand-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--focus-ring)]" />
             </label>
             <div className="flex items-end">
               <Button type="submit" variant="secondary">Apply</Button>
@@ -133,7 +145,7 @@ export default async function BalanceSheetPage({ searchParams }: BalanceSheetPag
         </CardContent>
       </Card>
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         {[
           { label: "Assets", value: formatBooksMoney(report.current.totals.assets) },
           { label: "Liabilities", value: formatBooksMoney(report.current.totals.liabilities) },
@@ -142,10 +154,10 @@ export default async function BalanceSheetPage({ searchParams }: BalanceSheetPag
         ].map((item) => (
           <Card key={item.label}>
             <CardHeader>
-              <p className="text-xs uppercase tracking-[0.18em] text-slate-500">{item.label}</p>
+              <p className="text-xs uppercase tracking-[0.12em] text-[var(--text-muted)]">{item.label}</p>
             </CardHeader>
             <CardContent>
-              <p className="text-xl font-semibold text-slate-900">{item.value}</p>
+              <p className="text-xl font-semibold text-[var(--text-primary)] tabular-nums">{item.value}</p>
             </CardContent>
           </Card>
         ))}

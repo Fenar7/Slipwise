@@ -5,18 +5,20 @@ import { DocumentAttachments } from "@/components/docs/document-attachments";
 import { getDocAttachments } from "@/app/app/docs/attachment-actions";
 import { getDocumentTimelineForPage } from "@/lib/document-events";
 import { DocumentTimeline } from "@/components/docs/document-timeline";
+import { DocumentActionBar } from "@/components/docs/document-action-bar";
+import { StatusBadge } from "@/components/dashboard/status-badge";
 
 export const metadata = {
   title: "Quote Detail | Slipwise",
 };
 
-const STATUS_COLORS: Record<string, string> = {
-  DRAFT: "bg-slate-100 text-slate-700",
-  SENT: "bg-blue-100 text-blue-700",
-  ACCEPTED: "bg-green-100 text-green-700",
-  DECLINED: "bg-red-100 text-red-700",
-  EXPIRED: "bg-amber-100 text-amber-700",
-  CONVERTED: "bg-indigo-100 text-indigo-700",
+const STATUS_VARIANTS: Record<string, Parameters<typeof StatusBadge>[0]["variant"]> = {
+  DRAFT: "neutral",
+  SENT: "info",
+  ACCEPTED: "success",
+  DECLINED: "danger",
+  EXPIRED: "warning",
+  CONVERTED: "success",
 };
 
 function formatCurrency(amount: number, currency: string = "INR") {
@@ -52,127 +54,137 @@ export default async function QuoteDetailPage({
   }
 
   const isExpired = quote.status === "SENT" && quote.validUntil < new Date();
+  const statusVariant = STATUS_VARIANTS[quote.status] ?? "neutral";
+  const displayStatus = isExpired && quote.status === "SENT" ? "EXPIRED" : quote.status;
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <div className="mx-auto max-w-5xl px-4 py-8">
-        {/* Header */}
-        <div className="mb-6 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Link
-              href="/app/docs/quotes"
-              className="text-sm text-slate-500 hover:text-slate-700"
-            >
-              ← Back to Quotes
-            </Link>
-          </div>
-          <div className="flex items-center gap-2">
-            {/* Actions based on status */}
-            {quote.status === "DRAFT" && (
-              <>
-                <Link
-                  href={`/app/docs/quotes/${quote.id}?edit=true`}
-                  className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
-                >
-                  Edit
-                </Link>
-                <form action={async () => {
-                  "use server";
-                  await sendQuoteAction(id);
-                }}>
-                  <button
-                    type="submit"
-                    className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
-                  >
-                    Send Quote
-                  </button>
-                </form>
-                <form action={async () => {
-                  "use server";
-                  await deleteQuote(id);
-                }}>
-                  <button
-                    type="submit"
-                    className="rounded-lg border border-red-300 bg-white px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 transition-colors"
-                  >
-                    Delete
-                  </button>
-                </form>
-              </>
-            )}
-            {quote.status === "ACCEPTED" && (
-              <form action={async () => {
+    <div className="min-h-screen bg-[var(--surface-base)]">
+      <div className="mx-auto max-w-5xl px-3 py-5 sm:px-4 lg:px-5 lg:py-7 space-y-5">
+        <DocumentActionBar
+          backHref="/app/docs/quotes"
+          backLabel="Quotes"
+          documentType="Quote"
+          documentNumber={`#${quote.quoteNumber}`}
+          title={quote.title}
+          status={displayStatus}
+          statusVariant={isExpired && quote.status === "SENT" ? "warning" : statusVariant}
+          primaryActions={[
+            ...(quote.status === "DRAFT"
+              ? [
+                  {
+                    id: "send",
+                    label: "Send Quote",
+                    icon: "send" as const,
+                    variant: "primary" as const,
+                    formAction: async () => {
+                      "use server";
+                      await sendQuoteAction(id);
+                    },
+                  },
+                ]
+              : []),
+            ...(quote.status === "ACCEPTED"
+              ? [
+                  {
+                    id: "convert",
+                    label: "Convert to Invoice",
+                    icon: "convert" as const,
+                    variant: "primary" as const,
+                    formAction: async () => {
+                      "use server";
+                      await convertQuoteAction(id);
+                    },
+                  },
+                ]
+              : []),
+            {
+              id: "duplicate",
+              label: "Duplicate",
+              icon: "duplicate",
+              variant: "secondary",
+              formAction: async () => {
                 "use server";
-                await convertQuoteAction(id);
-              }}>
-                <button
-                  type="submit"
-                  className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 transition-colors"
-                >
-                  Convert to Invoice
-                </button>
-              </form>
-            )}
-            <form action={async () => {
-              "use server";
-              await duplicateQuote(id);
-            }}>
-              <button
-                type="submit"
-                className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
-              >
-                Duplicate
-              </button>
-            </form>
-          </div>
-        </div>
+                await duplicateQuote(id);
+              },
+            },
+          ]}
+          secondaryActions={[
+            ...(quote.status === "DRAFT"
+              ? [
+                  {
+                    id: "edit",
+                    label: "Edit",
+                    icon: "edit" as const,
+                    variant: "subtle" as const,
+                    href: `/app/docs/quotes/${quote.id}?edit=true`,
+                  },
+                  {
+                    id: "delete",
+                    label: "Delete",
+                    icon: "delete" as const,
+                    variant: "danger" as const,
+                    formAction: async () => {
+                      "use server";
+                      await deleteQuote(id);
+                    },
+                  },
+                ]
+              : []),
+          ]}
+          contextMeta={[
+            { label: "Customer", value: quote.customer.name },
+            { label: "Issue Date", value: formatDate(quote.issueDate) },
+            { label: "Valid Until", value: formatDate(quote.validUntil) },
+            { label: "Total", value: formatCurrency(quote.totalAmount, quote.currency) },
+          ]}
+        />
 
-        <div className="flex flex-col gap-6 lg:flex-row">
+        <div className="flex flex-col gap-5 lg:flex-row">
           {/* Main Content */}
           <div className="flex-1">
-            <div className="rounded-lg border border-slate-200 bg-white shadow-sm overflow-hidden">
+            <div className="rounded-2xl border border-[var(--border-default)] bg-white shadow-[var(--shadow-card)] overflow-hidden">
               {/* Accent Bar */}
-              <div className="h-1.5 bg-red-600" />
+              <div className="h-1.5 bg-[var(--brand-cta)]" />
 
               {/* Header Section */}
-              <div className="px-8 pt-8 pb-6">
+              <div className="px-6 pt-6 pb-5 sm:px-8 sm:pt-8 sm:pb-6">
                 <div className="flex items-start justify-between">
                   <div>
-                    <h1 className="text-2xl font-bold text-slate-900">{quote.org.name}</h1>
+                    <h1 className="text-2xl font-bold text-[var(--text-primary)]">{quote.org.name}</h1>
                   </div>
                   <div className="text-right">
-                    <h2 className="text-xl font-bold uppercase tracking-wide text-red-600">Quote</h2>
-                    <p className="mt-1 text-lg font-semibold text-slate-900">#{quote.quoteNumber}</p>
-                    <span
-                      className={`mt-2 inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_COLORS[quote.status] || "bg-slate-100 text-slate-700"}`}
-                    >
-                      {quote.status}
-                    </span>
+                    <h2 className="text-xl font-bold uppercase tracking-wide text-[var(--brand-cta)]">Quote</h2>
+                    <p className="mt-1 text-lg font-semibold text-[var(--text-primary)]">#{quote.quoteNumber}</p>
+                    <StatusBadge variant={isExpired && quote.status === "SENT" ? "warning" : statusVariant} className="mt-2">
+                      {displayStatus}
+                    </StatusBadge>
                   </div>
                 </div>
-                <p className="mt-2 text-lg text-slate-700">{quote.title}</p>
+                <p className="mt-2 text-lg text-[var(--text-secondary)]">{quote.title}</p>
               </div>
 
               {/* Meta */}
-              <div className="border-t border-slate-100 px-8 py-6 grid grid-cols-2 gap-8">
+              <div className="border-t border-[var(--border-soft)] px-6 py-5 sm:px-8 grid grid-cols-2 gap-6">
                 <div>
-                  <h3 className="text-xs font-medium uppercase tracking-wider text-slate-400 mb-2">Customer</h3>
-                  <p className="font-medium text-slate-900">{quote.customer.name}</p>
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)] mb-2">Customer</h3>
+                  <Link href={`/app/data/customers/${quote.customer.id}`} className="font-medium text-[var(--brand-primary)] hover:underline">
+                    {quote.customer.name}
+                  </Link>
                   {quote.customer.email && (
-                    <p className="text-sm text-slate-500">{quote.customer.email}</p>
+                    <p className="text-sm text-[var(--text-secondary)]">{quote.customer.email}</p>
                   )}
                   {quote.customer.phone && (
-                    <p className="text-sm text-slate-500">{quote.customer.phone}</p>
+                    <p className="text-sm text-[var(--text-secondary)]">{quote.customer.phone}</p>
                   )}
                 </div>
-                <div className="text-right space-y-1">
+                <div className="text-right space-y-1.5">
                   <div>
-                    <span className="text-xs font-medium uppercase tracking-wider text-slate-400">Issue Date: </span>
-                    <span className="text-sm text-slate-700">{formatDate(quote.issueDate)}</span>
+                    <span className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">Issue Date: </span>
+                    <span className="text-sm text-[var(--text-secondary)]">{formatDate(quote.issueDate)}</span>
                   </div>
                   <div>
-                    <span className="text-xs font-medium uppercase tracking-wider text-slate-400">Valid Until: </span>
-                    <span className={`text-sm ${isExpired ? "text-red-600 font-medium" : "text-slate-700"}`}>
+                    <span className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">Valid Until: </span>
+                    <span className={`text-sm ${isExpired ? "text-[var(--state-danger)] font-medium" : "text-[var(--text-secondary)]"}`}>
                       {formatDate(quote.validUntil)}
                       {isExpired && " (Expired)"}
                     </span>
@@ -181,25 +193,25 @@ export default async function QuoteDetailPage({
               </div>
 
               {/* Line Items */}
-              <div className="px-8 pb-6">
+              <div className="px-6 pb-5 sm:px-8">
                 <table className="w-full">
                   <thead>
-                    <tr className="border-b-2 border-red-600">
-                      <th className="py-2 text-left text-xs font-medium uppercase tracking-wider text-slate-500">Description</th>
-                      <th className="py-2 text-right text-xs font-medium uppercase tracking-wider text-slate-500">Qty</th>
-                      <th className="py-2 text-right text-xs font-medium uppercase tracking-wider text-slate-500">Unit Price</th>
-                      <th className="py-2 text-right text-xs font-medium uppercase tracking-wider text-slate-500">Tax %</th>
-                      <th className="py-2 text-right text-xs font-medium uppercase tracking-wider text-slate-500">Amount</th>
+                    <tr className="border-b-2 border-[var(--brand-cta)]">
+                      <th className="py-2 text-left text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">Description</th>
+                      <th className="py-2 text-right text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">Qty</th>
+                      <th className="py-2 text-right text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">Unit Price</th>
+                      <th className="py-2 text-right text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">Tax %</th>
+                      <th className="py-2 text-right text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">Amount</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100">
+                  <tbody className="divide-y divide-[var(--border-soft)]">
                     {quote.lineItems.map((item) => (
                       <tr key={item.id}>
-                        <td className="py-3 text-sm text-slate-900">{item.description}</td>
-                        <td className="py-3 text-right text-sm text-slate-700">{item.quantity}</td>
-                        <td className="py-3 text-right text-sm text-slate-700">{formatCurrency(item.unitPrice, quote.currency)}</td>
-                        <td className="py-3 text-right text-sm text-slate-700">{item.taxRate}%</td>
-                        <td className="py-3 text-right text-sm font-medium text-slate-900">{formatCurrency(item.amount, quote.currency)}</td>
+                        <td className="py-3 text-sm text-[var(--text-primary)]">{item.description}</td>
+                        <td className="py-3 text-right text-sm text-[var(--text-secondary)]">{item.quantity}</td>
+                        <td className="py-3 text-right text-sm text-[var(--text-secondary)]">{formatCurrency(item.unitPrice, quote.currency)}</td>
+                        <td className="py-3 text-right text-sm text-[var(--text-secondary)]">{item.taxRate}%</td>
+                        <td className="py-3 text-right text-sm font-medium text-[var(--text-primary)]">{formatCurrency(item.amount, quote.currency)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -207,28 +219,28 @@ export default async function QuoteDetailPage({
               </div>
 
               {/* Totals */}
-              <div className="border-t border-slate-200 px-8 py-6">
+              <div className="border-t border-[var(--border-default)] px-6 py-6 sm:px-8">
                 <div className="flex justify-end">
                   <div className="w-64 space-y-2">
                     <div className="flex justify-between text-sm">
-                      <span className="text-slate-500">Subtotal</span>
-                      <span className="text-slate-700">{formatCurrency(quote.subtotal, quote.currency)}</span>
+                      <span className="text-[var(--text-muted)]">Subtotal</span>
+                      <span className="text-[var(--text-secondary)]">{formatCurrency(quote.subtotal, quote.currency)}</span>
                     </div>
                     {quote.taxAmount > 0 && (
                       <div className="flex justify-between text-sm">
-                        <span className="text-slate-500">Tax</span>
-                        <span className="text-slate-700">{formatCurrency(quote.taxAmount, quote.currency)}</span>
+                        <span className="text-[var(--text-muted)]">Tax</span>
+                        <span className="text-[var(--text-secondary)]">{formatCurrency(quote.taxAmount, quote.currency)}</span>
                       </div>
                     )}
                     {quote.discountAmount > 0 && (
                       <div className="flex justify-between text-sm">
-                        <span className="text-slate-500">Discount</span>
-                        <span className="text-slate-700">−{formatCurrency(quote.discountAmount, quote.currency)}</span>
+                        <span className="text-[var(--text-muted)]">Discount</span>
+                        <span className="text-[var(--text-secondary)]">−{formatCurrency(quote.discountAmount, quote.currency)}</span>
                       </div>
                     )}
-                    <div className="flex justify-between border-t border-slate-200 pt-2">
-                      <span className="text-base font-semibold text-slate-900">Total</span>
-                      <span className="text-base font-bold text-red-600">
+                    <div className="flex justify-between border-t border-[var(--border-default)] pt-2">
+                      <span className="text-base font-semibold text-[var(--text-primary)]">Total</span>
+                      <span className="text-base font-bold text-[var(--brand-cta)]">
                         {formatCurrency(quote.totalAmount, quote.currency)}
                       </span>
                     </div>
@@ -238,17 +250,17 @@ export default async function QuoteDetailPage({
 
               {/* Notes & Terms */}
               {(quote.notes || quote.termsAndConditions) && (
-                <div className="border-t border-slate-100 px-8 py-6 grid grid-cols-2 gap-8">
+                <div className="border-t border-[var(--border-soft)] px-6 py-5 sm:px-8 grid grid-cols-2 gap-6">
                   {quote.notes && (
                     <div>
-                      <h3 className="text-xs font-medium uppercase tracking-wider text-slate-400 mb-1">Notes</h3>
-                      <p className="text-sm text-slate-600 whitespace-pre-line">{quote.notes}</p>
+                      <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)] mb-1">Notes</h3>
+                      <p className="text-sm text-[var(--text-secondary)] whitespace-pre-line">{quote.notes}</p>
                     </div>
                   )}
                   {quote.termsAndConditions && (
                     <div>
-                      <h3 className="text-xs font-medium uppercase tracking-wider text-slate-400 mb-1">Terms & Conditions</h3>
-                      <p className="text-sm text-slate-600 whitespace-pre-line">{quote.termsAndConditions}</p>
+                      <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)] mb-1">Terms & Conditions</h3>
+                      <p className="text-sm text-[var(--text-secondary)] whitespace-pre-line">{quote.termsAndConditions}</p>
                     </div>
                   )}
                 </div>
@@ -257,49 +269,47 @@ export default async function QuoteDetailPage({
           </div>
 
           {/* Sidebar */}
-          <aside className="w-full shrink-0 lg:w-80">
-            <div className="rounded-lg border border-slate-200 bg-white p-4 space-y-4">
-              <h3 className="font-semibold text-slate-900">Quote Details</h3>
+          <aside className="w-full shrink-0 lg:w-80 space-y-4">
+            <div className="rounded-xl border border-[var(--border-default)] bg-white p-4 shadow-[var(--shadow-card)] space-y-4">
+              <h3 className="font-semibold text-[var(--text-primary)]">Quote Details</h3>
 
               <div className="space-y-3 text-sm">
                 <div className="flex justify-between">
-                  <span className="text-slate-500">Status</span>
-                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_COLORS[quote.status] || "bg-slate-100 text-slate-700"}`}>
-                    {quote.status}
-                  </span>
+                  <span className="text-[var(--text-muted)]">Status</span>
+                  <StatusBadge variant={statusVariant}>{displayStatus}</StatusBadge>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-slate-500">Currency</span>
-                  <span className="text-slate-900">{quote.currency}</span>
+                  <span className="text-[var(--text-muted)]">Currency</span>
+                  <span className="text-[var(--text-primary)]">{quote.currency}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-slate-500">Created</span>
-                  <span className="text-slate-900">{formatDate(quote.createdAt)}</span>
+                  <span className="text-[var(--text-muted)]">Created</span>
+                  <span className="text-[var(--text-primary)]">{formatDate(quote.createdAt)}</span>
                 </div>
                 {quote.acceptedAt && (
                   <div className="flex justify-between">
-                    <span className="text-slate-500">Accepted</span>
-                    <span className="text-green-700">{formatDate(quote.acceptedAt)}</span>
+                    <span className="text-[var(--text-muted)]">Accepted</span>
+                    <span className="text-[var(--state-success)]">{formatDate(quote.acceptedAt)}</span>
                   </div>
                 )}
                 {quote.declinedAt && (
                   <div className="flex justify-between">
-                    <span className="text-slate-500">Declined</span>
-                    <span className="text-red-700">{formatDate(quote.declinedAt)}</span>
+                    <span className="text-[var(--text-muted)]">Declined</span>
+                    <span className="text-[var(--state-danger)]">{formatDate(quote.declinedAt)}</span>
                   </div>
                 )}
                 {quote.declineReason && (
                   <div>
-                    <span className="text-slate-500 block mb-1">Decline Reason</span>
-                    <p className="text-sm text-red-700 bg-red-50 rounded px-2 py-1">{quote.declineReason}</p>
+                    <span className="text-[var(--text-muted)] block mb-1">Decline Reason</span>
+                    <p className="text-sm text-[var(--state-danger)] bg-[var(--state-danger-soft)] rounded-lg px-3 py-2">{quote.declineReason}</p>
                   </div>
                 )}
                 {quote.convertedInvoiceId && (
                   <div className="flex justify-between">
-                    <span className="text-slate-500">Invoice</span>
+                    <span className="text-[var(--text-muted)]">Invoice</span>
                     <Link
                       href={`/app/docs/invoices/${quote.convertedInvoiceId}`}
-                      className="text-blue-600 hover:underline"
+                      className="text-[var(--brand-primary)] hover:underline transition-colors"
                     >
                       View Invoice →
                     </Link>
@@ -309,27 +319,24 @@ export default async function QuoteDetailPage({
 
               {/* Public Link */}
               {quote.publicToken && quote.status !== "DRAFT" && (
-                <div className="border-t border-slate-100 pt-4">
-                  <h4 className="text-xs font-medium uppercase tracking-wider text-slate-400 mb-2">Public Link</h4>
-                  <p className="text-xs text-slate-500 break-all bg-slate-50 rounded p-2">
+                <div className="border-t border-[var(--border-soft)] pt-4">
+                  <h4 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)] mb-2">Public Link</h4>
+                  <p className="text-xs text-[var(--text-muted)] break-all bg-[var(--surface-subtle)] rounded-lg p-2.5">
                     {process.env.NEXT_PUBLIC_APP_URL || "https://app.slipwise.app"}/quote/{quote.publicToken}
                   </p>
                 </div>
               )}
             </div>
-            
-            <div className="mt-4">
-              <DocumentAttachments docId={quote.id} docType="quote" attachments={attachments} />
-            </div>
+
+            <DocumentAttachments docId={quote.id} docType="quote" attachments={attachments} />
           </aside>
         </div>
 
-        {/* Phase 19.2: Quote lifecycle timeline */}
-        <div className="mt-6 rounded-lg border border-slate-200 bg-white p-6">
+        {/* Quote lifecycle timeline */}
+        <div className="rounded-xl border border-[var(--border-default)] bg-white p-5 shadow-[var(--shadow-card)] md:p-6">
           <DocumentTimeline events={events} title="History" />
         </div>
       </div>
     </div>
   );
 }
-

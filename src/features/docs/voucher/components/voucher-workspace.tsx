@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
+import { Settings, Palette, FileText, CheckCircle, Eye, Tag } from "lucide-react";
 import {
   FormProvider,
   useForm,
@@ -34,6 +35,9 @@ import { VoucherDocumentFrame } from "@/features/docs/voucher/components/voucher
 import { VendorPicker } from "@/features/docs/voucher/components/vendor-picker";
 import { MultiLineVoucherEditor } from "@/features/docs/voucher/components/multi-line-voucher-editor";
 import { VoucherSaveBar } from "@/features/docs/voucher/components/voucher-save-bar";
+import { TagPicker } from "@/features/tags/components/tag-picker";
+import { trackTagApplied } from "@/lib/tags/telemetry";
+import { getSuggestedTags, type SuggestedTag } from "@/lib/tags/suggestion-service";
 import { voucherFormSchema } from "@/features/docs/voucher/schema";
 import type { VoucherDocument, VoucherFormValues } from "@/features/docs/voucher/types";
 import { voucherTemplateRegistry } from "@/features/docs/voucher/templates";
@@ -118,6 +122,15 @@ function VoucherPanel({
   const [savedNumber, setSavedNumber] = useState<string | undefined>(
     voucherId ? values.voucherNumber : undefined
   );
+  const [tagIds, setTagIds] = useState<string[]>([]);
+  const [suggestions, setSuggestions] = useState<SuggestedTag[]>([]);
+
+  const loadSuggestions = async (vendorId: string) => {
+    try {
+      const result = await getSuggestedTags({ counterpartyId: vendorId, counterpartyType: "vendor", documentType: "voucher", limit: 8 });
+      setSuggestions(result.filter((s) => s.source !== "default"));
+    } catch { setSuggestions([]); }
+  };
 
   // Sync multi-line total → amount field so preview stays live
   useEffect(() => {
@@ -142,6 +155,7 @@ function VoucherPanel({
         isMultiLine: currentValues.isMultiLine,
         formData: currentValues as Record<string, unknown>,
         lines: buildLines(currentValues),
+        tagIds,
       };
       if (savedId) {
         const result = await updateVoucher(savedId, input);
@@ -155,6 +169,7 @@ function VoucherPanel({
         if (result.success) {
           setSavedId(result.data.id);
           setSavedNumber(result.data.voucherNumber);
+          if (tagIds.length > 0) trackTagApplied("voucher", tagIds.length);
           toast.success("Voucher saved");
         } else {
           toast.error(result.error || "Failed to save voucher");
@@ -327,13 +342,6 @@ function VoucherPanel({
   return (
     <>
       <DocumentWorkspaceLayout
-        eyebrow="Voucher workspace"
-        title={isEditing ? "Edit Voucher" : "Voucher Generator"}
-        description={
-          isEditing
-            ? "Update the voucher details and export when ready."
-            : "Create payment and receipt vouchers in a cleaner workspace with live preview, structured input, and export actions that stay close to the document."
-        }
         actions={[
           { id: "home", label: "Back to vault", href: "/app/docs/vouchers", variant: "secondary" },
           {
@@ -398,26 +406,21 @@ function VoucherPanel({
                 } satisfies WorkspaceExportDialog)
               : undefined
         }
-        builderEyebrow="Voucher controls"
-        builderTitle="Build the document"
-        builderDescription="Move from setup to core details, approvals, and visibility without losing the live preview on the right."
         sections={voucherWorkspaceSections}
-        previewEyebrow="Preview"
-        previewTitle="Live A4 document"
-        previewDescription="Review the final voucher while you edit. Template, branding, and field visibility update immediately."
         builderContent={
           <>
             <div id="voucher-setup" className="scroll-mt-28">
                 <FormSection
-                  eyebrow="Template"
+                  icon={<Settings className="h-4 w-4" />}
+
                   title="Template and voucher mode"
                   description="Switch layouts or voucher type without losing the entered form state."
                 >
                   {/* Type indicator banner */}
-                  <div className={cn("rounded-lg border px-3 py-2 text-sm font-medium", typeBannerClass)}>
+                  <div className={cn("rounded-md px-3 py-2 text-sm font-medium", typeBannerClass)}>
                     {isPayment
-                      ? "💸 Payment Voucher — money going out"
-                      : "💰 Receipt Voucher — money coming in"}
+                      ? "Payment Voucher — money going out"
+                      : "Receipt Voucher — money coming in"}
                   </div>
 
                   <FieldShell label="Voucher template">
@@ -439,16 +442,16 @@ function VoucherPanel({
                               });
                             }}
                             className={cn(
-                              "rounded-[1.05rem] border px-4 py-3 text-left shadow-[0_12px_28px_rgba(34,34,34,0.04)] transition-colors",
+                              "rounded-md px-4 py-3 text-left transition-colors",
                               active
-                                ? "border-[var(--accent)] bg-white"
-                                : "border-[var(--border-soft)] bg-white/88 hover:bg-white",
+                                ? "bg-[var(--surface-subtle)]"
+                                : "hover:bg-[var(--surface-subtle)]",
                             )}
                           >
                             <span className="block text-sm font-medium text-[var(--foreground)]">
                               {template.name}
                             </span>
-                            <span className="mt-1 block text-xs leading-6 text-[var(--muted-foreground)]">
+                            <span className="mt-1 block text-xs text-[var(--muted-foreground)]">
                               {template.description}
                             </span>
                           </button>
@@ -456,13 +459,6 @@ function VoucherPanel({
                       })}
                     </div>
                   </FieldShell>
-                  <div className="rounded-[1rem] border border-[var(--border-soft)] bg-white px-4 py-3 text-sm leading-7 text-[var(--muted-foreground)]">
-                    {
-                      voucherTemplateOptions.find(
-                        (template) => template.id === selectedTemplateId,
-                      )?.description
-                    }
-                  </div>
                   <SelectField<VoucherFormValues>
                     name="voucherType"
                     label="Voucher type"
@@ -477,7 +473,8 @@ function VoucherPanel({
 
             <div id="voucher-branding" className="scroll-mt-28">
                 <FormSection
-                  eyebrow="Branding"
+                  icon={<Palette className="h-4 w-4" />}
+
                   title="Business identity"
                   description="Logo and accent color apply instantly to the live preview."
                 >
@@ -520,7 +517,8 @@ function VoucherPanel({
 
             <div id="voucher-details" className="scroll-mt-28">
                 <FormSection
-                  eyebrow="Voucher details"
+                  icon={<FileText className="h-4 w-4" />}
+
                   title="Core voucher information"
                   description="These fields drive the document content and validation."
                 >
@@ -565,6 +563,8 @@ function VoucherPanel({
                     <VendorPicker
                       vendors={vendors}
                       label={isPayment ? "Select vendor" : "Select from"}
+                      onTagPrefill={setTagIds}
+                      onVendorSelect={loadSuggestions}
                     />
 
                     <TextField<VoucherFormValues>
@@ -651,9 +651,46 @@ function VoucherPanel({
                 </FormSection>
             </div>
 
+            <div id="voucher-tags" className="scroll-mt-28">
+              <FormSection
+                icon={<Tag className="h-4 w-4" />}
+
+                title="Document Tags"
+                description="Categorise this voucher for reporting and analytics."
+              >
+                <TagPicker
+                  selectedIds={tagIds}
+                  onChange={setTagIds}
+                  placeholder="Search or create tags..."
+                  allowCreate
+                />
+                {suggestions.length > 0 && (
+                  <div className="mt-3">
+                    <p className="mb-1.5 text-xs font-medium text-[var(--muted-foreground)]">Suggestions</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {suggestions.map((s) => (
+                        <button
+                          key={s.id} type="button"
+                          onClick={() => { if (!tagIds.includes(s.id)) setTagIds([...tagIds, s.id]); }}
+                          disabled={tagIds.includes(s.id)}
+                          className="inline-flex items-center gap-1 rounded-full border border-dashed px-2 py-0.5 text-xs font-medium transition-colors hover:border-solid hover:bg-[var(--surface-soft)] disabled:opacity-30 disabled:cursor-default"
+                          style={{ borderColor: s.color ?? "var(--border-soft)", color: s.color ?? "var(--muted-foreground)" }}
+                          title={s.source === "recent" ? `Used ${s.usageCount} times with this vendor` : "Popular in your organisation"}
+                        >
+                          <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4"/></svg>
+                          {s.name}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </FormSection>
+            </div>
+
             <div id="voucher-approvals" className="scroll-mt-28">
                 <FormSection
-                  eyebrow="Approvals"
+                  icon={<CheckCircle className="h-4 w-4" />}
+
                   title="Signature and authorization"
                   description="Only the enabled blocks appear in the preview."
                 >
@@ -676,7 +713,8 @@ function VoucherPanel({
 
             <div id="voucher-visibility" className="scroll-mt-28">
                 <FormSection
-                  eyebrow="Visibility"
+                  icon={<Eye className="h-4 w-4" />}
+
                   title="Show or hide optional fields"
                   description="These toggles immediately rebalance the preview layout."
                 >
@@ -758,17 +796,19 @@ export function VoucherWorkspace({
   initialValues,
   vendors = [],
   initialTemplateId,
+  initialAccentColor,
 }: {
   voucherId?: string;
   initialValues?: Partial<VoucherFormValues>;
   vendors?: Vendor[];
   initialTemplateId?: string;
+  initialAccentColor?: string;
 }) {
   const methods = useForm<VoucherFormValues>({
     resolver: zodResolver(voucherFormSchema),
     defaultValues: initialValues
-      ? { ...voucherDefaultValues, ...initialValues }
-      : voucherDefaultValues,
+      ? { ...voucherDefaultValues, branding: { ...voucherDefaultValues.branding, accentColor: initialAccentColor ?? voucherDefaultValues.branding.accentColor }, ...initialValues }
+      : { ...voucherDefaultValues, branding: { ...voucherDefaultValues.branding, accentColor: initialAccentColor ?? voucherDefaultValues.branding.accentColor } },
     mode: "onChange",
   });
 

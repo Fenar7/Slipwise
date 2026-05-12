@@ -59,6 +59,7 @@ export type InvoiceFormValues = {
   authorizedBy: string;
   lineItems: InvoiceLineItemFormValue[];
   visibility: InvoiceVisibilityConfig;
+  tagIds?: string[];
 };
 
 export type InvoiceLineItem = {

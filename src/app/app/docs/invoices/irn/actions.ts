@@ -95,7 +95,7 @@ export async function generateInvoiceIrn(
     const totalCess = toAccountingNumber(invoice.gstTotalCess);
 
     const request: IrnGenerateRequest = {
-      invoiceNumber: invoice.invoiceNumber,
+      invoiceNumber: invoice.invoiceNumber ?? "",
       invoiceDate: formatDateForIrp(formatIsoDate(invoice.invoiceDate)),
       invoiceType: "INV",
       supplierGstin: invoice.supplierGstin,

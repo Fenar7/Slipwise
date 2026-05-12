@@ -16,7 +16,7 @@ describe("getNavigationContext", () => {
     expect(context.suiteLabel).toBe("Pay");
     expect(context.pageTitle).toBe("New");
     expect(context.breadcrumbs.map((crumb) => crumb.label)).toEqual([
-      "Slipwise One",
+      "Slipwise",
       "Pay",
       "Dunning",
       "Sequences",

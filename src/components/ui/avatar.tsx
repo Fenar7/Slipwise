@@ -26,7 +26,7 @@ export function Avatar({ name, imageUrl, size = "md", className }: AvatarProps) 
   return (
     <div
       className={cn(
-        "inline-flex items-center justify-center rounded-full bg-[var(--accent)] font-semibold text-white select-none overflow-hidden",
+        "inline-flex items-center justify-center rounded-full bg-[var(--brand-primary)] font-semibold text-white select-none overflow-hidden",
         sizeClass,
         className
       )}

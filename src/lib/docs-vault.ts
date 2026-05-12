@@ -112,6 +112,8 @@ export interface VaultQueryParams {
   sortDir?: "asc" | "desc";
   page?: number;
   limit?: number;
+  /** Phase 29: Filter by one or more tag IDs (match any) */
+  tagIds?: string[];
 }
 
 export interface VaultRow {
@@ -183,6 +185,33 @@ export async function queryVault(params: VaultQueryParams = {}): Promise<VaultRe
       { titleOrSummary: { contains: q, mode: "insensitive" } },
       { counterpartyLabel: { contains: q, mode: "insensitive" } },
     ];
+  }
+
+  // Phase 29: Tag-aware filtering via relational joins
+  if (params.tagIds && params.tagIds.length > 0) {
+    const [taggedInvoiceIds, taggedVoucherIds] = await Promise.all([
+      db.invoiceTagAssignment.findMany({
+        where: { tagId: { in: params.tagIds } },
+        select: { invoiceId: true },
+        distinct: ["invoiceId"],
+      }),
+      db.voucherTagAssignment.findMany({
+        where: { tagId: { in: params.tagIds } },
+        select: { voucherId: true },
+        distinct: ["voucherId"],
+      }),
+    ]);
+
+    const matchingDocIds = [
+      ...taggedInvoiceIds.map((a) => a.invoiceId),
+      ...taggedVoucherIds.map((a) => a.voucherId),
+    ];
+
+    if (matchingDocIds.length === 0) {
+      return { rows: [], total: 0, page, totalPages: 0 };
+    }
+
+    where.documentId = { in: matchingDocIds };
   }
 
   // Sort

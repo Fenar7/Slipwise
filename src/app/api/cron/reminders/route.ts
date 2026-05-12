@@ -75,9 +75,9 @@ export async function GET(request: Request) {
       try {
         await sendEmail({
           to: email,
-          subject: `Reminder: Invoice ${inv.invoiceNumber} due in ${daysUntilDue} day${daysUntilDue > 1 ? "s" : ""}`,
+          subject: `Reminder: Invoice ${inv.invoiceNumber || "N/A"} due in ${daysUntilDue} day${daysUntilDue > 1 ? "s" : ""}`,
           html: reminderEmailHtml({
-            invoiceNumber: inv.invoiceNumber,
+            invoiceNumber: inv.invoiceNumber || "",
             customerName: inv.customer?.name || "",
             totalAmount: formatCurrency(toAccountingNumber(inv.totalAmount)),
             dueDate: dueDateIso ?? target3Str,

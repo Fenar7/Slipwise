@@ -1,6 +1,15 @@
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import {
+  FinanceTable,
+  FinanceTableHeader,
+  FinanceTableHead,
+  FinanceTableBody,
+  FinanceTableRow,
+  FinanceTableCell,
+  FinanceTableEmpty,
+} from "@/components/ui/finance-table";
 import { BankTransactionActions } from "../../../components/bank-transaction-actions";
 import { ExportReconciliationButton } from "../../../components/export-reconciliation-button";
 import { RefreshReconciliationButton } from "../../../components/refresh-reconciliation-button";
@@ -24,7 +33,7 @@ export default async function BankImportDetailPage({ params }: ImportDetailPageP
   if (!detailResult.success) {
     return (
       <div className="mx-auto max-w-6xl">
-        <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
+        <div className="rounded-xl bg-[var(--state-danger-soft)] px-4 py-3 text-sm text-[var(--state-danger)]">
           {detailResult.error}
         </div>
       </div>
@@ -34,7 +43,7 @@ export default async function BankImportDetailPage({ params }: ImportDetailPageP
   if (!workspaceResult.success) {
     return (
       <div className="mx-auto max-w-6xl">
-        <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
+        <div className="rounded-xl bg-[var(--state-danger-soft)] px-4 py-3 text-sm text-[var(--state-danger)]">
           {workspaceResult.error}
         </div>
       </div>
@@ -51,11 +60,14 @@ export default async function BankImportDetailPage({ params }: ImportDetailPageP
     <div className="mx-auto max-w-7xl space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <Link href="/app/books/reconciliation" className="text-sm font-medium text-blue-600 hover:underline">
+          <Link
+            href="/app/books/reconciliation"
+            className="text-sm font-medium text-[var(--brand-primary)] hover:underline"
+          >
             ← Back to Reconciliation
           </Link>
-          <h1 className="mt-2 text-2xl font-semibold text-slate-900">{detail.fileName}</h1>
-          <p className="mt-1 text-sm text-slate-500">
+          <h1 className="mt-2 text-2xl font-semibold text-[var(--text-primary)]">{detail.fileName}</h1>
+          <p className="mt-1 text-sm text-[var(--text-muted)]">
             {detail.bankAccount.name} • imported on {new Date(detail.createdAt).toLocaleString()}
           </p>
         </div>
@@ -66,7 +78,7 @@ export default async function BankImportDetailPage({ params }: ImportDetailPageP
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         {[
           { label: "Imported Rows", value: String(detail.importedRows) },
           { label: "Failed Rows", value: String(detail.failedRows) },
@@ -75,10 +87,10 @@ export default async function BankImportDetailPage({ params }: ImportDetailPageP
         ].map((item) => (
           <Card key={item.label}>
             <CardHeader>
-              <p className="text-xs uppercase tracking-[0.18em] text-slate-500">{item.label}</p>
+              <p className="text-xs uppercase tracking-[0.12em] text-[var(--text-muted)]">{item.label}</p>
             </CardHeader>
             <CardContent>
-              <p className="text-xl font-semibold text-slate-900">{item.value}</p>
+              <p className="text-xl font-semibold text-[var(--text-primary)] tabular-nums">{item.value}</p>
             </CardContent>
           </Card>
         ))}
@@ -87,34 +99,30 @@ export default async function BankImportDetailPage({ params }: ImportDetailPageP
       {failedRows.length > 0 && (
         <Card>
           <CardHeader>
-            <h2 className="text-lg font-semibold text-slate-900">Failed rows</h2>
-            <p className="mt-1 text-sm text-slate-500">
+            <h2 className="text-base font-semibold text-[var(--text-primary)]">Failed rows</h2>
+            <p className="mt-1 text-sm text-[var(--text-muted)]">
               These rows were rejected during import and need mapping or data cleanup.
             </p>
           </CardHeader>
           <CardContent className="px-0 py-0">
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-                    <th className="px-6 py-3">Row</th>
-                    <th className="px-6 py-3">Error</th>
-                    <th className="px-6 py-3">Raw</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200">
-                  {failedRows.map((row) => (
-                    <tr key={`${row.rowNumber}-${row.error}`}>
-                      <td className="px-6 py-4 text-sm text-slate-700">{row.rowNumber}</td>
-                      <td className="px-6 py-4 text-sm text-red-700">{row.error}</td>
-                      <td className="px-6 py-4 text-xs text-slate-500">
-                        <pre className="whitespace-pre-wrap break-words">{JSON.stringify(row.raw)}</pre>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <FinanceTable>
+              <FinanceTableHeader>
+                <FinanceTableHead>Row</FinanceTableHead>
+                <FinanceTableHead>Error</FinanceTableHead>
+                <FinanceTableHead>Raw</FinanceTableHead>
+              </FinanceTableHeader>
+              <FinanceTableBody>
+                {failedRows.map((row) => (
+                  <FinanceTableRow key={`${row.rowNumber}-${row.error}`}>
+                    <FinanceTableCell>{row.rowNumber}</FinanceTableCell>
+                    <FinanceTableCell className="text-[var(--state-danger)]">{row.error}</FinanceTableCell>
+                    <FinanceTableCell className="text-xs">
+                      <pre className="whitespace-pre-wrap break-words text-[var(--text-muted)]">{JSON.stringify(row.raw)}</pre>
+                    </FinanceTableCell>
+                  </FinanceTableRow>
+                ))}
+              </FinanceTableBody>
+            </FinanceTable>
           </CardContent>
         </Card>
       )}
@@ -122,8 +130,8 @@ export default async function BankImportDetailPage({ params }: ImportDetailPageP
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
-            <h2 className="text-lg font-semibold text-slate-900">Imported bank lines</h2>
-            <p className="mt-1 text-sm text-slate-500">
+            <h2 className="text-base font-semibold text-[var(--text-primary)]">Imported bank lines</h2>
+            <p className="mt-1 text-sm text-[var(--text-muted)]">
               Review suggestions and finalize reconciliation for the lines in this import.
             </p>
           </div>
@@ -140,69 +148,63 @@ export default async function BankImportDetailPage({ params }: ImportDetailPageP
           </Badge>
         </CardHeader>
         <CardContent className="px-0 py-0">
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-                  <th className="px-6 py-3">Transaction</th>
-                  <th className="px-6 py-3">Amount</th>
-                  <th className="px-6 py-3">Status</th>
-                  <th className="px-6 py-3">Matches & Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200">
-                {transactions.length === 0 ? (
-                  <tr>
-                    <td colSpan={4} className="px-6 py-10 text-center text-sm text-slate-500">
-                      No transactions found for this import.
-                    </td>
-                  </tr>
-                ) : (
-                  transactions.map((transaction) => (
-                    <tr key={transaction.id}>
-                      <td className="px-6 py-4 align-top">
-                        <div className="font-medium text-slate-900">
-                          {new Date(transaction.txnDate).toLocaleDateString()} •{" "}
-                          {transaction.reference ?? "No reference"}
-                        </div>
-                        <div className="mt-1 text-sm text-slate-500">{transaction.description}</div>
-                      </td>
-                      <td className="px-6 py-4 align-top text-sm text-slate-700">
+          <FinanceTable>
+            <FinanceTableHeader>
+              <FinanceTableHead>Transaction</FinanceTableHead>
+              <FinanceTableHead align="right">Amount</FinanceTableHead>
+              <FinanceTableHead>Status</FinanceTableHead>
+              <FinanceTableHead>Matches & Actions</FinanceTableHead>
+            </FinanceTableHeader>
+            <FinanceTableBody>
+              {transactions.length === 0 ? (
+                <FinanceTableEmpty colSpan={4} message="No transactions found for this import." />
+              ) : (
+                transactions.map((transaction) => (
+                  <FinanceTableRow key={transaction.id}>
+                    <FinanceTableCell variant="primary">
+                      <div className="font-medium">
+                        {new Date(transaction.txnDate).toLocaleDateString()} •{" "}
+                        {transaction.reference ?? "No reference"}
+                      </div>
+                      <div className="mt-1 text-xs text-[var(--text-muted)]">{transaction.description}</div>
+                    </FinanceTableCell>
+                    <FinanceTableCell align="right">
+                      <span className="tabular-nums">
                         {transaction.direction === "CREDIT" ? "+" : "-"}
                         {transaction.amount.toLocaleString("en-IN", {
                           minimumFractionDigits: 2,
                           maximumFractionDigits: 2,
                         })}
-                      </td>
-                      <td className="px-6 py-4 align-top">
-                        <Badge
-                          variant={
-                            transaction.status === "MATCHED"
-                              ? "success"
-                              : transaction.status === "PARTIALLY_MATCHED"
-                                ? "warning"
-                                : transaction.status === "IGNORED"
-                                  ? "default"
-                                  : "danger"
-                          }
-                        >
-                          {transaction.status.replaceAll("_", " ")}
-                        </Badge>
-                      </td>
-                      <td className="px-6 py-4 align-top">
-                        <BankTransactionActions
-                          transactionId={transaction.id}
-                          status={transaction.status}
-                          suggestions={transaction.matches}
-                          manualAccounts={manualAccounts}
-                        />
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+                      </span>
+                    </FinanceTableCell>
+                    <FinanceTableCell>
+                      <Badge
+                        variant={
+                          transaction.status === "MATCHED"
+                            ? "success"
+                            : transaction.status === "PARTIALLY_MATCHED"
+                              ? "warning"
+                              : transaction.status === "IGNORED"
+                                ? "default"
+                                : "danger"
+                        }
+                      >
+                        {transaction.status.replaceAll("_", " ")}
+                      </Badge>
+                    </FinanceTableCell>
+                    <FinanceTableCell>
+                      <BankTransactionActions
+                        transactionId={transaction.id}
+                        status={transaction.status}
+                        suggestions={transaction.matches}
+                        manualAccounts={manualAccounts}
+                      />
+                    </FinanceTableCell>
+                  </FinanceTableRow>
+                ))
+              )}
+            </FinanceTableBody>
+          </FinanceTable>
         </CardContent>
       </Card>
     </div>

@@ -2,6 +2,15 @@ import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import {
+  FinanceTable,
+  FinanceTableHeader,
+  FinanceTableHead,
+  FinanceTableBody,
+  FinanceTableRow,
+  FinanceTableCell,
+  FinanceTableEmpty,
+} from "@/components/ui/finance-table";
 import { getBooksVendorBillFormOptions, getBooksVendorBills } from "../actions";
 import { booksStatusBadgeVariant, formatBooksDate, formatBooksMoney } from "../view-helpers";
 
@@ -33,7 +42,9 @@ export default async function VendorBillsPage({ searchParams }: VendorBillsPageP
   if (!billsResult.success) {
     return (
       <div className="mx-auto max-w-6xl">
-        <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{billsResult.error}</div>
+        <div className="rounded-xl bg-[var(--state-danger-soft)] px-4 py-3 text-sm text-[var(--state-danger)]">
+          {billsResult.error}
+        </div>
       </div>
     );
   }
@@ -41,7 +52,9 @@ export default async function VendorBillsPage({ searchParams }: VendorBillsPageP
   if (!optionsResult.success) {
     return (
       <div className="mx-auto max-w-6xl">
-        <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{optionsResult.error}</div>
+        <div className="rounded-xl bg-[var(--state-danger-soft)] px-4 py-3 text-sm text-[var(--state-danger)]">
+          {optionsResult.error}
+        </div>
       </div>
     );
   }
@@ -56,8 +69,8 @@ export default async function VendorBillsPage({ searchParams }: VendorBillsPageP
     <div className="mx-auto max-w-7xl space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Vendor Bills</h1>
-          <p className="mt-1 text-sm text-slate-500">
+          <h1 className="text-2xl font-semibold text-[var(--text-primary)]">Vendor Bills</h1>
+          <p className="mt-1 text-sm text-[var(--text-muted)]">
             Manage structured payables, due dates, approvals, attachments, and AP aging.
           </p>
         </div>
@@ -72,7 +85,7 @@ export default async function VendorBillsPage({ searchParams }: VendorBillsPageP
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         {[
           { label: "Bills in View", value: String(bills.length) },
           { label: "Pending Approval", value: String(pendingApprovalCount) },
@@ -81,10 +94,10 @@ export default async function VendorBillsPage({ searchParams }: VendorBillsPageP
         ].map((item) => (
           <Card key={item.label}>
             <CardHeader>
-              <p className="text-xs uppercase tracking-[0.18em] text-slate-500">{item.label}</p>
+              <p className="text-xs uppercase tracking-[0.12em] text-[var(--text-muted)]">{item.label}</p>
             </CardHeader>
             <CardContent>
-              <p className="text-xl font-semibold text-slate-900">{item.value}</p>
+              <p className="text-xl font-semibold text-[var(--text-primary)] tabular-nums">{item.value}</p>
             </CardContent>
           </Card>
         ))}
@@ -92,19 +105,19 @@ export default async function VendorBillsPage({ searchParams }: VendorBillsPageP
 
       <Card>
         <CardHeader>
-          <h2 className="text-lg font-semibold text-slate-900">Filters</h2>
-          <p className="mt-1 text-sm text-slate-500">
+          <h2 className="text-base font-semibold text-[var(--text-primary)]">Filters</h2>
+          <p className="mt-1 text-sm text-[var(--text-muted)]">
             Narrow the AP queue by lifecycle state, vendor, or bill reference.
           </p>
         </CardHeader>
         <CardContent>
           <form className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <label className="block text-sm">
-              <span className="mb-1 block font-medium text-slate-700">Status</span>
+              <span className="mb-1 block font-medium text-[var(--text-primary)]">Status</span>
               <select
                 name="status"
                 defaultValue={params.status ?? ""}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                className="w-full rounded-lg border border-[var(--border-default)] bg-white px-3 py-2 text-sm text-[var(--text-primary)] transition-colors focus:border-[var(--brand-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--focus-ring)]"
               >
                 <option value="">All statuses</option>
                 {[
@@ -124,11 +137,11 @@ export default async function VendorBillsPage({ searchParams }: VendorBillsPageP
             </label>
 
             <label className="block text-sm">
-              <span className="mb-1 block font-medium text-slate-700">Vendor</span>
+              <span className="mb-1 block font-medium text-[var(--text-primary)]">Vendor</span>
               <select
                 name="vendorId"
                 defaultValue={params.vendorId ?? ""}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                className="w-full rounded-lg border border-[var(--border-default)] bg-white px-3 py-2 text-sm text-[var(--text-primary)] transition-colors focus:border-[var(--brand-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--focus-ring)]"
               >
                 <option value="">All vendors</option>
                 {vendors.map((vendor) => (
@@ -140,12 +153,12 @@ export default async function VendorBillsPage({ searchParams }: VendorBillsPageP
             </label>
 
             <label className="block text-sm md:col-span-2">
-              <span className="mb-1 block font-medium text-slate-700">Search</span>
+              <span className="mb-1 block font-medium text-[var(--text-primary)]">Search</span>
               <input
                 name="search"
                 defaultValue={params.search ?? ""}
                 placeholder="Bill number, vendor, or note"
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                className="w-full rounded-lg border border-[var(--border-default)] bg-white px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] transition-colors focus:border-[var(--brand-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--focus-ring)]"
               />
             </label>
 
@@ -153,7 +166,10 @@ export default async function VendorBillsPage({ searchParams }: VendorBillsPageP
               <Button type="submit" variant="secondary">
                 Apply Filters
               </Button>
-              <Link href="/app/books/vendor-bills" className="text-sm font-medium text-slate-600 hover:underline">
+              <Link
+                href="/app/books/vendor-bills"
+                className="text-sm font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:underline transition-colors"
+              >
                 Reset
               </Link>
             </div>
@@ -164,76 +180,70 @@ export default async function VendorBillsPage({ searchParams }: VendorBillsPageP
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
-            <h2 className="text-lg font-semibold text-slate-900">AP queue</h2>
-            <p className="mt-1 text-sm text-slate-500">
+            <h2 className="text-base font-semibold text-[var(--text-primary)]">AP queue</h2>
+            <p className="mt-1 text-sm text-[var(--text-muted)]">
               {total} vendor bill{total === 1 ? "" : "s"} across {totalPages} page{totalPages === 1 ? "" : "s"}.
             </p>
           </div>
           <Badge variant="default">Page {page}</Badge>
         </CardHeader>
         <CardContent className="px-0 py-0">
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-                  <th className="px-6 py-3">Bill</th>
-                  <th className="px-6 py-3">Vendor</th>
-                  <th className="px-6 py-3">Dates</th>
-                  <th className="px-6 py-3">Amounts</th>
-                  <th className="px-6 py-3">Status</th>
-                  <th className="px-6 py-3 text-right">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200">
-                {bills.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} className="px-6 py-10 text-center text-sm text-slate-500">
-                      No vendor bills match the current filters.
-                    </td>
-                  </tr>
-                ) : (
-                  bills.map((bill) => (
-                    <tr key={bill.id}>
-                      <td className="px-6 py-4">
-                        <div className="font-medium text-slate-900">{bill.billNumber}</div>
-                        <div className="text-xs text-slate-500">
-                          {bill.currency} • {bill.approvalRequests.length} pending approval request
-                          {bill.approvalRequests.length === 1 ? "" : "s"}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 text-sm text-slate-700">{bill.vendor?.name ?? "—"}</td>
-                      <td className="px-6 py-4 text-sm text-slate-700">
-                        <div>Bill {formatBooksDate(bill.billDate)}</div>
-                        <div className="text-xs text-slate-500">Due {formatBooksDate(bill.dueDate)}</div>
-                      </td>
-                      <td className="px-6 py-4 text-sm text-slate-700">
-                        <div>Total {formatBooksMoney(bill.totalAmount)}</div>
-                        <div className="text-xs text-slate-500">
-                          Remaining {formatBooksMoney(bill.remainingAmount)}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="flex flex-wrap gap-2">
-                          <Badge variant={booksStatusBadgeVariant(bill.status)}>{bill.status.replaceAll("_", " ")}</Badge>
-                          <Badge variant={booksStatusBadgeVariant(bill.accountingStatus)}>
-                            {bill.accountingStatus}
-                          </Badge>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 text-right">
-                        <Link
-                          href={`/app/books/vendor-bills/${bill.id}`}
-                          className="text-sm font-medium text-blue-600 hover:underline"
-                        >
-                          View Detail
-                        </Link>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+          <FinanceTable>
+            <FinanceTableHeader>
+              <FinanceTableHead>Bill</FinanceTableHead>
+              <FinanceTableHead>Vendor</FinanceTableHead>
+              <FinanceTableHead>Dates</FinanceTableHead>
+              <FinanceTableHead align="right">Amounts</FinanceTableHead>
+              <FinanceTableHead>Status</FinanceTableHead>
+              <FinanceTableHead align="right">Action</FinanceTableHead>
+            </FinanceTableHeader>
+            <FinanceTableBody>
+              {bills.length === 0 ? (
+                <FinanceTableEmpty colSpan={6} message="No vendor bills match the current filters." />
+              ) : (
+                bills.map((bill) => (
+                  <FinanceTableRow key={bill.id}>
+                    <FinanceTableCell variant="primary">
+                      <div>{bill.billNumber}</div>
+                      <div className="text-xs text-[var(--text-muted)]">
+                        {bill.currency} • {bill.approvalRequests.length} pending approval request
+                        {bill.approvalRequests.length === 1 ? "" : "s"}
+                      </div>
+                    </FinanceTableCell>
+                    <FinanceTableCell>{bill.vendor?.name ?? "—"}</FinanceTableCell>
+                    <FinanceTableCell>
+                      <div>Bill {formatBooksDate(bill.billDate)}</div>
+                      <div className="text-xs text-[var(--text-muted)]">Due {formatBooksDate(bill.dueDate)}</div>
+                    </FinanceTableCell>
+                    <FinanceTableCell align="right">
+                      <div className="tabular-nums">{formatBooksMoney(bill.totalAmount)}</div>
+                      <div className="text-xs text-[var(--text-muted)] tabular-nums">
+                        Remaining {formatBooksMoney(bill.remainingAmount)}
+                      </div>
+                    </FinanceTableCell>
+                    <FinanceTableCell>
+                      <div className="flex flex-wrap gap-2">
+                        <Badge variant={booksStatusBadgeVariant(bill.status)}>
+                          {bill.status.replaceAll("_", " ")}
+                        </Badge>
+                        <Badge variant={booksStatusBadgeVariant(bill.accountingStatus)}>
+                          {bill.accountingStatus}
+                        </Badge>
+                      </div>
+                    </FinanceTableCell>
+                    <FinanceTableCell align="right">
+                      <Link
+                        href={`/app/books/vendor-bills/${bill.id}`}
+                        className="text-sm font-medium text-[var(--brand-primary)] hover:underline"
+                      >
+                        View Detail
+                      </Link>
+                    </FinanceTableCell>
+                  </FinanceTableRow>
+                ))
+              )}
+            </FinanceTableBody>
+          </FinanceTable>
         </CardContent>
       </Card>
 
@@ -247,7 +257,7 @@ export default async function VendorBillsPage({ searchParams }: VendorBillsPageP
                 ...(params.search ? { search: params.search } : {}),
                 page: String(page - 1),
               }).toString()}`}
-              className="font-medium text-blue-600 hover:underline"
+              className="font-medium text-[var(--brand-primary)] hover:underline"
             >
               ← Previous
             </Link>
@@ -260,7 +270,7 @@ export default async function VendorBillsPage({ searchParams }: VendorBillsPageP
                 ...(params.search ? { search: params.search } : {}),
                 page: String(page + 1),
               }).toString()}`}
-              className="font-medium text-blue-600 hover:underline"
+              className="font-medium text-[var(--brand-primary)] hover:underline"
             >
               Next →
             </Link>

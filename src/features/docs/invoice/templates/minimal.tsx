@@ -119,11 +119,11 @@ function MinimalEditor({ document }: { document: InvoiceDocument }) {
           </div>
         </div>
         <div className="rounded-[1.5rem] p-5 text-white" style={{ backgroundColor: "var(--voucher-accent)" }}>
-          <p className="text-[0.68rem] uppercase tracking-[0.25em] text-white/72">
+          <p className="text-[0.68rem] uppercase tracking-[0.25em] text-white">
             Balance due
           </p>
-          <p className="mt-3 text-3xl font-medium">{doc.balanceDueFormatted}</p>
-          <p className="mt-4 text-sm leading-7 text-white/82">{doc.amountInWords}</p>
+          <p className="mt-3 text-3xl font-medium text-white">{doc.balanceDueFormatted}</p>
+          <p className="mt-4 text-sm leading-7 text-white">{doc.amountInWords}</p>
         </div>
       </section>
 
@@ -338,11 +338,11 @@ export function MinimalInvoiceTemplate({
           </div>
         </div>
         <div className="rounded-[1.5rem] p-5 text-white" style={{ backgroundColor: "var(--voucher-accent)" }}>
-          <p className="text-[0.68rem] uppercase tracking-[0.25em] text-white/72">
+          <p className="text-[0.68rem] uppercase tracking-[0.25em] text-white">
             Balance due
           </p>
-          <p className="mt-3 text-3xl font-medium">{document.balanceDueFormatted}</p>
-          <p className="mt-4 text-sm leading-7 text-white/82">{document.amountInWords}</p>
+          <p className="mt-3 text-3xl font-medium text-white">{document.balanceDueFormatted}</p>
+          <p className="mt-4 text-sm leading-7 text-white">{document.amountInWords}</p>
         </div>
       </section>
 

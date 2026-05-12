@@ -1,6 +1,15 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import {
+  FinanceTable,
+  FinanceTableHeader,
+  FinanceTableHead,
+  FinanceTableBody,
+  FinanceTableRow,
+  FinanceTableCell,
+  FinanceTableEmpty,
+} from "@/components/ui/finance-table";
 import { getBooksLedger, getChartOfAccounts } from "../actions";
 import { ExportBooksReportButton } from "../components/export-books-report-button";
 
@@ -22,7 +31,9 @@ export default async function LedgerPage({
   if (!accountsResult.success) {
     return (
       <div className="mx-auto max-w-6xl">
-        <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{accountsResult.error}</div>
+        <div className="rounded-xl bg-[var(--state-danger-soft)] px-4 py-3 text-sm text-[var(--state-danger)]">
+          {accountsResult.error}
+        </div>
       </div>
     );
   }
@@ -30,7 +41,9 @@ export default async function LedgerPage({
   if (!ledgerResult.success) {
     return (
       <div className="mx-auto max-w-6xl">
-        <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{ledgerResult.error}</div>
+        <div className="rounded-xl bg-[var(--state-danger-soft)] px-4 py-3 text-sm text-[var(--state-danger)]">
+          {ledgerResult.error}
+        </div>
       </div>
     );
   }
@@ -42,8 +55,8 @@ export default async function LedgerPage({
     <div className="mx-auto max-w-6xl space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">General Ledger</h1>
-          <p className="mt-1 text-sm text-slate-500">
+          <h1 className="text-2xl font-semibold text-[var(--text-primary)]">General Ledger</h1>
+          <p className="mt-1 text-sm text-[var(--text-muted)]">
             Review posted journal lines with running balances by account.
           </p>
         </div>
@@ -57,16 +70,16 @@ export default async function LedgerPage({
 
       <Card>
         <CardHeader>
-          <h2 className="text-lg font-semibold text-slate-900">Filters</h2>
+          <h2 className="text-base font-semibold text-[var(--text-primary)]">Filters</h2>
         </CardHeader>
         <CardContent>
           <form className="grid gap-4 md:grid-cols-4">
             <label className="block text-sm">
-              <span className="mb-1 block font-medium text-slate-700">Account</span>
+              <span className="mb-1 block font-medium text-[var(--text-primary)]">Account</span>
               <select
                 name="accountId"
                 defaultValue={params.accountId ?? ""}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                className="w-full rounded-lg border border-[var(--border-default)] bg-white px-3 py-2 text-sm text-[var(--text-primary)] transition-colors focus:border-[var(--brand-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--focus-ring)]"
               >
                 <option value="">All accounts</option>
                 {accounts.map((account) => (
@@ -78,22 +91,22 @@ export default async function LedgerPage({
             </label>
 
             <label className="block text-sm">
-              <span className="mb-1 block font-medium text-slate-700">Start date</span>
+              <span className="mb-1 block font-medium text-[var(--text-primary)]">Start date</span>
               <input
                 type="date"
                 name="startDate"
                 defaultValue={params.startDate ?? ""}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                className="w-full rounded-lg border border-[var(--border-default)] bg-white px-3 py-2 text-sm text-[var(--text-primary)] transition-colors focus:border-[var(--brand-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--focus-ring)]"
               />
             </label>
 
             <label className="block text-sm">
-              <span className="mb-1 block font-medium text-slate-700">End date</span>
+              <span className="mb-1 block font-medium text-[var(--text-primary)]">End date</span>
               <input
                 type="date"
                 name="endDate"
                 defaultValue={params.endDate ?? ""}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                className="w-full rounded-lg border border-[var(--border-default)] bg-white px-3 py-2 text-sm text-[var(--text-primary)] transition-colors focus:border-[var(--brand-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--focus-ring)]"
               />
             </label>
 
@@ -107,76 +120,68 @@ export default async function LedgerPage({
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-slate-900">Ledger lines</h2>
+            <h2 className="text-base font-semibold text-[var(--text-primary)]">Ledger lines</h2>
             <Badge variant="default">{ledger.length} rows</Badge>
           </div>
         </CardHeader>
         <CardContent className="px-0 py-0">
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-                  <th className="px-4 py-3">Date</th>
-                  <th className="px-4 py-3">Account</th>
-                  <th className="px-4 py-3">Entry</th>
-                  <th className="px-4 py-3">Memo</th>
-                  <th className="px-4 py-3">Debit</th>
-                  <th className="px-4 py-3">Credit</th>
-                  <th className="px-4 py-3">Running</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200">
-                {ledger.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="px-4 py-10 text-center text-sm text-slate-500">
-                      No posted ledger lines found for the selected filter.
-                    </td>
-                  </tr>
-                ) : (
-                  ledger.map((line) => (
-                    <tr key={line.id}>
-                      <td className="px-4 py-3 text-sm text-slate-700">
-                        {new Date(line.entryDate).toLocaleDateString()}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-slate-900">
-                        <div className="font-medium">
-                          {line.accountCode} — {line.accountName}
-                        </div>
-                        <div className="text-xs text-slate-500">{line.accountType}</div>
-                      </td>
-                      <td className="px-4 py-3 text-sm text-slate-700">
-                        <div>{line.entryNumber}</div>
-                        {line.sourceRef && (
-                          <div className="text-xs text-slate-500">{line.sourceRef}</div>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-slate-700">
-                        {line.description || line.memo || "—"}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-slate-700">
-                        {line.debit.toLocaleString("en-IN", {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-slate-700">
-                        {line.credit.toLocaleString("en-IN", {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })}
-                      </td>
-                      <td className="px-4 py-3 text-sm font-medium text-slate-900">
-                        {line.runningBalance.toLocaleString("en-IN", {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })}
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+          <FinanceTable>
+            <FinanceTableHeader>
+              <FinanceTableHead>Date</FinanceTableHead>
+              <FinanceTableHead>Account</FinanceTableHead>
+              <FinanceTableHead>Entry</FinanceTableHead>
+              <FinanceTableHead>Memo</FinanceTableHead>
+              <FinanceTableHead align="right">Debit</FinanceTableHead>
+              <FinanceTableHead align="right">Credit</FinanceTableHead>
+              <FinanceTableHead align="right">Running</FinanceTableHead>
+            </FinanceTableHeader>
+            <FinanceTableBody>
+              {ledger.length === 0 ? (
+                <FinanceTableEmpty colSpan={7} message="No posted ledger lines found for the selected filter." />
+              ) : (
+                ledger.map((line) => (
+                  <FinanceTableRow key={line.id}>
+                    <FinanceTableCell>
+                      {new Date(line.entryDate).toLocaleDateString()}
+                    </FinanceTableCell>
+                    <FinanceTableCell variant="primary">
+                      <div className="font-medium">
+                        {line.accountCode} — {line.accountName}
+                      </div>
+                      <div className="text-xs text-[var(--text-muted)]">{line.accountType}</div>
+                    </FinanceTableCell>
+                    <FinanceTableCell>
+                      <div>{line.entryNumber}</div>
+                      {line.sourceRef && (
+                        <div className="text-xs text-[var(--text-muted)]">{line.sourceRef}</div>
+                      )}
+                    </FinanceTableCell>
+                    <FinanceTableCell>
+                      {line.description || line.memo || "—"}
+                    </FinanceTableCell>
+                    <FinanceTableCell align="right" variant="numeric">
+                      {line.debit.toLocaleString("en-IN", {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
+                    </FinanceTableCell>
+                    <FinanceTableCell align="right" variant="numeric">
+                      {line.credit.toLocaleString("en-IN", {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
+                    </FinanceTableCell>
+                    <FinanceTableCell align="right" variant="numeric">
+                      {line.runningBalance.toLocaleString("en-IN", {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
+                    </FinanceTableCell>
+                  </FinanceTableRow>
+                ))
+              )}
+            </FinanceTableBody>
+          </FinanceTable>
         </CardContent>
       </Card>
     </div>

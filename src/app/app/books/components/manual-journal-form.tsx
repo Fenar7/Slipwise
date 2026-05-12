@@ -2,7 +2,9 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { FormField, FormGrid, FormSection, FormActions, financeInputClassName } from "@/components/forms/form-primitives";
 import { createManualJournal } from "../actions";
 
 interface ManualJournalFormProps {
@@ -82,146 +84,150 @@ export function ManualJournalForm({ accounts }: ManualJournalFormProps) {
   }
 
   return (
-    <div className="space-y-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+    <div className="space-y-6 rounded-2xl border border-[var(--border-soft)] bg-[var(--surface-panel)] p-6 shadow-[var(--shadow-card)]">
       {error && (
-        <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
+        <div className="rounded-xl bg-[var(--state-danger-soft)] px-4 py-3 text-sm text-[var(--state-danger)]">
+          {error}
+        </div>
       )}
 
-      <div className="grid gap-4 md:grid-cols-[220px,1fr]">
-        <label className="block text-sm">
-          <span className="mb-1 block font-medium text-slate-700">Entry date</span>
+      <FormGrid columns={2}>
+        <FormField label="Entry date">
           <input
             type="date"
             value={entryDate}
             onChange={(event) => setEntryDate(event.target.value)}
-            className="w-full rounded-lg border border-slate-300 px-3 py-2"
+            className={financeInputClassName}
           />
-        </label>
+        </FormField>
 
-        <label className="block text-sm">
-          <span className="mb-1 block font-medium text-slate-700">Memo</span>
+        <FormField label="Memo">
           <input
             value={memo}
             onChange={(event) => setMemo(event.target.value)}
             placeholder="Optional journal memo"
-            className="w-full rounded-lg border border-slate-300 px-3 py-2"
+            className={financeInputClassName}
           />
-        </label>
-      </div>
+        </FormField>
+      </FormGrid>
 
-      <div className="overflow-x-auto rounded-xl border border-slate-200">
-        <table className="w-full">
-          <thead>
-            <tr className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-              <th className="px-4 py-3">Account</th>
-              <th className="px-4 py-3">Description</th>
-              <th className="px-4 py-3">Debit</th>
-              <th className="px-4 py-3">Credit</th>
-              <th className="px-4 py-3 text-right">Action</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-200">
-            {lines.map((line, index) => (
-              <tr key={`${index}-${line.accountId}`}>
-                <td className="px-4 py-3">
-                  <select
-                    value={line.accountId}
-                    onChange={(event) => updateLine(index, { accountId: event.target.value })}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                  >
-                    <option value="">Select account</option>
-                    {availableAccounts.map((account) => (
-                      <option key={account.id} value={account.id}>
-                        {account.code} — {account.name}
-                      </option>
-                    ))}
-                  </select>
-                </td>
-                <td className="px-4 py-3">
-                  <input
-                    value={line.description}
-                    onChange={(event) => updateLine(index, { description: event.target.value })}
-                    placeholder="Line note"
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                  />
-                </td>
-                <td className="px-4 py-3">
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={line.debit}
-                    onChange={(event) =>
-                      updateLine(index, {
-                        debit: parseFloat(event.target.value) || 0,
-                        credit: 0,
-                      })
-                    }
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-right text-sm"
-                  />
-                </td>
-                <td className="px-4 py-3">
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={line.credit}
-                    onChange={(event) =>
-                      updateLine(index, {
-                        credit: parseFloat(event.target.value) || 0,
-                        debit: 0,
-                      })
-                    }
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-right text-sm"
-                  />
-                </td>
-                <td className="px-4 py-3 text-right">
-                  <button
-                    type="button"
-                    onClick={() => removeLine(index)}
-                    className="text-sm text-red-600 hover:underline"
-                  >
-                    Remove
-                  </button>
-                </td>
+      <FormSection title="Journal lines" description="Debits must equal credits for a balanced entry.">
+        <div className="overflow-x-auto rounded-xl border border-[var(--border-soft)]">
+          <table className="w-full">
+            <thead>
+              <tr className="bg-[var(--surface-subtle)] text-left text-[0.7rem] uppercase tracking-[0.12em] text-[var(--text-muted)]">
+                <th className="px-4 py-2.5 font-medium">Account</th>
+                <th className="px-4 py-2.5 font-medium">Description</th>
+                <th className="px-4 py-2.5 font-medium text-right">Debit</th>
+                <th className="px-4 py-2.5 font-medium text-right">Credit</th>
+                <th className="px-4 py-2.5 text-right font-medium">Action</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody className="divide-y divide-[var(--border-soft)]">
+              {lines.map((line, index) => (
+                <tr key={`${index}-${line.accountId}`} className="hover:bg-[var(--surface-selected)] transition-colors">
+                  <td className="px-4 py-3">
+                    <select
+                      value={line.accountId}
+                      onChange={(event) => updateLine(index, { accountId: event.target.value })}
+                      className={financeInputClassName}
+                    >
+                      <option value="">Select account</option>
+                      {availableAccounts.map((account) => (
+                        <option key={account.id} value={account.id}>
+                          {account.code} — {account.name}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                  <td className="px-4 py-3">
+                    <input
+                      value={line.description}
+                      onChange={(event) => updateLine(index, { description: event.target.value })}
+                      placeholder="Line note"
+                      className={financeInputClassName}
+                    />
+                  </td>
+                  <td className="px-4 py-3">
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={line.debit}
+                      onChange={(event) =>
+                        updateLine(index, {
+                          debit: parseFloat(event.target.value) || 0,
+                          credit: 0,
+                        })
+                      }
+                      className={cn(financeInputClassName, "text-right")}
+                    />
+                  </td>
+                  <td className="px-4 py-3">
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={line.credit}
+                      onChange={(event) =>
+                        updateLine(index, {
+                          credit: parseFloat(event.target.value) || 0,
+                          debit: 0,
+                        })
+                      }
+                      className={cn(financeInputClassName, "text-right")}
+                    />
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <button
+                      type="button"
+                      onClick={() => removeLine(index)}
+                      className="text-sm text-[var(--state-danger)] hover:underline"
+                    >
+                      Remove
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </FormSection>
 
       <div className="flex items-center justify-between">
-        <button
-          type="button"
-          onClick={addLine}
-          className="text-sm font-medium text-blue-600 hover:underline"
-        >
+        <Button type="button" variant="secondary" size="sm" onClick={addLine}>
           + Add line
-        </button>
+        </Button>
 
-        <div className="rounded-xl bg-slate-50 px-4 py-3 text-sm">
+        <div className="rounded-xl bg-[var(--surface-subtle)] px-4 py-3 text-sm">
           <div className="flex gap-6">
-            <span className="text-slate-600">
-              Debit: <strong className="text-slate-900">{totalDebit.toFixed(2)}</strong>
+            <span className="text-[var(--text-secondary)]">
+              Debit:{" "}
+              <strong className="text-[var(--text-primary)] tabular-nums">{totalDebit.toFixed(2)}</strong>
             </span>
-            <span className="text-slate-600">
-              Credit: <strong className="text-slate-900">{totalCredit.toFixed(2)}</strong>
+            <span className="text-[var(--text-secondary)]">
+              Credit:{" "}
+              <strong className="text-[var(--text-primary)] tabular-nums">{totalCredit.toFixed(2)}</strong>
             </span>
           </div>
-          <div className={`mt-1 ${totalDebit === totalCredit ? "text-green-700" : "text-red-600"}`}>
+          <div
+            className={`mt-1 ${
+              totalDebit === totalCredit ? "text-[var(--state-success)]" : "text-[var(--state-danger)]"
+            }`}
+          >
             {totalDebit === totalCredit ? "Balanced entry" : "Debits and credits must match"}
           </div>
         </div>
       </div>
 
-      <div className="flex items-center justify-end gap-3">
+      <FormActions>
         <Button variant="secondary" onClick={() => router.push("/app/books/journals")} disabled={isPending}>
           Cancel
         </Button>
         <Button onClick={submit} disabled={isPending}>
           {isPending ? "Posting..." : "Post Journal"}
         </Button>
-      </div>
+      </FormActions>
     </div>
   );
 }

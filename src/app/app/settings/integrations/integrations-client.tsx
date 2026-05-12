@@ -1,9 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/components/ui";
+import {
+  SettingsCard,
+  SettingsCardHeader,
+  SettingsCardContent,
+} from "@/components/settings/settings-primitives";
 import { useActiveOrg } from "@/hooks/use-active-org";
+import { Plug, Zap, Webhook, ArrowRight } from "lucide-react";
 
 interface IntegrationStatus {
   provider: string;
@@ -116,238 +121,158 @@ export default function IntegrationsClient() {
 
   if (loading) {
     return (
-      <div className="space-y-6">
-        <h1 className="text-2xl font-bold text-[#1a1a1a]">Integrations</h1>
-        <p className="text-[#666]">Loading...</p>
+      <div className="slipwise-panel p-6">
+        <p className="text-sm text-[var(--text-muted)]">Loading integrations…</p>
       </div>
     );
   }
 
+  const integrationsList = [
+    {
+      key: "tally",
+      title: "Tally Prime",
+      description: "Import/export invoices and vouchers with Tally ERP 9 / Prime.",
+      badge: "Import & Export",
+      badgeColor: "bg-[var(--state-info-soft)] text-[var(--state-info)]",
+      icon: Plug,
+      href: "/app/settings/integrations/tally",
+      isConnected: false,
+    },
+    {
+      key: "zapier",
+      title: "Zapier",
+      description: "Connect Slipwise to 6,000+ apps via Zapier polling triggers.",
+      badge: "API Key",
+      badgeColor: "bg-orange-50 text-orange-700",
+      icon: Zap,
+      href: "/app/settings/developer/tokens",
+      isConnected: false,
+    },
+    {
+      key: "make",
+      title: "Make.com (Integromat)",
+      description: "Receive instant webhook events in Make.com scenarios.",
+      badge: "Webhook",
+      badgeColor: "bg-purple-50 text-purple-700",
+      icon: Webhook,
+      href: "/app/settings/developer/webhooks/v2",
+      isConnected: false,
+    },
+    {
+      key: "quickbooks",
+      title: "QuickBooks",
+      description: "Sync invoices with QuickBooks Online.",
+      badge: getStatus("quickbooks")?.isActive ? "Connected" : "Not connected",
+      badgeColor: getStatus("quickbooks")?.isActive
+        ? "bg-[var(--state-success-soft)] text-[var(--state-success)]"
+        : "bg-[var(--surface-subtle)] text-[var(--text-muted)]",
+      icon: Plug,
+      isConnected: !!getStatus("quickbooks")?.isActive,
+    },
+    {
+      key: "zoho",
+      title: "Zoho Books",
+      description: "Sync invoices with Zoho Books.",
+      badge: getStatus("zoho")?.isActive ? "Connected" : "Not connected",
+      badgeColor: getStatus("zoho")?.isActive
+        ? "bg-[var(--state-success-soft)] text-[var(--state-success)]"
+        : "bg-[var(--surface-subtle)] text-[var(--text-muted)]",
+      icon: Plug,
+      isConnected: !!getStatus("zoho")?.isActive,
+    },
+  ];
+
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-[#1a1a1a]">Integrations</h1>
-        <p className="text-sm text-[#666] mt-1">
-          Connect your accounting software to sync invoices automatically.
+        <h2 className="text-base font-semibold text-[var(--text-primary)]">Integrations</h2>
+        <p className="mt-0.5 text-sm text-[var(--text-muted)]">
+          Connect your accounting software and automation tools to sync invoices automatically.
         </p>
       </div>
 
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-lg font-semibold text-[#1a1a1a]">
-                Tally Prime
-              </h2>
-              <p className="text-sm text-[#666] mt-1">
-                Import/export invoices and vouchers with Tally ERP 9 / Prime.
-              </p>
-            </div>
-            <span className="inline-flex items-center rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-medium text-blue-700">
-              Import &amp; Export
-            </span>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <a href="/app/settings/integrations/tally">
-            <Button variant="secondary" size="sm">
-              Open Tally Hub
-            </Button>
-          </a>
-        </CardContent>
-      </Card>
+      <div className="space-y-4">
+        {integrationsList.map((integration) => {
+          const Icon = integration.icon;
+          const status = integration.isConnected
+            ? getStatus(integration.key)
+            : undefined;
 
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-lg font-semibold text-[#1a1a1a]">Zapier</h2>
-              <p className="text-sm text-[#666] mt-1">
-                Connect Slipwise to 6,000+ apps via Zapier polling triggers.
-              </p>
-            </div>
-            <span className="inline-flex items-center rounded-full bg-orange-50 px-2.5 py-0.5 text-xs font-medium text-orange-700">
-              API Key
-            </span>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-2">
-          <p className="text-sm text-[#666]">
-            Use your API key at{" "}
-            <code className="rounded bg-[#f5f5f5] px-1 py-0.5 text-xs">
-              GET /api/v1/zapier/triggers/&#123;triggerName&#125;
-            </code>{" "}
-            as polling triggers. Supported: <span className="font-mono text-xs">invoice.created</span>,{" "}
-            <span className="font-mono text-xs">invoice.status_changed</span>,{" "}
-            <span className="font-mono text-xs">payment.received</span>,{" "}
-            <span className="font-mono text-xs">customer.created</span>.
-          </p>
-          <a href="/app/settings/developer/tokens">
-            <Button variant="secondary" size="sm">
-              Manage API Keys
-            </Button>
-          </a>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-lg font-semibold text-[#1a1a1a]">
-                Make.com (Integromat)
-              </h2>
-              <p className="text-sm text-[#666] mt-1">
-                Receive instant webhook events in Make.com scenarios.
-              </p>
-            </div>
-            <span className="inline-flex items-center rounded-full bg-purple-50 px-2.5 py-0.5 text-xs font-medium text-purple-700">
-              Webhook
-            </span>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-2">
-          <p className="text-sm text-[#666]">
-            Register a Make.com webhook URL under{" "}
-            <strong>Webhook Endpoints</strong>. Slipwise will fire real-time
-            events to your scenario on every matching action.
-          </p>
-          <a href="/app/settings/developer/webhooks/v2">
-            <Button variant="secondary" size="sm">
-              Configure Webhooks
-            </Button>
-          </a>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-lg font-semibold text-[#1a1a1a]">
-                QuickBooks
-              </h2>
-              <p className="text-sm text-[#666] mt-1">
-                Sync invoices with QuickBooks Online.
-              </p>
-            </div>
-            {getStatus("quickbooks")?.isActive && (
-              <span className="inline-flex items-center rounded-full bg-green-50 px-2.5 py-0.5 text-xs font-medium text-green-700">
-                Connected
-              </span>
-            )}
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center gap-3">
-            {getStatus("quickbooks")?.isActive ? (
-              <>
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={() => handleSync("quickbooks")}
-                  disabled={syncing === "quickbooks"}
-                >
-                  {syncing === "quickbooks" ? "Syncing…" : "Sync now"}
-                </Button>
-                <Button
-                  variant="danger"
-                  size="sm"
-                  onClick={() => handleDisconnect("quickbooks")}
-                >
-                  Disconnect
-                </Button>
-                <span className="text-xs text-[#999]">
-                  Last sync:{" "}
-                  {formatDate(getStatus("quickbooks")?.lastSyncAt ?? null)}
-                </span>
-              </>
-            ) : (
-              <a href="/api/integrations/quickbooks/connect">
-                <Button variant="primary" size="sm">
-                  Connect QuickBooks
-                </Button>
-              </a>
-            )}
-          </div>
-          {getStatus("quickbooks")?.isActive && (
-            <div className="mt-3 space-y-1 text-xs text-[#666]">
-              <p>Status: {formatSyncSummary(getStatus("quickbooks"))}</p>
-              <p>Token expiry: {formatDate(getStatus("quickbooks")?.tokenExpiresAt ?? null)}</p>
-              <p>Company ID: {getStatus("quickbooks")?.externalOrgId ?? "Pending callback"}</p>
-              {getStatus("quickbooks")?.lastSyncError && (
-                <p className="text-red-600">
-                  Last sync issue: {getStatus("quickbooks")?.lastSyncError}
-                </p>
-              )}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-lg font-semibold text-[#1a1a1a]">
-                Zoho Books
-              </h2>
-              <p className="text-sm text-[#666] mt-1">
-                Sync invoices with Zoho Books.
-              </p>
-            </div>
-            {getStatus("zoho")?.isActive && (
-              <span className="inline-flex items-center rounded-full bg-green-50 px-2.5 py-0.5 text-xs font-medium text-green-700">
-                Connected
-              </span>
-            )}
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center gap-3">
-            {getStatus("zoho")?.isActive ? (
-              <>
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={() => handleSync("zoho")}
-                  disabled={syncing === "zoho"}
-                >
-                  {syncing === "zoho" ? "Syncing…" : "Sync now"}
-                </Button>
-                <Button
-                  variant="danger"
-                  size="sm"
-                  onClick={() => handleDisconnect("zoho")}
-                >
-                  Disconnect
-                </Button>
-                <span className="text-xs text-[#999]">
-                  Last sync: {formatDate(getStatus("zoho")?.lastSyncAt ?? null)}
-                </span>
-              </>
-            ) : (
-              <a href="/api/integrations/zoho/connect">
-                <Button variant="primary" size="sm">
-                  Connect Zoho Books
-                </Button>
-              </a>
-            )}
-          </div>
-          {getStatus("zoho")?.isActive && (
-            <div className="mt-3 space-y-1 text-xs text-[#666]">
-              <p>Status: {formatSyncSummary(getStatus("zoho"))}</p>
-              <p>Token expiry: {formatDate(getStatus("zoho")?.tokenExpiresAt ?? null)}</p>
-              <p>Organization ID: {getStatus("zoho")?.externalOrgId ?? "Pending callback"}</p>
-              {getStatus("zoho")?.lastSyncError && (
-                <p className="text-red-600">
-                  Last sync issue: {getStatus("zoho")?.lastSyncError}
-                </p>
-              )}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+          return (
+            <SettingsCard key={integration.key}>
+              <SettingsCardHeader>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--surface-selected)]">
+                      <Icon className="h-4 w-4 text-[var(--brand-primary)]" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-semibold text-[var(--text-primary)]">
+                        {integration.title}
+                      </h3>
+                      <p className="text-xs text-[var(--text-muted)]">
+                        {integration.description}
+                      </p>
+                    </div>
+                  </div>
+                  <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${integration.badgeColor}`}>
+                    {integration.badge}
+                  </span>
+                </div>
+              </SettingsCardHeader>
+              <SettingsCardContent>
+                {integration.href ? (
+                  <a href={integration.href}>
+                    <Button variant="secondary" size="sm">
+                      Open {integration.title} Hub
+                      <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
+                    </Button>
+                  </a>
+                ) : status?.isActive ? (
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-3">
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        onClick={() => handleSync(integration.key)}
+                        disabled={syncing === integration.key}
+                      >
+                        {syncing === integration.key ? "Syncing…" : "Sync now"}
+                      </Button>
+                      <Button
+                        variant="danger"
+                        size="sm"
+                        onClick={() => handleDisconnect(integration.key)}
+                      >
+                        Disconnect
+                      </Button>
+                      <span className="text-xs text-[var(--text-muted)]">
+                        Last sync: {formatDate(status?.lastSyncAt ?? null)}
+                      </span>
+                    </div>
+                    <div className="space-y-1 text-xs text-[var(--text-muted)]">
+                      <p>Status: {formatSyncSummary(status)}</p>
+                      <p>Token expiry: {formatDate(status?.tokenExpiresAt ?? null)}</p>
+                      <p>Company ID: {status?.externalOrgId ?? "Pending callback"}</p>
+                      {status?.lastSyncError && (
+                        <p className="text-[var(--state-danger)]">
+                          Last sync issue: {status.lastSyncError}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <a href={`/api/integrations/${integration.key}/connect`}>
+                    <Button variant="primary" size="sm">
+                      Connect {integration.title}
+                    </Button>
+                  </a>
+                )}
+              </SettingsCardContent>
+            </SettingsCard>
+          );
+        })}
+      </div>
     </div>
   );
 }

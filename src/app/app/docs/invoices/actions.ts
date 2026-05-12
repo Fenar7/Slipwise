@@ -27,6 +27,7 @@ import { consumeSequenceNumber } from "@/features/sequences/services/sequence-en
 import { getSequenceConfig } from "@/features/sequences/services/sequence-admin";
 import { rateLimitByOrg, RATE_LIMITS } from "@/lib/rate-limit";
 import type { ConsumeResult } from "@/features/sequences/types";
+import { setInvoiceTags } from "@/lib/tags/assignment-service";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -74,6 +75,7 @@ export interface InvoiceInput {
   notes?: string;
   formData: Record<string, unknown>;
   lineItems: InvoiceLineItemInput[];
+  tagIds?: string[];
 }
 
 async function reverseInvoicePostingIfNeededTx(
@@ -83,7 +85,7 @@ async function reverseInvoicePostingIfNeededTx(
     actorId: string;
     invoice: {
       id: string;
-      invoiceNumber: string;
+      invoiceNumber: string | null;
       amountPaid: number;
       postedJournalEntryId: string | null;
       accountingStatus: string;
@@ -106,7 +108,7 @@ async function reverseInvoicePostingIfNeededTx(
     orgId: input.orgId,
     journalEntryId: input.invoice.postedJournalEntryId,
     actorId: input.actorId,
-    memo: `${input.action === "cancel" ? "Cancel" : "Reissue"} invoice ${input.invoice.invoiceNumber}${
+    memo: `${input.action === "cancel" ? "Cancel" : "Reissue"} invoice ${input.invoice.invoiceNumber ?? input.invoice.id}${
       input.reason.trim() ? `: ${input.reason.trim()}` : ""
     }`,
   });
@@ -191,7 +193,7 @@ async function syncInvoiceRecordToIndex(orgId: string, invoiceId: string): Promi
 
   await syncInvoiceToIndex(orgId, {
     id: invoice.id,
-    invoiceNumber: invoice.invoiceNumber,
+    invoiceNumber: invoice.invoiceNumber ?? "",
     status: invoice.status,
     invoiceDate,
     totalAmount: toAccountingNumber(invoice.totalAmount),
@@ -460,7 +462,7 @@ export async function saveInvoice(
         sourceEntityId: invoice.id,
         actorId: userId,
         payload: {
-          invoiceNumber: invoice.invoiceNumber,
+          invoiceNumber: invoice.invoiceNumber ?? "",
           totalAmount: invoice.totalAmount,
           customerId: invoice.customerId,
         },
@@ -475,12 +477,17 @@ export async function saveInvoice(
         sourceEntityId: invoice.id,
         actorId: userId,
         payload: {
-          invoiceNumber: invoice.invoiceNumber,
+          invoiceNumber: invoice.invoiceNumber ?? "",
           totalAmount: invoice.totalAmount,
           customerId: invoice.customerId,
           status: invoice.status,
         },
       });
+    }
+
+    // Assign tags if provided
+    if (input.tagIds !== undefined) {
+      await setInvoiceTags(invoice.id, input.tagIds);
     }
 
     await emitInvoiceEvent(orgId, invoice.id, status === "ISSUED" ? "issued" : "created", {
@@ -563,6 +570,11 @@ export async function updateInvoice(
         });
       }
     });
+
+    // Assign tags if provided
+    if (input.tagIds !== undefined) {
+      await setInvoiceTags(id, input.tagIds);
+    }
 
     await emitInvoiceEvent(orgId, id, "updated", { actorId: userId });
     await syncInvoiceRecordToIndex(orgId, id);
@@ -717,6 +729,7 @@ export async function getInvoice(id: string) {
     include: {
       lineItems: { orderBy: { sortOrder: "asc" } },
       customer: true,
+      tagAssignments: { include: { tag: { select: { id: true, name: true, slug: true, color: true } } } },
     },
   });
 
@@ -751,6 +764,8 @@ export async function listInvoices(params?: {
   amountMin?: number;
   amountMax?: number;
   customerId?: string;
+  tagIds?: string[];
+  hasTags?: boolean;
 }) {
   const { orgId } = await requireOrgContext();
   const page = params?.page ?? 1;
@@ -787,6 +802,20 @@ export async function listInvoices(params?: {
     where.invoiceDate = { gte: dateFrom };
   } else if (dateTo) {
     where.invoiceDate = { lte: dateTo };
+  }
+
+  // Tag filter
+  if (params?.tagIds && params.tagIds.length > 0) {
+    where.tagAssignments = {
+      some: { tagId: { in: params.tagIds } },
+    };
+  }
+
+  // Tagged-only filter (has at least one tag)
+  if (params?.hasTags && !(params.tagIds && params.tagIds.length > 0)) {
+    where.tagAssignments = {
+      some: {},
+    };
   }
 
   const [invoices, total] = await Promise.all([

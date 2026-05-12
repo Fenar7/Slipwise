@@ -1,6 +1,14 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import {
+  FinanceTable,
+  FinanceTableHeader,
+  FinanceTableHead,
+  FinanceTableBody,
+  FinanceTableRow,
+  FinanceTableCell,
+} from "@/components/ui/finance-table";
 import { getBooksProfitLoss } from "../../actions";
 import { ExportBooksReportButton } from "../../components/export-books-report-button";
 import { formatBooksMoney } from "../../view-helpers";
@@ -34,48 +42,48 @@ function StatementTable({
   return (
     <Card>
       <CardHeader>
-        <h2 className="text-lg font-semibold text-slate-900">{title}</h2>
-        <p className="mt-1 text-sm text-slate-500">{subtitle}</p>
+        <h2 className="text-base font-semibold text-[var(--text-primary)]">{title}</h2>
+        <p className="mt-1 text-sm text-[var(--text-muted)]">{subtitle}</p>
       </CardHeader>
       <CardContent className="px-0 py-0">
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-                <th className="px-6 py-3">Section</th>
-                <th className="px-6 py-3">Code</th>
-                <th className="px-6 py-3">Account</th>
-                <th className="px-6 py-3 text-right">Amount</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-200">
-              {income.map((row) => (
-                <tr key={`${title}-income-${row.id}`}>
-                  <td className="px-6 py-4 text-sm text-slate-700">Income</td>
-                  <td className="px-6 py-4 text-sm text-slate-700">{row.code}</td>
-                  <td className="px-6 py-4 text-sm text-slate-900">{row.name}</td>
-                  <td className="px-6 py-4 text-right text-sm text-slate-700">{formatBooksMoney(row.amount)}</td>
-                </tr>
-              ))}
-              {expenses.map((row) => (
-                <tr key={`${title}-expense-${row.id}`}>
-                  <td className="px-6 py-4 text-sm text-slate-700">Expense</td>
-                  <td className="px-6 py-4 text-sm text-slate-700">{row.code}</td>
-                  <td className="px-6 py-4 text-sm text-slate-900">{row.name}</td>
-                  <td className="px-6 py-4 text-right text-sm text-slate-700">{formatBooksMoney(row.amount)}</td>
-                </tr>
-              ))}
-              <tr className="bg-slate-50">
-                <td className="px-6 py-4 text-sm font-medium text-slate-900" colSpan={3}>
-                  Net Profit
-                </td>
-                <td className="px-6 py-4 text-right text-sm font-semibold text-slate-900">
-                  {formatBooksMoney(netProfit)}
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+        <FinanceTable>
+          <FinanceTableHeader>
+            <FinanceTableHead>Section</FinanceTableHead>
+            <FinanceTableHead>Code</FinanceTableHead>
+            <FinanceTableHead>Account</FinanceTableHead>
+            <FinanceTableHead align="right">Amount</FinanceTableHead>
+          </FinanceTableHeader>
+          <FinanceTableBody>
+            {income.map((row) => (
+              <FinanceTableRow key={`${title}-income-${row.id}`}>
+                <FinanceTableCell className="text-[var(--state-success)]">Income</FinanceTableCell>
+                <FinanceTableCell>{row.code}</FinanceTableCell>
+                <FinanceTableCell variant="primary">{row.name}</FinanceTableCell>
+                <FinanceTableCell align="right" variant="numeric">
+                  {formatBooksMoney(row.amount)}
+                </FinanceTableCell>
+              </FinanceTableRow>
+            ))}
+            {expenses.map((row) => (
+              <FinanceTableRow key={`${title}-expense-${row.id}`}>
+                <FinanceTableCell className="text-[var(--state-danger)]">Expense</FinanceTableCell>
+                <FinanceTableCell>{row.code}</FinanceTableCell>
+                <FinanceTableCell variant="primary">{row.name}</FinanceTableCell>
+                <FinanceTableCell align="right" variant="numeric">
+                  {formatBooksMoney(row.amount)}
+                </FinanceTableCell>
+              </FinanceTableRow>
+            ))}
+            <FinanceTableRow className="bg-[var(--surface-subtle)]">
+              <FinanceTableCell className="font-medium text-[var(--text-primary)]" colSpan={3}>
+                Net Profit
+              </FinanceTableCell>
+              <FinanceTableCell align="right" variant="numeric" className="font-semibold">
+                {formatBooksMoney(netProfit)}
+              </FinanceTableCell>
+            </FinanceTableRow>
+          </FinanceTableBody>
+        </FinanceTable>
       </CardContent>
     </Card>
   );
@@ -94,7 +102,9 @@ export default async function ProfitLossPage({ searchParams }: ProfitLossPagePro
   if (!result.success) {
     return (
       <div className="mx-auto max-w-6xl">
-        <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{result.error}</div>
+        <div className="rounded-xl bg-[var(--state-danger-soft)] px-4 py-3 text-sm text-[var(--state-danger)]">
+          {result.error}
+        </div>
       </div>
     );
   }
@@ -106,12 +116,12 @@ export default async function ProfitLossPage({ searchParams }: ProfitLossPagePro
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-semibold text-slate-900">Profit &amp; Loss</h1>
+            <h1 className="text-2xl font-semibold text-[var(--text-primary)]">Profit &amp; Loss</h1>
             <Badge variant={report.current.totals.netProfit >= 0 ? "success" : "warning"}>
               {report.current.totals.netProfit >= 0 ? "Profit" : "Loss"}
             </Badge>
           </div>
-          <p className="mt-1 text-sm text-slate-500">
+          <p className="mt-1 text-sm text-[var(--text-muted)]">
             Period income, expenses, and comparison reporting derived from posted ledger balances.
           </p>
         </div>
@@ -126,25 +136,25 @@ export default async function ProfitLossPage({ searchParams }: ProfitLossPagePro
 
       <Card>
         <CardHeader>
-          <h2 className="text-lg font-semibold text-slate-900">Filters</h2>
+          <h2 className="text-base font-semibold text-[var(--text-primary)]">Filters</h2>
         </CardHeader>
         <CardContent>
           <form className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <label className="block text-sm">
-              <span className="mb-1 block font-medium text-slate-700">Start date</span>
-              <input type="date" name="startDate" defaultValue={params.startDate ?? ""} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+              <span className="mb-1 block font-medium text-[var(--text-primary)]">Start date</span>
+              <input type="date" name="startDate" defaultValue={params.startDate ?? ""} className="w-full rounded-lg border border-[var(--border-default)] bg-white px-3 py-2 text-sm text-[var(--text-primary)] transition-colors focus:border-[var(--brand-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--focus-ring)]" />
             </label>
             <label className="block text-sm">
-              <span className="mb-1 block font-medium text-slate-700">End date</span>
-              <input type="date" name="endDate" defaultValue={params.endDate ?? ""} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+              <span className="mb-1 block font-medium text-[var(--text-primary)]">End date</span>
+              <input type="date" name="endDate" defaultValue={params.endDate ?? ""} className="w-full rounded-lg border border-[var(--border-default)] bg-white px-3 py-2 text-sm text-[var(--text-primary)] transition-colors focus:border-[var(--brand-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--focus-ring)]" />
             </label>
             <label className="block text-sm">
-              <span className="mb-1 block font-medium text-slate-700">Compare start</span>
-              <input type="date" name="compareStartDate" defaultValue={params.compareStartDate ?? ""} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+              <span className="mb-1 block font-medium text-[var(--text-primary)]">Compare start</span>
+              <input type="date" name="compareStartDate" defaultValue={params.compareStartDate ?? ""} className="w-full rounded-lg border border-[var(--border-default)] bg-white px-3 py-2 text-sm text-[var(--text-primary)] transition-colors focus:border-[var(--brand-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--focus-ring)]" />
             </label>
             <label className="block text-sm">
-              <span className="mb-1 block font-medium text-slate-700">Compare end</span>
-              <input type="date" name="compareEndDate" defaultValue={params.compareEndDate ?? ""} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+              <span className="mb-1 block font-medium text-[var(--text-primary)]">Compare end</span>
+              <input type="date" name="compareEndDate" defaultValue={params.compareEndDate ?? ""} className="w-full rounded-lg border border-[var(--border-default)] bg-white px-3 py-2 text-sm text-[var(--text-primary)] transition-colors focus:border-[var(--brand-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--focus-ring)]" />
             </label>
             <div className="flex items-end gap-3 md:col-span-2 xl:col-span-4">
               <Button type="submit" variant="secondary">Apply</Button>
@@ -153,7 +163,7 @@ export default async function ProfitLossPage({ searchParams }: ProfitLossPagePro
         </CardContent>
       </Card>
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         {[
           { label: "Current Income", value: formatBooksMoney(report.current.totals.income) },
           { label: "Current Expenses", value: formatBooksMoney(report.current.totals.expenses) },
@@ -165,10 +175,10 @@ export default async function ProfitLossPage({ searchParams }: ProfitLossPagePro
         ].map((item) => (
           <Card key={item.label}>
             <CardHeader>
-              <p className="text-xs uppercase tracking-[0.18em] text-slate-500">{item.label}</p>
+              <p className="text-xs uppercase tracking-[0.12em] text-[var(--text-muted)]">{item.label}</p>
             </CardHeader>
             <CardContent>
-              <p className="text-xl font-semibold text-slate-900">{item.value}</p>
+              <p className="text-xl font-semibold text-[var(--text-primary)] tabular-nums">{item.value}</p>
             </CardContent>
           </Card>
         ))}

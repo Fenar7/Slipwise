@@ -1,16 +1,30 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useState, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import { Button, Badge } from "@/components/ui";
 import { cn } from "@/lib/utils";
-import {
-  getProxyGrants,
-  createProxyGrant,
-  revokeProxyGrant,
-  getOrgMembersForProxy,
-} from "./actions";
+import { ShieldCheck } from "lucide-react";
 
-type ProxyGrant = Awaited<ReturnType<typeof getProxyGrants>>[number];
+type ProxyGrant = {
+  id: string;
+  actorId: string;
+  actorName: string;
+  actorEmail: string;
+  representedId: string;
+  representedName: string;
+  representedEmail: string;
+  scope: string[];
+  reason: string;
+  expiresAt: string;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+  grantedBy: string;
+  revokedAt: string | null;
+  revokedBy: string | null;
+};
+
 type OrgMember = { id: string; name: string; email: string };
 
 const SCOPE_OPTIONS = [
@@ -30,58 +44,62 @@ const STATUS_VARIANT: Record<string, "success" | "default" | "danger"> = {
 
 const STATUS_FILTERS = ["All", "ACTIVE", "EXPIRED", "REVOKED"] as const;
 
-export function ProxyClient() {
-  const [grants, setGrants] = useState<ProxyGrant[]>([]);
-  const [members, setMembers] = useState<OrgMember[]>([]);
-  const [loading, setLoading] = useState(true);
+type CreateGrantResult =
+  | { success: true; id?: string }
+  | { success: false; error: string };
+
+type RevokeGrantResult =
+  | { success: true }
+  | { success: false; error: string };
+
+interface ProxyClientProps {
+  initialGrants: ProxyGrant[];
+  initialMembers: OrgMember[];
+  createGrant: (data: {
+    actorId: string;
+    representedId: string;
+    scope: string[];
+    reason: string;
+    expiresAt: string;
+  }) => Promise<CreateGrantResult>;
+  revokeGrant: (id: string) => Promise<RevokeGrantResult>;
+}
+
+export function ProxyClient({
+  initialGrants,
+  initialMembers,
+  createGrant,
+  revokeGrant,
+}: ProxyClientProps) {
+  const router = useRouter();
   const [statusFilter, setStatusFilter] = useState<string>("All");
   const [showModal, setShowModal] = useState(false);
   const [revoking, setRevoking] = useState<string | null>(null);
   const [confirmRevoke, setConfirmRevoke] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [g, m] = await Promise.all([
-        getProxyGrants(),
-        getOrgMembersForProxy(),
-      ]);
-      setGrants(g);
-      setMembers(m);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    load();
-  }, [load]);
-
   const filtered = useMemo(
     () =>
       statusFilter === "All"
-        ? grants
-        : grants.filter((g) => g.status === statusFilter),
-    [grants, statusFilter]
+        ? initialGrants
+        : initialGrants.filter((g) => g.status === statusFilter),
+    [initialGrants, statusFilter]
   );
 
   async function handleRevoke(id: string) {
     setRevoking(id);
-    const res = await revokeProxyGrant(id);
+    const res = await revokeGrant(id);
     if (!res.success) alert(res.error);
     setConfirmRevoke(null);
     setRevoking(null);
-    load();
+    router.refresh();
   }
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-semibold text-[var(--foreground)]">
-            Proxy Access
-          </h2>
-          <p className="text-sm text-[var(--muted-foreground)]">
+          <h2 className="text-base font-semibold text-[var(--text-primary)]">Proxy Access</h2>
+          <p className="mt-0.5 text-sm text-[var(--text-muted)]">
             Grant team members the ability to act on behalf of others.
           </p>
         </div>
@@ -91,7 +109,7 @@ export function ProxyClient() {
       </div>
 
       {/* Status filter tabs */}
-      <div className="flex gap-1 rounded-lg bg-[var(--surface-soft)] p-1 w-fit">
+      <div className="flex gap-1 rounded-lg bg-[var(--surface-subtle)] p-1 w-fit">
         {STATUS_FILTERS.map((f) => (
           <button
             key={f}
@@ -99,8 +117,8 @@ export function ProxyClient() {
             className={cn(
               "px-3 py-1.5 text-xs font-medium rounded-md transition-colors",
               statusFilter === f
-                ? "bg-white text-[var(--foreground)] shadow-sm"
-                : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+                ? "bg-white text-[var(--text-primary)] shadow-sm"
+                : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
             )}
           >
             {f}
@@ -109,35 +127,31 @@ export function ProxyClient() {
       </div>
 
       {/* Table */}
-      <div className="rounded-xl border border-[var(--border-soft)] bg-white shadow-sm overflow-hidden">
-        {loading ? (
-          <div className="p-8 text-center text-sm text-[var(--muted-foreground)]">
-            Loading…
-          </div>
-        ) : filtered.length === 0 ? (
-          <div className="p-8 text-center text-sm text-[var(--muted-foreground)]">
+      <div className="slipwise-panel overflow-hidden">
+        {filtered.length === 0 ? (
+          <div className="p-8 text-center text-sm text-[var(--text-muted)]">
             No proxy grants found.
           </div>
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-[var(--border-soft)] bg-[var(--surface-soft)]">
-                <th className="text-left px-4 py-3 font-medium text-[var(--muted-foreground)]">
+              <tr className="border-b border-[var(--border-soft)] bg-[var(--surface-subtle)]">
+                <th className="text-left px-4 py-3 font-medium text-xs text-[var(--text-muted)] uppercase tracking-wider">
                   Actor
                 </th>
-                <th className="text-left px-4 py-3 font-medium text-[var(--muted-foreground)]">
+                <th className="text-left px-4 py-3 font-medium text-xs text-[var(--text-muted)] uppercase tracking-wider">
                   Representing
                 </th>
-                <th className="text-left px-4 py-3 font-medium text-[var(--muted-foreground)]">
+                <th className="text-left px-4 py-3 font-medium text-xs text-[var(--text-muted)] uppercase tracking-wider">
                   Scope
                 </th>
-                <th className="text-left px-4 py-3 font-medium text-[var(--muted-foreground)]">
+                <th className="text-left px-4 py-3 font-medium text-xs text-[var(--text-muted)] uppercase tracking-wider">
                   Expires
                 </th>
-                <th className="text-left px-4 py-3 font-medium text-[var(--muted-foreground)]">
+                <th className="text-left px-4 py-3 font-medium text-xs text-[var(--text-muted)] uppercase tracking-wider">
                   Status
                 </th>
-                <th className="text-right px-4 py-3 font-medium text-[var(--muted-foreground)]">
+                <th className="text-right px-4 py-3 font-medium text-xs text-[var(--text-muted)] uppercase tracking-wider">
                   Actions
                 </th>
               </tr>
@@ -146,18 +160,18 @@ export function ProxyClient() {
               {filtered.map((g) => (
                 <tr
                   key={g.id}
-                  className="border-b border-[var(--border-soft)] last:border-0 hover:bg-[var(--surface-soft)] transition-colors"
+                  className="border-b border-[var(--border-soft)] last:border-0 hover:bg-[var(--surface-subtle)]/50 transition-colors"
                 >
                   <td className="px-4 py-3">
-                    <div className="font-medium text-[var(--foreground)]">
+                    <div className="font-medium text-[var(--text-primary)]">
                       {g.actorName}
                     </div>
-                    <div className="text-xs text-[var(--muted-foreground)]">
+                    <div className="text-xs text-[var(--text-muted)]">
                       {g.actorEmail}
                     </div>
                   </td>
                   <td className="px-4 py-3">
-                    <div className="font-medium text-[var(--foreground)]">
+                    <div className="font-medium text-[var(--text-primary)]">
                       {g.representedName}
                     </div>
                   </td>
@@ -170,7 +184,7 @@ export function ProxyClient() {
                       ))}
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-[var(--muted-foreground)]">
+                  <td className="px-4 py-3 text-[var(--text-muted)]">
                     {new Date(g.expiresAt).toLocaleDateString()}
                   </td>
                   <td className="px-4 py-3">
@@ -221,12 +235,13 @@ export function ProxyClient() {
       {/* Grant Proxy Modal */}
       {showModal && (
         <GrantProxyModal
-          members={members}
+          members={initialMembers}
           onClose={() => setShowModal(false)}
           onCreated={() => {
             setShowModal(false);
-            load();
+            router.refresh();
           }}
+          createGrant={createGrant}
         />
       )}
     </div>
@@ -239,10 +254,12 @@ function GrantProxyModal({
   members,
   onClose,
   onCreated,
+  createGrant,
 }: {
   members: OrgMember[];
   onClose: () => void;
   onCreated: () => void;
+  createGrant: ProxyClientProps["createGrant"];
 }) {
   const [actorId, setActorId] = useState("");
   const [representedId, setRepresentedId] = useState("");
@@ -292,7 +309,7 @@ function GrantProxyModal({
     }
 
     setSaving(true);
-    const result = await createProxyGrant({
+    const result = await createGrant({
       actorId,
       representedId,
       scope,
@@ -310,21 +327,24 @@ function GrantProxyModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="w-full max-w-lg rounded-xl bg-white p-6 shadow-xl">
-        <h3 className="text-lg font-semibold text-[var(--foreground)] mb-4">
-          Grant Proxy Access
-        </h3>
+      <div className="w-full max-w-lg rounded-xl bg-white p-6 shadow-xl slipwise-panel">
+        <div className="flex items-center gap-2.5 mb-4">
+          <ShieldCheck className="h-5 w-5 text-[var(--brand-primary)]" />
+          <h3 className="text-base font-semibold text-[var(--text-primary)]">
+            Grant Proxy Access
+          </h3>
+        </div>
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* Actor */}
           <div>
-            <label className="block text-sm font-medium text-[var(--foreground)] mb-1">
+            <label className="block text-sm font-medium text-[var(--text-primary)] mb-1">
               Actor (who will act)
             </label>
             <select
               required
               value={actorId}
               onChange={(e) => setActorId(e.target.value)}
-              className="w-full rounded-lg border border-[var(--border-strong)] bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--ring)]"
+              className="w-full rounded-lg border border-[var(--border-soft)] bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--focus-ring)]"
             >
               <option value="">Select member…</option>
               {members.map((m) => (
@@ -337,14 +357,14 @@ function GrantProxyModal({
 
           {/* Represented */}
           <div>
-            <label className="block text-sm font-medium text-[var(--foreground)] mb-1">
+            <label className="block text-sm font-medium text-[var(--text-primary)] mb-1">
               Representing (act on behalf of)
             </label>
             <select
               required
               value={representedId}
               onChange={(e) => setRepresentedId(e.target.value)}
-              className="w-full rounded-lg border border-[var(--border-strong)] bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--ring)]"
+              className="w-full rounded-lg border border-[var(--border-soft)] bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--focus-ring)]"
             >
               <option value="">Select member…</option>
               {members.map((m) => (
@@ -357,7 +377,7 @@ function GrantProxyModal({
 
           {/* Scope */}
           <div>
-            <label className="block text-sm font-medium text-[var(--foreground)] mb-2">
+            <label className="block text-sm font-medium text-[var(--text-primary)] mb-2">
               Scope
             </label>
             <div className="flex flex-wrap gap-2">
@@ -367,8 +387,8 @@ function GrantProxyModal({
                   className={cn(
                     "inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium cursor-pointer transition-colors",
                     scope.includes(s)
-                      ? "border-[var(--accent)] bg-red-50 text-[var(--accent)]"
-                      : "border-[var(--border-soft)] text-[var(--muted-foreground)] hover:border-[var(--border-strong)]"
+                      ? "border-[var(--brand-primary)] bg-[var(--surface-selected)] text-[var(--brand-primary)]"
+                      : "border-[var(--border-soft)] text-[var(--text-muted)] hover:border-[var(--border-default)]"
                   )}
                 >
                   <input
@@ -385,7 +405,7 @@ function GrantProxyModal({
 
           {/* Reason */}
           <div>
-            <label className="block text-sm font-medium text-[var(--foreground)] mb-1">
+            <label className="block text-sm font-medium text-[var(--text-primary)] mb-1">
               Reason
             </label>
             <textarea
@@ -395,16 +415,16 @@ function GrantProxyModal({
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               placeholder="Explain why this proxy is needed (min 10 chars)…"
-              className="w-full rounded-lg border border-[var(--border-strong)] bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--ring)] resize-none"
+              className="w-full rounded-lg border border-[var(--border-soft)] bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--focus-ring)] resize-none"
             />
-            <p className="mt-1 text-xs text-[var(--muted-foreground)]">
+            <p className="mt-1 text-xs text-[var(--text-muted)]">
               {reason.trim().length}/10 characters minimum
             </p>
           </div>
 
           {/* Expiry */}
           <div>
-            <label className="block text-sm font-medium text-[var(--foreground)] mb-1">
+            <label className="block text-sm font-medium text-[var(--text-primary)] mb-1">
               Expires
             </label>
             <input
@@ -414,15 +434,15 @@ function GrantProxyModal({
               max={maxDate}
               value={expiresAt}
               onChange={(e) => setExpiresAt(e.target.value)}
-              className="w-full rounded-lg border border-[var(--border-strong)] bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--ring)]"
+              className="w-full rounded-lg border border-[var(--border-soft)] bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--focus-ring)]"
             />
-            <p className="mt-1 text-xs text-[var(--muted-foreground)]">
+            <p className="mt-1 text-xs text-[var(--text-muted)]">
               Maximum 90 days from today
             </p>
           </div>
 
           {error && (
-            <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">
+            <p className="text-sm text-[var(--state-danger)] bg-[var(--state-danger-soft)] rounded-lg px-3 py-2">
               {error}
             </p>
           )}

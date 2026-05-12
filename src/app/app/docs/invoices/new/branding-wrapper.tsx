@@ -26,6 +26,14 @@ export type ExistingInvoice = {
     id: string;
     name: string;
   } | null;
+  tagAssignments?: Array<{
+    tag: {
+      id: string;
+      name: string;
+      slug: string;
+      color: string | null;
+    };
+  }>;
 };
 
 interface InvoiceBrandingWrapperProps {
@@ -70,6 +78,7 @@ export function InvoiceBrandingWrapper({
       <InvoiceWorkspace
         existingInvoice={existingInvoice}
         initialTemplateId={initialTemplateId}
+        initialAccentColor={branding.accentColor}
         customers={customers}
         inventoryItems={inventoryItems}
       />

@@ -1,0 +1,11 @@
+export { KpiCard } from "./kpi-card";
+export { KpiRow } from "./kpi-row";
+export { QuickActionCard } from "./quick-action-card";
+export { DashboardSection, ContentPanel } from "./dashboard-section";
+export { ActivityItem, ActivityList } from "./activity-list";
+export { ActivitySidebar } from "./activity-sidebar";
+export { StatusBadge } from "./status-badge";
+export { RevenueChart } from "./revenue-chart";
+export { DocBreakdownChart } from "./doc-breakdown-chart";
+export { ModuleGrid } from "./module-grid";
+export { RecentDocs } from "./recent-docs";

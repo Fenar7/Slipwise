@@ -1,6 +1,14 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import {
+  FinanceTable,
+  FinanceTableHeader,
+  FinanceTableHead,
+  FinanceTableBody,
+  FinanceTableRow,
+  FinanceTableCell,
+} from "@/components/ui/finance-table";
 import { getBooksCashFlow } from "../../actions";
 import { ExportBooksReportButton } from "../../components/export-books-report-button";
 import { formatBooksMoney } from "../../view-helpers";
@@ -27,7 +35,9 @@ export default async function CashFlowPage({ searchParams }: CashFlowPageProps) 
   if (!result.success) {
     return (
       <div className="mx-auto max-w-6xl">
-        <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{result.error}</div>
+        <div className="rounded-xl bg-[var(--state-danger-soft)] px-4 py-3 text-sm text-[var(--state-danger)]">
+          {result.error}
+        </div>
       </div>
     );
   }
@@ -39,12 +49,12 @@ export default async function CashFlowPage({ searchParams }: CashFlowPageProps) 
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-semibold text-slate-900">Cash Flow</h1>
+            <h1 className="text-2xl font-semibold text-[var(--text-primary)]">Cash Flow</h1>
             <Badge variant={Math.abs(report.reconciliationDifference) <= 0.01 ? "success" : "warning"}>
               {Math.abs(report.reconciliationDifference) <= 0.01 ? "Reconciled" : "Difference"}
             </Badge>
           </div>
-          <p className="mt-1 text-sm text-slate-500">
+          <p className="mt-1 text-sm text-[var(--text-muted)]">
             Indirect cash flow built from net profit, working capital deltas, and bank-ledger balances.
           </p>
         </div>
@@ -59,17 +69,17 @@ export default async function CashFlowPage({ searchParams }: CashFlowPageProps) 
 
       <Card>
         <CardHeader>
-          <h2 className="text-lg font-semibold text-slate-900">Filters</h2>
+          <h2 className="text-base font-semibold text-[var(--text-primary)]">Filters</h2>
         </CardHeader>
         <CardContent>
           <form className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             <label className="block text-sm">
-              <span className="mb-1 block font-medium text-slate-700">Start date</span>
-              <input type="date" name="startDate" defaultValue={params.startDate ?? ""} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+              <span className="mb-1 block font-medium text-[var(--text-primary)]">Start date</span>
+              <input type="date" name="startDate" defaultValue={params.startDate ?? ""} className="w-full rounded-lg border border-[var(--border-default)] bg-white px-3 py-2 text-sm text-[var(--text-primary)] transition-colors focus:border-[var(--brand-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--focus-ring)]" />
             </label>
             <label className="block text-sm">
-              <span className="mb-1 block font-medium text-slate-700">End date</span>
-              <input type="date" name="endDate" defaultValue={params.endDate ?? ""} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+              <span className="mb-1 block font-medium text-[var(--text-primary)]">End date</span>
+              <input type="date" name="endDate" defaultValue={params.endDate ?? ""} className="w-full rounded-lg border border-[var(--border-default)] bg-white px-3 py-2 text-sm text-[var(--text-primary)] transition-colors focus:border-[var(--brand-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--focus-ring)]" />
             </label>
             <div className="flex items-end">
               <Button type="submit" variant="secondary">Apply</Button>
@@ -78,7 +88,7 @@ export default async function CashFlowPage({ searchParams }: CashFlowPageProps) 
         </CardContent>
       </Card>
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
         {[
           { label: "Opening Cash", value: formatBooksMoney(report.openingCash) },
           { label: "Closing Cash", value: formatBooksMoney(report.closingCash) },
@@ -88,10 +98,10 @@ export default async function CashFlowPage({ searchParams }: CashFlowPageProps) 
         ].map((item) => (
           <Card key={item.label}>
             <CardHeader>
-              <p className="text-xs uppercase tracking-[0.18em] text-slate-500">{item.label}</p>
+              <p className="text-xs uppercase tracking-[0.12em] text-[var(--text-muted)]">{item.label}</p>
             </CardHeader>
             <CardContent>
-              <p className="text-xl font-semibold text-slate-900">{item.value}</p>
+              <p className="text-xl font-semibold text-[var(--text-primary)] tabular-nums">{item.value}</p>
             </CardContent>
           </Card>
         ))}
@@ -99,42 +109,44 @@ export default async function CashFlowPage({ searchParams }: CashFlowPageProps) 
 
       <Card>
         <CardHeader>
-          <h2 className="text-lg font-semibold text-slate-900">Working capital adjustments</h2>
-          <p className="mt-1 text-sm text-slate-500">
+          <h2 className="text-base font-semibold text-[var(--text-primary)]">Working capital adjustments</h2>
+          <p className="mt-1 text-sm text-[var(--text-muted)]">
             Changes in AR, AP, and tax control accounts that bridge accrual profit to cash movement.
           </p>
         </CardHeader>
         <CardContent className="px-0 py-0">
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-                  <th className="px-6 py-3">Adjustment</th>
-                  <th className="px-6 py-3 text-right">Amount</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200">
-                {report.adjustments.map((row) => (
-                  <tr key={row.label}>
-                    <td className="px-6 py-4 text-sm text-slate-900">{row.label}</td>
-                    <td className="px-6 py-4 text-right text-sm text-slate-700">{formatBooksMoney(row.amount)}</td>
-                  </tr>
-                ))}
-                <tr className="bg-slate-50">
-                  <td className="px-6 py-4 text-sm font-medium text-slate-900">Total Adjustments</td>
-                  <td className="px-6 py-4 text-right text-sm font-semibold text-slate-900">
-                    {formatBooksMoney(report.totalAdjustments)}
-                  </td>
-                </tr>
-                <tr className="bg-slate-50">
-                  <td className="px-6 py-4 text-sm font-medium text-slate-900">Actual Net Cash Movement</td>
-                  <td className="px-6 py-4 text-right text-sm font-semibold text-slate-900">
-                    {formatBooksMoney(report.actualNetCashMovement)}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+          <FinanceTable>
+            <FinanceTableHeader>
+              <FinanceTableHead>Adjustment</FinanceTableHead>
+              <FinanceTableHead align="right">Amount</FinanceTableHead>
+            </FinanceTableHeader>
+            <FinanceTableBody>
+              {report.adjustments.map((row) => (
+                <FinanceTableRow key={row.label}>
+                  <FinanceTableCell variant="primary">{row.label}</FinanceTableCell>
+                  <FinanceTableCell align="right" variant="numeric">
+                    {formatBooksMoney(row.amount)}
+                  </FinanceTableCell>
+                </FinanceTableRow>
+              ))}
+              <FinanceTableRow className="bg-[var(--surface-subtle)]">
+                <FinanceTableCell variant="primary" className="font-medium">
+                  Total Adjustments
+                </FinanceTableCell>
+                <FinanceTableCell align="right" variant="numeric" className="font-semibold">
+                  {formatBooksMoney(report.totalAdjustments)}
+                </FinanceTableCell>
+              </FinanceTableRow>
+              <FinanceTableRow className="bg-[var(--surface-subtle)]">
+                <FinanceTableCell variant="primary" className="font-medium">
+                  Actual Net Cash Movement
+                </FinanceTableCell>
+                <FinanceTableCell align="right" variant="numeric" className="font-semibold">
+                  {formatBooksMoney(report.actualNetCashMovement)}
+                </FinanceTableCell>
+              </FinanceTableRow>
+            </FinanceTableBody>
+          </FinanceTable>
         </CardContent>
       </Card>
     </div>

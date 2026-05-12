@@ -2,8 +2,11 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { cn } from "@/lib/utils";
 import type { BankAccountType } from "@/generated/prisma/client";
 import { Button } from "@/components/ui/button";
+import { Modal } from "@/components/ui/modal";
+import { FormField, FormGrid, financeInputClassName } from "@/components/forms/form-primitives";
 import { createBooksBankAccount } from "../actions";
 
 const ACCOUNT_TYPES: Array<{ value: BankAccountType; label: string }> = [
@@ -77,144 +80,120 @@ export function CreateBankAccountModal() {
     <>
       <Button onClick={() => setOpen(true)}>New Bank Account</Button>
 
-      {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 px-4">
-          <div className="w-full max-w-2xl rounded-2xl bg-white shadow-xl">
-            <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
-              <div>
-                <h2 className="text-lg font-semibold text-slate-900">Add bank account</h2>
-                <p className="mt-1 text-sm text-slate-500">
-                  Create a cash, bank, or gateway-clearing account for reconciliation.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={close}
-                className="text-xl text-slate-400 hover:text-slate-700"
-                aria-label="Close"
-              >
-                ×
-              </button>
-            </div>
-
-            <div className="space-y-4 px-6 py-5">
-              {error && (
-                <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
-                  {error}
-                </div>
-              )}
-
-              <div className="grid gap-4 md:grid-cols-2">
-                <label className="block text-sm">
-                  <span className="mb-1 block font-medium text-slate-700">Account name</span>
-                  <input
-                    value={name}
-                    onChange={(event) => setName(event.target.value)}
-                    placeholder="e.g. HDFC Current Account"
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                  />
-                </label>
-
-                <label className="block text-sm">
-                  <span className="mb-1 block font-medium text-slate-700">Type</span>
-                  <select
-                    value={type}
-                    onChange={(event) => setType(event.target.value as BankAccountType)}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                  >
-                    {ACCOUNT_TYPES.map((accountType) => (
-                      <option key={accountType.value} value={accountType.value}>
-                        {accountType.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <label className="block text-sm">
-                  <span className="mb-1 block font-medium text-slate-700">Bank name</span>
-                  <input
-                    value={bankName}
-                    onChange={(event) => setBankName(event.target.value)}
-                    placeholder="e.g. HDFC Bank"
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                  />
-                </label>
-
-                <label className="block text-sm">
-                  <span className="mb-1 block font-medium text-slate-700">Masked account #</span>
-                  <input
-                    value={maskedAccountNo}
-                    onChange={(event) => setMaskedAccountNo(event.target.value)}
-                    placeholder="e.g. XXXX1234"
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                  />
-                </label>
-
-                <label className="block text-sm">
-                  <span className="mb-1 block font-medium text-slate-700">IFSC / SWIFT</span>
-                  <input
-                    value={ifscOrSwift}
-                    onChange={(event) => setIfscOrSwift(event.target.value)}
-                    placeholder="e.g. HDFC0001234"
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                  />
-                </label>
-
-                <label className="block text-sm">
-                  <span className="mb-1 block font-medium text-slate-700">Currency</span>
-                  <input
-                    value={currency}
-                    onChange={(event) => setCurrency(event.target.value.toUpperCase())}
-                    placeholder="INR"
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm uppercase"
-                    maxLength={3}
-                  />
-                </label>
-
-                <label className="block text-sm">
-                  <span className="mb-1 block font-medium text-slate-700">Opening balance</span>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={openingBalance}
-                    onChange={(event) => setOpeningBalance(event.target.value)}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                  />
-                </label>
-
-                <label className="block text-sm">
-                  <span className="mb-1 block font-medium text-slate-700">Opening balance date</span>
-                  <input
-                    type="date"
-                    value={openingBalanceDate}
-                    onChange={(event) => setOpeningBalanceDate(event.target.value)}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                  />
-                </label>
-              </div>
-
-              <label className="flex items-center gap-2 text-sm text-slate-700">
-                <input
-                  type="checkbox"
-                  checked={isPrimary}
-                  onChange={(event) => setIsPrimary(event.target.checked)}
-                  className="h-4 w-4 rounded border-slate-300"
-                />
-                Mark as primary settlement bank
-              </label>
-            </div>
-
-            <div className="flex items-center justify-end gap-3 border-t border-slate-200 px-6 py-4">
-              <Button variant="secondary" onClick={close} disabled={isPending}>
-                Cancel
-              </Button>
-              <Button onClick={submit} disabled={isPending}>
-                {isPending ? "Creating..." : "Create Bank Account"}
-              </Button>
-            </div>
+      <Modal
+        open={open}
+        onClose={close}
+        title="Add bank account"
+        subtitle="Create a cash, bank, or gateway-clearing account for reconciliation."
+        size="lg"
+        footer={
+          <>
+            <Button variant="secondary" onClick={close} disabled={isPending}>
+              Cancel
+            </Button>
+            <Button onClick={submit} disabled={isPending}>
+              {isPending ? "Creating..." : "Create Bank Account"}
+            </Button>
+          </>
+        }
+      >
+        {error && (
+          <div className="mb-4 rounded-lg bg-[var(--state-danger-soft)] px-4 py-3 text-sm text-[var(--state-danger)]">
+            {error}
           </div>
-        </div>
-      )}
+        )}
+
+        <FormGrid>
+          <FormField label="Account name" required>
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. HDFC Current Account"
+              className={financeInputClassName}
+            />
+          </FormField>
+
+          <FormField label="Type" required>
+            <select
+              value={type}
+              onChange={(e) => setType(e.target.value as BankAccountType)}
+              className={financeInputClassName}
+            >
+              {ACCOUNT_TYPES.map((accountType) => (
+                <option key={accountType.value} value={accountType.value}>
+                  {accountType.label}
+                </option>
+              ))}
+            </select>
+          </FormField>
+
+          <FormField label="Bank name">
+            <input
+              value={bankName}
+              onChange={(e) => setBankName(e.target.value)}
+              placeholder="e.g. HDFC Bank"
+              className={financeInputClassName}
+            />
+          </FormField>
+
+          <FormField label="Masked account #">
+            <input
+              value={maskedAccountNo}
+              onChange={(e) => setMaskedAccountNo(e.target.value)}
+              placeholder="e.g. XXXX1234"
+              className={financeInputClassName}
+            />
+          </FormField>
+
+          <FormField label="IFSC / SWIFT">
+            <input
+              value={ifscOrSwift}
+              onChange={(e) => setIfscOrSwift(e.target.value)}
+              placeholder="e.g. HDFC0001234"
+              className={financeInputClassName}
+            />
+          </FormField>
+
+          <FormField label="Currency">
+            <input
+              value={currency}
+              onChange={(e) => setCurrency(e.target.value.toUpperCase())}
+              placeholder="INR"
+              className={cn(financeInputClassName, "uppercase")}
+              maxLength={3}
+            />
+          </FormField>
+
+          <FormField label="Opening balance">
+            <input
+              type="number"
+              step="0.01"
+              value={openingBalance}
+              onChange={(e) => setOpeningBalance(e.target.value)}
+              className={cn(financeInputClassName, "text-right")}
+            />
+          </FormField>
+
+          <FormField label="Opening balance date">
+            <input
+              type="date"
+              value={openingBalanceDate}
+              onChange={(e) => setOpeningBalanceDate(e.target.value)}
+              className={financeInputClassName}
+            />
+          </FormField>
+        </FormGrid>
+
+        <label className="mt-4 flex items-center gap-2 text-sm text-[var(--text-secondary)]">
+          <input
+            type="checkbox"
+            checked={isPrimary}
+            onChange={(e) => setIsPrimary(e.target.checked)}
+            className="h-4 w-4 rounded border-[var(--border-default)]"
+          />
+          Mark as primary settlement bank
+        </label>
+      </Modal>
     </>
   );
 }

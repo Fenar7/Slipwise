@@ -1,13 +1,20 @@
 import type { Metadata } from "next";
-import { Lato } from "next/font/google";
+import { Inter, Manrope } from "next/font/google";
 import { Toaster } from "sonner";
 import { slipwiseBrand } from "@/components/foundation/slipwise-brand";
 import "./globals.css";
 
-const lato = Lato({
+const inter = Inter({
   subsets: ["latin"],
-  variable: "--font-lato",
-  weight: ["300", "400", "700", "900"],
+  variable: "--font-inter",
+  weight: ["400", "500", "600", "700"],
+  display: "swap",
+});
+
+const manrope = Manrope({
+  subsets: ["latin"],
+  variable: "--font-manrope",
+  weight: ["500", "600", "700", "800"],
   display: "swap",
 });
 
@@ -33,7 +40,7 @@ export default function RootLayout({
     <html
       lang="en"
       data-scroll-behavior="smooth"
-      className={`${lato.variable} h-full antialiased`}
+      className={`${inter.variable} ${manrope.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
         {children}

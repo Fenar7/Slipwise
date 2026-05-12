@@ -10,9 +10,10 @@ const {
   mockRequireRole: vi.fn(),
   mockGetOrgContext: vi.fn(),
   mockDb: {
-    sequence: { findFirst: vi.fn(), update: vi.fn() },
+    sequence: { findFirst: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
     sequenceFormat: { update: vi.fn(), create: vi.fn() },
     sequencePeriod: { update: vi.fn() },
+    sequenceSnapshot: { findFirst: vi.fn(), create: vi.fn() },
     auditLog: { findMany: vi.fn(), count: vi.fn() },
     $transaction: vi.fn(),
   },
@@ -83,14 +84,26 @@ describe("sequence-admin", () => {
       proxyGrantId: null,
       proxyScope: [],
     });
+    mockDb.sequence.findUnique.mockResolvedValue({
+      id: "seq-1",
+      name: "Test Sequence",
+      documentType: "invoice",
+      periodicity: "MONTHLY",
+      isActive: true,
+      formats: [{ id: "fmt-1", formatString: "INV-{YYYY}-{NNNN}", startCounter: 1, counterPadding: 4, isDefault: true }],
+      periods: [{ id: "per-1", startDate: new Date("2024-01-01"), endDate: new Date("2024-01-31"), currentCounter: 5, status: "OPEN" }],
+    });
+    mockDb.sequenceSnapshot.findFirst.mockResolvedValue(null);
+    mockDb.sequenceSnapshot.create.mockResolvedValue({ id: "snap-1", version: 1 });
     mockDb.$transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
       const txClient = {
         sequenceFormat: {
           update: mockDb.sequenceFormat.update,
           create: mockDb.sequenceFormat.create,
         },
-        sequence: { update: mockDb.sequence.update },
+        sequence: { findUnique: mockDb.sequence.findUnique, update: mockDb.sequence.update },
         sequencePeriod: { update: mockDb.sequencePeriod.update },
+        sequenceSnapshot: { findFirst: mockDb.sequenceSnapshot.findFirst, create: mockDb.sequenceSnapshot.create },
         auditLog: { create: vi.fn() },
         proxyGrant: { findFirst: vi.fn().mockResolvedValue(null) },
       };

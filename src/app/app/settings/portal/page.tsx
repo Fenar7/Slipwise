@@ -2,10 +2,14 @@
 import { useState, useEffect } from "react";
 import { useActiveOrg } from "@/hooks/use-active-org";
 import { usePermissions } from "@/hooks/use-permissions";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import {
+  SettingsCard,
+  SettingsCardHeader,
+  SettingsCardContent,
+} from "@/components/settings/settings-primitives";
 import { getPortalSettings, updatePortalSettings, revokeAllPortalTokens } from "./actions";
+import { DoorOpen, Link2, ShieldAlert } from "lucide-react";
 
 export default function PortalSettingsPage() {
   const { activeOrg } = useActiveOrg();
@@ -36,16 +40,20 @@ export default function PortalSettingsPage() {
 
   if (!activeOrg) {
     return (
-      <div className="text-sm text-[#666]">
-        No active organization. Complete onboarding first.
+      <div className="slipwise-panel p-6">
+        <p className="text-sm text-[var(--text-muted)]">
+          No active organization. Complete onboarding first.
+        </p>
       </div>
     );
   }
 
   if (!isAdmin) {
     return (
-      <div className="text-sm text-red-600">
-        You need admin or owner access to manage portal settings.
+      <div className="slipwise-panel p-6">
+        <p className="text-sm text-[var(--state-danger)]">
+          You need admin or owner access to manage portal settings.
+        </p>
       </div>
     );
   }
@@ -85,17 +93,24 @@ export default function PortalSettingsPage() {
 
   return (
     <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <h2 className="text-lg font-semibold text-[#1a1a1a]">Customer Portal</h2>
-          <p className="text-sm text-[#666]">
-            Allow customers to view their invoices and statements via a self-service portal.
-          </p>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSave} className="space-y-4 max-w-md">
+      <div>
+        <h2 className="text-base font-semibold text-[var(--text-primary)]">Customer Portal</h2>
+        <p className="mt-0.5 text-sm text-[var(--text-muted)]">
+          Allow customers to view their invoices and statements via a self-service portal.
+        </p>
+      </div>
+
+      <SettingsCard>
+        <SettingsCardHeader>
+          <div className="flex items-center gap-2.5">
+            <DoorOpen className="h-4 w-4 text-[var(--brand-primary)]" />
+            <h3 className="text-base font-semibold text-[var(--text-primary)]">Portal Settings</h3>
+          </div>
+        </SettingsCardHeader>
+        <SettingsCardContent>
+          <form onSubmit={handleSave} className="space-y-5 max-w-md">
             <div className="flex items-center gap-3">
-              <label className="block text-sm font-medium text-[#1a1a1a]">
+              <label className="block text-sm font-medium text-[var(--text-primary)]">
                 Portal Enabled
               </label>
               <button
@@ -104,7 +119,7 @@ export default function PortalSettingsPage() {
                 aria-checked={portalEnabled}
                 onClick={() => setPortalEnabled(!portalEnabled)}
                 className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                  portalEnabled ? "bg-[#dc2626]" : "bg-[#d1d5db]"
+                  portalEnabled ? "bg-[var(--brand-cta)]" : "bg-[var(--border-default)]"
                 }`}
               >
                 <span
@@ -113,13 +128,13 @@ export default function PortalSettingsPage() {
                   }`}
                 />
               </button>
-              <span className="text-sm text-[#666]">
+              <span className="text-sm text-[var(--text-muted)]">
                 {portalEnabled ? "Enabled" : "Disabled"}
               </span>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-[#1a1a1a] mb-1">
+              <label className="block text-sm font-medium text-[var(--text-primary)] mb-1">
                 Header Message
               </label>
               <input
@@ -127,65 +142,81 @@ export default function PortalSettingsPage() {
                 value={headerMessage}
                 onChange={(e) => setHeaderMessage(e.target.value)}
                 placeholder="Welcome to our customer portal"
-                className="w-full border border-[#e5e5e5] rounded-md px-3 py-2 text-sm text-[#1a1a1a] bg-white focus:outline-none focus:ring-2 focus:ring-[#dc2626]"
+                className="w-full rounded-lg border border-[var(--border-soft)] px-3 py-2 text-sm text-[var(--text-primary)] bg-white focus:outline-none focus:ring-2 focus:ring-[var(--focus-ring)]"
               />
             </div>
 
-            <Input
-              label="Support Email"
-              type="email"
-              value={supportEmail}
-              onChange={(e) => setSupportEmail(e.target.value)}
-              placeholder="support@yourcompany.com"
-            />
+            <div>
+              <label className="block text-sm font-medium text-[var(--text-primary)] mb-1">
+                Support Email
+              </label>
+              <input
+                type="email"
+                value={supportEmail}
+                onChange={(e) => setSupportEmail(e.target.value)}
+                placeholder="support@yourcompany.com"
+                className="w-full rounded-lg border border-[var(--border-soft)] px-3 py-2 text-sm text-[var(--text-primary)] bg-white focus:outline-none focus:ring-2 focus:ring-[var(--focus-ring)]"
+              />
+            </div>
 
-            <Input
-              label="Support Phone"
-              type="tel"
-              value={supportPhone}
-              onChange={(e) => setSupportPhone(e.target.value)}
-              placeholder="+91 98765 43210"
-            />
+            <div>
+              <label className="block text-sm font-medium text-[var(--text-primary)] mb-1">
+                Support Phone
+              </label>
+              <input
+                type="tel"
+                value={supportPhone}
+                onChange={(e) => setSupportPhone(e.target.value)}
+                placeholder="+91 98765 43210"
+                className="w-full rounded-lg border border-[var(--border-soft)] px-3 py-2 text-sm text-[var(--text-primary)] bg-white focus:outline-none focus:ring-2 focus:ring-[var(--focus-ring)]"
+              />
+            </div>
 
             {success === "settings" && (
-              <p className="text-sm text-green-600">✓ Portal settings saved</p>
+              <p className="text-sm text-[var(--state-success)]">✓ Portal settings saved</p>
             )}
             <Button type="submit" disabled={saving}>
               {saving ? "Saving…" : "Save settings"}
             </Button>
           </form>
-        </CardContent>
-      </Card>
+        </SettingsCardContent>
+      </SettingsCard>
 
-      <Card>
-        <CardHeader>
-          <h2 className="text-lg font-semibold text-[#1a1a1a]">Portal URL</h2>
-          <p className="text-sm text-[#666]">
+      <SettingsCard>
+        <SettingsCardHeader>
+          <div className="flex items-center gap-2.5">
+            <Link2 className="h-4 w-4 text-[var(--brand-primary)]" />
+            <h3 className="text-base font-semibold text-[var(--text-primary)]">Portal URL</h3>
+          </div>
+        </SettingsCardHeader>
+        <SettingsCardContent>
+          <p className="text-sm text-[var(--text-muted)] mb-3">
             Share this URL with customers so they can access the portal.
           </p>
-        </CardHeader>
-        <CardContent>
           <div className="flex items-center gap-3 max-w-lg">
-            <code className="flex-1 bg-[#f8f8f8] border border-[#e5e5e5] rounded-md px-3 py-2 text-sm font-mono text-[#1a1a1a] truncate">
+            <code className="flex-1 bg-[var(--surface-subtle)] border border-[var(--border-soft)] rounded-lg px-3 py-2 text-sm font-mono text-[var(--text-primary)] truncate">
               {portalUrl}
             </code>
             <Button type="button" onClick={handleCopyUrl} variant="secondary">
               {copied ? "Copied!" : "Copy"}
             </Button>
           </div>
-        </CardContent>
-      </Card>
+        </SettingsCardContent>
+      </SettingsCard>
 
-      <Card>
-        <CardHeader>
-          <h2 className="text-lg font-semibold text-[#1a1a1a]">Security</h2>
-          <p className="text-sm text-[#666]">
+      <SettingsCard>
+        <SettingsCardHeader>
+          <div className="flex items-center gap-2.5">
+            <ShieldAlert className="h-4 w-4 text-[var(--state-danger)]" />
+            <h3 className="text-base font-semibold text-[var(--text-primary)]">Security</h3>
+          </div>
+        </SettingsCardHeader>
+        <SettingsCardContent>
+          <p className="text-sm text-[var(--text-muted)] mb-4">
             Revoke all active portal tokens. Customers will need to request new magic links.
           </p>
-        </CardHeader>
-        <CardContent>
           {success?.startsWith("revoked-") && (
-            <p className="text-sm text-green-600 mb-3">
+            <p className="text-sm text-[var(--state-success)] mb-3">
               ✓ {success.replace("revoked-", "")} token(s) revoked
             </p>
           )}
@@ -197,8 +228,8 @@ export default function PortalSettingsPage() {
           >
             {revoking ? "Revoking…" : "Revoke all portal tokens"}
           </Button>
-        </CardContent>
-      </Card>
+        </SettingsCardContent>
+      </SettingsCard>
     </div>
   );
 }

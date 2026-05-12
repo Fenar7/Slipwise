@@ -19,6 +19,9 @@ env:
   # ── App ──────────────────────────────────────────────────────────────────────
   NEXT_PUBLIC_APP_URL: "http://localhost:3000"
   NEXT_PUBLIC_APP_NAME: "Slipwise One"
+  # Build memory: large TypeScript codebase (~790k lines incl. generated Prisma
+  # models) exceeds default Node heap during `next build` type-checking phase.
+  NODE_OPTIONS: "--max-old-space-size=6144"
 
 jobs:
   verify:

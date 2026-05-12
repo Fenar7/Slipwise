@@ -1,8 +1,11 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
+import { AnimatePresence, motion } from "motion/react";
 import { Badge } from "@/components/ui/badge";
-import { ChevronDown, Plus, Building2 } from "lucide-react";
+import { ChevronDown, Plus, Building2, Check, Settings } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { panelAppear, fadeInUp } from "@/components/foundation/motion-primitives";
 
 interface OrgItem {
   orgId: string;
@@ -11,7 +14,12 @@ interface OrgItem {
   role: string;
 }
 
-export function OrgSwitcher() {
+interface OrgSwitcherProps {
+  initialOrgName?: string;
+  fullWidth?: boolean;
+}
+
+export function OrgSwitcher({ initialOrgName, fullWidth }: OrgSwitcherProps) {
   const [orgs, setOrgs] = useState<OrgItem[]>([]);
   const [activeOrgId, setActiveOrgId] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
@@ -70,54 +78,134 @@ export function OrgSwitcher() {
 
   const activeOrg = orgs.find((o) => o.orgId === activeOrgId);
 
-  if (orgs.length === 0) return null;
+  if (orgs.length === 0) {
+    if (!initialOrgName) return null;
+    return (
+      <div className="flex items-center gap-2 rounded-lg border border-[var(--border-soft)] bg-[var(--surface-subtle)] px-3 py-1.5 text-sm">
+        <Building2 className="h-4 w-4 shrink-0 text-[var(--text-muted)]" />
+        <span className="font-medium text-[var(--text-primary)] max-w-[140px] truncate">
+          {initialOrgName}
+        </span>
+      </div>
+    );
+  }
 
   return (
-    <div className="relative" ref={ref}>
-      <button
+    <div className={cn("relative", fullWidth && "w-full")} ref={ref}>
+      <motion.button
         onClick={() => setOpen(!open)}
         disabled={switching}
-        className="flex items-center gap-2 rounded-xl border border-[var(--border-strong)] bg-white px-3 py-2 text-sm transition-colors hover:bg-[var(--surface-soft)]"
+        whileTap={{ scale: 0.98 }}
+        className={cn(
+          "flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm transition-colors",
+          fullWidth && "w-full",
+          open
+            ? "border-[var(--brand-primary)] bg-[var(--surface-selected)]"
+            : "border-[var(--border-soft)] bg-white hover:bg-[var(--surface-subtle)]"
+        )}
       >
-        <Building2 className="h-4 w-4 text-[#666]" />
-        <span className="font-medium text-[#1a1a1a] max-w-[160px] truncate">
-          {activeOrg?.name ?? "Select Organization"}
+        <Building2 className="h-4 w-4 shrink-0 text-[var(--text-muted)]" />
+        <span className="font-medium text-[var(--text-primary)] max-w-[140px] truncate">
+          {activeOrg?.name ?? initialOrgName ?? "Select Organization"}
         </span>
         {activeOrg && (
-          <Badge variant="default">{activeOrg.role}</Badge>
+          <Badge variant="default" className="ml-1 shrink-0">
+            {activeOrg.role}
+          </Badge>
         )}
-        <ChevronDown className="h-3 w-3 text-[#666]" />
-      </button>
+        <motion.span
+          animate={{ rotate: open ? 180 : 0 }}
+          transition={{ duration: 0.2, ease: "easeInOut" }}
+        >
+          <ChevronDown className="h-3 w-3 shrink-0 text-[var(--text-muted)]" />
+        </motion.span>
+      </motion.button>
 
-      {open && (
-        <div className="absolute left-0 top-full z-50 mt-1 w-64 rounded-xl border border-[var(--border-strong)] bg-white shadow-lg">
-          <div className="p-1">
-            {orgs.map((org) => (
-              <button
-                key={org.orgId}
-                onClick={() => handleSwitch(org.orgId)}
-                className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition-colors ${
-                  org.orgId === activeOrgId
-                    ? "bg-[var(--surface-soft)] font-medium"
-                    : "hover:bg-[var(--surface-soft)]"
-                }`}
-              >
-                <span className="truncate text-[#1a1a1a]">{org.name}</span>
-                <Badge variant="default">{org.role}</Badge>
-              </button>
-            ))}
-          </div>
-          <div className="border-t border-[var(--border-soft)] p-1">
-            <a
-              href="/onboarding"
-              className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-[#666] hover:bg-[var(--surface-soft)] hover:text-[#1a1a1a] transition-colors"
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            variants={panelAppear}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
+            className={cn(
+              "absolute right-0 top-full z-50 mt-1.5 overflow-hidden rounded-xl border border-[var(--border-soft)] bg-[var(--surface-panel)] shadow-lg",
+              fullWidth ? "left-0 w-full min-w-[220px]" : "w-72"
+            )}
+          >
+            {/* Header */}
+            <div className="border-b border-[var(--border-soft)] px-3 py-2.5">
+              <p className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+                Organizations
+              </p>
+            </div>
+
+            {/* Org list */}
+            <motion.div
+              variants={fadeInUp}
+              initial="hidden"
+              animate="visible"
+              className="max-h-72 overflow-y-auto p-1.5"
             >
-              <Plus className="h-4 w-4" />
-              Create New Organization
-            </a>
-          </div>
-        </div>
-      )}
+              {orgs.map((org) => (
+                <motion.button
+                  key={org.orgId}
+                  onClick={() => handleSwitch(org.orgId)}
+                  disabled={switching}
+                  whileTap={{ scale: 0.99 }}
+                  className={cn(
+                    "flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition-colors",
+                    org.orgId === activeOrgId
+                      ? "bg-[var(--surface-selected)] font-medium"
+                      : "hover:bg-[var(--surface-subtle)]"
+                  )}
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div
+                      className={cn(
+                        "flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-xs font-bold text-white",
+                        org.orgId === activeOrgId ? "bg-[var(--brand-primary)]" : "bg-[var(--border-default)]"
+                      )}
+                    >
+                      {org.name.charAt(0).toUpperCase()}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="truncate text-[var(--text-primary)]">{org.name}</p>
+                      <p className="text-[0.7rem] text-[var(--text-muted)]">{org.slug}</p>
+                    </div>
+                  </div>
+                  {org.orgId === activeOrgId && (
+                    <Check className="h-4 w-4 shrink-0 text-[var(--brand-primary)]" />
+                  )}
+                  {org.orgId !== activeOrgId && (
+                    <Badge variant="default" className="shrink-0 ml-2">
+                      {org.role}
+                    </Badge>
+                  )}
+                </motion.button>
+              ))}
+            </motion.div>
+
+            {/* Footer actions */}
+            <div className="border-t border-[var(--border-soft)] p-1.5 space-y-0.5">
+              <a
+                href="/app/settings/organization"
+                className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-[var(--text-secondary)] hover:bg-[var(--surface-subtle)] hover:text-[var(--text-primary)] transition-colors"
+              >
+                <Settings className="h-4 w-4" />
+                Organization Settings
+              </a>
+              <a
+                href="/onboarding"
+                className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-[var(--text-secondary)] hover:bg-[var(--surface-subtle)] hover:text-[var(--text-primary)] transition-colors"
+              >
+                <Plus className="h-4 w-4" />
+                Create New Organization
+              </a>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

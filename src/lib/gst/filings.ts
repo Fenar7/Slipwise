@@ -162,7 +162,7 @@ async function buildValidationSnapshot(orgId: string, periodMonth: string) {
 
   const reportingInvoices = invoices.map((invoice) => ({
     id: invoice.id,
-    invoiceNumber: invoice.invoiceNumber,
+    invoiceNumber: invoice.invoiceNumber ?? "",
     invoiceDate: formatIsoDate(invoice.invoiceDate),
     customerId: invoice.customerId,
     customerGstin: invoice.customerGstin,

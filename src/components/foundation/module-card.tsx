@@ -67,12 +67,12 @@ export function ModuleCard({ module }: ModuleCardProps) {
   return (
     <article
       data-animate="generator-card"
-      className="group relative overflow-hidden rounded-2xl border border-[var(--border-strong)] bg-white p-6 shadow-[var(--shadow-soft)] transition-shadow hover:shadow-[var(--shadow-card)]"
+      className="group relative overflow-hidden rounded-xl border border-[var(--border-strong)] bg-white p-6 transition-colors hover:border-[var(--border-brand)]"
     >
       <div className="relative flex h-full flex-col gap-6">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <span className="flex h-12 w-12 items-center justify-center rounded-xl border border-[var(--border-soft)] bg-[var(--surface-soft)] text-[var(--accent)]">
+            <span className="flex h-12 w-12 items-center justify-center rounded-lg border border-[var(--border-soft)] bg-[var(--surface-soft)] text-[var(--accent)]">
               <Icon className="h-5 w-5" />
             </span>
             <p className="mt-4 text-[0.68rem] font-semibold uppercase tracking-[0.32em] text-[var(--muted-foreground)]">
@@ -99,7 +99,7 @@ export function ModuleCard({ module }: ModuleCardProps) {
 
         <Link
           href={module.href}
-          className="slipwise-btn slipwise-btn-primary mt-auto w-fit gap-2 px-4 py-2 text-sm hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--background)]"
+          className="slipwise-btn slipwise-btn-primary mt-auto w-fit gap-2 px-4 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--background)]"
         >
           Open workspace
           <span aria-hidden="true">→</span>

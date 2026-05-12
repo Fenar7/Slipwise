@@ -59,7 +59,7 @@ export async function sendInvoiceEmail(
     const viewUrl = `${baseUrl}/invoice/${publicToken.token}`;
 
     const html = invoiceEmailHtml({
-      invoiceNumber: invoice.invoiceNumber,
+      invoiceNumber: invoice.invoiceNumber ?? "",
       customerName: invoice.customer?.name || recipientEmail,
       totalAmount: formatCurrency(toAccountingNumber(invoice.totalAmount)),
       dueDate: invoice.dueDate ? formatIsoDate(invoice.dueDate) : "",

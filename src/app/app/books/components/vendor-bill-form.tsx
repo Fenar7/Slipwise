@@ -2,7 +2,9 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { FormField, FormGrid, FormSection, FormActions, financeInputClassName } from "@/components/forms/form-primitives";
 import { createBooksVendorBill, updateBooksVendorBill } from "../actions";
 
 interface VendorBillFormProps {
@@ -127,15 +129,18 @@ export function VendorBillForm({
 
   return (
     <div className="space-y-6">
-      {error && <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
+      {error && (
+        <div className="rounded-xl bg-[var(--state-danger-soft)] px-4 py-3 text-sm text-[var(--state-danger)]">
+          {error}
+        </div>
+      )}
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <label className="block text-sm">
-          <span className="mb-1 block font-medium text-slate-700">Vendor</span>
+      <FormGrid columns={2}>
+        <FormField label="Vendor">
           <select
             value={vendorId}
             onChange={(event) => setVendorId(event.target.value)}
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            className={financeInputClassName}
           >
             <option value="">Select vendor</option>
             {vendors.map((vendor) => (
@@ -145,14 +150,13 @@ export function VendorBillForm({
               </option>
             ))}
           </select>
-        </label>
+        </FormField>
 
-        <label className="block text-sm">
-          <span className="mb-1 block font-medium text-slate-700">Expense account</span>
+        <FormField label="Expense account">
           <select
             value={expenseAccountId}
             onChange={(event) => setExpenseAccountId(event.target.value)}
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            className={financeInputClassName}
           >
             <option value="">Select expense account</option>
             {expenseAccounts.map((account) => (
@@ -161,106 +165,97 @@ export function VendorBillForm({
               </option>
             ))}
           </select>
-        </label>
+        </FormField>
 
-        <label className="block text-sm">
-          <span className="mb-1 block font-medium text-slate-700">Bill date</span>
+        <FormField label="Bill date">
           <input
             type="date"
             value={billDate}
             onChange={(event) => setBillDate(event.target.value)}
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            className={financeInputClassName}
           />
-        </label>
+        </FormField>
 
-        <label className="block text-sm">
-          <span className="mb-1 block font-medium text-slate-700">Due date</span>
+        <FormField label="Due date">
           <input
             type="date"
             value={dueDate}
             onChange={(event) => setDueDate(event.target.value)}
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            className={financeInputClassName}
           />
-        </label>
+        </FormField>
 
-        <label className="block text-sm md:col-span-2">
-          <span className="mb-1 block font-medium text-slate-700">Currency</span>
+        <FormField label="Currency" className="md:col-span-2 xl:col-span-1">
           <input
             value={currency}
             onChange={(event) => setCurrency(event.target.value.toUpperCase())}
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm uppercase"
+            className={cn(financeInputClassName, "uppercase")}
             maxLength={3}
           />
-        </label>
+        </FormField>
 
-        <label className="block text-sm md:col-span-2 xl:col-span-2">
-          <span className="mb-1 block font-medium text-slate-700">Notes</span>
+        <FormField label="Notes" className="md:col-span-2">
           <textarea
             value={notes}
             onChange={(event) => setNotes(event.target.value)}
             rows={3}
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            className={financeInputClassName}
             placeholder="Optional context, bill reference, or payment instructions"
           />
-        </label>
-      </div>
+        </FormField>
+      </FormGrid>
 
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-slate-900">Bill lines</h3>
-          <Button type="button" variant="secondary" size="sm" onClick={addLine}>
-            Add line
-          </Button>
-        </div>
-
+      <FormSection
+        title="Bill lines"
+        description="Add line items for services, goods, or expenses."
+      >
         <div className="space-y-3">
           {lines.map((line, index) => (
-            <div key={`vendor-bill-line-${index}`} className="grid gap-3 rounded-xl border border-slate-200 p-4 md:grid-cols-[2fr_repeat(3,1fr)_auto]">
-              <label className="block text-sm">
-                <span className="mb-1 block font-medium text-slate-700">Description</span>
+            <div
+              key={`vendor-bill-line-${index}`}
+              className="grid gap-3 rounded-xl border border-[var(--border-soft)] bg-[var(--surface-panel)] p-4 md:grid-cols-[2fr_repeat(3,1fr)_auto]"
+            >
+              <FormField label="Description">
                 <input
                   value={line.description}
                   onChange={(event) => updateLine(index, "description", event.target.value)}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  className={financeInputClassName}
                   placeholder="Consulting, software, rent, utilities..."
                 />
-              </label>
+              </FormField>
 
-              <label className="block text-sm">
-                <span className="mb-1 block font-medium text-slate-700">Qty</span>
+              <FormField label="Qty">
                 <input
                   type="number"
                   min="0"
                   step="0.01"
                   value={line.quantity}
                   onChange={(event) => updateLine(index, "quantity", event.target.value)}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  className={cn(financeInputClassName, "text-right")}
                 />
-              </label>
+              </FormField>
 
-              <label className="block text-sm">
-                <span className="mb-1 block font-medium text-slate-700">Unit price</span>
+              <FormField label="Unit price">
                 <input
                   type="number"
                   min="0"
                   step="0.01"
                   value={line.unitPrice}
                   onChange={(event) => updateLine(index, "unitPrice", event.target.value)}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  className={cn(financeInputClassName, "text-right")}
                 />
-              </label>
+              </FormField>
 
-              <label className="block text-sm">
-                <span className="mb-1 block font-medium text-slate-700">Tax %</span>
+              <FormField label="Tax %">
                 <input
                   type="number"
                   min="0"
                   step="0.01"
                   value={line.taxRate}
                   onChange={(event) => updateLine(index, "taxRate", event.target.value)}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  className={cn(financeInputClassName, "text-right")}
                 />
-              </label>
+              </FormField>
 
               <div className="flex items-end">
                 <Button
@@ -276,13 +271,17 @@ export function VendorBillForm({
             </div>
           ))}
         </div>
-      </div>
 
-      <div className="flex items-center justify-end gap-3">
+        <Button type="button" variant="secondary" size="sm" onClick={addLine}>
+          Add line
+        </Button>
+      </FormSection>
+
+      <FormActions>
         <Button type="button" onClick={submit} disabled={isPending}>
           {isPending ? (vendorBillId ? "Saving..." : "Creating...") : vendorBillId ? "Save Bill" : "Create Bill"}
         </Button>
-      </div>
+      </FormActions>
     </div>
   );
 }

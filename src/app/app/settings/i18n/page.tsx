@@ -1,9 +1,15 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
+import {
+  SettingsCard,
+  SettingsCardHeader,
+  SettingsCardContent,
+  SettingsSectionHeader,
+  SettingsFormField,
+  SettingsSaveBar,
+} from "@/components/settings/settings-primitives";
 import {
   getOrgI18nSettings,
   updateOrgLanguageSettings,
@@ -11,6 +17,7 @@ import {
 } from "./actions";
 import { SUPPORTED_CURRENCIES, type SupportedCurrency } from "@/lib/currency/utils";
 import { COUNTRY_CONFIGS, SUPPORTED_COUNTRIES } from "@/lib/currency/country-config";
+import { Languages, Globe } from "lucide-react";
 
 const LANGUAGES = [
   { code: "en", label: "English" },
@@ -22,19 +29,14 @@ const LANGUAGES = [
 ];
 
 export default function I18nSettingsPage() {
-  // ── Language state ──
   const [defaultLanguage, setDefaultLanguage] = useState("en");
   const [defaultDocLanguage, setDefaultDocLanguage] = useState("en");
-
-  // ── Country / currency state ──
   const [country, setCountry] = useState("IN");
   const [baseCurrency, setBaseCurrency] = useState<SupportedCurrency>("INR");
   const [timezone, setTimezone] = useState("Asia/Kolkata");
   const [vatRegNumber, setVatRegNumber] = useState("");
   const [vatRate, setVatRate] = useState("");
   const [fiscalYearStart, setFiscalYearStart] = useState("4");
-
-  // ── UI state ──
   const [saving, setSaving] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -83,6 +85,7 @@ export default function I18nSettingsPage() {
     setSaving(null);
     if (result.success) {
       setSuccess("language");
+      setTimeout(() => setSuccess(null), 3000);
     } else {
       setError(result.error);
     }
@@ -104,39 +107,45 @@ export default function I18nSettingsPage() {
     setSaving(null);
     if (result.success) {
       setSuccess("country");
+      setTimeout(() => setSuccess(null), 3000);
     } else {
       setError(result.error);
     }
   }
 
   if (loading) {
-    return <p className="text-sm text-[#666]">Loading settings…</p>;
+    return (
+      <div className="slipwise-panel p-6">
+        <p className="text-sm text-[var(--text-muted)]">Loading settings…</p>
+      </div>
+    );
   }
 
   const selectClass =
-    "w-full border border-[#e5e5e5] rounded-md px-3 py-2 text-sm text-[#1a1a1a] bg-white focus:outline-none focus:ring-2 focus:ring-[#dc2626]";
+    "w-full rounded-lg border border-[var(--border-soft)] bg-white px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--focus-ring)]";
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 max-w-2xl">
       {error && (
-        <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-4 py-2">
+        <div className="rounded-lg border border-[var(--state-danger)]/20 bg-[var(--state-danger-soft)] px-4 py-3 text-sm text-[var(--state-danger)]">
           {error}
-        </p>
+        </div>
       )}
 
-      {/* ── Language Settings ── */}
-      <Card>
-        <CardHeader>
-          <h2 className="text-lg font-semibold text-[#1a1a1a]">
-            Language Settings
-          </h2>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSaveLanguage} className="space-y-4 max-w-md">
-            <div>
-              <label className="block text-sm font-medium text-[#1a1a1a] mb-1">
-                App UI Language
-              </label>
+      {/* Language Settings */}
+      <SettingsCard>
+        <SettingsCardHeader>
+          <div className="flex items-center gap-2.5">
+            <Languages className="h-4 w-4 text-[var(--brand-primary)]" />
+            <SettingsSectionHeader
+              title="Language Settings"
+              description="Choose the language for the app interface and exported documents."
+            />
+          </div>
+        </SettingsCardHeader>
+        <SettingsCardContent>
+          <form onSubmit={handleSaveLanguage} className="space-y-5">
+            <SettingsFormField label="App UI Language">
               <select
                 value={defaultLanguage}
                 onChange={(e) => setDefaultLanguage(e.target.value)}
@@ -148,11 +157,12 @@ export default function I18nSettingsPage() {
                   </option>
                 ))}
               </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-[#1a1a1a] mb-1">
-                Document Language
-              </label>
+            </SettingsFormField>
+
+            <SettingsFormField
+              label="Document Language"
+              hint="Language used for invoices, salary slips, and other PDF exports."
+            >
               <select
                 value={defaultDocLanguage}
                 onChange={(e) => setDefaultDocLanguage(e.target.value)}
@@ -164,87 +174,93 @@ export default function I18nSettingsPage() {
                   </option>
                 ))}
               </select>
-              <p className="text-xs text-[#999] mt-1">
-                Language used for invoices, salary slips, and other PDF exports.
-              </p>
-            </div>
-            {success === "language" && (
-              <p className="text-sm text-green-600">✓ Language settings saved</p>
-            )}
-            <Button type="submit" disabled={saving === "language"}>
-              {saving === "language" ? "Saving…" : "Save language settings"}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
+            </SettingsFormField>
 
-      {/* ── Country & Tax Configuration ── */}
-      <Card>
-        <CardHeader>
-          <h2 className="text-lg font-semibold text-[#1a1a1a]">
-            Country &amp; Tax Configuration
-          </h2>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSaveCountry} className="space-y-4 max-w-md">
-            <div>
-              <label className="block text-sm font-medium text-[#1a1a1a] mb-1">
-                Country
-              </label>
-              <select
-                value={country}
-                onChange={(e) => handleCountryChange(e.target.value)}
-                className={selectClass}
-              >
-                {SUPPORTED_COUNTRIES.map((code) => (
-                  <option key={code} value={code}>
-                    {COUNTRY_CONFIGS[code].name}
-                  </option>
-                ))}
-              </select>
+            <SettingsSaveBar
+              saving={saving === "language"}
+              saved={success === "language"}
+              saveLabel="Save language settings"
+            />
+          </form>
+        </SettingsCardContent>
+      </SettingsCard>
+
+      {/* Country & Tax Configuration */}
+      <SettingsCard>
+        <SettingsCardHeader>
+          <div className="flex items-center gap-2.5">
+            <Globe className="h-4 w-4 text-[var(--brand-primary)]" />
+            <SettingsSectionHeader
+              title="Country & Tax Configuration"
+              description="Set your operating country, currency, and tax defaults."
+            />
+          </div>
+        </SettingsCardHeader>
+        <SettingsCardContent>
+          <form onSubmit={handleSaveCountry} className="space-y-5">
+            <div className="grid gap-5 sm:grid-cols-2">
+              <SettingsFormField label="Country">
+                <select
+                  value={country}
+                  onChange={(e) => handleCountryChange(e.target.value)}
+                  className={selectClass}
+                >
+                  {SUPPORTED_COUNTRIES.map((code) => (
+                    <option key={code} value={code}>
+                      {COUNTRY_CONFIGS[code].name}
+                    </option>
+                  ))}
+                </select>
+              </SettingsFormField>
+
+              <SettingsFormField label="Base Currency">
+                <select
+                  value={baseCurrency}
+                  onChange={(e) =>
+                    setBaseCurrency(e.target.value as SupportedCurrency)
+                  }
+                  className={selectClass}
+                >
+                  {Object.entries(SUPPORTED_CURRENCIES).map(([code, info]) => (
+                    <option key={code} value={code}>
+                      {info.symbol} {info.name} ({code})
+                    </option>
+                  ))}
+                </select>
+              </SettingsFormField>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-[#1a1a1a] mb-1">
-                Base Currency
-              </label>
-              <select
-                value={baseCurrency}
-                onChange={(e) =>
-                  setBaseCurrency(e.target.value as SupportedCurrency)
-                }
-                className={selectClass}
+
+            <SettingsFormField label="Timezone">
+              <Input
+                value={timezone}
+                onChange={(e) => setTimezone(e.target.value)}
+                placeholder="e.g. Asia/Kolkata"
+              />
+            </SettingsFormField>
+
+            <div className="grid gap-5 sm:grid-cols-2">
+              <SettingsFormField
+                label="VAT / Tax Registration Number"
+                hint={COUNTRY_CONFIGS[country]?.vatIdLabel ?? "Tax ID"}
               >
-                {Object.entries(SUPPORTED_CURRENCIES).map(([code, info]) => (
-                  <option key={code} value={code}>
-                    {info.symbol} {info.name} ({code})
-                  </option>
-                ))}
-              </select>
+                <Input
+                  value={vatRegNumber}
+                  onChange={(e) => setVatRegNumber(e.target.value)}
+                  placeholder="Enter registration number"
+                />
+              </SettingsFormField>
+
+              <SettingsFormField label="VAT / Tax Rate (%)">
+                <Input
+                  type="number"
+                  value={vatRate}
+                  onChange={(e) => setVatRate(e.target.value)}
+                  placeholder="e.g. 5"
+                />
+              </SettingsFormField>
             </div>
-            <Input
-              label="Timezone"
-              value={timezone}
-              onChange={(e) => setTimezone(e.target.value)}
-            />
-            <Input
-              label="VAT / Tax Registration Number"
-              value={vatRegNumber}
-              onChange={(e) => setVatRegNumber(e.target.value)}
-              placeholder={
-                COUNTRY_CONFIGS[country]?.vatIdLabel ?? "Tax ID"
-              }
-            />
-            <Input
-              label="VAT / Tax Rate (%)"
-              type="number"
-              value={vatRate}
-              onChange={(e) => setVatRate(e.target.value)}
-              placeholder="e.g. 5"
-            />
-            <div>
-              <label className="block text-sm font-medium text-[#1a1a1a] mb-1">
-                Fiscal Year Start Month
-              </label>
+
+            <SettingsFormField label="Fiscal Year Start Month">
               <select
                 value={fiscalYearStart}
                 onChange={(e) => setFiscalYearStart(e.target.value)}
@@ -258,18 +274,16 @@ export default function I18nSettingsPage() {
                   </option>
                 ))}
               </select>
-            </div>
-            {success === "country" && (
-              <p className="text-sm text-green-600">
-                ✓ Country &amp; tax settings saved
-              </p>
-            )}
-            <Button type="submit" disabled={saving === "country"}>
-              {saving === "country" ? "Saving…" : "Save country settings"}
-            </Button>
+            </SettingsFormField>
+
+            <SettingsSaveBar
+              saving={saving === "country"}
+              saved={success === "country"}
+              saveLabel="Save country settings"
+            />
           </form>
-        </CardContent>
-      </Card>
+        </SettingsCardContent>
+      </SettingsCard>
     </div>
   );
 }

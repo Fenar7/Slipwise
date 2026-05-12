@@ -3,6 +3,8 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { Modal } from "@/components/ui/modal";
+import { FormField, FormGrid, financeInputClassName } from "@/components/forms/form-primitives";
 import { createChartAccount } from "../actions";
 
 interface CreateAccountModalProps {
@@ -84,125 +86,103 @@ export function CreateAccountModal({ parentOptions }: CreateAccountModalProps) {
     <>
       <Button onClick={() => setOpen(true)}>New Account</Button>
 
-      {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 px-4">
-          <div className="w-full max-w-2xl rounded-2xl bg-white shadow-xl">
-            <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
-              <div>
-                <h2 className="text-lg font-semibold text-slate-900">Create account</h2>
-                <p className="mt-1 text-sm text-slate-500">
-                  Add a custom account under your SW Books chart of accounts.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={close}
-                className="text-xl text-slate-400 hover:text-slate-700"
-                aria-label="Close"
-              >
-                ×
-              </button>
-            </div>
-
-            <div className="space-y-4 px-6 py-5">
-              {error && (
-                <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
-                  {error}
-                </div>
-              )}
-
-              <div className="grid gap-4 md:grid-cols-2">
-                <label className="block text-sm">
-                  <span className="mb-1 block font-medium text-slate-700">Code</span>
-                  <input
-                    value={code}
-                    onChange={(event) => setCode(event.target.value)}
-                    placeholder="e.g. 6100"
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                  />
-                </label>
-
-                <label className="block text-sm">
-                  <span className="mb-1 block font-medium text-slate-700">Name</span>
-                  <input
-                    value={name}
-                    onChange={(event) => setName(event.target.value)}
-                    placeholder="e.g. Office Supplies"
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                  />
-                </label>
-
-                <label className="block text-sm">
-                  <span className="mb-1 block font-medium text-slate-700">Account type</span>
-                  <select
-                    value={accountType}
-                    onChange={(event) => {
-                      const nextType = event.target.value;
-                      setAccountType(nextType);
-                      setNormalBalance(defaultNormalBalance(nextType));
-                    }}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                  >
-                    <option value="ASSET">Asset</option>
-                    <option value="LIABILITY">Liability</option>
-                    <option value="EQUITY">Equity</option>
-                    <option value="INCOME">Income</option>
-                    <option value="EXPENSE">Expense</option>
-                    <option value="CONTRA">Contra</option>
-                  </select>
-                </label>
-
-                <label className="block text-sm">
-                  <span className="mb-1 block font-medium text-slate-700">Normal balance</span>
-                  <select
-                    value={normalBalance}
-                    onChange={(event) => setNormalBalance(event.target.value)}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                  >
-                    <option value="DEBIT">Debit</option>
-                    <option value="CREDIT">Credit</option>
-                  </select>
-                </label>
-
-                <label className="block text-sm md:col-span-2">
-                  <span className="mb-1 block font-medium text-slate-700">Parent account</span>
-                  <select
-                    value={parentId}
-                    onChange={(event) => setParentId(event.target.value)}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                  >
-                    <option value="">No parent</option>
-                    {parentOptions.map((account) => (
-                      <option key={account.id} value={account.id}>
-                        {account.code} — {account.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <label className="block text-sm md:col-span-2">
-                  <span className="mb-1 block font-medium text-slate-700">Description</span>
-                  <textarea
-                    value={description}
-                    onChange={(event) => setDescription(event.target.value)}
-                    rows={3}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                  />
-                </label>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-3 border-t border-slate-200 px-6 py-4">
-              <Button variant="secondary" onClick={close} disabled={isPending}>
-                Cancel
-              </Button>
-              <Button onClick={submit} disabled={isPending}>
-                {isPending ? "Creating..." : "Create Account"}
-              </Button>
-            </div>
+      <Modal
+        open={open}
+        onClose={close}
+        title="Create account"
+        subtitle="Add a custom account under your SW Books chart of accounts."
+        size="lg"
+        footer={
+          <>
+            <Button variant="secondary" onClick={close} disabled={isPending}>
+              Cancel
+            </Button>
+            <Button onClick={submit} disabled={isPending}>
+              {isPending ? "Creating..." : "Create Account"}
+            </Button>
+          </>
+        }
+      >
+        {error && (
+          <div className="mb-4 rounded-lg bg-[var(--state-danger-soft)] px-4 py-3 text-sm text-[var(--state-danger)]">
+            {error}
           </div>
-        </div>
-      )}
+        )}
+
+        <FormGrid>
+          <FormField label="Code" required>
+            <input
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              placeholder="e.g. 6100"
+              className={financeInputClassName}
+            />
+          </FormField>
+
+          <FormField label="Name" required>
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. Office Supplies"
+              className={financeInputClassName}
+            />
+          </FormField>
+
+          <FormField label="Account type" required>
+            <select
+              value={accountType}
+              onChange={(e) => {
+                const nextType = e.target.value;
+                setAccountType(nextType);
+                setNormalBalance(defaultNormalBalance(nextType));
+              }}
+              className={financeInputClassName}
+            >
+              <option value="ASSET">Asset</option>
+              <option value="LIABILITY">Liability</option>
+              <option value="EQUITY">Equity</option>
+              <option value="INCOME">Income</option>
+              <option value="EXPENSE">Expense</option>
+              <option value="CONTRA">Contra</option>
+            </select>
+          </FormField>
+
+          <FormField label="Normal balance" required>
+            <select
+              value={normalBalance}
+              onChange={(e) => setNormalBalance(e.target.value)}
+              className={financeInputClassName}
+            >
+              <option value="DEBIT">Debit</option>
+              <option value="CREDIT">Credit</option>
+            </select>
+          </FormField>
+
+          <FormField label="Parent account" className="md:col-span-2">
+            <select
+              value={parentId}
+              onChange={(e) => setParentId(e.target.value)}
+              className={financeInputClassName}
+            >
+              <option value="">No parent</option>
+              {parentOptions.map((account) => (
+                <option key={account.id} value={account.id}>
+                  {account.code} — {account.name}
+                </option>
+              ))}
+            </select>
+          </FormField>
+
+          <FormField label="Description" className="md:col-span-2">
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={3}
+              className={financeInputClassName}
+            />
+          </FormField>
+        </FormGrid>
+      </Modal>
     </>
   );
 }

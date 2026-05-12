@@ -33,7 +33,7 @@ describe("ProfileSettingsPage", () => {
       expect(screen.getByDisplayValue("Fenar Owner")).toBeInTheDocument();
     });
 
-    expect(screen.getByText("owner@example.com")).toBeInTheDocument();
+    expect(screen.getAllByText("owner@example.com")).toHaveLength(2);
   });
 
   it("saves profile changes through server actions", async () => {

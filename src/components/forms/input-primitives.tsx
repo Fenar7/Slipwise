@@ -12,10 +12,10 @@ import { cn } from "@/lib/utils";
 
 function baseInputClass(hasError?: boolean) {
   return cn(
-    "w-full rounded-lg border bg-white px-4 py-3.5 text-base font-medium text-[var(--foreground)] outline-none transition-[border-color,box-shadow,background-color] placeholder:text-[var(--muted-foreground)] placeholder:font-normal",
+    "w-full rounded-lg border bg-white px-4 py-3 text-sm text-[var(--foreground)] outline-none transition-all placeholder:text-[var(--muted-foreground)]",
     hasError
-      ? "border-[var(--danger)] focus:border-[var(--danger)] focus:shadow-[0_0_0_3px_rgba(220,38,38,0.1)]"
-      : "border-[var(--border-soft)] focus:border-[#9ca3af] focus:shadow-[0_0_0_3px_rgba(156,163,175,0.18)]",
+      ? "border-red-300 focus:border-red-500 focus:ring-2 focus:ring-red-100"
+      : "border-[var(--border-default)] hover:border-[var(--border-default)] focus:border-[var(--brand-cta)] focus:ring-2 focus:ring-[var(--brand-cta)]/10",
   );
 }
 

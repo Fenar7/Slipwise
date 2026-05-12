@@ -122,7 +122,10 @@ export async function updateVendorCrmFields(
 export async function getCustomerTimeline(customerId: string) {
   const { orgId } = await requireOrgContext();
 
-  const customer = await db.customer.findUnique({ where: { id: customerId } });
+  const customer = await db.customer.findUnique({
+    where: { id: customerId },
+    include: { _count: { select: { quotes: true } } },
+  });
   if (!customer || customer.organizationId !== orgId) return null;
 
   const [invoices, notes, quotes] = await Promise.all([
@@ -273,33 +276,74 @@ export async function getVendorTimeline(vendorId: string) {
 export async function getCrmDashboard() {
   const { orgId } = await requireOrgContext();
 
-  const [lifecycleBreakdown, vendorCompliance, upcomingFollowUps, recentNotes] =
-    await Promise.all([
-      db.customer.groupBy({
-        by: ["lifecycleStage"],
-        where: { organizationId: orgId },
-        _count: { id: true },
-      }),
-      db.vendor.groupBy({
-        by: ["complianceStatus"],
-        where: { organizationId: orgId },
-        _count: { id: true },
-      }),
-      db.customer.findMany({
-        where: {
-          organizationId: orgId,
-          nextFollowUpAt: { gte: new Date(), lte: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) },
-        },
-        orderBy: { nextFollowUpAt: "asc" },
-        take: 10,
-        select: { id: true, name: true, email: true, nextFollowUpAt: true, lifecycleStage: true },
-      }),
-      db.crmNote.findMany({
-        where: { orgId },
-        orderBy: { createdAt: "desc" },
-        take: 10,
-      }),
-    ]);
+  const now = new Date();
+  const sevenDaysLater = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
-  return { lifecycleBreakdown, vendorCompliance, upcomingFollowUps, recentNotes };
+  const [
+    lifecycleBreakdown,
+    vendorCompliance,
+    upcomingFollowUps,
+    overdueFollowUps,
+    atRiskCustomers,
+    recentNotes,
+    recentInvoices,
+    recentQuotes,
+  ] = await Promise.all([
+    db.customer.groupBy({
+      by: ["lifecycleStage"],
+      where: { organizationId: orgId },
+      _count: { id: true },
+    }),
+    db.vendor.groupBy({
+      by: ["complianceStatus"],
+      where: { organizationId: orgId },
+      _count: { id: true },
+    }),
+    db.customer.findMany({
+      where: {
+        organizationId: orgId,
+        nextFollowUpAt: { gte: now, lte: sevenDaysLater },
+      },
+      orderBy: { nextFollowUpAt: "asc" },
+      take: 10,
+      select: { id: true, name: true, email: true, nextFollowUpAt: true, lifecycleStage: true },
+    }),
+    db.customer.findMany({
+      where: {
+        organizationId: orgId,
+        nextFollowUpAt: { lt: now },
+      },
+      orderBy: { nextFollowUpAt: "asc" },
+      take: 10,
+      select: { id: true, name: true, email: true, nextFollowUpAt: true, lifecycleStage: true },
+    }),
+    db.customer.findMany({
+      where: {
+        organizationId: orgId,
+        lifecycleStage: { in: ["AT_RISK", "CHURNED"] },
+      },
+      orderBy: { updatedAt: "desc" },
+      take: 10,
+      select: { id: true, name: true, email: true, lifecycleStage: true, totalInvoiced: true },
+    }),
+    db.crmNote.findMany({
+      where: { orgId },
+      orderBy: { createdAt: "desc" },
+      take: 10,
+    }),
+    db.invoice.findMany({
+      where: { organizationId: orgId },
+      orderBy: { createdAt: "desc" },
+      take: 5,
+      select: { id: true, invoiceNumber: true, status: true, totalAmount: true, createdAt: true, customerId: true, customer: { select: { name: true } } },
+    }),
+    db.quote.findMany({
+      where: { orgId },
+      orderBy: { createdAt: "desc" },
+      take: 5,
+      select: { id: true, quoteNumber: true, status: true, totalAmount: true, createdAt: true, customerId: true, customer: { select: { name: true } } },
+    }),
+  ]);
+
+  return { lifecycleBreakdown, vendorCompliance, upcomingFollowUps, overdueFollowUps, atRiskCustomers, recentNotes, recentInvoices, recentQuotes };
 }

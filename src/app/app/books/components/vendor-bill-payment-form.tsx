@@ -2,7 +2,9 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { FormField, FormGrid, FormActions, financeInputClassName } from "@/components/forms/form-primitives";
 import { recordBooksVendorBillPayment } from "../actions";
 
 interface VendorBillPaymentFormProps {
@@ -49,19 +51,25 @@ export function VendorBillPaymentForm({ vendorBillId, maxAmount }: VendorBillPay
   }
 
   return (
-    <div className="space-y-4 rounded-xl border border-slate-200 p-4">
+    <div className="space-y-4 rounded-xl border border-[var(--border-soft)] bg-[var(--surface-panel)] p-4 shadow-[var(--shadow-card)]">
       <div>
-        <h3 className="text-sm font-semibold text-slate-900">Record payment</h3>
-        <p className="mt-1 text-sm text-slate-500">
-          Outstanding balance {maxAmount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+        <h3 className="text-sm font-semibold text-[var(--text-primary)]">Record payment</h3>
+        <p className="mt-1 text-sm text-[var(--text-muted)]">
+          Outstanding balance{" "}
+          <span className="font-medium text-[var(--text-primary)] tabular-nums">
+            {maxAmount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </span>
         </p>
       </div>
 
-      {error && <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
+      {error && (
+        <div className="rounded-xl bg-[var(--state-danger-soft)] px-4 py-3 text-sm text-[var(--state-danger)]">
+          {error}
+        </div>
+      )}
 
-      <div className="grid gap-4 md:grid-cols-2">
-        <label className="block text-sm">
-          <span className="mb-1 block font-medium text-slate-700">Amount</span>
+      <FormGrid columns={2}>
+        <FormField label="Amount">
           <input
             type="number"
             min="0"
@@ -69,46 +77,43 @@ export function VendorBillPaymentForm({ vendorBillId, maxAmount }: VendorBillPay
             step="0.01"
             value={amount}
             onChange={(event) => setAmount(event.target.value)}
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            className={cn(financeInputClassName, "text-right")}
           />
-        </label>
+        </FormField>
 
-        <label className="block text-sm">
-          <span className="mb-1 block font-medium text-slate-700">Paid at</span>
+        <FormField label="Paid at">
           <input
             type="date"
             value={paidAt}
             onChange={(event) => setPaidAt(event.target.value)}
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            className={financeInputClassName}
           />
-        </label>
+        </FormField>
 
-        <label className="block text-sm">
-          <span className="mb-1 block font-medium text-slate-700">Method</span>
+        <FormField label="Method">
           <input
             value={method}
             onChange={(event) => setMethod(event.target.value)}
             placeholder="Bank transfer, cheque, UPI..."
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            className={financeInputClassName}
           />
-        </label>
+        </FormField>
 
-        <label className="block text-sm">
-          <span className="mb-1 block font-medium text-slate-700">Note</span>
+        <FormField label="Note">
           <input
             value={note}
             onChange={(event) => setNote(event.target.value)}
             placeholder="Optional bank reference"
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            className={financeInputClassName}
           />
-        </label>
-      </div>
+        </FormField>
+      </FormGrid>
 
-      <div className="flex justify-end">
+      <FormActions>
         <Button type="button" onClick={submit} disabled={isPending}>
           {isPending ? "Recording..." : "Record Payment"}
         </Button>
-      </div>
+      </FormActions>
     </div>
   );
 }

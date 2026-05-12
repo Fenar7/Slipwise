@@ -1,8 +1,13 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import {
+  SettingsCard,
+  SettingsCardHeader,
+  SettingsCardContent,
+} from "@/components/settings/settings-primitives";
 import { Input } from "@/components/ui/input";
 import {
   ASSIGNABLE_ROLES,
@@ -10,19 +15,31 @@ import {
   getRoleColor,
   type Role,
 } from "@/lib/permissions";
-import {
-  getOrgMembers,
-  getPendingInvitations,
-  inviteUser,
-  updateMemberRole,
-  deactivateMember,
-  reactivateMember,
-  removeMember,
-  resendInvitation,
-  cancelInvitation,
-  type MemberWithProfile,
-  type InvitationRow,
-} from "./actions";
+import { Users, UserPlus, Mail } from "lucide-react";
+
+interface MemberWithProfile {
+  id: string;
+  userId: string;
+  role: string;
+  createdAt: string;
+  user: {
+    id: string;
+    name: string;
+    email: string;
+    avatarUrl: string | null;
+  };
+}
+
+interface InvitationRow {
+  id: string;
+  email: string;
+  role: string | null;
+  status: string;
+  expiresAt: string;
+  inviterId: string;
+}
+
+type ActionResult = { success: boolean; error?: string };
 
 function ConfirmDialog({
   open,
@@ -41,9 +58,9 @@ function ConfirmDialog({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/40" onClick={onCancel} />
-      <div className="relative bg-white rounded-xl shadow-lg p-6 w-full max-w-sm mx-4">
-        <h3 className="text-base font-semibold text-[#1a1a1a] mb-2">{title}</h3>
-        <p className="text-sm text-[#666] mb-6">{message}</p>
+      <div className="relative slipwise-panel p-6 w-full max-w-sm mx-4">
+        <h3 className="text-base font-semibold text-[var(--text-primary)] mb-2">{title}</h3>
+        <p className="text-sm text-[var(--text-muted)] mb-6">{message}</p>
         <div className="flex justify-end gap-2">
           <Button variant="secondary" size="sm" onClick={onCancel}>
             Cancel
@@ -93,10 +110,13 @@ function InviteModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="relative bg-white rounded-xl shadow-lg p-6 w-full max-w-md mx-4">
-        <h3 className="text-lg font-semibold text-[#1a1a1a] mb-4">
-          Invite Team Member
-        </h3>
+      <div className="relative slipwise-panel p-6 w-full max-w-md mx-4">
+        <div className="flex items-center gap-2.5 mb-4">
+          <UserPlus className="h-5 w-5 text-[var(--brand-primary)]" />
+          <h3 className="text-base font-semibold text-[var(--text-primary)]">
+            Invite Team Member
+          </h3>
+        </div>
         <form onSubmit={handleSubmit} className="space-y-4">
           <Input
             label="Email address"
@@ -106,13 +126,13 @@ function InviteModal({
             required
           />
           <div>
-            <label className="block text-sm font-medium text-[#1a1a1a] mb-1">
+            <label className="block text-sm font-medium text-[var(--text-primary)] mb-1">
               Role
             </label>
             <select
               value={role}
               onChange={(e) => setRole(e.target.value)}
-              className="w-full border border-[#e5e5e5] rounded-md px-3 py-2 text-sm text-[#1a1a1a] bg-white focus:outline-none focus:ring-2 focus:ring-[#dc2626]"
+              className="w-full rounded-lg border border-[var(--border-soft)] bg-white px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--focus-ring)]"
             >
               {ASSIGNABLE_ROLES.map((r) => (
                 <option key={r} value={r}>
@@ -121,7 +141,7 @@ function InviteModal({
               ))}
             </select>
           </div>
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          {error && <p className="text-sm text-[var(--state-danger)]">{error}</p>}
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="secondary" onClick={onClose}>
               Cancel
@@ -152,14 +172,32 @@ function RoleBadge({ role }: { role: string }) {
   );
 }
 
+interface UsersClientProps {
+  currentUserId: string;
+  initialMembers: MemberWithProfile[];
+  initialInvitations: InvitationRow[];
+  inviteUserAction: (data: { email: string; role: string }) => Promise<ActionResult>;
+  updateMemberRoleAction: (memberId: string, role: string) => Promise<ActionResult>;
+  deactivateMemberAction: (memberId: string) => Promise<ActionResult>;
+  reactivateMemberAction: (memberId: string) => Promise<ActionResult>;
+  removeMemberAction: (memberId: string) => Promise<ActionResult>;
+  resendInvitationAction: (invitationId: string) => Promise<ActionResult>;
+  cancelInvitationAction: (invitationId: string) => Promise<ActionResult>;
+}
+
 export default function UsersClient({
   currentUserId,
-}: {
-  currentUserId: string;
-}) {
-  const [members, setMembers] = useState<MemberWithProfile[]>([]);
-  const [invitations, setInvitations] = useState<InvitationRow[]>([]);
-  const [loading, setLoading] = useState(true);
+  initialMembers,
+  initialInvitations,
+  inviteUserAction,
+  updateMemberRoleAction,
+  deactivateMemberAction,
+  reactivateMemberAction,
+  removeMemberAction,
+  resendInvitationAction,
+  cancelInvitationAction,
+}: UsersClientProps) {
+  const router = useRouter();
   const [error, setError] = useState("");
   const [showInvite, setShowInvite] = useState(false);
   const [confirm, setConfirm] = useState<{
@@ -168,41 +206,23 @@ export default function UsersClient({
     action: () => Promise<void>;
   } | null>(null);
 
-  const loadData = useCallback(async () => {
-    try {
-      const [m, inv] = await Promise.all([
-        getOrgMembers(),
-        getPendingInvitations(),
-      ]);
-      setMembers(m);
-      setInvitations(inv);
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Failed to load team members"
-      );
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadData();
-  }, [loadData]);
+  const activeMembers = initialMembers.filter((m) => m.role !== "deactivated");
+  const deactivatedMembers = initialMembers.filter((m) => m.role === "deactivated");
 
   async function handleInvite(email: string, role: string) {
-    const result = await inviteUser({ email, role });
+    const result = await inviteUserAction({ email, role });
     if (!result.success) throw new Error(result.error);
-    await loadData();
+    router.refresh();
   }
 
   async function handleRoleChange(memberId: string, newRole: string) {
-    const result = await updateMemberRole(memberId, newRole);
+    const result = await updateMemberRoleAction(memberId, newRole);
     if (!result.success) {
       setError(result.error ?? "Failed to update role");
       return;
     }
     setError("");
-    await loadData();
+    router.refresh();
   }
 
   async function handleDeactivate(member: MemberWithProfile) {
@@ -210,20 +230,20 @@ export default function UsersClient({
       title: "Deactivate Member",
       message: `Deactivate ${member.user.name}? They will lose access until reactivated.`,
       action: async () => {
-        const result = await deactivateMember(member.id);
+        const result = await deactivateMemberAction(member.id);
         if (!result.success) setError(result.error ?? "Failed");
         else setError("");
         setConfirm(null);
-        await loadData();
+        router.refresh();
       },
     });
   }
 
   async function handleReactivate(memberId: string) {
-    const result = await reactivateMember(memberId);
+    const result = await reactivateMemberAction(memberId);
     if (!result.success) setError(result.error ?? "Failed");
     else setError("");
-    await loadData();
+    router.refresh();
   }
 
   async function handleRemove(member: MemberWithProfile) {
@@ -231,46 +251,37 @@ export default function UsersClient({
       title: "Remove Member",
       message: `Remove ${member.user.name} from the organization? This cannot be undone.`,
       action: async () => {
-        const result = await removeMember(member.id);
+        const result = await removeMemberAction(member.id);
         if (!result.success) setError(result.error ?? "Failed");
         else setError("");
         setConfirm(null);
-        await loadData();
+        router.refresh();
       },
     });
   }
 
   async function handleResendInvite(id: string) {
-    const result = await resendInvitation(id);
+    const result = await resendInvitationAction(id);
     if (!result.success) setError(result.error ?? "Failed");
     else setError("");
-    await loadData();
+    router.refresh();
   }
 
   async function handleCancelInvite(id: string) {
-    const result = await cancelInvitation(id);
+    const result = await cancelInvitationAction(id);
     if (!result.success) setError(result.error ?? "Failed");
     else setError("");
-    await loadData();
+    router.refresh();
   }
-
-  if (loading) {
-    return (
-      <div className="text-sm text-[#666]">Loading team members…</div>
-    );
-  }
-
-  const activeMembers = members.filter((m) => m.role !== "deactivated");
-  const deactivatedMembers = members.filter((m) => m.role === "deactivated");
 
   return (
     <div className="space-y-6">
       {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+        <div className="rounded-lg border border-[var(--state-danger)]/20 bg-[var(--state-danger-soft)] px-4 py-3 text-sm text-[var(--state-danger)]">
           {error}
           <button
             onClick={() => setError("")}
-            className="ml-2 text-red-500 hover:text-red-700"
+            className="ml-2 text-[var(--state-danger)] hover:opacity-80"
           >
             ✕
           </button>
@@ -278,35 +289,38 @@ export default function UsersClient({
       )}
 
       {/* Active Members */}
-      <Card>
-        <CardHeader>
+      <SettingsCard>
+        <SettingsCardHeader>
           <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-[#1a1a1a]">
-              Team Members
-              <span className="ml-2 text-sm font-normal text-[#999]">
-                ({activeMembers.length})
-              </span>
-            </h2>
+            <div className="flex items-center gap-2.5">
+              <Users className="h-4 w-4 text-[var(--brand-primary)]" />
+              <h2 className="text-base font-semibold text-[var(--text-primary)]">
+                Team Members
+                <span className="ml-2 text-sm font-normal text-[var(--text-muted)]">
+                  ({activeMembers.length})
+                </span>
+              </h2>
+            </div>
             <Button size="sm" onClick={() => setShowInvite(true)}>
               Invite Member
             </Button>
           </div>
-        </CardHeader>
-        <CardContent className="p-0">
+        </SettingsCardHeader>
+        <SettingsCardContent className="p-0">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-[#e5e5e5]">
-                  <th className="text-left px-6 py-3 font-medium text-[#666]">
+                <tr className="border-b border-[var(--border-soft)] bg-[var(--surface-subtle)]">
+                  <th className="text-left px-5 py-3 font-medium text-xs text-[var(--text-muted)] uppercase tracking-wider">
                     Name
                   </th>
-                  <th className="text-left px-6 py-3 font-medium text-[#666]">
+                  <th className="text-left px-5 py-3 font-medium text-xs text-[var(--text-muted)] uppercase tracking-wider">
                     Email
                   </th>
-                  <th className="text-left px-6 py-3 font-medium text-[#666]">
+                  <th className="text-left px-5 py-3 font-medium text-xs text-[var(--text-muted)] uppercase tracking-wider">
                     Role
                   </th>
-                  <th className="text-right px-6 py-3 font-medium text-[#666]">
+                  <th className="text-right px-5 py-3 font-medium text-xs text-[var(--text-muted)] uppercase tracking-wider">
                     Actions
                   </th>
                 </tr>
@@ -319,11 +333,11 @@ export default function UsersClient({
                   return (
                     <tr
                       key={member.id}
-                      className="border-b border-[#f0f0f0] last:border-0"
+                      className="border-b border-[var(--border-soft)] last:border-0 hover:bg-[var(--surface-subtle)]/50 transition-colors"
                     >
-                      <td className="px-6 py-3">
+                      <td className="px-5 py-3">
                         <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-full bg-[#f0f0f0] flex items-center justify-center text-xs font-medium text-[#666]">
+                          <div className="w-8 h-8 rounded-full bg-[var(--surface-subtle)] flex items-center justify-center text-xs font-medium text-[var(--text-muted)]">
                             {member.user.name
                               .split(" ")
                               .map((n) => n[0])
@@ -331,20 +345,20 @@ export default function UsersClient({
                               .toUpperCase()
                               .slice(0, 2)}
                           </div>
-                          <span className="font-medium text-[#1a1a1a]">
+                          <span className="font-medium text-[var(--text-primary)]">
                             {member.user.name}
                             {isSelf && (
-                              <span className="ml-1.5 text-xs text-[#999]">
+                              <span className="ml-1.5 text-xs text-[var(--text-muted)]">
                                 (you)
                               </span>
                             )}
                           </span>
                         </div>
                       </td>
-                      <td className="px-6 py-3 text-[#666]">
+                      <td className="px-5 py-3 text-[var(--text-secondary)]">
                         {member.user.email}
                       </td>
-                      <td className="px-6 py-3">
+                      <td className="px-5 py-3">
                         {isOwner ? (
                           <RoleBadge role={member.role} />
                         ) : (
@@ -353,7 +367,7 @@ export default function UsersClient({
                             onChange={(e) =>
                               handleRoleChange(member.id, e.target.value)
                             }
-                            className="border border-[#e5e5e5] rounded-md px-2 py-1 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-[#dc2626]"
+                            className="border border-[var(--border-soft)] rounded-md px-2 py-1 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-[var(--focus-ring)]"
                           >
                             {ASSIGNABLE_ROLES.map((r) => (
                               <option key={r} value={r}>
@@ -363,7 +377,7 @@ export default function UsersClient({
                           </select>
                         )}
                       </td>
-                      <td className="px-6 py-3 text-right">
+                      <td className="px-5 py-3 text-right">
                         {!isOwner && !isSelf && (
                           <div className="flex justify-end gap-1">
                             <Button
@@ -376,7 +390,7 @@ export default function UsersClient({
                             <Button
                               variant="ghost"
                               size="sm"
-                              className="text-red-600 hover:text-red-700"
+                              className="text-[var(--state-danger)] hover:text-[var(--state-danger)]"
                               onClick={() => handleRemove(member)}
                             >
                               Remove
@@ -391,7 +405,7 @@ export default function UsersClient({
                   <tr>
                     <td
                       colSpan={4}
-                      className="px-6 py-8 text-center text-[#999]"
+                      className="px-5 py-8 text-center text-sm text-[var(--text-muted)]"
                     >
                       No team members found.
                     </td>
@@ -400,32 +414,32 @@ export default function UsersClient({
               </tbody>
             </table>
           </div>
-        </CardContent>
-      </Card>
+        </SettingsCardContent>
+      </SettingsCard>
 
       {/* Deactivated Members */}
       {deactivatedMembers.length > 0 && (
-        <Card>
-          <CardHeader>
-            <h2 className="text-lg font-semibold text-[#1a1a1a]">
+        <SettingsCard>
+          <SettingsCardHeader>
+            <h2 className="text-base font-semibold text-[var(--text-primary)]">
               Deactivated Members
-              <span className="ml-2 text-sm font-normal text-[#999]">
+              <span className="ml-2 text-sm font-normal text-[var(--text-muted)]">
                 ({deactivatedMembers.length})
               </span>
             </h2>
-          </CardHeader>
-          <CardContent className="p-0">
+          </SettingsCardHeader>
+          <SettingsCardContent className="p-0">
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-[#e5e5e5]">
-                    <th className="text-left px-6 py-3 font-medium text-[#666]">
+                  <tr className="border-b border-[var(--border-soft)] bg-[var(--surface-subtle)]">
+                    <th className="text-left px-5 py-3 font-medium text-xs text-[var(--text-muted)] uppercase tracking-wider">
                       Name
                     </th>
-                    <th className="text-left px-6 py-3 font-medium text-[#666]">
+                    <th className="text-left px-5 py-3 font-medium text-xs text-[var(--text-muted)] uppercase tracking-wider">
                       Email
                     </th>
-                    <th className="text-right px-6 py-3 font-medium text-[#666]">
+                    <th className="text-right px-5 py-3 font-medium text-xs text-[var(--text-muted)] uppercase tracking-wider">
                       Actions
                     </th>
                   </tr>
@@ -434,15 +448,15 @@ export default function UsersClient({
                   {deactivatedMembers.map((member) => (
                     <tr
                       key={member.id}
-                      className="border-b border-[#f0f0f0] last:border-0 opacity-60"
+                      className="border-b border-[var(--border-soft)] last:border-0 opacity-60 hover:opacity-100 transition-opacity"
                     >
-                      <td className="px-6 py-3 text-[#1a1a1a]">
+                      <td className="px-5 py-3 text-[var(--text-primary)]">
                         {member.user.name}
                       </td>
-                      <td className="px-6 py-3 text-[#666]">
+                      <td className="px-5 py-3 text-[var(--text-secondary)]">
                         {member.user.email}
                       </td>
-                      <td className="px-6 py-3 text-right">
+                      <td className="px-5 py-3 text-right">
                         <div className="flex justify-end gap-1">
                           <Button
                             variant="ghost"
@@ -454,7 +468,7 @@ export default function UsersClient({
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="text-red-600 hover:text-red-700"
+                            className="text-[var(--state-danger)] hover:text-[var(--state-danger)]"
                             onClick={() => handleRemove(member)}
                           >
                             Remove
@@ -466,64 +480,67 @@ export default function UsersClient({
                 </tbody>
               </table>
             </div>
-          </CardContent>
-        </Card>
+          </SettingsCardContent>
+        </SettingsCard>
       )}
 
       {/* Pending Invitations */}
-      {invitations.length > 0 && (
-        <Card>
-          <CardHeader>
-            <h2 className="text-lg font-semibold text-[#1a1a1a]">
-              Pending Invitations
-              <span className="ml-2 text-sm font-normal text-[#999]">
-                ({invitations.length})
-              </span>
-            </h2>
-          </CardHeader>
-          <CardContent className="p-0">
+      {initialInvitations.length > 0 && (
+        <SettingsCard>
+          <SettingsCardHeader>
+            <div className="flex items-center gap-2.5">
+              <Mail className="h-4 w-4 text-[var(--brand-primary)]" />
+              <h2 className="text-base font-semibold text-[var(--text-primary)]">
+                Pending Invitations
+                <span className="ml-2 text-sm font-normal text-[var(--text-muted)]">
+                  ({initialInvitations.length})
+                </span>
+              </h2>
+            </div>
+          </SettingsCardHeader>
+          <SettingsCardContent className="p-0">
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-[#e5e5e5]">
-                    <th className="text-left px-6 py-3 font-medium text-[#666]">
+                  <tr className="border-b border-[var(--border-soft)] bg-[var(--surface-subtle)]">
+                    <th className="text-left px-5 py-3 font-medium text-xs text-[var(--text-muted)] uppercase tracking-wider">
                       Email
                     </th>
-                    <th className="text-left px-6 py-3 font-medium text-[#666]">
+                    <th className="text-left px-5 py-3 font-medium text-xs text-[var(--text-muted)] uppercase tracking-wider">
                       Role
                     </th>
-                    <th className="text-left px-6 py-3 font-medium text-[#666]">
+                    <th className="text-left px-5 py-3 font-medium text-xs text-[var(--text-muted)] uppercase tracking-wider">
                       Expires
                     </th>
-                    <th className="text-right px-6 py-3 font-medium text-[#666]">
+                    <th className="text-right px-5 py-3 font-medium text-xs text-[var(--text-muted)] uppercase tracking-wider">
                       Actions
                     </th>
                   </tr>
                 </thead>
                 <tbody>
-                  {invitations.map((inv) => {
+                  {initialInvitations.map((inv) => {
                     const expired = new Date(inv.expiresAt) < new Date();
                     return (
                       <tr
                         key={inv.id}
-                        className="border-b border-[#f0f0f0] last:border-0"
+                        className="border-b border-[var(--border-soft)] last:border-0 hover:bg-[var(--surface-subtle)]/50 transition-colors"
                       >
-                        <td className="px-6 py-3 text-[#1a1a1a]">
+                        <td className="px-5 py-3 text-[var(--text-primary)]">
                           {inv.email}
                         </td>
-                        <td className="px-6 py-3">
+                        <td className="px-5 py-3">
                           <RoleBadge role={inv.role ?? "viewer"} />
                         </td>
-                        <td className="px-6 py-3 text-[#666]">
+                        <td className="px-5 py-3 text-[var(--text-secondary)]">
                           {expired ? (
-                            <span className="text-red-500 text-xs font-medium">
+                            <span className="text-[var(--state-danger)] text-xs font-medium">
                               Expired
                             </span>
                           ) : (
                             new Date(inv.expiresAt).toLocaleDateString()
                           )}
                         </td>
-                        <td className="px-6 py-3 text-right">
+                        <td className="px-5 py-3 text-right">
                           <div className="flex justify-end gap-1">
                             <Button
                               variant="ghost"
@@ -535,7 +552,7 @@ export default function UsersClient({
                             <Button
                               variant="ghost"
                               size="sm"
-                              className="text-red-600 hover:text-red-700"
+                              className="text-[var(--state-danger)] hover:text-[var(--state-danger)]"
                               onClick={() => handleCancelInvite(inv.id)}
                             >
                               Cancel
@@ -548,8 +565,8 @@ export default function UsersClient({
                 </tbody>
               </table>
             </div>
-          </CardContent>
-        </Card>
+          </SettingsCardContent>
+        </SettingsCard>
       )}
 
       {/* Modals */}

@@ -273,7 +273,7 @@ async function getApprovalDocumentSummaries(
 
   for (const invoice of invoices) {
     documents.set(`invoice:${invoice.id}`, {
-      number: invoice.invoiceNumber,
+      number: invoice.invoiceNumber ?? "—",
       entityName: invoice.customer?.name ?? null,
       amount: toAccountingNumber(invoice.totalAmount),
       date: formatIsoDate(invoice.invoiceDate),

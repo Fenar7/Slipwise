@@ -29,7 +29,7 @@ interface KpiCardProps {
 
 function KpiCard({ kpi }: KpiCardProps) {
   const trendArrow = kpi.trend === "UP" ? "↑" : kpi.trend === "DOWN" ? "↓" : "→";
-  const trendColor = kpi.trendIsPositive ? "text-green-600" : "text-red-600";
+  const trendColor = kpi.trendIsPositive ? "text-[var(--state-success)]" : "text-[var(--state-danger)]";
   const sparkData = kpi.sparkline.map((v, i) => ({ i, v }));
 
   function formatValue(): string {
@@ -66,13 +66,13 @@ function KpiCard({ kpi }: KpiCardProps) {
           <div className="w-20 h-10">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={sparkData}>
-                <Area
-                  type="monotone"
-                  dataKey="v"
-                  stroke={kpi.trendIsPositive ? "#16a34a" : "#dc2626"}
-                  fill={kpi.trendIsPositive ? "#dcfce7" : "#fee2e2"}
-                  strokeWidth={1.5}
-                />
+                 <Area
+                   type="monotone"
+                   dataKey="v"
+                   stroke={kpi.trendIsPositive ? "var(--state-success)" : "var(--state-danger)"}
+                   fill={kpi.trendIsPositive ? "var(--state-success-soft)" : "var(--state-danger-soft)"}
+                   strokeWidth={1.5}
+                 />
               </AreaChart>
             </ResponsiveContainer>
           </div>

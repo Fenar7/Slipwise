@@ -222,6 +222,12 @@ async function backfillVouchers(result: BackfillResult): Promise<void> {
       }
 
       try {
+        // Drafts created after Phase 4 may have null voucherNumber — skip them.
+        if (!v.voucherNumber) {
+          result.vouchersSkipped++;
+          continue;
+        }
+
         const docDate = new Date(v.voucherDate);
         const prefix = sequence.formats[0].formatString.split("/")[0] ?? "";
         const parsed = parseHistoricalSequenceNumber(v.voucherNumber, prefix);

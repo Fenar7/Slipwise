@@ -7,6 +7,7 @@ import { authenticatePasskey, browserSupportsWebAuthn } from "@/lib/passkey/clie
 import { beginPasskeyAuthentication } from "@/app/app/settings/security/passkey-actions";
 import { signOutSupabaseBrowser } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
+import { AuthCard } from "@/features/auth/components/auth-card";
 import type { AuthenticationResponseJSON } from "@simplewebauthn/browser";
 
 type MfaMode = "passkey" | "totp" | "recovery";
@@ -171,187 +172,191 @@ export function TwoChallengeForm() {
   const showTotp = factors?.hasTotp;
   const showRecovery = factors?.hasRecoveryCodes;
 
+  const subtitle = loadingFactors
+    ? "Checking your verification methods…"
+    : mode === "passkey"
+    ? "Verify your identity with your passkey."
+    : mode === "totp"
+    ? "Enter the 6-digit code from your authenticator app."
+    : "Enter one of your recovery codes.";
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[var(--surface)] px-4">
-      <div className="w-full max-w-sm space-y-6">
-        <div className="text-center">
-          <h1 className="text-2xl font-semibold tracking-tight">Multi-factor authentication</h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            {loadingFactors
-              ? "Checking your verification methods…"
-              : mode === "passkey"
-              ? "Verify your identity with your passkey."
-              : mode === "totp"
-                ? "Enter the 6-digit code from your authenticator app."
-                : "Enter one of your recovery codes."}
-          </p>
+    <AuthCard title="Multi-factor authentication" subtitle={subtitle}>
+      {error && (
+        <div className="rounded-lg border p-3 text-sm text-center mb-4" style={{ background: "#F9DEDC", borderColor: "#F2B8B5", color: "#410E0B" }} role="alert">
+          {error}
         </div>
+      )}
 
-        {error && (
-          <p className="text-sm text-destructive text-center" role="alert">
-            {error}
-          </p>
-        )}
+      {loadingFactors && (
+        <div className="rounded-lg border px-4 py-3 text-center text-sm" style={{ background: "#F5F5F5", borderColor: "#E0E0E0", color: "#79747E" }}>
+          Checking your account before showing a verification method.
+        </div>
+      )}
 
-        {loadingFactors && (
-          <div className="rounded-md border border-border bg-muted/40 px-4 py-3 text-center text-sm text-muted-foreground">
-            Checking your account before showing a verification method.
-          </div>
-        )}
-
-        {!loadingFactors && mode === "passkey" && showPasskey && (
-          <div className="space-y-4">
+      {!loadingFactors && mode === "passkey" && showPasskey && (
+        <div className="space-y-4">
+          <Button
+            type="button"
+            className="w-full"
+            onClick={triggerPasskey}
+            disabled={passkeyLoading || isPending}
+          >
+            {passkeyLoading ? "Waiting for passkey…" : "Use passkey"}
+          </Button>
+          {passkeyAttempted && error && (
             <Button
               type="button"
+              variant="secondary"
               className="w-full"
               onClick={triggerPasskey}
               disabled={passkeyLoading || isPending}
             >
-              {passkeyLoading ? "Waiting for passkey…" : "Use passkey"}
+              Try passkey again
             </Button>
-            {passkeyAttempted && error && (
-              <Button
-                type="button"
-                variant="secondary"
-                className="w-full"
-                onClick={triggerPasskey}
-                disabled={passkeyLoading || isPending}
-              >
-                Try passkey again
-              </Button>
-            )}
-            <div className="flex flex-col gap-2 text-center">
-              {showTotp && (
-                <button
-                  type="button"
-                  onClick={() => { setMode("totp"); setError(null); }}
-                  className="text-xs text-muted-foreground hover:text-foreground underline-offset-4 hover:underline"
-                >
-                  Use authenticator app instead
-                </button>
-              )}
-              {showRecovery && (
-                <button
-                  type="button"
-                  onClick={() => { setMode("recovery"); setError(null); }}
-                  className="text-xs text-muted-foreground hover:text-foreground underline-offset-4 hover:underline"
-                >
-                  Use a recovery code instead
-                </button>
-              )}
-              {!showTotp && !showRecovery && (
-                <button
-                  type="button"
-                  onClick={backToSignIn}
-                  className="text-xs text-muted-foreground hover:text-foreground underline-offset-4 hover:underline"
-                >
-                  Back to sign in
-                </button>
-              )}
-            </div>
-          </div>
-        )}
-
-        {!loadingFactors && mode === "passkey" && factors?.hasPasskey && !webauthnSupported && (
-          <div className="space-y-4 text-center">
-            <p className="text-sm text-muted-foreground">
-              This browser does not support passkeys. Use another enrolled verification method or sign in from a supported device.
-            </p>
+          )}
+          <div className="flex flex-col gap-2 text-center">
             {showTotp && (
-              <Button type="button" variant="secondary" className="w-full" onClick={() => setMode("totp")}>
-                Use authenticator app
-              </Button>
+              <button
+                type="button"
+                onClick={() => { setMode("totp"); setError(null); }}
+                className="text-xs underline-offset-4 hover:underline transition-colors"
+                style={{ color: "#79747E" }}
+              >
+                Use authenticator app instead
+              </button>
             )}
             {showRecovery && (
-              <Button type="button" variant="secondary" className="w-full" onClick={() => setMode("recovery")}>
-                Use recovery code
-              </Button>
+              <button
+                type="button"
+                onClick={() => { setMode("recovery"); setError(null); }}
+                className="text-xs underline-offset-4 hover:underline transition-colors"
+                style={{ color: "#79747E" }}
+              >
+                Use a recovery code instead
+              </button>
             )}
             {!showTotp && !showRecovery && (
               <button
                 type="button"
                 onClick={backToSignIn}
-                className="text-xs text-muted-foreground hover:text-foreground underline-offset-4 hover:underline"
+                className="text-xs underline-offset-4 hover:underline transition-colors"
+                style={{ color: "#79747E" }}
               >
                 Back to sign in
               </button>
             )}
           </div>
-        )}
+        </div>
+      )}
 
-        {!loadingFactors && !showPasskey && !showTotp && !showRecovery && (
-          <div className="space-y-4 text-center">
-            <p className="text-sm text-muted-foreground">
-              No verification method is available for this account. Sign in again or contact your administrator.
-            </p>
-            <Button type="button" variant="secondary" className="w-full" onClick={backToSignIn}>
-              Back to sign in
+      {!loadingFactors && mode === "passkey" && factors?.hasPasskey && !webauthnSupported && (
+        <div className="space-y-4 text-center">
+          <p className="text-sm" style={{ color: "#79747E" }}>
+            This browser does not support passkeys. Use another enrolled verification method or sign in from a supported device.
+          </p>
+          {showTotp && (
+            <Button type="button" variant="secondary" className="w-full" onClick={() => setMode("totp")}>
+              Use authenticator app
             </Button>
-          </div>
-        )}
-
-        {!loadingFactors && (mode === "totp" || mode === "recovery") && (
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium mb-1" htmlFor="code">
-                {mode === "totp" ? "Authenticator code" : "Recovery code"}
-              </label>
-              <input
-                id="code"
-                type="text"
-                inputMode={mode === "totp" ? "numeric" : "text"}
-                pattern={mode === "totp" ? "[0-9]{6}" : undefined}
-                autoComplete={mode === "totp" ? "one-time-code" : "off"}
-                autoFocus
-                required
-                value={code}
-                onChange={(e) => setCode(e.target.value)}
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-                placeholder={mode === "totp" ? "000000" : "xxxxxxxxxxxxxxxx"}
-              />
-            </div>
-
+          )}
+          {showRecovery && (
+            <Button type="button" variant="secondary" className="w-full" onClick={() => setMode("recovery")}>
+              Use recovery code
+            </Button>
+          )}
+          {!showTotp && !showRecovery && (
             <button
-              type="submit"
-              disabled={isPending || code.length < 6}
-              className="w-full rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              type="button"
+              onClick={backToSignIn}
+              className="text-xs underline-offset-4 hover:underline transition-colors"
+              style={{ color: "#79747E" }}
             >
-              {isPending ? "Verifying…" : "Verify"}
+              Back to sign in
             </button>
+          )}
+        </div>
+      )}
 
-            <div className="flex flex-col gap-2 text-center">
-              {showPasskey && (
-                <button
-                  type="button"
-                  onClick={() => { setMode("passkey"); setError(null); setCode(""); }}
-                  className="text-xs text-muted-foreground hover:text-foreground underline-offset-4 hover:underline"
-                >
-                  Use passkey instead
-                </button>
-              )}
-              {mode === "totp" && showRecovery && (
-                <button
-                  type="button"
-                  onClick={() => { setMode("recovery"); setError(null); setCode(""); }}
-                  className="text-xs text-muted-foreground hover:text-foreground underline-offset-4 hover:underline"
-                >
-                  Use a recovery code instead
-                </button>
-              )}
-              {mode === "recovery" && showTotp && (
-                <button
-                  type="button"
-                  onClick={() => { setMode("totp"); setError(null); setCode(""); }}
-                  className="text-xs text-muted-foreground hover:text-foreground underline-offset-4 hover:underline"
-                >
-                  Use authenticator app instead
-                </button>
-              )}
-            </div>
-          </form>
-        )}
-      </div>
-    </div>
+      {!loadingFactors && !showPasskey && !showTotp && !showRecovery && (
+        <div className="space-y-4 text-center">
+          <p className="text-sm" style={{ color: "#79747E" }}>
+            No verification method is available for this account. Sign in again or contact your administrator.
+          </p>
+          <Button type="button" variant="secondary" className="w-full" onClick={backToSignIn}>
+            Back to sign in
+          </Button>
+        </div>
+      )}
+
+      {!loadingFactors && (mode === "totp" || mode === "recovery") && (
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium mb-1.5" htmlFor="code" style={{ color: "#1C1B1F" }}>
+              {mode === "totp" ? "Authenticator code" : "Recovery code"}
+            </label>
+            <input
+              id="code"
+              type="text"
+              inputMode={mode === "totp" ? "numeric" : "text"}
+              pattern={mode === "totp" ? "[0-9]{6}" : undefined}
+              autoComplete={mode === "totp" ? "one-time-code" : "off"}
+              autoFocus
+              required
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              className="w-full rounded-xl border bg-white px-3.5 py-2.5 text-sm placeholder:text-[#79747E] focus:outline-none focus:ring-2 focus:ring-[#DC2626]/25 focus:border-[#DC2626] transition-colors"
+              style={{ borderColor: "#E0E0E0", color: "#1C1B1F" }}
+              placeholder={mode === "totp" ? "000000" : "xxxxxxxxxxxxxxxx"}
+            />
+          </div>
+
+          <button
+            type="submit"
+            disabled={isPending || code.length < 6}
+            className="w-full rounded-xl px-4 py-2.5 text-sm font-medium text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            style={{ background: "#DC2626" }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = "#B91C1C")}
+            onMouseLeave={(e) => (e.currentTarget.style.background = "#DC2626")}
+          >
+            {isPending ? "Verifying…" : "Verify"}
+          </button>
+
+          <div className="flex flex-col gap-2 text-center">
+            {showPasskey && (
+              <button
+                type="button"
+                onClick={() => { setMode("passkey"); setError(null); setCode(""); }}
+                className="text-xs underline-offset-4 hover:underline transition-colors"
+                style={{ color: "#79747E" }}
+              >
+                Use passkey instead
+              </button>
+            )}
+            {mode === "totp" && showRecovery && (
+              <button
+                type="button"
+                onClick={() => { setMode("recovery"); setError(null); setCode(""); }}
+                className="text-xs underline-offset-4 hover:underline transition-colors"
+                style={{ color: "#79747E" }}
+              >
+                Use a recovery code instead
+              </button>
+            )}
+            {mode === "recovery" && showTotp && (
+              <button
+                type="button"
+                onClick={() => { setMode("totp"); setError(null); setCode(""); }}
+                className="text-xs underline-offset-4 hover:underline transition-colors"
+                style={{ color: "#79747E" }}
+              >
+                Use authenticator app instead
+              </button>
+            )}
+          </div>
+        </form>
+      )}
+    </AuthCard>
   );
 }
 

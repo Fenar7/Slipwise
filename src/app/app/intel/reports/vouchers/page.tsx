@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import {
   getVoucherReport,
@@ -18,8 +18,9 @@ import {
   formatCurrency,
   type Column,
 } from "@/features/intel/components/report-data-table";
+import { listTags } from "@/lib/tags/tag-service";
 
-const FILTER_FIELDS: FilterField[] = [
+const BASE_FILTER_FIELDS: FilterField[] = [
   {
     key: "type",
     label: "Type",
@@ -39,7 +40,7 @@ const FILTER_FIELDS: FilterField[] = [
   },
 ];
 
-const COLUMNS: Column<VoucherReportRow>[] = [
+const BASE_COLUMNS: Column<VoucherReportRow>[] = [
   { key: "voucherNumber", label: "Voucher #", sortable: true },
   {
     key: "type",
@@ -62,6 +63,13 @@ const COLUMNS: Column<VoucherReportRow>[] = [
     sortable: true,
     render: (row) => <StatusBadge status={row.status} />,
   },
+  {
+    key: "tags",
+    label: "Tags",
+    render: (row) => (
+      <span className="text-xs text-[var(--muted-foreground)]">{row.tags}</span>
+    ),
+  },
 ];
 
 export default function VoucherReportPage() {
@@ -80,6 +88,33 @@ export default function VoucherReportPage() {
     receipts: 0,
     receiptCount: 0,
   });
+  const [tagOptions, setTagOptions] = useState<{ value: string; label: string }[]>([]);
+
+  useEffect(() => {
+    listTags({ includeArchived: false }).then((result) => {
+      if (result.success && result.data) {
+        setTagOptions(
+          result.data.map((t) => ({ value: t.id, label: t.name }))
+        );
+      }
+    });
+  }, []);
+
+  const filterFields = useMemo<FilterField[]>(() => {
+    if (tagOptions.length > 0) {
+      return [
+        ...BASE_FILTER_FIELDS,
+        {
+          key: "tagIds",
+          label: "Tags",
+          type: "multi-select",
+          options: tagOptions,
+          placeholder: "All tags",
+        },
+      ];
+    }
+    return BASE_FILTER_FIELDS;
+  }, [tagOptions]);
 
   const fetchData = useCallback(
     (f: FilterValues, p: number, sk?: string, sd?: "asc" | "desc") => {
@@ -89,6 +124,7 @@ export default function VoucherReportPage() {
           dateFrom: f.dateFrom as string | undefined,
           dateTo: f.dateTo as string | undefined,
           category: f.category as string | undefined,
+          tagIds: (f.tagIds as string[])?.length ? (f.tagIds as string[]) : undefined,
           page: p,
           sortKey: sk,
           sortDir: sd,
@@ -136,6 +172,7 @@ export default function VoucherReportPage() {
         dateFrom: filters.dateFrom as string | undefined,
         dateTo: filters.dateTo as string | undefined,
         category: filters.category as string | undefined,
+        tagIds: (filters.tagIds as string[])?.length ? (filters.tagIds as string[]) : undefined,
       });
       const blob = new Blob([csv], { type: "text/csv" });
       const url = URL.createObjectURL(blob);
@@ -223,7 +260,7 @@ export default function VoucherReportPage() {
 
       <div className="mb-6">
         <ReportFilterBar
-          fields={FILTER_FIELDS}
+          fields={filterFields}
           values={filters}
           onApply={handleApply}
           onClear={handleClear}
@@ -237,7 +274,7 @@ export default function VoucherReportPage() {
       ) : (
         <div className={isPending ? "opacity-60 pointer-events-none" : ""}>
           <ReportDataTable
-            columns={COLUMNS}
+            columns={BASE_COLUMNS}
             rows={rows}
             total={total}
             page={page}

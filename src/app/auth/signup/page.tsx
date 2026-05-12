@@ -2,6 +2,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { Eye, EyeOff } from "lucide-react";
 import { AuthCard } from "@/features/auth/components/auth-card";
 import { GoogleButton } from "@/features/auth/components/google-button";
 import { AuthDivider } from "@/features/auth/components/auth-divider";
@@ -14,7 +15,9 @@ export default function SignupPage() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [confirm, setConfirm] = useState("");
+  const [showConfirm, setShowConfirm] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -37,8 +40,6 @@ export default function SignupPage() {
         password,
         options: {
           data: { name },
-          // After email verification, Supabase redirects here to exchange the
-          // PKCE code for a session and then forward to onboarding.
           emailRedirectTo: `${window.location.origin}/auth/callback?next=/onboarding`,
         },
       });
@@ -46,12 +47,10 @@ export default function SignupPage() {
         console.error("[signup] signUp error:", signUpError.message, signUpError.code);
         setError(signUpError.message ?? "Could not create account");
       } else if (data.session) {
-        // Email confirmations disabled — user is already signed in
         console.log("[signup] signed up and session created immediately (no confirmation)");
         router.push("/onboarding");
         router.refresh();
       } else {
-        // Email confirmation required
         console.log("[signup] user created, awaiting email confirmation");
         router.push("/auth/verify-email?email=" + encodeURIComponent(email));
       }
@@ -65,9 +64,6 @@ export default function SignupPage() {
 
   return (
     <AuthCard title="Create your account" subtitle="Get started with Slipwise for free">
-      <GoogleButton callbackURL="/onboarding" />
-
-      <AuthDivider text="or" />
       <form onSubmit={handleSubmit} className="space-y-4">
         <Input
           label="Full name"
@@ -76,6 +72,7 @@ export default function SignupPage() {
           onChange={(e) => setName(e.target.value)}
           required
           autoComplete="name"
+          placeholder="John Doe"
         />
         <Input
           label="Email"
@@ -84,40 +81,71 @@ export default function SignupPage() {
           onChange={(e) => setEmail(e.target.value)}
           required
           autoComplete="email"
+          placeholder="you@company.com"
         />
-        <Input
-          label="Password"
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-          autoComplete="new-password"
-        />
-        <Input
-          label="Confirm password"
-          type="password"
-          value={confirm}
-          onChange={(e) => setConfirm(e.target.value)}
-          required
-          autoComplete="new-password"
-        />
+        <div className="relative">
+          <Input
+            label="Password"
+            type={showPassword ? "text" : "password"}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+            autoComplete="new-password"
+            placeholder="••••••••"
+          />
+          <button
+            type="button"
+            onClick={() => setShowPassword((s) => !s)}
+            className="absolute right-3 top-[2.05rem] transition-colors"
+            style={{ color: "#79747E" }}
+            tabIndex={-1}
+          >
+            {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+          </button>
+        </div>
+        <div className="relative">
+          <Input
+            label="Confirm password"
+            type={showConfirm ? "text" : "password"}
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value)}
+            required
+            autoComplete="new-password"
+            placeholder="••••••••"
+          />
+          <button
+            type="button"
+            onClick={() => setShowConfirm((s) => !s)}
+            className="absolute right-3 top-[2.05rem] transition-colors"
+            style={{ color: "#79747E" }}
+            tabIndex={-1}
+          >
+            {showConfirm ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+          </button>
+        </div>
         {error && (
-          <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <div className="rounded-lg border p-3 text-sm" style={{ background: "#F9DEDC", borderColor: "#F2B8B5", color: "#410E0B" }}>
             {error}
-          </p>
+          </div>
         )}
         <Button
           type="submit"
-          className="h-10 w-full bg-[#dc2626] text-white hover:bg-[#b91c1c]"
+          className="h-10 w-full"
           disabled={loading}
         >
           {loading ? "Creating account…" : "Create account"}
         </Button>
       </form>
 
-      <p className="mt-5 text-center text-sm text-gray-500">
+      <AuthDivider text="or" />
+
+      <div className="space-y-3">
+        <GoogleButton callbackURL="/onboarding" />
+      </div>
+
+      <p className="mt-6 text-center text-sm" style={{ color: "#79747E" }}>
         Already have an account?{" "}
-        <Link href="/auth/login" className="font-medium text-[#dc2626] hover:underline">
+        <Link href="/auth/login" className="font-medium hover:underline" style={{ color: "#C05092" }}>
           Sign in
         </Link>
       </p>

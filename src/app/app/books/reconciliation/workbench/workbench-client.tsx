@@ -72,20 +72,20 @@ function MatchRow({
   const isConfirmed = match.status === "CONFIRMED";
 
   return (
-    <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+    <div className="flex items-center justify-between rounded-lg border border-[var(--border-soft)] bg-[var(--surface-subtle)] px-3 py-2.5 text-sm">
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          <span className="font-medium text-slate-800">{match.label}</span>
+          <span className="font-medium text-[var(--text-primary)]">{match.label}</span>
           {match.subLabel && (
-            <span className="text-slate-500">· {match.subLabel}</span>
+            <span className="text-[var(--text-muted)]">· {match.subLabel}</span>
           )}
           {confidenceBadge(match.confidenceScore)}
         </div>
-        <div className="mt-0.5 text-xs text-slate-500">
+        <div className="mt-0.5 text-xs text-[var(--text-muted)]">
           {match.entityType.replace(/_/g, " ")}
           {match.documentDate ? ` · ${formatDate(match.documentDate)}` : ""}
           {" · "}
-          <span className="font-mono">
+          <span className="font-mono tabular-nums">
             {new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR" }).format(
               match.matchedAmount,
             )}
@@ -94,7 +94,7 @@ function MatchRow({
       </div>
       <div className="ml-3 flex shrink-0 gap-2">
         {isConfirmed ? (
-          <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">
+          <span className="rounded-full bg-[var(--state-success-soft)] px-2.5 py-0.5 text-xs font-medium text-[var(--state-success)]">
             Confirmed
           </span>
         ) : (
@@ -109,7 +109,7 @@ function MatchRow({
             <Button
               variant="ghost"
               onClick={() => onReject(match.matchId)}
-              className="h-7 px-2 text-xs text-slate-500"
+              className="h-7 px-2 text-xs text-[var(--text-muted)]"
             >
               Reject
             </Button>
@@ -184,7 +184,7 @@ function TxnCard({
   const matchCount = txn.matches.length;
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
+    <div className="rounded-xl border border-[var(--border-soft)] bg-[var(--surface-panel)] shadow-[var(--shadow-card)] transition-colors hover:border-[var(--border-default)]">
       <button
         type="button"
         onClick={handleExpand}
@@ -194,35 +194,37 @@ function TxnCard({
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span
-              className={`text-sm font-semibold ${txn.direction === "CREDIT" ? "text-green-700" : "text-red-700"}`}
+              className={`text-sm font-semibold tabular-nums ${
+                txn.direction === "CREDIT" ? "text-[var(--state-success)]" : "text-[var(--state-danger)]"
+              }`}
             >
               {formatCurrency(txn.amount, txn.direction)}
             </span>
-            <span className="text-sm text-slate-500">{formatDate(txn.txnDate)}</span>
+            <span className="text-sm text-[var(--text-muted)]">{formatDate(txn.txnDate)}</span>
             <Badge variant={txn.status === "SUGGESTED" ? "default" : "warning"}>
               {txn.status}
             </Badge>
           </div>
-          <p className="mt-0.5 truncate text-sm text-slate-700">
+          <p className="mt-0.5 truncate text-sm text-[var(--text-secondary)]">
             {txn.normalizedPayee ?? txn.description}
           </p>
           {txn.reference && (
-            <p className="mt-0.5 font-mono text-xs text-slate-400">{txn.reference}</p>
+            <p className="mt-0.5 font-mono text-xs text-[var(--text-muted)]">{txn.reference}</p>
           )}
           {txn.bankAccount && (
-            <p className="mt-0.5 text-xs text-slate-400">{txn.bankAccount.name}</p>
+            <p className="mt-0.5 text-xs text-[var(--text-muted)]">{txn.bankAccount.name}</p>
           )}
         </div>
-        <div className="shrink-0 text-sm text-slate-400">
+        <div className="shrink-0 text-sm text-[var(--text-muted)]">
           {matchCount > 0 ? `${matchCount} match${matchCount > 1 ? "es" : ""}` : "No matches"}{" "}
           {expanded ? "▲" : "▼"}
         </div>
       </button>
 
       {expanded && (
-        <div className="border-t border-slate-100 px-4 pb-4 pt-3">
+        <div className="border-t border-[var(--border-soft)] px-4 pb-4 pt-3">
           {isPending && !enrichedMatches ? (
-            <p className="text-sm text-slate-500">Loading matches…</p>
+            <p className="text-sm text-[var(--text-muted)]">Loading matches…</p>
           ) : enrichedMatches && enrichedMatches.length > 0 ? (
             <div className="space-y-2">
               {enrichedMatches.map((m) => (
@@ -235,7 +237,7 @@ function TxnCard({
               ))}
             </div>
           ) : (
-            <p className="text-sm text-slate-500">
+            <p className="text-sm text-[var(--text-muted)]">
               No suggested matches. Use the main reconciliation page to manually match.
             </p>
           )}
@@ -255,9 +257,9 @@ export function WorkbenchClient({ transactions }: WorkbenchClientProps) {
   if (transactions.length === 0) {
     return (
       <Card>
-        <CardContent className="py-12 text-center text-slate-500">
-          <p className="text-base font-medium">All transactions are reconciled</p>
-          <p className="mt-1 text-sm">Import a bank statement to begin reconciliation.</p>
+        <CardContent className="py-12 text-center">
+          <p className="text-base font-medium text-[var(--text-primary)]">All transactions are reconciled</p>
+          <p className="mt-1 text-sm text-[var(--text-muted)]">Import a bank statement to begin reconciliation.</p>
         </CardContent>
       </Card>
     );

@@ -55,7 +55,7 @@ export async function POST(request: Request) {
 
     const mapped: InvoiceWithItems[] = invoices.map((inv) => ({
       id: inv.id,
-      invoiceNumber: inv.invoiceNumber,
+      invoiceNumber: inv.invoiceNumber || "",
       invoiceDate: formatIsoDate(inv.invoiceDate),
       totalAmount: toAccountingNumber(inv.totalAmount),
       notes: inv.notes,

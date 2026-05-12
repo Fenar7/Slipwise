@@ -2,6 +2,15 @@ import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import {
+  FinanceTable,
+  FinanceTableHeader,
+  FinanceTableHead,
+  FinanceTableBody,
+  FinanceTableRow,
+  FinanceTableCell,
+  FinanceTableEmpty,
+} from "@/components/ui/finance-table";
 import { getBooksJournalRegister, getChartOfAccounts } from "../actions";
 import { ExportBooksReportButton } from "../components/export-books-report-button";
 import { JournalRowActions } from "../components/journal-row-actions";
@@ -30,7 +39,9 @@ export default async function JournalsPage({
   if (!accountsResult.success) {
     return (
       <div className="mx-auto max-w-6xl">
-        <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{accountsResult.error}</div>
+        <div className="rounded-xl bg-[var(--state-danger-soft)] px-4 py-3 text-sm text-[var(--state-danger)]">
+          {accountsResult.error}
+        </div>
       </div>
     );
   }
@@ -38,7 +49,9 @@ export default async function JournalsPage({
   if (!journalsResult.success) {
     return (
       <div className="mx-auto max-w-6xl">
-        <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{journalsResult.error}</div>
+        <div className="rounded-xl bg-[var(--state-danger-soft)] px-4 py-3 text-sm text-[var(--state-danger)]">
+          {journalsResult.error}
+        </div>
       </div>
     );
   }
@@ -50,8 +63,8 @@ export default async function JournalsPage({
     <div className="mx-auto max-w-6xl space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Journal Register</h1>
-          <p className="mt-1 text-sm text-slate-500">
+          <h1 className="text-2xl font-semibold text-[var(--text-primary)]">Journal Register</h1>
+          <p className="mt-1 text-sm text-[var(--text-muted)]">
             Filter journal entries by date, source, account, and posting status.
           </p>
         </div>
@@ -70,16 +83,16 @@ export default async function JournalsPage({
 
       <Card>
         <CardHeader>
-          <h2 className="text-lg font-semibold text-slate-900">Filters</h2>
+          <h2 className="text-base font-semibold text-[var(--text-primary)]">Filters</h2>
         </CardHeader>
         <CardContent>
           <form className="grid gap-4 md:grid-cols-5">
             <label className="block text-sm">
-              <span className="mb-1 block font-medium text-slate-700">Status</span>
+              <span className="mb-1 block font-medium text-[var(--text-primary)]">Status</span>
               <select
                 name="status"
                 defaultValue={params.status ?? ""}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                className="w-full rounded-lg border border-[var(--border-default)] bg-white px-3 py-2 text-sm text-[var(--text-primary)] transition-colors focus:border-[var(--brand-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--focus-ring)]"
               >
                 <option value="">All</option>
                 <option value="DRAFT">Draft</option>
@@ -89,11 +102,11 @@ export default async function JournalsPage({
             </label>
 
             <label className="block text-sm">
-              <span className="mb-1 block font-medium text-slate-700">Source</span>
+              <span className="mb-1 block font-medium text-[var(--text-primary)]">Source</span>
               <select
                 name="source"
                 defaultValue={params.source ?? ""}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                className="w-full rounded-lg border border-[var(--border-default)] bg-white px-3 py-2 text-sm text-[var(--text-primary)] transition-colors focus:border-[var(--brand-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--focus-ring)]"
               >
                 <option value="">All</option>
                 {[
@@ -115,11 +128,11 @@ export default async function JournalsPage({
             </label>
 
             <label className="block text-sm">
-              <span className="mb-1 block font-medium text-slate-700">Account</span>
+              <span className="mb-1 block font-medium text-[var(--text-primary)]">Account</span>
               <select
                 name="accountId"
                 defaultValue={params.accountId ?? ""}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                className="w-full rounded-lg border border-[var(--border-default)] bg-white px-3 py-2 text-sm text-[var(--text-primary)] transition-colors focus:border-[var(--brand-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--focus-ring)]"
               >
                 <option value="">All accounts</option>
                 {accounts.map((account) => (
@@ -131,27 +144,30 @@ export default async function JournalsPage({
             </label>
 
             <label className="block text-sm">
-              <span className="mb-1 block font-medium text-slate-700">Start date</span>
+              <span className="mb-1 block font-medium text-[var(--text-primary)]">Start date</span>
               <input
                 type="date"
                 name="startDate"
                 defaultValue={params.startDate ?? ""}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                className="w-full rounded-lg border border-[var(--border-default)] bg-white px-3 py-2 text-sm text-[var(--text-primary)] transition-colors focus:border-[var(--brand-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--focus-ring)]"
               />
             </label>
 
             <label className="block text-sm">
-              <span className="mb-1 block font-medium text-slate-700">End date</span>
+              <span className="mb-1 block font-medium text-[var(--text-primary)]">End date</span>
               <input
                 type="date"
                 name="endDate"
                 defaultValue={params.endDate ?? ""}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                className="w-full rounded-lg border border-[var(--border-default)] bg-white px-3 py-2 text-sm text-[var(--text-primary)] transition-colors focus:border-[var(--brand-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--focus-ring)]"
               />
             </label>
 
             <div className="md:col-span-5 flex items-center justify-end gap-3">
-              <Link href="/app/books/journals" className="text-sm font-medium text-slate-500 hover:underline">
+              <Link
+                href="/app/books/journals"
+                className="text-sm font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:underline transition-colors"
+              >
                 Reset
               </Link>
               <Button type="submit">Apply Filters</Button>
@@ -163,86 +179,76 @@ export default async function JournalsPage({
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-slate-900">Entries</h2>
+            <h2 className="text-base font-semibold text-[var(--text-primary)]">Entries</h2>
             <Badge variant="default">{journals.length} results</Badge>
           </div>
         </CardHeader>
         <CardContent className="px-0 py-0">
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-                  <th className="px-4 py-3">Entry</th>
-                  <th className="px-4 py-3">Date</th>
-                  <th className="px-4 py-3">Source</th>
-                  <th className="px-4 py-3">Period</th>
-                  <th className="px-4 py-3">Amount</th>
-                  <th className="px-4 py-3">Evidence</th>
-                  <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3 text-right">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200">
-                {journals.length === 0 ? (
-                  <tr>
-                    <td colSpan={8} className="px-4 py-10 text-center text-sm text-slate-500">
-                      No journals match the current filters.
-                    </td>
-                  </tr>
-                ) : (
-                  journals.map((journal) => (
-                    <tr key={journal.id}>
-                      <td className="px-4 py-3 text-sm text-slate-900">
-                        <Link
-                          href={`/app/books/journals/${journal.id}`}
-                          className="font-medium text-blue-600 hover:underline"
-                        >
-                          {journal.entryNumber}
-                        </Link>
-                        <div className="text-xs text-slate-500">
-                          {journal.memo || journal.sourceRef || `${journal.lineCount} lines`}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-sm text-slate-700">
-                        {new Date(journal.entryDate).toLocaleDateString()}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-slate-700">
-                        {journal.source.replaceAll("_", " ")}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-slate-700">{journal.periodLabel}</td>
-                      <td className="px-4 py-3 text-sm text-slate-700">
-                        {journal.totalDebit.toLocaleString("en-IN", {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-slate-700">
-                        {journal.attachmentCount === 0
-                          ? "No files"
-                          : `${journal.attachmentCount} attachment${journal.attachmentCount === 1 ? "" : "s"}`}
-                      </td>
-                      <td className="px-4 py-3">
-                        <Badge
-                          variant={
-                            journal.status === "POSTED"
-                              ? "success"
-                              : journal.status === "REVERSED"
-                                ? "warning"
-                                : "default"
-                          }
-                        >
-                          {journal.status}
-                        </Badge>
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        <JournalRowActions journalEntryId={journal.id} status={journal.status} />
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+          <FinanceTable>
+            <FinanceTableHeader>
+              <FinanceTableHead>Entry</FinanceTableHead>
+              <FinanceTableHead>Date</FinanceTableHead>
+              <FinanceTableHead>Source</FinanceTableHead>
+              <FinanceTableHead>Period</FinanceTableHead>
+              <FinanceTableHead align="right">Amount</FinanceTableHead>
+              <FinanceTableHead>Evidence</FinanceTableHead>
+              <FinanceTableHead>Status</FinanceTableHead>
+              <FinanceTableHead align="right">Action</FinanceTableHead>
+            </FinanceTableHeader>
+            <FinanceTableBody>
+              {journals.length === 0 ? (
+                <FinanceTableEmpty colSpan={8} message="No journals match the current filters." />
+              ) : (
+                journals.map((journal) => (
+                  <FinanceTableRow key={journal.id}>
+                    <FinanceTableCell variant="primary">
+                      <Link
+                        href={`/app/books/journals/${journal.id}`}
+                        className="font-medium text-[var(--brand-primary)] hover:underline"
+                      >
+                        {journal.entryNumber}
+                      </Link>
+                      <div className="text-xs text-[var(--text-muted)]">
+                        {journal.memo || journal.sourceRef || `${journal.lineCount} lines`}
+                      </div>
+                    </FinanceTableCell>
+                    <FinanceTableCell>
+                      {new Date(journal.entryDate).toLocaleDateString()}
+                    </FinanceTableCell>
+                    <FinanceTableCell>{journal.source.replaceAll("_", " ")}</FinanceTableCell>
+                    <FinanceTableCell>{journal.periodLabel}</FinanceTableCell>
+                    <FinanceTableCell align="right" variant="numeric">
+                      {journal.totalDebit.toLocaleString("en-IN", {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
+                    </FinanceTableCell>
+                    <FinanceTableCell>
+                      {journal.attachmentCount === 0
+                        ? "No files"
+                        : `${journal.attachmentCount} attachment${journal.attachmentCount === 1 ? "" : "s"}`}
+                    </FinanceTableCell>
+                    <FinanceTableCell>
+                      <Badge
+                        variant={
+                          journal.status === "POSTED"
+                            ? "success"
+                            : journal.status === "REVERSED"
+                              ? "warning"
+                              : "default"
+                        }
+                      >
+                        {journal.status}
+                      </Badge>
+                    </FinanceTableCell>
+                    <FinanceTableCell align="right">
+                      <JournalRowActions journalEntryId={journal.id} status={journal.status} />
+                    </FinanceTableCell>
+                  </FinanceTableRow>
+                ))
+              )}
+            </FinanceTableBody>
+          </FinanceTable>
         </CardContent>
       </Card>
     </div>
