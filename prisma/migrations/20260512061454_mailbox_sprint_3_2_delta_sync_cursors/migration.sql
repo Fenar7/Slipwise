@@ -19,11 +19,10 @@ ALTER TYPE "mailbox_audit_action" ADD VALUE 'WATCH_RENEWED';
 ALTER TYPE "mailbox_audit_action" ADD VALUE 'WATCH_EXPIRED_DETECTED';
 
 -- AlterTable
-ALTER TABLE "e_invoice_request" ALTER COLUMN "status" SET DEFAULT 'PENDING';
-
--- AlterTable
 ALTER TABLE "mailbox_connection" ADD COLUMN     "watchExpiresAt" TIMESTAMP(3),
-ADD COLUMN     "watchRenewedAt" TIMESTAMP(3);
+ADD COLUMN     "watchRenewedAt" TIMESTAMP(3),
+ADD COLUMN     "syncLeaseToken" TEXT,
+ADD COLUMN     "syncLeaseExpiresAt" TIMESTAMP(3);
 
 -- AlterTable
 ALTER TABLE "mailbox_sync_run" ADD COLUMN     "syncMode" "mailbox_sync_mode" NOT NULL DEFAULT 'INITIAL',

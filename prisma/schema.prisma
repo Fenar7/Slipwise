@@ -5980,6 +5980,9 @@ model MailboxConnection {
   /// Explicit watch/subscription expiration for renewal modeling.
   watchExpiresAt    DateTime?
   watchRenewedAt    DateTime?
+  /// Mailbox-scoped sync lease. Used to prevent concurrent sync execution.
+  syncLeaseToken    String?
+  syncLeaseExpiresAt DateTime?
   lastSyncAt        DateTime?
   lastSyncError     String?
   /// Soft-disable: when set, the connection is treated as inactive without deletion.

@@ -4,6 +4,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { NextRequest } from "next/server";
 
 vi.mock("server-only", () => ({}));
 
@@ -34,6 +35,7 @@ vi.mock("@/lib/db", () => ({
       findUnique: vi.fn(),
       findFirst: vi.fn(),
       update: vi.fn(),
+      updateMany: vi.fn(),
     },
     mailboxProviderCursor: {
       findFirst: vi.fn(),
@@ -99,6 +101,14 @@ vi.mock("@/lib/mailbox/provider-registry", () => ({
   getMailboxProviderAdapter: vi.fn(),
 }));
 
+vi.mock("@/app/api/integrations/_auth", () => ({
+  requireIntegrationAdminRoute: vi.fn(),
+}));
+
+vi.mock("@/lib/rate-limit", () => ({
+  rateLimitByOrg: vi.fn(),
+}));
+
 const mockDb = db as unknown as {
   mailboxSyncRun: {
     create: ReturnType<typeof vi.fn>;
@@ -108,6 +118,7 @@ const mockDb = db as unknown as {
   mailboxConnection: {
     update: ReturnType<typeof vi.fn>;
     findFirst: ReturnType<typeof vi.fn>;
+    updateMany: ReturnType<typeof vi.fn>;
   };
   mailboxProviderCursor: {
     upsert: ReturnType<typeof vi.fn>;
@@ -120,6 +131,7 @@ describe("Sprint 3.2 — Incremental sync and provider cursors", () => {
     vi.clearAllMocks();
     // Reset the concurrency guard mock so one test's resolved value does not leak into the next.
     mockDb.mailboxSyncRun.findFirst.mockResolvedValue(null);
+    mockDb.mailboxConnection.updateMany.mockResolvedValue({ count: 1 });
   });
 
   // ─── Domain helpers ──────────────────────────────────────────────────────
@@ -186,6 +198,7 @@ describe("Sprint 3.2 — Incremental sync and provider cursors", () => {
       vi.mocked(getMailboxProviderAdapter).mockReturnValue(makeMockAdapter() as never);
 
       // Simulate an existing RUNNING sync run.
+      mockDb.mailboxConnection.updateMany.mockResolvedValue({ count: 0 });
       mockDb.mailboxSyncRun.findFirst.mockResolvedValue({ id: "run-existing" });
 
       const result = await runMailboxSync({
@@ -210,7 +223,7 @@ describe("Sprint 3.2 — Incremental sync and provider cursors", () => {
       vi.mocked(getMailboxProviderAdapter).mockReturnValue(makeMockAdapter() as never);
 
       // No existing RUNNING sync for THIS mailbox.
-      mockDb.mailboxSyncRun.findFirst.mockResolvedValue(null);
+      mockDb.mailboxConnection.updateMany.mockResolvedValue({ count: 1 });
       mockDb.mailboxSyncRun.create.mockResolvedValue(makeSyncRunRow());
       mockDb.mailboxSyncRun.update.mockResolvedValue({});
       mockDb.mailboxConnection.update.mockResolvedValue({});
@@ -225,6 +238,7 @@ describe("Sprint 3.2 — Incremental sync and provider cursors", () => {
       });
 
       expect(result.success).toBe(true);
+      expect(mockDb.mailboxConnection.updateMany).toHaveBeenCalledTimes(2);
     });
   });
 
@@ -375,6 +389,45 @@ describe("Sprint 3.2 — Incremental sync and provider cursors", () => {
       expect(deleteMailboxCursors).toHaveBeenCalledWith("org-1", "conn-1");
       expect(result.syncMode).toBe("INITIAL");
     });
+
+    it("fails the sync and requires reconnect when watch renewal loses auth", async () => {
+      const { getMailboxConnection } = await import("@/lib/mailbox/connection-service");
+      const { getMailboxProviderAdapter } = await import("@/lib/mailbox/provider-registry");
+      const { getMailboxCursor, deleteMailboxCursors } = await import("@/lib/mailbox/cursor-service");
+
+      vi.mocked(getMailboxConnection).mockResolvedValue(
+        makeConnectionRecord({ watchExpiresAt: new Date("2020-01-01") }),
+      );
+      vi.mocked(getMailboxCursor).mockResolvedValue(makeCursorRecord());
+
+      const mockAdapter = makeMockAdapter();
+      mockAdapter.renewWatch.mockResolvedValue({
+        category: "auth_expired",
+        safeMessage: "Token revoked",
+        retryable: false,
+      });
+      vi.mocked(getMailboxProviderAdapter).mockReturnValue(mockAdapter as never);
+
+      mockDb.mailboxSyncRun.create.mockResolvedValue(makeSyncRunRow({ syncMode: "DELTA" }));
+      mockDb.mailboxSyncRun.update.mockResolvedValue({});
+      mockDb.mailboxConnection.update.mockResolvedValue({});
+
+      const result = await runMailboxSync({
+        orgId: "org-1",
+        connectionId: "conn-1",
+        actorId: "user-1",
+        triggerSource: "RENEWAL",
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error?.category).toBe("auth_expired");
+      expect(deleteMailboxCursors).not.toHaveBeenCalled();
+      expect(mockDb.mailboxConnection.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ status: "RECONNECT_REQUIRED" }),
+        }),
+      );
+    });
   });
 
   // ─── Trigger sources ──────────────────────────────────────────────────────
@@ -435,6 +488,34 @@ describe("Sprint 3.2 — Incremental sync and provider cursors", () => {
       });
 
       expect(result.triggerSource).toBe("SCHEDULED");
+    });
+  });
+
+  // ─── Public route trigger trust boundary ────────────────────────────────
+
+  describe("Public sync route", () => {
+    it("rejects non-manual trigger sources on the public route", async () => {
+      const { requireIntegrationAdminRoute } = await import("@/app/api/integrations/_auth");
+      const { POST } = await import("@/app/api/mailbox/sync/route");
+
+      vi.mocked(requireIntegrationAdminRoute).mockResolvedValue({
+        ok: true,
+        ctx: { orgId: "org-1", userId: "user-1" },
+      } as never);
+
+      const request = new NextRequest("http://localhost/api/mailbox/sync", {
+        method: "POST",
+        body: JSON.stringify({
+          mailboxConnectionId: "conn-1",
+          triggerSource: "SCHEDULED",
+        }),
+      });
+
+      const response = await POST(request);
+      const payload = await response.json();
+
+      expect(response.status).toBe(400);
+      expect(payload.error).toContain("MANUAL");
     });
   });
 

@@ -4,17 +4,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireIntegrationAdminRoute } from "@/app/api/integrations/_auth";
 import { rateLimitByOrg } from "@/lib/rate-limit";
 import { runMailboxSync } from "@/lib/mailbox/mailbox-sync-service";
-import type { MailboxSyncTriggerSource } from "@/lib/mailbox/domain-types";
 
 /** Rate-limit window for manual mailbox sync requests. */
 const MAILBOX_SYNC_RATE_LIMIT = { maxRequests: 1, window: "10 s" as const };
-
-const VALID_TRIGGER_SOURCES: MailboxSyncTriggerSource[] = [
-  "MANUAL",
-  "SCHEDULED",
-  "RENEWAL",
-  "WEBHOOK",
-];
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
@@ -29,11 +21,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ error: "mailboxConnectionId is required" }, { status: 400 });
     }
 
-    const triggerSource =
-      typeof body.triggerSource === "string" &&
-      VALID_TRIGGER_SOURCES.includes(body.triggerSource as MailboxSyncTriggerSource)
-        ? (body.triggerSource as MailboxSyncTriggerSource)
-        : "MANUAL";
+    if (body.triggerSource !== undefined && body.triggerSource !== "MANUAL") {
+      return NextResponse.json(
+        { error: "Only MANUAL triggerSource is accepted on the public sync route" },
+        { status: 400 },
+      );
+    }
 
     const rl = await rateLimitByOrg(
       `${auth.ctx.orgId}:mailbox:${body.mailboxConnectionId}`,
@@ -47,7 +40,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       orgId: auth.ctx.orgId,
       connectionId: body.mailboxConnectionId,
       actorId: auth.ctx.userId,
-      triggerSource,
+      triggerSource: "MANUAL",
     });
 
     return NextResponse.json(result, { status: result.success ? 200 : 400 });

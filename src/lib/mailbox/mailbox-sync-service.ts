@@ -1,5 +1,6 @@
 import "server-only";
 
+import { randomUUID } from "node:crypto";
 import { Prisma } from "@/generated/prisma/client";
 import { db } from "@/lib/db";
 import { logMailboxAudit } from "./audit";
@@ -7,7 +8,6 @@ import { getMailboxConnection } from "./connection-service";
 import { getMailboxCursor, upsertMailboxCursor, deleteMailboxCursors } from "./cursor-service";
 import {
   mailboxCanSync,
-  resolveSyncMode,
   cursorIsValidForDelta,
   watchIsExpired,
 } from "./domain-types";
@@ -41,13 +41,14 @@ export interface RunMailboxSyncResult {
 }
 
 const MAILBOX_SYNC_MAX_RUNNING_AGE_MINUTES = 30;
+const MAILBOX_SYNC_LEASE_DURATION_MS = MAILBOX_SYNC_MAX_RUNNING_AGE_MINUTES * 60 * 1000;
 
 /**
  * Check whether a sync is already running for this mailbox.
  * Uses the database as the source of truth so the guard is mailbox-scoped
  * and works across server instances.
  */
-async function isSyncRunningForMailbox(
+async function findRunningSyncForMailbox(
   mailboxConnectionId: string,
 ): Promise<{ running: false } | { running: true; runId: string }> {
   const cutoff = new Date(Date.now() - MAILBOX_SYNC_MAX_RUNNING_AGE_MINUTES * 60 * 1000);
@@ -64,6 +65,50 @@ async function isSyncRunningForMailbox(
     return { running: true, runId: existing.id };
   }
   return { running: false };
+}
+
+async function acquireSyncLease(
+  orgId: string,
+  connectionId: string,
+): Promise<string | null> {
+  const leaseToken = randomUUID();
+  const now = new Date();
+  const leaseExpiresAt = new Date(now.getTime() + MAILBOX_SYNC_LEASE_DURATION_MS);
+
+  const result = await db.mailboxConnection.updateMany({
+    where: {
+      id: connectionId,
+      orgId,
+      OR: [
+        { syncLeaseExpiresAt: null },
+        { syncLeaseExpiresAt: { lt: now } },
+      ],
+    },
+    data: {
+      syncLeaseToken: leaseToken,
+      syncLeaseExpiresAt: leaseExpiresAt,
+    },
+  });
+
+  return result.count === 1 ? leaseToken : null;
+}
+
+async function releaseSyncLease(
+  orgId: string,
+  connectionId: string,
+  leaseToken: string,
+): Promise<void> {
+  await db.mailboxConnection.updateMany({
+    where: {
+      id: connectionId,
+      orgId,
+      syncLeaseToken: leaseToken,
+    },
+    data: {
+      syncLeaseToken: null,
+      syncLeaseExpiresAt: null,
+    },
+  });
 }
 
 /**
@@ -83,12 +128,12 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
     throw new Error("Mailbox connection is not available for sync");
   }
 
-  // ─── Mailbox-scoped concurrency guard ─────────────────────────────────────
-  const concurrencyCheck = await isSyncRunningForMailbox(connection.id);
-  if (concurrencyCheck.running) {
+  const leaseToken = await acquireSyncLease(params.orgId, connection.id);
+  if (!leaseToken) {
+    const concurrencyCheck = await findRunningSyncForMailbox(connection.id);
     return {
       success: false,
-      runId: concurrencyCheck.runId,
+      runId: concurrencyCheck.running ? concurrencyCheck.runId : `lease-denied:${connection.id}`,
       threadCount: 0,
       messageCount: 0,
       syncMode: params.syncMode ?? "INITIAL",
@@ -102,87 +147,93 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
   const hasValidCursor = cursorIsValidForDelta(cursor);
   const requestedMode = params.syncMode ?? (hasValidCursor ? "DELTA" : "INITIAL");
 
-  // ─── Watch renewal check ────────────────────────────────────────────────
+  const startedAt = new Date();
   let effectiveMode: MailboxSyncMode = requestedMode;
   let effectiveCursor = cursor;
-
-  if (requestedMode === "DELTA" && watchIsExpired(connection)) {
-    const adapter = getMailboxProviderAdapter(connection.provider);
-    const renewal = await adapter.renewWatch({
-      orgId: params.orgId,
-      tokenRef: connection.tokenRef,
-    });
-    if (isMailboxProviderError(renewal)) {
-      // If renewal fails, fall back to initial sync rather than leaving
-      // the mailbox stuck in a non-advanceable state.
-      // Log the failure and delete the stale cursor so the next run
-      // will perform an initial backfill.
-      await db.mailboxConnection.update({
-        where: { id: connection.id },
-        data: { lastSyncError: `Watch renewal failed: ${renewal.safeMessage}` },
-      });
-      await logMailboxAudit({
-        orgId: params.orgId,
-        actorId: params.actorId,
-        action: "WATCH_EXPIRED_DETECTED",
-        summary: `Watch expired and renewal failed: ${renewal.safeMessage}`,
-        mailboxConnectionId: connection.id,
-        metadata: { errorCategory: renewal.category },
-      });
-      await deleteMailboxCursors(params.orgId, connection.id);
-      effectiveMode = "INITIAL";
-      effectiveCursor = null;
-    } else {
-      await db.mailboxConnection.update({
-        where: { id: connection.id },
-        data: {
-          watchExpiresAt: renewal.expiresAt,
-          watchRenewedAt: new Date(),
-          watchMetadata: renewal.metadata as Prisma.InputJsonValue,
-          lastSyncError: null,
-        },
-      });
-      await logMailboxAudit({
-        orgId: params.orgId,
-        actorId: params.actorId,
-        action: "WATCH_RENEWED",
-        summary: "Mailbox watch renewed successfully",
-        mailboxConnectionId: connection.id,
-        metadata: { expiresAt: renewal.expiresAt?.toISOString() },
-      });
-    }
-  }
-
-  const startedAt = new Date();
-  const run = await db.mailboxSyncRun.create({
-    data: {
-      orgId: params.orgId,
-      mailboxConnectionId: connection.id,
-      provider: connection.provider,
-      status: "RUNNING",
-      triggerSource,
-      syncMode: effectiveMode,
-      startedAt,
-      createdBy: params.actorId,
-    },
-  });
-
-  await logMailboxAudit({
-    orgId: params.orgId,
-    actorId: params.actorId,
-    action:
-      triggerSource === "SCHEDULED"
-        ? "SYNC_SCHEDULED_TRIGGERED"
-        : triggerSource === "RENEWAL"
-          ? "SYNC_RENEWAL_TRIGGERED"
-          : "SYNC_MANUAL_TRIGGERED",
-    summary: `${effectiveMode} mailbox sync triggered (${triggerSource})`,
-    mailboxConnectionId: connection.id,
-    metadata: { runId: run.id, provider: connection.provider, syncMode: effectiveMode, triggerSource },
-  });
+  let run:
+    | {
+        id: string;
+      }
+    | null = null;
 
   try {
+    run = await db.mailboxSyncRun.create({
+      data: {
+        orgId: params.orgId,
+        mailboxConnectionId: connection.id,
+        provider: connection.provider,
+        status: "RUNNING",
+        triggerSource,
+        syncMode: effectiveMode,
+        startedAt,
+        createdBy: params.actorId,
+      },
+      select: { id: true },
+    });
+
+    await logMailboxAudit({
+      orgId: params.orgId,
+      actorId: params.actorId,
+      action:
+        triggerSource === "SCHEDULED"
+          ? "SYNC_SCHEDULED_TRIGGERED"
+          : triggerSource === "RENEWAL"
+            ? "SYNC_RENEWAL_TRIGGERED"
+            : "SYNC_MANUAL_TRIGGERED",
+      summary: `${effectiveMode} mailbox sync triggered (${triggerSource})`,
+      mailboxConnectionId: connection.id,
+      metadata: { runId: run.id, provider: connection.provider, syncMode: effectiveMode, triggerSource },
+    });
+
     const adapter = getMailboxProviderAdapter(connection.provider);
+
+    // ─── Watch renewal check ────────────────────────────────────────────────
+    if (requestedMode === "DELTA" && watchIsExpired(connection)) {
+      const renewal = await adapter.renewWatch({
+        orgId: params.orgId,
+        tokenRef: connection.tokenRef,
+      });
+      if (isMailboxProviderError(renewal)) {
+        if (renewal.category === "auth_expired" || renewal.category === "auth_insufficient") {
+          throw toProviderErrorException(renewal);
+        }
+
+        await logMailboxAudit({
+          orgId: params.orgId,
+          actorId: params.actorId,
+          action: "WATCH_EXPIRED_DETECTED",
+          summary: `Watch expired and renewal failed: ${renewal.safeMessage}`,
+          mailboxConnectionId: connection.id,
+          metadata: { errorCategory: renewal.category, runId: run.id },
+        });
+        await deleteMailboxCursors(params.orgId, connection.id);
+        effectiveMode = "INITIAL";
+        effectiveCursor = null;
+        await db.mailboxSyncRun.update({
+          where: { id: run.id },
+          data: { syncMode: effectiveMode },
+        });
+      } else {
+        await db.mailboxConnection.update({
+          where: { id: connection.id },
+          data: {
+            watchExpiresAt: renewal.expiresAt,
+            watchRenewedAt: new Date(),
+            watchMetadata: renewal.metadata as Prisma.InputJsonValue,
+            lastSyncError: null,
+          },
+        });
+        await logMailboxAudit({
+          orgId: params.orgId,
+          actorId: params.actorId,
+          action: "WATCH_RENEWED",
+          summary: "Mailbox watch renewed successfully",
+          mailboxConnectionId: connection.id,
+          metadata: { expiresAt: renewal.expiresAt?.toISOString(), runId: run.id },
+        });
+      }
+    }
+
     const delta = await adapter.syncDelta({
       orgId: params.orgId,
       tokenRef: connection.tokenRef,
@@ -270,6 +321,9 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
       triggerSource,
     };
   } catch (error) {
+    if (!run) {
+      throw error;
+    }
     const providerError = normalizeSyncError(error);
     await db.mailboxSyncRun.update({
       where: { id: run.id },
@@ -309,6 +363,8 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
         summary: providerError.safeMessage,
       },
     };
+  } finally {
+    await releaseSyncLease(params.orgId, connection.id, leaseToken);
   }
 }
 
