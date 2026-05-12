@@ -8,12 +8,17 @@ import {
   typingOrgSafeWhere,
   conversationOrgSafeWhere,
 } from "./org-safe-helpers";
-import { toPresenceRecord, toTypingRecord } from "./mappers";
+import { toConversationRecord, toPresenceRecord, toTypingRecord } from "./mappers";
 import type {
   UpdatePresenceInput,
   StartTypingInput,
   StopTypingInput,
 } from "./service-contracts";
+import {
+  assertActiveParticipant,
+  assertConversationAccessible,
+  getConversationInOrg,
+} from "./service-helpers";
 
 // ─── Presence ───────────────────────────────────────────────────────────────────
 
@@ -23,6 +28,34 @@ import type {
 export async function upsertPresence(
   input: UpdatePresenceInput,
 ): Promise<PresenceSessionRecord> {
+  if (input.activeConversationId) {
+    const conversation = await db.conversation.findFirst({
+      where: conversationOrgSafeWhere(input.orgId, input.activeConversationId),
+    });
+
+    if (!conversation) {
+      throw new Error("upsertPresence: active conversation not found or access denied");
+    }
+
+    assertConversationAccessible(
+      toConversationRecord(conversation),
+      "upsertPresence",
+    );
+
+    const activeParticipant = await db.conversationParticipant.findFirst({
+      where: {
+        orgId: input.orgId,
+        conversationId: input.activeConversationId,
+        userId: input.userId,
+        leftAt: null,
+      },
+    });
+
+    if (!activeParticipant) {
+      throw new Error("upsertPresence: active participant access required");
+    }
+  }
+
   const row = await db.presenceSession.upsert({
     where: {
       orgId_userId: {
@@ -71,13 +104,20 @@ export async function startTyping(
   input: StartTypingInput,
 ): Promise<TypingSessionRecord> {
   const row = await db.$transaction(async (tx) => {
-    // Verify conversation exists in org
-    const conversation = await tx.conversation.findFirst({
-      where: conversationOrgSafeWhere(input.orgId, input.conversationId),
-    });
-    if (!conversation) {
-      throw new Error("startTyping: conversation not found or access denied");
-    }
+    const conversation = await getConversationInOrg(
+      tx,
+      input.orgId,
+      input.conversationId,
+      "startTyping",
+    );
+    assertConversationAccessible(toConversationRecord(conversation), "startTyping");
+    await assertActiveParticipant(
+      tx,
+      input.orgId,
+      input.conversationId,
+      input.userId,
+      "startTyping",
+    );
 
     const typing = await tx.typingSession.upsert({
       where: {
@@ -111,19 +151,31 @@ export async function startTyping(
 export async function stopTyping(
   input: StopTypingInput,
 ): Promise<TypingSessionRecord | null> {
-  const row = await db.typingSession.findFirst({
-    where: typingOrgSafeWhere(input.orgId, input.conversationId, input.userId),
+  const row = await db.$transaction(async (tx) => {
+    await assertActiveParticipant(
+      tx,
+      input.orgId,
+      input.conversationId,
+      input.userId,
+      "stopTyping",
+    );
+
+    const typing = await tx.typingSession.findFirst({
+      where: typingOrgSafeWhere(input.orgId, input.conversationId, input.userId),
+    });
+
+    if (!typing) {
+      return null;
+    }
+
+    await tx.typingSession.delete({
+      where: { id: typing.id },
+    });
+
+    return typing;
   });
 
-  if (!row) {
-    return null;
-  }
-
-  await db.typingSession.delete({
-    where: { id: row.id },
-  });
-
-  return toTypingRecord(row);
+  return row ? toTypingRecord(row) : null;
 }
 
 /**
@@ -135,7 +187,10 @@ export async function listTypingForConversation(
   conversationId: string,
 ): Promise<TypingSessionRecord[]> {
   const rows = await db.typingSession.findMany({
-    where: typingOrgSafeWhere(orgId, conversationId),
+    where: {
+      ...typingOrgSafeWhere(orgId, conversationId),
+      expiresAt: { gt: new Date() },
+    },
     orderBy: { createdAt: "desc" },
   });
   return rows.map(toTypingRecord);

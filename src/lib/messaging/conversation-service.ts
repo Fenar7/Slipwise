@@ -2,19 +2,17 @@ import "server-only";
 
 import { db } from "@/lib/db";
 import type { Prisma } from "@/generated/prisma/client";
-import type {
-  ConversationRecord,
-  ConversationParticipantRecord,
-  ConversationType,
-  ConversationVisibility,
-} from "./domain-types";
-import { conversationIsDM } from "./domain-types";
+import type { ConversationRecord } from "./domain-types";
 import {
   conversationOrgSafeWhere,
   participantOrgSafeWhere,
 } from "./org-safe-helpers";
 import { toConversationRecord, toParticipantRecord } from "./mappers";
 import { logMessagingAuditTx } from "./audit";
+import {
+  assertConversationAccessible,
+  assertNotDMConversation,
+} from "./service-helpers";
 import type {
   CreateConversationInput,
   CreateConversationResult,
@@ -31,12 +29,6 @@ function assertConversationExists(
 ): asserts row is { id: string } {
   if (!row) {
     throw new Error(`${context}: conversation not found or access denied`);
-  }
-}
-
-function assertNotDM(record: ConversationRecord, action: string): void {
-  if (conversationIsDM(record)) {
-    throw new Error(`${action}: not allowed on DM conversations`);
   }
 }
 
@@ -134,8 +126,11 @@ export async function createConversation(
         role: "MEMBER",
       });
     } else if (input.initialParticipantIds && input.initialParticipantIds.length > 0) {
+      const seenUserIds = new Set<string>([input.createdBy]);
       for (const userId of input.initialParticipantIds) {
         if (userId === input.createdBy) continue;
+        if (seenUserIds.has(userId)) continue;
+        seenUserIds.add(userId);
         participantData.push({
           orgId: input.orgId,
           userId,
@@ -183,6 +178,7 @@ export async function archiveConversation(
       where: conversationOrgSafeWhere(input.orgId, input.conversationId),
     });
     assertConversationExists(existing, "archiveConversation");
+    assertConversationAccessible(toConversationRecord(existing), "archiveConversation");
 
     const updated = await tx.conversation.update({
       where: { id: input.conversationId, orgId: input.orgId },
@@ -217,7 +213,8 @@ export async function renameConversation(
       where: conversationOrgSafeWhere(input.orgId, input.conversationId),
     });
     assertConversationExists(existing, "renameConversation");
-    assertNotDM(toConversationRecord(existing), "renameConversation");
+    assertConversationAccessible(toConversationRecord(existing), "renameConversation");
+    assertNotDMConversation(toConversationRecord(existing), "renameConversation");
 
     const updated = await tx.conversation.update({
       where: { id: input.conversationId, orgId: input.orgId },
@@ -249,7 +246,11 @@ export async function changeConversationVisibility(
       where: conversationOrgSafeWhere(input.orgId, input.conversationId),
     });
     assertConversationExists(existing, "changeConversationVisibility");
-    assertNotDM(toConversationRecord(existing), "changeConversationVisibility");
+    assertConversationAccessible(toConversationRecord(existing), "changeConversationVisibility");
+    assertNotDMConversation(
+      toConversationRecord(existing),
+      "changeConversationVisibility",
+    );
 
     const updated = await tx.conversation.update({
       where: { id: input.conversationId, orgId: input.orgId },

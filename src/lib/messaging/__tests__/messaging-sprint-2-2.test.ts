@@ -333,6 +333,8 @@ function makeTypingRow(overrides: Partial<Record<string, unknown>> = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  db.conversation.findFirst.mockResolvedValue(makeConversationRow());
+  db.conversationParticipant.findFirst.mockResolvedValue(makeParticipantRow());
 });
 
 // ─── Conversation Service ─────────────────────────────────────────────────────
@@ -630,6 +632,22 @@ describe("participant service", () => {
       expect(result.userId).toBe(USER_1);
       expect(db.conversationParticipant.create).not.toHaveBeenCalled();
     });
+
+    it("rejects adding participants to DMs", async () => {
+      db.conversation.findFirst.mockResolvedValue(
+        makeConversationRow({ type: "DM", visibility: null, name: null }),
+      );
+
+      await expect(
+        addParticipant({
+          orgId: ORG_A,
+          conversationId: CONV_ID,
+          userId: USER_3,
+          role: "MEMBER",
+          addedBy: USER_1,
+        }),
+      ).rejects.toThrow("addParticipant: not allowed on DM conversations");
+    });
   });
 
   describe("removeParticipant", () => {
@@ -661,6 +679,21 @@ describe("participant service", () => {
           removedBy: USER_2,
         }),
       ).rejects.toThrow("Participant action: conversation not found or access denied");
+    });
+
+    it("rejects removing participants from DMs", async () => {
+      db.conversation.findFirst.mockResolvedValue(
+        makeConversationRow({ type: "DM", visibility: null, name: null }),
+      );
+
+      await expect(
+        removeParticipant({
+          orgId: ORG_A,
+          conversationId: CONV_ID,
+          userId: USER_2,
+          removedBy: USER_1,
+        }),
+      ).rejects.toThrow("removeParticipant: not allowed on DM conversations");
     });
   });
 
@@ -716,7 +749,10 @@ describe("message service", () => {
 
   describe("sendMessage", () => {
     it("sends a message and creates mentions", async () => {
+      db.conversation.findFirst.mockResolvedValue(makeConversationRow());
+      db.conversationParticipant.findFirst.mockResolvedValue(makeParticipantRow());
       db.conversationParticipant.count.mockResolvedValue(3);
+      db.conversationParticipant.findMany.mockResolvedValue([{ userId: USER_2 }]);
       db.conversationMessage.create.mockResolvedValue(
         makeMessageRow({ body: "Hello @user2" }),
       );
@@ -739,6 +775,9 @@ describe("message service", () => {
     });
 
     it("sends a thread reply", async () => {
+      db.conversation.findFirst.mockResolvedValue(makeConversationRow());
+      db.conversationParticipant.findFirst.mockResolvedValue(makeParticipantRow());
+      db.conversationThread.findFirst.mockResolvedValue(makeThreadRow());
       db.conversationParticipant.count.mockResolvedValue(3);
       db.conversationMessage.create.mockResolvedValue(
         makeMessageRow({ threadId: THREAD_ID, body: "Reply" }),
@@ -755,11 +794,39 @@ describe("message service", () => {
 
       expect(result.threadId).toBe(THREAD_ID);
     });
+
+    it("rejects non-participants sending messages", async () => {
+      db.conversationParticipant.findFirst.mockResolvedValue(null);
+
+      await expect(
+        sendMessage({
+          orgId: ORG_A,
+          conversationId: CONV_ID,
+          authorId: USER_3,
+          body: "No access",
+        }),
+      ).rejects.toThrow("sendMessage: active participant access required");
+    });
+
+    it("rejects unsupported attachment refs instead of dropping them", async () => {
+      await expect(
+        sendMessage({
+          orgId: ORG_A,
+          conversationId: CONV_ID,
+          authorId: USER_1,
+          body: "File attached",
+          attachmentRefs: ["vault://file-001"],
+        }),
+      ).rejects.toThrow(
+        "sendMessage: attachment linking is not implemented in Sprint 2.2",
+      );
+    });
   });
 
   describe("editMessage", () => {
     it("edits a message and marks status", async () => {
       db.conversationMessage.findFirst.mockResolvedValue(makeMessageRow());
+      db.conversationParticipant.findFirst.mockResolvedValue(makeParticipantRow());
       db.conversationMessage.update.mockResolvedValue(
         makeMessageRow({ body: "Edited body", status: "EDITED", editedAt: new Date() }),
       );
@@ -781,6 +848,7 @@ describe("message service", () => {
       db.conversationMessage.findFirst.mockResolvedValue(
         makeMessageRow({ status: "DELETED" }),
       );
+      db.conversationParticipant.findFirst.mockResolvedValue(makeParticipantRow());
       await expect(
         editMessage({
           orgId: ORG_A,
@@ -807,6 +875,7 @@ describe("message service", () => {
   describe("softDeleteMessage", () => {
     it("soft-deletes a message", async () => {
       db.conversationMessage.findFirst.mockResolvedValue(makeMessageRow());
+      db.conversationParticipant.findFirst.mockResolvedValue(makeParticipantRow());
       db.conversationMessage.update.mockResolvedValue(
         makeMessageRow({ status: "DELETED", deletedAt: new Date() }),
       );
@@ -838,6 +907,8 @@ describe("thread service", () => {
 
   describe("createThread", () => {
     it("creates a thread from an anchor message", async () => {
+      db.conversation.findFirst.mockResolvedValue(makeConversationRow());
+      db.conversationParticipant.findFirst.mockResolvedValue(makeParticipantRow());
       db.conversationMessage.findFirst.mockResolvedValue(makeMessageRow());
       db.conversationThread.create.mockResolvedValue(makeThreadRow());
       db.messagingAuditEvent.create.mockResolvedValue({});
@@ -869,6 +940,8 @@ describe("thread service", () => {
 
   describe("replyToThread", () => {
     it("creates a reply and increments replyCount", async () => {
+      db.conversation.findFirst.mockResolvedValue(makeConversationRow());
+      db.conversationParticipant.findFirst.mockResolvedValue(makeParticipantRow());
       db.conversationThread.findFirst.mockResolvedValue(makeThreadRow());
       db.conversationParticipant.count.mockResolvedValue(3);
       db.conversationMessage.create.mockResolvedValue(
@@ -910,6 +983,8 @@ describe("thread service", () => {
   describe("resolveThread", () => {
     it("marks thread as resolved", async () => {
       db.conversationThread.findFirst.mockResolvedValue(makeThreadRow());
+      db.conversation.findFirst.mockResolvedValue(makeConversationRow());
+      db.conversationParticipant.findFirst.mockResolvedValue(makeParticipantRow());
       db.conversationThread.update.mockResolvedValue(
         makeThreadRow({ resolvedAt: new Date() }),
       );
@@ -922,6 +997,11 @@ describe("thread service", () => {
       });
 
       expect(result.resolvedAt).not.toBeNull();
+      expect(db.messagingAuditEvent.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ action: "THREAD_RESOLVED" }),
+        }),
+      );
     });
   });
 });
@@ -932,6 +1012,7 @@ describe("reaction service", () => {
   describe("addReaction", () => {
     it("adds a new reaction and emits audit", async () => {
       db.conversationMessage.findFirst.mockResolvedValue(makeMessageRow());
+      db.conversationParticipant.findFirst.mockResolvedValue(makeParticipantRow());
       db.messageReaction.findFirst.mockResolvedValue(null);
       db.messageReaction.create.mockResolvedValue(makeReactionRow({ value: "🔥" }));
       db.messagingAuditEvent.create.mockResolvedValue({});
@@ -949,6 +1030,7 @@ describe("reaction service", () => {
 
     it("is idempotent when reaction already exists", async () => {
       db.conversationMessage.findFirst.mockResolvedValue(makeMessageRow());
+      db.conversationParticipant.findFirst.mockResolvedValue(makeParticipantRow());
       db.messageReaction.findFirst.mockResolvedValue(makeReactionRow());
 
       const result = await addReaction({
@@ -966,6 +1048,7 @@ describe("reaction service", () => {
   describe("removeReaction", () => {
     it("removes a reaction and emits audit", async () => {
       db.conversationMessage.findFirst.mockResolvedValue(makeMessageRow());
+      db.conversationParticipant.findFirst.mockResolvedValue(makeParticipantRow());
       db.messageReaction.findFirst.mockResolvedValue(makeReactionRow());
       db.messageReaction.delete.mockResolvedValue({});
       db.messagingAuditEvent.create.mockResolvedValue({});
@@ -983,6 +1066,7 @@ describe("reaction service", () => {
 
     it("returns null when reaction does not exist", async () => {
       db.conversationMessage.findFirst.mockResolvedValue(makeMessageRow());
+      db.conversationParticipant.findFirst.mockResolvedValue(makeParticipantRow());
       db.messageReaction.findFirst.mockResolvedValue(null);
 
       const result = await removeReaction({
@@ -1044,6 +1128,8 @@ describe("mention / read-state service", () => {
 
   describe("updateReadState", () => {
     it("upserts read state and emits audit", async () => {
+      db.conversationParticipant.findFirst.mockResolvedValue(makeParticipantRow());
+      db.conversationMessage.findFirst.mockResolvedValue(makeMessageRow());
       db.conversationReadState.upsert.mockResolvedValue(makeReadStateRow());
       db.messagingAuditEvent.create.mockResolvedValue({});
 
@@ -1058,10 +1144,26 @@ describe("mention / read-state service", () => {
       expect(result.unreadCount).toBe(0);
       expect(db.messagingAuditEvent.create).toHaveBeenCalled();
     });
+
+    it("rejects read-state updates with a message from another conversation", async () => {
+      db.conversationParticipant.findFirst.mockResolvedValue(makeParticipantRow());
+      db.conversationMessage.findFirst.mockResolvedValue(null);
+
+      await expect(
+        updateReadState({
+          orgId: ORG_A,
+          conversationId: CONV_ID,
+          userId: USER_1,
+          lastReadMessageId: "msg-other",
+          lastReadAt: new Date(),
+        }),
+      ).rejects.toThrow("updateReadState: message does not belong to conversation");
+    });
   });
 
   describe("markConversationRead", () => {
     it("marks conversation read using latest message", async () => {
+      db.conversationParticipant.findFirst.mockResolvedValue(makeParticipantRow());
       db.conversationMessage.findFirst.mockResolvedValue(
         makeMessageRow({ id: "msg-latest" }),
       );
@@ -1116,6 +1218,20 @@ describe("presence / typing service", () => {
       });
       expect(result.status).toBe("AWAY");
     });
+
+    it("rejects active conversation presence for non-participants", async () => {
+      db.conversation.findFirst.mockResolvedValue(makeConversationRow());
+      db.conversationParticipant.findFirst.mockResolvedValue(null);
+
+      await expect(
+        upsertPresence({
+          orgId: ORG_A,
+          userId: USER_3,
+          status: "ONLINE",
+          activeConversationId: CONV_ID,
+        }),
+      ).rejects.toThrow("upsertPresence: active participant access required");
+    });
   });
 
   describe("getPresenceByUserId", () => {
@@ -1130,6 +1246,7 @@ describe("presence / typing service", () => {
   describe("startTyping", () => {
     it("upserts typing session for conversation", async () => {
       db.conversation.findFirst.mockResolvedValue(makeConversationRow());
+      db.conversationParticipant.findFirst.mockResolvedValue(makeParticipantRow());
       db.typingSession.upsert.mockResolvedValue(makeTypingRow());
 
       const result = await startTyping({
@@ -1158,6 +1275,7 @@ describe("presence / typing service", () => {
 
   describe("stopTyping", () => {
     it("deletes typing session", async () => {
+      db.conversationParticipant.findFirst.mockResolvedValue(makeParticipantRow());
       db.typingSession.findFirst.mockResolvedValue(makeTypingRow());
       db.typingSession.delete.mockResolvedValue({});
 
@@ -1172,6 +1290,7 @@ describe("presence / typing service", () => {
     });
 
     it("returns null when no typing session exists", async () => {
+      db.conversationParticipant.findFirst.mockResolvedValue(makeParticipantRow());
       db.typingSession.findFirst.mockResolvedValue(null);
 
       const result = await stopTyping({
@@ -1194,6 +1313,13 @@ describe("presence / typing service", () => {
       const result = await listTypingForConversation(ORG_A, CONV_ID);
       expect(result).toHaveLength(2);
       expect(result[0].userId).toBe(USER_1);
+      expect(db.typingSession.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            expiresAt: { gt: expect.any(Date) },
+          }),
+        }),
+      );
     });
   });
 });

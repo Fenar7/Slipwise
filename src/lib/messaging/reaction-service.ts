@@ -7,6 +7,7 @@ import { reactionOrgSafeWhere, messageOrgSafeWhere } from "./org-safe-helpers";
 import { toReactionRecord } from "./mappers";
 import { logMessagingAuditTx } from "./audit";
 import type { AddReactionInput, RemoveReactionInput } from "./service-contracts";
+import { assertActiveParticipant } from "./service-helpers";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -14,13 +15,14 @@ async function assertMessageInOrg(
   tx: Prisma.TransactionClient,
   orgId: string,
   messageId: string,
-): Promise<void> {
+): Promise<Prisma.ConversationMessageGetPayload<Record<string, never>>> {
   const existing = await tx.conversationMessage.findFirst({
     where: messageOrgSafeWhere(orgId, messageId),
   });
   if (!existing) {
     throw new Error("Reaction action: message not found or access denied");
   }
+  return existing;
 }
 
 // ─── Queries ────────────────────────────────────────────────────────────────────
@@ -49,7 +51,14 @@ export async function addReaction(
   input: AddReactionInput,
 ): Promise<MessageReactionRecord> {
   const result = await db.$transaction(async (tx) => {
-    await assertMessageInOrg(tx, input.orgId, input.messageId);
+    const message = await assertMessageInOrg(tx, input.orgId, input.messageId);
+    await assertActiveParticipant(
+      tx,
+      input.orgId,
+      message.conversationId,
+      input.userId,
+      "addReaction",
+    );
 
     const existing = await tx.messageReaction.findFirst({
       where: {
@@ -96,7 +105,14 @@ export async function removeReaction(
   input: RemoveReactionInput,
 ): Promise<MessageReactionRecord | null> {
   const result = await db.$transaction(async (tx) => {
-    await assertMessageInOrg(tx, input.orgId, input.messageId);
+    const message = await assertMessageInOrg(tx, input.orgId, input.messageId);
+    await assertActiveParticipant(
+      tx,
+      input.orgId,
+      message.conversationId,
+      input.userId,
+      "removeReaction",
+    );
 
     const existing = await tx.messageReaction.findFirst({
       where: {

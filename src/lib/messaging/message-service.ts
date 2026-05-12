@@ -7,13 +7,18 @@ import {
   messageOrgSafeWhere,
   messageListOrgSafeWhere,
 } from "./org-safe-helpers";
-import { toMessageRecord } from "./mappers";
+import { toConversationRecord, toMessageRecord } from "./mappers";
 import { logMessagingAuditTx } from "./audit";
 import type {
   SendMessageInput,
   EditMessageInput,
   DeleteMessageInput,
 } from "./service-contracts";
+import {
+  assertActiveParticipant,
+  assertConversationAccessible,
+  getConversationInOrg,
+} from "./service-helpers";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -33,10 +38,12 @@ async function assertMessageInOrg(
 
 async function countActiveParticipants(
   tx: Prisma.TransactionClient,
+  orgId: string,
   conversationId: string,
 ): Promise<number> {
   return tx.conversationParticipant.count({
     where: {
+      orgId,
       conversationId,
       leftAt: null,
     },
@@ -90,7 +97,62 @@ export async function sendMessage(
   input: SendMessageInput,
 ): Promise<ConversationMessageRecord> {
   const result = await db.$transaction(async (tx) => {
-    const participantCount = await countActiveParticipants(tx, input.conversationId);
+    const conversation = await getConversationInOrg(
+      tx,
+      input.orgId,
+      input.conversationId,
+      "sendMessage",
+    );
+    assertConversationAccessible(toConversationRecord(conversation), "sendMessage");
+    await assertActiveParticipant(
+      tx,
+      input.orgId,
+      input.conversationId,
+      input.authorId,
+      "sendMessage",
+    );
+
+    if (input.attachmentRefs && input.attachmentRefs.length > 0) {
+      throw new Error("sendMessage: attachment linking is not implemented in Sprint 2.2");
+    }
+
+    if (input.threadId) {
+      const thread = await tx.conversationThread.findFirst({
+        where: {
+          id: input.threadId,
+          orgId: input.orgId,
+          conversationId: input.conversationId,
+        },
+      });
+
+      if (!thread) {
+        throw new Error("sendMessage: thread not found or does not belong to conversation");
+      }
+    }
+
+    if (input.mentions && input.mentions.length > 0) {
+      const mentionedUserIds = [...new Set(input.mentions.map((mention) => mention.userId))];
+      const activeParticipants = await tx.conversationParticipant.findMany({
+        where: {
+          orgId: input.orgId,
+          conversationId: input.conversationId,
+          userId: { in: mentionedUserIds },
+          leftAt: null,
+        },
+        select: { userId: true },
+      });
+      const activeUserIds = new Set(activeParticipants.map((participant) => participant.userId));
+      const invalidMention = mentionedUserIds.find((userId) => !activeUserIds.has(userId));
+      if (invalidMention) {
+        throw new Error(`sendMessage: mentioned user is not an active participant: ${invalidMention}`);
+      }
+    }
+
+    const participantCount = await countActiveParticipants(
+      tx,
+      input.orgId,
+      input.conversationId,
+    );
 
     const message = await tx.conversationMessage.create({
       data: {
@@ -164,6 +226,13 @@ export async function editMessage(
 ): Promise<ConversationMessageRecord> {
   const result = await db.$transaction(async (tx) => {
     const existing = await assertMessageInOrg(tx, input.orgId, input.messageId);
+    await assertActiveParticipant(
+      tx,
+      input.orgId,
+      existing.conversationId,
+      input.actorId,
+      "editMessage",
+    );
 
     if (existing.status === "DELETED") {
       throw new Error("editMessage: cannot edit a deleted message");
@@ -201,6 +270,13 @@ export async function softDeleteMessage(
 ): Promise<ConversationMessageRecord> {
   const result = await db.$transaction(async (tx) => {
     const existing = await assertMessageInOrg(tx, input.orgId, input.messageId);
+    await assertActiveParticipant(
+      tx,
+      input.orgId,
+      existing.conversationId,
+      input.actorId,
+      "softDeleteMessage",
+    );
 
     const updated = await tx.conversationMessage.update({
       where: { id: input.messageId, orgId: input.orgId },

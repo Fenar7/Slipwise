@@ -6,15 +6,19 @@ import type { ConversationThreadRecord, ConversationMessageRecord } from "./doma
 import {
   threadOrgSafeWhere,
   messageOrgSafeWhere,
-  messageListOrgSafeWhere,
 } from "./org-safe-helpers";
-import { toThreadRecord, toMessageRecord } from "./mappers";
+import { toConversationRecord, toThreadRecord, toMessageRecord } from "./mappers";
 import { logMessagingAuditTx } from "./audit";
 import type {
   CreateThreadInput,
   ReplyToThreadInput,
   ResolveThreadInput,
 } from "./service-contracts";
+import {
+  assertActiveParticipant,
+  assertConversationAccessible,
+  getConversationInOrg,
+} from "./service-helpers";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -91,6 +95,21 @@ export async function createThread(
   input: CreateThreadInput,
 ): Promise<ConversationThreadRecord> {
   const result = await db.$transaction(async (tx) => {
+    const conversation = await getConversationInOrg(
+      tx,
+      input.orgId,
+      input.conversationId,
+      "createThread",
+    );
+    assertConversationAccessible(toConversationRecord(conversation), "createThread");
+    await assertActiveParticipant(
+      tx,
+      input.orgId,
+      input.conversationId,
+      input.createdBy,
+      "createThread",
+    );
+
     // Verify anchor message exists and belongs to this conversation+org
     const anchor = await tx.conversationMessage.findFirst({
       where: {
@@ -135,13 +154,32 @@ export async function replyToThread(
 ): Promise<ConversationMessageRecord> {
   const result = await db.$transaction(async (tx) => {
     const thread = await assertThreadInOrg(tx, input.orgId, input.threadId);
+    const conversation = await getConversationInOrg(
+      tx,
+      input.orgId,
+      input.conversationId,
+      "replyToThread",
+    );
+    assertConversationAccessible(toConversationRecord(conversation), "replyToThread");
+    await assertActiveParticipant(
+      tx,
+      input.orgId,
+      input.conversationId,
+      input.authorId,
+      "replyToThread",
+    );
 
     if (thread.conversationId !== input.conversationId) {
       throw new Error("replyToThread: thread does not belong to conversation");
     }
 
+    if (input.attachmentRefs && input.attachmentRefs.length > 0) {
+      throw new Error("replyToThread: attachment linking is not implemented in Sprint 2.2");
+    }
+
     const participantCount = await tx.conversationParticipant.count({
       where: {
+        orgId: input.orgId,
         conversationId: input.conversationId,
         leftAt: null,
       },
@@ -188,6 +226,20 @@ export async function resolveThread(
 ): Promise<ConversationThreadRecord> {
   const result = await db.$transaction(async (tx) => {
     const thread = await assertThreadInOrg(tx, input.orgId, input.threadId);
+    const conversation = await getConversationInOrg(
+      tx,
+      input.orgId,
+      thread.conversationId,
+      "resolveThread",
+    );
+    assertConversationAccessible(toConversationRecord(conversation), "resolveThread");
+    await assertActiveParticipant(
+      tx,
+      input.orgId,
+      thread.conversationId,
+      input.resolvedBy,
+      "resolveThread",
+    );
 
     const updated = await tx.conversationThread.update({
       where: { id: input.threadId, orgId: input.orgId },
@@ -197,7 +249,7 @@ export async function resolveThread(
     await logMessagingAuditTx(tx, {
       orgId: input.orgId,
       actorId: input.resolvedBy,
-      action: "THREAD_REPLIED",
+      action: "THREAD_RESOLVED",
       summary: `Resolved thread`,
       conversationId: thread.conversationId,
       threadId: updated.id,

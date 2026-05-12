@@ -14,6 +14,7 @@ import type {
   UpdateReadStateInput,
   MarkConversationReadInput,
 } from "./service-contracts";
+import { assertActiveParticipant } from "./service-helpers";
 
 // ─── Mentions ───────────────────────────────────────────────────────────────────
 
@@ -76,6 +77,26 @@ export async function updateReadState(
   input: UpdateReadStateInput,
 ): Promise<ConversationReadStateRecord> {
   const result = await db.$transaction(async (tx) => {
+    await assertActiveParticipant(
+      tx,
+      input.orgId,
+      input.conversationId,
+      input.userId,
+      "updateReadState",
+    );
+
+    const message = await tx.conversationMessage.findFirst({
+      where: {
+        id: input.lastReadMessageId,
+        orgId: input.orgId,
+        conversationId: input.conversationId,
+      },
+    });
+
+    if (!message) {
+      throw new Error("updateReadState: message does not belong to conversation");
+    }
+
     const readState = await tx.conversationReadState.upsert({
       where: {
         conversationId_userId: {
@@ -120,6 +141,14 @@ export async function markConversationRead(
   input: MarkConversationReadInput,
 ): Promise<ConversationReadStateRecord> {
   const result = await db.$transaction(async (tx) => {
+    await assertActiveParticipant(
+      tx,
+      input.orgId,
+      input.conversationId,
+      input.userId,
+      "markConversationRead",
+    );
+
     const latestMessage = await tx.conversationMessage.findFirst({
       where: {
         orgId: input.orgId,

@@ -9,6 +9,11 @@ import {
 } from "./org-safe-helpers";
 import { toParticipantRecord } from "./mappers";
 import { logMessagingAuditTx } from "./audit";
+import {
+  assertConversationAccessible,
+  assertNotDMConversation,
+} from "./service-helpers";
+import { toConversationRecord } from "./mappers";
 import type {
   AddParticipantInput,
   RemoveParticipantInput,
@@ -21,13 +26,14 @@ async function assertConversationInOrg(
   tx: Prisma.TransactionClient,
   orgId: string,
   conversationId: string,
-): Promise<void> {
+): Promise<Prisma.ConversationGetPayload<Record<string, never>>> {
   const existing = await tx.conversation.findFirst({
     where: conversationOrgSafeWhere(orgId, conversationId),
   });
   if (!existing) {
     throw new Error("Participant action: conversation not found or access denied");
   }
+  return existing;
 }
 
 // ─── Queries ────────────────────────────────────────────────────────────────────
@@ -76,7 +82,13 @@ export async function addParticipant(
   input: AddParticipantInput,
 ): Promise<ConversationParticipantRecord> {
   const result = await db.$transaction(async (tx) => {
-    await assertConversationInOrg(tx, input.orgId, input.conversationId);
+    const conversation = await assertConversationInOrg(
+      tx,
+      input.orgId,
+      input.conversationId,
+    );
+    assertConversationAccessible(toConversationRecord(conversation), "addParticipant");
+    assertNotDMConversation(toConversationRecord(conversation), "addParticipant");
 
     const existing = await tx.conversationParticipant.findFirst({
       where: {
@@ -141,7 +153,16 @@ export async function removeParticipant(
   input: RemoveParticipantInput,
 ): Promise<ConversationParticipantRecord> {
   const result = await db.$transaction(async (tx) => {
-    await assertConversationInOrg(tx, input.orgId, input.conversationId);
+    const conversation = await assertConversationInOrg(
+      tx,
+      input.orgId,
+      input.conversationId,
+    );
+    assertConversationAccessible(
+      toConversationRecord(conversation),
+      "removeParticipant",
+    );
+    assertNotDMConversation(toConversationRecord(conversation), "removeParticipant");
 
     const existing = await tx.conversationParticipant.findFirst({
       where: {
@@ -153,6 +174,9 @@ export async function removeParticipant(
 
     if (!existing) {
       throw new Error("removeParticipant: participant not found");
+    }
+    if (existing.leftAt !== null) {
+      throw new Error("removeParticipant: participant already inactive");
     }
 
     const updated = await tx.conversationParticipant.update({
@@ -181,7 +205,19 @@ export async function updateParticipantRole(
   input: UpdateParticipantRoleInput,
 ): Promise<ConversationParticipantRecord> {
   const result = await db.$transaction(async (tx) => {
-    await assertConversationInOrg(tx, input.orgId, input.conversationId);
+    const conversation = await assertConversationInOrg(
+      tx,
+      input.orgId,
+      input.conversationId,
+    );
+    assertConversationAccessible(
+      toConversationRecord(conversation),
+      "updateParticipantRole",
+    );
+    assertNotDMConversation(
+      toConversationRecord(conversation),
+      "updateParticipantRole",
+    );
 
     const existing = await tx.conversationParticipant.findFirst({
       where: {
@@ -193,6 +229,9 @@ export async function updateParticipantRole(
 
     if (!existing) {
       throw new Error("updateParticipantRole: participant not found");
+    }
+    if (existing.leftAt !== null) {
+      throw new Error("updateParticipantRole: participant is inactive");
     }
 
     const updated = await tx.conversationParticipant.update({
