@@ -27,7 +27,7 @@ export function SalarySlipDocumentFrame({
           width: `${A4_DOCUMENT_WIDTH}px`,
           minHeight: `${A4_DOCUMENT_HEIGHT}px`,
           "--voucher-ink": "#1d1710",
-          "--voucher-accent": document.branding.accentColor || "var(--accent)",
+          "--voucher-accent": document.branding.accentColor || "#dc2626",
         } as CSSProperties
       }
     >

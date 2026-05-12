@@ -796,17 +796,19 @@ export function VoucherWorkspace({
   initialValues,
   vendors = [],
   initialTemplateId,
+  initialAccentColor,
 }: {
   voucherId?: string;
   initialValues?: Partial<VoucherFormValues>;
   vendors?: Vendor[];
   initialTemplateId?: string;
+  initialAccentColor?: string;
 }) {
   const methods = useForm<VoucherFormValues>({
     resolver: zodResolver(voucherFormSchema),
     defaultValues: initialValues
-      ? { ...voucherDefaultValues, ...initialValues }
-      : voucherDefaultValues,
+      ? { ...voucherDefaultValues, branding: { ...voucherDefaultValues.branding, accentColor: initialAccentColor ?? voucherDefaultValues.branding.accentColor }, ...initialValues }
+      : { ...voucherDefaultValues, branding: { ...voucherDefaultValues.branding, accentColor: initialAccentColor ?? voucherDefaultValues.branding.accentColor } },
     mode: "onChange",
   });
 

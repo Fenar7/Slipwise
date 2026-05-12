@@ -56,19 +56,19 @@ function ProfessionalEditor({ document }: { document: InvoiceDocument }) {
               </div>
             </div>
           </div>
-          <div className="rounded-[1.4rem] bg-[rgba(29,23,16,0.04)] p-5">
+          <div className="rounded-[1.4rem] p-5 text-white" style={{ backgroundColor: "var(--voucher-accent)" }}>
             <div className="grid gap-3 text-sm">
               <div>
-                <p className="text-[0.68rem] uppercase tracking-[0.25em] text-[rgba(29,23,16,0.45)]">Invoice no.</p>
-                <InlineTextField name="invoiceNumber" className="mt-2 font-medium" />
+                <p className="text-[0.68rem] uppercase tracking-[0.25em] text-white/70">Invoice no.</p>
+                <InlineTextField name="invoiceNumber" className="mt-2 font-medium text-white" />
               </div>
               <div>
-                <p className="text-[0.68rem] uppercase tracking-[0.25em] text-[rgba(29,23,16,0.45)]">Invoice date</p>
-                <InlineDateField name="invoiceDate" className="mt-2 font-medium" />
+                <p className="text-[0.68rem] uppercase tracking-[0.25em] text-white/70">Invoice date</p>
+                <InlineDateField name="invoiceDate" className="mt-2 font-medium text-white" />
               </div>
               <div>
-                <p className="text-[0.68rem] uppercase tracking-[0.25em] text-[rgba(29,23,16,0.45)]">Due date</p>
-                <InlineDateField name="dueDate" className="mt-2 font-medium" />
+                <p className="text-[0.68rem] uppercase tracking-[0.25em] text-white/70">Due date</p>
+                <InlineDateField name="dueDate" className="mt-2 font-medium text-white" />
               </div>
             </div>
           </div>
@@ -258,20 +258,20 @@ export function ProfessionalInvoiceTemplate({
               </div>
             </div>
           </div>
-          <div className="rounded-[1.4rem] bg-[rgba(29,23,16,0.04)] p-5">
+          <div className="rounded-[1.4rem] p-5 text-white" style={{ backgroundColor: "var(--voucher-accent)" }}>
             <div className="grid gap-3 text-sm">
               <div>
-                <p className="text-[0.68rem] uppercase tracking-[0.25em] text-[rgba(29,23,16,0.45)]">Invoice no.</p>
-                <p className="mt-2 font-medium">{document.invoiceNumber}</p>
+                <p className="text-[0.68rem] uppercase tracking-[0.25em] text-white/70">Invoice no.</p>
+                <p className="mt-2 font-medium text-white">{document.invoiceNumber}</p>
               </div>
               <div>
-                <p className="text-[0.68rem] uppercase tracking-[0.25em] text-[rgba(29,23,16,0.45)]">Invoice date</p>
-                <p className="mt-2 font-medium">{document.invoiceDate}</p>
+                <p className="text-[0.68rem] uppercase tracking-[0.25em] text-white/70">Invoice date</p>
+                <p className="mt-2 font-medium text-white">{document.invoiceDate}</p>
               </div>
               {document.dueDate ? (
                 <div>
-                  <p className="text-[0.68rem] uppercase tracking-[0.25em] text-[rgba(29,23,16,0.45)]">Due date</p>
-                  <p className="mt-2 font-medium">{document.dueDate}</p>
+                  <p className="text-[0.68rem] uppercase tracking-[0.25em] text-white/70">Due date</p>
+                  <p className="mt-2 font-medium text-white">{document.dueDate}</p>
                 </div>
               ) : null}
             </div>
