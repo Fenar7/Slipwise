@@ -26,6 +26,7 @@ import type {
   ConversationVisibility,
   ConversationMessageStatus,
   ConversationParticipantRole,
+  ConversationAttachmentRecord,
 } from "./domain-types";
 
 import {
@@ -241,10 +242,11 @@ export interface ConversationDetailInput {
   threads: ConversationThreadRecord[];
   readState: ConversationReadStateRecord | null;
   currentUserId: string;
+  attachmentCountByMessageId?: Map<string, number>;
 }
 
 export function toConversationDetail(input: ConversationDetailInput): ConversationDetail {
-  const { record, participants, messages, messageReactions, threads, readState, currentUserId } = input;
+  const { record, participants, messages, messageReactions, threads, readState, currentUserId, attachmentCountByMessageId } = input;
 
   const activeParticipants = participants.filter((p) => participantIsActive(p));
 
@@ -268,7 +270,7 @@ export function toConversationDetail(input: ConversationDetailInput): Conversati
         record: msg,
         reactions: messageReactions.get(msg.id) ?? [],
         currentUserId,
-        attachmentCount: 0,
+        attachmentCount: attachmentCountByMessageId?.get(msg.id) ?? 0,
       }),
     ),
     threads: threads.map((t) => ({
@@ -294,6 +296,20 @@ export function toConversationDetail(input: ConversationDetailInput): Conversati
 // ─── Message Detail ─────────────────────────────────────────────────────────────
 
 /**
+ * Attachment summary for message detail views.
+ */
+export interface AttachmentSummary {
+  id: string;
+  storageRef: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  thumbnailRef: string | null;
+  scanStatus: string;
+  createdAt: string;
+}
+
+/**
  * Enriched message detail for message actions / inspector views.
  */
 export interface MessageDetail {
@@ -310,16 +326,31 @@ export interface MessageDetail {
   createdAt: string;
   reactions: MessageReactionRecord[];
   mentions: MessageMentionRecord[];
+  attachments: AttachmentSummary[];
 }
 
 export interface MessageDetailInput {
   record: ConversationMessageRecord;
   reactions: MessageReactionRecord[];
   mentions: MessageMentionRecord[];
+  attachments?: ConversationAttachmentRecord[];
+}
+
+function toAttachmentSummary(record: ConversationAttachmentRecord): AttachmentSummary {
+  return {
+    id: record.id,
+    storageRef: record.storageRef,
+    fileName: record.fileName,
+    mimeType: record.mimeType,
+    sizeBytes: record.sizeBytes,
+    thumbnailRef: record.thumbnailRef,
+    scanStatus: record.scanStatus,
+    createdAt: record.createdAt.toISOString(),
+  };
 }
 
 export function toMessageDetail(input: MessageDetailInput): MessageDetail {
-  const { record, reactions, mentions } = input;
+  const { record, reactions, mentions, attachments = [] } = input;
   return {
     id: record.id,
     orgId: record.orgId,
@@ -334,5 +365,6 @@ export function toMessageDetail(input: MessageDetailInput): MessageDetail {
     createdAt: record.createdAt.toISOString(),
     reactions,
     mentions,
+    attachments: attachments.map(toAttachmentSummary),
   };
 }

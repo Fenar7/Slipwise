@@ -13,6 +13,7 @@ import type {
   SendMessageInput,
   EditMessageInput,
   DeleteMessageInput,
+  MessageAttachmentDescriptor,
 } from "./service-contracts";
 import {
   assertActiveParticipant,
@@ -68,12 +69,26 @@ export async function getMessageById(
 /**
  * List messages for a conversation.
  * Ordered by createdAt ascending for chronological feed.
+ * Requires active participant status.
  */
 export async function listConversationMessages(
   orgId: string,
   conversationId: string,
+  userId: string,
   options?: { limit?: number; cursor?: string },
 ): Promise<ConversationMessageRecord[]> {
+  const participant = await db.conversationParticipant.findFirst({
+    where: {
+      orgId,
+      conversationId,
+      userId,
+      leftAt: null,
+    },
+  });
+  if (!participant) {
+    throw new Error("listConversationMessages: active participant access required");
+  }
+
   const rows = await db.conversationMessage.findMany({
     where: {
       ...messageListOrgSafeWhere(orgId, conversationId),
@@ -111,10 +126,6 @@ export async function sendMessage(
       input.authorId,
       "sendMessage",
     );
-
-    if (input.attachmentRefs && input.attachmentRefs.length > 0) {
-      throw new Error("sendMessage: attachment linking is not implemented in Sprint 2.2");
-    }
 
     if (input.threadId) {
       const thread = await tx.conversationThread.findFirst({
@@ -177,6 +188,31 @@ export async function sendMessage(
           offsetEnd: m.offsetEnd,
         })),
         skipDuplicates: true,
+      });
+    }
+
+    // Create attachments if provided
+    if (input.attachments && input.attachments.length > 0) {
+      await tx.conversationAttachment.createMany({
+        data: input.attachments.map((att) => ({
+          orgId: input.orgId,
+          messageId: message.id,
+          storageRef: att.storageRef,
+          fileName: att.fileName,
+          mimeType: att.mimeType,
+          sizeBytes: att.sizeBytes,
+          thumbnailRef: att.thumbnailRef ?? null,
+          scanStatus: "PENDING" as const,
+        })),
+      });
+
+      await logMessagingAuditTx(tx, {
+        orgId: input.orgId,
+        actorId: input.authorId,
+        action: "ATTACHMENT_UPLOADED",
+        summary: `Linked ${input.attachments.length} attachment(s) to message`,
+        conversationId: input.conversationId,
+        messageId: message.id,
       });
     }
 

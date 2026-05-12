@@ -92,6 +92,7 @@ export type {
   AddParticipantInput,
   RemoveParticipantInput,
   UpdateParticipantRoleInput,
+  MessageAttachmentDescriptor,
   SendMessageInput,
   EditMessageInput,
   DeleteMessageInput,

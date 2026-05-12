@@ -53,11 +53,25 @@ export async function getThreadById(
 
 /**
  * List threads for a conversation.
+ * Requires active participant status.
  */
 export async function listThreadsForConversation(
   orgId: string,
   conversationId: string,
+  userId: string,
 ): Promise<ConversationThreadRecord[]> {
+  const participant = await db.conversationParticipant.findFirst({
+    where: {
+      orgId,
+      conversationId,
+      userId,
+      leftAt: null,
+    },
+  });
+  if (!participant) {
+    throw new Error("listThreadsForConversation: active participant access required");
+  }
+
   const rows = await db.conversationThread.findMany({
     where: {
       orgId,
@@ -70,11 +84,26 @@ export async function listThreadsForConversation(
 
 /**
  * List replies for a thread.
+ * Requires active participant status in the conversation.
  */
 export async function listThreadReplies(
   orgId: string,
+  conversationId: string,
   threadId: string,
+  userId: string,
 ): Promise<ConversationMessageRecord[]> {
+  const participant = await db.conversationParticipant.findFirst({
+    where: {
+      orgId,
+      conversationId,
+      userId,
+      leftAt: null,
+    },
+  });
+  if (!participant) {
+    throw new Error("listThreadReplies: active participant access required");
+  }
+
   const rows = await db.conversationMessage.findMany({
     where: {
       orgId,
@@ -173,10 +202,6 @@ export async function replyToThread(
       throw new Error("replyToThread: thread does not belong to conversation");
     }
 
-    if (input.attachmentRefs && input.attachmentRefs.length > 0) {
-      throw new Error("replyToThread: attachment linking is not implemented in Sprint 2.2");
-    }
-
     const participantCount = await tx.conversationParticipant.count({
       where: {
         orgId: input.orgId,
@@ -201,6 +226,31 @@ export async function replyToThread(
       where: { id: input.threadId, orgId: input.orgId },
       data: { replyCount: { increment: 1 } },
     });
+
+    // Create attachments if provided
+    if (input.attachments && input.attachments.length > 0) {
+      await tx.conversationAttachment.createMany({
+        data: input.attachments.map((att) => ({
+          orgId: input.orgId,
+          messageId: message.id,
+          storageRef: att.storageRef,
+          fileName: att.fileName,
+          mimeType: att.mimeType,
+          sizeBytes: att.sizeBytes,
+          thumbnailRef: att.thumbnailRef ?? null,
+          scanStatus: "PENDING" as const,
+        })),
+      });
+
+      await logMessagingAuditTx(tx, {
+        orgId: input.orgId,
+        actorId: input.authorId,
+        action: "ATTACHMENT_UPLOADED",
+        summary: `Linked ${input.attachments.length} attachment(s) to thread reply`,
+        conversationId: input.conversationId,
+        messageId: message.id,
+      });
+    }
 
     await logMessagingAuditTx(tx, {
       orgId: input.orgId,

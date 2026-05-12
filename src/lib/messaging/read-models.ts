@@ -158,31 +158,48 @@ export async function getConversationDetail(
   }
 
   const [participants, messages, threads, readState] = await Promise.all([
-    listParticipantsForConversation(orgId, conversationId),
-    listConversationMessages(orgId, conversationId, {
+    listParticipantsForConversation(orgId, conversationId, userId),
+    listConversationMessages(orgId, conversationId, userId, {
       limit: options?.messageLimit ?? 50,
       cursor: options?.messageCursor ?? undefined,
     }),
-    listThreadsForConversation(orgId, conversationId),
+    listThreadsForConversation(orgId, conversationId, userId),
     getReadState(orgId, conversationId, userId),
   ]);
 
-  // Fetch reactions for all messages in one batch
+  // Fetch reactions and attachment counts for all messages in one batch
   const messageIds = messages.map((m) => m.id);
-  const reactionsRows = messageIds.length > 0
-    ? await db.messageReaction.findMany({
-        where: {
-          orgId,
-          messageId: { in: messageIds },
-        },
-      })
-    : [];
+  const [reactionsRows, attachmentRows] = await Promise.all([
+    messageIds.length > 0
+      ? db.messageReaction.findMany({
+          where: {
+            orgId,
+            messageId: { in: messageIds },
+          },
+        })
+      : Promise.resolve([]),
+    messageIds.length > 0
+      ? db.conversationAttachment.findMany({
+          where: {
+            orgId,
+            messageId: { in: messageIds },
+          },
+          select: { messageId: true },
+        })
+      : Promise.resolve([]),
+  ]);
 
   const reactionsByMessageId = new Map<string, MessageReactionRecord[]>();
   for (const row of reactionsRows) {
     const list = reactionsByMessageId.get(row.messageId) ?? [];
     list.push(row);
     reactionsByMessageId.set(row.messageId, list);
+  }
+
+  const attachmentCountByMessageId = new Map<string, number>();
+  for (const row of attachmentRows) {
+    const count = attachmentCountByMessageId.get(row.messageId) ?? 0;
+    attachmentCountByMessageId.set(row.messageId, count + 1);
   }
 
   return toConversationDetail({
@@ -193,6 +210,7 @@ export async function getConversationDetail(
     threads,
     readState,
     currentUserId: userId,
+    attachmentCountByMessageId,
   });
 }
 
@@ -200,19 +218,39 @@ export async function getConversationDetail(
 
 /**
  * Fetch an enriched message detail with reactions and mentions.
+ * Requires active participant status in the message's conversation.
  */
 export async function getMessageDetail(
   orgId: string,
   messageId: string,
+  userId: string,
 ): Promise<MessageDetail | null> {
   const message = await getMessageById(orgId, messageId);
   if (!message) {
     return null;
   }
 
-  const [reactions, mentions] = await Promise.all([
+  const participant = await db.conversationParticipant.findFirst({
+    where: {
+      orgId,
+      conversationId: message.conversationId,
+      userId,
+      leftAt: null,
+    },
+  });
+  if (!participant) {
+    return null;
+  }
+
+  const [reactions, mentions, attachments] = await Promise.all([
     listReactionsForMessage(orgId, messageId),
     db.messageMention.findMany({
+      where: {
+        orgId,
+        messageId,
+      },
+    }),
+    db.conversationAttachment.findMany({
       where: {
         orgId,
         messageId,
@@ -224,5 +262,6 @@ export async function getMessageDetail(
     record: message,
     reactions,
     mentions,
+    attachments,
   });
 }

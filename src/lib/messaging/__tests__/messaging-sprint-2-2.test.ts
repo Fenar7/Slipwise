@@ -91,6 +91,11 @@ vi.mock("@/lib/db", () => {
     create: makeFn(),
   };
 
+  const conversationAttachment = {
+    createMany: makeFn(),
+    findMany: makeFn(),
+  };
+
   const db = {
     ...{
       conversation,
@@ -103,6 +108,7 @@ vi.mock("@/lib/db", () => {
       presenceSession,
       typingSession,
       messagingAuditEvent,
+      conversationAttachment,
     },
     $transaction: makeFn().mockImplementation(async (fn: (tx: typeof db) => Promise<unknown>) => {
       return fn(db);
@@ -557,7 +563,8 @@ describe("participant service", () => {
         makeParticipantRow(),
         makeParticipantRow({ id: "part-002", userId: USER_2 }),
       ]);
-      const result = await listParticipantsForConversation(ORG_A, CONV_ID);
+      db.conversationParticipant.findFirst.mockResolvedValue(makeParticipantRow());
+      const result = await listParticipantsForConversation(ORG_A, CONV_ID, USER_1);
       expect(result).toHaveLength(2);
       expect(result[0].userId).toBe(USER_1);
     });
@@ -737,7 +744,8 @@ describe("message service", () => {
         makeMessageRow(),
         makeMessageRow({ id: "msg-002", body: "Second message" }),
       ]);
-      const result = await listConversationMessages(ORG_A, CONV_ID);
+      db.conversationParticipant.findFirst.mockResolvedValue(makeParticipantRow());
+      const result = await listConversationMessages(ORG_A, CONV_ID, USER_1);
       expect(result).toHaveLength(2);
       expect(db.conversationMessage.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -808,17 +816,33 @@ describe("message service", () => {
       ).rejects.toThrow("sendMessage: active participant access required");
     });
 
-    it("rejects unsupported attachment refs instead of dropping them", async () => {
-      await expect(
-        sendMessage({
-          orgId: ORG_A,
-          conversationId: CONV_ID,
-          authorId: USER_1,
-          body: "File attached",
-          attachmentRefs: ["vault://file-001"],
+    it("links attachments transactionally when provided", async () => {
+      db.conversation.findFirst.mockResolvedValue(makeConversationRow());
+      db.conversationParticipant.findFirst.mockResolvedValue(makeParticipantRow());
+      db.conversationParticipant.count.mockResolvedValue(3);
+      db.conversationMessage.create.mockResolvedValue(
+        makeMessageRow({ body: "File attached" }),
+      );
+      db.conversationAttachment.createMany.mockResolvedValue({ count: 1 });
+      db.conversationReadState.upsert.mockResolvedValue(makeReadStateRow());
+      db.messagingAuditEvent.create.mockResolvedValue({});
+
+      const result = await sendMessage({
+        orgId: ORG_A,
+        conversationId: CONV_ID,
+        authorId: USER_1,
+        body: "File attached",
+        attachments: [
+          { storageRef: "vault://file-001", fileName: "report.pdf", mimeType: "application/pdf", sizeBytes: 1024 },
+        ],
+      });
+
+      expect(result.body).toBe("File attached");
+      expect(db.conversationAttachment.createMany).toHaveBeenCalled();
+      expect(db.messagingAuditEvent.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ action: "ATTACHMENT_UPLOADED" }),
         }),
-      ).rejects.toThrow(
-        "sendMessage: attachment linking is not implemented in Sprint 2.2",
       );
     });
   });

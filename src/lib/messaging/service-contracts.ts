@@ -127,6 +127,16 @@ export interface UpdateParticipantRoleInput {
   updatedBy: string;
 }
 
+// ─── Attachment descriptor ────────────────────────────────────────────────────
+
+export interface MessageAttachmentDescriptor {
+  storageRef: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  thumbnailRef?: string | null;
+}
+
 // ─── Message service contracts ───────────────────────────────────────────────
 
 export interface SendMessageInput {
@@ -137,8 +147,8 @@ export interface SendMessageInput {
   authorId: string;
   body: string;
   contentMeta?: Record<string, unknown> | null;
-  /** Opaque attachment storage refs to link to the message. */
-  attachmentRefs?: string[];
+  /** Structured attachment metadata to link to the message transactionally. */
+  attachments?: MessageAttachmentDescriptor[];
   /** Mentioned userIds with offset ranges (optional; may be computed by service). */
   mentions?: Array<{ userId: string; offsetStart: number; offsetEnd: number }>;
 }
@@ -173,7 +183,7 @@ export interface ReplyToThreadInput {
   authorId: string;
   body: string;
   contentMeta?: Record<string, unknown> | null;
-  attachmentRefs?: string[];
+  attachments?: MessageAttachmentDescriptor[];
 }
 
 export interface ResolveThreadInput {

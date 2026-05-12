@@ -54,6 +54,24 @@ export function handleMessagingApiError(error: unknown): NextResponse {
     return messagingApiError(error.code, error.message, error.status);
   }
 
+  if (error instanceof Error) {
+    const msg = error.message;
+    if (msg.includes("active participant access required") || msg.includes("access denied")) {
+      return messagingApiError(
+        MessagingApiErrorCode.FORBIDDEN,
+        "Access denied.",
+        STATUS_MAP[MessagingApiErrorCode.FORBIDDEN],
+      );
+    }
+    if (msg.includes("not found")) {
+      return messagingApiError(
+        MessagingApiErrorCode.NOT_FOUND,
+        msg,
+        STATUS_MAP[MessagingApiErrorCode.NOT_FOUND],
+      );
+    }
+  }
+
   console.error("[api/messaging] Unhandled error:", error);
   return messagingApiError(
     MessagingApiErrorCode.INTERNAL_ERROR,

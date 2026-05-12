@@ -78,6 +78,11 @@ vi.mock("@/lib/db", () => {
     create: makeFn(),
   };
 
+  const conversationAttachment = {
+    createMany: makeFn(),
+    findMany: makeFn(),
+  };
+
   const db = {
     ...{
       conversation,
@@ -88,6 +93,7 @@ vi.mock("@/lib/db", () => {
       messageMention,
       conversationReadState,
       messagingAuditEvent,
+      conversationAttachment,
     },
     $transaction: makeFn().mockImplementation(async (fn: (tx: typeof db) => Promise<unknown>) => {
       return fn(db);
@@ -522,6 +528,7 @@ describe("Sprint 2.3 — Read-model service functions", () => {
       const mockedThreadFindMany = vi.mocked(db.conversationThread.findMany);
       const mockedReadStateFindFirst = vi.mocked(db.conversationReadState.findFirst);
       const mockedReactionFindMany = vi.mocked(db.messageReaction.findMany);
+      const mockedAttachmentFindMany = vi.mocked(db.conversationAttachment.findMany);
 
       mockedParticipantFindFirst.mockResolvedValue(makeParticipantRow());
       mockedConversationFindFirst.mockResolvedValue(makeConversationRow());
@@ -530,6 +537,7 @@ describe("Sprint 2.3 — Read-model service functions", () => {
       mockedThreadFindMany.mockResolvedValue([makeThreadRow()]);
       mockedReadStateFindFirst.mockResolvedValue(makeReadStateRow());
       mockedReactionFindMany.mockResolvedValue([]);
+      mockedAttachmentFindMany.mockResolvedValue([]);
 
       const detail = await getConversationDetail(ORG_A, CONV_ID, USER_1);
 
@@ -547,20 +555,24 @@ describe("Sprint 2.3 — Read-model service functions", () => {
       const mockedMessageFindFirst = vi.mocked(db.conversationMessage.findFirst);
       mockedMessageFindFirst.mockResolvedValue(null);
 
-      const detail = await getMessageDetail(ORG_A, MSG_ID);
+      const detail = await getMessageDetail(ORG_A, MSG_ID, USER_1);
       expect(detail).toBeNull();
     });
 
     it("returns enriched message detail", async () => {
       const mockedMessageFindFirst = vi.mocked(db.conversationMessage.findFirst);
+      const mockedParticipantFindFirst = vi.mocked(db.conversationParticipant.findFirst);
       const mockedReactionFindMany = vi.mocked(db.messageReaction.findMany);
       const mockedMentionFindMany = vi.mocked(db.messageMention.findMany);
+      const mockedAttachmentFindMany = vi.mocked(db.conversationAttachment.findMany);
 
       mockedMessageFindFirst.mockResolvedValue(makeMessageRow());
+      mockedParticipantFindFirst.mockResolvedValue(makeParticipantRow());
       mockedReactionFindMany.mockResolvedValue([makeReactionRow()]);
       mockedMentionFindMany.mockResolvedValue([makeMentionRow()]);
+      mockedAttachmentFindMany.mockResolvedValue([]);
 
-      const detail = await getMessageDetail(ORG_A, MSG_ID);
+      const detail = await getMessageDetail(ORG_A, MSG_ID, USER_1);
 
       expect(detail).not.toBeNull();
       expect(detail!.id).toBe(MSG_ID);
@@ -684,6 +696,7 @@ describe("Sprint 2.3 — API routes", () => {
       const mockedThreadFindMany = vi.mocked(db.conversationThread.findMany);
       const mockedReadStateFindFirst = vi.mocked(db.conversationReadState.findFirst);
       const mockedReactionFindMany = vi.mocked(db.messageReaction.findMany);
+      const mockedAttachmentFindMany = vi.mocked(db.conversationAttachment.findMany);
 
       mockedParticipantFindFirst.mockResolvedValue(makeParticipantRow());
       mockedConversationFindFirst.mockResolvedValue(makeConversationRow());
@@ -692,6 +705,7 @@ describe("Sprint 2.3 — API routes", () => {
       mockedThreadFindMany.mockResolvedValue([makeThreadRow()]);
       mockedReadStateFindFirst.mockResolvedValue(makeReadStateRow());
       mockedReactionFindMany.mockResolvedValue([]);
+      mockedAttachmentFindMany.mockResolvedValue([]);
 
       const request = makeRequest("http://localhost/api/messaging/conversations/conv-001");
       const response = await getConversationDetailRoute(request, { params: Promise.resolve({ id: CONV_ID }) });
@@ -731,7 +745,9 @@ describe("Sprint 2.3 — API routes", () => {
 
   describe("GET /api/messaging/conversations/:id/messages", () => {
     it("lists messages for a conversation", async () => {
+      const mockedParticipantFindFirst = vi.mocked(db.conversationParticipant.findFirst);
       const mockedMessageFindMany = vi.mocked(db.conversationMessage.findMany);
+      mockedParticipantFindFirst.mockResolvedValue(makeParticipantRow());
       mockedMessageFindMany.mockResolvedValue([makeMessageRow()]);
 
       const request = makeRequest("http://localhost/api/messaging/conversations/conv-001/messages");
@@ -740,6 +756,19 @@ describe("Sprint 2.3 — API routes", () => {
       expect(response.status).toBe(200);
       const body = await response.json();
       expect(body.data.messages).toHaveLength(1);
+    });
+
+    it("returns 403 when user is not a participant", async () => {
+      const mockedParticipantFindFirst = vi.mocked(db.conversationParticipant.findFirst);
+      mockedParticipantFindFirst.mockResolvedValue(null);
+
+      const request = makeRequest("http://localhost/api/messaging/conversations/conv-001/messages");
+      const response = await getMessages(request, { params: Promise.resolve({ id: CONV_ID }) });
+
+      expect(response.status).toBe(403);
+      const body = await response.json();
+      expect(body.success).toBe(false);
+      expect(body.error.code).toBe("FORBIDDEN");
     });
   });
 
@@ -778,11 +807,44 @@ describe("Sprint 2.3 — API routes", () => {
 
       expect(response.status).toBe(422);
     });
+
+    it("sends a message with attachments", async () => {
+      const mockedConversationFindFirst = vi.mocked(db.conversation.findFirst);
+      const mockedParticipantFindFirst = vi.mocked(db.conversationParticipant.findFirst);
+      const mockedMessageCreate = vi.mocked(db.conversationMessage.create);
+      const mockedAttachmentCreateMany = vi.mocked(db.conversationAttachment.createMany);
+      const mockedReadStateUpsert = vi.mocked(db.conversationReadState.upsert);
+      const mockedAuditCreate = vi.mocked(db.messagingAuditEvent.create);
+
+      mockedConversationFindFirst.mockResolvedValue(makeConversationRow());
+      mockedParticipantFindFirst.mockResolvedValue(makeParticipantRow());
+      mockedMessageCreate.mockResolvedValue(makeMessageRow());
+      mockedAttachmentCreateMany.mockResolvedValue({ count: 1 } as never);
+      mockedReadStateUpsert.mockResolvedValue(makeReadStateRow());
+      mockedAuditCreate.mockResolvedValue({} as never);
+
+      const request = makeRequest("http://localhost/api/messaging/conversations/conv-001/messages", {
+        method: "POST",
+        body: JSON.stringify({
+          body: "Check this file",
+          attachments: [
+            { storageRef: "vault://file-001", fileName: "report.pdf", mimeType: "application/pdf", sizeBytes: 1024 },
+          ],
+        }),
+      });
+      const response = await postMessages(request, { params: Promise.resolve({ id: CONV_ID }) });
+
+      expect(response.status).toBe(201);
+      const body = await response.json();
+      expect(body.success).toBe(true);
+    });
   });
 
   describe("GET /api/messaging/conversations/:id/participants", () => {
     it("lists participants", async () => {
+      const mockedParticipantFindFirst = vi.mocked(db.conversationParticipant.findFirst);
       const mockedParticipantFindMany = vi.mocked(db.conversationParticipant.findMany);
+      mockedParticipantFindFirst.mockResolvedValue(makeParticipantRow());
       mockedParticipantFindMany.mockResolvedValue([makeParticipantRow()]);
 
       const request = makeRequest("http://localhost/api/messaging/conversations/conv-001/participants");
@@ -792,11 +854,26 @@ describe("Sprint 2.3 — API routes", () => {
       const body = await response.json();
       expect(body.data.participants).toHaveLength(1);
     });
+
+    it("returns 403 when user is not a participant", async () => {
+      const mockedParticipantFindFirst = vi.mocked(db.conversationParticipant.findFirst);
+      mockedParticipantFindFirst.mockResolvedValue(null);
+
+      const request = makeRequest("http://localhost/api/messaging/conversations/conv-001/participants");
+      const response = await getParticipants(request, { params: Promise.resolve({ id: CONV_ID }) });
+
+      expect(response.status).toBe(403);
+      const body = await response.json();
+      expect(body.success).toBe(false);
+      expect(body.error.code).toBe("FORBIDDEN");
+    });
   });
 
   describe("GET /api/messaging/conversations/:id/threads", () => {
     it("lists threads", async () => {
+      const mockedParticipantFindFirst = vi.mocked(db.conversationParticipant.findFirst);
       const mockedThreadFindMany = vi.mocked(db.conversationThread.findMany);
+      mockedParticipantFindFirst.mockResolvedValue(makeParticipantRow());
       mockedThreadFindMany.mockResolvedValue([makeThreadRow()]);
 
       const request = makeRequest("http://localhost/api/messaging/conversations/conv-001/threads");
@@ -805,6 +882,19 @@ describe("Sprint 2.3 — API routes", () => {
       expect(response.status).toBe(200);
       const body = await response.json();
       expect(body.data.threads).toHaveLength(1);
+    });
+
+    it("returns 403 when user is not a participant", async () => {
+      const mockedParticipantFindFirst = vi.mocked(db.conversationParticipant.findFirst);
+      mockedParticipantFindFirst.mockResolvedValue(null);
+
+      const request = makeRequest("http://localhost/api/messaging/conversations/conv-001/threads");
+      const response = await getThreads(request, { params: Promise.resolve({ id: CONV_ID }) });
+
+      expect(response.status).toBe(403);
+      const body = await response.json();
+      expect(body.success).toBe(false);
+      expect(body.error.code).toBe("FORBIDDEN");
     });
   });
 });

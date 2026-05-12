@@ -40,11 +40,23 @@ async function assertConversationInOrg(
 
 /**
  * List active participants for a conversation.
+ * Requires active participant status.
  */
 export async function listParticipantsForConversation(
   orgId: string,
   conversationId: string,
+  userId: string,
 ): Promise<ConversationParticipantRecord[]> {
+  const membership = await db.conversationParticipant.findFirst({
+    where: {
+      ...participantOrgSafeWhere(orgId, conversationId, userId),
+      leftAt: null,
+    },
+  });
+  if (!membership) {
+    throw new Error("listParticipantsForConversation: active participant access required");
+  }
+
   const rows = await db.conversationParticipant.findMany({
     where: {
       ...participantOrgSafeWhere(orgId, conversationId),

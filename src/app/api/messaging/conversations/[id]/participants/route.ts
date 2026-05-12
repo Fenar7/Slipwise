@@ -17,10 +17,10 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const { orgId } = await requireMessagingApiContext();
+    const { orgId, userId } = await requireMessagingApiContext();
     const { id } = await params;
 
-    const participants = await listParticipantsForConversation(orgId, id);
+    const participants = await listParticipantsForConversation(orgId, id, userId);
 
     return messagingApiResponse({ participants });
   } catch (error) {
