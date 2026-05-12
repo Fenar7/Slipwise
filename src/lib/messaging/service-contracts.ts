@@ -136,7 +136,6 @@ export interface MessageAttachmentDescriptor {
   sizeBytes: number;
   thumbnailRef?: string | null;
 }
-
 // ─── Message service contracts ───────────────────────────────────────────────
 
 export interface SendMessageInput {

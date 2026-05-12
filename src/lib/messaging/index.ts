@@ -201,11 +201,11 @@ export {
 
 // Message service
 export {
-  getMessageById,
-  listConversationMessages,
   sendMessage,
   editMessage,
   softDeleteMessage,
+  getMessageById,
+  listConversationMessages,
 } from "./message-service";
 
 // Thread service
