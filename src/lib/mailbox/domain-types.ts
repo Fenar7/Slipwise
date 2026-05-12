@@ -67,6 +67,7 @@ export interface MailboxConnectionRecord {
   watchRenewedAt: Date | null;
   lastSyncAt: Date | null;
   lastSyncError: string | null;
+  lastSyncErrorCategory: string | null;
   disabledAt: Date | null;
   connectedBy: string;
   createdAt: Date;
@@ -259,7 +260,7 @@ export function connectionIsOperational(
 }
 
 export function mailboxCanSync(status: MailboxConnectionStatus): boolean {
-  return connectionIsOperational(status);
+  return connectionIsOperational(status) || connectionIsDegraded(status);
 }
 
 /**

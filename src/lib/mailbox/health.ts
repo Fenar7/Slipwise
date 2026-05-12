@@ -1,6 +1,16 @@
 import "server-only";
 
 import type { MailboxConnectionRecord } from "./domain-types";
+import {
+  classifyProviderError,
+  resolveRecoveryAction,
+  isRetryAllowed,
+  isReplayRequired,
+  isReconnectRequired,
+  getFailureClassSummary,
+} from "./sync-failure-model";
+import type { MailboxSyncFailureClass, MailboxRecoveryAction } from "./sync-failure-model";
+import type { MailboxProviderErrorCategory } from "./provider-contracts";
 
 export type MailboxHealthStatus =
   | "healthy"
@@ -17,6 +27,18 @@ export interface MailboxConnectionHealth {
   actionRequired: boolean;
   /** ISO string — when the current token expires. Null if unknown. */
   tokenExpiresAt: string | null;
+  /** Classified failure class from the last sync error, if any. */
+  lastErrorCategory: MailboxSyncFailureClass | null;
+  /** The recommended recovery action for the current state. */
+  recoveryAction: MailboxRecoveryAction;
+  /** Whether retrying sync is expected to be safe. */
+  canRetry: boolean;
+  /** Whether a full replay (cursor reset + initial sync) is required. */
+  replayRequired: boolean;
+  /** Whether re-authorization is required. */
+  reconnectRequired: boolean;
+  /** Whether the connection is currently syncing (lease held). */
+  isSyncing: boolean;
 }
 
 export const EXPIRING_SOON_THRESHOLD_MS = 24 * 60 * 60 * 1000;
@@ -27,46 +49,106 @@ export function deriveMailboxHealth(
 ): MailboxConnectionHealth {
   const tokenExpiresAt = connection.tokenExpiry?.toISOString() ?? null;
 
+  // Derive failure class from stored error category, if present.
+  const lastErrorCategory: MailboxSyncFailureClass | null =
+    connection.lastSyncErrorCategory
+      ? classifyProviderError(connection.lastSyncErrorCategory as MailboxProviderErrorCategory)
+      : null;
+
+  const recoveryAction = lastErrorCategory
+    ? resolveRecoveryAction(lastErrorCategory)
+    : "none";
+
+  const canRetry = lastErrorCategory ? isRetryAllowed(lastErrorCategory) : false;
+  const replayRequired = lastErrorCategory ? isReplayRequired(lastErrorCategory) : false;
+  const reconnectRequired =
+    connection.status === "RECONNECT_REQUIRED" ||
+    (lastErrorCategory ? isReconnectRequired(lastErrorCategory) : false);
+
+  // A sync lease that has not expired implies an active sync.
+  const isSyncing =
+    connection.syncLeaseExpiresAt !== null &&
+    connection.syncLeaseExpiresAt.getTime() > now;
+
   switch (connection.status) {
-    case "RECONNECT_REQUIRED":
+    case "RECONNECT_REQUIRED": {
       return {
         status: "reconnect_required",
         summary: "Mailbox authorization has expired. Reconnect required.",
         actionRequired: true,
         tokenExpiresAt,
+        lastErrorCategory,
+        recoveryAction: "reconnect",
+        canRetry: false,
+        replayRequired: false,
+        reconnectRequired: true,
+        isSyncing,
       };
-    case "DEGRADED":
+    }
+    case "DEGRADED": {
+      const summary =
+        lastErrorCategory && lastErrorCategory !== "unknown"
+          ? getFailureClassSummary(lastErrorCategory)
+          : "Mailbox connection is experiencing issues.";
       return {
         status: "degraded",
-        summary: "Mailbox connection is experiencing issues.",
+        summary,
         actionRequired: true,
         tokenExpiresAt,
+        lastErrorCategory,
+        recoveryAction,
+        canRetry,
+        replayRequired,
+        reconnectRequired,
+        isSyncing,
       };
-    case "DISCONNECTED":
+    }
+    case "DISCONNECTED": {
       return {
         status: "disconnected",
         summary: "Mailbox has been disconnected.",
         actionRequired: false,
         tokenExpiresAt: null,
+        lastErrorCategory: null,
+        recoveryAction: "none",
+        canRetry: false,
+        replayRequired: false,
+        reconnectRequired: false,
+        isSyncing: false,
       };
+    }
     case "ACTIVE": {
       const isExpiringSoon =
         connection.tokenExpiry !== null &&
         connection.tokenExpiry.getTime() - now < EXPIRING_SOON_THRESHOLD_MS &&
         connection.tokenExpiry.getTime() > now;
+
       if (isExpiringSoon) {
         return {
           status: "expiring_soon",
           summary: "Access token is expiring soon. Token refresh recommended.",
           actionRequired: true,
           tokenExpiresAt,
+          lastErrorCategory: null,
+          recoveryAction: "retry",
+          canRetry: true,
+          replayRequired: false,
+          reconnectRequired: false,
+          isSyncing,
         };
       }
+
       return {
         status: "healthy",
         summary: "Mailbox is connected and active.",
         actionRequired: false,
         tokenExpiresAt,
+        lastErrorCategory: null,
+        recoveryAction: "none",
+        canRetry: false,
+        replayRequired: false,
+        reconnectRequired: false,
+        isSyncing,
       };
     }
     default:
@@ -75,6 +157,12 @@ export function deriveMailboxHealth(
         summary: "Unknown mailbox state.",
         actionRequired: false,
         tokenExpiresAt: null,
+        lastErrorCategory: null,
+        recoveryAction: "none",
+        canRetry: false,
+        replayRequired: false,
+        reconnectRequired: false,
+        isSyncing: false,
       };
   }
 }

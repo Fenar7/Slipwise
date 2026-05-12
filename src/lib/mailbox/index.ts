@@ -132,6 +132,36 @@ export {
 export type { MailboxHealthStatus, MailboxConnectionHealth } from "./health";
 export { deriveMailboxHealth, EXPIRING_SOON_THRESHOLD_MS } from "./health";
 
+// Sprint 3.4: Sync failure classification and recovery model
+export type {
+  MailboxSyncFailureClass,
+  MailboxRecoveryAction,
+} from "./sync-failure-model";
+export {
+  classifyProviderError,
+  resolveRecoveryAction,
+  isRetryAllowed,
+  isReplayRequired,
+  isReconnectRequired,
+  shouldDegradeConnection,
+  resolveStatusAfterFailure,
+  resolveStatusAfterSuccess,
+  resolveRecoverySyncMode,
+  getFailureClassSummary,
+  getRecoveryActionSummary,
+} from "./sync-failure-model";
+
+export type {
+  MailboxRecoveryStatus,
+  RecoveryActionType,
+  RecoveryActionResult,
+  PerformRecoveryActionParams,
+} from "./recovery-service";
+export {
+  getMailboxRecoveryStatus,
+  performMailboxRecoveryAction,
+} from "./recovery-service";
+
 // Admin shapes
 export type { MailboxConnectionListItem } from "./admin-shapes";
 export { toMailboxConnectionListItem } from "./admin-shapes";

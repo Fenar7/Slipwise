@@ -55,11 +55,24 @@ export interface MailboxConnectionSummary {
   isOperational: boolean;
   /** Whether the user should be prompted to reconnect. */
   requiresReconnect: boolean;
+  /** The recommended recovery action for the current state. */
+  recoveryAction: "retry" | "replay" | "reconnect" | "none";
 }
 
 export function toMailboxConnectionSummary(
   record: MailboxConnectionRecord,
 ): MailboxConnectionSummary {
+  const isReconnectRequired =
+    record.status === "RECONNECT_REQUIRED" ||
+    record.status === "DISCONNECTED";
+
+  let recoveryAction: MailboxConnectionSummary["recoveryAction"] = "none";
+  if (isReconnectRequired) {
+    recoveryAction = "reconnect";
+  } else if (record.status === "DEGRADED") {
+    recoveryAction = "retry";
+  }
+
   return {
     id: record.id,
     provider: record.provider,
@@ -68,9 +81,8 @@ export function toMailboxConnectionSummary(
     status: record.status,
     lastSyncAt: record.lastSyncAt?.toISOString() ?? null,
     isOperational: record.status === "ACTIVE",
-    requiresReconnect:
-      record.status === "RECONNECT_REQUIRED" ||
-      record.status === "DISCONNECTED",
+    requiresReconnect: isReconnectRequired,
+    recoveryAction,
   };
 }
 
