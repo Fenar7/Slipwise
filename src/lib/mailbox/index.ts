@@ -42,6 +42,8 @@ export type {
   MailboxCursorType,
   MailboxThreadLinkEntityType,
   MailboxSyncRunStatus,
+  MailboxSyncTriggerSource,
+  MailboxSyncMode,
   MailboxMessageDirection,
 } from "./domain-types";
 export {
@@ -50,6 +52,9 @@ export {
   connectionIsOperational,
   mailboxCanSync,
   cursorIsExpired,
+  watchIsExpired,
+  cursorIsValidForDelta,
+  resolveSyncMode,
 } from "./domain-types";
 
 // Provider contracts

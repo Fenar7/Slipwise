@@ -24,6 +24,8 @@ import type {
   MailboxCursorType,
   MailboxThreadLinkEntityType,
   MailboxSyncRunStatus,
+  MailboxSyncTriggerSource,
+  MailboxSyncMode,
 } from "@/generated/prisma/client";
 
 // Re-export enums for use in service layer without importing from generated client directly.
@@ -38,6 +40,8 @@ export type {
   MailboxCursorType,
   MailboxThreadLinkEntityType,
   MailboxSyncRunStatus,
+  MailboxSyncTriggerSource,
+  MailboxSyncMode,
 };
 
 // ─── Connection ───────────────────────────────────────────────────────────────
@@ -59,6 +63,8 @@ export interface MailboxConnectionRecord {
   tokenRef: string | null;
   tokenExpiry: Date | null;
   watchMetadata: Record<string, unknown> | null;
+  watchExpiresAt: Date | null;
+  watchRenewedAt: Date | null;
   lastSyncAt: Date | null;
   lastSyncError: string | null;
   disabledAt: Date | null;
@@ -206,6 +212,8 @@ export interface MailboxSyncRunRecord {
   mailboxConnectionId: string;
   provider: MailboxProvider;
   status: MailboxSyncRunStatus;
+  triggerSource: MailboxSyncTriggerSource;
+  syncMode: MailboxSyncMode;
   startedAt: Date;
   completedAt: Date | null;
   errorCategory: string | null;
@@ -402,4 +410,50 @@ export function resolveMailboxAccessLevel(
  */
 export function canAccessMailbox(resolution: MailboxAccessResolution): boolean {
   return resolution.accessLevel !== "none";
+}
+
+// ─── Sprint 3.2 — Incremental sync, cursor renewal, and concurrency ─────────────
+
+/**
+ * Returns true if the provider watch/subscription has expired and must be
+ * renewed before a delta sync can proceed safely.
+ */
+export function watchIsExpired(connection: MailboxConnectionRecord): boolean {
+  if (!connection.watchExpiresAt) return false;
+  return connection.watchExpiresAt <= new Date();
+}
+
+/**
+ * Returns true if a cursor exists, has not expired, and can be used for delta sync.
+ */
+export function cursorIsValidForDelta(cursor: MailboxProviderCursorRecord | null): boolean {
+  if (!cursor) return false;
+  if (cursorIsExpired(cursor)) return false;
+  return cursor.cursorValue.length > 0;
+}
+
+/**
+ * Determine the sync mode for a mailbox given its current state.
+ * - INITIAL when no valid delta cursor exists.
+ * - DELTA when a valid cursor exists and the watch has not expired.
+ */
+export function resolveSyncMode(
+  connection: MailboxConnectionRecord,
+  cursor: MailboxProviderCursorRecord | null,
+): MailboxSyncMode {
+  if (watchIsExpired(connection)) return "INITIAL";
+  if (!cursorIsValidForDelta(cursor)) return "INITIAL";
+  return "DELTA";
+}
+
+/**
+ * Result shape for a concurrency-guarded sync attempt.
+ */
+export interface MailboxSyncAttemptResult {
+  /** Whether the sync was allowed to start. */
+  allowed: boolean;
+  /** If false, the reason the sync was rejected. */
+  reason?: "concurrent_sync_running" | "connection_not_operational" | "watch_expired_requires_renewal";
+  /** The sync run record if one was created. */
+  runId?: string;
 }

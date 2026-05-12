@@ -5930,8 +5930,13 @@ enum MailboxAuditAction {
   DRAFT_CREATED
   DRAFT_DISCARDED
   SYNC_MANUAL_TRIGGERED
+  SYNC_SCHEDULED_TRIGGERED
+  SYNC_RENEWAL_TRIGGERED
   SYNC_COMPLETED
+  SYNC_DELTA_COMPLETED
   SYNC_FAILED
+  WATCH_RENEWED
+  WATCH_EXPIRED_DETECTED
   ADMIN_SUPPORT_ACTION
 
   @@map("mailbox_audit_action")
@@ -5972,6 +5977,9 @@ model MailboxConnection {
   /// Provider-specific watch/subscription metadata (e.g. Gmail push subscription).
   /// Stored as JSON so no Gmail-specific columns leak into the core model.
   watchMetadata     Json?
+  /// Explicit watch/subscription expiration for renewal modeling.
+  watchExpiresAt    DateTime?
+  watchRenewedAt    DateTime?
   lastSyncAt        DateTime?
   lastSyncError     String?
   /// Soft-disable: when set, the connection is treated as inactive without deletion.
@@ -6142,6 +6150,24 @@ enum MailboxSyncRunStatus {
   @@map("mailbox_sync_run_status")
 }
 
+/// Why a sync run was triggered.
+enum MailboxSyncTriggerSource {
+  MANUAL
+  SCHEDULED
+  RENEWAL
+  WEBHOOK
+
+  @@map("mailbox_sync_trigger_source")
+}
+
+/// Whether this sync run is an initial backfill or an incremental delta.
+enum MailboxSyncMode {
+  INITIAL
+  DELTA
+
+  @@map("mailbox_sync_mode")
+}
+
 /// Normalized mailbox thread. One row per provider thread per connection.
 model MailboxThread {
   id                  String              @id @default(cuid())
@@ -6229,6 +6255,8 @@ model MailboxSyncRun {
   mailboxConnectionId String
   provider            MailboxProvider
   status              MailboxSyncRunStatus
+  triggerSource       MailboxSyncTriggerSource @default(MANUAL)
+  syncMode            MailboxSyncMode          @default(INITIAL)
   startedAt           DateTime
   completedAt         DateTime?
   errorCategory       String?

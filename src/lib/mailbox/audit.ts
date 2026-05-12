@@ -28,8 +28,13 @@ export const MAILBOX_AUDIT_ACTION_LABELS: Record<MailboxAuditAction, string> = {
   DRAFT_CREATED: "Created draft",
   DRAFT_DISCARDED: "Discarded draft",
   SYNC_MANUAL_TRIGGERED: "Triggered manual sync",
+  SYNC_SCHEDULED_TRIGGERED: "Triggered scheduled sync",
+  SYNC_RENEWAL_TRIGGERED: "Triggered renewal sync",
   SYNC_COMPLETED: "Completed sync",
+  SYNC_DELTA_COMPLETED: "Completed delta sync",
   SYNC_FAILED: "Failed sync",
+  WATCH_RENEWED: "Renewed mailbox watch",
+  WATCH_EXPIRED_DETECTED: "Detected expired watch",
   ADMIN_SUPPORT_ACTION: "Performed admin support action",
 };
 

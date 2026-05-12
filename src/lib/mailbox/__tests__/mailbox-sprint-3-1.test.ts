@@ -26,6 +26,7 @@ vi.mock("@/lib/db", () => ({
     mailboxSyncRun: {
       create: vi.fn(),
       update: vi.fn(),
+      findFirst: vi.fn(),
       findUnique: vi.fn(),
     },
     mailboxConnection: {
