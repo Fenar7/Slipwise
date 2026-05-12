@@ -241,3 +241,32 @@ export {
   stopTyping,
   listTypingForConversation,
 } from "./presence-service";
+
+// ─── Sprint 2.3: Read shapes and read models ──────────────────────────────────────
+
+// Read shapes (domain record → UI-facing shape)
+export type {
+  ConversationSummary,
+  MessageSummary,
+  ParticipantSummary,
+  ConversationDetail,
+  ThreadSummary,
+  ReadStateSummary,
+  MessageDetail,
+} from "./read-shapes";
+export {
+  toConversationSummary,
+  toMessageSummary,
+  toParticipantSummary,
+  toConversationDetail,
+  toMessageDetail,
+} from "./read-shapes";
+
+// Read models (aggregated queries returning UI shapes)
+export {
+  listConversationSummariesForUser,
+  getConversationDetail,
+  getMessageDetail,
+  type ListConversationSummariesOptions,
+  type GetConversationDetailOptions,
+} from "./read-models";
