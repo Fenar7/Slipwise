@@ -23,6 +23,9 @@ import type {
   MailboxAuditAction,
   MailboxCursorType,
   MailboxThreadLinkEntityType,
+  MailboxSyncRunStatus,
+  MailboxSyncTriggerSource,
+  MailboxSyncMode,
 } from "@/generated/prisma/client";
 
 // Re-export enums for use in service layer without importing from generated client directly.
@@ -36,6 +39,9 @@ export type {
   MailboxAuditAction,
   MailboxCursorType,
   MailboxThreadLinkEntityType,
+  MailboxSyncRunStatus,
+  MailboxSyncTriggerSource,
+  MailboxSyncMode,
 };
 
 // ─── Connection ───────────────────────────────────────────────────────────────
@@ -57,8 +63,11 @@ export interface MailboxConnectionRecord {
   tokenRef: string | null;
   tokenExpiry: Date | null;
   watchMetadata: Record<string, unknown> | null;
+  watchExpiresAt: Date | null;
+  watchRenewedAt: Date | null;
   lastSyncAt: Date | null;
   lastSyncError: string | null;
+  lastSyncErrorCategory: string | null;
   disabledAt: Date | null;
   connectedBy: string;
   createdAt: Date;
@@ -145,6 +154,81 @@ export interface MailboxProviderCursorRecord {
   updatedAt: Date;
 }
 
+export type MailboxMessageDirection = "inbound" | "outbound";
+
+export interface MailboxThreadRecord {
+  id: string;
+  orgId: string;
+  mailboxConnectionId: string;
+  providerThreadId: string;
+  subject: string;
+  participantsSummary: Record<string, unknown> | unknown[];
+  lastMessageAt: Date;
+  unreadCount: number;
+  status: MailboxThreadStatus;
+  assigneeId: string | null;
+  isFlagged: boolean;
+  primaryLinkSummary: Record<string, unknown> | null;
+  /** Normalized preview snippet from the most recent message. Sprint 3.3. */
+  previewSnippet: string;
+  /** Total attachment count across all thread messages. Sprint 3.3. */
+  attachmentCount: number;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface MailboxMessageRecord {
+  id: string;
+  orgId: string;
+  threadId: string;
+  providerMessageId: string;
+  rfcMessageId: string | null;
+  direction: MailboxMessageDirection;
+  from: Record<string, unknown>;
+  to: unknown[];
+  cc: unknown[];
+  bcc: unknown[];
+  subject: string;
+  htmlBody: string;
+  textBody: string | null;
+  snippet: string;
+  sentAt: Date;
+  receivedAt: Date | null;
+  attachmentCount: number;
+  providerMetadata: Record<string, unknown> | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface MailboxAttachmentRecord {
+  id: string;
+  messageId: string;
+  providerAttachmentId: string;
+  filename: string;
+  mimeType: string;
+  size: number;
+  isInline: boolean;
+  storageRef: string | null;
+}
+
+export interface MailboxSyncRunRecord {
+  id: string;
+  orgId: string;
+  mailboxConnectionId: string;
+  provider: MailboxProvider;
+  status: MailboxSyncRunStatus;
+  triggerSource: MailboxSyncTriggerSource;
+  syncMode: MailboxSyncMode;
+  startedAt: Date;
+  completedAt: Date | null;
+  errorCategory: string | null;
+  errorSummary: string | null;
+  stats: Record<string, unknown> | null;
+  createdBy: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 // ─── Validation helpers ───────────────────────────────────────────────────────
 
 /**
@@ -173,6 +257,10 @@ export function connectionIsOperational(
   status: MailboxConnectionStatus,
 ): boolean {
   return status === "ACTIVE";
+}
+
+export function mailboxCanSync(status: MailboxConnectionStatus): boolean {
+  return connectionIsOperational(status) || connectionIsDegraded(status);
 }
 
 /**
@@ -327,4 +415,50 @@ export function resolveMailboxAccessLevel(
  */
 export function canAccessMailbox(resolution: MailboxAccessResolution): boolean {
   return resolution.accessLevel !== "none";
+}
+
+// ─── Sprint 3.2 — Incremental sync, cursor renewal, and concurrency ─────────────
+
+/**
+ * Returns true if the provider watch/subscription has expired and must be
+ * renewed before a delta sync can proceed safely.
+ */
+export function watchIsExpired(connection: MailboxConnectionRecord): boolean {
+  if (!connection.watchExpiresAt) return false;
+  return connection.watchExpiresAt <= new Date();
+}
+
+/**
+ * Returns true if a cursor exists, has not expired, and can be used for delta sync.
+ */
+export function cursorIsValidForDelta(cursor: MailboxProviderCursorRecord | null): boolean {
+  if (!cursor) return false;
+  if (cursorIsExpired(cursor)) return false;
+  return cursor.cursorValue.length > 0;
+}
+
+/**
+ * Determine the sync mode for a mailbox given its current state.
+ * - INITIAL when no valid delta cursor exists.
+ * - DELTA when a valid cursor exists and the watch has not expired.
+ */
+export function resolveSyncMode(
+  connection: MailboxConnectionRecord,
+  cursor: MailboxProviderCursorRecord | null,
+): MailboxSyncMode {
+  if (watchIsExpired(connection)) return "INITIAL";
+  if (!cursorIsValidForDelta(cursor)) return "INITIAL";
+  return "DELTA";
+}
+
+/**
+ * Result shape for a concurrency-guarded sync attempt.
+ */
+export interface MailboxSyncAttemptResult {
+  /** Whether the sync was allowed to start. */
+  allowed: boolean;
+  /** If false, the reason the sync was rejected. */
+  reason?: "concurrent_sync_running" | "connection_not_operational" | "watch_expired_requires_renewal";
+  /** The sync run record if one was created. */
+  runId?: string;
 }

@@ -111,6 +111,14 @@ export interface MailboxThreadEnvelope {
  * Body content is not included here — it is fetched separately via
  * fetchThreadDetail to avoid loading large payloads during list sync.
  */
+export interface MailboxAttachmentEnvelope {
+  providerAttachmentId: string;
+  filename: string;
+  mimeType: string;
+  size: number;
+  isInline: boolean;
+}
+
 export interface MailboxMessageEnvelope {
   /** Provider-side message identifier. */
   providerMessageId: string;
@@ -120,6 +128,7 @@ export interface MailboxMessageEnvelope {
   from: MailboxParticipantRef;
   to: MailboxParticipantRef[];
   cc: MailboxParticipantRef[];
+  bcc: MailboxParticipantRef[];
   subject: string;
   /** Short preview snippet (plain text, safe to display). */
   snippet: string;
@@ -127,6 +136,7 @@ export interface MailboxMessageEnvelope {
   receivedAt: string | null;
   attachmentCount: number;
   providerMetadata: Record<string, unknown>;
+  attachments?: MailboxAttachmentEnvelope[];
 }
 
 export interface MailboxParticipantRef {
@@ -149,6 +159,7 @@ export type MailboxProviderErrorCategory =
   | "not_found"           // requested resource does not exist
   | "provider_unavailable" // provider API is temporarily unavailable
   | "quota_exceeded"      // provider quota exhausted
+  | "watch_expired"       // push subscription/watch has expired; renewal required
   | "unknown";            // unclassified error; log server-side only
 
 export interface MailboxProviderError {
@@ -157,6 +168,20 @@ export interface MailboxProviderError {
   safeMessage: string;
   /** Whether the operation is safe to retry. */
   retryable: boolean;
+}
+
+// ─── Watch renewal result ─────────────────────────────────────────────────────
+
+/**
+ * Result of a successful watch/subscription renewal.
+ * Provider-neutral: the mailbox core stores these fields directly on
+ * MailboxConnection.watchExpiresAt / watchRenewedAt.
+ */
+export interface MailboxWatchRenewalResult {
+  /** When the renewed watch will expire. Null if the provider does not expose expiry. */
+  expiresAt: Date | null;
+  /** Provider-specific metadata to persist in MailboxConnection.watchMetadata. */
+  metadata: Record<string, unknown>;
 }
 
 // ─── Provider adapter interface ───────────────────────────────────────────────
@@ -233,6 +258,16 @@ export interface IMailboxProviderAdapter {
     | { messages: (MailboxMessageEnvelope & { htmlBody: string; textBody: string | null })[] }
     | MailboxProviderError
   >;
+
+  /**
+   * Renew the provider push watch/subscription.
+   * Returns the renewed watch metadata and expiration for persistence.
+   * Returns watch_expired if the watch cannot be renewed (e.g. auth expired).
+   */
+  renewWatch(params: {
+    orgId: string;
+    tokenRef: string;
+  }): Promise<MailboxWatchRenewalResult | MailboxProviderError>;
 
   /**
    * Revoke provider authorization and clean up any push subscriptions.

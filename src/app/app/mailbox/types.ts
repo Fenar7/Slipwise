@@ -21,6 +21,7 @@ export interface MailboxConnection {
   status: MailboxConnectionStatus;
   lastSyncAt: string | null;
   lastSyncError: string | null;
+  lastSyncErrorCategory: string | null;
   unreadCount: number;
   inboxCount: number;
 }

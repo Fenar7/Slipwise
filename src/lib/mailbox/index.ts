@@ -28,6 +28,10 @@ export type {
   MailboxAssignmentRecord,
   MailboxAuditEventRecord,
   MailboxProviderCursorRecord,
+  MailboxThreadRecord,
+  MailboxMessageRecord,
+  MailboxAttachmentRecord,
+  MailboxSyncRunRecord,
   MailboxProvider,
   MailboxConnectionStatus,
   MailboxThreadStatus,
@@ -37,12 +41,20 @@ export type {
   MailboxAuditAction,
   MailboxCursorType,
   MailboxThreadLinkEntityType,
+  MailboxSyncRunStatus,
+  MailboxSyncTriggerSource,
+  MailboxSyncMode,
+  MailboxMessageDirection,
 } from "./domain-types";
 export {
   connectionRequiresReconnect,
   connectionIsDegraded,
   connectionIsOperational,
+  mailboxCanSync,
   cursorIsExpired,
+  watchIsExpired,
+  cursorIsValidForDelta,
+  resolveSyncMode,
 } from "./domain-types";
 
 // Provider contracts
@@ -54,6 +66,7 @@ export type {
   MailboxSyncCursor,
   MailboxThreadEnvelope,
   MailboxMessageEnvelope,
+  MailboxAttachmentEnvelope,
   MailboxParticipantRef,
   MailboxProviderErrorCategory,
   MailboxProviderError,
@@ -71,6 +84,10 @@ export type {
   MailboxAssignmentSummary,
   MailboxThreadLinkSummary,
   MailboxAuditEventSummary,
+  MailboxParticipantReadShape,
+  MailboxThreadReadShape,
+  MailboxMessageReadShape,
+  MailboxAttachmentReadShape,
 } from "./read-shapes";
 export {
   toMailboxConnectionSummary,
@@ -80,6 +97,9 @@ export {
   toMailboxAssignmentSummary,
   toMailboxThreadLinkSummary,
   toMailboxAuditEventSummary,
+  toMailboxThreadReadShape,
+  toMailboxMessageReadShape,
+  toMailboxAttachmentReadShape,
 } from "./read-shapes";
 
 // Audit helpers
@@ -111,6 +131,36 @@ export {
 // Health derivation
 export type { MailboxHealthStatus, MailboxConnectionHealth } from "./health";
 export { deriveMailboxHealth, EXPIRING_SOON_THRESHOLD_MS } from "./health";
+
+// Sprint 3.4: Sync failure classification and recovery model
+export type {
+  MailboxSyncFailureClass,
+  MailboxRecoveryAction,
+} from "./sync-failure-model";
+export {
+  classifyProviderError,
+  resolveRecoveryAction,
+  isRetryAllowed,
+  isReplayRequired,
+  isReconnectRequired,
+  shouldDegradeConnection,
+  resolveStatusAfterFailure,
+  resolveStatusAfterSuccess,
+  resolveRecoverySyncMode,
+  getFailureClassSummary,
+  getRecoveryActionSummary,
+} from "./sync-failure-model";
+
+export type {
+  MailboxRecoveryStatus,
+  RecoveryActionType,
+  RecoveryActionResult,
+  PerformRecoveryActionParams,
+} from "./recovery-service";
+export {
+  getMailboxRecoveryStatus,
+  performMailboxRecoveryAction,
+} from "./recovery-service";
 
 // Admin shapes
 export type { MailboxConnectionListItem } from "./admin-shapes";
@@ -152,3 +202,31 @@ export {
   listMailboxConnectionsForMember,
   setMailboxVisibilityPolicy,
 } from "./visibility-service";
+
+// Sprint 3.1: Provider registry
+export { getMailboxProviderAdapter, mailboxProviderRegistry } from "./provider-registry";
+
+// Sprint 3.1: Ingestion service
+export {
+  upsertMailboxThread,
+  upsertMailboxMessage,
+  upsertMailboxAttachment,
+  updateMailboxThreadSummary,
+} from "./ingestion-service";
+
+// Sprint 3.1: Sync orchestration
+export type { RunMailboxSyncParams, RunMailboxSyncResult } from "./mailbox-sync-service";
+export { runMailboxSync } from "./mailbox-sync-service";
+
+// Sprint 3.3: Participant normalization
+export {
+  normalizeParticipant,
+  normalizeParticipants,
+  deduplicateParticipants,
+  classifyMessageDirection,
+  extractParticipantsFromMessage,
+  deriveThreadParticipants,
+} from "./participant-service";
+
+// Sprint 3.3: Normalization helpers
+export { MAILBOX_SNIPPET_MAX_LENGTH, normalizeSnippet } from "./normalization-service";
