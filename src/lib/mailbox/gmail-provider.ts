@@ -32,6 +32,7 @@ import type {
   MailboxThreadEnvelope,
   MailboxMessageEnvelope,
   MailboxProviderError,
+  MailboxWatchRenewalResult,
 } from "./provider-contracts";
 import { storeMailboxCredential, readMailboxCredential, rotateMailboxCredential, revokeMailboxCredential } from "./credential-store";
 import type { MailboxCredentialPayload } from "./credential-store";
@@ -44,6 +45,8 @@ const GMAIL_USERINFO_URL = "https://www.googleapis.com/oauth2/v3/userinfo";
 const GMAIL_PROFILE_URL = "https://gmail.googleapis.com/gmail/v1/users/me/profile";
 const GMAIL_THREADS_URL = "https://gmail.googleapis.com/gmail/v1/users/me/threads";
 const GMAIL_THREAD_URL = "https://gmail.googleapis.com/gmail/v1/users/me/threads";
+const GMAIL_HISTORY_URL = "https://gmail.googleapis.com/gmail/v1/users/me/history";
+const GMAIL_WATCH_URL = "https://gmail.googleapis.com/gmail/v1/users/me/watch";
 
 /**
  * Least-privilege scopes for Sprint 2.2 (auth lifecycle only).
@@ -93,6 +96,10 @@ function mapGoogleError(
   // Quota
   if (status === 403 && errorCode === "quotaExceeded") {
     return { category: "quota_exceeded", safeMessage: "Gmail API quota exceeded", retryable: false };
+  }
+  // History invalid / expired → force full re-sync by treating as watch expired
+  if (status === 404 && (errorCode === "historyNotFound" || errorCode === "notFound")) {
+    return { category: "watch_expired", safeMessage: "Gmail history expired; full re-sync required", retryable: false };
   }
   // Not found
   if (status === 404) {
@@ -353,8 +360,13 @@ export const gmailProviderAdapter: IMailboxProviderAdapter = {
   },
 
   /**
-   * Perform an initial sync delta using Gmail threads.list + threads.get.
-   * Returns normalized thread envelopes and the next cursor (highest historyId).
+   * Perform a sync run. Supports both initial backfill and incremental delta.
+   *
+   * - If cursor is null → initial sync using threads.list (page-token pagination).
+   * - If cursor exists  → incremental delta using history.list (real Gmail
+   *   history-based sync) to avoid re-fetching unchanged threads.
+   *
+   * Returns normalized thread envelopes and the next cursor to persist.
    */
   async syncDelta({ orgId, tokenRef, cursor }) {
     const credential = await readMailboxCredential(orgId, tokenRef);
@@ -365,44 +377,153 @@ export const gmailProviderAdapter: IMailboxProviderAdapter = {
     const accessToken = await ensureValidAccessToken(orgId, tokenRef, credential);
     if (isProviderError(accessToken)) return accessToken;
 
-    const params = new URLSearchParams({
-      maxResults: "50",
-      includeSpamTrash: "false",
-    });
     if (cursor) {
-      params.set("pageToken", cursor.value);
+      // ─── Delta path: use Gmail history.list ───────────────────────────────
+      const threadIds = new Set<string>();
+      let nextPageToken: string | undefined;
+      let lastHistoryId = cursor.value;
+
+      do {
+        const params = new URLSearchParams({
+          startHistoryId: cursor.value,
+          maxResults: "100",
+        });
+        if (nextPageToken) {
+          params.set("pageToken", nextPageToken);
+        }
+        const historyRes = await fetch(`${GMAIL_HISTORY_URL}?${params.toString()}`, {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        if (!historyRes.ok) {
+          const errorCode = await parseGoogleErrorCode(historyRes);
+          return mapGoogleError(historyRes.status, errorCode);
+        }
+
+        const historyData = await historyRes.json() as GmailHistoryListResponse;
+        if (historyData.historyId) {
+          lastHistoryId = historyData.historyId;
+        }
+        for (const record of historyData.history ?? []) {
+          for (const added of record.messagesAdded ?? []) {
+            if (added.message?.threadId) threadIds.add(added.message.threadId);
+          }
+          for (const modified of record.labelsAdded ?? []) {
+            if (modified.message?.threadId) threadIds.add(modified.message.threadId);
+          }
+        }
+        nextPageToken = historyData.nextPageToken;
+      } while (nextPageToken);
+
+      const threads: MailboxThreadEnvelope[] = [];
+      for (const threadId of threadIds) {
+        const threadRes = await fetch(`${GMAIL_THREAD_URL}/${threadId}`, {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        if (!threadRes.ok) continue;
+        const threadData = await threadRes.json() as GmailThreadResponse;
+        const envelope = toThreadEnvelope(threadData);
+        if (envelope) threads.push(envelope);
+      }
+
+      const nextCursor: MailboxSyncCursor = {
+        value: lastHistoryId,
+        expiresAt: null,
+      };
+
+      return { threads, nextCursor };
     }
 
-    const res = await fetch(`${GMAIL_THREADS_URL}?${params.toString()}`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
+    // ─── Initial path: use threads.list ─────────────────────────────────────
+    const threads: MailboxThreadEnvelope[] = [];
+    let nextPageToken: string | undefined;
+    let highestHistoryId = "0";
+
+    do {
+      const params = new URLSearchParams({
+        maxResults: "50",
+        includeSpamTrash: "false",
+      });
+      if (nextPageToken) {
+        params.set("pageToken", nextPageToken);
+      }
+      const res = await fetch(`${GMAIL_THREADS_URL}?${params.toString()}`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (!res.ok) {
+        const errorCode = await parseGoogleErrorCode(res);
+        return mapGoogleError(res.status, errorCode);
+      }
+
+      const data = await res.json() as GmailThreadsListResponse;
+      for (const threadRef of data.threads ?? []) {
+        if (threadRef.historyId && BigInt(threadRef.historyId) > BigInt(highestHistoryId)) {
+          highestHistoryId = threadRef.historyId;
+        }
+        const threadRes = await fetch(`${GMAIL_THREAD_URL}/${threadRef.id}`, {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        if (!threadRes.ok) continue;
+        const threadData = await threadRes.json() as GmailThreadResponse;
+        if (threadData.historyId && BigInt(threadData.historyId) > BigInt(highestHistoryId)) {
+          highestHistoryId = threadData.historyId;
+        }
+        const envelope = toThreadEnvelope(threadData);
+        if (envelope) threads.push(envelope);
+      }
+      nextPageToken = data.nextPageToken;
+    } while (nextPageToken);
+
+    const nextCursor: MailboxSyncCursor = { value: highestHistoryId, expiresAt: null };
+
+    return { threads, nextCursor };
+  },
+
+  /**
+   * Renew the Gmail push watch subscription.
+   * Calls the Gmail watch endpoint and returns expiration + metadata.
+   * Returns watch_expired if the topic is not configured or the call fails.
+   */
+  async renewWatch({ orgId, tokenRef }) {
+    const credential = await readMailboxCredential(orgId, tokenRef);
+    if (!credential) {
+      return { category: "auth_expired", safeMessage: "Credential not found for tokenRef", retryable: false };
+    }
+
+    const accessToken = await ensureValidAccessToken(orgId, tokenRef, credential);
+    if (isProviderError(accessToken)) return accessToken;
+
+    const topicName = process.env.GMAIL_PUBSUB_TOPIC;
+    if (!topicName) {
+      return {
+        category: "watch_expired",
+        safeMessage: "Gmail push topic not configured; cannot renew watch",
+        retryable: false,
+      };
+    }
+
+    const res = await fetch(GMAIL_WATCH_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ topicName, labelIds: ["INBOX"] }),
     });
+
     if (!res.ok) {
       const errorCode = await parseGoogleErrorCode(res);
       return mapGoogleError(res.status, errorCode);
     }
 
-    const data = await res.json() as GmailThreadsListResponse;
-    const threads: MailboxThreadEnvelope[] = [];
-    let highestHistoryId = data.threads?.[0]?.historyId ?? "0";
-
-    for (const threadRef of data.threads ?? []) {
-      const threadRes = await fetch(`${GMAIL_THREAD_URL}/${threadRef.id}`, {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
-      if (!threadRes.ok) continue;
-      const threadData = await threadRes.json() as GmailThreadResponse;
-      if (threadData.historyId && BigInt(threadData.historyId) > BigInt(highestHistoryId)) {
-        highestHistoryId = threadData.historyId;
-      }
-      const envelope = toThreadEnvelope(threadData);
-      if (envelope) threads.push(envelope);
-    }
-
-    const nextCursor: MailboxSyncCursor | null = data.nextPageToken
-      ? { value: data.nextPageToken, expiresAt: null }
-      : { value: highestHistoryId, expiresAt: null };
-
-    return { threads, nextCursor };
+    const data = await res.json() as { historyId?: string; expiration?: string };
+    const expiresAt = data.expiration ? new Date(parseInt(data.expiration, 10)) : null;
+    return {
+      expiresAt,
+      metadata: {
+        gmailHistoryId: data.historyId ?? null,
+        gmailWatchExpiration: data.expiration ?? null,
+      },
+    };
   },
 
   /**
@@ -464,6 +585,17 @@ interface GmailThreadRef {
   id: string;
   historyId?: string;
   snippet?: string;
+}
+
+interface GmailHistoryListResponse {
+  history?: GmailHistoryRecord[];
+  historyId?: string;
+  nextPageToken?: string;
+}
+
+interface GmailHistoryRecord {
+  messagesAdded?: Array<{ message?: { id: string; threadId: string } }>;
+  labelsAdded?: Array<{ message?: { id: string; threadId: string } }>;
 }
 
 interface GmailThreadResponse {

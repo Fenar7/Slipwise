@@ -26,11 +26,13 @@ vi.mock("@/lib/db", () => ({
     mailboxSyncRun: {
       create: vi.fn(),
       update: vi.fn(),
+      findFirst: vi.fn(),
       findUnique: vi.fn(),
     },
     mailboxConnection: {
       findUnique: vi.fn(),
       update: vi.fn(),
+      updateMany: vi.fn(),
     },
     mailboxProviderCursor: {
       findFirst: vi.fn(),
@@ -88,6 +90,8 @@ vi.mock("@/lib/mailbox/provider-registry", () => ({
 describe("Sprint 3.1 — Initial sync pipeline", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(db.mailboxConnection.updateMany).mockResolvedValue({ count: 1 } as never);
+    vi.mocked(db.mailboxSyncRun.findFirst).mockResolvedValue(null);
   });
 
   describe("Domain helpers", () => {
