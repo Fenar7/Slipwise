@@ -13,9 +13,12 @@
  * - Org-safe query helpers (for Prisma query pattern enforcement)
  * - Contract type guards (for runtime validation)
  *
+ * What is exported from Sprint 2.2 onward:
+ * - Service implementations (conversation, participant, message, thread,
+ *   reaction, mention/read-state, presence/typing)
+ *
  * What is NOT exported from here:
  * - Raw Prisma types (import from @/generated/prisma/client directly)
- * - Actual service implementations with DB queries (future sprints)
  */
 
 // Domain types
@@ -89,6 +92,7 @@ export type {
   AddParticipantInput,
   RemoveParticipantInput,
   UpdateParticipantRoleInput,
+  MessageAttachmentDescriptor,
   SendMessageInput,
   EditMessageInput,
   DeleteMessageInput,
@@ -173,3 +177,97 @@ export {
   auditEventOrgSafeWhere,
   retentionPolicyOrgSafeWhere,
 } from "./org-safe-helpers";
+
+// ─── Sprint 2.2: Service implementations ─────────────────────────────────────────
+
+// Conversation service
+export {
+  getConversationById,
+  listConversationsForUser,
+  createConversation,
+  archiveConversation,
+  renameConversation,
+  changeConversationVisibility,
+} from "./conversation-service";
+
+// Participant service
+export {
+  listParticipantsForConversation,
+  getParticipantByUserId,
+  addParticipant,
+  removeParticipant,
+  updateParticipantRole,
+} from "./participant-service";
+
+// Message service
+export {
+  sendMessage,
+  editMessage,
+  softDeleteMessage,
+  getMessageById,
+  listConversationMessages,
+} from "./message-service";
+
+// Thread service
+export {
+  getThreadById,
+  listThreadsForConversation,
+  listThreadReplies,
+  createThread,
+  replyToThread,
+  resolveThread,
+} from "./thread-service";
+
+// Reaction service
+export {
+  listReactionsForMessage,
+  addReaction,
+  removeReaction,
+} from "./reaction-service";
+
+// Mention / Read-state service
+export {
+  acknowledgeMention,
+  listUnacknowledgedMentions,
+  updateReadState,
+  markConversationRead,
+  getReadState,
+} from "./mention-readstate-service";
+
+// Presence / Typing service
+export {
+  upsertPresence,
+  getPresenceByUserId,
+  startTyping,
+  stopTyping,
+  listTypingForConversation,
+} from "./presence-service";
+
+// ─── Sprint 2.3: Read shapes and read models ──────────────────────────────────────
+
+// Read shapes (domain record → UI-facing shape)
+export type {
+  ConversationSummary,
+  MessageSummary,
+  ParticipantSummary,
+  ConversationDetail,
+  ThreadSummary,
+  ReadStateSummary,
+  MessageDetail,
+} from "./read-shapes";
+export {
+  toConversationSummary,
+  toMessageSummary,
+  toParticipantSummary,
+  toConversationDetail,
+  toMessageDetail,
+} from "./read-shapes";
+
+// Read models (aggregated queries returning UI shapes)
+export {
+  listConversationSummariesForUser,
+  getConversationDetail,
+  getMessageDetail,
+  type ListConversationSummariesOptions,
+  type GetConversationDetailOptions,
+} from "./read-models";

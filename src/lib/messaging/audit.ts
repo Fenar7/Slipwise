@@ -23,6 +23,7 @@ export const MESSAGING_AUDIT_ACTION_LABELS: Record<MessagingAuditAction, string>
   MESSAGE_DELETED: "Deleted message",
   THREAD_CREATED: "Created thread",
   THREAD_REPLIED: "Replied to thread",
+  THREAD_RESOLVED: "Resolved thread",
   REACTION_ADDED: "Added reaction",
   REACTION_REMOVED: "Removed reaction",
   MENTION_CREATED: "Created mention",
