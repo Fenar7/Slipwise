@@ -84,6 +84,7 @@ function makeRecord(overrides: Partial<Record<string, unknown>> = {}) {
     watchMetadata: { historyId: "12345" },
     lastSyncAt: new Date("2026-05-01T10:00:00Z"),
     lastSyncError: null,
+    lastSyncErrorCategory: null,
     disabledAt: null,
     connectedBy: ACTOR,
     createdAt: new Date("2026-01-01T00:00:00Z"),

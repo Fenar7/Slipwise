@@ -5985,6 +5985,7 @@ model MailboxConnection {
   syncLeaseExpiresAt DateTime?
   lastSyncAt        DateTime?
   lastSyncError     String?
+  lastSyncErrorCategory String?
   /// Soft-disable: when set, the connection is treated as inactive without deletion.
   disabledAt        DateTime?
   /// Who connected this mailbox (org member userId).

@@ -101,9 +101,13 @@ describe("Sprint 3.1 — Initial sync pipeline", () => {
       expect(mailboxCanSync("ACTIVE")).toBe(true);
     });
 
-    it("mailboxCanSync returns false for non-ACTIVE connections", () => {
+    it("mailboxCanSync returns true for ACTIVE and DEGRADED connections", () => {
+      expect(mailboxCanSync("ACTIVE")).toBe(true);
+      expect(mailboxCanSync("DEGRADED")).toBe(true);
+    });
+
+    it("mailboxCanSync returns false for RECONNECT_REQUIRED and DISCONNECTED", () => {
       expect(mailboxCanSync("RECONNECT_REQUIRED")).toBe(false);
-      expect(mailboxCanSync("DEGRADED")).toBe(false);
       expect(mailboxCanSync("DISCONNECTED")).toBe(false);
     });
   });

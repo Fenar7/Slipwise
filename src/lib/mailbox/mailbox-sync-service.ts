@@ -21,6 +21,12 @@ import {
 import { getMailboxProviderAdapter } from "./provider-registry";
 import { isMailboxProviderError } from "./provider-contracts";
 import type { MailboxProviderError } from "./provider-contracts";
+import {
+  classifyProviderError,
+  resolveStatusAfterFailure,
+  resolveStatusAfterSuccess,
+  isReplayRequired,
+} from "./sync-failure-model";
 import { deriveThreadParticipants } from "./participant-service";
 import {
   deriveThreadLastMessageAt,
@@ -317,9 +323,15 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
     }
 
     const stats = { threadCount: delta.threads.length, messageCount };
+    const nextStatus = resolveStatusAfterSuccess(connection.status);
     await db.mailboxConnection.update({
       where: { id: connection.id },
-      data: { lastSyncAt: new Date(), lastSyncError: null },
+      data: {
+        status: nextStatus,
+        lastSyncAt: new Date(),
+        lastSyncError: null,
+        lastSyncErrorCategory: null,
+      },
     });
     await db.mailboxSyncRun.update({
       where: { id: run.id },
@@ -351,6 +363,15 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
       throw error;
     }
     const providerError = normalizeSyncError(error);
+    const failureClass = classifyProviderError(providerError.category);
+    const nextStatus = resolveStatusAfterFailure(connection.status, failureClass);
+
+    // For cursor-invalid failures, clear the cursor so the next sync is INITIAL.
+    if (isReplayRequired(failureClass)) {
+      await deleteMailboxCursors(params.orgId, connection.id);
+      effectiveMode = "INITIAL";
+    }
+
     await db.mailboxSyncRun.update({
       where: { id: run.id },
       data: {
@@ -364,8 +385,9 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
     await db.mailboxConnection.update({
       where: { id: connection.id },
       data: {
-        status: providerError.category === "auth_expired" ? "RECONNECT_REQUIRED" : connection.status,
+        status: nextStatus,
         lastSyncError: providerError.safeMessage,
+        lastSyncErrorCategory: providerError.category,
       },
     });
     await logMailboxAudit({
@@ -374,7 +396,7 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
       action: "SYNC_FAILED",
       summary: "Mailbox sync failed",
       mailboxConnectionId: connection.id,
-      metadata: { runId: run.id, errorCategory: providerError.category, syncMode: effectiveMode, triggerSource },
+      metadata: { runId: run.id, errorCategory: providerError.category, failureClass, syncMode: effectiveMode, triggerSource },
     });
 
     return {
