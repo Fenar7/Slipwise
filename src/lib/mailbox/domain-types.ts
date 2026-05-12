@@ -168,6 +168,10 @@ export interface MailboxThreadRecord {
   assigneeId: string | null;
   isFlagged: boolean;
   primaryLinkSummary: Record<string, unknown> | null;
+  /** Normalized preview snippet from the most recent message. Sprint 3.3. */
+  previewSnippet: string;
+  /** Total attachment count across all thread messages. Sprint 3.3. */
+  attachmentCount: number;
   createdAt: Date;
   updatedAt: Date;
 }

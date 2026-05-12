@@ -12,6 +12,7 @@ vi.mock("@/lib/db", () => ({
   db: {
     mailboxThread: {
       upsert: vi.fn(),
+      updateMany: vi.fn(),
       findFirst: vi.fn(),
       count: vi.fn(),
     },
@@ -57,6 +58,7 @@ import {
   cursorIsValidForDelta,
   resolveSyncMode,
 } from "@/lib/mailbox/domain-types";
+import type { MailboxConnectionRecord } from "@/lib/mailbox/domain-types";
 
 import {
   upsertMailboxThread,
@@ -120,6 +122,15 @@ const mockDb = db as unknown as {
     findFirst: ReturnType<typeof vi.fn>;
     updateMany: ReturnType<typeof vi.fn>;
   };
+  mailboxThread: {
+    upsert: ReturnType<typeof vi.fn>;
+    updateMany: ReturnType<typeof vi.fn>;
+    findFirst: ReturnType<typeof vi.fn>;
+  };
+  mailboxMessage: {
+    upsert: ReturnType<typeof vi.fn>;
+    findFirst: ReturnType<typeof vi.fn>;
+  };
   mailboxProviderCursor: {
     upsert: ReturnType<typeof vi.fn>;
     deleteMany: ReturnType<typeof vi.fn>;
@@ -132,6 +143,7 @@ describe("Sprint 3.2 — Incremental sync and provider cursors", () => {
     // Reset the concurrency guard mock so one test's resolved value does not leak into the next.
     mockDb.mailboxSyncRun.findFirst.mockResolvedValue(null);
     mockDb.mailboxConnection.updateMany.mockResolvedValue({ count: 1 });
+    mockDb.mailboxThread.updateMany.mockResolvedValue({ count: 1 });
   });
 
   // ─── Domain helpers ──────────────────────────────────────────────────────
@@ -624,19 +636,60 @@ describe("Sprint 3.2 — Incremental sync and provider cursors", () => {
       expect(mockDb.mailboxThread.upsert).toHaveBeenCalledTimes(2);
     });
   });
+
+  // Sprint 3.3 regression: derived thread summary helpers must actually be wired.
+  describe("Thread summary derivation wiring", () => {
+    it("persists previewSnippet and attachmentCount after message ingestion", async () => {
+      const { getMailboxConnection } = await import("@/lib/mailbox/connection-service");
+      const { getMailboxProviderAdapter } = await import("@/lib/mailbox/provider-registry");
+      const { getMailboxCursor } = await import("@/lib/mailbox/cursor-service");
+
+      vi.mocked(getMailboxConnection).mockResolvedValue(
+        makeConnectionRecord({ watchExpiresAt: new Date("2099-01-01") }),
+      );
+      vi.mocked(getMailboxCursor).mockResolvedValue(makeCursorRecord());
+
+      const mockAdapter = makeMockAdapter({
+        snippet: "latest normalized snippet",
+        attachmentCount: 2,
+      });
+      vi.mocked(getMailboxProviderAdapter).mockReturnValue(mockAdapter as never);
+
+      mockDb.mailboxSyncRun.findFirst.mockResolvedValue(null);
+      mockDb.mailboxSyncRun.create.mockResolvedValue(makeSyncRunRow({ syncMode: "DELTA" }));
+      mockDb.mailboxSyncRun.update.mockResolvedValue({});
+      mockDb.mailboxConnection.update.mockResolvedValue({});
+      mockDb.mailboxThread.updateMany.mockResolvedValue({ count: 1 });
+      mockDb.mailboxMessage.upsert.mockResolvedValue(makeMessageRow({
+        snippet: "latest normalized snippet",
+        attachmentCount: 2,
+      }));
+
+      await runMailboxSync({ orgId: "org-1", connectionId: "conn-1", actorId: "user-1" });
+
+      expect(mockDb.mailboxThread.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            previewSnippet: "latest normalized snippet",
+            attachmentCount: 2,
+          }),
+        }),
+      );
+    });
+  });
 });
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 
-function makeConnection(overrides: Partial<Record<string, unknown>> = {}) {
+function makeConnection(overrides: Partial<MailboxConnectionRecord> = {}): MailboxConnectionRecord {
   return {
     id: "conn-1",
     orgId: "org-1",
-    provider: "GMAIL" as const,
+    provider: "GMAIL",
     providerAccountId: "gmail-uid-123",
     emailAddress: "ops@example.com",
     displayName: "Ops Inbox",
-    status: "ACTIVE" as const,
+    status: "ACTIVE",
     visibilityPolicy: "org_shared",
     tokenRef: "token-1",
     tokenExpiry: null,
@@ -669,17 +722,27 @@ function makeCursor(overrides: Partial<Record<string, unknown>> = {}) {
   };
 }
 
-function makeConnectionRecord(overrides: Partial<Record<string, unknown>> = {}) {
+function makeConnectionRecord(overrides: Partial<MailboxConnectionRecord> = {}): MailboxConnectionRecord {
   return {
     id: "conn-1",
     orgId: "org-1",
-    provider: "GMAIL" as const,
-    status: "ACTIVE" as const,
+    provider: "GMAIL",
+    providerAccountId: "gmail-uid-123",
+    emailAddress: "ops@example.com",
+    displayName: "Ops Inbox",
+    status: "ACTIVE",
+    visibilityPolicy: "org_shared",
     tokenRef: "token-1",
+    tokenExpiry: null,
+    watchMetadata: null,
     watchExpiresAt: null,
     watchRenewedAt: null,
     lastSyncAt: null,
     lastSyncError: null,
+    disabledAt: null,
+    connectedBy: "user-1",
+    createdAt: new Date(),
+    updatedAt: new Date(),
     ...overrides,
   };
 }
@@ -720,7 +783,7 @@ function makeSyncRunRow(overrides: Partial<Record<string, unknown>> = {}) {
   };
 }
 
-function makeMockAdapter() {
+function makeMockAdapter(overrides: { snippet?: string; attachmentCount?: number } = {}) {
   return {
     descriptor: { provider: "GMAIL", displayName: "Gmail", supportsPushSync: true, supportsSend: true },
     connect: vi.fn(),
@@ -747,10 +810,10 @@ function makeMockAdapter() {
         cc: [],
         bcc: [],
         subject: "Test",
-        snippet: "Hello",
+        snippet: overrides.snippet ?? "Hello",
         sentAt: new Date().toISOString(),
         receivedAt: new Date().toISOString(),
-        attachmentCount: 0,
+        attachmentCount: overrides.attachmentCount ?? 0,
         providerMetadata: {},
         htmlBody: "<p>Hello</p>",
         textBody: "Hello",
@@ -776,12 +839,14 @@ function makeThreadRow() {
     assigneeId: null,
     isFlagged: false,
     primaryLinkSummary: null,
+    previewSnippet: "",
+    attachmentCount: 0,
     createdAt: new Date(),
     updatedAt: new Date(),
   };
 }
 
-function makeMessageRow() {
+function makeMessageRow(overrides: Partial<Record<string, unknown>> = {}) {
   return {
     id: "msg-1",
     orgId: "org-1",
@@ -795,11 +860,14 @@ function makeMessageRow() {
     bcc: [],
     subject: "Test",
     snippet: "Hello",
+    htmlBody: "<p>Hello</p>",
+    textBody: "Hello",
     sentAt: new Date(),
     receivedAt: null,
     attachmentCount: 0,
     providerMetadata: null,
     createdAt: new Date(),
     updatedAt: new Date(),
+    ...overrides,
   };
 }

@@ -84,6 +84,10 @@ export type {
   MailboxAssignmentSummary,
   MailboxThreadLinkSummary,
   MailboxAuditEventSummary,
+  MailboxParticipantReadShape,
+  MailboxThreadReadShape,
+  MailboxMessageReadShape,
+  MailboxAttachmentReadShape,
 } from "./read-shapes";
 export {
   toMailboxConnectionSummary,
@@ -93,6 +97,9 @@ export {
   toMailboxAssignmentSummary,
   toMailboxThreadLinkSummary,
   toMailboxAuditEventSummary,
+  toMailboxThreadReadShape,
+  toMailboxMessageReadShape,
+  toMailboxAttachmentReadShape,
 } from "./read-shapes";
 
 // Audit helpers
@@ -174,8 +181,22 @@ export {
   upsertMailboxThread,
   upsertMailboxMessage,
   upsertMailboxAttachment,
+  updateMailboxThreadSummary,
 } from "./ingestion-service";
 
 // Sprint 3.1: Sync orchestration
 export type { RunMailboxSyncParams, RunMailboxSyncResult } from "./mailbox-sync-service";
 export { runMailboxSync } from "./mailbox-sync-service";
+
+// Sprint 3.3: Participant normalization
+export {
+  normalizeParticipant,
+  normalizeParticipants,
+  deduplicateParticipants,
+  classifyMessageDirection,
+  extractParticipantsFromMessage,
+  deriveThreadParticipants,
+} from "./participant-service";
+
+// Sprint 3.3: Normalization helpers
+export { MAILBOX_SNIPPET_MAX_LENGTH, normalizeSnippet } from "./normalization-service";

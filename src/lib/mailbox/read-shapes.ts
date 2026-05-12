@@ -25,12 +25,17 @@ import type {
   MailboxAssignmentRecord,
   MailboxAuditEventRecord,
   MailboxThreadLinkRecord,
+  MailboxThreadRecord,
+  MailboxMessageRecord,
+  MailboxAttachmentRecord,
 } from "./domain-types";
 import type {
   MailboxConnectionStatus,
   MailboxProvider,
   MailboxAuditAction,
   MailboxThreadLinkEntityType,
+  MailboxThreadStatus,
+  MailboxMessageDirection,
 } from "./domain-types";
 
 // ─── Connection summary (member-facing) ──────────────────────────────────────
@@ -263,5 +268,140 @@ export function toMailboxAuditEventSummary(
     action: record.action,
     summary: record.summary,
     createdAt: record.createdAt.toISOString(),
+  };
+}
+
+// ─── Thread read shapes ───────────────────────────────────────────────────────
+
+export interface MailboxParticipantReadShape {
+  email: string;
+  displayName: string | null;
+}
+
+export interface MailboxThreadReadShape {
+  id: string;
+  mailboxConnectionId: string;
+  providerThreadId: string;
+  subject: string;
+  participants: MailboxParticipantReadShape[];
+  lastMessageAt: string;
+  unreadCount: number;
+  status: MailboxThreadStatus;
+  isFlagged: boolean;
+  previewSnippet: string;
+  attachmentCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MailboxMessageReadShape {
+  id: string;
+  threadId: string;
+  providerMessageId: string;
+  rfcMessageId: string | null;
+  direction: MailboxMessageDirection;
+  from: MailboxParticipantReadShape | null;
+  to: MailboxParticipantReadShape[];
+  cc: MailboxParticipantReadShape[];
+  bcc: MailboxParticipantReadShape[];
+  subject: string;
+  snippet: string;
+  sentAt: string;
+  receivedAt: string | null;
+  attachmentCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MailboxAttachmentReadShape {
+  id: string;
+  messageId: string;
+  providerAttachmentId: string;
+  filename: string;
+  mimeType: string;
+  size: number;
+  isInline: boolean;
+  storageRef: string | null;
+}
+
+function toParticipantReadShape(
+  raw: unknown,
+): MailboxParticipantReadShape | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const r = raw as Record<string, unknown>;
+  const email = typeof r.email === "string" ? r.email : null;
+  if (!email) return null;
+  const displayName = typeof r.displayName === "string" ? r.displayName : null;
+  return { email, displayName };
+}
+
+export function toMailboxThreadReadShape(
+  record: MailboxThreadRecord,
+): MailboxThreadReadShape {
+  const rawParticipants = Array.isArray(record.participantsSummary)
+    ? record.participantsSummary
+    : [];
+  const participants = rawParticipants
+    .map(toParticipantReadShape)
+    .filter(Boolean) as MailboxParticipantReadShape[];
+
+  return {
+    id: record.id,
+    mailboxConnectionId: record.mailboxConnectionId,
+    providerThreadId: record.providerThreadId,
+    subject: record.subject,
+    participants,
+    lastMessageAt: record.lastMessageAt.toISOString(),
+    unreadCount: record.unreadCount,
+    status: record.status,
+    isFlagged: record.isFlagged,
+    previewSnippet: record.previewSnippet ?? "",
+    attachmentCount: record.attachmentCount ?? 0,
+    createdAt: record.createdAt.toISOString(),
+    updatedAt: record.updatedAt.toISOString(),
+  };
+}
+
+export function toMailboxMessageReadShape(
+  record: MailboxMessageRecord,
+): MailboxMessageReadShape {
+  return {
+    id: record.id,
+    threadId: record.threadId,
+    providerMessageId: record.providerMessageId,
+    rfcMessageId: record.rfcMessageId,
+    direction: record.direction,
+    from: toParticipantReadShape(record.from),
+    to: (Array.isArray(record.to) ? record.to : [])
+      .map(toParticipantReadShape)
+      .filter(Boolean) as MailboxParticipantReadShape[],
+    cc: (Array.isArray(record.cc) ? record.cc : [])
+      .map(toParticipantReadShape)
+      .filter(Boolean) as MailboxParticipantReadShape[],
+    bcc: (Array.isArray(record.bcc) ? record.bcc : [])
+      .map(toParticipantReadShape)
+      .filter(Boolean) as MailboxParticipantReadShape[],
+    subject: record.subject,
+    snippet: record.snippet,
+    sentAt: record.sentAt.toISOString(),
+    receivedAt: record.receivedAt?.toISOString() ?? null,
+    attachmentCount: record.attachmentCount,
+    createdAt: record.createdAt.toISOString(),
+    updatedAt: record.updatedAt.toISOString(),
+  };
+}
+
+export function toMailboxAttachmentReadShape(
+  record: MailboxAttachmentRecord,
+): MailboxAttachmentReadShape {
+  return {
+    id: record.id,
+    messageId: record.messageId,
+    providerAttachmentId: record.providerAttachmentId,
+    filename: record.filename,
+    mimeType: record.mimeType,
+    size: record.size,
+    isInline: record.isInline,
+    storageRef: record.storageRef,
   };
 }
