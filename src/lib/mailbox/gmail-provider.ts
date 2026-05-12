@@ -33,6 +33,7 @@ import type {
   MailboxMessageEnvelope,
   MailboxProviderError,
   MailboxWatchRenewalResult,
+  MailboxParticipantRef,
 } from "./provider-contracts";
 import { storeMailboxCredential, readMailboxCredential, rotateMailboxCredential, revokeMailboxCredential } from "./credential-store";
 import type { MailboxCredentialPayload } from "./credential-store";
@@ -638,7 +639,7 @@ function toThreadEnvelope(thread: GmailThreadResponse): MailboxThreadEnvelope | 
   const headers = firstMessage.payload?.headers ?? [];
   const subject = headers.find((h) => h.name === "Subject")?.value ?? "(no subject)";
   const participants = extractParticipants(headers);
-  const lastMessage = thread.messages[thread.messages.length - 1];
+  const lastMessage = thread.messages![thread.messages!.length - 1];
   const unreadCount = thread.messages?.filter((m) => m.labelIds?.includes("UNREAD")).length ?? 0;
 
   return {
@@ -655,7 +656,7 @@ function toThreadEnvelope(thread: GmailThreadResponse): MailboxThreadEnvelope | 
 
 function toMessageEnvelope(msg: GmailMessage): (MailboxMessageEnvelope & { htmlBody: string; textBody: string | null }) | null {
   const headers = msg.payload?.headers ?? [];
-  const from = parseAddressHeader(headers.find((h) => h.name === "From")?.value ?? "");
+  const from = parseAddressHeader(headers.find((h) => h.name === "From")?.value ?? "") ?? { email: "unknown@unknown.com", displayName: null };
   const to = parseAddressListHeader(headers.find((h) => h.name === "To")?.value ?? "");
   const cc = parseAddressListHeader(headers.find((h) => h.name === "Cc")?.value ?? "");
   const bcc = parseAddressListHeader(headers.find((h) => h.name === "Bcc")?.value ?? "");
@@ -697,7 +698,7 @@ function extractParticipants(headers: Array<{ name: string; value: string }>): M
 
 function parseAddressListHeader(value: string): MailboxParticipantRef[] {
   if (!value) return [];
-  return value.split(",").map((part) => parseAddressHeader(part.trim())).filter(Boolean) as MailboxParticipantRef[];
+  return value.split(",").map((part) => parseAddressHeader(part.trim())).filter((p): p is MailboxParticipantRef => p !== null);
 }
 
 function parseAddressHeader(value: string): MailboxParticipantRef | null {
@@ -759,7 +760,7 @@ function extractAttachments(part: GmailMessagePart | null): Array<{ providerAtta
         filename,
         mimeType,
         size: p.body.size ?? 0,
-        isInline: mimeType.startsWith("image/") && p.headers?.some((h) => h.name === "Content-Disposition" && h.value?.includes("inline")),
+        isInline: mimeType.startsWith("image/") && (p.headers?.some((h) => h.name === "Content-Disposition" && h.value?.includes("inline")) ?? false),
       });
     }
     if (p.parts) {

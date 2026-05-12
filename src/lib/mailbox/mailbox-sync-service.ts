@@ -12,10 +12,18 @@ import {
   watchIsExpired,
 } from "./domain-types";
 import type { MailboxSyncTriggerSource, MailboxSyncMode } from "./domain-types";
-import { upsertMailboxAttachment, upsertMailboxMessage, upsertMailboxThread } from "./ingestion-service";
+import {
+  upsertMailboxAttachment,
+  upsertMailboxMessage,
+  upsertMailboxThread,
+  updateMailboxThreadSummary,
+} from "./ingestion-service";
 import { getMailboxProviderAdapter } from "./provider-registry";
 import { isMailboxProviderError } from "./provider-contracts";
 import type { MailboxProviderError } from "./provider-contracts";
+import { deriveThreadParticipants } from "./participant-service";
+import { deriveThreadLastMessageAt } from "./normalization-service";
+import type { MailboxMessageRecord } from "./domain-types";
 
 export interface RunMailboxSyncParams {
   orgId: string;
@@ -258,24 +266,34 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
       if (isMailboxProviderError(detail)) {
         throw toProviderErrorException(detail);
       }
+      const threadMessages: MailboxMessageRecord[] = [];
       for (const messageEnvelope of detail.messages) {
         const message = await upsertMailboxMessage({
           orgId: params.orgId,
           threadId: thread.id,
           envelope: messageEnvelope,
+          mailboxEmail: connection.emailAddress,
         });
         messageCount += 1;
+        threadMessages.push(message);
         for (const attachment of messageEnvelope.attachments ?? []) {
           await upsertMailboxAttachment({
             messageId: message.id,
-            providerAttachmentId: attachment.providerAttachmentId,
-            filename: attachment.filename,
-            mimeType: attachment.mimeType,
-            size: attachment.size,
-            isInline: attachment.isInline,
+            envelope: attachment,
           });
         }
       }
+      const participantsSummary = deriveThreadParticipants(threadMessages);
+      const lastMessageAt = deriveThreadLastMessageAt(
+        threadMessages,
+        thread.lastMessageAt,
+      );
+      await updateMailboxThreadSummary({
+        orgId: params.orgId,
+        threadId: thread.id,
+        participantsSummary: participantsSummary as unknown as Prisma.InputJsonValue,
+        lastMessageAt,
+      });
     }
 
     // ─── Cursor advancement only after successful ingestion ─────────────────

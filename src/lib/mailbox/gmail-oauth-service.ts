@@ -362,6 +362,7 @@ function toConnectionRecord(
     emailAddress: row.emailAddress,
     displayName: row.displayName,
     status: row.status,
+    visibilityPolicy: row.visibilityPolicy,
     tokenRef: row.tokenRef,
     tokenExpiry: row.tokenExpiry,
     watchMetadata:
@@ -370,6 +371,8 @@ function toConnectionRecord(
       !Array.isArray(row.watchMetadata)
         ? (row.watchMetadata as Record<string, unknown>)
         : null,
+    watchExpiresAt: row.watchExpiresAt,
+    watchRenewedAt: row.watchRenewedAt,
     lastSyncAt: row.lastSyncAt,
     lastSyncError: row.lastSyncError,
     disabledAt: row.disabledAt,

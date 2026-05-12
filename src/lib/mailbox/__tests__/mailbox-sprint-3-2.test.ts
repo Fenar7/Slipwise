@@ -12,6 +12,7 @@ vi.mock("@/lib/db", () => ({
   db: {
     mailboxThread: {
       upsert: vi.fn(),
+      updateMany: vi.fn(),
       findFirst: vi.fn(),
       count: vi.fn(),
     },
@@ -57,6 +58,7 @@ import {
   cursorIsValidForDelta,
   resolveSyncMode,
 } from "@/lib/mailbox/domain-types";
+import type { MailboxConnectionRecord } from "@/lib/mailbox/domain-types";
 
 import {
   upsertMailboxThread,
@@ -120,6 +122,15 @@ const mockDb = db as unknown as {
     findFirst: ReturnType<typeof vi.fn>;
     updateMany: ReturnType<typeof vi.fn>;
   };
+  mailboxThread: {
+    upsert: ReturnType<typeof vi.fn>;
+    updateMany: ReturnType<typeof vi.fn>;
+    findFirst: ReturnType<typeof vi.fn>;
+  };
+  mailboxMessage: {
+    upsert: ReturnType<typeof vi.fn>;
+    findFirst: ReturnType<typeof vi.fn>;
+  };
   mailboxProviderCursor: {
     upsert: ReturnType<typeof vi.fn>;
     deleteMany: ReturnType<typeof vi.fn>;
@@ -132,6 +143,7 @@ describe("Sprint 3.2 — Incremental sync and provider cursors", () => {
     // Reset the concurrency guard mock so one test's resolved value does not leak into the next.
     mockDb.mailboxSyncRun.findFirst.mockResolvedValue(null);
     mockDb.mailboxConnection.updateMany.mockResolvedValue({ count: 1 });
+    mockDb.mailboxThread.updateMany.mockResolvedValue({ count: 1 });
   });
 
   // ─── Domain helpers ──────────────────────────────────────────────────────
@@ -628,15 +640,15 @@ describe("Sprint 3.2 — Incremental sync and provider cursors", () => {
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 
-function makeConnection(overrides: Partial<Record<string, unknown>> = {}) {
+function makeConnection(overrides: Partial<MailboxConnectionRecord> = {}): MailboxConnectionRecord {
   return {
     id: "conn-1",
     orgId: "org-1",
-    provider: "GMAIL" as const,
+    provider: "GMAIL",
     providerAccountId: "gmail-uid-123",
     emailAddress: "ops@example.com",
     displayName: "Ops Inbox",
-    status: "ACTIVE" as const,
+    status: "ACTIVE",
     visibilityPolicy: "org_shared",
     tokenRef: "token-1",
     tokenExpiry: null,
@@ -669,17 +681,27 @@ function makeCursor(overrides: Partial<Record<string, unknown>> = {}) {
   };
 }
 
-function makeConnectionRecord(overrides: Partial<Record<string, unknown>> = {}) {
+function makeConnectionRecord(overrides: Partial<MailboxConnectionRecord> = {}): MailboxConnectionRecord {
   return {
     id: "conn-1",
     orgId: "org-1",
-    provider: "GMAIL" as const,
-    status: "ACTIVE" as const,
+    provider: "GMAIL",
+    providerAccountId: "gmail-uid-123",
+    emailAddress: "ops@example.com",
+    displayName: "Ops Inbox",
+    status: "ACTIVE",
+    visibilityPolicy: "org_shared",
     tokenRef: "token-1",
+    tokenExpiry: null,
+    watchMetadata: null,
     watchExpiresAt: null,
     watchRenewedAt: null,
     lastSyncAt: null,
     lastSyncError: null,
+    disabledAt: null,
+    connectedBy: "user-1",
+    createdAt: new Date(),
+    updatedAt: new Date(),
     ...overrides,
   };
 }

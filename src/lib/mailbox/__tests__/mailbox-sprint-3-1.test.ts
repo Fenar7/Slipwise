@@ -10,6 +10,7 @@ vi.mock("@/lib/db", () => ({
   db: {
     mailboxThread: {
       upsert: vi.fn(),
+      updateMany: vi.fn(),
       findFirst: vi.fn(),
       count: vi.fn(),
     },
@@ -92,6 +93,7 @@ describe("Sprint 3.1 — Initial sync pipeline", () => {
     vi.clearAllMocks();
     vi.mocked(db.mailboxConnection.updateMany).mockResolvedValue({ count: 1 } as never);
     vi.mocked(db.mailboxSyncRun.findFirst).mockResolvedValue(null);
+    vi.mocked(db.mailboxThread.updateMany).mockResolvedValue({ count: 1 } as never);
   });
 
   describe("Domain helpers", () => {
@@ -155,6 +157,8 @@ describe("Sprint 3.1 — Initial sync pipeline", () => {
         bcc: [],
         subject: "Test",
         snippet: "Hello",
+        htmlBody: "<p>Hello</p>",
+        textBody: "Hello",
         sentAt: new Date(),
         receivedAt: null,
         attachmentCount: 0,
@@ -178,10 +182,12 @@ describe("Sprint 3.1 — Initial sync pipeline", () => {
         receivedAt: null,
         attachmentCount: 0,
         providerMetadata: {},
+        htmlBody: "<p>Hello</p>",
+        textBody: "Hello",
       };
 
-      const m1 = await upsertMailboxMessage({ orgId: "org-1", threadId: "thread-1", envelope });
-      const m2 = await upsertMailboxMessage({ orgId: "org-1", threadId: "thread-1", envelope });
+      const m1 = await upsertMailboxMessage({ orgId: "org-1", threadId: "thread-1", envelope, mailboxEmail: "b@example.com" });
+      const m2 = await upsertMailboxMessage({ orgId: "org-1", threadId: "thread-1", envelope, mailboxEmail: "b@example.com" });
       expect(m1.id).toBe(m2.id);
       expect(db.mailboxMessage.upsert).toHaveBeenCalledTimes(2);
     });
@@ -227,6 +233,7 @@ describe("Sprint 3.1 — Initial sync pipeline", () => {
         provider: "GMAIL",
         status: "ACTIVE",
         tokenRef: "token-1",
+        emailAddress: "ops@example.com",
       } as unknown as Awaited<ReturnType<typeof getMailboxConnection>>);
 
       vi.mocked(getMailboxCursor).mockResolvedValue(null);
@@ -295,6 +302,8 @@ describe("Sprint 3.1 — Initial sync pipeline", () => {
         bcc: [],
         subject: "Sync Test",
         snippet: "Sync body",
+        htmlBody: "<p>Sync body</p>",
+        textBody: "Sync body",
         sentAt: new Date(),
         receivedAt: null,
         attachmentCount: 0,
@@ -309,6 +318,8 @@ describe("Sprint 3.1 — Initial sync pipeline", () => {
         mailboxConnectionId: "conn-1",
         provider: "GMAIL",
         status: "RUNNING",
+        triggerSource: "MANUAL" as const,
+        syncMode: "INITIAL" as const,
         startedAt: new Date(),
         completedAt: null,
         errorCategory: null,
@@ -345,6 +356,7 @@ describe("Sprint 3.1 — Initial sync pipeline", () => {
         provider: "GMAIL",
         status: "ACTIVE",
         tokenRef: "token-1",
+        emailAddress: "ops@example.com",
       } as unknown as Awaited<ReturnType<typeof getMailboxConnection>>);
 
       vi.mocked(getMailboxCursor).mockResolvedValue(null);
@@ -364,6 +376,8 @@ describe("Sprint 3.1 — Initial sync pipeline", () => {
         mailboxConnectionId: "conn-1",
         provider: "GMAIL",
         status: "RUNNING",
+        triggerSource: "MANUAL" as const,
+        syncMode: "INITIAL" as const,
         startedAt: new Date(),
         completedAt: null,
         errorCategory: null,
@@ -395,6 +409,7 @@ describe("Sprint 3.1 — Initial sync pipeline", () => {
         provider: "GMAIL",
         status: "DISCONNECTED",
         tokenRef: "token-1",
+        emailAddress: "ops@example.com",
       } as unknown as Awaited<ReturnType<typeof getMailboxConnection>>);
 
       await expect(runMailboxSync({ orgId: "org-1", connectionId: "conn-1", actorId: "user-1" }))

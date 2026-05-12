@@ -3,19 +3,23 @@ import "server-only";
 import { Prisma } from "@/generated/prisma/client";
 import { db } from "@/lib/db";
 import type {
-  MailboxThreadRecord,
-  MailboxMessageRecord,
   MailboxAttachmentRecord,
+  MailboxMessageRecord,
+  MailboxThreadRecord,
 } from "./domain-types";
-import type { MailboxThreadEnvelope, MailboxMessageEnvelope, MailboxAttachmentEnvelope } from "./provider-contracts";
+import type { MailboxMessageEnvelope, MailboxThreadEnvelope, MailboxAttachmentEnvelope } from "./provider-contracts";
+import {
+  classifyMessageDirection,
+  normalizeParticipant,
+  normalizeParticipants,
+} from "./participant-service";
+import { normalizeSnippet } from "./normalization-service";
 
-interface UpsertThreadParams {
+export async function upsertMailboxThread(params: {
   orgId: string;
   mailboxConnectionId: string;
   envelope: MailboxThreadEnvelope;
-}
-
-export async function upsertMailboxThread(params: UpsertThreadParams): Promise<MailboxThreadRecord> {
+}): Promise<MailboxThreadRecord> {
   const record = await db.mailboxThread.upsert({
     where: {
       orgId_mailboxConnectionId_providerThreadId: {
@@ -26,33 +30,39 @@ export async function upsertMailboxThread(params: UpsertThreadParams): Promise<M
     },
     update: {
       subject: params.envelope.subject,
-      participantsSummary: params.envelope.participants as unknown as Prisma.InputJsonValue,
       lastMessageAt: new Date(params.envelope.lastMessageAt),
       unreadCount: params.envelope.unreadCount,
-      providerMetadata: params.envelope.providerMetadata as Prisma.InputJsonValue,
     },
     create: {
       orgId: params.orgId,
       mailboxConnectionId: params.mailboxConnectionId,
       providerThreadId: params.envelope.providerThreadId,
       subject: params.envelope.subject,
-      participantsSummary: params.envelope.participants as unknown as Prisma.InputJsonValue,
+      participantsSummary: [],
       lastMessageAt: new Date(params.envelope.lastMessageAt),
       unreadCount: params.envelope.unreadCount,
       status: "OPEN",
-      providerMetadata: params.envelope.providerMetadata as Prisma.InputJsonValue,
     },
   });
   return toThreadRecord(record);
 }
 
-interface UpsertMessageParams {
+export async function upsertMailboxMessage(params: {
   orgId: string;
   threadId: string;
-  envelope: MailboxMessageEnvelope;
-}
+  envelope: MailboxMessageEnvelope & { htmlBody: string; textBody: string | null };
+  /** Mailbox connection email address for provider-neutral direction classification. */
+  mailboxEmail: string;
+}): Promise<MailboxMessageRecord> {
+  const normalizedFrom = normalizeParticipant(params.envelope.from);
+  const normalizedTo = normalizeParticipants(params.envelope.to);
+  const normalizedCc = normalizeParticipants(params.envelope.cc);
+  const normalizedBcc = normalizeParticipants(params.envelope.bcc);
 
-export async function upsertMailboxMessage(params: UpsertMessageParams): Promise<MailboxMessageRecord> {
+  const senderEmail = normalizedFrom?.email ?? "";
+  const direction = classifyMessageDirection(params.mailboxEmail, senderEmail);
+  const snippet = normalizeSnippet(params.envelope.snippet);
+
   const record = await db.mailboxMessage.upsert({
     where: {
       orgId_threadId_providerMessageId: {
@@ -62,45 +72,47 @@ export async function upsertMailboxMessage(params: UpsertMessageParams): Promise
       },
     },
     update: {
-      direction: params.envelope.direction,
-      from: params.envelope.from as unknown as Prisma.InputJsonValue,
-      to: params.envelope.to as unknown as Prisma.InputJsonValue,
-      cc: params.envelope.cc as unknown as Prisma.InputJsonValue,
-      bcc: params.envelope.bcc as unknown as Prisma.InputJsonValue,
+      direction,
+      from: normalizedFrom as unknown as Prisma.InputJsonValue,
+      to: normalizedTo as unknown as Prisma.InputJsonValue,
+      cc: normalizedCc as unknown as Prisma.InputJsonValue,
+      bcc: normalizedBcc as unknown as Prisma.InputJsonValue,
       subject: params.envelope.subject,
-      snippet: params.envelope.snippet,
+      htmlBody: params.envelope.htmlBody,
+      textBody: params.envelope.textBody,
+      snippet,
       sentAt: new Date(params.envelope.sentAt),
       receivedAt: params.envelope.receivedAt ? new Date(params.envelope.receivedAt) : null,
       attachmentCount: params.envelope.attachmentCount,
-      providerMetadata: params.envelope.providerMetadata as Prisma.InputJsonValue,
+      providerMetadata: params.envelope.providerMetadata as unknown as Prisma.InputJsonValue,
     },
     create: {
       orgId: params.orgId,
       threadId: params.threadId,
       providerMessageId: params.envelope.providerMessageId,
       rfcMessageId: params.envelope.rfcMessageId,
-      direction: params.envelope.direction,
-      from: params.envelope.from as unknown as Prisma.InputJsonValue,
-      to: params.envelope.to as unknown as Prisma.InputJsonValue,
-      cc: params.envelope.cc as unknown as Prisma.InputJsonValue,
-      bcc: params.envelope.bcc as unknown as Prisma.InputJsonValue,
+      direction,
+      from: normalizedFrom as unknown as Prisma.InputJsonValue,
+      to: normalizedTo as unknown as Prisma.InputJsonValue,
+      cc: normalizedCc as unknown as Prisma.InputJsonValue,
+      bcc: normalizedBcc as unknown as Prisma.InputJsonValue,
       subject: params.envelope.subject,
-      snippet: params.envelope.snippet,
+      htmlBody: params.envelope.htmlBody,
+      textBody: params.envelope.textBody,
+      snippet,
       sentAt: new Date(params.envelope.sentAt),
       receivedAt: params.envelope.receivedAt ? new Date(params.envelope.receivedAt) : null,
       attachmentCount: params.envelope.attachmentCount,
-      providerMetadata: params.envelope.providerMetadata as Prisma.InputJsonValue,
+      providerMetadata: params.envelope.providerMetadata as unknown as Prisma.InputJsonValue,
     },
   });
   return toMessageRecord(record);
 }
 
-interface UpsertAttachmentParams {
+export async function upsertMailboxAttachment(params: {
   messageId: string;
   envelope: MailboxAttachmentEnvelope;
-}
-
-export async function upsertMailboxAttachment(params: UpsertAttachmentParams): Promise<MailboxAttachmentRecord> {
+}): Promise<MailboxAttachmentRecord> {
   const record = await db.mailboxAttachment.upsert({
     where: {
       messageId_providerAttachmentId: {
@@ -124,6 +136,29 @@ export async function upsertMailboxAttachment(params: UpsertAttachmentParams): P
     },
   });
   return toAttachmentRecord(record);
+}
+
+/**
+ * Update a thread's derived summary fields after its messages have been
+ * normalized and ingested. Call this once per thread at the end of sync
+ * (or per-batch) so thread-level metadata stays coherent.
+ *
+ * Sprint 3.3: participantsSummary is derived from normalized message
+ * participants, not from raw provider envelope data.
+ */
+export async function updateMailboxThreadSummary(params: {
+  orgId: string;
+  threadId: string;
+  participantsSummary: Prisma.InputJsonValue;
+  lastMessageAt: Date;
+}): Promise<void> {
+  await db.mailboxThread.updateMany({
+    where: { id: params.threadId, orgId: params.orgId },
+    data: {
+      participantsSummary: params.participantsSummary,
+      lastMessageAt: params.lastMessageAt,
+    },
+  });
 }
 
 function toThreadRecord(record: Awaited<ReturnType<typeof db.mailboxThread.upsert>>): MailboxThreadRecord {
