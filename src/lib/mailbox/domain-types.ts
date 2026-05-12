@@ -23,6 +23,7 @@ import type {
   MailboxAuditAction,
   MailboxCursorType,
   MailboxThreadLinkEntityType,
+  MailboxSyncRunStatus,
 } from "@/generated/prisma/client";
 
 // Re-export enums for use in service layer without importing from generated client directly.
@@ -36,6 +37,7 @@ export type {
   MailboxAuditAction,
   MailboxCursorType,
   MailboxThreadLinkEntityType,
+  MailboxSyncRunStatus,
 };
 
 // ─── Connection ───────────────────────────────────────────────────────────────
@@ -145,6 +147,75 @@ export interface MailboxProviderCursorRecord {
   updatedAt: Date;
 }
 
+export type MailboxMessageDirection = "inbound" | "outbound";
+
+export interface MailboxThreadRecord {
+  id: string;
+  orgId: string;
+  mailboxConnectionId: string;
+  providerThreadId: string;
+  subject: string;
+  participantsSummary: Record<string, unknown> | unknown[];
+  lastMessageAt: Date;
+  unreadCount: number;
+  status: MailboxThreadStatus;
+  assigneeId: string | null;
+  isFlagged: boolean;
+  primaryLinkSummary: Record<string, unknown> | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface MailboxMessageRecord {
+  id: string;
+  orgId: string;
+  threadId: string;
+  providerMessageId: string;
+  rfcMessageId: string | null;
+  direction: MailboxMessageDirection;
+  from: Record<string, unknown>;
+  to: unknown[];
+  cc: unknown[];
+  bcc: unknown[];
+  subject: string;
+  htmlBody: string;
+  textBody: string | null;
+  snippet: string;
+  sentAt: Date;
+  receivedAt: Date | null;
+  attachmentCount: number;
+  providerMetadata: Record<string, unknown> | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface MailboxAttachmentRecord {
+  id: string;
+  messageId: string;
+  providerAttachmentId: string;
+  filename: string;
+  mimeType: string;
+  size: number;
+  isInline: boolean;
+  storageRef: string | null;
+}
+
+export interface MailboxSyncRunRecord {
+  id: string;
+  orgId: string;
+  mailboxConnectionId: string;
+  provider: MailboxProvider;
+  status: MailboxSyncRunStatus;
+  startedAt: Date;
+  completedAt: Date | null;
+  errorCategory: string | null;
+  errorSummary: string | null;
+  stats: Record<string, unknown> | null;
+  createdBy: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 // ─── Validation helpers ───────────────────────────────────────────────────────
 
 /**
@@ -173,6 +244,10 @@ export function connectionIsOperational(
   status: MailboxConnectionStatus,
 ): boolean {
   return status === "ACTIVE";
+}
+
+export function mailboxCanSync(status: MailboxConnectionStatus): boolean {
+  return connectionIsOperational(status);
 }
 
 /**

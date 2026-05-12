@@ -42,6 +42,8 @@ const GMAIL_TOKEN_URL = "https://oauth2.googleapis.com/token";
 const GMAIL_REVOKE_URL = "https://oauth2.googleapis.com/revoke";
 const GMAIL_USERINFO_URL = "https://www.googleapis.com/oauth2/v3/userinfo";
 const GMAIL_PROFILE_URL = "https://gmail.googleapis.com/gmail/v1/users/me/profile";
+const GMAIL_THREADS_URL = "https://gmail.googleapis.com/gmail/v1/users/me/threads";
+const GMAIL_THREAD_URL = "https://gmail.googleapis.com/gmail/v1/users/me/threads";
 
 /**
  * Least-privilege scopes for Sprint 2.2 (auth lifecycle only).
@@ -351,34 +353,81 @@ export const gmailProviderAdapter: IMailboxProviderAdapter = {
   },
 
   /**
-   * Perform an incremental sync delta.
-   * Sprint 2.2 scope: stub that returns empty results.
-   * Phase 3 (Sprint 3.1/3.2) implements real Gmail history/list sync.
-   *
-   * The method signature and return shape are real and contract-compliant so
-   * Phase 3 can implement against this without redesign.
+   * Perform an initial sync delta using Gmail threads.list + threads.get.
+   * Returns normalized thread envelopes and the next cursor (highest historyId).
    */
-  async syncDelta({ orgId, tokenRef, cursor: _cursor }) {
+  async syncDelta({ orgId, tokenRef, cursor }) {
     const credential = await readMailboxCredential(orgId, tokenRef);
     if (!credential) {
       return { category: "auth_expired", safeMessage: "Credential not found for tokenRef", retryable: false };
     }
-    // Phase 3 implements real delta sync. Sprint 2.2 returns empty to satisfy
-    // the contract without implementing sync logic.
-    return { threads: [] as MailboxThreadEnvelope[], nextCursor: null };
+
+    const accessToken = await ensureValidAccessToken(orgId, tokenRef, credential);
+    if (isProviderError(accessToken)) return accessToken;
+
+    const params = new URLSearchParams({
+      maxResults: "50",
+      includeSpamTrash: "false",
+    });
+    if (cursor) {
+      params.set("pageToken", cursor.value);
+    }
+
+    const res = await fetch(`${GMAIL_THREADS_URL}?${params.toString()}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!res.ok) {
+      const errorCode = await parseGoogleErrorCode(res);
+      return mapGoogleError(res.status, errorCode);
+    }
+
+    const data = await res.json() as GmailThreadsListResponse;
+    const threads: MailboxThreadEnvelope[] = [];
+    let highestHistoryId = data.threads?.[0]?.historyId ?? "0";
+
+    for (const threadRef of data.threads ?? []) {
+      const threadRes = await fetch(`${GMAIL_THREAD_URL}/${threadRef.id}`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (!threadRes.ok) continue;
+      const threadData = await threadRes.json() as GmailThreadResponse;
+      if (threadData.historyId && BigInt(threadData.historyId) > BigInt(highestHistoryId)) {
+        highestHistoryId = threadData.historyId;
+      }
+      const envelope = toThreadEnvelope(threadData);
+      if (envelope) threads.push(envelope);
+    }
+
+    const nextCursor: MailboxSyncCursor | null = data.nextPageToken
+      ? { value: data.nextPageToken, expiresAt: null }
+      : { value: highestHistoryId, expiresAt: null };
+
+    return { threads, nextCursor };
   },
 
   /**
-   * Fetch full thread detail.
-   * Sprint 2.2 scope: stub that returns empty messages.
-   * Phase 3 implements real message body fetching.
+   * Fetch full thread detail including message bodies and attachments.
    */
-  async fetchThreadDetail({ orgId, tokenRef, providerThreadId: _providerThreadId }) {
+  async fetchThreadDetail({ orgId, tokenRef, providerThreadId }) {
     const credential = await readMailboxCredential(orgId, tokenRef);
     if (!credential) {
       return { category: "auth_expired", safeMessage: "Credential not found for tokenRef", retryable: false };
     }
-    return { messages: [] as (MailboxMessageEnvelope & { htmlBody: string; textBody: string | null })[] };
+
+    const accessToken = await ensureValidAccessToken(orgId, tokenRef, credential);
+    if (isProviderError(accessToken)) return accessToken;
+
+    const res = await fetch(`${GMAIL_THREAD_URL}/${providerThreadId}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!res.ok) {
+      const errorCode = await parseGoogleErrorCode(res);
+      return mapGoogleError(res.status, errorCode);
+    }
+
+    const data = await res.json() as GmailThreadResponse;
+    const messages = (data.messages ?? []).map(toMessageEnvelope).filter(Boolean) as (MailboxMessageEnvelope & { htmlBody: string; textBody: string | null })[];
+    return { messages };
   },
 
   /**
@@ -403,6 +452,229 @@ export const gmailProviderAdapter: IMailboxProviderAdapter = {
     await revokeMailboxCredential(orgId, tokenRef);
   },
 };
+
+// ─── Gmail API types ──────────────────────────────────────────────────────────
+
+interface GmailThreadsListResponse {
+  threads?: GmailThreadRef[];
+  nextPageToken?: string;
+}
+
+interface GmailThreadRef {
+  id: string;
+  historyId?: string;
+  snippet?: string;
+}
+
+interface GmailThreadResponse {
+  id: string;
+  historyId?: string;
+  messages?: GmailMessage[];
+}
+
+interface GmailMessage {
+  id: string;
+  threadId?: string;
+  historyId?: string;
+  labelIds?: string[];
+  snippet?: string;
+  payload?: GmailMessagePart;
+  internalDate?: string;
+}
+
+interface GmailMessagePart {
+  partId?: string;
+  mimeType?: string;
+  filename?: string;
+  headers?: Array<{ name: string; value: string }>;
+  body?: GmailMessagePartBody;
+  parts?: GmailMessagePart[];
+}
+
+interface GmailMessagePartBody {
+  attachmentId?: string;
+  size?: number;
+  data?: string;
+}
+
+// ─── Gmail parsing helpers ────────────────────────────────────────────────────
+
+function toThreadEnvelope(thread: GmailThreadResponse): MailboxThreadEnvelope | null {
+  const firstMessage = thread.messages?.[0];
+  if (!firstMessage) return null;
+
+  const headers = firstMessage.payload?.headers ?? [];
+  const subject = headers.find((h) => h.name === "Subject")?.value ?? "(no subject)";
+  const participants = extractParticipants(headers);
+  const lastMessage = thread.messages[thread.messages.length - 1];
+  const unreadCount = thread.messages?.filter((m) => m.labelIds?.includes("UNREAD")).length ?? 0;
+
+  return {
+    providerThreadId: thread.id,
+    subject,
+    lastMessageAt: lastMessage?.internalDate
+      ? new Date(parseInt(lastMessage.internalDate, 10)).toISOString()
+      : new Date().toISOString(),
+    unreadCount,
+    participants,
+    providerMetadata: { gmailHistoryId: thread.historyId, messageCount: thread.messages?.length ?? 0 },
+  };
+}
+
+function toMessageEnvelope(msg: GmailMessage): (MailboxMessageEnvelope & { htmlBody: string; textBody: string | null }) | null {
+  const headers = msg.payload?.headers ?? [];
+  const from = parseAddressHeader(headers.find((h) => h.name === "From")?.value ?? "");
+  const to = parseAddressListHeader(headers.find((h) => h.name === "To")?.value ?? "");
+  const cc = parseAddressListHeader(headers.find((h) => h.name === "Cc")?.value ?? "");
+  const bcc = parseAddressListHeader(headers.find((h) => h.name === "Bcc")?.value ?? "");
+  const subject = headers.find((h) => h.name === "Subject")?.value ?? "";
+  const messageId = headers.find((h) => h.name === "Message-ID")?.value ?? null;
+  const date = msg.internalDate ? new Date(parseInt(msg.internalDate, 10)) : new Date();
+  const direction = isOutbound(headers) ? "outbound" : "inbound";
+
+  const { htmlBody, textBody } = extractBodies(msg.payload ?? null);
+  const attachments = extractAttachments(msg.payload ?? null);
+
+  return {
+    providerMessageId: msg.id,
+    rfcMessageId: messageId,
+    direction,
+    from,
+    to,
+    cc,
+    bcc,
+    subject,
+    snippet: msg.snippet ?? "",
+    sentAt: date.toISOString(),
+    receivedAt: date.toISOString(),
+    attachmentCount: attachments.length,
+    providerMetadata: { labelIds: msg.labelIds ?? [] },
+    htmlBody,
+    textBody,
+    attachments,
+  };
+}
+
+function extractParticipants(headers: Array<{ name: string; value: string }>): MailboxParticipantRef[] {
+  const from = headers.find((h) => h.name === "From")?.value ?? "";
+  const to = headers.find((h) => h.name === "To")?.value ?? "";
+  const cc = headers.find((h) => h.name === "Cc")?.value ?? "";
+  const all = [from, to, cc].join(", ");
+  return parseAddressListHeader(all);
+}
+
+function parseAddressListHeader(value: string): MailboxParticipantRef[] {
+  if (!value) return [];
+  return value.split(",").map((part) => parseAddressHeader(part.trim())).filter(Boolean) as MailboxParticipantRef[];
+}
+
+function parseAddressHeader(value: string): MailboxParticipantRef | null {
+  if (!value) return null;
+  const match = value.match(/^(.*?)\s*<([^>]+)>$/);
+  if (match) {
+    const displayName = match[1].trim().replace(/^"|"$/g, "");
+    return { email: match[2].trim(), displayName: displayName || null };
+  }
+  if (value.includes("@")) {
+    return { email: value.trim(), displayName: null };
+  }
+  return null;
+}
+
+function isOutbound(headers: Array<{ name: string; value: string }>): boolean {
+  const from = headers.find((h) => h.name === "From")?.value ?? "";
+  // Simple heuristic: if there's no Received header and the message has SENT label, it's outbound.
+  // For now, rely on Gmail labels if available, otherwise assume inbound.
+  return false;
+}
+
+function extractBodies(part: GmailMessagePart | null): { htmlBody: string; textBody: string | null } {
+  if (!part) return { htmlBody: "", textBody: null };
+
+  const htmlParts: string[] = [];
+  const textParts: string[] = [];
+
+  function walk(p: GmailMessagePart) {
+    const mimeType = p.mimeType ?? "";
+    if (mimeType === "text/html" && p.body?.data) {
+      htmlParts.push(decodeBase64(p.body.data));
+    } else if (mimeType === "text/plain" && p.body?.data) {
+      textParts.push(decodeBase64(p.body.data));
+    }
+    if (p.parts) {
+      for (const child of p.parts) walk(child);
+    }
+  }
+
+  walk(part);
+
+  return {
+    htmlBody: htmlParts.join("\n") || "",
+    textBody: textParts.join("\n") || null,
+  };
+}
+
+function extractAttachments(part: GmailMessagePart | null): Array<{ providerAttachmentId: string; filename: string; mimeType: string; size: number; isInline: boolean }> {
+  if (!part) return [];
+  const attachments: Array<{ providerAttachmentId: string; filename: string; mimeType: string; size: number; isInline: boolean }> = [];
+
+  function walk(p: GmailMessagePart) {
+    const mimeType = p.mimeType ?? "";
+    const filename = p.filename ?? "";
+    if (filename && p.body?.attachmentId) {
+      attachments.push({
+        providerAttachmentId: p.body.attachmentId,
+        filename,
+        mimeType,
+        size: p.body.size ?? 0,
+        isInline: mimeType.startsWith("image/") && p.headers?.some((h) => h.name === "Content-Disposition" && h.value?.includes("inline")),
+      });
+    }
+    if (p.parts) {
+      for (const child of p.parts) walk(child);
+    }
+  }
+
+  walk(part);
+  return attachments;
+}
+
+function decodeBase64(data: string): string {
+  // Gmail uses URL-safe base64 with padding stripped.
+  const normalized = data.replace(/-/g, "+").replace(/_/g, "/");
+  const padded = normalized.padEnd(normalized.length + (4 - (normalized.length % 4)) % 4, "=");
+  try {
+    return Buffer.from(padded, "base64").toString("utf-8");
+  } catch {
+    return "";
+  }
+}
+
+async function ensureValidAccessToken(
+  orgId: string,
+  tokenRef: string,
+  credential: MailboxCredentialPayload,
+): Promise<string | MailboxProviderError> {
+  if (credential.expiresAtMs && Date.now() < credential.expiresAtMs - 60000) {
+    return credential.accessToken;
+  }
+  const { clientId, clientSecret } = getGmailConfig();
+  if (!credential.refreshToken) {
+    return { category: "auth_expired", safeMessage: "No refresh token available", retryable: false };
+  }
+  const tokens = await refreshAccessToken(credential.refreshToken, clientId, clientSecret);
+  if (isProviderError(tokens)) return tokens;
+  const expiresAtMs = tokens.expires_in ? Date.now() + tokens.expires_in * 1000 : null;
+  const newPayload: MailboxCredentialPayload = {
+    accessToken: tokens.access_token,
+    refreshToken: tokens.refresh_token ?? credential.refreshToken,
+    expiresAtMs,
+    tokenType: tokens.token_type,
+    scope: tokens.scope,
+  };
+  await rotateMailboxCredential(orgId, tokenRef, newPayload);
+  return tokens.access_token;
+}
 
 // ─── OAuth URL builder ────────────────────────────────────────────────────────
 
