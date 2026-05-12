@@ -123,6 +123,8 @@ describe("Sprint 3.1 — Initial sync pipeline", () => {
         assigneeId: null,
         isFlagged: false,
         primaryLinkSummary: null,
+        previewSnippet: "",
+        attachmentCount: 0,
         createdAt: new Date(),
         updatedAt: new Date(),
       };
@@ -285,6 +287,8 @@ describe("Sprint 3.1 — Initial sync pipeline", () => {
         assigneeId: null,
         isFlagged: false,
         primaryLinkSummary: null,
+        previewSnippet: "",
+        attachmentCount: 0,
         createdAt: new Date(),
         updatedAt: new Date(),
       });

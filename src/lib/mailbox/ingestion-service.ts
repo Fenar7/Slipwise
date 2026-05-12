@@ -143,20 +143,24 @@ export async function upsertMailboxAttachment(params: {
  * normalized and ingested. Call this once per thread at the end of sync
  * (or per-batch) so thread-level metadata stays coherent.
  *
- * Sprint 3.3: participantsSummary is derived from normalized message
- * participants, not from raw provider envelope data.
+ * Sprint 3.3: participantsSummary, previewSnippet, and attachmentCount
+ * are derived from normalized message state, not from raw provider envelope data.
  */
 export async function updateMailboxThreadSummary(params: {
   orgId: string;
   threadId: string;
   participantsSummary: Prisma.InputJsonValue;
   lastMessageAt: Date;
+  previewSnippet: string;
+  attachmentCount: number;
 }): Promise<void> {
   await db.mailboxThread.updateMany({
     where: { id: params.threadId, orgId: params.orgId },
     data: {
       participantsSummary: params.participantsSummary,
       lastMessageAt: params.lastMessageAt,
+      previewSnippet: params.previewSnippet,
+      attachmentCount: params.attachmentCount,
     },
   });
 }
@@ -175,6 +179,8 @@ function toThreadRecord(record: Awaited<ReturnType<typeof db.mailboxThread.upser
     assigneeId: record.assigneeId,
     isFlagged: record.isFlagged,
     primaryLinkSummary: record.primaryLinkSummary as Record<string, unknown> | null,
+    previewSnippet: record.previewSnippet ?? "",
+    attachmentCount: record.attachmentCount ?? 0,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
   };

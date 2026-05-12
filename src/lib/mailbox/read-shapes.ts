@@ -289,6 +289,7 @@ export interface MailboxThreadReadShape {
   status: MailboxThreadStatus;
   isFlagged: boolean;
   previewSnippet: string;
+  attachmentCount: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -354,10 +355,8 @@ export function toMailboxThreadReadShape(
     unreadCount: record.unreadCount,
     status: record.status,
     isFlagged: record.isFlagged,
-    previewSnippet:
-      (typeof record.primaryLinkSummary?.previewSnippet === "string"
-        ? record.primaryLinkSummary.previewSnippet
-        : "") ?? "",
+    previewSnippet: record.previewSnippet ?? "",
+    attachmentCount: record.attachmentCount ?? 0,
     createdAt: record.createdAt.toISOString(),
     updatedAt: record.updatedAt.toISOString(),
   };

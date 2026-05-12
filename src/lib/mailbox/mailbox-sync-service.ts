@@ -22,7 +22,11 @@ import { getMailboxProviderAdapter } from "./provider-registry";
 import { isMailboxProviderError } from "./provider-contracts";
 import type { MailboxProviderError } from "./provider-contracts";
 import { deriveThreadParticipants } from "./participant-service";
-import { deriveThreadLastMessageAt } from "./normalization-service";
+import {
+  deriveThreadLastMessageAt,
+  deriveThreadPreviewSnippet,
+  computeThreadAttachmentCount,
+} from "./normalization-service";
 import type { MailboxMessageRecord } from "./domain-types";
 
 export interface RunMailboxSyncParams {
@@ -288,11 +292,15 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
         threadMessages,
         thread.lastMessageAt,
       );
+      const previewSnippet = deriveThreadPreviewSnippet(threadMessages);
+      const attachmentCount = computeThreadAttachmentCount(threadMessages);
       await updateMailboxThreadSummary({
         orgId: params.orgId,
         threadId: thread.id,
         participantsSummary: participantsSummary as unknown as Prisma.InputJsonValue,
         lastMessageAt,
+        previewSnippet,
+        attachmentCount,
       });
     }
 

@@ -51,6 +51,7 @@ import {
   upsertMailboxThread,
   upsertMailboxMessage,
   upsertMailboxAttachment,
+  updateMailboxThreadSummary,
 } from "@/lib/mailbox/ingestion-service";
 
 import {
@@ -448,6 +449,72 @@ describe("Sprint 3.3 — Read shape mappers", () => {
     const shape = toMailboxThreadReadShape(record);
     expect(shape.participants).toEqual([]);
   });
+
+  it("reads previewSnippet from record.previewSnippet, not primaryLinkSummary", () => {
+    const record = makeThreadRow({
+      previewSnippet: "latest message snippet",
+      primaryLinkSummary: { previewSnippet: "wrong source" } as unknown as Record<string, unknown>,
+    });
+    const shape = toMailboxThreadReadShape(record);
+    expect(shape.previewSnippet).toBe("latest message snippet");
+  });
+
+  it("reads attachmentCount from record.attachmentCount", () => {
+    const record = makeThreadRow({ attachmentCount: 5 });
+    const shape = toMailboxThreadReadShape(record);
+    expect(shape.attachmentCount).toBe(5);
+  });
+});
+
+describe("Sprint 3.3 — Thread summary update wiring", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("persists previewSnippet and attachmentCount in updateMailboxThreadSummary", async () => {
+    mockDb.mailboxThread.updateMany.mockResolvedValue({ count: 1 });
+
+    await updateMailboxThreadSummary({
+      orgId: "org-1",
+      threadId: "thread-1",
+      participantsSummary: [{ email: "a@example.com", displayName: "A" }],
+      lastMessageAt: new Date("2024-01-15"),
+      previewSnippet: "latest snippet",
+      attachmentCount: 3,
+    });
+
+    expect(mockDb.mailboxThread.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "thread-1", orgId: "org-1" },
+        data: expect.objectContaining({
+          previewSnippet: "latest snippet",
+          attachmentCount: 3,
+        }),
+      }),
+    );
+  });
+
+  it("defaults to empty previewSnippet and zero attachmentCount when not provided", async () => {
+    mockDb.mailboxThread.updateMany.mockResolvedValue({ count: 1 });
+
+    await updateMailboxThreadSummary({
+      orgId: "org-1",
+      threadId: "thread-1",
+      participantsSummary: [],
+      lastMessageAt: new Date(),
+      previewSnippet: "",
+      attachmentCount: 0,
+    });
+
+    expect(mockDb.mailboxThread.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          previewSnippet: "",
+          attachmentCount: 0,
+        }),
+      }),
+    );
+  });
 });
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
@@ -492,6 +559,8 @@ function makeThreadRow(overrides: Partial<Record<string, unknown>> = {}) {
     assigneeId: null,
     isFlagged: false,
     primaryLinkSummary: null,
+    previewSnippet: "",
+    attachmentCount: 0,
     createdAt: new Date(),
     updatedAt: new Date(),
     ...overrides,

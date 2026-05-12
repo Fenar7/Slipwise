@@ -6185,6 +6185,10 @@ model MailboxThread {
   assigneeId          String?             @db.Uuid
   isFlagged           Boolean             @default(false)
   primaryLinkSummary  Json?
+  /// Normalized preview snippet from the most recent message. Sprint 3.3.
+  previewSnippet      String              @default("")
+  /// Total attachment count across all thread messages. Sprint 3.3.
+  attachmentCount   Int                 @default(0)
   createdAt           DateTime            @default(now())
   updatedAt           DateTime            @updatedAt
 

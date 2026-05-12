@@ -663,7 +663,7 @@ function toMessageEnvelope(msg: GmailMessage): (MailboxMessageEnvelope & { htmlB
   const subject = headers.find((h) => h.name === "Subject")?.value ?? "";
   const messageId = headers.find((h) => h.name === "Message-ID")?.value ?? null;
   const date = msg.internalDate ? new Date(parseInt(msg.internalDate, 10)) : new Date();
-  const direction = isOutbound(headers) ? "outbound" : "inbound";
+  const direction = isOutbound(msg.labelIds ?? []) ? "outbound" : "inbound";
 
   const { htmlBody, textBody } = extractBodies(msg.payload ?? null);
   const attachments = extractAttachments(msg.payload ?? null);
@@ -696,12 +696,48 @@ function extractParticipants(headers: Array<{ name: string; value: string }>): M
   return parseAddressListHeader(all);
 }
 
-function parseAddressListHeader(value: string): MailboxParticipantRef[] {
+/**
+ * Parse an RFC-style address-list header into normalized participant refs.
+ * Handles quoted display names containing commas and angle-bracket addresses.
+ *
+ * Exported for unit testing.
+ */
+export function parseAddressListHeader(value: string): MailboxParticipantRef[] {
   if (!value) return [];
-  return value.split(",").map((part) => parseAddressHeader(part.trim())).filter((p): p is MailboxParticipantRef => p !== null);
+
+  const parts: string[] = [];
+  let current = "";
+  let inQuotes = false;
+  let inAngleBrackets = false;
+
+  for (const char of value) {
+    if (char === '"') {
+      inQuotes = !inQuotes;
+      current += char;
+    } else if (char === '<' && !inQuotes) {
+      inAngleBrackets = true;
+      current += char;
+    } else if (char === '>' && !inQuotes) {
+      inAngleBrackets = false;
+      current += char;
+    } else if (char === ',' && !inQuotes && !inAngleBrackets) {
+      parts.push(current.trim());
+      current = "";
+    } else {
+      current += char;
+    }
+  }
+
+  if (current.trim()) {
+    parts.push(current.trim());
+  }
+
+  return parts
+    .map((part) => parseAddressHeader(part))
+    .filter((p): p is MailboxParticipantRef => p !== null);
 }
 
-function parseAddressHeader(value: string): MailboxParticipantRef | null {
+export function parseAddressHeader(value: string): MailboxParticipantRef | null {
   if (!value) return null;
   const match = value.match(/^(.*?)\s*<([^>]+)>$/);
   if (match) {
@@ -714,11 +750,9 @@ function parseAddressHeader(value: string): MailboxParticipantRef | null {
   return null;
 }
 
-function isOutbound(headers: Array<{ name: string; value: string }>): boolean {
-  const from = headers.find((h) => h.name === "From")?.value ?? "";
-  // Simple heuristic: if there's no Received header and the message has SENT label, it's outbound.
-  // For now, rely on Gmail labels if available, otherwise assume inbound.
-  return false;
+export function isOutbound(labelIds: string[]): boolean {
+  // Gmail labels a sent message with "SENT". If present, treat as outbound.
+  return labelIds.includes("SENT");
 }
 
 function extractBodies(part: GmailMessagePart | null): { htmlBody: string; textBody: string | null } {
