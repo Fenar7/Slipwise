@@ -419,3 +419,79 @@ export function toMailboxAttachmentReadShape(
     storageRef: record.storageRef,
   };
 }
+
+// ─── Thread detail read shape (Sprint 4.2) ────────────────────────────────────
+
+/**
+ * Message read shape as included inside a thread detail response.
+ * Extends the flat message shape with inline attachments.
+ */
+export interface MailboxThreadDetailMessageReadShape
+  extends MailboxMessageReadShape {
+  attachments: MailboxAttachmentReadShape[];
+}
+
+/**
+ * Full thread detail read shape for the reading pane.
+ * Data-oriented: excludes purely presentational fields the client can derive
+ * (e.g., mailboxColor, fromInitial, fromColor).
+ */
+export interface MailboxThreadDetailReadShape {
+  id: string;
+  mailboxConnectionId: string;
+  subject: string;
+  participants: MailboxParticipantReadShape[];
+  unreadCount: number;
+  status: MailboxThreadStatus;
+  assigneeId: string | null;
+  isFlagged: boolean;
+  previewSnippet: string;
+  attachmentCount: number;
+  messages: MailboxThreadDetailMessageReadShape[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export function toMailboxThreadDetailMessageReadShape(
+  record: MailboxMessageRecord,
+  attachments: MailboxAttachmentRecord[],
+): MailboxThreadDetailMessageReadShape {
+  return {
+    ...toMailboxMessageReadShape(record),
+    attachments: attachments.map(toMailboxAttachmentReadShape),
+  };
+}
+
+export function toMailboxThreadDetailReadShape(
+  threadRecord: MailboxThreadRecord,
+  messageRecords: MailboxMessageRecord[],
+  attachmentMap: Map<string, MailboxAttachmentRecord[]>,
+): MailboxThreadDetailReadShape {
+  const rawParticipants = Array.isArray(threadRecord.participantsSummary)
+    ? threadRecord.participantsSummary
+    : [];
+  const participants = rawParticipants
+    .map(toParticipantReadShape)
+    .filter(Boolean) as MailboxParticipantReadShape[];
+
+  const messages = messageRecords.map((msg) => {
+    const attachments = attachmentMap.get(msg.id) ?? [];
+    return toMailboxThreadDetailMessageReadShape(msg, attachments);
+  });
+
+  return {
+    id: threadRecord.id,
+    mailboxConnectionId: threadRecord.mailboxConnectionId,
+    subject: threadRecord.subject,
+    participants,
+    unreadCount: threadRecord.unreadCount,
+    status: threadRecord.status,
+    assigneeId: threadRecord.assigneeId ?? null,
+    isFlagged: threadRecord.isFlagged,
+    previewSnippet: threadRecord.previewSnippet ?? "",
+    attachmentCount: threadRecord.attachmentCount ?? 0,
+    messages,
+    createdAt: threadRecord.createdAt.toISOString(),
+    updatedAt: threadRecord.updatedAt.toISOString(),
+  };
+}

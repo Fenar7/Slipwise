@@ -20,6 +20,7 @@ import {
   File,
   PanelRightOpen,
 } from "lucide-react";
+import { sanitizeMessageHtml } from "@/lib/mailbox/sanitize-message-html";
 import type { MailboxThreadDetail, MailboxMessageItem, MailboxAttachmentSummary } from "./types";
 
 // ─── Attachment chip ─────────────────────────────────────────────────────────
@@ -137,10 +138,9 @@ function MessageItem({ message, onReply }: { message: MailboxMessageItem; onRepl
       {!collapsed && (
         <>
           <div
-            className="border-t px-4 py-4 text-sm leading-relaxed text-[#334155]"
+            className="mailbox-message-body border-t px-4 py-4 text-sm leading-relaxed text-[#334155]"
             style={{ borderColor: "#F1F3F7" }}
-            // Safe for static HTML — real implementation will sanitize
-            dangerouslySetInnerHTML={{ __html: message.bodyHtml }}
+            dangerouslySetInnerHTML={{ __html: sanitizeMessageHtml(message.bodyHtml) }}
           />
 
           {/* Attachments */}

@@ -593,3 +593,28 @@ button:not(:disabled),
     scroll-behavior: auto;
   }
 }
+
+/* ======================================================================
+   Mailbox Message Body Styles (Sprint 4.2)
+   ====================================================================== */
+
+.mailbox-message-body blockquote {
+  margin: 0.75rem 0;
+  padding-left: 0.75rem;
+  border-left: 3px solid #cbd5e1;
+  color: #64748b;
+}
+
+.mailbox-message-body blockquote p {
+  margin: 0.25rem 0;
+}
+
+.mailbox-message-body a {
+  color: #2563eb;
+  text-decoration: underline;
+}
+
+.mailbox-message-body img {
+  max-width: 100%;
+  height: auto;
+}
