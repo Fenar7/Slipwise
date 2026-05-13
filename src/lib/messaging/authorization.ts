@@ -115,14 +115,14 @@ export function evaluateConversationAccess(
   if (!participant) {
     return {
       allowed: false,
-      reason: "Active participant access required",
+      reason: "active participant access required",
     };
   }
 
   if (!participantIsActive(participant)) {
     return {
       allowed: false,
-      reason: "Active participant access required",
+      reason: "active participant access required",
     };
   }
 
@@ -130,7 +130,7 @@ export function evaluateConversationAccess(
   if (participant.orgId !== conversation.orgId) {
     return {
       allowed: false,
-      reason: "Org boundary violation",
+      reason: "org boundary violation",
     };
   }
 
@@ -138,7 +138,7 @@ export function evaluateConversationAccess(
   if (conversationIsDM(conversation) && NON_DM_ACTIONS.includes(action)) {
     return {
       allowed: false,
-      reason: "Not allowed on DM conversations",
+      reason: "not allowed on DM conversations",
     };
   }
 
@@ -147,13 +147,13 @@ export function evaluateConversationAccess(
     if (conversationIsArchived(conversation)) {
       return {
         allowed: false,
-        reason: "Conversation is archived",
+        reason: "conversation is archived",
       };
     }
     if (conversationIsLocked(conversation)) {
       return {
         allowed: false,
-        reason: "Conversation is locked",
+        reason: "conversation is locked",
       };
     }
   }
@@ -163,22 +163,29 @@ export function evaluateConversationAccess(
     if (!roleCanGovern(participant.role)) {
       return {
         allowed: false,
-        reason: "Governance action requires OWNER or ADMIN role",
+        reason: "governance action requires OWNER or ADMIN role",
       };
     }
 
-    // Archived conversations block governance (unarchive not yet implemented).
+    // Archived and locked conversations block governance
+    // (unarchive / unlock are not yet implemented in Sprint 3.1).
     if (conversationIsArchived(conversation)) {
       return {
         allowed: false,
-        reason: "Conversation is archived",
+        reason: "conversation is archived",
+      };
+    }
+    if (conversationIsLocked(conversation)) {
+      return {
+        allowed: false,
+        reason: "conversation is locked",
       };
     }
   }
 
   return {
     allowed: true,
-    reason: "Access granted",
+    reason: "access granted",
   };
 }
 

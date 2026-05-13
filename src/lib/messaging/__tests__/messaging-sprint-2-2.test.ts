@@ -691,7 +691,7 @@ describe("participant service", () => {
           userId: USER_1,
           removedBy: USER_2,
         }),
-      ).rejects.toThrow("Participant action: conversation not found or access denied");
+      ).rejects.toThrow("removeParticipant: conversation not found or access denied");
     });
 
     it("rejects removing participants from DMs", async () => {

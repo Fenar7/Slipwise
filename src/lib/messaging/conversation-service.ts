@@ -10,9 +10,7 @@ import {
 import { toConversationRecord, toParticipantRecord } from "./mappers";
 import { logMessagingAuditTx } from "./audit";
 import {
-  assertConversationAccessible,
-  assertNotDMConversation,
-  assertGovernanceParticipant,
+  assertConversationAction,
 } from "./service-helpers";
 import type {
   CreateConversationInput,
@@ -175,16 +173,12 @@ export async function archiveConversation(
   input: ArchiveConversationInput,
 ): Promise<ConversationRecord> {
   const result = await db.$transaction(async (tx) => {
-    const existing = await tx.conversation.findFirst({
-      where: conversationOrgSafeWhere(input.orgId, input.conversationId),
-    });
-    assertConversationExists(existing, "archiveConversation");
-    assertConversationAccessible(toConversationRecord(existing), "archiveConversation");
-    await assertGovernanceParticipant(
+    const { conversation: existing } = await assertConversationAction(
       tx,
       input.orgId,
       input.conversationId,
       input.archivedBy,
+      "ARCHIVE",
       "archiveConversation",
     );
 
@@ -217,17 +211,12 @@ export async function renameConversation(
   input: RenameConversationInput,
 ): Promise<ConversationRecord> {
   const result = await db.$transaction(async (tx) => {
-    const existing = await tx.conversation.findFirst({
-      where: conversationOrgSafeWhere(input.orgId, input.conversationId),
-    });
-    assertConversationExists(existing, "renameConversation");
-    assertConversationAccessible(toConversationRecord(existing), "renameConversation");
-    assertNotDMConversation(toConversationRecord(existing), "renameConversation");
-    await assertGovernanceParticipant(
+    await assertConversationAction(
       tx,
       input.orgId,
       input.conversationId,
       input.actorId,
+      "RENAME",
       "renameConversation",
     );
 
@@ -257,20 +246,12 @@ export async function changeConversationVisibility(
   input: ChangeConversationVisibilityInput,
 ): Promise<ConversationRecord> {
   const result = await db.$transaction(async (tx) => {
-    const existing = await tx.conversation.findFirst({
-      where: conversationOrgSafeWhere(input.orgId, input.conversationId),
-    });
-    assertConversationExists(existing, "changeConversationVisibility");
-    assertConversationAccessible(toConversationRecord(existing), "changeConversationVisibility");
-    assertNotDMConversation(
-      toConversationRecord(existing),
-      "changeConversationVisibility",
-    );
-    await assertGovernanceParticipant(
+    await assertConversationAction(
       tx,
       input.orgId,
       input.conversationId,
       input.actorId,
+      "CHANGE_VISIBILITY",
       "changeConversationVisibility",
     );
 

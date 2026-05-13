@@ -3,7 +3,12 @@ import "server-only";
 import type { Prisma } from "@/generated/prisma/client";
 import type { ConversationRecord } from "./domain-types";
 import { conversationIsAccessible, conversationIsDM } from "./domain-types";
-import { roleCanGovern } from "./authorization";
+import { toParticipantRecord, toConversationRecord } from "./mappers";
+import {
+  roleCanGovern,
+  requireConversationAccess,
+  type ConversationAction,
+} from "./authorization";
 
 export async function getConversationInOrg(
   tx: Prisma.TransactionClient,
@@ -64,8 +69,41 @@ export function assertNotDMConversation(
 }
 
 /**
- * Assert that the active participant has a governance role (OWNER or ADMIN).
- * Throws if the participant is not found or lacks governance privileges.
+ * Fetch the conversation and active participant, map them to domain records,
+ * and delegate the access decision to the centralized authorization policy.
+ *
+ * This is the primary bridge from Prisma rows → domain records → policy layer.
+ * Use this instead of scattering getConversationInOrg + assertConversationAccessible
+ * + assertActiveParticipant across services.
+ */
+export async function assertConversationAction(
+  tx: Prisma.TransactionClient,
+  orgId: string,
+  conversationId: string,
+  userId: string,
+  action: ConversationAction,
+  context: string,
+): Promise<{
+  conversation: Prisma.ConversationGetPayload<Record<string, never>>;
+  participant: Prisma.ConversationParticipantGetPayload<Record<string, never>>;
+}> {
+  const conversation = await getConversationInOrg(tx, orgId, conversationId, context);
+  const participant = await assertActiveParticipant(tx, orgId, conversationId, userId, context);
+
+  requireConversationAccess(
+    toConversationRecord(conversation),
+    toParticipantRecord(participant),
+    action,
+    context,
+  );
+
+  return { conversation, participant };
+}
+
+/**
+ * Assert that the active participant may perform a governance action.
+ * Delegates to assertConversationAction with the given governance action,
+ * so the policy layer remains the single source of truth.
  */
 export async function assertGovernanceParticipant(
   tx: Prisma.TransactionClient,
@@ -74,11 +112,12 @@ export async function assertGovernanceParticipant(
   userId: string,
   context: string,
 ): Promise<Prisma.ConversationParticipantGetPayload<Record<string, never>>> {
-  const participant = await assertActiveParticipant(
+  const { participant } = await assertConversationAction(
     tx,
     orgId,
     conversationId,
     userId,
+    "ARCHIVE", // any governance action works for role-only assertion
     context,
   );
 

@@ -19,6 +19,21 @@ const STATUS_MAP: Record<string, number> = {
   [MessagingApiErrorCode.INTERNAL_ERROR]: 500,
 };
 
+/**
+ * Explicit error class for authorization / access-denial failures.
+ * Carries a semantic code so the API layer can map deterministically.
+ */
+export class MessagingAccessError extends Error {
+  code = "FORBIDDEN";
+}
+
+/**
+ * Explicit error class for not-found failures.
+ */
+export class MessagingNotFoundError extends Error {
+  code = "NOT_FOUND";
+}
+
 export class MessagingApiError extends Error {
   code: string;
   status: number;
@@ -54,9 +69,37 @@ export function handleMessagingApiError(error: unknown): NextResponse {
     return messagingApiError(error.code, error.message, error.status);
   }
 
+  if (error instanceof MessagingAccessError) {
+    return messagingApiError(
+      MessagingApiErrorCode.FORBIDDEN,
+      "Access denied.",
+      STATUS_MAP[MessagingApiErrorCode.FORBIDDEN],
+    );
+  }
+
+  if (error instanceof MessagingNotFoundError) {
+    return messagingApiError(
+      MessagingApiErrorCode.NOT_FOUND,
+      error.message,
+      STATUS_MAP[MessagingApiErrorCode.NOT_FOUND],
+    );
+  }
+
   if (error instanceof Error) {
     const msg = error.message;
-    if (msg.includes("active participant access required") || msg.includes("access denied")) {
+    // Fallback substring checks for errors thrown by services that do not yet use
+    // the structured error classes. These should migrate over time.
+    if (
+      msg.includes("active participant access required") ||
+      msg.includes("governance action requires") ||
+      msg.includes("conversation is archived") ||
+      msg.includes("conversation is locked") ||
+      msg.includes("can only edit your own messages") ||
+      msg.includes("can only delete your own messages") ||
+      msg.includes("cannot remove the sole owner") ||
+      msg.includes("cannot demote the sole owner") ||
+      msg.includes("not allowed on DM conversations")
+    ) {
       return messagingApiError(
         MessagingApiErrorCode.FORBIDDEN,
         "Access denied.",
