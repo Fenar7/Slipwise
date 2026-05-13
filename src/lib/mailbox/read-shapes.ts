@@ -299,6 +299,7 @@ export interface MailboxThreadReadShape {
   lastMessageAt: string;
   unreadCount: number;
   status: MailboxThreadStatus;
+  assigneeId: string | null;
   isFlagged: boolean;
   previewSnippet: string;
   attachmentCount: number;
@@ -366,6 +367,7 @@ export function toMailboxThreadReadShape(
     lastMessageAt: record.lastMessageAt.toISOString(),
     unreadCount: record.unreadCount,
     status: record.status,
+    assigneeId: record.assigneeId ?? null,
     isFlagged: record.isFlagged,
     previewSnippet: record.previewSnippet ?? "",
     attachmentCount: record.attachmentCount ?? 0,

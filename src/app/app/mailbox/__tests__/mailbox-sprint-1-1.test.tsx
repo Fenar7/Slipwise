@@ -7,6 +7,28 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }),
 }));
 
+// Mock mailbox data hooks for workspace tests
+vi.mock("../use-mailbox-connections", () => ({
+  useMailboxConnections: () => ({
+    connections: [],
+    isLoading: false,
+    error: null,
+    refetch: vi.fn(),
+  }),
+}));
+
+vi.mock("../use-mailbox-threads", () => ({
+  useMailboxThreads: () => ({
+    threads: [],
+    totalCount: 0,
+    nextCursor: null,
+    isLoading: false,
+    error: null,
+    refetch: vi.fn(),
+    loadMore: vi.fn(),
+  }),
+}));
+
 import { MailboxLeftRail } from "../mailbox-left-rail";
 import { MailboxCommandBar } from "../mailbox-command-bar";
 import { MailboxThreadList } from "../mailbox-thread-list";
@@ -224,8 +246,8 @@ describe("MailboxReadingPaneEmpty", () => {
 
 describe("MailboxWorkspace", () => {
   it("resolves mailbox-specific folder labels from stable slugs", () => {
-    expect(resolveViewLabel("/app/mailbox/billing/inbox")).toBe("Billing · Inbox");
-    expect(resolveViewLabel("/app/mailbox/support/sent")).toBe("Support · Sent");
+    expect(resolveViewLabel("/app/mailbox/billing/inbox", MOCK_CONNECTIONS)).toBe("Billing · Inbox");
+    expect(resolveViewLabel("/app/mailbox/support/sent", MOCK_CONNECTIONS)).toBe("Support · Sent");
   });
 
   it("renders the workspace container", () => {

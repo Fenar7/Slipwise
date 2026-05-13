@@ -25,7 +25,7 @@ import {
   Link2Off,
 } from "lucide-react";
 import type { MailboxConnection, MailboxGroup, MailboxTreeItem } from "./types";
-import { GLOBAL_SMART_VIEWS, MOCK_MAILBOX_GROUPS } from "./mock-data";
+import { GLOBAL_SMART_VIEWS, MOCK_CONNECTIONS } from "./mock-data";
 
 const ICON_MAP: Record<string, React.ElementType> = {
   Inbox,
@@ -113,6 +113,53 @@ function NavItem({ item, depth = 0 }: { item: MailboxTreeItem; depth?: number })
   );
 }
 
+function mailboxFolders(connectionId: string, prefix: string): MailboxTreeItem[] {
+  return [
+    {
+      id: `${connectionId}-inbox`,
+      label: "Inbox",
+      href: `/app/mailbox/${prefix}/inbox`,
+      icon: "Inbox",
+      mailboxConnectionId: connectionId,
+    },
+    {
+      id: `${connectionId}-sent`,
+      label: "Sent",
+      href: `/app/mailbox/${prefix}/sent`,
+      icon: "Send",
+      mailboxConnectionId: connectionId,
+    },
+    {
+      id: `${connectionId}-drafts`,
+      label: "Drafts",
+      href: `/app/mailbox/${prefix}/drafts`,
+      icon: "FileEdit",
+      mailboxConnectionId: connectionId,
+    },
+    {
+      id: `${connectionId}-archive`,
+      label: "Archive",
+      href: `/app/mailbox/${prefix}/archive`,
+      icon: "Archive",
+      mailboxConnectionId: connectionId,
+    },
+    {
+      id: `${connectionId}-spam`,
+      label: "Spam",
+      href: `/app/mailbox/${prefix}/spam`,
+      icon: "ShieldAlert",
+      mailboxConnectionId: connectionId,
+    },
+  ];
+}
+
+function buildMailboxGroups(connections: MailboxConnection[]): MailboxGroup[] {
+  return connections.map((conn) => ({
+    connection: conn,
+    items: mailboxFolders(conn.id, conn.id),
+  }));
+}
+
 function MailboxAccountGroup({ group }: { group: MailboxGroup }) {
   const { connection, items } = group;
   const [expanded, setExpanded] = useState(connection.status === "connected");
@@ -182,7 +229,13 @@ function MailboxAccountGroup({ group }: { group: MailboxGroup }) {
   );
 }
 
-export function MailboxLeftRail() {
+interface MailboxLeftRailProps {
+  connections?: MailboxConnection[];
+}
+
+export function MailboxLeftRail({ connections = MOCK_CONNECTIONS }: MailboxLeftRailProps) {
+  const groups = buildMailboxGroups(connections);
+
   return (
     <aside
       className="flex h-full w-56 shrink-0 flex-col overflow-hidden border-r bg-white"
@@ -228,9 +281,15 @@ export function MailboxLeftRail() {
           <p className="px-2.5 text-[10px] font-semibold uppercase tracking-widest text-[#94A3B8]">
             Accounts
           </p>
-          {MOCK_MAILBOX_GROUPS.map((group) => (
-            <MailboxAccountGroup key={group.connection.id} group={group} />
-          ))}
+          {groups.length === 0 ? (
+            <p className="px-2.5 text-xs text-[#94A3B8]">
+              No mailboxes connected
+            </p>
+          ) : (
+            groups.map((group) => (
+              <MailboxAccountGroup key={group.connection.id} group={group} />
+            ))
+          )}
         </div>
       </nav>
 

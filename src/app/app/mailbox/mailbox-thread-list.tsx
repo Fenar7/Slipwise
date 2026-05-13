@@ -11,6 +11,7 @@ import {
   Trash2,
   MailOpen,
   MoreHorizontal,
+  Loader2,
 } from "lucide-react";
 
 export interface ThreadRowData {
@@ -28,9 +29,10 @@ export interface ThreadRowData {
   mailboxLabel: string;
   mailboxColor: string;
   assignee?: string;
-  status: "open" | "pending" | "closed";
+  status: "open" | "pending" | "closed" | "archived";
 }
 
+/** @deprecated Use real thread data from useMailboxThreads hook. Kept for reference. */
 export const MOCK_THREADS: ThreadRowData[] = [
   {
     id: "t1",
@@ -136,6 +138,7 @@ const STATUS_STYLES: Record<ThreadRowData["status"], string> = {
   open: "bg-blue-50 text-blue-700",
   pending: "bg-amber-50 text-amber-700",
   closed: "bg-gray-100 text-gray-500",
+  archived: "bg-gray-100 text-gray-500",
 };
 
 function QuickActions({ threadId }: { threadId: string }) {
@@ -322,7 +325,8 @@ export function MailboxThreadList({
   onSelectThread,
   reconnectBanner,
   emptyState,
-}: MailboxThreadListProps) {
+  isLoading = false,
+}: MailboxThreadListProps & { isLoading?: boolean }) {
   return (
     <div
       className="flex h-full flex-col overflow-hidden border-r bg-white"
@@ -333,7 +337,11 @@ export function MailboxThreadList({
     >
       {reconnectBanner}
       <div className="flex-1 overflow-y-auto">
-        {threads.length === 0 && emptyState ? (
+        {isLoading && threads.length === 0 ? (
+          <div className="flex h-full items-center justify-center">
+            <Loader2 className="h-5 w-5 animate-spin text-[#94A3B8]" />
+          </div>
+        ) : threads.length === 0 && emptyState ? (
           emptyState
         ) : (
           threads.map((thread) => (
