@@ -3,8 +3,8 @@ import "server-only";
 import { db } from "@/lib/db";
 import type { Prisma } from "@/generated/prisma/client";
 import { listMailboxConnectionsForMember } from "./visibility-service";
-import { toMailboxThreadReadShape } from "./read-shapes";
-import type { MailboxThreadReadShape } from "./read-shapes";
+import { toMailboxThreadReadShape, toMailboxThreadDetailReadShape } from "./read-shapes";
+import type { MailboxThreadReadShape, MailboxThreadDetailReadShape } from "./read-shapes";
 import type { MailboxThreadStatus } from "./domain-types";
 
 const DEFAULT_LIMIT = 50;
@@ -225,4 +225,55 @@ export async function getMailboxThread(
 
   if (!row) return null;
   return toMailboxThreadReadShape(row);
+}
+
+/**
+ * Get a single thread detail by ID, including messages and attachments.
+ * Verifies the caller has access to the thread's mailbox.
+ * Messages are returned in chronological order (sentAt ASC).
+ */
+export async function getMailboxThreadDetail(
+  orgId: string,
+  userId: string,
+  role: "owner" | "admin" | "member",
+  threadId: string,
+): Promise<MailboxThreadDetailReadShape | null> {
+  const { accessible } = await listMailboxConnectionsForMember(
+    orgId,
+    userId,
+    role,
+  );
+
+  const accessibleConnectionIds = accessible.map((c) => c.id);
+  if (accessibleConnectionIds.length === 0) return null;
+
+  const threadRow = await db.mailboxThread.findFirst({
+    where: {
+      id: threadId,
+      orgId,
+      mailboxConnectionId: { in: accessibleConnectionIds },
+    },
+    include: {
+      messages: {
+        orderBy: { sentAt: "asc" as const },
+        include: {
+          attachments: true,
+        },
+      },
+    },
+  });
+
+  if (!threadRow) return null;
+
+  const messages = threadRow.messages ?? [];
+  const attachmentMap = new Map<string, typeof messages[0]["attachments"]>();
+  for (const msg of messages) {
+    attachmentMap.set(msg.id, msg.attachments ?? []);
+  }
+
+  return toMailboxThreadDetailReadShape(
+    threadRow,
+    messages,
+    attachmentMap,
+  );
 }

@@ -17,12 +17,13 @@ import { ReconnectBanner } from "./mailbox-restricted-states";
 import { MailboxRailDrawer, MobileTopBar, TabletTopBar, MobileTabBar } from "./mailbox-mobile-nav";
 import {
   GLOBAL_SMART_VIEWS,
-  MOCK_THREAD_DETAILS,
   MOCK_LINKED_CONTEXT,
 } from "./mock-data";
 import { useMailboxConnections } from "./use-mailbox-connections";
 import { useMailboxThreads } from "./use-mailbox-threads";
-import { mapThreadToRowData, deriveMailboxColor } from "./thread-data-helpers";
+import { mapThreadToRowData, deriveMailboxColor, mapThreadDetailToUI } from "./thread-data-helpers";
+import { useMailboxThreadDetail } from "./use-mailbox-thread-detail";
+import { ThreadNotFoundEmpty } from "./mailbox-empty-states";
 import type { ThreadRowData } from "./mailbox-thread-list";
 import type {
   MailboxComposerState,
@@ -308,7 +309,18 @@ export function MailboxWorkspace() {
   const activeConnection = resolveActiveConnection(pathname, connections);
   const totalCount = visibleThreads.length;
   const unreadCount = visibleThreads.filter((t) => t.isUnread).length;
-  const selectedDetail = selectedThreadId ? MOCK_THREAD_DETAILS[selectedThreadId] ?? null : null;
+
+  const {
+    detail: rawDetail,
+    isLoading: detailLoading,
+    isNotFound: detailNotFound,
+  } = useMailboxThreadDetail(selectedThreadId);
+
+  const selectedDetail = useMemo(() => {
+    if (!rawDetail) return null;
+    return mapThreadDetailToUI(rawDetail, { connectionMap, currentUserId });
+  }, [rawDetail, connectionMap, currentUserId]);
+
   const reconnectConnection = resolveReconnectConnection(pathname, connections);
   const smartViewEmpty = resolveSmartViewDescription(pathname);
   const connectedMailboxCount = connections.filter((conn) => conn.status !== "disconnected").length;
@@ -358,12 +370,12 @@ export function MailboxWorkspace() {
   const openInlineReply = useCallback(
     (mode: ComposeMode, threadId: string, messageId: string, subject: string, to: string[]) => {
       const threadConnection =
-        connections.find((c) => c.id === MOCK_THREAD_DETAILS[threadId]?.mailboxConnectionId) ??
+        connections.find((c) => c.id === selectedDetail?.mailboxConnectionId) ??
         defaultComposeConnection;
       if (!threadConnection) return;
       setComposer(makeComposerState(mode, threadId, messageId, subject, to, threadConnection, "inline"));
     },
-    [connections, defaultComposeConnection]
+    [connections, defaultComposeConnection, selectedDetail]
   );
 
   const closeComposer = useCallback(() => setComposer(null), []);
@@ -602,7 +614,13 @@ export function MailboxWorkspace() {
             ].join(" ")}
             data-testid="mailbox-reading-pane"
           >
-            {selectedDetail ? (
+            {detailLoading ? (
+              <div className="flex h-full items-center justify-center bg-[#F7F8FB]" data-testid="mailbox-reading-pane-loading">
+                <div className="h-8 w-8 animate-spin rounded-full border-2 border-[#E2E8F0] border-t-[#16294D]" />
+              </div>
+            ) : detailNotFound ? (
+              <ThreadNotFoundEmpty onDismiss={() => setSelectedThreadId(null)} />
+            ) : selectedDetail ? (
               <MailboxReadingPane
                 detail={selectedDetail}
                 composerState={composer?.threadId === selectedDetail.threadId ? composer : null}
