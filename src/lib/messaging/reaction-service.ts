@@ -7,7 +7,12 @@ import { reactionOrgSafeWhere, messageOrgSafeWhere } from "./org-safe-helpers";
 import { toReactionRecord } from "./mappers";
 import { logMessagingAuditTx } from "./audit";
 import type { AddReactionInput, RemoveReactionInput } from "./service-contracts";
-import { assertActiveParticipant } from "./service-helpers";
+import {
+  assertActiveParticipant,
+  assertConversationAccessible,
+  getConversationInOrg,
+} from "./service-helpers";
+import { toConversationRecord } from "./mappers";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -52,6 +57,13 @@ export async function addReaction(
 ): Promise<MessageReactionRecord> {
   const result = await db.$transaction(async (tx) => {
     const message = await assertMessageInOrg(tx, input.orgId, input.messageId);
+    const conversation = await getConversationInOrg(
+      tx,
+      input.orgId,
+      message.conversationId,
+      "addReaction",
+    );
+    assertConversationAccessible(toConversationRecord(conversation), "addReaction");
     await assertActiveParticipant(
       tx,
       input.orgId,
@@ -106,6 +118,13 @@ export async function removeReaction(
 ): Promise<MessageReactionRecord | null> {
   const result = await db.$transaction(async (tx) => {
     const message = await assertMessageInOrg(tx, input.orgId, input.messageId);
+    const conversation = await getConversationInOrg(
+      tx,
+      input.orgId,
+      message.conversationId,
+      "removeReaction",
+    );
+    assertConversationAccessible(toConversationRecord(conversation), "removeReaction");
     await assertActiveParticipant(
       tx,
       input.orgId,

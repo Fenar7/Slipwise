@@ -262,6 +262,13 @@ export async function editMessage(
 ): Promise<ConversationMessageRecord> {
   const result = await db.$transaction(async (tx) => {
     const existing = await assertMessageInOrg(tx, input.orgId, input.messageId);
+    const conversation = await getConversationInOrg(
+      tx,
+      input.orgId,
+      existing.conversationId,
+      "editMessage",
+    );
+    assertConversationAccessible(toConversationRecord(conversation), "editMessage");
     await assertActiveParticipant(
       tx,
       input.orgId,
@@ -306,6 +313,13 @@ export async function softDeleteMessage(
 ): Promise<ConversationMessageRecord> {
   const result = await db.$transaction(async (tx) => {
     const existing = await assertMessageInOrg(tx, input.orgId, input.messageId);
+    const conversation = await getConversationInOrg(
+      tx,
+      input.orgId,
+      existing.conversationId,
+      "softDeleteMessage",
+    );
+    assertConversationAccessible(toConversationRecord(conversation), "softDeleteMessage");
     await assertActiveParticipant(
       tx,
       input.orgId,

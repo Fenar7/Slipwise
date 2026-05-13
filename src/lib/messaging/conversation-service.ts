@@ -12,6 +12,7 @@ import { logMessagingAuditTx } from "./audit";
 import {
   assertConversationAccessible,
   assertNotDMConversation,
+  assertGovernanceParticipant,
 } from "./service-helpers";
 import type {
   CreateConversationInput,
@@ -179,6 +180,13 @@ export async function archiveConversation(
     });
     assertConversationExists(existing, "archiveConversation");
     assertConversationAccessible(toConversationRecord(existing), "archiveConversation");
+    await assertGovernanceParticipant(
+      tx,
+      input.orgId,
+      input.conversationId,
+      input.archivedBy,
+      "archiveConversation",
+    );
 
     const updated = await tx.conversation.update({
       where: { id: input.conversationId, orgId: input.orgId },
@@ -215,6 +223,13 @@ export async function renameConversation(
     assertConversationExists(existing, "renameConversation");
     assertConversationAccessible(toConversationRecord(existing), "renameConversation");
     assertNotDMConversation(toConversationRecord(existing), "renameConversation");
+    await assertGovernanceParticipant(
+      tx,
+      input.orgId,
+      input.conversationId,
+      input.actorId,
+      "renameConversation",
+    );
 
     const updated = await tx.conversation.update({
       where: { id: input.conversationId, orgId: input.orgId },
@@ -249,6 +264,13 @@ export async function changeConversationVisibility(
     assertConversationAccessible(toConversationRecord(existing), "changeConversationVisibility");
     assertNotDMConversation(
       toConversationRecord(existing),
+      "changeConversationVisibility",
+    );
+    await assertGovernanceParticipant(
+      tx,
+      input.orgId,
+      input.conversationId,
+      input.actorId,
       "changeConversationVisibility",
     );
 

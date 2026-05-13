@@ -3,6 +3,7 @@ import "server-only";
 import type { Prisma } from "@/generated/prisma/client";
 import type { ConversationRecord } from "./domain-types";
 import { conversationIsAccessible, conversationIsDM } from "./domain-types";
+import { roleCanGovern } from "./authorization";
 
 export async function getConversationInOrg(
   tx: Prisma.TransactionClient,
@@ -60,4 +61,30 @@ export function assertNotDMConversation(
   if (conversationIsDM(conversation)) {
     throw new Error(`${context}: not allowed on DM conversations`);
   }
+}
+
+/**
+ * Assert that the active participant has a governance role (OWNER or ADMIN).
+ * Throws if the participant is not found or lacks governance privileges.
+ */
+export async function assertGovernanceParticipant(
+  tx: Prisma.TransactionClient,
+  orgId: string,
+  conversationId: string,
+  userId: string,
+  context: string,
+): Promise<Prisma.ConversationParticipantGetPayload<Record<string, never>>> {
+  const participant = await assertActiveParticipant(
+    tx,
+    orgId,
+    conversationId,
+    userId,
+    context,
+  );
+
+  if (!roleCanGovern(participant.role)) {
+    throw new Error(`${context}: governance action requires OWNER or ADMIN role`);
+  }
+
+  return participant;
 }

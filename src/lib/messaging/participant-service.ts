@@ -7,13 +7,13 @@ import {
   conversationOrgSafeWhere,
   participantOrgSafeWhere,
 } from "./org-safe-helpers";
-import { toParticipantRecord } from "./mappers";
+import { toParticipantRecord, toConversationRecord } from "./mappers";
 import { logMessagingAuditTx } from "./audit";
 import {
   assertConversationAccessible,
   assertNotDMConversation,
+  assertGovernanceParticipant,
 } from "./service-helpers";
-import { toConversationRecord } from "./mappers";
 import type {
   AddParticipantInput,
   RemoveParticipantInput,
@@ -101,6 +101,13 @@ export async function addParticipant(
     );
     assertConversationAccessible(toConversationRecord(conversation), "addParticipant");
     assertNotDMConversation(toConversationRecord(conversation), "addParticipant");
+    await assertGovernanceParticipant(
+      tx,
+      input.orgId,
+      input.conversationId,
+      input.addedBy,
+      "addParticipant",
+    );
 
     const existing = await tx.conversationParticipant.findFirst({
       where: {
@@ -175,6 +182,13 @@ export async function removeParticipant(
       "removeParticipant",
     );
     assertNotDMConversation(toConversationRecord(conversation), "removeParticipant");
+    await assertGovernanceParticipant(
+      tx,
+      input.orgId,
+      input.conversationId,
+      input.removedBy,
+      "removeParticipant",
+    );
 
     const existing = await tx.conversationParticipant.findFirst({
       where: {
@@ -228,6 +242,13 @@ export async function updateParticipantRole(
     );
     assertNotDMConversation(
       toConversationRecord(conversation),
+      "updateParticipantRole",
+    );
+    await assertGovernanceParticipant(
+      tx,
+      input.orgId,
+      input.conversationId,
+      input.updatedBy,
       "updateParticipantRole",
     );
 
