@@ -248,6 +248,48 @@ export function NoLinkedRecordsEmpty({ onLinkRecord }: { onLinkRecord?: () => vo
   );
 }
 
+// ─── Thread not found or unavailable ───────────────────────────────────────────
+
+/**
+ * Shown when a thread ID is selected but the thread is not found,
+ * inaccessible, or no longer belongs to the current result set.
+ */
+export function ThreadNotFoundEmpty({ onDismiss }: { onDismiss?: () => void }) {
+  return (
+    <div
+      className="flex h-full flex-col items-center justify-center gap-3 px-8 text-center"
+      style={{ background: "#F7F8FB" }}
+      aria-label="Thread not found"
+      data-testid="empty-thread-not-found"
+    >
+      <div
+        className="flex h-12 w-12 items-center justify-center rounded-xl"
+        style={{ background: "rgba(220,38,38,0.06)" }}
+        aria-hidden="true"
+      >
+        <MailOpen className="h-6 w-6" style={{ color: "#DC2626" }} />
+      </div>
+      <div>
+        <p className="text-sm font-semibold text-[#0F172A]">Thread unavailable</p>
+        <p className="mt-1 text-xs text-[#64748B]">
+          This thread was not found or you no longer have access to it. It may have been moved, deleted, or removed from this view.
+        </p>
+      </div>
+      {onDismiss && (
+        <button
+          onClick={onDismiss}
+          className="mt-1 flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-medium text-white transition-colors hover:opacity-90"
+          style={{ background: "#16294D" }}
+          data-testid="dismiss-thread-not-found"
+        >
+          <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
+          Back to thread list
+        </button>
+      )}
+    </div>
+  );
+}
+
 // ─── Smart view empty (no threads in view) ────────────────────────────────────
 
 /**

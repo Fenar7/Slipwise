@@ -1,5 +1,10 @@
-import type { MailboxThreadReadShape } from "@/lib/mailbox/read-shapes";
+import type {
+  MailboxThreadReadShape,
+  MailboxThreadDetailReadShape,
+  MailboxThreadDetailMessageReadShape,
+} from "@/lib/mailbox/read-shapes";
 import type { ThreadRowData } from "./mailbox-thread-list";
+import type { MailboxThreadDetail, MailboxMessageItem, MailboxAttachmentSummary } from "./types";
 
 const MAILBOX_COLORS = [
   "#16294D",
@@ -98,5 +103,109 @@ export function mapThreadToRowData(
     mailboxColor,
     assignee,
     status: thread.status.toLowerCase() as "open" | "pending" | "closed",
+  };
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function buildParticipantsSummary(
+  participants: { displayName?: string; email: string }[],
+): string {
+  if (participants.length === 0) return "No participants";
+  if (participants.length === 1) {
+    return participants[0].displayName ?? participants[0].email;
+  }
+  const first = participants[0].displayName ?? participants[0].email;
+  const remaining = participants.length - 1;
+  return `${first}, +${remaining}`;
+}
+
+function mapMessageToItem(
+  msg: MailboxThreadDetailMessageReadShape,
+  index: number,
+  totalMessages: number,
+): MailboxMessageItem {
+  const fromParticipant = msg.from;
+  const fromName = fromParticipant?.displayName ?? fromParticipant?.email ?? "Unknown";
+  const fromEmail = fromParticipant?.email ?? "";
+
+  const toList = (msg.to ?? [])
+    .map((p) => (p as { displayName?: string; email: string }).displayName ?? (p as { email: string }).email)
+    .filter(Boolean);
+  const ccList = (msg.cc ?? [])
+    .map((p) => (p as { displayName?: string; email: string }).displayName ?? (p as { email: string }).email)
+    .filter(Boolean);
+
+  const attachments: MailboxAttachmentSummary[] = (msg.attachments ?? []).map((att) => ({
+    id: att.id,
+    filename: att.filename,
+    mimeType: att.mimeType,
+    sizeLabel: formatFileSize(att.size),
+  }));
+
+  // Older messages (not the last one) are collapsed by default
+  const isCollapsed = totalMessages > 1 && index < totalMessages - 1;
+
+  return {
+    id: msg.id,
+    threadId: msg.threadId,
+    direction: msg.direction === "inbound" ? "inbound" : "outbound",
+    from: fromName,
+    fromInitial: getInitial(fromName),
+    fromColor: deriveFromColor(fromEmail || msg.id),
+    fromEmail,
+    to: toList,
+    cc: ccList.length > 0 ? ccList : undefined,
+    subject: msg.subject,
+    bodyHtml: msg.htmlBody,
+    sentAt: msg.sentAt,
+    isCollapsed,
+    attachments,
+  };
+}
+
+export interface DetailMappingContext {
+  connectionMap: Map<string, { displayName: string; color: string }>;
+  currentUserId: string;
+}
+
+export function mapThreadDetailToUI(
+  detail: MailboxThreadDetailReadShape,
+  ctx: DetailMappingContext,
+): MailboxThreadDetail {
+  const connectionInfo = ctx.connectionMap.get(detail.mailboxConnectionId);
+  const mailboxLabel = connectionInfo?.displayName ?? "Mailbox";
+  const mailboxColor = connectionInfo?.color ?? "#16294D";
+
+  const assignee = detail.assigneeId
+    ? detail.assigneeId === ctx.currentUserId
+      ? "You"
+      : "Assigned"
+    : null;
+
+  const messages = detail.messages.map((msg, idx) =>
+    mapMessageToItem(msg, idx, detail.messages.length),
+  );
+
+  const totalAttachments = detail.messages.reduce(
+    (sum, msg) => sum + (msg.attachments?.length ?? 0),
+    0,
+  );
+
+  return {
+    threadId: detail.id,
+    mailboxConnectionId: detail.mailboxConnectionId,
+    subject: detail.subject,
+    status: detail.status.toLowerCase() as "open" | "pending" | "closed",
+    assignee,
+    mailboxLabel,
+    mailboxColor,
+    participantsSummary: buildParticipantsSummary(detail.participants),
+    messages,
+    totalAttachments,
   };
 }

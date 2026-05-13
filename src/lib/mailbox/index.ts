@@ -88,6 +88,8 @@ export type {
   MailboxThreadReadShape,
   MailboxMessageReadShape,
   MailboxAttachmentReadShape,
+  MailboxThreadDetailReadShape,
+  MailboxThreadDetailMessageReadShape,
 } from "./read-shapes";
 export {
   toMailboxConnectionSummary,
@@ -100,6 +102,7 @@ export {
   toMailboxThreadReadShape,
   toMailboxMessageReadShape,
   toMailboxAttachmentReadShape,
+  toMailboxThreadDetailReadShape,
 } from "./read-shapes";
 
 // Audit helpers
@@ -236,4 +239,4 @@ export type {
   ListMailboxThreadsParams,
   ListMailboxThreadsResult,
 } from "./thread-service";
-export { listMailboxThreads, getMailboxThread } from "./thread-service";
+export { listMailboxThreads, getMailboxThread, getMailboxThreadDetail } from "./thread-service";
