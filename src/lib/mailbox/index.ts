@@ -230,3 +230,10 @@ export {
 
 // Sprint 3.3: Normalization helpers
 export { MAILBOX_SNIPPET_MAX_LENGTH, normalizeSnippet } from "./normalization-service";
+
+// Sprint 4.1: Thread list read model
+export type {
+  ListMailboxThreadsParams,
+  ListMailboxThreadsResult,
+} from "./thread-service";
+export { listMailboxThreads, getMailboxThread } from "./thread-service";

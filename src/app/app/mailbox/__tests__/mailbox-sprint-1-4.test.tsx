@@ -10,6 +10,28 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }),
 }));
 
+// Mock mailbox data hooks for workspace tests
+vi.mock("../use-mailbox-connections", () => ({
+  useMailboxConnections: () => ({
+    connections: [],
+    isLoading: false,
+    error: null,
+    refetch: vi.fn(),
+  }),
+}));
+
+vi.mock("../use-mailbox-threads", () => ({
+  useMailboxThreads: () => ({
+    threads: [],
+    totalCount: 0,
+    nextCursor: null,
+    isLoading: false,
+    error: null,
+    refetch: vi.fn(),
+    loadMore: vi.fn(),
+  }),
+}));
+
 // Settings page
 import MailboxSettingsPage from "../settings/page";
 // Connect flow

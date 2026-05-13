@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import { usePathname } from "next/navigation";
 import { MailboxLeftRail } from "./mailbox-left-rail";
 import { MailboxCommandBar } from "./mailbox-command-bar";
-import { MailboxThreadList, MOCK_THREADS } from "./mailbox-thread-list";
+import { MailboxThreadList } from "./mailbox-thread-list";
 import { MailboxReadingPaneEmpty } from "./mailbox-reading-pane-empty";
 import { MailboxReadingPane } from "./mailbox-reading-pane";
 import { FloatingComposer } from "./mailbox-floating-composer";
@@ -17,10 +17,13 @@ import { ReconnectBanner } from "./mailbox-restricted-states";
 import { MailboxRailDrawer, MobileTopBar, TabletTopBar, MobileTabBar } from "./mailbox-mobile-nav";
 import {
   GLOBAL_SMART_VIEWS,
-  MOCK_CONNECTIONS,
   MOCK_THREAD_DETAILS,
   MOCK_LINKED_CONTEXT,
 } from "./mock-data";
+import { useMailboxConnections } from "./use-mailbox-connections";
+import { useMailboxThreads } from "./use-mailbox-threads";
+import { mapThreadToRowData, deriveMailboxColor } from "./thread-data-helpers";
+import type { ThreadRowData } from "./mailbox-thread-list";
 import type {
   MailboxComposerState,
   ComposeMode,
@@ -31,17 +34,28 @@ import type {
   MailboxResponsivePanel,
 } from "./types";
 
-export function resolveViewLabel(pathname: string): string {
+// Minimal connection shape for composer and filters
+interface ConnectionLike {
+  id: string;
+  displayName: string;
+  emailAddress: string;
+}
+
+export function resolveViewLabel(
+  pathname: string,
+  connections: MailboxConnection[] = [],
+): string {
   const smartView = GLOBAL_SMART_VIEWS.find(
     (v) =>
       v.href === "/app/mailbox"
         ? pathname === v.href
-        : pathname === v.href || pathname.startsWith(`${v.href}/`)
+        : pathname === v.href || pathname.startsWith(`${v.href}/`),
   );
   if (smartView) return smartView.label;
 
-  for (const conn of MOCK_CONNECTIONS) {
-    if (pathname.includes(`/${conn.slug}/`)) {
+  for (const conn of connections) {
+    const prefix = conn.slug || conn.id;
+    if (pathname.includes(`/${prefix}/`)) {
       const folder = pathname.split("/").pop() ?? "Inbox";
       return `${conn.displayName} · ${folder.charAt(0).toUpperCase()}${folder.slice(1)}`;
     }
@@ -56,8 +70,8 @@ function makeComposerState(
   replyToMessageId: string | null,
   subject: string,
   to: string[],
-  fromConnection: MailboxConnection,
-  layout: MailboxComposerState["layout"] = "floating"
+  fromConnection: ConnectionLike,
+  layout: MailboxComposerState["layout"] = "floating",
 ): MailboxComposerState {
   return {
     isOpen: true,
@@ -84,95 +98,124 @@ function makeComposerState(
   };
 }
 
-function resolveActiveConnection(pathname: string): MailboxConnection | null {
+function resolveActiveConnection(
+  pathname: string,
+  connections: MailboxConnection[] = [],
+): MailboxConnection | null {
   return (
-    MOCK_CONNECTIONS.find(
-      (conn) =>
-        pathname === `/app/mailbox/${conn.slug}` ||
-        pathname.startsWith(`/app/mailbox/${conn.slug}/`)
+    connections.find(
+      (conn) => {
+        const prefix = conn.slug || conn.id;
+        return (
+          pathname === `/app/mailbox/${prefix}` ||
+          pathname.startsWith(`/app/mailbox/${prefix}/`)
+        );
+      },
     ) ?? null
   );
 }
 
-function resolveVisibleThreads(pathname: string, filterState: ActiveFilterState) {
-  const activeConnection = resolveActiveConnection(pathname);
+function resolveThreadQueryParams(
+  pathname: string,
+  connections: MailboxConnection[] = [],
+): {
+  connectionId?: string;
+  status?: string;
+  unreadOnly?: boolean;
+  isFlagged?: boolean;
+  assignee?: "me" | "none";
+} {
+  const activeConnection = resolveActiveConnection(pathname, connections);
   const smartView = GLOBAL_SMART_VIEWS.find(
-    (view) => view.href !== "/app/mailbox" && (pathname === view.href || pathname.startsWith(`${view.href}/`))
+    (view) =>
+      view.href !== "/app/mailbox" &&
+      (pathname === view.href || pathname.startsWith(`${view.href}/`)),
   );
 
-  let threads = MOCK_THREADS;
-
-  // Smart view filtering
-  if (smartView?.id === "unread") threads = threads.filter((t) => t.isUnread);
-  else if (smartView?.id === "assigned-to-me") threads = threads.filter((t) => t.assignee === "You");
-  else if (smartView?.id === "unassigned") threads = threads.filter((t) => !t.assignee);
-  else if (smartView?.id === "flagged") threads = threads.filter((t) => t.isFlagged);
-  else if (smartView?.id === "waiting") threads = threads.filter((t) => t.status === "pending");
-  else if (smartView?.id === "linked") {
-    threads = threads.filter((t) => (MOCK_LINKED_CONTEXT[t.id]?.links.length ?? 0) > 0);
-  } else if (smartView?.id === "unlinked") {
-    threads = threads.filter(
-      (t) =>
-        (MOCK_LINKED_CONTEXT[t.id]?.links.length ?? 0) === 0 &&
-        (MOCK_LINKED_CONTEXT[t.id]?.suggestions.length ?? 0) === 0
-    );
-  } else if (activeConnection) {
-    const folder = pathname.split("/").pop() ?? "inbox";
-    const connectionThreads = threads.filter((t) => t.mailboxConnectionId === activeConnection.id);
-    if (folder === "sent") {
-      threads = connectionThreads.filter((t) => {
-        const detail = MOCK_THREAD_DETAILS[t.id];
-        return detail?.messages[detail.messages.length - 1]?.direction === "outbound";
-      });
-    } else if (folder === "drafts" || folder === "spam") {
-      threads = [];
-    } else if (folder === "archive") {
-      threads = connectionThreads.filter((t) => t.status === "closed");
-    } else {
-      threads = connectionThreads.filter((t) => t.status !== "closed");
-    }
+  if (smartView?.id === "unread") return { unreadOnly: true };
+  if (smartView?.id === "assigned-to-me") return { assignee: "me" };
+  if (smartView?.id === "unassigned") return { assignee: "none" };
+  if (smartView?.id === "flagged") return { isFlagged: true };
+  if (smartView?.id === "waiting") return { status: "PENDING" };
+  if (smartView?.id === "linked" || smartView?.id === "unlinked") {
+    // Linked/unlinked not supported by backend thread list yet
+    return {};
   }
 
-  // Active filter chips
+  if (activeConnection) {
+    const folder = pathname.split("/").pop() ?? "inbox";
+    if (folder === "archive") {
+      return { connectionId: activeConnection.id, status: "ARCHIVED" };
+    }
+    if (folder === "drafts" || folder === "spam") {
+      // Drafts and spam are not supported by the thread list backend yet.
+      // Return a sentinel status that yields an empty result.
+      return { connectionId: activeConnection.id, status: "DRAFT" };
+    }
+    if (folder === "sent") {
+      // Sent folder not yet supported by thread list backend
+      return { connectionId: activeConnection.id };
+    }
+    // Inbox: show OPEN and PENDING threads
+    return {
+      connectionId: activeConnection.id,
+      status: "OPEN,PENDING",
+    };
+  }
+
+  return {};
+}
+
+function applyClientFilters(
+  threads: ThreadRowData[],
+  filterState: ActiveFilterState,
+): ThreadRowData[] {
+  let result = threads;
+
+  // Active filter chips (client-side for fields not sent to API)
   for (const filter of filterState.filters) {
     if (filter.field === "mailbox") {
-      threads = threads.filter((t) => t.mailboxConnectionId === filter.value);
+      result = result.filter((t) => t.mailboxConnectionId === filter.value);
     } else if (filter.field === "unread" && filter.value === "true") {
-      threads = threads.filter((t) => t.isUnread);
+      result = result.filter((t) => t.isUnread);
     } else if (filter.field === "flagged" && filter.value === "true") {
-      threads = threads.filter((t) => t.isFlagged);
+      result = result.filter((t) => t.isFlagged);
     } else if (filter.field === "assignee" && filter.value === "me") {
-      threads = threads.filter((t) => t.assignee === "You");
+      result = result.filter((t) => t.assignee === "You");
     } else if (filter.field === "assignee" && filter.value === "none") {
-      threads = threads.filter((t) => !t.assignee);
+      result = result.filter((t) => !t.assignee);
     } else if (filter.field === "status") {
-      threads = threads.filter((t) => t.status === filter.value);
+      result = result.filter((t) => t.status === filter.value);
     } else if (filter.field === "linked" && filter.value === "true") {
-      threads = threads.filter((t) => (MOCK_LINKED_CONTEXT[t.id]?.links.length ?? 0) > 0);
+      result = result.filter((t) => (MOCK_LINKED_CONTEXT[t.id]?.links.length ?? 0) > 0);
     } else if (filter.field === "linked" && filter.value === "false") {
-      threads = threads.filter(
+      result = result.filter(
         (t) =>
           (MOCK_LINKED_CONTEXT[t.id]?.links.length ?? 0) === 0 &&
-          (MOCK_LINKED_CONTEXT[t.id]?.suggestions.length ?? 0) === 0
+          (MOCK_LINKED_CONTEXT[t.id]?.suggestions.length ?? 0) === 0,
       );
     }
   }
 
-  // Search query
+  // Search query (client-side until search backend is built)
   if (filterState.searchQuery) {
     const q = filterState.searchQuery.toLowerCase();
-    threads = threads.filter(
+    result = result.filter(
       (t) =>
         t.subject.toLowerCase().includes(q) ||
         t.from.toLowerCase().includes(q) ||
-        t.snippet.toLowerCase().includes(q)
+        t.snippet.toLowerCase().includes(q),
     );
   }
 
-  return threads;
+  return result;
 }
 
-function resolveEmptyMailboxLabel(pathname: string, activeConnection: MailboxConnection | null, viewLabel: string) {
+function resolveEmptyMailboxLabel(
+  pathname: string,
+  activeConnection: MailboxConnection | null,
+  viewLabel: string,
+) {
   if (!activeConnection) return viewLabel;
   const folder = pathname.split("/").pop() ?? "inbox";
   if (folder === "inbox") return activeConnection.displayName;
@@ -180,8 +223,11 @@ function resolveEmptyMailboxLabel(pathname: string, activeConnection: MailboxCon
 }
 
 /** Resolve the reconnect-required connection for the current view, if any */
-function resolveReconnectConnection(pathname: string): MailboxConnection | null {
-  const activeConnection = resolveActiveConnection(pathname);
+function resolveReconnectConnection(
+  pathname: string,
+  connections: MailboxConnection[] = [],
+): MailboxConnection | null {
+  const activeConnection = resolveActiveConnection(pathname, connections);
   if (activeConnection?.status === "reconnect_required") return activeConnection;
   return null;
 }
@@ -220,15 +266,52 @@ export function MailboxWorkspace() {
   const [isRailOpen, setIsRailOpen] = useState(false);
   const [mobilePanel, setMobilePanel] = useState<MailboxResponsivePanel>("thread-list");
 
-  const viewLabel = resolveViewLabel(pathname);
-  const activeConnection = resolveActiveConnection(pathname);
-  const visibleThreads = resolveVisibleThreads(pathname, filterState);
+  // Real data hooks
+  const { connections, isLoading: connectionsLoading } = useMailboxConnections();
+
+  const threadQueryParams = useMemo(
+    () => resolveThreadQueryParams(pathname, connections),
+    [pathname, connections],
+  );
+
+  const {
+    threads: rawThreads,
+    totalCount: apiTotalCount,
+    isLoading: threadsLoading,
+  } = useMailboxThreads(threadQueryParams);
+
+  const connectionMap = useMemo(() => {
+    const map = new Map<string, { displayName: string; color: string }>();
+    for (const conn of connections) {
+      map.set(conn.id, { displayName: conn.displayName, color: deriveMailboxColor(conn.id) });
+    }
+    return map;
+  }, [connections]);
+
+  // TODO: Sprint 4.1 does not have current user ID from auth context in this component.
+  // Using empty string means assignee will show as "Assigned" rather than "You".
+  // This will be resolved when auth context is wired into the mailbox workspace.
+  const currentUserId = "";
+
+  const mappedThreads = useMemo(() => {
+    const ctx = { connectionMap, currentUserId };
+    return rawThreads.map((t) => mapThreadToRowData(t, ctx));
+  }, [rawThreads, connectionMap, currentUserId]);
+
+  // Apply client-side filters (search, linked status, etc.)
+  const visibleThreads = useMemo(
+    () => applyClientFilters(mappedThreads, filterState),
+    [mappedThreads, filterState],
+  );
+
+  const viewLabel = resolveViewLabel(pathname, connections);
+  const activeConnection = resolveActiveConnection(pathname, connections);
   const totalCount = visibleThreads.length;
   const unreadCount = visibleThreads.filter((t) => t.isUnread).length;
   const selectedDetail = selectedThreadId ? MOCK_THREAD_DETAILS[selectedThreadId] ?? null : null;
-  const reconnectConnection = resolveReconnectConnection(pathname);
+  const reconnectConnection = resolveReconnectConnection(pathname, connections);
   const smartViewEmpty = resolveSmartViewDescription(pathname);
-  const connectedMailboxCount = MOCK_CONNECTIONS.filter((conn) => conn.status !== "disconnected").length;
+  const connectedMailboxCount = connections.filter((conn) => conn.status !== "disconnected").length;
 
   const selectedContext: LinkedContextState | null = selectedThreadId
     ? { ...(MOCK_LINKED_CONTEXT[selectedThreadId] ?? null), ...(contextOverrides[selectedThreadId] ?? {}) } as LinkedContextState
@@ -236,8 +319,8 @@ export function MailboxWorkspace() {
 
   const defaultComposeConnection =
     activeConnection ??
-    MOCK_CONNECTIONS.find((c) => c.status === "connected") ??
-    MOCK_CONNECTIONS[0];
+    connections.find((c) => c.status === "connected") ??
+    connections[0];
 
   useEffect(() => {
     if (selectedThreadId && !visibleThreads.some((t) => t.id === selectedThreadId)) {
@@ -268,17 +351,19 @@ export function MailboxWorkspace() {
   }, [mobilePanel]);
 
   const openNewCompose = useCallback(() => {
+    if (!defaultComposeConnection) return;
     setComposer(makeComposerState("new", null, null, "", [], defaultComposeConnection));
   }, [defaultComposeConnection]);
 
   const openInlineReply = useCallback(
     (mode: ComposeMode, threadId: string, messageId: string, subject: string, to: string[]) => {
       const threadConnection =
-        MOCK_CONNECTIONS.find((c) => c.id === MOCK_THREAD_DETAILS[threadId]?.mailboxConnectionId) ??
+        connections.find((c) => c.id === MOCK_THREAD_DETAILS[threadId]?.mailboxConnectionId) ??
         defaultComposeConnection;
+      if (!threadConnection) return;
       setComposer(makeComposerState(mode, threadId, messageId, subject, to, threadConnection, "inline"));
     },
-    [defaultComposeConnection]
+    [connections, defaultComposeConnection]
   );
 
   const closeComposer = useCallback(() => setComposer(null), []);
@@ -353,6 +438,9 @@ export function MailboxWorkspace() {
 
   // Resolve thread list empty state
   const threadListEmptyState = (() => {
+    if (connectionsLoading) {
+      return null; // Will show loading spinner inside thread list
+    }
     if (connectedMailboxCount === 0) {
       return <NoMailboxesEmpty isAdmin={true} />;
     }
@@ -411,13 +499,13 @@ export function MailboxWorkspace() {
         {/* ── Desktop left rail (xl+) — single instance, always in DOM ── */}
         {/* On xl+: shown inline. On <xl: hidden (drawer has its own copy via portal). */}
         <div className="hidden xl:flex xl:shrink-0" aria-hidden="false">
-          <MailboxLeftRail />
+          <MailboxLeftRail connections={connections} />
         </div>
 
         {/* ── Rail drawer for tablet + mobile — separate instance, aria-hidden when closed ── */}
         <div className="xl:hidden" aria-hidden={!isRailOpen}>
           <MailboxRailDrawer isOpen={isRailOpen} onClose={() => setIsRailOpen(false)}>
-            <MailboxLeftRail />
+            <MailboxLeftRail connections={connections} />
           </MailboxRailDrawer>
         </div>
 
@@ -468,7 +556,7 @@ export function MailboxWorkspace() {
             viewLabel={viewLabel}
             filterState={filterState}
             draftState={filterDraftState}
-            connections={MOCK_CONNECTIONS.filter((connection) => connection.status !== "disconnected")}
+            connections={connections.filter((connection) => connection.status !== "disconnected")}
             onToggleDraftFilter={toggleDraftFilter}
             onClearDraft={clearDraftFilters}
             onApply={applyDraftFilters}
@@ -502,6 +590,7 @@ export function MailboxWorkspace() {
               onSelectThread={handleSelectThread}
               reconnectBanner={reconnectBanner}
               emptyState={threadListEmptyState ?? undefined}
+              isLoading={threadsLoading}
             />
           </div>
 
