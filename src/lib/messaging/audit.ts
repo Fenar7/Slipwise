@@ -12,6 +12,9 @@ import type { MessagingAuditAction } from "./domain-types";
 export const MESSAGING_AUDIT_ACTION_LABELS: Record<MessagingAuditAction, string> = {
   CONVERSATION_CREATED: "Created conversation",
   CONVERSATION_ARCHIVED: "Archived conversation",
+  CONVERSATION_UNARCHIVED: "Unarchived conversation",
+  CONVERSATION_LOCKED: "Locked conversation",
+  CONVERSATION_UNLOCKED: "Unlocked conversation",
   CONVERSATION_DELETED: "Deleted conversation",
   CONVERSATION_RENAMED: "Renamed conversation",
   CONVERSATION_VISIBILITY_CHANGED: "Changed conversation visibility",

@@ -88,6 +88,26 @@ export interface ArchiveConversationInput {
   archivedBy: string;
 }
 
+export interface UnarchiveConversationInput {
+  orgId: string;
+  conversationId: string;
+  unarchivedBy: string;
+}
+
+export interface LockConversationInput {
+  orgId: string;
+  conversationId: string;
+  lockedBy: string;
+  /** Optional reason category. Must not contain sensitive freeform text. */
+  reason?: string | null;
+}
+
+export interface UnlockConversationInput {
+  orgId: string;
+  conversationId: string;
+  unlockedBy: string;
+}
+
 export interface RenameConversationInput {
   orgId: string;
   conversationId: string;

@@ -16,6 +16,9 @@ import type {
   CreateConversationInput,
   CreateConversationResult,
   ArchiveConversationInput,
+  UnarchiveConversationInput,
+  LockConversationInput,
+  UnlockConversationInput,
   RenameConversationInput,
   ChangeConversationVisibilityInput,
 } from "./service-contracts";
@@ -265,6 +268,127 @@ export async function changeConversationVisibility(
       actorId: input.actorId,
       action: "CONVERSATION_VISIBILITY_CHANGED",
       summary: `Changed visibility to ${input.visibility}`,
+      conversationId: updated.id,
+    });
+
+    return toConversationRecord(updated);
+  });
+
+  return result;
+}
+
+/**
+ * Unarchive a conversation (restore from soft-delete). Org-scoped.
+ */
+export async function unarchiveConversation(
+  input: UnarchiveConversationInput,
+): Promise<ConversationRecord> {
+  const result = await db.$transaction(async (tx) => {
+    const { conversation: existing } = await assertConversationAction(
+      tx,
+      input.orgId,
+      input.conversationId,
+      input.unarchivedBy,
+      "UNARCHIVE",
+      "unarchiveConversation",
+    );
+
+    const updated = await tx.conversation.update({
+      where: { id: input.conversationId, orgId: input.orgId },
+      data: {
+        archivedAt: null,
+        archivedBy: null,
+      },
+    });
+
+    await logMessagingAuditTx(tx, {
+      orgId: input.orgId,
+      actorId: input.unarchivedBy,
+      action: "CONVERSATION_UNARCHIVED",
+      summary: `Unarchived conversation "${updated.name ?? "(untitled)"}"`,
+      conversationId: updated.id,
+    });
+
+    return toConversationRecord(updated);
+  });
+
+  return result;
+}
+
+/**
+ * Lock a conversation. Blocks ordinary member mutations.
+ * Org-scoped. Requires governance role.
+ */
+export async function lockConversation(
+  input: LockConversationInput,
+): Promise<ConversationRecord> {
+  const result = await db.$transaction(async (tx) => {
+    const { conversation: existing } = await assertConversationAction(
+      tx,
+      input.orgId,
+      input.conversationId,
+      input.lockedBy,
+      "LOCK",
+      "lockConversation",
+    );
+
+    const updated = await tx.conversation.update({
+      where: { id: input.conversationId, orgId: input.orgId },
+      data: {
+        lockedAt: new Date(),
+        lockedBy: input.lockedBy,
+        lockReason: input.reason ?? null,
+      },
+    });
+
+    await logMessagingAuditTx(tx, {
+      orgId: input.orgId,
+      actorId: input.lockedBy,
+      action: "CONVERSATION_LOCKED",
+      summary: `Locked conversation "${updated.name ?? "(untitled)"}"`,
+      conversationId: updated.id,
+      metadata: {
+        reason: input.reason ?? null,
+      },
+    });
+
+    return toConversationRecord(updated);
+  });
+
+  return result;
+}
+
+/**
+ * Unlock a conversation. Restores ordinary member mutations.
+ * Org-scoped. Requires governance role.
+ */
+export async function unlockConversation(
+  input: UnlockConversationInput,
+): Promise<ConversationRecord> {
+  const result = await db.$transaction(async (tx) => {
+    const { conversation: existing } = await assertConversationAction(
+      tx,
+      input.orgId,
+      input.conversationId,
+      input.unlockedBy,
+      "UNLOCK",
+      "unlockConversation",
+    );
+
+    const updated = await tx.conversation.update({
+      where: { id: input.conversationId, orgId: input.orgId },
+      data: {
+        lockedAt: null,
+        lockedBy: null,
+        lockReason: null,
+      },
+    });
+
+    await logMessagingAuditTx(tx, {
+      orgId: input.orgId,
+      actorId: input.unlockedBy,
+      action: "CONVERSATION_UNLOCKED",
+      summary: `Unlocked conversation "${updated.name ?? "(untitled)"}"`,
       conversationId: updated.id,
     });
 
