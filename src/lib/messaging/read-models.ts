@@ -21,7 +21,7 @@ import type {
   MessageReactionRecord,
 } from "./domain-types";
 import { conversationOrgSafeWhere, participantOrgSafeWhere } from "./org-safe-helpers";
-import { toConversationRecord, toMessageRecord, toThreadRecord, toReadStateRecord } from "./mappers";
+import { toConversationRecord, toMessageRecord, toThreadRecord, toReadStateRecord, toParticipantRecord } from "./mappers";
 import {
   toConversationSummary,
   toConversationDetail,
@@ -35,15 +35,8 @@ import {
   listConversationsForUser,
 } from "./conversation-service";
 import {
-  listParticipantsForConversation,
-} from "./participant-service";
-import {
-  listConversationMessages,
   getMessageById,
 } from "./message-service";
-import {
-  listThreadsForConversation,
-} from "./thread-service";
 import {
   listReactionsForMessage,
 } from "./reaction-service";
@@ -158,12 +151,21 @@ export async function getConversationDetail(
   }
 
   const [participants, messages, threads, readState] = await Promise.all([
-    listParticipantsForConversation(orgId, conversationId, userId),
-    listConversationMessages(orgId, conversationId, userId, {
-      limit: options?.messageLimit ?? 50,
-      cursor: options?.messageCursor ?? undefined,
-    }),
-    listThreadsForConversation(orgId, conversationId, userId),
+    db.conversationParticipant.findMany({
+      where: { orgId, conversationId, leftAt: null },
+      orderBy: { joinedAt: "asc" },
+    }).then((rows) => rows.map(toParticipantRecord)),
+    db.conversationMessage.findMany({
+      where: { orgId, conversationId, threadId: null },
+      orderBy: { createdAt: "asc" },
+      take: options?.messageLimit ?? 50,
+      skip: options?.messageCursor ? 1 : 0,
+      cursor: options?.messageCursor ? { id: options.messageCursor } : undefined,
+    }).then((rows) => rows.map(toMessageRecord)),
+    db.conversationThread.findMany({
+      where: { orgId, conversationId },
+      orderBy: { createdAt: "desc" },
+    }).then((rows) => rows.map(toThreadRecord)),
     getReadState(orgId, conversationId, userId),
   ]);
 
