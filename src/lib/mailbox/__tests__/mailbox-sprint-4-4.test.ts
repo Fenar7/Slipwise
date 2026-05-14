@@ -343,3 +343,152 @@ describe("Sprint 4.4 — useMailboxThreads hook params", () => {
     expect(typeof useMailboxThreads).toBe("function");
   });
 });
+
+// ─── Review finding tests ─────────────────────────────────────────────────────
+
+// Finding A: linked/unlinked smart views must not appear in nav or route handling
+import { GLOBAL_SMART_VIEWS, SMART_VIEW_DEFS } from "@/app/app/mailbox/mock-data";
+
+describe("Sprint 4.4 review — Finding A: linked/unlinked removed", () => {
+  it("GLOBAL_SMART_VIEWS does not contain linked", () => {
+    const ids = GLOBAL_SMART_VIEWS.map((v) => v.id);
+    expect(ids).not.toContain("linked");
+    expect(ids).not.toContain("unlinked");
+  });
+
+  it("SMART_VIEW_DEFS does not contain linked", () => {
+    const ids = SMART_VIEW_DEFS.map((v) => v.id);
+    expect(ids).not.toContain("linked");
+    expect(ids).not.toContain("unlinked");
+  });
+});
+
+// Finding B: route-derived folder semantics — status filter must not override route status
+// (Tested via the resolveLiveQueryParams helper indirectly through UI workspace tests)
+// We add a direct workspace-param test here:
+import {
+  resolveThreadQueryParams,
+  resolveLiveQueryParams,
+} from "@/app/app/mailbox/mailbox-workspace";
+import type { MailboxConnection } from "@/app/app/mailbox/types";
+
+function makeMinimalConnection(overrides: Partial<MailboxConnection> = {}): MailboxConnection {
+  return {
+    id: "conn_billing",
+    orgId: "org_1",
+    provider: "gmail",
+    slug: "billing",
+    emailAddress: "billing@example.com",
+    displayName: "Billing",
+    status: "connected",
+    lastSyncAt: null,
+    lastSyncError: null,
+    lastSyncErrorCategory: null,
+    unreadCount: 0,
+    inboxCount: 0,
+    ...overrides,
+  };
+}
+
+describe("Sprint 4.4 review — Finding B: route-derived status semantics", () => {
+  it("inbox route resolves to OPEN,PENDING status", () => {
+    const connections = [makeMinimalConnection({ slug: "billing" })];
+    const params = resolveThreadQueryParams("/app/mailbox/billing/inbox", connections);
+    expect(params.status).toBe("OPEN,PENDING");
+    expect(params.connectionId).toBe("conn_billing");
+  });
+
+  it("archive route resolves to ARCHIVED status", () => {
+    const connections = [makeMinimalConnection({ slug: "billing" })];
+    const params = resolveThreadQueryParams("/app/mailbox/billing/archive", connections);
+    expect(params.status).toBe("ARCHIVED");
+  });
+
+  it("smart view waiting resolves to PENDING status", () => {
+    const params = resolveThreadQueryParams("/app/mailbox/waiting", []);
+    expect(params.status).toBe("PENDING");
+  });
+
+  it("user status filter is ignored when route already defines status", () => {
+    const routeParams = { connectionId: "conn_billing", status: "OPEN,PENDING" };
+    const filterState = {
+      filters: [{ field: "status", value: "closed", label: "Closed" }],
+      searchQuery: "",
+    };
+    const result = resolveLiveQueryParams(routeParams, filterState);
+    expect(result.status).toBe("OPEN,PENDING");
+  });
+
+  it("user status filter is applied when route has no built-in status", () => {
+    const routeParams = { connectionId: "conn_billing" };
+    const filterState = {
+      filters: [{ field: "status", value: "closed", label: "Closed" }],
+      searchQuery: "",
+    };
+    const result = resolveLiveQueryParams(routeParams, filterState);
+    expect(result.status).toBe("CLOSED");
+  });
+});
+
+// Finding C: request-aware loading state
+import { renderHook, waitFor } from "@testing-library/react";
+
+describe("Sprint 4.4 review — Finding C: request-aware loading state", () => {
+  it("useMailboxThreads tracks loading correctly for the latest request", async () => {
+    let resolveFirst: (v: Response) => void = () => {};
+    let resolveSecond: (v: Response) => void = () => {};
+
+    const fetchSpy = vi.spyOn(global, "fetch").mockImplementation((url) => {
+      const u = new URL(url as string);
+      if (u.searchParams.get("status") === "OPEN") {
+        return new Promise((resolve) => {
+          resolveFirst = resolve;
+        });
+      }
+      return new Promise((resolve) => {
+        resolveSecond = resolve;
+      });
+    });
+
+    const { useMailboxThreads } = await import("@/app/app/mailbox/use-mailbox-threads");
+    const { result, rerender } = renderHook(
+      (props) => useMailboxThreads(props),
+      {
+        initialProps: { status: "OPEN" } as UseMailboxThreadsParams,
+      },
+    );
+
+    // Wait for the effect to start the first fetch
+    await waitFor(() => expect(result.current.isLoading).toBe(true));
+
+    // Trigger a second fetch (params change — status prop is not debounced)
+    rerender({ status: "PENDING" } as UseMailboxThreadsParams);
+
+    // Second request should also be loading
+    await waitFor(() => expect(result.current.isLoading).toBe(true));
+
+    // Resolve the first (now stale) request
+    resolveFirst(
+      new Response(
+        JSON.stringify({ threads: [], nextCursor: null, totalCount: 0 }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+
+    // Wait a tick — stale request must NOT clear loading
+    await new Promise((r) => setTimeout(r, 10));
+    expect(result.current.isLoading).toBe(true);
+
+    // Resolve the second (latest) request
+    resolveSecond(
+      new Response(
+        JSON.stringify({ threads: [], nextCursor: null, totalCount: 0 }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    fetchSpy.mockRestore();
+  });
+});

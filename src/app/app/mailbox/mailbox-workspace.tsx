@@ -118,7 +118,7 @@ function resolveActiveConnection(
   );
 }
 
-function resolveThreadQueryParams(
+export function resolveThreadQueryParams(
   pathname: string,
   connections: MailboxConnection[] = [],
 ): {
@@ -140,10 +140,7 @@ function resolveThreadQueryParams(
   if (smartView?.id === "unassigned") return { assignee: "none" };
   if (smartView?.id === "flagged") return { isFlagged: true };
   if (smartView?.id === "waiting") return { status: "PENDING" };
-  if (smartView?.id === "linked" || smartView?.id === "unlinked") {
-    // Linked/unlinked not supported by backend thread list yet
-    return {};
-  }
+  // Sprint 4.4: linked/unlinked smart views removed from live nav
 
   if (activeConnection) {
     const folder = pathname.split("/").pop() ?? "inbox";
@@ -180,7 +177,7 @@ function resolveThreadQueryParams(
  * - Status values are uppercased for the API contract.
  * - Linked/unlinked filters are not supported by the backend and are ignored.
  */
-function resolveLiveQueryParams(
+export function resolveLiveQueryParams(
   routeParams: ReturnType<typeof resolveThreadQueryParams>,
   filterState: ActiveFilterState,
 ): UseMailboxThreadsParams {
@@ -200,7 +197,12 @@ function resolveLiveQueryParams(
         }
         break;
       case "status":
-        params.status = filter.value.toUpperCase();
+        // Sprint 4.4 review fix: preserve route-derived folder semantics.
+        // Do not let a user-applied status filter override the folder's
+        // built-in status (e.g. inbox = OPEN,PENDING, archive = ARCHIVED).
+        if (!routeParams.status) {
+          params.status = filter.value.toUpperCase();
+        }
         break;
       case "assignee":
         params.assignee = filter.value as "me" | "none";
@@ -251,8 +253,7 @@ function resolveSmartViewDescription(pathname: string): { label: string; descrip
     unassigned: "All threads have been assigned.",
     flagged: "No threads are flagged for follow-up.",
     waiting: "No threads are in a pending or waiting state.",
-    linked: "No threads are linked to a Slipwise record yet.",
-    unlinked: "All threads have been linked to records.",
+    // Sprint 4.4: linked/unlinked smart views removed from live nav
   };
   return {
     label: smartView.label,

@@ -52,6 +52,7 @@ export function useMailboxThreads(
   }, [params.searchQuery]);
 
   const abortControllerRef = useRef<AbortController | null>(null);
+  const requestIdRef = useRef(0);
 
   const buildUrl = useCallback(
     (cursor?: string) => {
@@ -103,6 +104,8 @@ export function useMailboxThreads(
       const controller = new AbortController();
       abortControllerRef.current = controller;
 
+      const thisRequestId = ++requestIdRef.current;
+
       setIsLoading(true);
       setError(null);
       try {
@@ -113,19 +116,26 @@ export function useMailboxThreads(
           throw new Error(`Failed to fetch threads: ${res.status}`);
         }
         const data: MailboxThreadListResponse = await res.json();
-        setThreads((prev) =>
-          append ? [...prev, ...data.threads] : data.threads,
-        );
-        setTotalCount(data.totalCount);
-        setNextCursor(data.nextCursor);
+        // Only update state if this is still the latest request
+        if (thisRequestId === requestIdRef.current) {
+          setThreads((prev) =>
+            append ? [...prev, ...data.threads] : data.threads,
+          );
+          setTotalCount(data.totalCount);
+          setNextCursor(data.nextCursor);
+        }
       } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") {
           // Silently ignore aborted requests
           return;
         }
-        setError(err instanceof Error ? err.message : "Unknown error");
+        if (thisRequestId === requestIdRef.current) {
+          setError(err instanceof Error ? err.message : "Unknown error");
+        }
       } finally {
-        setIsLoading(false);
+        if (thisRequestId === requestIdRef.current) {
+          setIsLoading(false);
+        }
       }
     },
     [buildUrl],
