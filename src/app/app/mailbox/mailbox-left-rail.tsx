@@ -21,8 +21,6 @@ import {
   AlertTriangle,
   RefreshCw,
   Plus,
-  Link2,
-  Link2Off,
 } from "lucide-react";
 import type { MailboxConnection, MailboxGroup, MailboxTreeItem } from "./types";
 import { GLOBAL_SMART_VIEWS, MOCK_CONNECTIONS } from "./mock-data";
@@ -38,8 +36,6 @@ const ICON_MAP: Record<string, React.ElementType> = {
   FileEdit,
   Archive,
   ShieldAlert,
-  Link2,
-  Link2Off,
 };
 
 function UnreadBadge({ count }: { count: number }) {

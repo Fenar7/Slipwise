@@ -93,20 +93,7 @@ export const GLOBAL_SMART_VIEWS: MailboxTreeItem[] = [
     icon: "Clock",
     isSmartView: true,
   },
-  {
-    id: "linked",
-    label: "Linked",
-    href: "/app/mailbox/linked",
-    icon: "Link2",
-    isSmartView: true,
-  },
-  {
-    id: "unlinked",
-    label: "Unlinked",
-    href: "/app/mailbox/unlinked",
-    icon: "Link2Off",
-    isSmartView: true,
-  },
+  // Sprint 4.4: linked/unlinked smart views removed from live UI (not backend-supported)
 ];
 
 function mailboxFolders(connectionId: string, prefix: string): MailboxTreeItem[] {
@@ -697,16 +684,5 @@ export const SMART_VIEW_DEFS: SmartViewDef[] = [
     href: "/app/mailbox/waiting",
     description: "Threads in pending / waiting state",
   },
-  {
-    id: "linked",
-    label: "Linked",
-    href: "/app/mailbox/linked",
-    description: "Threads linked to a Slipwise record",
-  },
-  {
-    id: "unlinked",
-    label: "Unlinked",
-    href: "/app/mailbox/unlinked",
-    description: "Threads with no linked record",
-  },
+  // Sprint 4.4: linked/unlinked removed — not backed by live backend
 ];

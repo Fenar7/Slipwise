@@ -65,6 +65,7 @@ function parseNumberParam(
  *   unreadOnly?: "true"      — only threads with unread messages
  *   isFlagged?: "true"       — only flagged threads
  *   assignee?: string        — "me" | "none"
+ *   searchQuery?: string     — search subject and previewSnippet (case-insensitive)
  *   cursor?: string          — pagination cursor
  *   limit?: number           — page size (default 50, max 100)
  *
@@ -94,6 +95,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       | "me"
       | "none"
       | undefined;
+    const searchQuery = parseQueryParam(searchParams, "searchQuery")?.trim();
     const cursor = parseQueryParam(searchParams, "cursor") ?? undefined;
     const limit = parseNumberParam(searchParams, "limit", MAX_LIMIT);
 
@@ -119,6 +121,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       unreadOnly,
       isFlagged,
       assigneeFilter,
+      searchQuery,
       cursor,
       limit,
     });
