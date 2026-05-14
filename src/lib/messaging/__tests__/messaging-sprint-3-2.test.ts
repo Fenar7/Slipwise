@@ -871,6 +871,14 @@ describe("Sprint 3.2 — Route-level governance surfaces", () => {
   });
 
   it("PATCH /lock returns 403 for MEMBER", async () => {
+    (getOrgContext as ReturnType<typeof vi.fn>).mockResolvedValue({
+      userId: USER_1,
+      orgId: ORG_A,
+      role: "member",
+      representedId: null,
+      proxyGrantId: null,
+      proxyScope: [],
+    });
     db.conversationParticipant.findFirst.mockResolvedValue(makeParticipantRow({ role: "MEMBER" }));
 
     const request = makeRequest("http://localhost/api/messaging/conversations/conv-001/lock", {
@@ -882,6 +890,14 @@ describe("Sprint 3.2 — Route-level governance surfaces", () => {
   });
 
   it("PATCH /unlock returns 403 for MEMBER", async () => {
+    (getOrgContext as ReturnType<typeof vi.fn>).mockResolvedValue({
+      userId: USER_1,
+      orgId: ORG_A,
+      role: "member",
+      representedId: null,
+      proxyGrantId: null,
+      proxyScope: [],
+    });
     db.conversation.findFirst.mockResolvedValue(
       makeConversationRow({ lockedAt: new Date(), lockedBy: USER_1 }),
     );
@@ -895,6 +911,14 @@ describe("Sprint 3.2 — Route-level governance surfaces", () => {
   });
 
   it("PATCH /unarchive returns 403 for MEMBER", async () => {
+    (getOrgContext as ReturnType<typeof vi.fn>).mockResolvedValue({
+      userId: USER_1,
+      orgId: ORG_A,
+      role: "member",
+      representedId: null,
+      proxyGrantId: null,
+      proxyScope: [],
+    });
     db.conversation.findFirst.mockResolvedValue(
       makeConversationRow({ archivedAt: new Date(), archivedBy: USER_1 }),
     );
@@ -944,5 +968,197 @@ describe("Sprint 3.2 — Ownership invariants under governance", () => {
         updatedBy: USER_1,
       }),
     ).rejects.toThrow("updateParticipantRole: cannot demote the sole owner");
+  });
+});
+
+describe("runtime override end-to-end", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    db.conversation.findFirst.mockResolvedValue(
+      makeConversationRow({ visibility: "PUBLIC", archivedAt: new Date(), lockedAt: null }),
+    );
+    db.conversation.update.mockResolvedValue(makeConversationRow());
+    db.conversationParticipant.findFirst.mockResolvedValue(
+      makeParticipantRow({ role: "MEMBER", userId: USER_1 }),
+    );
+    db.messagingAuditEvent.create.mockResolvedValue({});
+  });
+
+  it("ORG_ADMIN can unarchive via service even when only a MEMBER participant", async () => {
+    db.conversation.findFirst.mockResolvedValue(
+      makeConversationRow({ visibility: "PUBLIC", archivedAt: new Date(), lockedAt: null }),
+    );
+    db.conversationParticipant.findFirst.mockResolvedValue(
+      makeParticipantRow({ role: "MEMBER", userId: USER_1 }),
+    );
+
+    const result = await unarchiveConversation({
+      orgId: ORG_A,
+      conversationId: CONV_ID,
+      unarchivedBy: USER_1,
+      actorOrgRole: "admin",
+      isPlatformAdmin: false,
+    });
+    expect(result.id).toBe(CONV_ID);
+    expect(db.conversation.update).toHaveBeenCalled();
+  });
+
+  it("PLATFORM_ADMIN can unlock via service even when not a participant at all", async () => {
+    db.conversation.findFirst.mockResolvedValue(
+      makeConversationRow({ visibility: "PUBLIC", archivedAt: null, lockedAt: new Date() }),
+    );
+    db.conversationParticipant.findFirst.mockResolvedValue(null);
+
+    const result = await unlockConversation({
+      orgId: ORG_A,
+      conversationId: CONV_ID,
+      unlockedBy: USER_1,
+      actorOrgRole: "member",
+      isPlatformAdmin: true,
+    });
+    expect(result.id).toBe(CONV_ID);
+    expect(db.conversation.update).toHaveBeenCalled();
+  });
+
+  it("plain MEMBER without override is denied archive even if participant", async () => {
+    db.conversation.findFirst.mockResolvedValue(
+      makeConversationRow({ visibility: "PUBLIC", archivedAt: null, lockedAt: null }),
+    );
+    db.conversationParticipant.findFirst.mockResolvedValue(
+      makeParticipantRow({ role: "MEMBER", userId: USER_1 }),
+    );
+
+    await expect(
+      archiveConversation({
+        orgId: ORG_A,
+        conversationId: CONV_ID,
+        archivedBy: USER_1,
+        actorOrgRole: "member",
+        isPlatformAdmin: false,
+      }),
+    ).rejects.toThrow("archiveConversation: governance action requires OWNER or ADMIN role");
+  });
+});
+
+describe("addParticipant role-bypass prevention", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    db.conversation.findFirst.mockResolvedValue(makeConversationRow());
+    db.conversationParticipant.create.mockResolvedValue(
+      makeParticipantRow({ id: "p-new", role: "MEMBER" }),
+    );
+    db.conversationParticipant.update.mockResolvedValue(
+      makeParticipantRow({ id: "p-existing", role: "ADMIN" }),
+    );
+    db.conversationParticipant.count.mockResolvedValue(2);
+    db.messagingAuditEvent.create.mockResolvedValue({});
+  });
+
+  it("rejects adding an already-active participant with a different role", async () => {
+    db.conversationParticipant.findFirst
+      .mockResolvedValueOnce(makeParticipantRow({ role: "OWNER", userId: USER_1 }))
+      .mockResolvedValueOnce(makeParticipantRow({ id: "p-existing", role: "MEMBER", leftAt: null }));
+
+    await expect(
+      addParticipant({
+        orgId: ORG_A,
+        conversationId: CONV_ID,
+        userId: USER_2,
+        role: "ADMIN",
+        addedBy: USER_1,
+      }),
+    ).rejects.toThrow("addParticipant: participant already active with different role; use updateParticipantRole instead");
+    expect(db.conversationParticipant.update).not.toHaveBeenCalled();
+    expect(db.conversationParticipant.create).not.toHaveBeenCalled();
+  });
+
+  it("allows adding an already-active participant with the same role", async () => {
+    db.conversationParticipant.findFirst
+      .mockResolvedValueOnce(makeParticipantRow({ role: "OWNER", userId: USER_1 }))
+      .mockResolvedValueOnce(makeParticipantRow({ id: "p-existing", role: "MEMBER", leftAt: null }));
+
+    const result = await addParticipant({
+      orgId: ORG_A,
+      conversationId: CONV_ID,
+      userId: USER_2,
+      role: "MEMBER",
+      addedBy: USER_1,
+    });
+
+    expect(result.role).toBe("MEMBER");
+    expect(db.conversationParticipant.update).not.toHaveBeenCalled();
+    expect(db.conversationParticipant.create).not.toHaveBeenCalled();
+  });
+
+  it("reactivates with new role when participant had previously left", async () => {
+    db.conversationParticipant.findFirst
+      .mockResolvedValueOnce(makeParticipantRow({ role: "OWNER", userId: USER_1 }))
+      .mockResolvedValueOnce(makeParticipantRow({ id: "p-left", role: "MEMBER", leftAt: new Date() }));
+
+    const result = await addParticipant({
+      orgId: ORG_A,
+      conversationId: CONV_ID,
+      userId: USER_2,
+      role: "ADMIN",
+      addedBy: USER_1,
+    });
+
+    expect(db.conversationParticipant.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "p-left" },
+        data: expect.objectContaining({ leftAt: null, role: "ADMIN" }),
+      }),
+    );
+    expect(result.role).toBe("ADMIN");
+  });
+});
+
+describe("lock route reason validation", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    db.conversation.findFirst.mockResolvedValue(
+      makeConversationRow({ visibility: "PUBLIC", archivedAt: null, lockedAt: null }),
+    );
+    db.conversation.update.mockResolvedValue(makeConversationRow());
+    db.conversationParticipant.findFirst.mockResolvedValue(
+      makeParticipantRow({ role: "OWNER", userId: USER_1 }),
+    );
+    db.messagingAuditEvent.create.mockResolvedValue({});
+  });
+
+  it("rejects lock reason over 100 characters", async () => {
+    const request = makeRequest(`http://localhost/api/messaging/conversations/${CONV_ID}/lock`, {
+      method: "PATCH",
+      body: JSON.stringify({ reason: "a".repeat(101) }),
+    });
+    const response = await patchLock(request, { params: Promise.resolve({ id: CONV_ID }) });
+    expect(response.status).toBe(422);
+  });
+
+  it("accepts lock reason at exactly 100 characters", async () => {
+    const request = makeRequest(`http://localhost/api/messaging/conversations/${CONV_ID}/lock`, {
+      method: "PATCH",
+      body: JSON.stringify({ reason: "a".repeat(100) }),
+    });
+    const response = await patchLock(request, { params: Promise.resolve({ id: CONV_ID }) });
+    expect(response.status).toBe(200);
+  });
+
+  it("treats whitespace-only reason as null", async () => {
+    const request = makeRequest(`http://localhost/api/messaging/conversations/${CONV_ID}/lock`, {
+      method: "PATCH",
+      body: JSON.stringify({ reason: "   " }),
+    });
+    const response = await patchLock(request, { params: Promise.resolve({ id: CONV_ID }) });
+    expect(response.status).toBe(200);
+  });
+
+  it("accepts empty body (no reason)", async () => {
+    const request = makeRequest(`http://localhost/api/messaging/conversations/${CONV_ID}/lock`, {
+      method: "PATCH",
+      body: JSON.stringify({}),
+    });
+    const response = await patchLock(request, { params: Promise.resolve({ id: CONV_ID }) });
+    expect(response.status).toBe(200);
   });
 });

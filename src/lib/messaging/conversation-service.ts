@@ -11,6 +11,7 @@ import { toConversationRecord, toParticipantRecord } from "./mappers";
 import { logMessagingAuditTx } from "./audit";
 import {
   assertConversationAction,
+  assertGovernanceAction,
 } from "./service-helpers";
 import type {
   CreateConversationInput,
@@ -32,6 +33,53 @@ function assertConversationExists(
   if (!row) {
     throw new Error(`${context}: conversation not found or access denied`);
   }
+}
+
+/**
+ * Choose the correct assertion helper based on whether admin override
+ * context is provided.  If actorOrgRole or isPlatformAdmin are present,
+ * use the governance-aware path; otherwise fall back to the standard
+ * conversation-role-only path.
+ */
+async function assertGovernanceOrConversationAction(
+  tx: Prisma.TransactionClient,
+  input: {
+    orgId: string;
+    conversationId: string;
+    actorId: string;
+    actorOrgRole?: string;
+    isPlatformAdmin?: boolean;
+  },
+  action: "ARCHIVE" | "UNARCHIVE" | "LOCK" | "UNLOCK",
+  context: string,
+): Promise<{
+  conversation: Prisma.ConversationGetPayload<Record<string, never>>;
+  participant: Prisma.ConversationParticipantGetPayload<Record<string, never>> | null;
+}> {
+  if (input.actorOrgRole || input.isPlatformAdmin) {
+    return assertGovernanceAction(
+      tx,
+      input.orgId,
+      input.conversationId,
+      input.actorId,
+      action,
+      {
+        participant: null, // filled inside assertGovernanceAction
+        orgRole: input.actorOrgRole ?? "member",
+        isPlatformAdmin: input.isPlatformAdmin ?? false,
+      },
+      context,
+    );
+  }
+
+  return assertConversationAction(
+    tx,
+    input.orgId,
+    input.conversationId,
+    input.actorId,
+    action,
+    context,
+  );
 }
 
 // ─── Queries ──────────────────────────────────────────────────────────────────
@@ -176,11 +224,15 @@ export async function archiveConversation(
   input: ArchiveConversationInput,
 ): Promise<ConversationRecord> {
   const result = await db.$transaction(async (tx) => {
-    const { conversation: existing } = await assertConversationAction(
+    const { conversation: existing } = await assertGovernanceOrConversationAction(
       tx,
-      input.orgId,
-      input.conversationId,
-      input.archivedBy,
+      {
+        orgId: input.orgId,
+        conversationId: input.conversationId,
+        actorId: input.archivedBy,
+        actorOrgRole: input.actorOrgRole,
+        isPlatformAdmin: input.isPlatformAdmin,
+      },
       "ARCHIVE",
       "archiveConversation",
     );
@@ -284,11 +336,15 @@ export async function unarchiveConversation(
   input: UnarchiveConversationInput,
 ): Promise<ConversationRecord> {
   const result = await db.$transaction(async (tx) => {
-    const { conversation: existing } = await assertConversationAction(
+    const { conversation: existing } = await assertGovernanceOrConversationAction(
       tx,
-      input.orgId,
-      input.conversationId,
-      input.unarchivedBy,
+      {
+        orgId: input.orgId,
+        conversationId: input.conversationId,
+        actorId: input.unarchivedBy,
+        actorOrgRole: input.actorOrgRole,
+        isPlatformAdmin: input.isPlatformAdmin,
+      },
       "UNARCHIVE",
       "unarchiveConversation",
     );
@@ -323,11 +379,15 @@ export async function lockConversation(
   input: LockConversationInput,
 ): Promise<ConversationRecord> {
   const result = await db.$transaction(async (tx) => {
-    const { conversation: existing } = await assertConversationAction(
+    const { conversation: existing } = await assertGovernanceOrConversationAction(
       tx,
-      input.orgId,
-      input.conversationId,
-      input.lockedBy,
+      {
+        orgId: input.orgId,
+        conversationId: input.conversationId,
+        actorId: input.lockedBy,
+        actorOrgRole: input.actorOrgRole,
+        isPlatformAdmin: input.isPlatformAdmin,
+      },
       "LOCK",
       "lockConversation",
     );
@@ -366,11 +426,15 @@ export async function unlockConversation(
   input: UnlockConversationInput,
 ): Promise<ConversationRecord> {
   const result = await db.$transaction(async (tx) => {
-    const { conversation: existing } = await assertConversationAction(
+    const { conversation: existing } = await assertGovernanceOrConversationAction(
       tx,
-      input.orgId,
-      input.conversationId,
-      input.unlockedBy,
+      {
+        orgId: input.orgId,
+        conversationId: input.conversationId,
+        actorId: input.unlockedBy,
+        actorOrgRole: input.actorOrgRole,
+        isPlatformAdmin: input.isPlatformAdmin,
+      },
       "UNLOCK",
       "unlockConversation",
     );

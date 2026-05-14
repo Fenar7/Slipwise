@@ -1164,6 +1164,14 @@ describe("Sprint 3.1 — Route-level access hardening", () => {
   });
 
   it("PATCH /api/messaging/conversations/:id/archive returns 403 for MEMBER", async () => {
+    mockedGetOrgContext.mockResolvedValue({
+      userId: USER_1,
+      orgId: ORG_A,
+      role: "member",
+      representedId: null,
+      proxyGrantId: null,
+      proxyScope: [],
+    });
     db.conversation.findFirst.mockResolvedValue(makeConversationRow());
     db.conversationParticipant.findFirst.mockResolvedValue(makeParticipantRow({ role: "MEMBER" }));
 
