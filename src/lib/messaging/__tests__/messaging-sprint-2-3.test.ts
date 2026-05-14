@@ -720,10 +720,12 @@ describe("Sprint 2.3 — API routes", () => {
   describe("PATCH /api/messaging/conversations/:id/archive", () => {
     it("archives a conversation", async () => {
       const mockedConversationFindFirst = vi.mocked(db.conversation.findFirst);
+      const mockedParticipantFindFirst = vi.mocked(db.conversationParticipant.findFirst);
       const mockedConversationUpdate = vi.mocked(db.conversation.update);
       const mockedAuditCreate = vi.mocked(db.messagingAuditEvent.create);
 
       mockedConversationFindFirst.mockResolvedValue(makeConversationRow());
+      mockedParticipantFindFirst.mockResolvedValue(makeParticipantRow({ role: "OWNER" }));
       mockedConversationUpdate.mockResolvedValue({
         ...makeConversationRow(),
         archivedAt: new Date("2026-01-10T00:00:00Z"),

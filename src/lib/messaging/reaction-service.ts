@@ -7,7 +7,9 @@ import { reactionOrgSafeWhere, messageOrgSafeWhere } from "./org-safe-helpers";
 import { toReactionRecord } from "./mappers";
 import { logMessagingAuditTx } from "./audit";
 import type { AddReactionInput, RemoveReactionInput } from "./service-contracts";
-import { assertActiveParticipant } from "./service-helpers";
+import {
+  assertConversationAction,
+} from "./service-helpers";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -52,11 +54,12 @@ export async function addReaction(
 ): Promise<MessageReactionRecord> {
   const result = await db.$transaction(async (tx) => {
     const message = await assertMessageInOrg(tx, input.orgId, input.messageId);
-    await assertActiveParticipant(
+    await assertConversationAction(
       tx,
       input.orgId,
       message.conversationId,
       input.userId,
+      "ADD_REACTION",
       "addReaction",
     );
 
@@ -106,11 +109,12 @@ export async function removeReaction(
 ): Promise<MessageReactionRecord | null> {
   const result = await db.$transaction(async (tx) => {
     const message = await assertMessageInOrg(tx, input.orgId, input.messageId);
-    await assertActiveParticipant(
+    await assertConversationAction(
       tx,
       input.orgId,
       message.conversationId,
       input.userId,
+      "REMOVE_REACTION",
       "removeReaction",
     );
 

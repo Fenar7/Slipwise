@@ -7,7 +7,7 @@ import {
   messageOrgSafeWhere,
   messageListOrgSafeWhere,
 } from "./org-safe-helpers";
-import { toConversationRecord, toMessageRecord } from "./mappers";
+import { toMessageRecord } from "./mappers";
 import { logMessagingAuditTx } from "./audit";
 import type {
   SendMessageInput,
@@ -16,9 +16,7 @@ import type {
   MessageAttachmentDescriptor,
 } from "./service-contracts";
 import {
-  assertActiveParticipant,
-  assertConversationAccessible,
-  getConversationInOrg,
+  assertConversationAction,
 } from "./service-helpers";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────────
@@ -112,18 +110,12 @@ export async function sendMessage(
   input: SendMessageInput,
 ): Promise<ConversationMessageRecord> {
   const result = await db.$transaction(async (tx) => {
-    const conversation = await getConversationInOrg(
-      tx,
-      input.orgId,
-      input.conversationId,
-      "sendMessage",
-    );
-    assertConversationAccessible(toConversationRecord(conversation), "sendMessage");
-    await assertActiveParticipant(
+    await assertConversationAction(
       tx,
       input.orgId,
       input.conversationId,
       input.authorId,
+      "SEND_MESSAGE",
       "sendMessage",
     );
 
@@ -262,13 +254,18 @@ export async function editMessage(
 ): Promise<ConversationMessageRecord> {
   const result = await db.$transaction(async (tx) => {
     const existing = await assertMessageInOrg(tx, input.orgId, input.messageId);
-    await assertActiveParticipant(
+    await assertConversationAction(
       tx,
       input.orgId,
       existing.conversationId,
       input.actorId,
+      "EDIT_MESSAGE",
       "editMessage",
     );
+
+    if (existing.authorId !== input.actorId) {
+      throw new Error("editMessage: can only edit your own messages");
+    }
 
     if (existing.status === "DELETED") {
       throw new Error("editMessage: cannot edit a deleted message");
@@ -306,13 +303,18 @@ export async function softDeleteMessage(
 ): Promise<ConversationMessageRecord> {
   const result = await db.$transaction(async (tx) => {
     const existing = await assertMessageInOrg(tx, input.orgId, input.messageId);
-    await assertActiveParticipant(
+    await assertConversationAction(
       tx,
       input.orgId,
       existing.conversationId,
       input.actorId,
+      "DELETE_MESSAGE",
       "softDeleteMessage",
     );
+
+    if (existing.authorId !== input.actorId) {
+      throw new Error("softDeleteMessage: can only delete your own messages");
+    }
 
     const updated = await tx.conversationMessage.update({
       where: { id: input.messageId, orgId: input.orgId },

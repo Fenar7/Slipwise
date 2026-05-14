@@ -5,6 +5,7 @@ import {
   messagingApiResponse,
   handleMessagingApiError,
   parsePagination,
+  MessagingAccessError,
 } from "../../_utils";
 
 export const runtime = "nodejs";
@@ -28,9 +29,7 @@ export async function GET(
     });
 
     if (!detail) {
-      return handleMessagingApiError(
-        new Error("Conversation not found or access denied"),
-      );
+      throw new MessagingAccessError("Access denied.");
     }
 
     return messagingApiResponse(detail);

@@ -7,7 +7,7 @@ import {
   threadOrgSafeWhere,
   messageOrgSafeWhere,
 } from "./org-safe-helpers";
-import { toConversationRecord, toThreadRecord, toMessageRecord } from "./mappers";
+import { toThreadRecord, toMessageRecord } from "./mappers";
 import { logMessagingAuditTx } from "./audit";
 import type {
   CreateThreadInput,
@@ -15,9 +15,7 @@ import type {
   ResolveThreadInput,
 } from "./service-contracts";
 import {
-  assertActiveParticipant,
-  assertConversationAccessible,
-  getConversationInOrg,
+  assertConversationAction,
 } from "./service-helpers";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────────
@@ -92,10 +90,24 @@ export async function listThreadReplies(
   threadId: string,
   userId: string,
 ): Promise<ConversationMessageRecord[]> {
+  // Verify the thread exists and belongs to the claimed conversation.
+  // This prevents cross-conversation leakage when a user knows a foreign thread id.
+  const thread = await db.conversationThread.findFirst({
+    where: {
+      id: threadId,
+      orgId,
+      conversationId,
+    },
+  });
+  if (!thread) {
+    throw new Error("listThreadReplies: thread not found or does not belong to conversation");
+  }
+
+  // Membership check must use the thread's actual conversation (defense in depth).
   const participant = await db.conversationParticipant.findFirst({
     where: {
       orgId,
-      conversationId,
+      conversationId: thread.conversationId,
       userId,
       leftAt: null,
     },
@@ -124,18 +136,12 @@ export async function createThread(
   input: CreateThreadInput,
 ): Promise<ConversationThreadRecord> {
   const result = await db.$transaction(async (tx) => {
-    const conversation = await getConversationInOrg(
-      tx,
-      input.orgId,
-      input.conversationId,
-      "createThread",
-    );
-    assertConversationAccessible(toConversationRecord(conversation), "createThread");
-    await assertActiveParticipant(
+    await assertConversationAction(
       tx,
       input.orgId,
       input.conversationId,
       input.createdBy,
+      "CREATE_THREAD",
       "createThread",
     );
 
@@ -183,18 +189,12 @@ export async function replyToThread(
 ): Promise<ConversationMessageRecord> {
   const result = await db.$transaction(async (tx) => {
     const thread = await assertThreadInOrg(tx, input.orgId, input.threadId);
-    const conversation = await getConversationInOrg(
-      tx,
-      input.orgId,
-      input.conversationId,
-      "replyToThread",
-    );
-    assertConversationAccessible(toConversationRecord(conversation), "replyToThread");
-    await assertActiveParticipant(
+    await assertConversationAction(
       tx,
       input.orgId,
       input.conversationId,
       input.authorId,
+      "REPLY_TO_THREAD",
       "replyToThread",
     );
 
@@ -276,18 +276,12 @@ export async function resolveThread(
 ): Promise<ConversationThreadRecord> {
   const result = await db.$transaction(async (tx) => {
     const thread = await assertThreadInOrg(tx, input.orgId, input.threadId);
-    const conversation = await getConversationInOrg(
-      tx,
-      input.orgId,
-      thread.conversationId,
-      "resolveThread",
-    );
-    assertConversationAccessible(toConversationRecord(conversation), "resolveThread");
-    await assertActiveParticipant(
+    await assertConversationAction(
       tx,
       input.orgId,
       thread.conversationId,
       input.resolvedBy,
+      "RESOLVE_THREAD",
       "resolveThread",
     );
 

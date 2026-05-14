@@ -80,6 +80,18 @@ export {
   retentionPolicyIsIndefinite,
 } from "./domain-types";
 
+// Authorization layer (Sprint 3.1)
+export type {
+  ConversationAction,
+  AuthorizationResult,
+} from "./authorization";
+export {
+  roleCanGovern,
+  evaluateConversationAccess,
+  requireConversationAccess,
+  canReadConversation,
+} from "./authorization";
+
 // Service contracts
 export type {
   OrgScopedQuery,
@@ -177,6 +189,15 @@ export {
   auditEventOrgSafeWhere,
   retentionPolicyOrgSafeWhere,
 } from "./org-safe-helpers";
+
+// Sprint 3.1: Service helpers (membership, governance assertions)
+export {
+  getConversationInOrg,
+  assertActiveParticipant,
+  assertConversationAccessible,
+  assertNotDMConversation,
+  assertGovernanceParticipant,
+} from "./service-helpers";
 
 // ─── Sprint 2.2: Service implementations ─────────────────────────────────────────
 
