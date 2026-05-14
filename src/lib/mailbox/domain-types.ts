@@ -166,6 +166,7 @@ export interface MailboxThreadRecord {
   lastMessageAt: Date;
   unreadCount: number;
   status: MailboxThreadStatus;
+  preArchiveStatus: MailboxThreadStatus | null;
   assigneeId: string | null;
   isFlagged: boolean;
   primaryLinkSummary: Record<string, unknown> | null;

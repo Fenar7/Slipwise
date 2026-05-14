@@ -5922,6 +5922,10 @@ enum MailboxAuditAction {
   THREAD_ASSIGNED
   THREAD_UNASSIGNED
   THREAD_STATUS_CHANGED
+  THREAD_READ
+  THREAD_UNREAD
+  THREAD_FLAGGED
+  THREAD_UNFLAGGED
   THREAD_LINKED
   THREAD_UNLINKED
   MESSAGE_SENT
@@ -6183,6 +6187,8 @@ model MailboxThread {
   lastMessageAt       DateTime
   unreadCount         Int                 @default(0)
   status              MailboxThreadStatus @default(OPEN)
+  /// Status before the thread was archived. Used to restore correct state on unarchive. Sprint 4.3.
+  preArchiveStatus    MailboxThreadStatus?
   assigneeId          String?             @db.Uuid
   isFlagged           Boolean             @default(false)
   primaryLinkSummary  Json?

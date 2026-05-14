@@ -102,7 +102,7 @@ export function mapThreadToRowData(
     mailboxLabel,
     mailboxColor,
     assignee,
-    status: thread.status.toLowerCase() as "open" | "pending" | "closed",
+    status: thread.status.toLowerCase() as "open" | "pending" | "closed" | "archived",
   };
 }
 
@@ -200,7 +200,8 @@ export function mapThreadDetailToUI(
     threadId: detail.id,
     mailboxConnectionId: detail.mailboxConnectionId,
     subject: detail.subject,
-    status: detail.status.toLowerCase() as "open" | "pending" | "closed",
+    status: detail.status.toLowerCase() as "open" | "pending" | "closed" | "archived",
+    isFlagged: detail.isFlagged,
     assignee,
     mailboxLabel,
     mailboxColor,

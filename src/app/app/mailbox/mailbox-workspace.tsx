@@ -23,6 +23,8 @@ import { useMailboxConnections } from "./use-mailbox-connections";
 import { useMailboxThreads } from "./use-mailbox-threads";
 import { mapThreadToRowData, deriveMailboxColor, mapThreadDetailToUI } from "./thread-data-helpers";
 import { useMailboxThreadDetail } from "./use-mailbox-thread-detail";
+import { useThreadAction } from "./use-thread-action";
+import type { ThreadAction } from "./use-thread-action";
 import { ThreadNotFoundEmpty } from "./mailbox-empty-states";
 import type { ThreadRowData } from "./mailbox-thread-list";
 import type {
@@ -279,6 +281,7 @@ export function MailboxWorkspace() {
     threads: rawThreads,
     totalCount: apiTotalCount,
     isLoading: threadsLoading,
+    refetch: refetchThreads,
   } = useMailboxThreads(threadQueryParams);
 
   const connectionMap = useMemo(() => {
@@ -314,7 +317,37 @@ export function MailboxWorkspace() {
     detail: rawDetail,
     isLoading: detailLoading,
     isNotFound: detailNotFound,
+    refetch: refetchDetail,
   } = useMailboxThreadDetail(selectedThreadId);
+
+  const handleActionSuccess = useCallback(
+    (_threadId: string, _action: ThreadAction) => {
+      // Refetch both list and detail to ensure consistency after mutation
+      refetchThreads();
+      if (selectedThreadId) {
+        refetchDetail();
+      }
+    },
+    [refetchThreads, refetchDetail, selectedThreadId],
+  );
+
+  const { isLoading: isActionLoading, performAction } = useThreadAction(handleActionSuccess);
+
+  const handleThreadAction = useCallback(
+    (threadId: string, action: ThreadAction) => {
+      void performAction(threadId, action);
+    },
+    [performAction],
+  );
+
+  const handleReadingPaneAction = useCallback(
+    (action: ThreadAction) => {
+      if (selectedThreadId) {
+        void performAction(selectedThreadId, action);
+      }
+    },
+    [performAction, selectedThreadId],
+  );
 
   const selectedDetail = useMemo(() => {
     if (!rawDetail) return null;
@@ -603,6 +636,8 @@ export function MailboxWorkspace() {
               reconnectBanner={reconnectBanner}
               emptyState={threadListEmptyState ?? undefined}
               isLoading={threadsLoading}
+              isActionLoading={isActionLoading}
+              onThreadAction={handleThreadAction}
             />
           </div>
 
@@ -629,6 +664,8 @@ export function MailboxWorkspace() {
                 onExpandReply={expandComposer}
                 onPatchComposer={patchComposer}
                 onOpenContext={() => setMobilePanel("context")}
+                isActionLoading={isActionLoading}
+                onThreadAction={handleReadingPaneAction}
               />
             ) : (
               <MailboxReadingPaneEmpty />

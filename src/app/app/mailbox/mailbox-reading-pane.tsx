@@ -208,13 +208,20 @@ const STATUS_STYLES: Record<string, string> = {
   archived: "bg-gray-100 text-gray-400 border-gray-200",
 };
 
+import type { ThreadAction } from "./use-thread-action";
+
 function ThreadHeader({
   detail,
   onOpenContext,
+  isActionLoading,
+  onAction,
 }: {
   detail: MailboxThreadDetail;
   onOpenContext?: () => void;
+  isActionLoading: boolean;
+  onAction: (action: ThreadAction) => void;
 }) {
+  const isArchived = detail.status === "archived";
   return (
     <div
       className="flex shrink-0 flex-col gap-2 border-b bg-white px-5 py-3"
@@ -237,30 +244,41 @@ function ThreadHeader({
             </button>
           )}
           <button
-            className="flex h-7 w-7 items-center justify-center rounded-lg text-[#64748B] transition-colors hover:bg-[#F1F3F7] hover:text-[#0F172A]"
-            title="Archive thread"
-            aria-label="Archive thread"
+            className="flex h-7 w-7 items-center justify-center rounded-lg text-[#64748B] transition-colors hover:bg-[#F1F3F7] hover:text-[#0F172A] disabled:opacity-50"
+            title={isArchived ? "Unarchive thread" : "Archive thread"}
+            aria-label={isArchived ? "Unarchive thread" : "Archive thread"}
+            disabled={isActionLoading}
+            onClick={() => onAction(isArchived ? "unarchive" : "archive")}
           >
             <Archive className="h-4 w-4" />
           </button>
           <button
-            className="flex h-7 w-7 items-center justify-center rounded-lg text-[#64748B] transition-colors hover:bg-[#F1F3F7] hover:text-[#0F172A]"
-            title="Flag thread"
-            aria-label="Flag thread"
+            className={cn(
+              "flex h-7 w-7 items-center justify-center rounded-lg transition-colors disabled:opacity-50",
+              detail.isFlagged
+                ? "text-[#DC2626] hover:bg-red-50"
+                : "text-[#64748B] hover:bg-[#F1F3F7] hover:text-[#0F172A]"
+            )}
+            title={detail.isFlagged ? "Unflag thread" : "Flag thread"}
+            aria-label={detail.isFlagged ? "Unflag thread" : "Flag thread"}
+            disabled={isActionLoading}
+            onClick={() => onAction(detail.isFlagged ? "unflag" : "flag")}
           >
             <Flag className="h-4 w-4" />
           </button>
           <button
-            className="flex h-7 w-7 items-center justify-center rounded-lg text-[#64748B] transition-colors hover:bg-red-50 hover:text-[#DC2626]"
+            className="flex h-7 w-7 items-center justify-center rounded-lg text-[#64748B] transition-colors hover:bg-red-50 hover:text-[#DC2626] disabled:opacity-50"
             title="Delete thread"
             aria-label="Delete thread"
+            disabled={isActionLoading}
           >
             <Trash2 className="h-4 w-4" />
           </button>
           <button
-            className="flex h-7 w-7 items-center justify-center rounded-lg text-[#64748B] transition-colors hover:bg-[#F1F3F7] hover:text-[#0F172A]"
+            className="flex h-7 w-7 items-center justify-center rounded-lg text-[#64748B] transition-colors hover:bg-[#F1F3F7] hover:text-[#0F172A] disabled:opacity-50"
             title="More thread actions"
             aria-label="More thread actions"
+            disabled={isActionLoading}
           >
             <MoreHorizontal className="h-4 w-4" />
           </button>
@@ -326,6 +344,8 @@ interface MailboxReadingPaneProps {
   onExpandReply: () => void;
   onPatchComposer: (patch: Partial<MailboxComposerState>) => void;
   onOpenContext?: () => void;
+  isActionLoading: boolean;
+  onThreadAction: (action: ThreadAction) => void;
 }
 
 export function MailboxReadingPane({
@@ -336,6 +356,8 @@ export function MailboxReadingPane({
   onExpandReply,
   onPatchComposer,
   onOpenContext,
+  isActionLoading,
+  onThreadAction,
 }: MailboxReadingPaneProps) {
   const lastMessage = detail.messages[detail.messages.length - 1];
 
@@ -356,7 +378,12 @@ export function MailboxReadingPane({
       aria-label={`Thread: ${detail.subject}`}
     >
       {/* Thread header */}
-      <ThreadHeader detail={detail} onOpenContext={onOpenContext} />
+      <ThreadHeader
+        detail={detail}
+        onOpenContext={onOpenContext}
+        isActionLoading={isActionLoading}
+        onAction={onThreadAction}
+      />
 
       {/* Message stack + inline reply */}
       <div className="flex-1 overflow-y-auto px-5 py-4">
