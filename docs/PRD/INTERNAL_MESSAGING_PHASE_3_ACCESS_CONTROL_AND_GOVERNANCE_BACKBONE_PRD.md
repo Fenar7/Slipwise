@@ -455,7 +455,7 @@ The policy model must define expected behavior for:
 ### 11.4 Governance-sensitive entity relationships
 
 Phase 3 policy must treat these as governed entities even if their full product workflows arrive later:
- 
+
  - messages
  - threads
  - reactions
