@@ -7,7 +7,9 @@ import { toParticipantRecord, toConversationRecord } from "./mappers";
 import {
   roleCanGovern,
   requireConversationAccess,
+  requireGovernanceAccess,
   type ConversationAction,
+  type GovernanceActor,
 } from "./authorization";
 
 export async function getConversationInOrg(
@@ -126,4 +128,46 @@ export async function assertGovernanceParticipant(
   }
 
   return participant;
+}
+
+/**
+ * Fetch the conversation and active participant, then evaluate governance
+ * access including org admin / platform admin override.
+ *
+ * Use this for operational routes that may allow admin intervention.
+ */
+export async function assertGovernanceAction(
+  tx: Prisma.TransactionClient,
+  orgId: string,
+  conversationId: string,
+  userId: string,
+  action: ConversationAction,
+  actor: GovernanceActor,
+  context: string,
+): Promise<{
+  conversation: Prisma.ConversationGetPayload<Record<string, never>>;
+  participant: Prisma.ConversationParticipantGetPayload<Record<string, never>> | null;
+}> {
+  const conversation = await getConversationInOrg(tx, orgId, conversationId, context);
+  const participant = await tx.conversationParticipant.findFirst({
+    where: {
+      orgId,
+      conversationId,
+      userId,
+      leftAt: null,
+    },
+  });
+
+  requireGovernanceAccess(
+    toConversationRecord(conversation),
+    {
+      participant: participant ? toParticipantRecord(participant) : null,
+      orgRole: actor.orgRole,
+      isPlatformAdmin: actor.isPlatformAdmin,
+    },
+    action,
+    context,
+  );
+
+  return { conversation, participant };
 }

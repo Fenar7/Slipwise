@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { archiveConversation } from "@/lib/messaging";
+import { unarchiveConversation } from "@/lib/messaging";
 import { isPlatformAdminUser } from "@/lib/auth/require-org";
 import {
   requireMessagingApiContext,
@@ -10,8 +10,8 @@ import {
 export const runtime = "nodejs";
 
 /**
- * PATCH /api/messaging/conversations/:id/archive
- * Archive a conversation (soft-delete).
+ * PATCH /api/messaging/conversations/:id/unarchive
+ * Unarchive a conversation (restore from soft-delete).
  */
 export async function PATCH(
   _request: NextRequest,
@@ -21,10 +21,10 @@ export async function PATCH(
     const { orgId, userId, role } = await requireMessagingApiContext();
     const { id } = await params;
 
-    const conversation = await archiveConversation({
+    const conversation = await unarchiveConversation({
       orgId,
       conversationId: id,
-      archivedBy: userId,
+      unarchivedBy: userId,
       actorOrgRole: role,
       isPlatformAdmin: isPlatformAdminUser(userId),
     });

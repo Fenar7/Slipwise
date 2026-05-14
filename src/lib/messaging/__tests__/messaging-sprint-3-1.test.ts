@@ -1113,7 +1113,8 @@ describe("Sprint 3.1 — Route-level access hardening", () => {
     });
   });
 
-  it("GET /api/messaging/conversations/:id returns 403 for non-participant", async () => {
+  it("GET /api/messaging/conversations/:id returns 404 for non-participant", async () => {
+    db.conversationParticipant.findFirst.mockReset();
     db.conversationParticipant.findFirst.mockResolvedValue(null);
 
     const request = makeRequest("http://localhost/api/messaging/conversations/conv-001");
@@ -1121,49 +1122,60 @@ describe("Sprint 3.1 — Route-level access hardening", () => {
       params: Promise.resolve({ id: CONV_ID }),
     });
 
-    expect(response.status).toBe(403);
+    expect(response.status).toBe(404);
     const body = await response.json();
     expect(body.success).toBe(false);
-    expect(body.error.code).toBe("FORBIDDEN");
+    expect(body.error.code).toBe("NOT_FOUND");
   });
 
-  it("GET /api/messaging/conversations/:id/messages returns 403 for non-participant", async () => {
+  it("GET /api/messaging/conversations/:id/messages returns 404 for non-participant", async () => {
+    db.conversationParticipant.findFirst.mockReset();
     db.conversationParticipant.findFirst.mockResolvedValue(null);
 
     const request = makeRequest("http://localhost/api/messaging/conversations/conv-001/messages");
     const response = await getMessages(request, { params: Promise.resolve({ id: CONV_ID }) });
 
-    expect(response.status).toBe(403);
+    expect(response.status).toBe(404);
     const body = await response.json();
     expect(body.success).toBe(false);
-    expect(body.error.code).toBe("FORBIDDEN");
+    expect(body.error.code).toBe("NOT_FOUND");
   });
 
-  it("GET /api/messaging/conversations/:id/participants returns 403 for non-participant", async () => {
+  it("GET /api/messaging/conversations/:id/participants returns 404 for non-participant", async () => {
+    db.conversationParticipant.findFirst.mockReset();
     db.conversationParticipant.findFirst.mockResolvedValue(null);
 
     const request = makeRequest("http://localhost/api/messaging/conversations/conv-001/participants");
     const response = await getParticipants(request, { params: Promise.resolve({ id: CONV_ID }) });
 
-    expect(response.status).toBe(403);
+    expect(response.status).toBe(404);
     const body = await response.json();
     expect(body.success).toBe(false);
-    expect(body.error.code).toBe("FORBIDDEN");
+    expect(body.error.code).toBe("NOT_FOUND");
   });
 
-  it("GET /api/messaging/conversations/:id/threads returns 403 for non-participant", async () => {
+  it("GET /api/messaging/conversations/:id/threads returns 404 for non-participant", async () => {
+    db.conversationParticipant.findFirst.mockReset();
     db.conversationParticipant.findFirst.mockResolvedValue(null);
 
     const request = makeRequest("http://localhost/api/messaging/conversations/conv-001/threads");
     const response = await getThreads(request, { params: Promise.resolve({ id: CONV_ID }) });
 
-    expect(response.status).toBe(403);
+    expect(response.status).toBe(404);
     const body = await response.json();
     expect(body.success).toBe(false);
-    expect(body.error.code).toBe("FORBIDDEN");
+    expect(body.error.code).toBe("NOT_FOUND");
   });
 
   it("PATCH /api/messaging/conversations/:id/archive returns 403 for MEMBER", async () => {
+    mockedGetOrgContext.mockResolvedValue({
+      userId: USER_1,
+      orgId: ORG_A,
+      role: "member",
+      representedId: null,
+      proxyGrantId: null,
+      proxyScope: [],
+    });
     db.conversation.findFirst.mockResolvedValue(makeConversationRow());
     db.conversationParticipant.findFirst.mockResolvedValue(makeParticipantRow({ role: "MEMBER" }));
 
@@ -1179,6 +1191,7 @@ describe("Sprint 3.1 — Route-level access hardening", () => {
   });
 
   it("route errors do not leak conversation existence details", async () => {
+    db.conversationParticipant.findFirst.mockReset();
     db.conversationParticipant.findFirst.mockResolvedValue(null);
 
     const request = makeRequest("http://localhost/api/messaging/conversations/conv-001");
@@ -1186,9 +1199,9 @@ describe("Sprint 3.1 — Route-level access hardening", () => {
       params: Promise.resolve({ id: CONV_ID }),
     });
 
-    expect(response.status).toBe(403);
+    expect(response.status).toBe(404);
     const body = await response.json();
-    expect(body.error.code).toBe("FORBIDDEN");
-    expect(body.error.message).toBe("Access denied.");
+    expect(body.error.code).toBe("NOT_FOUND");
+    expect(body.error.message).toBe("Conversation not found or access denied.");
   });
 });

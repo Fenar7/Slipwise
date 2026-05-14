@@ -64,6 +64,27 @@ export function messagingApiError(
   );
 }
 
+/**
+ * Wrap a read-path promise so that membership access errors become
+ * not-found responses. This prevents existence leakage on reads.
+ */
+export async function safeRead<T>(promise: Promise<T>): Promise<T> {
+  try {
+    return await promise;
+  } catch (error) {
+    if (error instanceof Error) {
+      const msg = error.message;
+      if (
+        msg.includes("active participant access required") ||
+        msg.includes("thread not found or does not belong to conversation")
+      ) {
+        throw new MessagingNotFoundError("Conversation not found or access denied.");
+      }
+    }
+    throw error;
+  }
+}
+
 export function handleMessagingApiError(error: unknown): NextResponse {
   if (error instanceof MessagingApiError) {
     return messagingApiError(error.code, error.message, error.status);
@@ -90,7 +111,6 @@ export function handleMessagingApiError(error: unknown): NextResponse {
     // Fallback substring checks for errors thrown by services that do not yet use
     // the structured error classes. These should migrate over time.
     if (
-      msg.includes("active participant access required") ||
       msg.includes("governance action requires") ||
       msg.includes("conversation is archived") ||
       msg.includes("conversation is locked") ||

@@ -86,6 +86,42 @@ export interface ArchiveConversationInput {
   orgId: string;
   conversationId: string;
   archivedBy: string;
+  /** Org-level role for admin override evaluation. */
+  actorOrgRole?: string;
+  /** Platform admin status for override evaluation. */
+  isPlatformAdmin?: boolean;
+}
+
+export interface UnarchiveConversationInput {
+  orgId: string;
+  conversationId: string;
+  unarchivedBy: string;
+  /** Org-level role for admin override evaluation. */
+  actorOrgRole?: string;
+  /** Platform admin status for override evaluation. */
+  isPlatformAdmin?: boolean;
+}
+
+export interface LockConversationInput {
+  orgId: string;
+  conversationId: string;
+  lockedBy: string;
+  /** Optional reason category. Must not contain sensitive freeform text. */
+  reason?: string | null;
+  /** Org-level role for admin override evaluation. */
+  actorOrgRole?: string;
+  /** Platform admin status for override evaluation. */
+  isPlatformAdmin?: boolean;
+}
+
+export interface UnlockConversationInput {
+  orgId: string;
+  conversationId: string;
+  unlockedBy: string;
+  /** Org-level role for admin override evaluation. */
+  actorOrgRole?: string;
+  /** Platform admin status for override evaluation. */
+  isPlatformAdmin?: boolean;
 }
 
 export interface RenameConversationInput {
@@ -117,6 +153,10 @@ export interface RemoveParticipantInput {
   conversationId: string;
   userId: string;
   removedBy: string;
+  /** Org-level role for admin override evaluation. */
+  actorOrgRole?: string;
+  /** Platform admin status for override evaluation. */
+  isPlatformAdmin?: boolean;
 }
 
 export interface UpdateParticipantRoleInput {

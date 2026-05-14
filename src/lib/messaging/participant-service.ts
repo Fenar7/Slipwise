@@ -10,6 +10,7 @@ import { toParticipantRecord } from "./mappers";
 import { logMessagingAuditTx } from "./audit";
 import {
   assertConversationAction,
+  assertGovernanceAction,
 } from "./service-helpers";
 import type {
   AddParticipantInput,
@@ -113,6 +114,7 @@ export async function addParticipant(
 
     if (existing) {
       if (existing.leftAt !== null) {
+        // Reactivate previously-removed participant.
         participant = await tx.conversationParticipant.update({
           where: { id: existing.id },
           data: {
@@ -122,15 +124,14 @@ export async function addParticipant(
           },
         });
       } else {
-        // Already active: just update role if different
+        // Already active: do NOT silently change role.
+        // Role changes must go through updateParticipantRole for invariant enforcement.
         if (existing.role !== input.role) {
-          participant = await tx.conversationParticipant.update({
-            where: { id: existing.id },
-            data: { role: input.role },
-          });
-        } else {
-          participant = existing;
+          throw new Error(
+            "addParticipant: participant already active with different role; use updateParticipantRole instead",
+          );
         }
+        participant = existing;
       }
     } else {
       participant = await tx.conversationParticipant.create({
@@ -164,14 +165,30 @@ export async function removeParticipant(
   input: RemoveParticipantInput,
 ): Promise<ConversationParticipantRecord> {
   const result = await db.$transaction(async (tx) => {
-    await assertConversationAction(
-      tx,
-      input.orgId,
-      input.conversationId,
-      input.removedBy,
-      "REMOVE_PARTICIPANT",
-      "removeParticipant",
-    );
+    if (input.actorOrgRole || input.isPlatformAdmin) {
+      await assertGovernanceAction(
+        tx,
+        input.orgId,
+        input.conversationId,
+        input.removedBy,
+        "REMOVE_PARTICIPANT",
+        {
+          participant: null,
+          orgRole: input.actorOrgRole ?? "member",
+          isPlatformAdmin: input.isPlatformAdmin ?? false,
+        },
+        "removeParticipant",
+      );
+    } else {
+      await assertConversationAction(
+        tx,
+        input.orgId,
+        input.conversationId,
+        input.removedBy,
+        "REMOVE_PARTICIPANT",
+        "removeParticipant",
+      );
+    }
 
     const existing = await tx.conversationParticipant.findFirst({
       where: {

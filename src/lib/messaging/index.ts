@@ -80,16 +80,20 @@ export {
   retentionPolicyIsIndefinite,
 } from "./domain-types";
 
-// Authorization layer (Sprint 3.1)
+// Authorization layer (Sprint 3.1 + 3.2)
 export type {
   ConversationAction,
   AuthorizationResult,
+  GovernanceActor,
 } from "./authorization";
 export {
   roleCanGovern,
   evaluateConversationAccess,
+  evaluateGovernanceAccess,
   requireConversationAccess,
+  requireGovernanceAccess,
   canReadConversation,
+  governanceMatrix,
 } from "./authorization";
 
 // Service contracts
@@ -99,6 +103,9 @@ export type {
   CreateConversationInput,
   CreateConversationResult,
   ArchiveConversationInput,
+  UnarchiveConversationInput,
+  LockConversationInput,
+  UnlockConversationInput,
   RenameConversationInput,
   ChangeConversationVisibilityInput,
   AddParticipantInput,
@@ -190,13 +197,15 @@ export {
   retentionPolicyOrgSafeWhere,
 } from "./org-safe-helpers";
 
-// Sprint 3.1: Service helpers (membership, governance assertions)
+// Sprint 3.1–3.2: Service helpers (membership, governance assertions)
 export {
   getConversationInOrg,
   assertActiveParticipant,
   assertConversationAccessible,
   assertNotDMConversation,
+  assertConversationAction,
   assertGovernanceParticipant,
+  assertGovernanceAction,
 } from "./service-helpers";
 
 // ─── Sprint 2.2: Service implementations ─────────────────────────────────────────
@@ -207,8 +216,11 @@ export {
   listConversationsForUser,
   createConversation,
   archiveConversation,
+  unarchiveConversation,
   renameConversation,
   changeConversationVisibility,
+  lockConversation,
+  unlockConversation,
 } from "./conversation-service";
 
 // Participant service
