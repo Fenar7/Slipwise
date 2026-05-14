@@ -1,6 +1,6 @@
 "use client";
 
-import { X, SlidersHorizontal, Mailbox, UserCircle2, CircleDot, Link2 } from "lucide-react";
+import { X, SlidersHorizontal, Mailbox, UserCircle2, CircleDot } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ActiveFilter, ActiveFilterState, MailboxConnection } from "./types";
 
@@ -238,24 +238,6 @@ export function MailboxFilterPanel({
             />
           </Section>
 
-          <Section icon={Link2} label="Link state">
-            <FilterOption
-              label="Linked"
-              active={hasDraftFilter(draftState, "linked", "true")}
-              testId="filter-option-linked"
-              onClick={() =>
-                onToggleDraftFilter({ field: "linked", value: "true", label: "Linked" })
-              }
-            />
-            <FilterOption
-              label="Unlinked"
-              active={hasDraftFilter(draftState, "linked", "false")}
-              testId="filter-option-unlinked"
-              onClick={() =>
-                onToggleDraftFilter({ field: "linked", value: "false", label: "Unlinked" })
-              }
-            />
-          </Section>
         </div>
 
         <div className="flex items-center justify-between gap-3 border-t px-4 py-3" style={{ borderColor: "#E2E5EA" }}>

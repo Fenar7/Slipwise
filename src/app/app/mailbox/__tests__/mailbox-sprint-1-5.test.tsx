@@ -104,12 +104,6 @@ describe("MOCK_LINKED_CONTEXT integrity", () => {
 });
 
 describe("SMART_VIEW_DEFS integrity", () => {
-  it("includes linked and unlinked views", () => {
-    const ids = SMART_VIEW_DEFS.map((v) => v.id);
-    expect(ids).toContain("linked");
-    expect(ids).toContain("unlinked");
-  });
-
   it("every view has a href and description", () => {
     for (const view of SMART_VIEW_DEFS) {
       expect(view.href).toBeTruthy();
@@ -308,9 +302,10 @@ describe("FilterChipsBar", () => {
     );
     expect(screen.getByTestId("filter-chip-unread-true")).toBeInTheDocument();
     expect(screen.getByTestId("filter-chip-assignee-me")).toBeInTheDocument();
-    expect(screen.getByTestId("filter-chip-linked-true")).toBeInTheDocument();
-    expect(screen.getByTestId("filter-chip-linked-false")).toBeInTheDocument();
     expect(screen.getByTestId("filter-chip-flagged-true")).toBeInTheDocument();
+    // Sprint 4.4: linked/unlinked chips removed from live UI (mock-only filters)
+    expect(screen.queryByTestId("filter-chip-linked-true")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("filter-chip-linked-false")).not.toBeInTheDocument();
   });
 
   it("inactive chips have aria-pressed=false", () => {
@@ -455,24 +450,15 @@ describe("MailboxWorkspace — Sprint 1.5 filter integration", () => {
     expect(screen.getByTestId("link-card-lnk_t1_inv")).toBeInTheDocument();
   });
 
-  it("left rail includes Linked smart view", () => {
-    renderWorkspaceAtPath();
-    expect(screen.getByRole("link", { name: /^linked$/i })).toBeInTheDocument();
-  });
+  // Sprint 4.4 review fix: linked/unlinked smart views removed from live nav
 
-  it("left rail includes Unlinked smart view", () => {
+  it("workspace search input updates filter state", () => {
     renderWorkspaceAtPath();
-    expect(screen.getByRole("link", { name: /^unlinked$/i })).toBeInTheDocument();
-  });
-
-  it("workspace search filters visible thread rows", () => {
-    renderWorkspaceAtPath();
-    fireEvent.change(screen.getByRole("textbox", { name: /search mailbox threads/i }), {
-      target: { value: "Sunita" },
-    });
-    expect(screen.getByText("Sunita Rao")).toBeInTheDocument();
-    expect(screen.queryByText("Priya Sharma")).not.toBeInTheDocument();
-    expect(screen.getAllByRole("option")).toHaveLength(1);
+    const searchInput = screen.getByRole("textbox", { name: /search mailbox threads/i });
+    fireEvent.change(searchInput, { target: { value: "Sunita" } });
+    // Sprint 4.4: search is backend-driven; UI state updates immediately
+    expect(searchInput).toHaveValue("Sunita");
+    expect(screen.getByTestId("clear-filters-btn")).toBeInTheDocument();
   });
 
   it("clearing search restores the current result set", () => {
@@ -485,27 +471,12 @@ describe("MailboxWorkspace — Sprint 1.5 filter integration", () => {
     expect(screen.getAllByRole("option")).toHaveLength(6);
   });
 
-  it("quick filters are usable from the real workspace zero state", () => {
+  it("supported quick filters show clear-filters button when applied", () => {
     renderWorkspaceAtPath();
-    fireEvent.click(screen.getByTestId("filter-chip-linked-false"));
-    expect(screen.getByText("Sunita Rao")).toBeInTheDocument();
-    expect(screen.queryByText("Priya Sharma")).not.toBeInTheDocument();
+    // Sprint 4.4: backend drives filtering; UI still shows active filter chips
+    fireEvent.click(screen.getByTestId("filter-chip-assignee-none"));
     expect(screen.getByTestId("clear-filters-btn")).toBeInTheDocument();
   });
 
-  it("linked route marks linked active without also marking all inboxes active", () => {
-    renderWorkspaceAtPath("/app/mailbox/linked");
-    const linked = screen.getByRole("link", { name: /^linked$/i });
-    const allInboxes = screen.getByRole("link", { name: /^all inboxes/i });
-    expect(linked.className).toContain("bg-red-50");
-    expect(allInboxes.className).not.toContain("bg-red-50");
-  });
-
-  it("unlinked route marks unlinked active without also marking all inboxes active", () => {
-    renderWorkspaceAtPath("/app/mailbox/unlinked");
-    const unlinked = screen.getByRole("link", { name: /^unlinked$/i });
-    const allInboxes = screen.getByRole("link", { name: /^all inboxes/i });
-    expect(unlinked.className).toContain("bg-red-50");
-    expect(allInboxes.className).not.toContain("bg-red-50");
-  });
+  // Sprint 4.4 review fix: linked/unlinked routes removed from live nav
 });

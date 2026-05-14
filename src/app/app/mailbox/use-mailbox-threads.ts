@@ -1,7 +1,9 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import type { MailboxThreadReadShape } from "@/lib/mailbox/read-shapes";
+
+const SEARCH_DEBOUNCE_MS = 300;
 
 export interface MailboxThreadListResponse {
   threads: MailboxThreadReadShape[];
@@ -38,6 +40,20 @@ export function useMailboxThreads(
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Debounce search query to avoid hammering the API on every keystroke
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState(
+    params.searchQuery,
+  );
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchQuery(params.searchQuery);
+    }, SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [params.searchQuery]);
+
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const requestIdRef = useRef(0);
+
   const buildUrl = useCallback(
     (cursor?: string) => {
       const url = new URL("/api/mailbox/threads", window.location.origin);
@@ -56,6 +72,10 @@ export function useMailboxThreads(
       if (params.assignee) {
         url.searchParams.set("assignee", params.assignee);
       }
+      const trimmedQuery = debouncedSearchQuery?.trim();
+      if (trimmedQuery) {
+        url.searchParams.set("searchQuery", trimmedQuery);
+      }
       if (params.limit) {
         url.searchParams.set("limit", String(params.limit));
       }
@@ -64,28 +84,58 @@ export function useMailboxThreads(
       }
       return url.toString();
     },
-    [params],
+    [
+      params.connectionId,
+      params.status,
+      params.unreadOnly,
+      params.isFlagged,
+      params.assignee,
+      params.limit,
+      debouncedSearchQuery,
+    ],
   );
 
   const fetchThreads = useCallback(
     async (append = false, cursor?: string) => {
+      // Cancel any in-flight request to prevent out-of-order UI updates
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
+
+      const thisRequestId = ++requestIdRef.current;
+
       setIsLoading(true);
       setError(null);
       try {
-        const res = await fetch(buildUrl(cursor));
+        const res = await fetch(buildUrl(cursor), {
+          signal: controller.signal,
+        });
         if (!res.ok) {
           throw new Error(`Failed to fetch threads: ${res.status}`);
         }
         const data: MailboxThreadListResponse = await res.json();
-        setThreads((prev) =>
-          append ? [...prev, ...data.threads] : data.threads,
-        );
-        setTotalCount(data.totalCount);
-        setNextCursor(data.nextCursor);
+        // Only update state if this is still the latest request
+        if (thisRequestId === requestIdRef.current) {
+          setThreads((prev) =>
+            append ? [...prev, ...data.threads] : data.threads,
+          );
+          setTotalCount(data.totalCount);
+          setNextCursor(data.nextCursor);
+        }
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Unknown error");
+        if (err instanceof DOMException && err.name === "AbortError") {
+          // Silently ignore aborted requests
+          return;
+        }
+        if (thisRequestId === requestIdRef.current) {
+          setError(err instanceof Error ? err.message : "Unknown error");
+        }
       } finally {
-        setIsLoading(false);
+        if (thisRequestId === requestIdRef.current) {
+          setIsLoading(false);
+        }
       }
     },
     [buildUrl],

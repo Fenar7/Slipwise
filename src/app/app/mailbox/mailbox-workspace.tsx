@@ -20,7 +20,7 @@ import {
   MOCK_LINKED_CONTEXT,
 } from "./mock-data";
 import { useMailboxConnections } from "./use-mailbox-connections";
-import { useMailboxThreads } from "./use-mailbox-threads";
+import { useMailboxThreads, type UseMailboxThreadsParams } from "./use-mailbox-threads";
 import { mapThreadToRowData, deriveMailboxColor, mapThreadDetailToUI } from "./thread-data-helpers";
 import { useMailboxThreadDetail } from "./use-mailbox-thread-detail";
 import { useThreadAction } from "./use-thread-action";
@@ -118,7 +118,7 @@ function resolveActiveConnection(
   );
 }
 
-function resolveThreadQueryParams(
+export function resolveThreadQueryParams(
   pathname: string,
   connections: MailboxConnection[] = [],
 ): {
@@ -140,10 +140,7 @@ function resolveThreadQueryParams(
   if (smartView?.id === "unassigned") return { assignee: "none" };
   if (smartView?.id === "flagged") return { isFlagged: true };
   if (smartView?.id === "waiting") return { status: "PENDING" };
-  if (smartView?.id === "linked" || smartView?.id === "unlinked") {
-    // Linked/unlinked not supported by backend thread list yet
-    return {};
-  }
+  // Sprint 4.4: linked/unlinked smart views removed from live nav
 
   if (activeConnection) {
     const folder = pathname.split("/").pop() ?? "inbox";
@@ -169,49 +166,58 @@ function resolveThreadQueryParams(
   return {};
 }
 
-function applyClientFilters(
-  threads: ThreadRowData[],
+/**
+ * Merge route-derived query params with user-applied filter state to produce
+ * the authoritative live-data fetch params for useMailboxThreads.
+ *
+ * Rules:
+ * - Route params (e.g., mailbox folder, smart view) are the base.
+ * - User filters override/add to the base where they don't conflict.
+ * - Mailbox filter is ignored when the route already scopes to a specific mailbox.
+ * - Status values are uppercased for the API contract.
+ * - Linked/unlinked filters are not supported by the backend and are ignored.
+ */
+export function resolveLiveQueryParams(
+  routeParams: ReturnType<typeof resolveThreadQueryParams>,
   filterState: ActiveFilterState,
-): ThreadRowData[] {
-  let result = threads;
+): UseMailboxThreadsParams {
+  const params: UseMailboxThreadsParams = { ...routeParams };
 
-  // Active filter chips (client-side for fields not sent to API)
+  const trimmedQuery = filterState.searchQuery.trim();
+  if (trimmedQuery) {
+    params.searchQuery = trimmedQuery;
+  }
+
   for (const filter of filterState.filters) {
-    if (filter.field === "mailbox") {
-      result = result.filter((t) => t.mailboxConnectionId === filter.value);
-    } else if (filter.field === "unread" && filter.value === "true") {
-      result = result.filter((t) => t.isUnread);
-    } else if (filter.field === "flagged" && filter.value === "true") {
-      result = result.filter((t) => t.isFlagged);
-    } else if (filter.field === "assignee" && filter.value === "me") {
-      result = result.filter((t) => t.assignee === "You");
-    } else if (filter.field === "assignee" && filter.value === "none") {
-      result = result.filter((t) => !t.assignee);
-    } else if (filter.field === "status") {
-      result = result.filter((t) => t.status === filter.value);
-    } else if (filter.field === "linked" && filter.value === "true") {
-      result = result.filter((t) => (MOCK_LINKED_CONTEXT[t.id]?.links.length ?? 0) > 0);
-    } else if (filter.field === "linked" && filter.value === "false") {
-      result = result.filter(
-        (t) =>
-          (MOCK_LINKED_CONTEXT[t.id]?.links.length ?? 0) === 0 &&
-          (MOCK_LINKED_CONTEXT[t.id]?.suggestions.length ?? 0) === 0,
-      );
+    switch (filter.field) {
+      case "mailbox":
+        // Only apply mailbox filter in all-inboxes view (no route-scoped connectionId)
+        if (!routeParams.connectionId) {
+          params.connectionId = filter.value;
+        }
+        break;
+      case "status":
+        // Sprint 4.4 review fix: preserve route-derived folder semantics.
+        // Do not let a user-applied status filter override the folder's
+        // built-in status (e.g. inbox = OPEN,PENDING, archive = ARCHIVED).
+        if (!routeParams.status) {
+          params.status = filter.value.toUpperCase();
+        }
+        break;
+      case "assignee":
+        params.assignee = filter.value as "me" | "none";
+        break;
+      case "unread":
+        params.unreadOnly = filter.value === "true";
+        break;
+      case "flagged":
+        params.isFlagged = filter.value === "true";
+        break;
+      // "linked" is not supported by the live backend — silently ignored
     }
   }
 
-  // Search query (client-side until search backend is built)
-  if (filterState.searchQuery) {
-    const q = filterState.searchQuery.toLowerCase();
-    result = result.filter(
-      (t) =>
-        t.subject.toLowerCase().includes(q) ||
-        t.from.toLowerCase().includes(q) ||
-        t.snippet.toLowerCase().includes(q),
-    );
-  }
-
-  return result;
+  return params;
 }
 
 function resolveEmptyMailboxLabel(
@@ -247,8 +253,7 @@ function resolveSmartViewDescription(pathname: string): { label: string; descrip
     unassigned: "All threads have been assigned.",
     flagged: "No threads are flagged for follow-up.",
     waiting: "No threads are in a pending or waiting state.",
-    linked: "No threads are linked to a Slipwise record yet.",
-    unlinked: "All threads have been linked to records.",
+    // Sprint 4.4: linked/unlinked smart views removed from live nav
   };
   return {
     label: smartView.label,
@@ -277,12 +282,17 @@ export function MailboxWorkspace() {
     [pathname, connections],
   );
 
+  const liveQueryParams = useMemo(
+    () => resolveLiveQueryParams(threadQueryParams, filterState),
+    [threadQueryParams, filterState],
+  );
+
   const {
     threads: rawThreads,
     totalCount: apiTotalCount,
     isLoading: threadsLoading,
     refetch: refetchThreads,
-  } = useMailboxThreads(threadQueryParams);
+  } = useMailboxThreads(liveQueryParams);
 
   const connectionMap = useMemo(() => {
     const map = new Map<string, { displayName: string; color: string }>();
@@ -302,16 +312,13 @@ export function MailboxWorkspace() {
     return rawThreads.map((t) => mapThreadToRowData(t, ctx));
   }, [rawThreads, connectionMap, currentUserId]);
 
-  // Apply client-side filters (search, linked status, etc.)
-  const visibleThreads = useMemo(
-    () => applyClientFilters(mappedThreads, filterState),
-    [mappedThreads, filterState],
-  );
+  // Backend drives all supported filtering; visible threads are the mapped API result
+  const visibleThreads = mappedThreads;
 
   const viewLabel = resolveViewLabel(pathname, connections);
   const activeConnection = resolveActiveConnection(pathname, connections);
-  const totalCount = visibleThreads.length;
-  const unreadCount = visibleThreads.filter((t) => t.isUnread).length;
+  const totalCount = apiTotalCount;
+  const unreadCount = mappedThreads.filter((t) => t.isUnread).length;
 
   const {
     detail: rawDetail,
@@ -489,24 +496,24 @@ export function MailboxWorkspace() {
     if (connectedMailboxCount === 0) {
       return <NoMailboxesEmpty isAdmin={true} />;
     }
-    if (hasActiveFilters) {
-      return (
-        <NoSearchResultsEmpty
-          query={filterState.searchQuery || undefined}
-          hasActiveFilters={filterState.filters.length > 0}
-          onClearFilters={clearFilters}
-        />
-      );
-    }
-    if (smartViewEmpty) {
-      return (
-        <SmartViewEmpty
-          viewLabel={smartViewEmpty.label}
-          viewDescription={smartViewEmpty.description}
-        />
-      );
-    }
-    if (visibleThreads.length === 0) {
+    if (rawThreads.length === 0) {
+      if (hasActiveFilters) {
+        return (
+          <NoSearchResultsEmpty
+            query={filterState.searchQuery || undefined}
+            hasActiveFilters={filterState.filters.length > 0}
+            onClearFilters={clearFilters}
+          />
+        );
+      }
+      if (smartViewEmpty) {
+        return (
+          <SmartViewEmpty
+            viewLabel={smartViewEmpty.label}
+            viewDescription={smartViewEmpty.description}
+          />
+        );
+      }
       return (
         <EmptyInboxState
           mailboxLabel={resolveEmptyMailboxLabel(pathname, activeConnection, viewLabel)}
