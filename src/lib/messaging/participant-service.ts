@@ -4,16 +4,14 @@ import { db } from "@/lib/db";
 import type { Prisma } from "@/generated/prisma/client";
 import type { ConversationParticipantRecord } from "./domain-types";
 import {
-  conversationOrgSafeWhere,
   participantOrgSafeWhere,
 } from "./org-safe-helpers";
 import { toParticipantRecord } from "./mappers";
 import { logMessagingAuditTx } from "./audit";
 import {
-  assertConversationAccessible,
-  assertNotDMConversation,
+  assertConversationAction,
+  assertGovernanceAction,
 } from "./service-helpers";
-import { toConversationRecord } from "./mappers";
 import type {
   AddParticipantInput,
   RemoveParticipantInput,
@@ -22,18 +20,19 @@ import type {
 
 // ─── Helpers ────────────────────────────────────────────────────────────────────
 
-async function assertConversationInOrg(
+async function countActiveOwners(
   tx: Prisma.TransactionClient,
   orgId: string,
   conversationId: string,
-): Promise<Prisma.ConversationGetPayload<Record<string, never>>> {
-  const existing = await tx.conversation.findFirst({
-    where: conversationOrgSafeWhere(orgId, conversationId),
+): Promise<number> {
+  return tx.conversationParticipant.count({
+    where: {
+      orgId,
+      conversationId,
+      role: "OWNER",
+      leftAt: null,
+    },
   });
-  if (!existing) {
-    throw new Error("Participant action: conversation not found or access denied");
-  }
-  return existing;
 }
 
 // ─── Queries ────────────────────────────────────────────────────────────────────
@@ -94,13 +93,14 @@ export async function addParticipant(
   input: AddParticipantInput,
 ): Promise<ConversationParticipantRecord> {
   const result = await db.$transaction(async (tx) => {
-    const conversation = await assertConversationInOrg(
+    await assertConversationAction(
       tx,
       input.orgId,
       input.conversationId,
+      input.addedBy,
+      "ADD_PARTICIPANT",
+      "addParticipant",
     );
-    assertConversationAccessible(toConversationRecord(conversation), "addParticipant");
-    assertNotDMConversation(toConversationRecord(conversation), "addParticipant");
 
     const existing = await tx.conversationParticipant.findFirst({
       where: {
@@ -114,6 +114,7 @@ export async function addParticipant(
 
     if (existing) {
       if (existing.leftAt !== null) {
+        // Reactivate previously-removed participant.
         participant = await tx.conversationParticipant.update({
           where: { id: existing.id },
           data: {
@@ -123,15 +124,14 @@ export async function addParticipant(
           },
         });
       } else {
-        // Already active: just update role if different
+        // Already active: do NOT silently change role.
+        // Role changes must go through updateParticipantRole for invariant enforcement.
         if (existing.role !== input.role) {
-          participant = await tx.conversationParticipant.update({
-            where: { id: existing.id },
-            data: { role: input.role },
-          });
-        } else {
-          participant = existing;
+          throw new Error(
+            "addParticipant: participant already active with different role; use updateParticipantRole instead",
+          );
         }
+        participant = existing;
       }
     } else {
       participant = await tx.conversationParticipant.create({
@@ -165,16 +165,30 @@ export async function removeParticipant(
   input: RemoveParticipantInput,
 ): Promise<ConversationParticipantRecord> {
   const result = await db.$transaction(async (tx) => {
-    const conversation = await assertConversationInOrg(
-      tx,
-      input.orgId,
-      input.conversationId,
-    );
-    assertConversationAccessible(
-      toConversationRecord(conversation),
-      "removeParticipant",
-    );
-    assertNotDMConversation(toConversationRecord(conversation), "removeParticipant");
+    if (input.actorOrgRole || input.isPlatformAdmin) {
+      await assertGovernanceAction(
+        tx,
+        input.orgId,
+        input.conversationId,
+        input.removedBy,
+        "REMOVE_PARTICIPANT",
+        {
+          participant: null,
+          orgRole: input.actorOrgRole ?? "member",
+          isPlatformAdmin: input.isPlatformAdmin ?? false,
+        },
+        "removeParticipant",
+      );
+    } else {
+      await assertConversationAction(
+        tx,
+        input.orgId,
+        input.conversationId,
+        input.removedBy,
+        "REMOVE_PARTICIPANT",
+        "removeParticipant",
+      );
+    }
 
     const existing = await tx.conversationParticipant.findFirst({
       where: {
@@ -189,6 +203,14 @@ export async function removeParticipant(
     }
     if (existing.leftAt !== null) {
       throw new Error("removeParticipant: participant already inactive");
+    }
+
+    // Sole-owner invariant: a conversation must never be left without an OWNER.
+    if (existing.role === "OWNER") {
+      const ownerCount = await countActiveOwners(tx, input.orgId, input.conversationId);
+      if (ownerCount <= 1) {
+        throw new Error("removeParticipant: cannot remove the sole owner");
+      }
     }
 
     const updated = await tx.conversationParticipant.update({
@@ -217,17 +239,12 @@ export async function updateParticipantRole(
   input: UpdateParticipantRoleInput,
 ): Promise<ConversationParticipantRecord> {
   const result = await db.$transaction(async (tx) => {
-    const conversation = await assertConversationInOrg(
+    await assertConversationAction(
       tx,
       input.orgId,
       input.conversationId,
-    );
-    assertConversationAccessible(
-      toConversationRecord(conversation),
-      "updateParticipantRole",
-    );
-    assertNotDMConversation(
-      toConversationRecord(conversation),
+      input.updatedBy,
+      "CHANGE_PARTICIPANT_ROLE",
       "updateParticipantRole",
     );
 
@@ -244,6 +261,14 @@ export async function updateParticipantRole(
     }
     if (existing.leftAt !== null) {
       throw new Error("updateParticipantRole: participant is inactive");
+    }
+
+    // Sole-owner invariant: cannot demote the only remaining OWNER.
+    if (existing.role === "OWNER" && input.role !== "OWNER") {
+      const ownerCount = await countActiveOwners(tx, input.orgId, input.conversationId);
+      if (ownerCount <= 1) {
+        throw new Error("updateParticipantRole: cannot demote the sole owner");
+      }
     }
 
     const updated = await tx.conversationParticipant.update({

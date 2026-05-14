@@ -2,6 +2,7 @@ import "server-only";
 
 import { NextResponse } from "next/server";
 import { getOrgContext, type OrgContext } from "@/lib/auth";
+import { rateLimitByOrg, rateLimitByIp, RATE_LIMITS } from "@/lib/rate-limit";
 
 export const MessagingApiErrorCode = {
   UNAUTHORIZED: "UNAUTHORIZED",
@@ -18,6 +19,47 @@ const STATUS_MAP: Record<string, number> = {
   [MessagingApiErrorCode.VALIDATION_ERROR]: 422,
   [MessagingApiErrorCode.INTERNAL_ERROR]: 500,
 };
+
+/**
+ * Denial categories for server-side diagnostics.
+ * These are NOT exposed to API clients.
+ */
+export type MessagingAccessDeniedCategory =
+  | "missing_membership"
+  | "cross_org"
+  | "archived"
+  | "locked"
+  | "governance_role"
+  | "invalid_override"
+  | "dm_constraint"
+  | "malformed_request";
+
+/**
+ * Explicit error class for authorization / access-denial failures.
+ * Carries a semantic code so the API layer can map deterministically.
+ *
+ * Hardening (Sprint 3.4): optional `category` enables structured server-side
+ * diagnostics without leaking unsafe detail to API clients.
+ */
+export class MessagingAccessError extends Error {
+  code = "FORBIDDEN";
+}
+
+export class MessagingAccessDeniedError extends MessagingAccessError {
+  category: MessagingAccessDeniedCategory;
+
+  constructor(category: MessagingAccessDeniedCategory, message?: string) {
+    super(message ?? "Access denied.");
+    this.category = category;
+  }
+}
+
+/**
+ * Explicit error class for not-found failures.
+ */
+export class MessagingNotFoundError extends Error {
+  code = "NOT_FOUND";
+}
 
 export class MessagingApiError extends Error {
   code: string;
@@ -49,14 +91,75 @@ export function messagingApiError(
   );
 }
 
+/**
+ * Wrap a read-path promise so that membership access errors become
+ * not-found responses. This prevents existence leakage on reads.
+ */
+export async function safeRead<T>(promise: Promise<T>): Promise<T> {
+  try {
+    return await promise;
+  } catch (error) {
+    if (error instanceof Error) {
+      const msg = error.message;
+      if (
+        msg.includes("active participant access required") ||
+        msg.includes("thread not found or does not belong to conversation")
+      ) {
+        throw new MessagingNotFoundError("Conversation not found or access denied.");
+      }
+    }
+    throw error;
+  }
+}
+
 export function handleMessagingApiError(error: unknown): NextResponse {
   if (error instanceof MessagingApiError) {
     return messagingApiError(error.code, error.message, error.status);
   }
 
+  if (error instanceof MessagingAccessDeniedError) {
+    // Server-side structured diagnostic: safe, not sent to client.
+    console.warn(
+      `[api/messaging] Access denied (${error.category}):`,
+      error.message,
+    );
+    return messagingApiError(
+      MessagingApiErrorCode.FORBIDDEN,
+      "Access denied.",
+      STATUS_MAP[MessagingApiErrorCode.FORBIDDEN],
+    );
+  }
+
+  if (error instanceof MessagingAccessError) {
+    return messagingApiError(
+      MessagingApiErrorCode.FORBIDDEN,
+      "Access denied.",
+      STATUS_MAP[MessagingApiErrorCode.FORBIDDEN],
+    );
+  }
+
+  if (error instanceof MessagingNotFoundError) {
+    return messagingApiError(
+      MessagingApiErrorCode.NOT_FOUND,
+      error.message,
+      STATUS_MAP[MessagingApiErrorCode.NOT_FOUND],
+    );
+  }
+
   if (error instanceof Error) {
     const msg = error.message;
-    if (msg.includes("active participant access required") || msg.includes("access denied")) {
+    // Fallback substring checks for errors thrown by services that do not yet use
+    // the structured error classes. These should migrate over time.
+    if (
+      msg.includes("governance action requires") ||
+      msg.includes("conversation is archived") ||
+      msg.includes("conversation is locked") ||
+      msg.includes("can only edit your own messages") ||
+      msg.includes("can only delete your own messages") ||
+      msg.includes("cannot remove the sole owner") ||
+      msg.includes("cannot demote the sole owner") ||
+      msg.includes("not allowed on DM conversations")
+    ) {
       return messagingApiError(
         MessagingApiErrorCode.FORBIDDEN,
         "Access denied.",
@@ -68,6 +171,13 @@ export function handleMessagingApiError(error: unknown): NextResponse {
         MessagingApiErrorCode.NOT_FOUND,
         msg,
         STATUS_MAP[MessagingApiErrorCode.NOT_FOUND],
+      );
+    }
+    if (msg.includes("Rate limit") || msg.includes("rate limit")) {
+      return messagingApiError(
+        "RATE_LIMITED",
+        "Too many requests. Please try again later.",
+        429,
       );
     }
   }
@@ -159,4 +269,38 @@ export function requireEnumField<T extends string>(
     );
   }
   return value as T;
+}
+
+/**
+ * Apply rate limiting for messaging routes.
+ * Checks both org-scoped and IP-based limits with fail-open behavior.
+ * Throws a MessagingApiError with 429 if the limit is exceeded.
+ */
+export async function applyMessagingRateLimit(
+  request: Request,
+  orgId: string,
+  limitKey: keyof typeof RATE_LIMITS,
+): Promise<void> {
+  const config = RATE_LIMITS[limitKey];
+
+  const [orgResult, ipResult] = await Promise.all([
+    rateLimitByOrg(orgId, config),
+    rateLimitByIp(request as unknown as import("next/server").NextRequest, config),
+  ]);
+
+  if (!orgResult.success) {
+    throw new MessagingApiError(
+      "RATE_LIMITED",
+      "Too many requests. Please try again later.",
+      429,
+    );
+  }
+
+  if (!ipResult.success) {
+    throw new MessagingApiError(
+      "RATE_LIMITED",
+      "Too many requests. Please try again later.",
+      429,
+    );
+  }
 }

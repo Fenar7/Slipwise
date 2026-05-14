@@ -6,6 +6,8 @@ import {
   handleMessagingApiError,
   parsePagination,
   requireStringField,
+  safeRead,
+  applyMessagingRateLimit,
 } from "../../../_utils";
 
 export const runtime = "nodejs";
@@ -13,6 +15,9 @@ export const runtime = "nodejs";
 /**
  * GET /api/messaging/conversations/:id/messages
  * List top-level messages for a conversation.
+ *
+ * Hardening (Sprint 3.3): unauthorized access returns 404 to prevent existence
+ * leakage. Only active participants can list messages.
  */
 export async function GET(
   request: NextRequest,
@@ -23,7 +28,9 @@ export async function GET(
     const { id } = await params;
     const { limit, cursor } = parsePagination(request.nextUrl.searchParams);
 
-    const messages = await listConversationMessages(orgId, id, userId, { limit, cursor: cursor ?? undefined });
+    const messages = await safeRead(
+      listConversationMessages(orgId, id, userId, { limit, cursor: cursor ?? undefined }),
+    );
 
     return messagingApiResponse({
       messages,
@@ -76,6 +83,7 @@ export async function POST(
 ) {
   try {
     const { orgId, userId } = await requireMessagingApiContext();
+    await applyMessagingRateLimit(request, orgId, "messagingSend");
     const { id } = await params;
     const body = (await request.json()) as Record<string, unknown>;
 

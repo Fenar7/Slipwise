@@ -720,10 +720,12 @@ describe("Sprint 2.3 — API routes", () => {
   describe("PATCH /api/messaging/conversations/:id/archive", () => {
     it("archives a conversation", async () => {
       const mockedConversationFindFirst = vi.mocked(db.conversation.findFirst);
+      const mockedParticipantFindFirst = vi.mocked(db.conversationParticipant.findFirst);
       const mockedConversationUpdate = vi.mocked(db.conversation.update);
       const mockedAuditCreate = vi.mocked(db.messagingAuditEvent.create);
 
       mockedConversationFindFirst.mockResolvedValue(makeConversationRow());
+      mockedParticipantFindFirst.mockResolvedValue(makeParticipantRow({ role: "OWNER" }));
       mockedConversationUpdate.mockResolvedValue({
         ...makeConversationRow(),
         archivedAt: new Date("2026-01-10T00:00:00Z"),
@@ -758,17 +760,17 @@ describe("Sprint 2.3 — API routes", () => {
       expect(body.data.messages).toHaveLength(1);
     });
 
-    it("returns 403 when user is not a participant", async () => {
+    it("returns 404 when user is not a participant", async () => {
       const mockedParticipantFindFirst = vi.mocked(db.conversationParticipant.findFirst);
       mockedParticipantFindFirst.mockResolvedValue(null);
 
       const request = makeRequest("http://localhost/api/messaging/conversations/conv-001/messages");
       const response = await getMessages(request, { params: Promise.resolve({ id: CONV_ID }) });
 
-      expect(response.status).toBe(403);
+      expect(response.status).toBe(404);
       const body = await response.json();
       expect(body.success).toBe(false);
-      expect(body.error.code).toBe("FORBIDDEN");
+      expect(body.error.code).toBe("NOT_FOUND");
     });
   });
 
@@ -855,17 +857,17 @@ describe("Sprint 2.3 — API routes", () => {
       expect(body.data.participants).toHaveLength(1);
     });
 
-    it("returns 403 when user is not a participant", async () => {
+    it("returns 404 when user is not a participant", async () => {
       const mockedParticipantFindFirst = vi.mocked(db.conversationParticipant.findFirst);
       mockedParticipantFindFirst.mockResolvedValue(null);
 
       const request = makeRequest("http://localhost/api/messaging/conversations/conv-001/participants");
       const response = await getParticipants(request, { params: Promise.resolve({ id: CONV_ID }) });
 
-      expect(response.status).toBe(403);
+      expect(response.status).toBe(404);
       const body = await response.json();
       expect(body.success).toBe(false);
-      expect(body.error.code).toBe("FORBIDDEN");
+      expect(body.error.code).toBe("NOT_FOUND");
     });
   });
 
@@ -884,17 +886,17 @@ describe("Sprint 2.3 — API routes", () => {
       expect(body.data.threads).toHaveLength(1);
     });
 
-    it("returns 403 when user is not a participant", async () => {
+    it("returns 404 when user is not a participant", async () => {
       const mockedParticipantFindFirst = vi.mocked(db.conversationParticipant.findFirst);
       mockedParticipantFindFirst.mockResolvedValue(null);
 
       const request = makeRequest("http://localhost/api/messaging/conversations/conv-001/threads");
       const response = await getThreads(request, { params: Promise.resolve({ id: CONV_ID }) });
 
-      expect(response.status).toBe(403);
+      expect(response.status).toBe(404);
       const body = await response.json();
       expect(body.success).toBe(false);
-      expect(body.error.code).toBe("FORBIDDEN");
+      expect(body.error.code).toBe("NOT_FOUND");
     });
   });
 });

@@ -10,13 +10,16 @@ import {
 import { toConversationRecord, toParticipantRecord } from "./mappers";
 import { logMessagingAuditTx } from "./audit";
 import {
-  assertConversationAccessible,
-  assertNotDMConversation,
+  assertConversationAction,
+  assertGovernanceAction,
 } from "./service-helpers";
 import type {
   CreateConversationInput,
   CreateConversationResult,
   ArchiveConversationInput,
+  UnarchiveConversationInput,
+  LockConversationInput,
+  UnlockConversationInput,
   RenameConversationInput,
   ChangeConversationVisibilityInput,
 } from "./service-contracts";
@@ -30,6 +33,53 @@ function assertConversationExists(
   if (!row) {
     throw new Error(`${context}: conversation not found or access denied`);
   }
+}
+
+/**
+ * Choose the correct assertion helper based on whether admin override
+ * context is provided.  If actorOrgRole or isPlatformAdmin are present,
+ * use the governance-aware path; otherwise fall back to the standard
+ * conversation-role-only path.
+ */
+async function assertGovernanceOrConversationAction(
+  tx: Prisma.TransactionClient,
+  input: {
+    orgId: string;
+    conversationId: string;
+    actorId: string;
+    actorOrgRole?: string;
+    isPlatformAdmin?: boolean;
+  },
+  action: "ARCHIVE" | "UNARCHIVE" | "LOCK" | "UNLOCK",
+  context: string,
+): Promise<{
+  conversation: Prisma.ConversationGetPayload<Record<string, never>>;
+  participant: Prisma.ConversationParticipantGetPayload<Record<string, never>> | null;
+}> {
+  if (input.actorOrgRole || input.isPlatformAdmin) {
+    return assertGovernanceAction(
+      tx,
+      input.orgId,
+      input.conversationId,
+      input.actorId,
+      action,
+      {
+        participant: null, // filled inside assertGovernanceAction
+        orgRole: input.actorOrgRole ?? "member",
+        isPlatformAdmin: input.isPlatformAdmin ?? false,
+      },
+      context,
+    );
+  }
+
+  return assertConversationAction(
+    tx,
+    input.orgId,
+    input.conversationId,
+    input.actorId,
+    action,
+    context,
+  );
 }
 
 // ─── Queries ──────────────────────────────────────────────────────────────────
@@ -174,11 +224,18 @@ export async function archiveConversation(
   input: ArchiveConversationInput,
 ): Promise<ConversationRecord> {
   const result = await db.$transaction(async (tx) => {
-    const existing = await tx.conversation.findFirst({
-      where: conversationOrgSafeWhere(input.orgId, input.conversationId),
-    });
-    assertConversationExists(existing, "archiveConversation");
-    assertConversationAccessible(toConversationRecord(existing), "archiveConversation");
+    const { conversation: existing } = await assertGovernanceOrConversationAction(
+      tx,
+      {
+        orgId: input.orgId,
+        conversationId: input.conversationId,
+        actorId: input.archivedBy,
+        actorOrgRole: input.actorOrgRole,
+        isPlatformAdmin: input.isPlatformAdmin,
+      },
+      "ARCHIVE",
+      "archiveConversation",
+    );
 
     const updated = await tx.conversation.update({
       where: { id: input.conversationId, orgId: input.orgId },
@@ -209,12 +266,14 @@ export async function renameConversation(
   input: RenameConversationInput,
 ): Promise<ConversationRecord> {
   const result = await db.$transaction(async (tx) => {
-    const existing = await tx.conversation.findFirst({
-      where: conversationOrgSafeWhere(input.orgId, input.conversationId),
-    });
-    assertConversationExists(existing, "renameConversation");
-    assertConversationAccessible(toConversationRecord(existing), "renameConversation");
-    assertNotDMConversation(toConversationRecord(existing), "renameConversation");
+    await assertConversationAction(
+      tx,
+      input.orgId,
+      input.conversationId,
+      input.actorId,
+      "RENAME",
+      "renameConversation",
+    );
 
     const updated = await tx.conversation.update({
       where: { id: input.conversationId, orgId: input.orgId },
@@ -242,13 +301,12 @@ export async function changeConversationVisibility(
   input: ChangeConversationVisibilityInput,
 ): Promise<ConversationRecord> {
   const result = await db.$transaction(async (tx) => {
-    const existing = await tx.conversation.findFirst({
-      where: conversationOrgSafeWhere(input.orgId, input.conversationId),
-    });
-    assertConversationExists(existing, "changeConversationVisibility");
-    assertConversationAccessible(toConversationRecord(existing), "changeConversationVisibility");
-    assertNotDMConversation(
-      toConversationRecord(existing),
+    await assertConversationAction(
+      tx,
+      input.orgId,
+      input.conversationId,
+      input.actorId,
+      "CHANGE_VISIBILITY",
       "changeConversationVisibility",
     );
 
@@ -262,6 +320,139 @@ export async function changeConversationVisibility(
       actorId: input.actorId,
       action: "CONVERSATION_VISIBILITY_CHANGED",
       summary: `Changed visibility to ${input.visibility}`,
+      conversationId: updated.id,
+    });
+
+    return toConversationRecord(updated);
+  });
+
+  return result;
+}
+
+/**
+ * Unarchive a conversation (restore from soft-delete). Org-scoped.
+ */
+export async function unarchiveConversation(
+  input: UnarchiveConversationInput,
+): Promise<ConversationRecord> {
+  const result = await db.$transaction(async (tx) => {
+    const { conversation: existing } = await assertGovernanceOrConversationAction(
+      tx,
+      {
+        orgId: input.orgId,
+        conversationId: input.conversationId,
+        actorId: input.unarchivedBy,
+        actorOrgRole: input.actorOrgRole,
+        isPlatformAdmin: input.isPlatformAdmin,
+      },
+      "UNARCHIVE",
+      "unarchiveConversation",
+    );
+
+    const updated = await tx.conversation.update({
+      where: { id: input.conversationId, orgId: input.orgId },
+      data: {
+        archivedAt: null,
+        archivedBy: null,
+      },
+    });
+
+    await logMessagingAuditTx(tx, {
+      orgId: input.orgId,
+      actorId: input.unarchivedBy,
+      action: "CONVERSATION_UNARCHIVED",
+      summary: `Unarchived conversation "${updated.name ?? "(untitled)"}"`,
+      conversationId: updated.id,
+    });
+
+    return toConversationRecord(updated);
+  });
+
+  return result;
+}
+
+/**
+ * Lock a conversation. Blocks ordinary member mutations.
+ * Org-scoped. Requires governance role.
+ */
+export async function lockConversation(
+  input: LockConversationInput,
+): Promise<ConversationRecord> {
+  const result = await db.$transaction(async (tx) => {
+    const { conversation: existing } = await assertGovernanceOrConversationAction(
+      tx,
+      {
+        orgId: input.orgId,
+        conversationId: input.conversationId,
+        actorId: input.lockedBy,
+        actorOrgRole: input.actorOrgRole,
+        isPlatformAdmin: input.isPlatformAdmin,
+      },
+      "LOCK",
+      "lockConversation",
+    );
+
+    const updated = await tx.conversation.update({
+      where: { id: input.conversationId, orgId: input.orgId },
+      data: {
+        lockedAt: new Date(),
+        lockedBy: input.lockedBy,
+        lockReason: input.reason ?? null,
+      },
+    });
+
+    await logMessagingAuditTx(tx, {
+      orgId: input.orgId,
+      actorId: input.lockedBy,
+      action: "CONVERSATION_LOCKED",
+      summary: `Locked conversation "${updated.name ?? "(untitled)"}"`,
+      conversationId: updated.id,
+      metadata: {
+        reason: input.reason ?? null,
+      },
+    });
+
+    return toConversationRecord(updated);
+  });
+
+  return result;
+}
+
+/**
+ * Unlock a conversation. Restores ordinary member mutations.
+ * Org-scoped. Requires governance role.
+ */
+export async function unlockConversation(
+  input: UnlockConversationInput,
+): Promise<ConversationRecord> {
+  const result = await db.$transaction(async (tx) => {
+    const { conversation: existing } = await assertGovernanceOrConversationAction(
+      tx,
+      {
+        orgId: input.orgId,
+        conversationId: input.conversationId,
+        actorId: input.unlockedBy,
+        actorOrgRole: input.actorOrgRole,
+        isPlatformAdmin: input.isPlatformAdmin,
+      },
+      "UNLOCK",
+      "unlockConversation",
+    );
+
+    const updated = await tx.conversation.update({
+      where: { id: input.conversationId, orgId: input.orgId },
+      data: {
+        lockedAt: null,
+        lockedBy: null,
+        lockReason: null,
+      },
+    });
+
+    await logMessagingAuditTx(tx, {
+      orgId: input.orgId,
+      actorId: input.unlockedBy,
+      action: "CONVERSATION_UNLOCKED",
+      summary: `Unlocked conversation "${updated.name ?? "(untitled)"}"`,
       conversationId: updated.id,
     });
 

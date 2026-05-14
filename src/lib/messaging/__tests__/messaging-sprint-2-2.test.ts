@@ -340,7 +340,7 @@ function makeTypingRow(overrides: Partial<Record<string, unknown>> = {}) {
 beforeEach(() => {
   vi.clearAllMocks();
   db.conversation.findFirst.mockResolvedValue(makeConversationRow());
-  db.conversationParticipant.findFirst.mockResolvedValue(makeParticipantRow());
+  db.conversationParticipant.findFirst.mockResolvedValue(makeParticipantRow({ role: "OWNER" }));
 });
 
 // ─── Conversation Service ─────────────────────────────────────────────────────
@@ -582,7 +582,9 @@ describe("participant service", () => {
   describe("addParticipant", () => {
     it("creates a new participant", async () => {
       db.conversation.findFirst.mockResolvedValue(makeConversationRow());
-      db.conversationParticipant.findFirst.mockResolvedValue(null);
+      db.conversationParticipant.findFirst
+        .mockResolvedValueOnce(makeParticipantRow({ role: "OWNER" }))
+        .mockResolvedValueOnce(null);
       db.conversationParticipant.create.mockResolvedValue(
         makeParticipantRow({ id: "part-new", userId: USER_3, role: "MEMBER" }),
       );
@@ -603,9 +605,9 @@ describe("participant service", () => {
 
     it("reactivates a participant who previously left", async () => {
       db.conversation.findFirst.mockResolvedValue(makeConversationRow());
-      db.conversationParticipant.findFirst.mockResolvedValue(
-        makeParticipantRow({ leftAt: new Date(), role: "MEMBER" }),
-      );
+      db.conversationParticipant.findFirst
+        .mockResolvedValueOnce(makeParticipantRow({ role: "OWNER", userId: USER_2 }))
+        .mockResolvedValueOnce(makeParticipantRow({ leftAt: new Date(), role: "MEMBER" }));
       db.conversationParticipant.update.mockResolvedValue(
         makeParticipantRow({ leftAt: null, role: "ADMIN" }),
       );
@@ -625,7 +627,9 @@ describe("participant service", () => {
 
     it("does not duplicate an already active participant", async () => {
       db.conversation.findFirst.mockResolvedValue(makeConversationRow());
-      db.conversationParticipant.findFirst.mockResolvedValue(makeParticipantRow());
+      db.conversationParticipant.findFirst
+        .mockResolvedValueOnce(makeParticipantRow({ role: "OWNER", userId: USER_2 }))
+        .mockResolvedValueOnce(makeParticipantRow());
       db.messagingAuditEvent.create.mockResolvedValue({});
 
       const result = await addParticipant({
@@ -660,7 +664,9 @@ describe("participant service", () => {
   describe("removeParticipant", () => {
     it("marks participant as left", async () => {
       db.conversation.findFirst.mockResolvedValue(makeConversationRow());
-      db.conversationParticipant.findFirst.mockResolvedValue(makeParticipantRow());
+      db.conversationParticipant.findFirst
+        .mockResolvedValueOnce(makeParticipantRow({ role: "OWNER", userId: USER_2 }))
+        .mockResolvedValueOnce(makeParticipantRow());
       db.conversationParticipant.update.mockResolvedValue(
         makeParticipantRow({ leftAt: new Date() }),
       );
@@ -685,7 +691,7 @@ describe("participant service", () => {
           userId: USER_1,
           removedBy: USER_2,
         }),
-      ).rejects.toThrow("Participant action: conversation not found or access denied");
+      ).rejects.toThrow("removeParticipant: conversation not found or access denied");
     });
 
     it("rejects removing participants from DMs", async () => {
@@ -707,7 +713,9 @@ describe("participant service", () => {
   describe("updateParticipantRole", () => {
     it("updates role and emits audit", async () => {
       db.conversation.findFirst.mockResolvedValue(makeConversationRow());
-      db.conversationParticipant.findFirst.mockResolvedValue(makeParticipantRow());
+      db.conversationParticipant.findFirst
+        .mockResolvedValueOnce(makeParticipantRow({ role: "OWNER", userId: USER_2 }))
+        .mockResolvedValueOnce(makeParticipantRow());
       db.conversationParticipant.update.mockResolvedValue(
         makeParticipantRow({ role: "ADMIN" }),
       );

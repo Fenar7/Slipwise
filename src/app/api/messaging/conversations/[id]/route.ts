@@ -5,6 +5,7 @@ import {
   messagingApiResponse,
   handleMessagingApiError,
   parsePagination,
+  MessagingNotFoundError,
 } from "../../_utils";
 
 export const runtime = "nodejs";
@@ -12,6 +13,9 @@ export const runtime = "nodejs";
 /**
  * GET /api/messaging/conversations/:id
  * Get enriched conversation detail.
+ *
+ * Hardening (Sprint 3.3): returns 404 for any unauthorized access to prevent
+ * existence leakage. Only active participants can read conversation detail.
  */
 export async function GET(
   request: NextRequest,
@@ -28,9 +32,7 @@ export async function GET(
     });
 
     if (!detail) {
-      return handleMessagingApiError(
-        new Error("Conversation not found or access denied"),
-      );
+      throw new MessagingNotFoundError("Conversation not found or access denied.");
     }
 
     return messagingApiResponse(detail);
