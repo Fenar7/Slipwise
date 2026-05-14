@@ -81,4 +81,7 @@ export const RATE_LIMITS = {
   voucherApprove: { maxRequests: 30, window: "60 s" },
   // Phase 7/Sprint 7.2: Diagnostics tooling
   diagnostics: { maxRequests: 10, window: "60 s" },
+  // Phase 3/Sprint 3.4: Messaging governance and send hardening
+  messagingGovernance: { maxRequests: 30, window: "60 s" },
+  messagingSend: { maxRequests: 60, window: "60 s" },
 } as const;
