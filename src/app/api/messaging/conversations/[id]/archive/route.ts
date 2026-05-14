@@ -5,6 +5,7 @@ import {
   requireMessagingApiContext,
   messagingApiResponse,
   handleMessagingApiError,
+  applyMessagingRateLimit,
 } from "../../../_utils";
 
 export const runtime = "nodejs";
@@ -14,11 +15,12 @@ export const runtime = "nodejs";
  * Archive a conversation (soft-delete).
  */
 export async function PATCH(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const { orgId, userId, role } = await requireMessagingApiContext();
+    await applyMessagingRateLimit(request, orgId, "messagingGovernance");
     const { id } = await params;
 
     const conversation = await archiveConversation({

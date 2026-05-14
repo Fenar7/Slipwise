@@ -175,6 +175,7 @@ export {
   logMessagingAuditTx,
   getMessagingAuditActionLabel,
   MESSAGING_AUDIT_ACTION_LABELS,
+  normalizeAuditMetadata,
 } from "./audit";
 
 // Org-safe query helpers

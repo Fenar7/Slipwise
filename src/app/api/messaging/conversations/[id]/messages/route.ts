@@ -7,6 +7,7 @@ import {
   parsePagination,
   requireStringField,
   safeRead,
+  applyMessagingRateLimit,
 } from "../../../_utils";
 
 export const runtime = "nodejs";
@@ -82,6 +83,7 @@ export async function POST(
 ) {
   try {
     const { orgId, userId } = await requireMessagingApiContext();
+    await applyMessagingRateLimit(request, orgId, "messagingSend");
     const { id } = await params;
     const body = (await request.json()) as Record<string, unknown>;
 

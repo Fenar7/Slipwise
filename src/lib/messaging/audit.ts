@@ -45,6 +45,53 @@ export const MESSAGING_AUDIT_ACTION_LABELS: Record<MessagingAuditAction, string>
   ADMIN_SUPPORT_ACTION: "Performed admin support action",
 };
 
+// ─── Safe metadata rules ──────────────────────────────────────────────────────
+
+/**
+ * Hardening (Sprint 3.4): normalize audit metadata so governance actions emit
+ * consistent, safe shapes.
+ *
+ * Rules:
+ * - No raw message body, attachment payloads, or content blobs.
+ * - No secrets, tokens, or provider-internal details.
+ * - Include actorRole and overrideUsed for governance-sensitive actions.
+ * - Include limited reason/category where appropriate.
+ * - Strip null/undefined keys to keep rows compact.
+ */
+export function normalizeAuditMetadata(
+  metadata: Record<string, unknown> | null | undefined,
+): Record<string, unknown> | null {
+  if (metadata == null) return null;
+
+  const safe: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(metadata)) {
+    if (value === undefined || value === null) continue;
+    // Block unsafe keys by name heuristic
+    if (
+      key === "body" ||
+      key === "content" ||
+      key === "token" ||
+      key === "secret" ||
+      key === "password" ||
+      key === "attachmentPayload" ||
+      key === "providerInternal"
+    ) {
+      continue;
+    }
+    // Only allow primitive-ish safe values (string, number, boolean, Date)
+    if (
+      typeof value === "string" ||
+      typeof value === "number" ||
+      typeof value === "boolean" ||
+      value instanceof Date
+    ) {
+      safe[key] = value;
+    }
+  }
+
+  return Object.keys(safe).length > 0 ? safe : null;
+}
+
 // ─── Audit event params ───────────────────────────────────────────────────────
 
 interface MessagingAuditParams {
@@ -57,7 +104,11 @@ interface MessagingAuditParams {
   threadId?: string | null;
   taskId?: string | null;
   meetingId?: string | null;
-  /** Must not contain raw tokens, secrets, or provider-internal details. */
+  /**
+   * Must not contain raw tokens, secrets, provider-internal details,
+   * message bodies, attachment payloads, or unsafe content blobs.
+   * Use normalizeAuditMetadata when constructing from user input.
+   */
   metadata?: Record<string, unknown> | null;
 }
 
@@ -91,6 +142,7 @@ async function writeMessagingAuditEvent(
   client: Prisma.TransactionClient | typeof db,
   params: MessagingAuditParams,
 ): Promise<void> {
+  const safeMetadata = normalizeAuditMetadata(params.metadata);
   await client.messagingAuditEvent.create({
     data: {
       orgId: params.orgId,
@@ -103,8 +155,8 @@ async function writeMessagingAuditEvent(
       taskId: params.taskId ?? null,
       meetingId: params.meetingId ?? null,
       metadata:
-        params.metadata != null
-          ? (params.metadata as Prisma.InputJsonValue)
+        safeMetadata != null
+          ? (safeMetadata as Prisma.InputJsonValue)
           : Prisma.DbNull,
     },
   });

@@ -7,6 +7,7 @@ import {
   handleMessagingApiError,
   MessagingApiError,
   MessagingApiErrorCode,
+  applyMessagingRateLimit,
 } from "../../../_utils";
 
 export const runtime = "nodejs";
@@ -39,6 +40,7 @@ export async function PATCH(
 ) {
   try {
     const { orgId, userId, role } = await requireMessagingApiContext();
+    await applyMessagingRateLimit(request, orgId, "messagingGovernance");
     const { id } = await params;
 
     const body = (await request.json()) as Record<string, unknown>;

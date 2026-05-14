@@ -2,6 +2,7 @@ import "server-only";
 
 import { NextResponse } from "next/server";
 import { getOrgContext, type OrgContext } from "@/lib/auth";
+import { rateLimitByOrg, rateLimitByIp, RATE_LIMITS } from "@/lib/rate-limit";
 
 export const MessagingApiErrorCode = {
   UNAUTHORIZED: "UNAUTHORIZED",
@@ -20,11 +21,37 @@ const STATUS_MAP: Record<string, number> = {
 };
 
 /**
+ * Denial categories for server-side diagnostics.
+ * These are NOT exposed to API clients.
+ */
+export type MessagingAccessDeniedCategory =
+  | "missing_membership"
+  | "cross_org"
+  | "archived"
+  | "locked"
+  | "governance_role"
+  | "invalid_override"
+  | "dm_constraint"
+  | "malformed_request";
+
+/**
  * Explicit error class for authorization / access-denial failures.
  * Carries a semantic code so the API layer can map deterministically.
+ *
+ * Hardening (Sprint 3.4): optional `category` enables structured server-side
+ * diagnostics without leaking unsafe detail to API clients.
  */
 export class MessagingAccessError extends Error {
   code = "FORBIDDEN";
+}
+
+export class MessagingAccessDeniedError extends MessagingAccessError {
+  category: MessagingAccessDeniedCategory;
+
+  constructor(category: MessagingAccessDeniedCategory, message?: string) {
+    super(message ?? "Access denied.");
+    this.category = category;
+  }
 }
 
 /**
@@ -90,6 +117,19 @@ export function handleMessagingApiError(error: unknown): NextResponse {
     return messagingApiError(error.code, error.message, error.status);
   }
 
+  if (error instanceof MessagingAccessDeniedError) {
+    // Server-side structured diagnostic: safe, not sent to client.
+    console.warn(
+      `[api/messaging] Access denied (${error.category}):`,
+      error.message,
+    );
+    return messagingApiError(
+      MessagingApiErrorCode.FORBIDDEN,
+      "Access denied.",
+      STATUS_MAP[MessagingApiErrorCode.FORBIDDEN],
+    );
+  }
+
   if (error instanceof MessagingAccessError) {
     return messagingApiError(
       MessagingApiErrorCode.FORBIDDEN,
@@ -131,6 +171,13 @@ export function handleMessagingApiError(error: unknown): NextResponse {
         MessagingApiErrorCode.NOT_FOUND,
         msg,
         STATUS_MAP[MessagingApiErrorCode.NOT_FOUND],
+      );
+    }
+    if (msg.includes("Rate limit") || msg.includes("rate limit")) {
+      return messagingApiError(
+        "RATE_LIMITED",
+        "Too many requests. Please try again later.",
+        429,
       );
     }
   }
@@ -222,4 +269,38 @@ export function requireEnumField<T extends string>(
     );
   }
   return value as T;
+}
+
+/**
+ * Apply rate limiting for messaging routes.
+ * Checks both org-scoped and IP-based limits with fail-open behavior.
+ * Throws a MessagingApiError with 429 if the limit is exceeded.
+ */
+export async function applyMessagingRateLimit(
+  request: Request,
+  orgId: string,
+  limitKey: keyof typeof RATE_LIMITS,
+): Promise<void> {
+  const config = RATE_LIMITS[limitKey];
+
+  const [orgResult, ipResult] = await Promise.all([
+    rateLimitByOrg(orgId, config),
+    rateLimitByIp(request as unknown as import("next/server").NextRequest, config),
+  ]);
+
+  if (!orgResult.success) {
+    throw new MessagingApiError(
+      "RATE_LIMITED",
+      "Too many requests. Please try again later.",
+      429,
+    );
+  }
+
+  if (!ipResult.success) {
+    throw new MessagingApiError(
+      "RATE_LIMITED",
+      "Too many requests. Please try again later.",
+      429,
+    );
+  }
 }
