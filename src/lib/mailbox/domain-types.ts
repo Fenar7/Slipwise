@@ -162,14 +162,14 @@ export interface MailboxThreadRecord {
   mailboxConnectionId: string;
   providerThreadId: string;
   subject: string;
-  participantsSummary: Record<string, unknown> | unknown[];
+  participantsSummary: unknown;
   lastMessageAt: Date;
   unreadCount: number;
   status: MailboxThreadStatus;
   preArchiveStatus: MailboxThreadStatus | null;
   assigneeId: string | null;
   isFlagged: boolean;
-  primaryLinkSummary: Record<string, unknown> | null;
+  primaryLinkSummary: unknown;
   /** Normalized preview snippet from the most recent message. Sprint 3.3. */
   previewSnippet: string;
   /** Total attachment count across all thread messages. Sprint 3.3. */

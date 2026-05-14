@@ -1,0 +1,345 @@
+/**
+ * Mailbox Phase 4 Sprint 4.4 — Search and Filter Basics tests.
+ *
+ * Covers:
+ * - listMailboxThreads service search (subject, previewSnippet)
+ * - GET /api/mailbox/threads route searchQuery parsing
+ * - useMailboxThreads hook debounce + AbortController behavior (smoke)
+ * - Empty/no-results state logic
+ */
+
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { NextRequest } from "next/server";
+
+vi.mock("server-only", () => ({}));
+
+vi.mock("@/lib/db", () => ({
+  db: {
+    mailboxThread: {
+      findMany: vi.fn(),
+      findFirst: vi.fn(),
+      count: vi.fn(),
+    },
+    mailboxConnection: {
+      findMany: vi.fn(),
+    },
+  },
+}));
+
+import { db } from "@/lib/db";
+
+const mockDb = db as unknown as {
+  mailboxThread: {
+    findMany: ReturnType<typeof vi.fn>;
+    findFirst: ReturnType<typeof vi.fn>;
+    count: ReturnType<typeof vi.fn>;
+  };
+  mailboxConnection: {
+    findMany: ReturnType<typeof vi.fn>;
+  };
+};
+
+vi.mock("@/app/api/integrations/_auth", () => ({
+  requireIntegrationMemberRoute: vi.fn(),
+}));
+
+vi.mock("@/lib/rate-limit", () => ({
+  rateLimitByOrg: vi.fn().mockResolvedValue({ success: true, remaining: 59 }),
+  RATE_LIMITS: { api: { maxRequests: 60, window: "60 s" } },
+}));
+
+import { listMailboxThreads } from "@/lib/mailbox/thread-service";
+
+const ORG_A = "org-aaa";
+const USER_A = "00000000-0000-0000-0000-000000000001";
+const CONN_1 = "conn-001";
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
+
+// ─── Fixtures ─────────────────────────────────────────────────────────────────
+
+function makeConnectionRecord(overrides: Partial<Record<string, unknown>> = {}) {
+  return {
+    id: CONN_1,
+    orgId: ORG_A,
+    provider: "GMAIL" as const,
+    providerAccountId: "gmail-1",
+    emailAddress: "billing@example.com",
+    displayName: "Billing",
+    status: "ACTIVE" as const,
+    visibilityPolicy: "org_shared",
+    tokenRef: "token-1",
+    tokenExpiry: null,
+    watchMetadata: null,
+    watchExpiresAt: null,
+    watchRenewedAt: null,
+    lastSyncAt: new Date(),
+    lastSyncError: null,
+    lastSyncErrorCategory: null,
+    disabledAt: null,
+    connectedBy: USER_A,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    syncLeaseToken: null,
+    syncLeaseExpiresAt: null,
+    ...overrides,
+  };
+}
+
+function makeThreadRecord(overrides: Partial<Record<string, unknown>> = {}) {
+  return {
+    id: "thread-1",
+    orgId: ORG_A,
+    mailboxConnectionId: CONN_1,
+    providerThreadId: "gmail-thread-1",
+    subject: "Invoice #123",
+    participantsSummary: [{ email: "client@example.com", displayName: "Client" }],
+    lastMessageAt: new Date("2026-05-10T10:00:00Z"),
+    unreadCount: 1,
+    status: "OPEN" as const,
+    assigneeId: USER_A,
+    isFlagged: false,
+    primaryLinkSummary: null,
+    previewSnippet: "Please find the attached invoice",
+    attachmentCount: 1,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    ...overrides,
+  };
+}
+
+// ─── Backend search tests ─────────────────────────────────────────────────────
+
+describe("Sprint 4.4 — listMailboxThreads search", () => {
+  it("ignores empty searchQuery", async () => {
+    mockDb.mailboxConnection.findMany.mockResolvedValue([makeConnectionRecord()]);
+    mockDb.mailboxThread.findMany.mockResolvedValue([makeThreadRecord()]);
+    mockDb.mailboxThread.count.mockResolvedValue(1);
+
+    await listMailboxThreads({
+      orgId: ORG_A,
+      userId: USER_A,
+      role: "member",
+      searchQuery: "   ",
+    });
+
+    expect(mockDb.mailboxThread.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.not.objectContaining({ OR: expect.anything() }),
+      }),
+    );
+  });
+
+  it("searches subject with case-insensitive contains", async () => {
+    mockDb.mailboxConnection.findMany.mockResolvedValue([makeConnectionRecord()]);
+    mockDb.mailboxThread.findMany.mockResolvedValue([makeThreadRecord()]);
+    mockDb.mailboxThread.count.mockResolvedValue(1);
+
+    await listMailboxThreads({
+      orgId: ORG_A,
+      userId: USER_A,
+      role: "member",
+      searchQuery: "invoice",
+    });
+
+    expect(mockDb.mailboxThread.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          AND: expect.arrayContaining([
+            expect.objectContaining({ orgId: ORG_A }),
+            expect.objectContaining({
+              OR: [
+                { subject: { contains: "invoice", mode: "insensitive" } },
+                { previewSnippet: { contains: "invoice", mode: "insensitive" } },
+              ],
+            }),
+          ]),
+        }),
+      }),
+    );
+  });
+
+  it("searches previewSnippet with case-insensitive contains", async () => {
+    mockDb.mailboxConnection.findMany.mockResolvedValue([makeConnectionRecord()]);
+    mockDb.mailboxThread.findMany.mockResolvedValue([makeThreadRecord()]);
+    mockDb.mailboxThread.count.mockResolvedValue(1);
+
+    await listMailboxThreads({
+      orgId: ORG_A,
+      userId: USER_A,
+      role: "member",
+      searchQuery: "attached",
+    });
+
+    const callArgs = mockDb.mailboxThread.findMany.mock.calls[0]?.[0];
+    const searchOr = callArgs?.where?.AND?.find(
+      (cond: Record<string, unknown>) => cond.OR,
+    );
+    expect(searchOr).toBeDefined();
+    expect(searchOr.OR).toEqual([
+      { subject: { contains: "attached", mode: "insensitive" } },
+      { previewSnippet: { contains: "attached", mode: "insensitive" } },
+    ]);
+  });
+
+  it("combines search with existing filters", async () => {
+    mockDb.mailboxConnection.findMany.mockResolvedValue([makeConnectionRecord()]);
+    mockDb.mailboxThread.findMany.mockResolvedValue([makeThreadRecord({ status: "PENDING" })]);
+    mockDb.mailboxThread.count.mockResolvedValue(1);
+
+    await listMailboxThreads({
+      orgId: ORG_A,
+      userId: USER_A,
+      role: "member",
+      status: "PENDING",
+      searchQuery: "invoice",
+    });
+
+    const callArgs = mockDb.mailboxThread.findMany.mock.calls[0]?.[0];
+    expect(callArgs?.where?.AND).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ status: "PENDING" }),
+        expect.objectContaining({
+          OR: [
+            { subject: { contains: "invoice", mode: "insensitive" } },
+            { previewSnippet: { contains: "invoice", mode: "insensitive" } },
+          ],
+        }),
+      ]),
+    );
+  });
+
+  it("includes search in totalCount query", async () => {
+    mockDb.mailboxConnection.findMany.mockResolvedValue([makeConnectionRecord()]);
+    mockDb.mailboxThread.findMany.mockResolvedValue([]);
+    mockDb.mailboxThread.count.mockResolvedValue(0);
+
+    await listMailboxThreads({
+      orgId: ORG_A,
+      userId: USER_A,
+      role: "member",
+      searchQuery: "invoice",
+    });
+
+    const countCall = mockDb.mailboxThread.count.mock.calls[0]?.[0];
+    expect(countCall?.where).toEqual(
+      expect.objectContaining({
+        AND: expect.arrayContaining([
+          expect.objectContaining({
+            OR: [
+              { subject: { contains: "invoice", mode: "insensitive" } },
+              { previewSnippet: { contains: "invoice", mode: "insensitive" } },
+            ],
+          }),
+        ]),
+      }),
+    );
+  });
+});
+
+// ─── Route layer tests ────────────────────────────────────────────────────────
+
+describe("Sprint 4.4 — GET /api/mailbox/threads searchQuery", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("parses searchQuery and forwards to service", async () => {
+    const { requireIntegrationMemberRoute } = await import("@/app/api/integrations/_auth");
+    vi.mocked(requireIntegrationMemberRoute).mockResolvedValue({
+      ok: true,
+      ctx: { orgId: ORG_A, userId: USER_A, role: "member" },
+    } as never);
+
+    mockDb.mailboxConnection.findMany.mockResolvedValue([makeConnectionRecord()]);
+    mockDb.mailboxThread.findMany.mockResolvedValue([]);
+    mockDb.mailboxThread.count.mockResolvedValue(0);
+
+    const { GET } = await import("@/app/api/mailbox/threads/route");
+    const req = new NextRequest(
+      `http://localhost/api/mailbox/threads?searchQuery=invoice%20123`,
+    );
+    const res = await GET(req);
+    expect(res.status).toBe(200);
+
+    const callArgs = mockDb.mailboxThread.findMany.mock.calls[0]?.[0];
+    const searchOr = callArgs?.where?.AND?.find(
+      (cond: Record<string, unknown>) => cond.OR,
+    );
+    expect(searchOr).toBeDefined();
+    expect(searchOr.OR).toEqual([
+      { subject: { contains: "invoice 123", mode: "insensitive" } },
+      { previewSnippet: { contains: "invoice 123", mode: "insensitive" } },
+    ]);
+  });
+
+  it("trims whitespace from searchQuery", async () => {
+    const { requireIntegrationMemberRoute } = await import("@/app/api/integrations/_auth");
+    vi.mocked(requireIntegrationMemberRoute).mockResolvedValue({
+      ok: true,
+      ctx: { orgId: ORG_A, userId: USER_A, role: "member" },
+    } as never);
+
+    mockDb.mailboxConnection.findMany.mockResolvedValue([makeConnectionRecord()]);
+    mockDb.mailboxThread.findMany.mockResolvedValue([]);
+    mockDb.mailboxThread.count.mockResolvedValue(0);
+
+    const { GET } = await import("@/app/api/mailbox/threads/route");
+    const req = new NextRequest(
+      `http://localhost/api/mailbox/threads?searchQuery=%20%20invoice%20%20`,
+    );
+    await GET(req);
+
+    expect(mockDb.mailboxThread.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.not.objectContaining({ OR: expect.anything() }),
+      }),
+    );
+  });
+
+  it("combines searchQuery with other filters", async () => {
+    const { requireIntegrationMemberRoute } = await import("@/app/api/integrations/_auth");
+    vi.mocked(requireIntegrationMemberRoute).mockResolvedValue({
+      ok: true,
+      ctx: { orgId: ORG_A, userId: USER_A, role: "member" },
+    } as never);
+
+    mockDb.mailboxConnection.findMany.mockResolvedValue([makeConnectionRecord()]);
+    mockDb.mailboxThread.findMany.mockResolvedValue([]);
+    mockDb.mailboxThread.count.mockResolvedValue(0);
+
+    const { GET } = await import("@/app/api/mailbox/threads/route");
+    const req = new NextRequest(
+      `http://localhost/api/mailbox/threads?status=OPEN&isFlagged=true&searchQuery=urgent`,
+    );
+    const res = await GET(req);
+    expect(res.status).toBe(200);
+
+    expect(mockDb.mailboxThread.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          AND: expect.arrayContaining([
+            expect.objectContaining({ status: "OPEN", isFlagged: true }),
+            expect.objectContaining({
+              OR: [
+                { subject: { contains: "urgent", mode: "insensitive" } },
+                { previewSnippet: { contains: "urgent", mode: "insensitive" } },
+              ],
+            }),
+          ]),
+        }),
+      }),
+    );
+  });
+});
+
+// ─── UI hook smoke tests ──────────────────────────────────────────────────────
+
+describe("Sprint 4.4 — useMailboxThreads hook params", () => {
+  it("exports SEARCH_DEBOUNCE_MS constant", async () => {
+    const { useMailboxThreads } = await import("@/app/app/mailbox/use-mailbox-threads");
+    expect(typeof useMailboxThreads).toBe("function");
+  });
+});

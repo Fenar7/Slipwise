@@ -308,9 +308,10 @@ describe("FilterChipsBar", () => {
     );
     expect(screen.getByTestId("filter-chip-unread-true")).toBeInTheDocument();
     expect(screen.getByTestId("filter-chip-assignee-me")).toBeInTheDocument();
-    expect(screen.getByTestId("filter-chip-linked-true")).toBeInTheDocument();
-    expect(screen.getByTestId("filter-chip-linked-false")).toBeInTheDocument();
     expect(screen.getByTestId("filter-chip-flagged-true")).toBeInTheDocument();
+    // Sprint 4.4: linked/unlinked chips removed from live UI (mock-only filters)
+    expect(screen.queryByTestId("filter-chip-linked-true")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("filter-chip-linked-false")).not.toBeInTheDocument();
   });
 
   it("inactive chips have aria-pressed=false", () => {
@@ -465,14 +466,13 @@ describe("MailboxWorkspace — Sprint 1.5 filter integration", () => {
     expect(screen.getByRole("link", { name: /^unlinked$/i })).toBeInTheDocument();
   });
 
-  it("workspace search filters visible thread rows", () => {
+  it("workspace search input updates filter state", () => {
     renderWorkspaceAtPath();
-    fireEvent.change(screen.getByRole("textbox", { name: /search mailbox threads/i }), {
-      target: { value: "Sunita" },
-    });
-    expect(screen.getByText("Sunita Rao")).toBeInTheDocument();
-    expect(screen.queryByText("Priya Sharma")).not.toBeInTheDocument();
-    expect(screen.getAllByRole("option")).toHaveLength(1);
+    const searchInput = screen.getByRole("textbox", { name: /search mailbox threads/i });
+    fireEvent.change(searchInput, { target: { value: "Sunita" } });
+    // Sprint 4.4: search is backend-driven; UI state updates immediately
+    expect(searchInput).toHaveValue("Sunita");
+    expect(screen.getByTestId("clear-filters-btn")).toBeInTheDocument();
   });
 
   it("clearing search restores the current result set", () => {
@@ -485,11 +485,10 @@ describe("MailboxWorkspace — Sprint 1.5 filter integration", () => {
     expect(screen.getAllByRole("option")).toHaveLength(6);
   });
 
-  it("quick filters are usable from the real workspace zero state", () => {
+  it("supported quick filters show clear-filters button when applied", () => {
     renderWorkspaceAtPath();
-    fireEvent.click(screen.getByTestId("filter-chip-linked-false"));
-    expect(screen.getByText("Sunita Rao")).toBeInTheDocument();
-    expect(screen.queryByText("Priya Sharma")).not.toBeInTheDocument();
+    // Sprint 4.4: backend drives filtering; UI still shows active filter chips
+    fireEvent.click(screen.getByTestId("filter-chip-assignee-none"));
     expect(screen.getByTestId("clear-filters-btn")).toBeInTheDocument();
   });
 

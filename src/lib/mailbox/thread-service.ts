@@ -24,6 +24,8 @@ export interface ListMailboxThreadsParams {
   isFlagged?: boolean;
   /** Filter by assignee. "me" = current user, "none" = unassigned. Omit for all. */
   assigneeFilter?: "me" | "none";
+  /** Search query for subject and previewSnippet. Trimmed; empty values are ignored. */
+  searchQuery?: string;
   /** Cursor for pagination (base64-encoded JSON {lastMessageAt, id}). */
   cursor?: string;
   /** Page size. Defaults to 50, capped at 100. */
@@ -81,6 +83,7 @@ export async function listMailboxThreads(
     unreadOnly,
     isFlagged,
     assigneeFilter,
+    searchQuery,
     cursor,
     limit: rawLimit,
   } = params;
@@ -117,32 +120,47 @@ export async function listMailboxThreads(
     ? [connectionId]
     : accessibleConnectionIds;
 
-  const where: Prisma.MailboxThreadWhereInput = {
+  const baseWhere: Prisma.MailboxThreadWhereInput = {
     orgId,
     mailboxConnectionId: { in: connectionIdsToQuery },
   };
 
   if (status) {
     if (Array.isArray(status)) {
-      where.status = { in: status };
+      baseWhere.status = { in: status };
     } else {
-      where.status = status;
+      baseWhere.status = status;
     }
   }
 
   if (unreadOnly) {
-    where.unreadCount = { gt: 0 };
+    baseWhere.unreadCount = { gt: 0 };
   }
 
   if (isFlagged) {
-    where.isFlagged = true;
+    baseWhere.isFlagged = true;
   }
 
   if (assigneeFilter === "me") {
-    where.assigneeId = userId;
+    baseWhere.assigneeId = userId;
   } else if (assigneeFilter === "none") {
-    where.assigneeId = null;
+    baseWhere.assigneeId = null;
   }
+
+  // Combine filter where with search condition
+  const conditions: Prisma.MailboxThreadWhereInput[] = [baseWhere];
+
+  const trimmedQuery = searchQuery?.trim();
+  if (trimmedQuery) {
+    conditions.push({
+      OR: [
+        { subject: { contains: trimmedQuery, mode: "insensitive" } },
+        { previewSnippet: { contains: trimmedQuery, mode: "insensitive" } },
+      ],
+    });
+  }
+
+  const where = conditions.length > 1 ? { AND: conditions } : baseWhere;
 
   // Parse cursor for pagination
   let cursorCondition: Prisma.MailboxThreadWhereInput | undefined;
