@@ -141,7 +141,17 @@ const STATUS_STYLES: Record<ThreadRowData["status"], string> = {
   archived: "bg-gray-100 text-gray-500",
 };
 
-function QuickActions({ threadId }: { threadId: string }) {
+import type { ThreadAction } from "./use-thread-action";
+
+interface QuickActionsProps {
+  threadId: string;
+  isUnread: boolean;
+  isFlagged: boolean;
+  isLoading: boolean;
+  onAction: (threadId: string, action: ThreadAction) => void;
+}
+
+function QuickActions({ threadId, isUnread, isFlagged, isLoading, onAction }: QuickActionsProps) {
   return (
     <div
       className="absolute right-3 top-1/2 hidden -translate-y-1/2 items-center gap-0.5 rounded-lg border border-[#E2E5EA] bg-white p-0.5 shadow-sm group-hover:flex group-focus-within:flex"
@@ -151,37 +161,50 @@ function QuickActions({ threadId }: { threadId: string }) {
       onClick={(e) => e.stopPropagation()}
     >
       <button
-        className="flex h-6 w-6 items-center justify-center rounded-md text-[#64748B] transition-colors hover:bg-[#F1F3F7] hover:text-[#0F172A]"
-        title="Reply"
-        aria-label="Reply"
-      >
-        <Reply className="h-3.5 w-3.5" />
-      </button>
-      <button
-        className="flex h-6 w-6 items-center justify-center rounded-md text-[#64748B] transition-colors hover:bg-[#F1F3F7] hover:text-[#0F172A]"
-        title="Archive"
-        aria-label="Archive"
-      >
-        <Archive className="h-3.5 w-3.5" />
-      </button>
-      <button
-        className="flex h-6 w-6 items-center justify-center rounded-md text-[#64748B] transition-colors hover:bg-[#F1F3F7] hover:text-[#0F172A]"
-        title="Mark as read"
-        aria-label="Mark as read"
+        className="flex h-6 w-6 items-center justify-center rounded-md text-[#64748B] transition-colors hover:bg-[#F1F3F7] hover:text-[#0F172A] disabled:opacity-50"
+        title={isUnread ? "Mark as read" : "Mark as unread"}
+        aria-label={isUnread ? "Mark as read" : "Mark as unread"}
+        disabled={isLoading}
+        onClick={() => onAction(threadId, isUnread ? "mark_read" : "mark_unread")}
       >
         <MailOpen className="h-3.5 w-3.5" />
       </button>
       <button
-        className="flex h-6 w-6 items-center justify-center rounded-md text-[#64748B] transition-colors hover:bg-red-50 hover:text-[#DC2626]"
+        className="flex h-6 w-6 items-center justify-center rounded-md text-[#64748B] transition-colors hover:bg-[#F1F3F7] hover:text-[#0F172A] disabled:opacity-50"
+        title="Archive"
+        aria-label="Archive"
+        disabled={isLoading}
+        onClick={() => onAction(threadId, "archive")}
+      >
+        <Archive className="h-3.5 w-3.5" />
+      </button>
+      <button
+        className={cn(
+          "flex h-6 w-6 items-center justify-center rounded-md transition-colors disabled:opacity-50",
+          isFlagged
+            ? "text-[#DC2626] hover:bg-red-50"
+            : "text-[#64748B] hover:bg-[#F1F3F7] hover:text-[#0F172A]"
+        )}
+        title={isFlagged ? "Unflag" : "Flag"}
+        aria-label={isFlagged ? "Unflag" : "Flag"}
+        disabled={isLoading}
+        onClick={() => onAction(threadId, isFlagged ? "unflag" : "flag")}
+      >
+        <Flag className="h-3.5 w-3.5" />
+      </button>
+      <button
+        className="flex h-6 w-6 items-center justify-center rounded-md text-[#64748B] transition-colors hover:bg-red-50 hover:text-[#DC2626] disabled:opacity-50"
         title="Delete"
         aria-label="Delete"
+        disabled={isLoading}
       >
         <Trash2 className="h-3.5 w-3.5" />
       </button>
       <button
-        className="flex h-6 w-6 items-center justify-center rounded-md text-[#64748B] transition-colors hover:bg-[#F1F3F7] hover:text-[#0F172A]"
+        className="flex h-6 w-6 items-center justify-center rounded-md text-[#64748B] transition-colors hover:bg-[#F1F3F7] hover:text-[#0F172A] disabled:opacity-50"
         title="More actions"
         aria-label="More actions"
+        disabled={isLoading}
       >
         <MoreHorizontal className="h-3.5 w-3.5" />
       </button>
@@ -193,10 +216,14 @@ function ThreadRow({
   thread,
   isSelected,
   onClick,
+  isActionLoading,
+  onAction,
 }: {
   thread: ThreadRowData;
   isSelected: boolean;
   onClick: () => void;
+  isActionLoading: boolean;
+  onAction: (threadId: string, action: ThreadAction) => void;
 }) {
   return (
     <div
@@ -304,7 +331,13 @@ function ThreadRow({
       </div>
 
       {/* Hover quick-action toolbar */}
-      <QuickActions threadId={thread.id} />
+      <QuickActions
+        threadId={thread.id}
+        isUnread={thread.isUnread}
+        isFlagged={thread.isFlagged}
+        isLoading={isActionLoading}
+        onAction={onAction}
+      />
     </div>
   );
 }
@@ -317,6 +350,8 @@ interface MailboxThreadListProps {
   reconnectBanner?: React.ReactNode;
   /** Shown when threads array is empty */
   emptyState?: React.ReactNode;
+  isActionLoading?: boolean;
+  onThreadAction?: (threadId: string, action: ThreadAction) => void;
 }
 
 export function MailboxThreadList({
@@ -326,6 +361,8 @@ export function MailboxThreadList({
   reconnectBanner,
   emptyState,
   isLoading = false,
+  isActionLoading = false,
+  onThreadAction,
 }: MailboxThreadListProps & { isLoading?: boolean }) {
   return (
     <div
@@ -350,6 +387,8 @@ export function MailboxThreadList({
               thread={thread}
               isSelected={selectedThreadId === thread.id}
               onClick={() => onSelectThread(thread.id)}
+              isActionLoading={isActionLoading}
+              onAction={onThreadAction ?? (() => {})}
             />
           ))
         )}

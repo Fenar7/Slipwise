@@ -102,6 +102,7 @@ export interface MailboxThreadDetail {
   subject: string;
   status: ThreadStatus;
   assignee: string | null;
+  isFlagged: boolean;
   mailboxLabel: string;
   mailboxColor: string;
   participantsSummary: string;
