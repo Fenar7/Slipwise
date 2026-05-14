@@ -14,11 +14,12 @@ import {
 interface ExpandedComposerProps {
   state: MailboxComposerState;
   onClose: () => void;
+  onDiscard: () => void;
   onCollapse: () => void;
   onChange: (patch: Partial<MailboxComposerState>) => void;
 }
 
-export function ExpandedComposer({ state, onClose, onCollapse, onChange }: ExpandedComposerProps) {
+export function ExpandedComposer({ state, onClose, onDiscard, onCollapse, onChange }: ExpandedComposerProps) {
   const removeAttachment = (id: string) =>
     onChange({ attachments: state.attachments.filter((a) => a.id !== id) });
 
@@ -174,7 +175,7 @@ export function ExpandedComposer({ state, onClose, onCollapse, onChange }: Expan
               schedulePanelOpen: false,
             })
           }
-          onDiscard={onClose}
+          onDiscard={onDiscard}
         />
       </div>
     </div>

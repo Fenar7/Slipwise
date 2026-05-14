@@ -25,6 +25,7 @@ import { mapThreadToRowData, deriveMailboxColor, mapThreadDetailToUI } from "./t
 import { useMailboxThreadDetail } from "./use-mailbox-thread-detail";
 import { useThreadAction } from "./use-thread-action";
 import type { ThreadAction } from "./use-thread-action";
+import { useMailboxDraft } from "./use-mailbox-draft";
 import { ThreadNotFoundEmpty } from "./mailbox-empty-states";
 import type { ThreadRowData } from "./mailbox-thread-list";
 import type {
@@ -75,6 +76,7 @@ function makeComposerState(
   to: string[],
   fromConnection: ConnectionLike,
   layout: MailboxComposerState["layout"] = "floating",
+  draftId: string | null = null,
 ): MailboxComposerState {
   return {
     isOpen: true,
@@ -98,6 +100,7 @@ function makeComposerState(
     schedulePanelOpen: false,
     threadId,
     replyToMessageId,
+    draftId,
   };
 }
 
@@ -340,6 +343,16 @@ export function MailboxWorkspace() {
 
   const { isLoading: isActionLoading, performAction } = useThreadAction(handleActionSuccess);
 
+  // Sprint 5.1: Draft persistence hook
+  const {
+    isLoading: isDraftLoading,
+    isAutosaving,
+    error: draftError,
+    createDraft,
+    autosave,
+    discardDraft,
+  } = useMailboxDraft();
+
   const handleThreadAction = useCallback(
     (threadId: string, action: ThreadAction) => {
       void performAction(threadId, action);
@@ -402,20 +415,34 @@ export function MailboxWorkspace() {
     setSelectedThreadId(null);
   }, [mobilePanel]);
 
-  const openNewCompose = useCallback(() => {
+  const openNewCompose = useCallback(async () => {
     if (!defaultComposeConnection) return;
-    setComposer(makeComposerState("new", null, null, "", [], defaultComposeConnection));
-  }, [defaultComposeConnection]);
+    const draft = await createDraft({
+      mailboxConnectionId: defaultComposeConnection.id,
+      mode: "NEW",
+    });
+    setComposer(makeComposerState("new", null, null, "", [], defaultComposeConnection, "floating", draft?.id ?? null));
+  }, [defaultComposeConnection, createDraft]);
 
   const openInlineReply = useCallback(
-    (mode: ComposeMode, threadId: string, messageId: string, subject: string, to: string[]) => {
+    async (mode: ComposeMode, threadId: string, messageId: string, subject: string, to: string[]) => {
       const threadConnection =
         connections.find((c) => c.id === selectedDetail?.mailboxConnectionId) ??
         defaultComposeConnection;
       if (!threadConnection) return;
-      setComposer(makeComposerState(mode, threadId, messageId, subject, to, threadConnection, "inline"));
+      const draftMode: import("./use-mailbox-draft").DraftModeUppercase =
+        mode === "reply-all" ? "REPLY_ALL" : mode === "reply" ? "REPLY" : "FORWARD";
+      const draft = await createDraft({
+        mailboxConnectionId: threadConnection.id,
+        mode: draftMode,
+        threadId,
+        replyToMessageId: messageId,
+        subject,
+        to,
+      });
+      setComposer(makeComposerState(mode, threadId, messageId, subject, to, threadConnection, "inline", draft?.id ?? null));
     },
-    [connections, defaultComposeConnection, selectedDetail]
+    [connections, defaultComposeConnection, selectedDetail, createDraft]
   );
 
   const closeComposer = useCallback(() => setComposer(null), []);
@@ -425,8 +452,29 @@ export function MailboxWorkspace() {
     []
   );
   const patchComposer = useCallback((patch: Partial<MailboxComposerState>) => {
-    setComposer((p) => p ? { ...p, ...patch } : p);
-  }, []);
+    setComposer((p) => {
+      if (!p) return p;
+      const next = { ...p, ...patch };
+      // Sprint 5.1: trigger debounced autosave when content mutates
+      if (p.draftId) {
+        void autosave({
+          to: next.to,
+          cc: next.cc,
+          bcc: next.bcc,
+          subject: next.subject,
+          htmlBody: next.bodyHtml,
+          textBody: null,
+          attachmentRefs: next.attachments.map((a) => a.id),
+        });
+      }
+      return next;
+    });
+  }, [autosave]);
+
+  const handleDiscardComposer = useCallback(async () => {
+    await discardDraft();
+    setComposer(null);
+  }, [discardDraft]);
 
   const patchContext = useCallback((patch: Partial<LinkedContextState>) => {
     if (!selectedThreadId) return;
@@ -668,6 +716,7 @@ export function MailboxWorkspace() {
                 composerState={composer?.threadId === selectedDetail.threadId ? composer : null}
                 onOpenReply={openInlineReply}
                 onCloseReply={closeComposer}
+                onDiscardReply={handleDiscardComposer}
                 onExpandReply={expandComposer}
                 onPatchComposer={patchComposer}
                 onOpenContext={() => setMobilePanel("context")}
@@ -710,6 +759,7 @@ export function MailboxWorkspace() {
         <FloatingComposer
           state={composer}
           onClose={closeComposer}
+          onDiscard={handleDiscardComposer}
           onExpand={expandComposer}
           onChange={patchComposer}
         />
@@ -720,6 +770,7 @@ export function MailboxWorkspace() {
         <ExpandedComposer
           state={composer}
           onClose={closeComposer}
+          onDiscard={handleDiscardComposer}
           onCollapse={collapseComposer}
           onChange={patchComposer}
         />

@@ -16,11 +16,12 @@ import {
 interface FloatingComposerProps {
   state: MailboxComposerState;
   onClose: () => void;
+  onDiscard: () => void;
   onExpand: () => void;
   onChange: (patch: Partial<MailboxComposerState>) => void;
 }
 
-export function FloatingComposer({ state, onClose, onExpand, onChange }: FloatingComposerProps) {
+export function FloatingComposer({ state, onClose, onDiscard, onExpand, onChange }: FloatingComposerProps) {
   const [minimized, setMinimized] = useState(false);
 
   const removeAttachment = (id: string) =>
@@ -188,7 +189,7 @@ export function FloatingComposer({ state, onClose, onExpand, onChange }: Floatin
                 schedulePanelOpen: false,
               })
             }
-            onDiscard={onClose}
+            onDiscard={onDiscard}
             onExpand={onExpand}
             showExpand
             compact

@@ -150,6 +150,8 @@ export interface MailboxComposerState {
   threadId: string | null;
   /** messageId being replied to, null for new/forward */
   replyToMessageId: string | null;
+  /** Persisted draft ID for this compose session. Sprint 5.1. */
+  draftId: string | null;
 }
 
 // ─── Sprint 1.4 additions ────────────────────────────────────────────────────

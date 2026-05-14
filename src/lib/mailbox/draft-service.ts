@@ -1,0 +1,617 @@
+import "server-only";
+
+import { db } from "@/lib/db";
+import { Prisma } from "@/generated/prisma/client";
+import { listMailboxConnectionsForMember } from "./visibility-service";
+import { getMailboxThreadDetail } from "./thread-service";
+import { toMailboxDraftReadShape } from "./read-shapes";
+import type { MailboxDraftReadShape } from "./read-shapes";
+import { logMailboxAuditTx } from "./audit";
+import type { MailboxDraftMode, MailboxDraftStatus } from "./domain-types";
+
+// ─── Errors ───────────────────────────────────────────────────────────────────
+
+export class DraftServiceError extends Error {
+  constructor(
+    message: string,
+    public statusCode: number,
+  ) {
+    super(message);
+    this.name = "DraftServiceError";
+  }
+}
+
+// ─── Input types ──────────────────────────────────────────────────────────────
+
+export interface CreateDraftInput {
+  orgId: string;
+  userId: string;
+  role: "owner" | "admin" | "member";
+  mailboxConnectionId: string;
+  mode: MailboxDraftMode;
+  /** threadId for reply/reply-all/forward; null for new compose */
+  threadId?: string | null;
+  /** messageId for forward context (optional, for future enrichment) */
+  replyToMessageId?: string | null;
+  fromIdentity?: string;
+  to?: string[];
+  cc?: string[];
+  bcc?: string[];
+  subject?: string;
+  htmlBody?: string;
+  textBody?: string | null;
+  attachmentRefs?: string[];
+}
+
+export interface AutosaveDraftInput {
+  orgId: string;
+  userId: string;
+  role: "owner" | "admin" | "member";
+  draftId: string;
+  /** ISO string of the last known updatedAt. Used for stale-write guard. */
+  lastKnownUpdatedAt?: string | null;
+  to?: string[];
+  cc?: string[];
+  bcc?: string[];
+  subject?: string;
+  htmlBody?: string;
+  textBody?: string | null;
+  attachmentRefs?: string[];
+}
+
+export interface DiscardDraftInput {
+  orgId: string;
+  userId: string;
+  role: "owner" | "admin" | "member";
+  draftId: string;
+}
+
+export interface GetDraftInput {
+  orgId: string;
+  userId: string;
+  role: "owner" | "admin" | "member";
+  draftId: string;
+}
+
+export interface RestoreDraftInput {
+  orgId: string;
+  userId: string;
+  role: "owner" | "admin" | "member";
+  mailboxConnectionId: string;
+  mode: MailboxDraftMode;
+  threadId?: string | null;
+}
+
+// ─── Permission helpers ───────────────────────────────────────────────────────
+
+async function assertCanAccessConnection(
+  orgId: string,
+  userId: string,
+  role: "owner" | "admin" | "member",
+  connectionId: string,
+): Promise<void> {
+  const { accessible } = await listMailboxConnectionsForMember(orgId, userId, role);
+  const connection = accessible.find((c) => c.id === connectionId);
+  if (!connection) {
+    throw new DraftServiceError("Mailbox connection not accessible", 403);
+  }
+  // Members with org_shared policy get read_only access; drafting requires full.
+  const isReadOnly = role === "member" && connection.visibilityPolicy === "org_shared";
+  if (isReadOnly) {
+    throw new DraftServiceError("You do not have permission to compose in this mailbox", 403);
+  }
+}
+
+async function assertCanMutateDraft(
+  orgId: string,
+  userId: string,
+  role: "owner" | "admin" | "member",
+  draftId: string,
+): Promise<{ draft: Prisma.MailboxDraftGetPayload<object>; connectionId: string }> {
+  const draft = await db.mailboxDraft.findFirst({
+    where: { id: draftId, orgId },
+  });
+
+  if (!draft) {
+    throw new DraftServiceError("Draft not found", 404);
+  }
+
+  // Ownership guard: only the creator or an admin can mutate.
+  if (draft.createdBy !== userId && role !== "owner" && role !== "admin") {
+    throw new DraftServiceError("You do not have permission to modify this draft", 403);
+  }
+
+  await assertCanAccessConnection(orgId, userId, role, draft.mailboxConnectionId);
+
+  return { draft, connectionId: draft.mailboxConnectionId };
+}
+
+// ─── Initialization helpers ───────────────────────────────────────────────────
+
+function deriveReplySubject(originalSubject: string): string {
+  const prefix = "Re: ";
+  if (originalSubject.startsWith(prefix)) return originalSubject;
+  return prefix + originalSubject;
+}
+
+function deriveForwardSubject(originalSubject: string): string {
+  const prefix = "Fwd: ";
+  if (originalSubject.startsWith(prefix)) return originalSubject;
+  return prefix + originalSubject;
+}
+
+
+/**
+ * Build default draft fields for reply/reply-all/forward from thread context.
+ * Returns null if the thread is not accessible or does not exist.
+ */
+async function buildThreadDerivedDefaults(
+  orgId: string,
+  userId: string,
+  role: "owner" | "admin" | "member",
+  connectionId: string,
+  mode: MailboxDraftMode,
+  threadId: string,
+): Promise<{
+  to: string[];
+  cc: string[];
+  bcc: string[];
+  subject: string;
+  htmlBody: string;
+} | null> {
+  const detail = await getMailboxThreadDetail(orgId, userId, role, threadId);
+  if (!detail) return null;
+
+  // Verify the thread belongs to the requested connection
+  if (detail.mailboxConnectionId !== connectionId) {
+    return null;
+  }
+
+  const messages = detail.messages;
+  if (messages.length === 0) return null;
+
+  const lastMessage = messages[messages.length - 1];
+  const fromEmail = lastMessage.from?.email ?? "";
+  const allCc = lastMessage.cc.map((p) => p.email);
+
+  switch (mode) {
+    case "REPLY": {
+      return {
+        to: fromEmail ? [fromEmail] : [],
+        cc: [],
+        bcc: [],
+        subject: deriveReplySubject(detail.subject),
+        htmlBody: "",
+      };
+    }
+    case "REPLY_ALL": {
+      // Exclude the sender's own identity from to/cc to avoid self-addressing.
+      // For Sprint 5.1 we do not have the mailbox identity resolved here yet,
+      // so we include all participants. Sprint 5.2 can refine self-exclusion.
+      const toRecipients = fromEmail ? [fromEmail] : [];
+      const ccRecipients = allCc;
+      return {
+        to: toRecipients,
+        cc: ccRecipients,
+        bcc: [],
+        subject: deriveReplySubject(detail.subject),
+        htmlBody: "",
+      };
+    }
+    case "FORWARD": {
+      return {
+        to: [],
+        cc: [],
+        bcc: [],
+        subject: deriveForwardSubject(detail.subject),
+        htmlBody: "",
+      };
+    }
+    default:
+      return null;
+  }
+}
+
+// ─── Core: create or restore draft ────────────────────────────────────────────
+
+export interface CreateDraftResult {
+  draft: MailboxDraftReadShape;
+  created: boolean;
+}
+
+/**
+ * Create a new draft or restore an existing one for the given compose context.
+ *
+ * Canonical restore rules:
+ * - For NEW mode: look for an ACTIVE draft with the same connectionId, mode=NEW, threadId=null, createdBy=userId.
+ * - For REPLY/REPLY_ALL/FORWARD: look for an ACTIVE draft with the same connectionId, threadId, mode, createdBy=userId.
+ * - If found, return the existing draft (do not duplicate).
+ * - If not found, create a new draft with sensible defaults.
+ */
+export async function createOrRestoreDraft(
+  input: CreateDraftInput,
+): Promise<CreateDraftResult> {
+  const {
+    orgId,
+    userId,
+    role,
+    mailboxConnectionId,
+    mode,
+    threadId = null,
+    _replyToMessageId = null,
+    fromIdentity,
+    to,
+    cc,
+    bcc,
+    subject,
+    htmlBody,
+    textBody,
+    attachmentRefs,
+  } = input;
+
+  await assertCanAccessConnection(orgId, userId, role, mailboxConnectionId);
+
+  // Canonical lookup for existing active draft in this context
+  const existing = await db.mailboxDraft.findFirst({
+    where: {
+      orgId,
+      mailboxConnectionId,
+      mode,
+      threadId: threadId ?? null,
+      createdBy: userId,
+      status: "ACTIVE",
+    },
+    orderBy: { updatedAt: "desc" },
+  });
+
+  if (existing) {
+    return { draft: toMailboxDraftReadShape(existing as unknown as import("./domain-types").MailboxDraftRecord), created: false };
+  }
+
+  // Derive defaults for thread-bound modes
+  let defaults: { to: string[]; cc: string[]; bcc: string[]; subject: string; htmlBody: string } | null = null;
+  if (threadId && (mode === "REPLY" || mode === "REPLY_ALL" || mode === "FORWARD")) {
+    defaults = await buildThreadDerivedDefaults(
+      orgId, userId, role, mailboxConnectionId, mode, threadId,
+    );
+  }
+
+  const connection = await db.mailboxConnection.findFirst({
+    where: { id: mailboxConnectionId, orgId },
+    select: { emailAddress: true },
+  });
+  const effectiveFromIdentity = fromIdentity ?? connection?.emailAddress ?? "";
+
+  const effectiveTo = to ?? defaults?.to ?? [];
+  const effectiveCc = cc ?? defaults?.cc ?? [];
+  const effectiveBcc = bcc ?? defaults?.bcc ?? [];
+  const effectiveSubject = subject ?? defaults?.subject ?? "";
+  const effectiveHtmlBody = htmlBody ?? defaults?.htmlBody ?? "";
+
+  const draft = await db.$transaction(async (tx: Prisma.TransactionClient) => {
+    const created = await tx.mailboxDraft.create({
+      data: {
+        orgId,
+        mailboxConnectionId,
+        threadId: threadId ?? null,
+        mode,
+        fromIdentity: effectiveFromIdentity,
+        toRecipients: effectiveTo as Prisma.InputJsonValue,
+        ccRecipients: effectiveCc as Prisma.InputJsonValue,
+        bccRecipients: effectiveBcc as Prisma.InputJsonValue,
+        subject: effectiveSubject,
+        htmlBody: effectiveHtmlBody,
+        textBody: textBody ?? null,
+        attachmentRefs: (attachmentRefs ?? []) as Prisma.InputJsonValue,
+        status: "ACTIVE",
+        lastAutosavedAt: new Date(),
+        createdBy: userId,
+      },
+    });
+
+    await logMailboxAuditTx(tx, {
+      orgId,
+      actorId: userId,
+      action: "DRAFT_CREATED",
+      summary: `Created ${mode.toLowerCase()} draft`,
+      mailboxConnectionId,
+      threadId: threadId ?? null,
+      metadata: { draftId: created.id, mode },
+    });
+
+    return created;
+  });
+
+  return {
+    draft: toMailboxDraftReadShape(draft as unknown as import("./domain-types").MailboxDraftRecord),
+    created: true,
+  };
+}
+
+// ─── Core: autosave draft ───────────────────────────────────────────────────
+
+export interface AutosaveDraftResult {
+  draft: MailboxDraftReadShape;
+  stale: boolean;
+}
+
+/**
+ * Autosave a draft with an optional stale-write guard.
+ *
+ * If lastKnownUpdatedAt is provided and does not match the current row's updatedAt,
+ * the save is rejected as stale. Callers should refetch and retry.
+ *
+ * Autosave updates lastAutosavedAt and does not create duplicate rows.
+ */
+export async function autosaveDraft(
+  input: AutosaveDraftInput,
+): Promise<AutosaveDraftResult> {
+  const { draftId, lastKnownUpdatedAt } = input;
+
+  const { draft } = await assertCanMutateDraft(input.orgId, input.userId, input.role, draftId);
+
+  if (draft.status !== "ACTIVE") {
+    throw new DraftServiceError("Cannot autosave a non-active draft", 409);
+  }
+
+  // Stale-write guard
+  if (lastKnownUpdatedAt) {
+    const currentUpdatedAt = draft.updatedAt.toISOString();
+    if (currentUpdatedAt !== lastKnownUpdatedAt) {
+      // Return the current draft so the caller can reconcile.
+      return {
+        draft: toMailboxDraftReadShape(draft as unknown as import("./domain-types").MailboxDraftRecord),
+        stale: true,
+      };
+    }
+  }
+
+  const updateData: Prisma.MailboxDraftUpdateInput = {
+    lastAutosavedAt: new Date(),
+  };
+
+  if (input.to !== undefined) {
+    updateData.toRecipients = input.to as Prisma.InputJsonValue;
+  }
+  if (input.cc !== undefined) {
+    updateData.ccRecipients = input.cc as Prisma.InputJsonValue;
+  }
+  if (input.bcc !== undefined) {
+    updateData.bccRecipients = input.bcc as Prisma.InputJsonValue;
+  }
+  if (input.subject !== undefined) {
+    updateData.subject = input.subject;
+  }
+  if (input.htmlBody !== undefined) {
+    updateData.htmlBody = input.htmlBody;
+  }
+  if (input.textBody !== undefined) {
+    updateData.textBody = input.textBody;
+  }
+  if (input.attachmentRefs !== undefined) {
+    updateData.attachmentRefs = input.attachmentRefs as Prisma.InputJsonValue;
+  }
+
+  const updated = await db.mailboxDraft.update({
+    where: { id: draftId, orgId: input.orgId },
+    data: updateData,
+  });
+
+  return {
+    draft: toMailboxDraftReadShape(updated as unknown as import("./domain-types").MailboxDraftRecord),
+    stale: false,
+  };
+}
+
+// ─── Core: discard draft ──────────────────────────────────────────────────────
+
+export interface DiscardDraftResult {
+  success: boolean;
+  draftId: string;
+}
+
+/**
+ * Discard a draft. Transitions status to DISCARDED rather than hard-deleting
+ * to preserve auditability and support potential recovery.
+ *
+ * Idempotent: discarding an already-discarded draft succeeds silently.
+ */
+export async function discardDraft(
+  input: DiscardDraftInput,
+): Promise<DiscardDraftResult> {
+  const { orgId, userId, role, draftId } = input;
+
+  const { draft } = await assertCanMutateDraft(orgId, userId, role, draftId);
+
+  if (draft.status === "DISCARDED") {
+    return { success: true, draftId };
+  }
+
+  await db.$transaction(async (tx: Prisma.TransactionClient) => {
+    await tx.mailboxDraft.update({
+      where: { id: draftId, orgId },
+      data: { status: "DISCARDED" as MailboxDraftStatus },
+    });
+
+    await logMailboxAuditTx(tx, {
+      orgId,
+      actorId: userId,
+      action: "DRAFT_DISCARDED",
+      summary: "Discarded draft",
+      mailboxConnectionId: draft.mailboxConnectionId,
+      threadId: draft.threadId ?? null,
+      metadata: { draftId, previousStatus: draft.status },
+    });
+  });
+
+  return { success: true, draftId };
+}
+
+// ─── Core: get draft ──────────────────────────────────────────────────────────
+
+export async function getDraft(
+  input: GetDraftInput,
+): Promise<MailboxDraftReadShape | null> {
+  const { orgId, userId, role, draftId } = input;
+
+  const draft = await db.mailboxDraft.findFirst({
+    where: { id: draftId, orgId },
+  });
+
+  if (!draft) return null;
+
+  // Verify the user can access the mailbox connection this draft belongs to
+  try {
+    await assertCanAccessConnection(orgId, userId, role, draft.mailboxConnectionId);
+  } catch {
+    return null;
+  }
+
+  // Ownership or admin visibility
+  if (draft.createdBy !== userId && role !== "owner" && role !== "admin") {
+    return null;
+  }
+
+  return toMailboxDraftReadShape(draft as unknown as import("./domain-types").MailboxDraftRecord);
+}
+
+// ─── Core: restore draft ────────────────────────────────────────────────────
+
+export interface RestoreDraftResult {
+  draft: MailboxDraftReadShape | null;
+}
+
+/**
+ * Restore the canonical active draft for a given compose context.
+ *
+ * Rules:
+ * - For NEW: the active draft for this user + connection + mode=NEW + threadId=null.
+ * - For REPLY/REPLY_ALL/FORWARD: the active draft for this user + connection + threadId + mode.
+ * - Returns null if no active draft exists.
+ */
+export async function restoreDraft(
+  input: RestoreDraftInput,
+): Promise<RestoreDraftResult> {
+  const { orgId, userId, role, mailboxConnectionId, mode, threadId = null } = input;
+
+  await assertCanAccessConnection(orgId, userId, role, mailboxConnectionId);
+
+  const draft = await db.mailboxDraft.findFirst({
+    where: {
+      orgId,
+      mailboxConnectionId,
+      mode,
+      threadId: threadId ?? null,
+      createdBy: userId,
+      status: "ACTIVE",
+    },
+    orderBy: { updatedAt: "desc" },
+  });
+
+  if (!draft) {
+    return { draft: null };
+  }
+
+  return {
+    draft: toMailboxDraftReadShape(draft as unknown as import("./domain-types").MailboxDraftRecord),
+  };
+}
+
+// ─── Convenience: initialize reply/reply-all/forward ──────────────────────────
+
+export async function initializeReplyDraft(
+  orgId: string,
+  userId: string,
+  role: "owner" | "admin" | "member",
+  mailboxConnectionId: string,
+  threadId: string,
+  replyToMessageId?: string | null,
+): Promise<CreateDraftResult> {
+  return createOrRestoreDraft({
+    orgId,
+    userId,
+    role,
+    mailboxConnectionId,
+    mode: "REPLY",
+    threadId,
+    replyToMessageId: replyToMessageId ?? null,
+  });
+}
+
+export async function initializeReplyAllDraft(
+  orgId: string,
+  userId: string,
+  role: "owner" | "admin" | "member",
+  mailboxConnectionId: string,
+  threadId: string,
+  replyToMessageId?: string | null,
+): Promise<CreateDraftResult> {
+  return createOrRestoreDraft({
+    orgId,
+    userId,
+    role,
+    mailboxConnectionId,
+    mode: "REPLY_ALL",
+    threadId,
+    replyToMessageId: replyToMessageId ?? null,
+  });
+}
+
+export async function initializeForwardDraft(
+  orgId: string,
+  userId: string,
+  role: "owner" | "admin" | "member",
+  mailboxConnectionId: string,
+  threadId: string,
+  replyToMessageId?: string | null,
+): Promise<CreateDraftResult> {
+  return createOrRestoreDraft({
+    orgId,
+    userId,
+    role,
+    mailboxConnectionId,
+    mode: "FORWARD",
+    threadId,
+    replyToMessageId: replyToMessageId ?? null,
+  });
+}
+
+// ─── List active drafts for a connection ──────────────────────────────────────
+
+export interface ListActiveDraftsInput {
+  orgId: string;
+  userId: string;
+  role: "owner" | "admin" | "member";
+  mailboxConnectionId?: string;
+}
+
+export async function listActiveDrafts(
+  input: ListActiveDraftsInput,
+): Promise<MailboxDraftReadShape[]> {
+  const { orgId, userId, role, mailboxConnectionId } = input;
+
+  const { accessible } = await listMailboxConnectionsForMember(orgId, userId, role);
+  const accessibleIds = accessible.map((c) => c.id);
+
+  if (accessibleIds.length === 0) return [];
+
+  const connectionIds = mailboxConnectionId
+    ? accessibleIds.includes(mailboxConnectionId)
+      ? [mailboxConnectionId]
+      : []
+    : accessibleIds;
+
+  if (connectionIds.length === 0) return [];
+
+  const rows = await db.mailboxDraft.findMany({
+    where: {
+      orgId,
+      mailboxConnectionId: { in: connectionIds },
+      createdBy: userId,
+      status: "ACTIVE",
+    },
+    orderBy: { updatedAt: "desc" },
+  });
+
+  return rows.map((r) => toMailboxDraftReadShape(r as unknown as import("./domain-types").MailboxDraftRecord));
+}

@@ -240,3 +240,40 @@ export type {
   ListMailboxThreadsResult,
 } from "./thread-service";
 export { listMailboxThreads, getMailboxThread, getMailboxThreadDetail } from "./thread-service";
+
+// Sprint 5.1: Draft read shapes
+export type { MailboxDraftReadShape } from "./read-shapes";
+export { toMailboxDraftReadShape } from "./read-shapes";
+
+// Sprint 5.1: Composer backend and draft persistence
+export type {
+  CreateDraftInput,
+  AutosaveDraftInput,
+  DiscardDraftInput,
+  GetDraftInput,
+  RestoreDraftInput,
+  CreateDraftResult,
+  AutosaveDraftResult,
+  DiscardDraftResult,
+  RestoreDraftResult,
+  ListActiveDraftsInput,
+} from "./draft-service";
+export {
+  createOrRestoreDraft,
+  autosaveDraft,
+  discardDraft,
+  getDraft,
+  restoreDraft,
+  initializeReplyDraft,
+  initializeReplyAllDraft,
+  initializeForwardDraft,
+  listActiveDrafts,
+  DraftServiceError,
+} from "./draft-service";
+
+// Sprint 5.1: Compose context normalization
+export type { ComposeContext, AutosaveContext } from "./compose-context";
+export {
+  normalizeCreateDraftInput,
+  normalizeAutosaveDraftInput,
+} from "./compose-context";
