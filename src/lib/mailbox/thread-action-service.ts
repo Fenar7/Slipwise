@@ -48,6 +48,7 @@ interface ActionPlan {
     currentStatus: MailboxThreadStatus,
     currentUnreadCount: number,
     currentIsFlagged: boolean,
+    preArchiveStatus: MailboxThreadStatus | null,
   ) => Prisma.MailboxThreadUpdateInput;
 }
 
@@ -55,14 +56,14 @@ const ACTION_PLANS: Record<ThreadAction, ActionPlan> = {
   mark_read: {
     auditAction: "THREAD_READ",
     auditSummary: (subject) => `Marked thread "${subject}" as read`,
-    updateData: (_status, _unreadCount, _isFlagged) => ({
+    updateData: (_status, _unreadCount, _isFlagged, _preArchiveStatus) => ({
       unreadCount: 0,
     }),
   },
   mark_unread: {
     auditAction: "THREAD_UNREAD",
     auditSummary: (subject) => `Marked thread "${subject}" as unread`,
-    updateData: (_status, _unreadCount, _isFlagged) => ({
+    updateData: (_status, _unreadCount, _isFlagged, _preArchiveStatus) => ({
       // Product model uses thread-level unreadCount, not per-message state.
       // Setting to 1 indicates the thread has unread messages.
       unreadCount: 1,
@@ -71,29 +72,32 @@ const ACTION_PLANS: Record<ThreadAction, ActionPlan> = {
   archive: {
     auditAction: "THREAD_STATUS_CHANGED",
     auditSummary: (subject) => `Archived thread "${subject}"`,
-    updateData: (_status, _unreadCount, _isFlagged) => ({
+    updateData: (currentStatus, _unreadCount, _isFlagged, _preArchiveStatus) => ({
       status: "ARCHIVED" as MailboxThreadStatus,
+      // Only capture pre-archive status if we're not already archived.
+      // Guards against double-archive overwriting the original value.
+      ...(currentStatus !== "ARCHIVED" ? { preArchiveStatus: currentStatus } : {}),
     }),
   },
   unarchive: {
     auditAction: "THREAD_STATUS_CHANGED",
     auditSummary: (subject) => `Unarchived thread "${subject}"`,
-    // Explicit stable rule: restore to OPEN when previous state is not tracked.
-    updateData: (_status, _unreadCount, _isFlagged) => ({
-      status: "OPEN" as MailboxThreadStatus,
+    updateData: (_currentStatus, _unreadCount, _isFlagged, preArchiveStatus) => ({
+      status: (preArchiveStatus ?? "OPEN") as MailboxThreadStatus,
+      preArchiveStatus: null,
     }),
   },
   flag: {
     auditAction: "THREAD_FLAGGED",
     auditSummary: (subject) => `Flagged thread "${subject}"`,
-    updateData: (_status, _unreadCount, _isFlagged) => ({
+    updateData: (_status, _unreadCount, _isFlagged, _preArchiveStatus) => ({
       isFlagged: true,
     }),
   },
   unflag: {
     auditAction: "THREAD_UNFLAGGED",
     auditSummary: (subject) => `Unflagged thread "${subject}"`,
-    updateData: (_status, _unreadCount, _isFlagged) => ({
+    updateData: (_status, _unreadCount, _isFlagged, _preArchiveStatus) => ({
       isFlagged: false,
     }),
   },
@@ -178,6 +182,7 @@ export async function performThreadAction(
       thread.status,
       thread.unreadCount,
       thread.isFlagged,
+      (thread as unknown as { preArchiveStatus: MailboxThreadStatus | null }).preArchiveStatus ?? null,
     );
 
     const after = await tx.mailboxThread.update({

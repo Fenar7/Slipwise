@@ -120,6 +120,7 @@ function makeThreadRecord(overrides: Partial<Record<string, unknown>> = {}) {
     lastMessageAt: new Date("2026-05-10T10:00:00Z"),
     unreadCount: 1,
     status: "OPEN" as const,
+    preArchiveStatus: null,
     assigneeId: USER_A,
     isFlagged: false,
     primaryLinkSummary: null,
@@ -219,10 +220,12 @@ describe("Sprint 4.3 — markThreadUnread", () => {
 // ─── archive / unarchive ──────────────────────────────────────────────────────
 
 describe("Sprint 4.3 — archiveThread", () => {
-  it("sets status to ARCHIVED and emits THREAD_STATUS_CHANGED audit", async () => {
+  it("sets status to ARCHIVED, preserves previous status, and emits THREAD_STATUS_CHANGED audit", async () => {
     mockDb.mailboxConnection.findMany.mockResolvedValue([makeConnectionRecord()]);
-    mockDb.mailboxThread.findFirst.mockResolvedValue(makeThreadRecord({ status: "OPEN" }));
-    mockDb.mailboxThread.update.mockResolvedValue(makeThreadRecord({ status: "ARCHIVED" }));
+    mockDb.mailboxThread.findFirst.mockResolvedValue(makeThreadRecord({ status: "PENDING" }));
+    mockDb.mailboxThread.update.mockResolvedValue(
+      makeThreadRecord({ status: "ARCHIVED", preArchiveStatus: "PENDING" }),
+    );
     mockDb.mailboxAuditEvent.create.mockResolvedValue({ id: "audit-1" });
 
     const result = await archiveThread(ORG_A, USER_A, "admin", "thread-1");
@@ -234,7 +237,10 @@ describe("Sprint 4.3 — archiveThread", () => {
     expect(mockDb.mailboxThread.update).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: "thread-1", orgId: ORG_A },
-        data: expect.objectContaining({ status: "ARCHIVED" }),
+        data: expect.objectContaining({
+          status: "ARCHIVED",
+          preArchiveStatus: "PENDING",
+        }),
       }),
     );
 
@@ -244,25 +250,118 @@ describe("Sprint 4.3 — archiveThread", () => {
       }),
     );
   });
+
+  it("does not overwrite preArchiveStatus on double-archive", async () => {
+    mockDb.mailboxConnection.findMany.mockResolvedValue([makeConnectionRecord()]);
+    mockDb.mailboxThread.findFirst.mockResolvedValue(
+      makeThreadRecord({ status: "ARCHIVED", preArchiveStatus: "PENDING" }),
+    );
+    mockDb.mailboxThread.update.mockResolvedValue(
+      makeThreadRecord({ status: "ARCHIVED", preArchiveStatus: "PENDING" }),
+    );
+    mockDb.mailboxAuditEvent.create.mockResolvedValue({ id: "audit-1" });
+
+    const result = await archiveThread(ORG_A, USER_A, "admin", "thread-1");
+
+    expect(result.success).toBe(true);
+
+    const updateCall = mockDb.mailboxThread.update.mock.calls[0][0];
+    // Should not set preArchiveStatus because already archived
+    expect(updateCall.data).not.toHaveProperty("preArchiveStatus");
+  });
 });
 
 describe("Sprint 4.3 — unarchiveThread", () => {
-  it("restores status to OPEN and emits THREAD_STATUS_CHANGED audit", async () => {
+  it("restores the preserved pre-archive status and clears it", async () => {
     mockDb.mailboxConnection.findMany.mockResolvedValue([makeConnectionRecord()]);
-    mockDb.mailboxThread.findFirst.mockResolvedValue(makeThreadRecord({ status: "ARCHIVED" }));
-    mockDb.mailboxThread.update.mockResolvedValue(makeThreadRecord({ status: "OPEN" }));
+    mockDb.mailboxThread.findFirst.mockResolvedValue(
+      makeThreadRecord({ status: "ARCHIVED", preArchiveStatus: "CLOSED" }),
+    );
+    mockDb.mailboxThread.update.mockResolvedValue(
+      makeThreadRecord({ status: "CLOSED", preArchiveStatus: null }),
+    );
     mockDb.mailboxAuditEvent.create.mockResolvedValue({ id: "audit-1" });
 
     const result = await unarchiveThread(ORG_A, USER_A, "admin", "thread-1");
 
     expect(result.success).toBe(true);
     expect(result.action).toBe("unarchive");
-    expect(result.thread?.status).toBe("OPEN");
+    expect(result.thread?.status).toBe("CLOSED");
 
     expect(mockDb.mailboxThread.update).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: "thread-1", orgId: ORG_A },
-        data: expect.objectContaining({ status: "OPEN" }),
+        data: expect.objectContaining({
+          status: "CLOSED",
+          preArchiveStatus: null,
+        }),
+      }),
+    );
+  });
+
+  it("restores OPEN from preArchiveStatus after archive/unarchive", async () => {
+    mockDb.mailboxConnection.findMany.mockResolvedValue([makeConnectionRecord()]);
+    mockDb.mailboxThread.findFirst.mockResolvedValue(
+      makeThreadRecord({ status: "ARCHIVED", preArchiveStatus: "OPEN" }),
+    );
+    mockDb.mailboxThread.update.mockResolvedValue(
+      makeThreadRecord({ status: "OPEN", preArchiveStatus: null }),
+    );
+    mockDb.mailboxAuditEvent.create.mockResolvedValue({ id: "audit-1" });
+
+    const result = await unarchiveThread(ORG_A, USER_A, "admin", "thread-1");
+
+    expect(result.success).toBe(true);
+    expect(result.thread?.status).toBe("OPEN");
+    expect(mockDb.mailboxThread.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: "OPEN", preArchiveStatus: null }),
+      }),
+    );
+  });
+
+  it("restores PENDING from preArchiveStatus after archive/unarchive", async () => {
+    mockDb.mailboxConnection.findMany.mockResolvedValue([makeConnectionRecord()]);
+    mockDb.mailboxThread.findFirst.mockResolvedValue(
+      makeThreadRecord({ status: "ARCHIVED", preArchiveStatus: "PENDING" }),
+    );
+    mockDb.mailboxThread.update.mockResolvedValue(
+      makeThreadRecord({ status: "PENDING", preArchiveStatus: null }),
+    );
+    mockDb.mailboxAuditEvent.create.mockResolvedValue({ id: "audit-1" });
+
+    const result = await unarchiveThread(ORG_A, USER_A, "admin", "thread-1");
+
+    expect(result.success).toBe(true);
+    expect(result.thread?.status).toBe("PENDING");
+    expect(mockDb.mailboxThread.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: "PENDING", preArchiveStatus: null }),
+      }),
+    );
+  });
+
+  it("falls back to OPEN when no pre-archive status is stored", async () => {
+    mockDb.mailboxConnection.findMany.mockResolvedValue([makeConnectionRecord()]);
+    mockDb.mailboxThread.findFirst.mockResolvedValue(
+      makeThreadRecord({ status: "ARCHIVED", preArchiveStatus: null }),
+    );
+    mockDb.mailboxThread.update.mockResolvedValue(
+      makeThreadRecord({ status: "OPEN", preArchiveStatus: null }),
+    );
+    mockDb.mailboxAuditEvent.create.mockResolvedValue({ id: "audit-1" });
+
+    const result = await unarchiveThread(ORG_A, USER_A, "admin", "thread-1");
+
+    expect(result.success).toBe(true);
+    expect(result.thread?.status).toBe("OPEN");
+
+    expect(mockDb.mailboxThread.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: "OPEN",
+          preArchiveStatus: null,
+        }),
       }),
     );
   });

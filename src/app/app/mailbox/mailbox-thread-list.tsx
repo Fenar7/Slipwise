@@ -145,13 +145,15 @@ import type { ThreadAction } from "./use-thread-action";
 
 interface QuickActionsProps {
   threadId: string;
+  status: ThreadRowData["status"];
   isUnread: boolean;
   isFlagged: boolean;
   isLoading: boolean;
   onAction: (threadId: string, action: ThreadAction) => void;
 }
 
-function QuickActions({ threadId, isUnread, isFlagged, isLoading, onAction }: QuickActionsProps) {
+function QuickActions({ threadId, status, isUnread, isFlagged, isLoading, onAction }: QuickActionsProps) {
+  const isArchived = status === "archived";
   return (
     <div
       className="absolute right-3 top-1/2 hidden -translate-y-1/2 items-center gap-0.5 rounded-lg border border-[#E2E5EA] bg-white p-0.5 shadow-sm group-hover:flex group-focus-within:flex"
@@ -171,10 +173,10 @@ function QuickActions({ threadId, isUnread, isFlagged, isLoading, onAction }: Qu
       </button>
       <button
         className="flex h-6 w-6 items-center justify-center rounded-md text-[#64748B] transition-colors hover:bg-[#F1F3F7] hover:text-[#0F172A] disabled:opacity-50"
-        title="Archive"
-        aria-label="Archive"
+        title={isArchived ? "Unarchive" : "Archive"}
+        aria-label={isArchived ? "Unarchive" : "Archive"}
         disabled={isLoading}
-        onClick={() => onAction(threadId, "archive")}
+        onClick={() => onAction(threadId, isArchived ? "unarchive" : "archive")}
       >
         <Archive className="h-3.5 w-3.5" />
       </button>
@@ -333,6 +335,7 @@ function ThreadRow({
       {/* Hover quick-action toolbar */}
       <QuickActions
         threadId={thread.id}
+        status={thread.status}
         isUnread={thread.isUnread}
         isFlagged={thread.isFlagged}
         isLoading={isActionLoading}

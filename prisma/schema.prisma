@@ -6187,6 +6187,8 @@ model MailboxThread {
   lastMessageAt       DateTime
   unreadCount         Int                 @default(0)
   status              MailboxThreadStatus @default(OPEN)
+  /// Status before the thread was archived. Used to restore correct state on unarchive. Sprint 4.3.
+  preArchiveStatus    MailboxThreadStatus?
   assigneeId          String?             @db.Uuid
   isFlagged           Boolean             @default(false)
   primaryLinkSummary  Json?
