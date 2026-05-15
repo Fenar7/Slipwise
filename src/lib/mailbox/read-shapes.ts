@@ -506,6 +506,7 @@ export interface MailboxDraftReadShape {
   orgId: string;
   mailboxConnectionId: string;
   threadId: string | null;
+  replyToMessageId: string | null;
   mode: MailboxDraftMode;
   fromIdentity: string;
   to: string[];
@@ -530,6 +531,7 @@ export function toMailboxDraftReadShape(
     orgId: record.orgId,
     mailboxConnectionId: record.mailboxConnectionId,
     threadId: record.threadId ?? null,
+    replyToMessageId: record.replyToMessageId ?? null,
     mode: record.mode,
     fromIdentity: record.fromIdentity,
     to: record.toRecipients,

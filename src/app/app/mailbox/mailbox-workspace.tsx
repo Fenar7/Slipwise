@@ -351,6 +351,7 @@ export function MailboxWorkspace() {
     createDraft,
     autosave,
     discardDraft,
+    cancelAutosave,
   } = useMailboxDraft();
 
   const handleThreadAction = useCallback(
@@ -445,7 +446,10 @@ export function MailboxWorkspace() {
     [connections, defaultComposeConnection, selectedDetail, createDraft]
   );
 
-  const closeComposer = useCallback(() => setComposer(null), []);
+  const closeComposer = useCallback(() => {
+    cancelAutosave();
+    setComposer(null);
+  }, [cancelAutosave]);
   const expandComposer = useCallback(() => setComposer((p) => p ? { ...p, layout: "expanded" } : p), []);
   const collapseComposer = useCallback(
     () => setComposer((p) => p ? { ...p, layout: p.threadId ? "inline" : "floating" } : p),

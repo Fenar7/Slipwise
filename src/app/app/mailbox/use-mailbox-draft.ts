@@ -24,6 +24,7 @@ export interface DraftResponse {
   orgId: string;
   mailboxConnectionId: string;
   threadId: string | null;
+  replyToMessageId: string | null;
   mode: string;
   fromIdentity: string;
   to: string[];
@@ -71,6 +72,7 @@ export interface UseMailboxDraftResult {
   createDraft: (payload: CreateDraftPayload) => Promise<DraftResponse | null>;
   autosave: (payload: AutosavePayload) => Promise<AutosaveResult | null>;
   discardDraft: () => Promise<boolean>;
+  cancelAutosave: () => void;
   clearError: () => void;
 }
 
@@ -90,11 +92,21 @@ export function useMailboxDraft(): UseMailboxDraftResult {
 
   currentDraftIdRef.current = draftId;
 
+  const cancelAutosave = useCallback(() => {
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+      debounceRef.current = null;
+    }
+    pendingAutosaveRef.current = null;
+  }, []);
+
   const clearError = useCallback(() => setError(null), []);
 
   const createDraft = useCallback(async (
     payload: CreateDraftPayload,
   ): Promise<DraftResponse | null> => {
+    // Cancel any pending autosave from a previous draft lifecycle
+    cancelAutosave();
     setIsLoading(true);
     setError(null);
 
@@ -124,7 +136,7 @@ export function useMailboxDraft(): UseMailboxDraftResult {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [cancelAutosave]);
 
   const performAutosave = useCallback(async (
     draftIdToSave: string,
@@ -184,6 +196,13 @@ export function useMailboxDraft(): UseMailboxDraftResult {
           return;
         }
 
+        // Guard: if the draft has been discarded or replaced since scheduling,
+        // do not send the autosave.
+        if (currentDraftIdRef.current !== currentId) {
+          resolve(null);
+          return;
+        }
+
         // Include lastKnownUpdatedAt from state for stale-write guard
         const guardPayload: AutosavePayload = {
           ...pending,
@@ -199,6 +218,10 @@ export function useMailboxDraft(): UseMailboxDraftResult {
   const discardDraft = useCallback(async (): Promise<boolean> => {
     const currentId = currentDraftIdRef.current;
     if (!currentId) return false;
+
+    // Cancel any pending autosave before discarding so a delayed save
+    // does not resurrect the discarded draft or surface spurious errors.
+    cancelAutosave();
 
     setIsLoading(true);
     setError(null);
@@ -226,7 +249,7 @@ export function useMailboxDraft(): UseMailboxDraftResult {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [cancelAutosave]);
 
   return {
     isLoading,
@@ -238,6 +261,7 @@ export function useMailboxDraft(): UseMailboxDraftResult {
     createDraft,
     autosave,
     discardDraft,
+    cancelAutosave,
     clearError,
   };
 }

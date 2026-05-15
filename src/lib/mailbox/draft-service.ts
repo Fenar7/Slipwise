@@ -31,7 +31,7 @@ export interface CreateDraftInput {
   mode: MailboxDraftMode;
   /** threadId for reply/reply-all/forward; null for new compose */
   threadId?: string | null;
-  /** messageId for forward context (optional, for future enrichment) */
+  /** messageId being replied to / forwarded. Part of canonical draft identity for thread-bound modes. */
   replyToMessageId?: string | null;
   fromIdentity?: string;
   to?: string[];
@@ -80,6 +80,7 @@ export interface RestoreDraftInput {
   mailboxConnectionId: string;
   mode: MailboxDraftMode;
   threadId?: string | null;
+  replyToMessageId?: string | null;
 }
 
 // ─── Permission helpers ───────────────────────────────────────────────────────
@@ -144,6 +145,9 @@ function deriveForwardSubject(originalSubject: string): string {
 /**
  * Build default draft fields for reply/reply-all/forward from thread context.
  * Returns null if the thread is not accessible or does not exist.
+ *
+ * @param fromIdentity — the sending mailbox email address. Used to exclude the
+ *   sender from reply-all recipient buckets so drafts are never self-addressed.
  */
 async function buildThreadDerivedDefaults(
   orgId: string,
@@ -152,6 +156,7 @@ async function buildThreadDerivedDefaults(
   connectionId: string,
   mode: MailboxDraftMode,
   threadId: string,
+  fromIdentity: string,
 ): Promise<{
   to: string[];
   cc: string[];
@@ -172,7 +177,9 @@ async function buildThreadDerivedDefaults(
 
   const lastMessage = messages[messages.length - 1];
   const fromEmail = lastMessage.from?.email ?? "";
+  const allTo = lastMessage.to.map((p) => p.email);
   const allCc = lastMessage.cc.map((p) => p.email);
+  const selfEmailLower = fromIdentity.trim().toLowerCase();
 
   switch (mode) {
     case "REPLY": {
@@ -185,11 +192,34 @@ async function buildThreadDerivedDefaults(
       };
     }
     case "REPLY_ALL": {
-      // Exclude the sender's own identity from to/cc to avoid self-addressing.
-      // For Sprint 5.1 we do not have the mailbox identity resolved here yet,
-      // so we include all participants. Sprint 5.2 can refine self-exclusion.
-      const toRecipients = fromEmail ? [fromEmail] : [];
-      const ccRecipients = allCc;
+      // Reply-all includes:
+      //   - original sender
+      //   - original to recipients
+      //   - original cc recipients
+      // Excludes the sending mailbox identity from all buckets.
+      // Deduplicates case-insensitively across to and cc.
+      const rawTo = [fromEmail, ...allTo].filter((e) => e.length > 0);
+      const rawCc = allCc.filter((e) => e.length > 0);
+
+      const seen = new Set<string>();
+      const toRecipients: string[] = [];
+      const ccRecipients: string[] = [];
+
+      for (const email of rawTo) {
+        const lower = email.trim().toLowerCase();
+        if (lower === selfEmailLower) continue;
+        if (seen.has(lower)) continue;
+        seen.add(lower);
+        toRecipients.push(email.trim());
+      }
+      for (const email of rawCc) {
+        const lower = email.trim().toLowerCase();
+        if (lower === selfEmailLower) continue;
+        if (seen.has(lower)) continue;
+        seen.add(lower);
+        ccRecipients.push(email.trim());
+      }
+
       return {
         to: toRecipients,
         cc: ccRecipients,
@@ -223,8 +253,8 @@ export interface CreateDraftResult {
  * Create a new draft or restore an existing one for the given compose context.
  *
  * Canonical restore rules:
- * - For NEW mode: look for an ACTIVE draft with the same connectionId, mode=NEW, threadId=null, createdBy=userId.
- * - For REPLY/REPLY_ALL/FORWARD: look for an ACTIVE draft with the same connectionId, threadId, mode, createdBy=userId.
+ * - For NEW mode: connectionId + mode=NEW + threadId=null + replyToMessageId=null + createdBy=userId.
+ * - For REPLY / REPLY_ALL / FORWARD: connectionId + mode + threadId + replyToMessageId + createdBy=userId.
  * - If found, return the existing draft (do not duplicate).
  * - If not found, create a new draft with sensible defaults.
  */
@@ -238,7 +268,7 @@ export async function createOrRestoreDraft(
     mailboxConnectionId,
     mode,
     threadId = null,
-    _replyToMessageId = null,
+    replyToMessageId = null,
     fromIdentity,
     to,
     cc,
@@ -251,6 +281,8 @@ export async function createOrRestoreDraft(
 
   await assertCanAccessConnection(orgId, userId, role, mailboxConnectionId);
 
+  const effectiveReplyToMessageId = replyToMessageId ?? null;
+
   // Canonical lookup for existing active draft in this context
   const existing = await db.mailboxDraft.findFirst({
     where: {
@@ -258,6 +290,7 @@ export async function createOrRestoreDraft(
       mailboxConnectionId,
       mode,
       threadId: threadId ?? null,
+      replyToMessageId: effectiveReplyToMessageId,
       createdBy: userId,
       status: "ACTIVE",
     },
@@ -268,19 +301,19 @@ export async function createOrRestoreDraft(
     return { draft: toMailboxDraftReadShape(existing as unknown as import("./domain-types").MailboxDraftRecord), created: false };
   }
 
-  // Derive defaults for thread-bound modes
-  let defaults: { to: string[]; cc: string[]; bcc: string[]; subject: string; htmlBody: string } | null = null;
-  if (threadId && (mode === "REPLY" || mode === "REPLY_ALL" || mode === "FORWARD")) {
-    defaults = await buildThreadDerivedDefaults(
-      orgId, userId, role, mailboxConnectionId, mode, threadId,
-    );
-  }
-
   const connection = await db.mailboxConnection.findFirst({
     where: { id: mailboxConnectionId, orgId },
     select: { emailAddress: true },
   });
   const effectiveFromIdentity = fromIdentity ?? connection?.emailAddress ?? "";
+
+  // Derive defaults for thread-bound modes
+  let defaults: { to: string[]; cc: string[]; bcc: string[]; subject: string; htmlBody: string } | null = null;
+  if (threadId && (mode === "REPLY" || mode === "REPLY_ALL" || mode === "FORWARD")) {
+    defaults = await buildThreadDerivedDefaults(
+      orgId, userId, role, mailboxConnectionId, mode, threadId, effectiveFromIdentity,
+    );
+  }
 
   const effectiveTo = to ?? defaults?.to ?? [];
   const effectiveCc = cc ?? defaults?.cc ?? [];
@@ -294,6 +327,7 @@ export async function createOrRestoreDraft(
         orgId,
         mailboxConnectionId,
         threadId: threadId ?? null,
+        replyToMessageId: effectiveReplyToMessageId,
         mode,
         fromIdentity: effectiveFromIdentity,
         toRecipients: effectiveTo as Prisma.InputJsonValue,
@@ -485,14 +519,14 @@ export interface RestoreDraftResult {
  * Restore the canonical active draft for a given compose context.
  *
  * Rules:
- * - For NEW: the active draft for this user + connection + mode=NEW + threadId=null.
- * - For REPLY/REPLY_ALL/FORWARD: the active draft for this user + connection + threadId + mode.
+ * - For NEW: the active draft for this user + connection + mode=NEW + threadId=null + replyToMessageId=null.
+ * - For REPLY/REPLY_ALL/FORWARD: the active draft for this user + connection + threadId + replyToMessageId + mode.
  * - Returns null if no active draft exists.
  */
 export async function restoreDraft(
   input: RestoreDraftInput,
 ): Promise<RestoreDraftResult> {
-  const { orgId, userId, role, mailboxConnectionId, mode, threadId = null } = input;
+  const { orgId, userId, role, mailboxConnectionId, mode, threadId = null, replyToMessageId = null } = input;
 
   await assertCanAccessConnection(orgId, userId, role, mailboxConnectionId);
 
@@ -502,6 +536,7 @@ export async function restoreDraft(
       mailboxConnectionId,
       mode,
       threadId: threadId ?? null,
+      replyToMessageId: replyToMessageId ?? null,
       createdBy: userId,
       status: "ACTIVE",
     },

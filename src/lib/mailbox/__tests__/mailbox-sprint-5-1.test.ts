@@ -219,6 +219,7 @@ function makeDraftRecord(overrides: Partial<Record<string, unknown>> = {}) {
     orgId: ORG_A,
     mailboxConnectionId: CONN_1,
     threadId: null,
+    replyToMessageId: null,
     mode: "NEW" as const,
     fromIdentity: "billing@example.com",
     toRecipients: [],
@@ -353,6 +354,135 @@ describe("createOrRestoreDraft", () => {
     expect(result.draft.subject).toBe("Re: Invoice #123");
     expect(result.draft.to).toEqual(["client@example.com"]);
     expect(result.draft.threadId).toBe(THREAD_1);
+  });
+
+  it("derives reply-all defaults, excludes sender, deduplicates, and preserves order", async () => {
+    const thread = makeThreadRecord();
+    mockListConnections.mockResolvedValue({
+      accessible: [makeConnectionListItem()],
+      restricted: [],
+    });
+    mockDb.mailboxDraft.findFirst.mockResolvedValue(null);
+    mockDb.mailboxConnection.findFirst.mockResolvedValue(makeConnectionRecord({ emailAddress: "billing@example.com" }));
+    mockDb.mailboxThread.findFirst.mockResolvedValue({
+      ...thread,
+      messages: [
+        makeMessageRecord({
+          from: { email: "client@example.com", displayName: "Client" },
+          to: [
+            { email: "billing@example.com", displayName: "Billing Team" },
+            { email: "client@example.com", displayName: "Client (duplicate in to)" },
+          ],
+          cc: [
+            { email: "cc@example.com", displayName: "CC" },
+            { email: "Billing@Example.COM", displayName: "Billing (cc dup)" },
+          ],
+        }),
+      ],
+    });
+
+    mockDb.$transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
+      const tx = {
+        mailboxDraft: {
+          create: vi.fn().mockImplementation(async ({ data }: { data: unknown }) => {
+            return { id: DRAFT_1, ...data, createdAt: new Date(), updatedAt: new Date() };
+          }),
+        },
+        mailboxAuditEvent: { create: vi.fn().mockResolvedValue({}) },
+      };
+      return fn(tx);
+    });
+
+    const result = await createOrRestoreDraft({
+      orgId: ORG_A,
+      userId: USER_A,
+      role: "owner",
+      mailboxConnectionId: CONN_1,
+      mode: "REPLY_ALL",
+      threadId: THREAD_1,
+    });
+
+    // Sender excluded from all buckets
+    expect(result.draft.to).toEqual(["client@example.com"]);
+    // cc deduplicated case-insensitively and self-excluded; Billing already removed
+    expect(result.draft.cc).toEqual(["cc@example.com"]);
+    expect(result.draft.to).not.toContain("billing@example.com");
+    expect(result.draft.cc).not.toContain("billing@example.com");
+    expect(result.draft.subject).toBe("Re: Invoice #123");
+  });
+
+  it("creates distinct drafts for different replyToMessageId within same thread", async () => {
+    mockListConnections.mockResolvedValue({
+      accessible: [makeConnectionListItem()],
+      restricted: [],
+    });
+    // First call: no existing draft for message-1
+    // Second call: no existing draft for message-2
+    mockDb.mailboxDraft.findFirst.mockResolvedValue(null);
+    mockDb.mailboxConnection.findFirst.mockResolvedValue(makeConnectionRecord());
+
+    mockDb.$transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
+      const tx = {
+        mailboxDraft: {
+          create: vi.fn().mockImplementation(async ({ data }: { data: unknown }) => {
+            return { id: `draft-${Math.random().toString(36).slice(2)}`, ...data, createdAt: new Date(), updatedAt: new Date() };
+          }),
+        },
+        mailboxAuditEvent: { create: vi.fn().mockResolvedValue({}) },
+      };
+      return fn(tx);
+    });
+
+    const draft1 = await createOrRestoreDraft({
+      orgId: ORG_A,
+      userId: USER_A,
+      role: "owner",
+      mailboxConnectionId: CONN_1,
+      mode: "REPLY",
+      threadId: THREAD_1,
+      replyToMessageId: "message-1",
+    });
+
+    const draft2 = await createOrRestoreDraft({
+      orgId: ORG_A,
+      userId: USER_A,
+      role: "owner",
+      mailboxConnectionId: CONN_1,
+      mode: "REPLY",
+      threadId: THREAD_1,
+      replyToMessageId: "message-2",
+    });
+
+    expect(draft1.draft.id).not.toBe(draft2.draft.id);
+    expect(draft1.created).toBe(true);
+    expect(draft2.created).toBe(true);
+  });
+
+  it("restores existing draft that matches replyToMessageId", async () => {
+    const existing = makeDraftRecord({
+      id: "existing-msg-1",
+      mode: "REPLY",
+      threadId: THREAD_1,
+      replyToMessageId: "message-1",
+    });
+    mockListConnections.mockResolvedValue({
+      accessible: [makeConnectionListItem()],
+      restricted: [],
+    });
+    mockDb.mailboxDraft.findFirst.mockResolvedValue(existing);
+
+    const result = await createOrRestoreDraft({
+      orgId: ORG_A,
+      userId: USER_A,
+      role: "owner",
+      mailboxConnectionId: CONN_1,
+      mode: "REPLY",
+      threadId: THREAD_1,
+      replyToMessageId: "message-1",
+    });
+
+    expect(result.created).toBe(false);
+    expect(result.draft.id).toBe("existing-msg-1");
   });
 
   it("derives forward defaults from thread context", async () => {
