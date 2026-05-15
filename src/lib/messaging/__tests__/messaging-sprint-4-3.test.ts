@@ -124,7 +124,7 @@ import { MessagingGateway } from "@/lib/messaging/realtime/gateway";
 
 // ─── Event Log Service ────────────────────────────────────────────────────────
 import {
-  generateCursor,
+  generateMonotonicCursor,
   appendConversationEvent,
   replayConversationEvents,
   DEFAULT_REPLAY_RETENTION_HOURS,
@@ -257,18 +257,39 @@ describe("Sprint 4.3 event log service", () => {
     vi.clearAllMocks();
   });
 
-  it("generateCursor returns a bigint", () => {
-    const c1 = generateCursor();
-    const c2 = generateCursor();
-    expect(typeof c1).toBe("bigint");
-    expect(typeof c2).toBe("bigint");
-    expect(c2 >= c1).toBe(true);
+  it("generateMonotonicCursor returns a bigint greater than latest persisted cursor", async () => {
+    const tx = {
+      conversationEventLog: {
+        findFirst: vi.fn().mockResolvedValue({ cursor: BigInt(100) }),
+      },
+    } as unknown as Parameters<typeof generateMonotonicCursor>[0];
+
+    const cursor = await generateMonotonicCursor(tx, CONV_ID);
+    expect(typeof cursor).toBe("bigint");
+    expect(cursor).toBeGreaterThan(BigInt(100));
+    expect(tx.conversationEventLog.findFirst).toHaveBeenCalledWith({
+      where: { conversationId: CONV_ID },
+      orderBy: { cursor: "desc" },
+      select: { cursor: true },
+    });
+  });
+
+  it("generateMonotonicCursor starts at 1 when no events exist", async () => {
+    const tx = {
+      conversationEventLog: {
+        findFirst: vi.fn().mockResolvedValue(null),
+      },
+    } as unknown as Parameters<typeof generateMonotonicCursor>[0];
+
+    const cursor = await generateMonotonicCursor(tx, CONV_ID);
+    expect(cursor).toBe(BigInt(1));
   });
 
   it("appendConversationEvent writes to tx.conversationEventLog.create", async () => {
     const tx = {
       conversationEventLog: {
         create: vi.fn().mockResolvedValue({ id: "log-1" }),
+        findFirst: vi.fn().mockResolvedValue(null),
       },
     } as unknown as Parameters<typeof appendConversationEvent>[0];
 
@@ -281,8 +302,34 @@ describe("Sprint 4.3 event log service", () => {
     });
 
     expect(tx.conversationEventLog.create).toHaveBeenCalledTimes(1);
+    expect(tx.conversationEventLog.findFirst).toHaveBeenCalledTimes(1);
     expect(result.eventId).toMatch(/^conversation.message.created:/);
     expect(typeof result.cursor).toBe("bigint");
+    expect(result.cursor).toBeGreaterThanOrEqual(BigInt(1));
+  });
+
+  it("appendConversationEvent retries on cursor unique constraint collision", async () => {
+    let mockCursor = BigInt(100);
+    const tx = {
+      conversationEventLog: {
+        findFirst: vi.fn().mockImplementation(() => Promise.resolve({ cursor: mockCursor++ })),
+        create: vi.fn()
+          .mockRejectedValueOnce(new Error("Unique constraint failed on the fields: (`conversationId`,`cursor`)"))
+          .mockResolvedValueOnce({ id: "log-1" }),
+      },
+    } as unknown as Parameters<typeof appendConversationEvent>[0];
+
+    const result = await appendConversationEvent(tx, {
+      orgId: ORG_A,
+      conversationId: CONV_ID,
+      eventType: "conversation.message.created",
+      actorId: USER_1,
+      payload: { messageId: "msg-1" },
+    });
+
+    expect(tx.conversationEventLog.create).toHaveBeenCalledTimes(2);
+    expect(tx.conversationEventLog.findFirst).toHaveBeenCalledTimes(2);
+    expect(result.cursor).toBeGreaterThan(BigInt(100));
   });
 
   it("replayConversationEvents returns ok with ordered events", async () => {
@@ -401,14 +448,24 @@ describe("Sprint 4.3 protocol validation", () => {
     ).toBe(false);
   });
 
-  it("accepts resume_session with lastSeenCursor", () => {
+  it("accepts resume_session with lastSeenCursors map", () => {
     expect(
       isValidClientCommand({
         type: "resume_session",
         requestId: "r1",
-        payload: { sessionToken: "tok", lastSeenCursor: "12345" },
+        payload: { sessionToken: "tok", lastSeenCursors: { [CONV_ID]: "12345" } },
       }),
     ).toBe(true);
+  });
+
+  it("rejects resume_session with empty cursor value in lastSeenCursors", () => {
+    expect(
+      isValidClientCommand({
+        type: "resume_session",
+        requestId: "r1",
+        payload: { sessionToken: "tok", lastSeenCursors: { [CONV_ID]: "" } },
+      }),
+    ).toBe(false);
   });
 });
 
@@ -516,18 +573,23 @@ describe("MessagingGateway Sprint 4.3 replay integration", () => {
     db.conversation.findFirst.mockResolvedValue(makeConversationRow());
     db.conversationParticipant.findFirst.mockResolvedValue(makeParticipantRow());
     db.conversationEventLog.findFirst.mockResolvedValue({ id: "anchor", createdAt: now });
-    db.conversationEventLog.findMany.mockResolvedValue([
-      {
-        eventId: "evt-resume-1",
-        cursor: BigInt(200),
-        eventType: "conversation.message.created",
-        orgId: ORG_A,
-        conversationId: CONV_ID,
-        actorId: USER_1,
-        payload: { messageId: "msg-resume-1" },
-        createdAt: new Date(now.getTime() + 1),
-      },
-    ]);
+    db.conversationEventLog.findMany.mockImplementation((args: { where?: { conversationId?: string } }) => {
+      if (args?.where?.conversationId === CONV_ID) {
+        return Promise.resolve([
+          {
+            eventId: "evt-resume-1",
+            cursor: BigInt(200),
+            eventType: "conversation.message.created",
+            orgId: ORG_A,
+            conversationId: CONV_ID,
+            actorId: USER_1,
+            payload: { messageId: "msg-resume-1" },
+            createdAt: new Date(now.getTime() + 1),
+          },
+        ]);
+      }
+      return Promise.resolve([]);
+    });
 
     const token = mintTestToken();
     const ws = await wsConnect(`ws://localhost:${port}`);
@@ -539,12 +601,12 @@ describe("MessagingGateway Sprint 4.3 replay integration", () => {
     await wsNextMessage(ws);
     ws.close();
 
-    // Reconnect with lastSeenCursor
+    // Reconnect with per-conversation cursor map
     const ws2 = await wsConnect(`ws://localhost:${port}`);
     wsSend(ws2, {
       type: "resume_session",
       requestId: "r2",
-      payload: { sessionToken: token.token, lastSeenCursor: "100" },
+      payload: { sessionToken: token.token, lastSeenCursors: { [CONV_ID]: "100" } },
     });
 
     const messages = await wsCollectMessages(ws2, 300);
@@ -578,7 +640,7 @@ describe("MessagingGateway Sprint 4.3 replay integration", () => {
     wsSend(ws2, {
       type: "resume_session",
       requestId: "r2",
-      payload: { sessionToken: token.token, lastSeenCursor: "100" },
+      payload: { sessionToken: token.token, lastSeenCursors: { [CONV_ID]: "100" } },
     });
 
     const messages = await wsCollectMessages(ws2, 300);
@@ -629,7 +691,7 @@ describe("MessagingGateway Sprint 4.3 replay integration", () => {
     wsSend(ws2, {
       type: "resume_session",
       requestId: "r2",
-      payload: { sessionToken: token.token, lastSeenCursor: "100" },
+      payload: { sessionToken: token.token, lastSeenCursors: { [CONV_ID]: "100" } },
     });
 
     const messages = await wsCollectMessages(ws2, 300);
@@ -660,6 +722,131 @@ describe("MessagingGateway Sprint 4.3 replay integration", () => {
     expect(msg.type).toBe("subscription_denied");
 
     ws.close();
+  });
+
+  it("resume with per-conversation cursors replays each conversation independently", async () => {
+    const now = new Date();
+    const CONV_2 = "conv-002";
+
+    db.conversation.findFirst.mockResolvedValue(makeConversationRow());
+    db.conversationParticipant.findFirst.mockResolvedValue(makeParticipantRow());
+    db.conversationEventLog.findFirst.mockResolvedValue({ id: "anchor", createdAt: now });
+    db.conversationEventLog.findMany.mockImplementation((args: { where?: { conversationId?: string } }) => {
+      if (args?.where?.conversationId === CONV_ID) {
+        return Promise.resolve([
+          {
+            eventId: "evt-resume-1",
+            cursor: BigInt(200),
+            eventType: "conversation.message.created",
+            orgId: ORG_A,
+            conversationId: CONV_ID,
+            actorId: USER_1,
+            payload: { messageId: "msg-resume-1" },
+            createdAt: new Date(now.getTime() + 1),
+          },
+        ]);
+      }
+      return Promise.resolve([]);
+    });
+
+    const token = mintTestToken();
+    const ws = await wsConnect(`ws://localhost:${port}`);
+    wsSend(ws, { type: "resume_session", requestId: "r0", payload: { sessionToken: token.token } });
+    await wsNextMessage(ws);
+
+    // Subscribe to two conversations
+    wsSend(ws, { type: "subscribe_conversation", requestId: "r1", payload: { conversationId: CONV_ID } });
+    await wsNextMessage(ws);
+    wsSend(ws, { type: "subscribe_conversation", requestId: "r2", payload: { conversationId: CONV_2 } });
+    await wsNextMessage(ws);
+    ws.close();
+
+    // Reconnect with per-conversation cursors
+    const ws2 = await wsConnect(`ws://localhost:${port}`);
+    wsSend(ws2, {
+      type: "resume_session",
+      requestId: "r3",
+      payload: { sessionToken: token.token, lastSeenCursors: { [CONV_ID]: "100", [CONV_2]: "50" } },
+    });
+
+    const messages = await wsCollectMessages(ws2, 300);
+    const resumeResult = messages.find((m) => m.type === "resume_session_result");
+    expect(resumeResult).toBeTruthy();
+    expect((resumeResult!.payload as Record<string, unknown>).resumed).toBe(true);
+    expect((resumeResult!.payload as Record<string, unknown>).rehydrateRecommended).toBe(false);
+
+    const replayed = messages.filter(
+      (m) => m.type === "event" && (m.payload as Record<string, unknown>)?.eventType === "conversation.message.created",
+    );
+    expect(replayed.length).toBe(1); // only conv-001 has a replay event
+
+    ws2.close();
+  });
+
+  it("resume: stale cursor for one conversation does not poison replay for another", async () => {
+    const now = new Date();
+    const oldDate = new Date(Date.now() - (DEFAULT_REPLAY_RETENTION_HOURS + 1) * 60 * 60 * 1000);
+    const CONV_2 = "conv-002";
+
+    db.conversation.findFirst.mockResolvedValue(makeConversationRow());
+    db.conversationParticipant.findFirst.mockResolvedValue(makeParticipantRow());
+
+    // First call (CONV_ID) returns stale anchor, second call (CONV_2) returns fresh anchor
+    db.conversationEventLog.findFirst
+      .mockResolvedValueOnce({ id: "anchor-stale", createdAt: oldDate })
+      .mockResolvedValueOnce({ id: "anchor-fresh", createdAt: now });
+
+    db.conversationEventLog.findMany.mockResolvedValue([
+      {
+        eventId: "evt-2",
+        cursor: BigInt(200),
+        eventType: "conversation.message.created",
+        orgId: ORG_A,
+        conversationId: CONV_2,
+        actorId: USER_1,
+        payload: { messageId: "msg-2" },
+        createdAt: new Date(now.getTime() + 1),
+      },
+    ]);
+
+    const token = mintTestToken();
+    const ws = await wsConnect(`ws://localhost:${port}`);
+    wsSend(ws, { type: "resume_session", requestId: "r0", payload: { sessionToken: token.token } });
+    await wsNextMessage(ws);
+
+    wsSend(ws, { type: "subscribe_conversation", requestId: "r1", payload: { conversationId: CONV_ID } });
+    await wsNextMessage(ws);
+    wsSend(ws, { type: "subscribe_conversation", requestId: "r2", payload: { conversationId: CONV_2 } });
+    await wsNextMessage(ws);
+    ws.close();
+
+    const ws2 = await wsConnect(`ws://localhost:${port}`);
+    wsSend(ws2, {
+      type: "resume_session",
+      requestId: "r3",
+      payload: { sessionToken: token.token, lastSeenCursors: { [CONV_ID]: "100", [CONV_2]: "50" } },
+    });
+
+    const messages = await wsCollectMessages(ws2, 300);
+
+    // resume_session_result should say rehydrateRecommended because CONV_ID was stale
+    const resumeResult = messages.find((m) => m.type === "resume_session_result");
+    expect(resumeResult).toBeTruthy();
+    expect((resumeResult!.payload as Record<string, unknown>).resumed).toBe(false);
+    expect((resumeResult!.payload as Record<string, unknown>).rehydrateRecommended).toBe(true);
+
+    // CONV_ID should get a replay_unavailable error
+    const errors = messages.filter((m) => m.type === "error");
+    expect(errors.length).toBeGreaterThanOrEqual(1);
+
+    // CONV_2 should still get its replayed event
+    const replayed = messages.find(
+      (m) =>
+        m.type === "event" && ((m.payload as Record<string, unknown>)?.conversationId as string) === CONV_2,
+    );
+    expect(replayed).toBeTruthy();
+
+    ws2.close();
   });
 });
 

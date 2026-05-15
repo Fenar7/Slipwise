@@ -204,7 +204,7 @@ export class MessagingGateway {
           connState,
           command.payload.sessionToken,
           requestId,
-          command.payload.lastSeenCursor ?? undefined,
+          command.payload.lastSeenCursors ?? undefined,
         );
         break;
       case "set_presence":
@@ -326,7 +326,7 @@ export class MessagingGateway {
     connState: GatewayConnectionState,
     sessionToken: string,
     requestId: string,
-    lastSeenCursor?: string,
+    lastSeenCursors?: Record<string, string>,
   ): Promise<void> {
     // If already authenticated, reject duplicate resume.
     if (connState.sessionId) {
@@ -421,10 +421,14 @@ export class MessagingGateway {
     }
 
     // Sprint 4.3: replay missed events for reauthorized subscriptions.
+    // Each conversation is replayed against its own cursor so that a stale or
+    // invalid cursor for conversation A never poisons replay for conversation B.
     let rehydrateRecommended = false;
-    if (lastSeenCursor && allowedSubs.length > 0) {
+    if (lastSeenCursors && allowedSubs.length > 0) {
       for (const conversationId of allowedSubs) {
-        const replayOk = await this.replayForSubscription(socket, session, conversationId, lastSeenCursor);
+        const cursor = lastSeenCursors[conversationId];
+        if (!cursor) continue; // no cursor for this conversation, skip replay
+        const replayOk = await this.replayForSubscription(socket, session, conversationId, cursor);
         if (!replayOk) {
           rehydrateRecommended = true;
         }
@@ -432,7 +436,7 @@ export class MessagingGateway {
     }
 
     // Send explicit resume result so the client knows whether continuity is satisfied.
-    if (lastSeenCursor) {
+    if (lastSeenCursors && allowedSubs.length > 0) {
       this.sendMessage(socket, {
         type: "resume_session_result",
         requestId,

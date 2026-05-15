@@ -13,25 +13,42 @@ import type { RealtimeEventType } from "./protocol";
  * - Support safe reconnect/replay semantics
  *
  * Cursor model:
- * - BigInt combining millisecond timestamp × 10000 + random tiebreaker
+ * - Strictly monotonic per-conversation stream (each cursor = previous + 1)
  * - Ordered per-conversation stream; not globally ordered across orgs
  * - Collisions are prevented by @@unique([conversationId, cursor]) DB constraint
+ *   with an in-transaction retry loop on contention
  */
 
 // ---------------------------------------------------------------------------
 // Cursor generation
 // ---------------------------------------------------------------------------
 
-let cursorCounter = 0;
-
-/** Generate a monotonic cursor for a conversation event.
- *  Uses millisecond timestamp × 10000 + an in-process counter for
- *  strict monotonicity within the same process. */
-export function generateCursor(): bigint {
-  const time = BigInt(Date.now());
-  const seq = BigInt(cursorCounter++ % 10000);
-  return time * BigInt(10000) + seq;
+/**
+ * Generate a monotonic cursor for a conversation event.
+ * Reads the latest persisted cursor for the conversation and returns
+ * `latest + 1`, guaranteeing strict monotonicity even across process
+ * restarts, multi-node writers, or backward clock skew.
+ */
+export async function generateMonotonicCursor(
+  tx: Prisma.TransactionClient,
+  conversationId: string,
+): Promise<bigint> {
+  const latest = await tx.conversationEventLog.findFirst({
+    where: { conversationId },
+    orderBy: { cursor: "desc" },
+    select: { cursor: true },
+  });
+  return (latest?.cursor ?? 0n) + 1n;
 }
+
+function isUniqueConstraintError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    (error.message.includes("Unique constraint failed") || error.message.includes("P2002"))
+  );
+}
+
+const MAX_APPEND_RETRIES = 3;
 
 // ---------------------------------------------------------------------------
 // Append
@@ -60,21 +77,33 @@ export async function appendConversationEvent(
   input: AppendConversationEventInput,
 ): Promise<AppendConversationEventResult> {
   const eventId = `${input.eventType}:${Date.now()}:${Math.random().toString(36).slice(2, 10)}`;
-  const cursor = generateCursor();
 
-  await tx.conversationEventLog.create({
-    data: {
-      orgId: input.orgId,
-      conversationId: input.conversationId,
-      eventType: input.eventType,
-      eventId,
-      cursor,
-      actorId: input.actorId ?? null,
-      payload: input.payload as Prisma.InputJsonValue,
-    },
-  });
+  for (let attempt = 0; attempt < MAX_APPEND_RETRIES; attempt++) {
+    const cursor = await generateMonotonicCursor(tx, input.conversationId);
 
-  return { eventId, cursor };
+    try {
+      await tx.conversationEventLog.create({
+        data: {
+          orgId: input.orgId,
+          conversationId: input.conversationId,
+          eventType: input.eventType,
+          eventId,
+          cursor,
+          actorId: input.actorId ?? null,
+          payload: input.payload as Prisma.InputJsonValue,
+        },
+      });
+
+      return { eventId, cursor };
+    } catch (error) {
+      if (isUniqueConstraintError(error) && attempt < MAX_APPEND_RETRIES - 1) {
+        continue; // retry with a freshly computed cursor
+      }
+      throw error;
+    }
+  }
+
+  throw new Error("appendConversationEvent: exhausted retries");
 }
 
 // ---------------------------------------------------------------------------

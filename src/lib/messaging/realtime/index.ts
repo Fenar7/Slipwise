@@ -111,7 +111,7 @@ export type {
 export {
   appendConversationEvent,
   replayConversationEvents,
-  generateCursor,
+  generateMonotonicCursor,
   DEFAULT_REPLAY_LIMIT,
   DEFAULT_REPLAY_RETENTION_HOURS,
 } from "./event-log-service";
