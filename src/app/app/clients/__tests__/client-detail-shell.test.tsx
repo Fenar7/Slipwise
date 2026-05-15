@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { ClientDetailShell } from "../components/client-detail-shell";
+import { MOCK_CLIENTS } from "../components/client-workspace-mock-data";
 
 // Mock Next.js Link and navigation
 vi.mock("next/link", () => ({
@@ -116,9 +117,37 @@ describe("ClientDetailShell", () => {
 });
 
 describe("ClientDetailShell — sparse data client", () => {
-  it("renders correctly for a client with minimal data", () => {
+  it("renders correctly for a client with moderate data", () => {
     render(<ClientDetailShell clientId="cl_02" />);
     expect(screen.getByRole("heading", { name: /Beta Logistics Pvt Ltd/i })).toBeInTheDocument();
     expect(screen.getAllByText(/priya@betalogistics.com/i).length).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe("ClientDetailShell — regression: all workspace-visible clients have detail shells", () => {
+  it.each(MOCK_CLIENTS.map((c) => [c.id, c.name] as const))(
+    "renders detail shell for workspace client %s (%s) without 404",
+    (id) => {
+      expect(() => render(<ClientDetailShell clientId={id} />)).not.toThrow();
+    }
+  );
+});
+
+describe("ClientDetailShell — sparse fallback states", () => {
+  it("renders empty-state placeholders for a client with no invoices/quotes/activity", () => {
+    render(<ClientDetailShell clientId="cl_09" />);
+    // Overview tab shows empty states for invoices and quotes
+    expect(screen.getByText(/No recent invoices/i)).toBeInTheDocument();
+    expect(screen.getByText(/No recent quotes/i)).toBeInTheDocument();
+
+    // Activity tab shows empty state
+    fireEvent.click(screen.getByRole("button", { name: /Activity/i }));
+    expect(screen.getByText(/No activity recorded/i)).toBeInTheDocument();
+  });
+
+  it("renders portal disabled state for a non-enabled client", () => {
+    render(<ClientDetailShell clientId="cl_09" />);
+    fireEvent.click(screen.getByRole("button", { name: /Portal/i }));
+    expect(screen.getByText(/Client Hub Disabled/i)).toBeInTheDocument();
   });
 });

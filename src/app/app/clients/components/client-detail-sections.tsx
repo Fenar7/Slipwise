@@ -425,7 +425,7 @@ function ActivitySection({ client }: { client: ClientDetail }) {
   );
 }
 
-function ActivityItem({ activity }: { activity: ClientActivity; isLast: boolean }) {
+function ActivityItem({ activity }: { activity: ClientActivity }) {
   const Icon = ACTIVITY_ICONS[activity.type] ?? FileText;
 
   return (
