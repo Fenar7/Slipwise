@@ -183,6 +183,16 @@ export const suiteNavItems: NavItem[] = [
     ],
   },
   {
+    href: "/app/clients",
+    label: "Clients",
+    suite: "clients",
+    icon: Users,
+    children: [
+      { href: "/app/clients", label: "Workspace" },
+      { href: "/app/data/customers", label: "Master Data" },
+    ],
+  },
+  {
     href: "/app/crm",
     label: "CRM",
     suite: "crm",
