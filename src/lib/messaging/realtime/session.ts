@@ -59,6 +59,7 @@ export interface SessionRegistry {
   sweepExpiredSessions(maxIdleMs: number): Array<{ sessionId: string; reason: string }>;
   getStats(): SessionRegistryStats;
   getSessionsForConversation(conversationId: string): RealtimeSession[];
+  getSessionsByOrg(orgId: string): RealtimeSession[];
 }
 
 // ---------------------------------------------------------------------------
@@ -235,6 +236,16 @@ export class InMemorySessionRegistry implements SessionRegistry {
     for (const sessionId of indexSet) {
       const session = this.sessions.get(sessionId);
       if (session && !session.closed) {
+        result.push(session);
+      }
+    }
+    return result;
+  }
+
+  getSessionsByOrg(orgId: string): RealtimeSession[] {
+    const result: RealtimeSession[] = [];
+    for (const session of this.sessions.values()) {
+      if (session.orgId === orgId && !session.closed) {
         result.push(session);
       }
     }

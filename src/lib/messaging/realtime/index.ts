@@ -24,6 +24,9 @@ export type {
   UnsubscribeConversationCommand,
   HeartbeatCommand,
   ResumeSessionCommand,
+  SetPresenceCommand,
+  StartTypingCommand,
+  StopTypingCommand,
   SessionAckMessage,
   SubscriptionAckMessage,
   SubscriptionDeniedMessage,
@@ -31,6 +34,8 @@ export type {
   ResumeSessionResultMessage,
   ErrorMessage,
   DisconnectMessage,
+  RealtimeEvent,
+  RealtimeEventType,
   RealtimeErrorCode,
 } from "./protocol";
 
@@ -90,3 +95,14 @@ export type {
   GatewayOptions,
   GatewayConnectionState,
 } from "./gateway";
+
+// Publisher
+export {
+  InMemoryRealtimePublisher,
+  registerRealtimePublisher,
+  getRealtimePublisher,
+  getRealtimePublisherOrNoop,
+} from "./publisher";
+export type {
+  RealtimePublisher,
+} from "./publisher";

@@ -5,6 +5,7 @@ import {
   type ClientCommand,
   type ServerMessage,
   type RealtimeErrorCode,
+  type RealtimeEvent,
   isValidClientCommand,
 } from "./protocol";
 import {
@@ -23,13 +24,14 @@ import {
   type RealtimeDiagnostics,
   ConsoleRealtimeDiagnostics,
 } from "./diagnostics";
+import { upsertPresence, startTyping, stopTyping } from "../presence-service";
 
 /**
  * Messaging WebSocket Gateway.
  *
  * Accepts authenticated connections using short-lived realtime session tokens,
- * maintains session lifecycle, enforces subscription authorization, and handles
- * heartbeat-based idle expiry.
+ * maintains session lifecycle, enforces subscription authorization, handles
+ * heartbeat-based idle expiry, and provides conversation-scoped fanout.
  *
  * Architecture note: this gateway is designed as a standalone module that can
  * be instantiated inside a custom Node.js server or a separate service process.
@@ -49,6 +51,8 @@ export interface GatewayOptions {
   sweepIntervalMs?: number;
   /** Clock skew tolerance for token verification (seconds). Default 30. */
   clockSkewSeconds?: number;
+  /** Typing indicator TTL (ms). Default 5s. */
+  typingTtlMs?: number;
 }
 
 export interface GatewayConnectionState {
@@ -64,8 +68,13 @@ export class MessagingGateway {
   private idleTimeoutMs: number;
   private sweepIntervalMs: number;
   private clockSkewSeconds: number;
+  private typingTtlMs: number;
   private sweepTimer: NodeJS.Timeout | null = null;
   private wsConnections = new WeakMap<WebSocket, GatewayConnectionState>();
+  /** sessionId -> active socket.  Only one transport per session at a time. */
+  private sessionSockets = new Map<string, WebSocket>();
+  /** sessionId:conversationId -> typing expiry timer. */
+  private typingTimers = new Map<string, NodeJS.Timeout>();
 
   constructor(options: GatewayOptions) {
     this.tokenSecret = options.tokenSecret;
@@ -74,6 +83,7 @@ export class MessagingGateway {
     this.idleTimeoutMs = options.idleTimeoutMs ?? DEFAULT_SESSION_IDLE_TIMEOUT_MS;
     this.sweepIntervalMs = options.sweepIntervalMs ?? 30_000;
     this.clockSkewSeconds = options.clockSkewSeconds ?? 30;
+    this.typingTtlMs = options.typingTtlMs ?? 5_000;
   }
 
   // -------------------------------------------------------------------------
@@ -95,6 +105,10 @@ export class MessagingGateway {
 
   destroy(): void {
     this.stopSweepJob();
+    for (const timer of Array.from(this.typingTimers.values())) {
+      clearTimeout(timer);
+    }
+    this.typingTimers.clear();
   }
 
   // -------------------------------------------------------------------------
@@ -178,6 +192,15 @@ export class MessagingGateway {
         break;
       case "resume_session":
         void this.handleResumeSession(socket, connState, command.payload.sessionToken, requestId);
+        break;
+      case "set_presence":
+        void this.handleSetPresence(socket, connState, command.payload, requestId);
+        break;
+      case "start_typing":
+        void this.handleStartTyping(socket, connState, command.payload.conversationId, requestId);
+        break;
+      case "stop_typing":
+        void this.handleStopTyping(socket, connState, command.payload.conversationId, requestId);
         break;
     }
   }
@@ -326,14 +349,11 @@ export class MessagingGateway {
       // No existing session record — create a fresh one. This happens on first
       // connect or when the prior session was fully evicted.
       session = this.sessions.createSession(claims);
-    } else {
-      // Reattaching to an existing logical session after transport disconnect.
-      // Heartbeat is updated below; subscriptions are preserved and reauthorized
-      // after the session_ack.
     }
 
     connState.sessionId = session.sessionId;
     this.sessions.updateHeartbeat(session.sessionId);
+    this.sessionSockets.set(session.sessionId, socket);
 
     this.diagnostics.emit({
       kind: "connect_success",
@@ -377,6 +397,215 @@ export class MessagingGateway {
     }
   }
 
+  private async handleSetPresence(
+    socket: WebSocket,
+    connState: GatewayConnectionState,
+    payload: { status: "online" | "away" | "offline"; activeConversationId?: string | null },
+    requestId: string,
+  ): Promise<void> {
+    const session = this.requireSession(socket, connState, requestId);
+    if (!session) return;
+
+    try {
+      const presence = await upsertPresence({
+        orgId: session.orgId,
+        userId: session.userId,
+        status: payload.status,
+        activeConversationId: payload.activeConversationId ?? null,
+        expiresAt: new Date(Date.now() + this.idleTimeoutMs),
+      });
+
+      this.diagnostics.emit({
+        kind: "presence_updated",
+        sessionId: session.sessionId,
+        orgId: session.orgId,
+        userId: session.userId,
+        status: payload.status,
+      });
+
+      this.sendMessage(socket, {
+        type: "heartbeat_ack",
+        requestId,
+        payload: { serverTime: Date.now() },
+      });
+
+      // Fanout presence update to org-scoped viewers.
+      const event: RealtimeEvent = {
+        type: "event",
+        eventId: `presence:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`,
+        payload: {
+          eventType: "conversation.presence.updated",
+          orgId: session.orgId,
+          conversationId: "_org",
+          occurredAt: Date.now(),
+          actorId: session.userId,
+          data: {
+            userId: presence.userId,
+            status: presence.status,
+            activeConversationId: presence.activeConversationId,
+          },
+        },
+      };
+      this.publishToOrg(session.orgId, event, { senderUserId: session.userId });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "presence update failed";
+      this.sendError(socket, "server_error", message, false, session.sessionId, requestId);
+    }
+  }
+
+  private async handleStartTyping(
+    socket: WebSocket,
+    connState: GatewayConnectionState,
+    conversationId: string,
+    requestId: string,
+  ): Promise<void> {
+    const session = this.requireSession(socket, connState, requestId);
+    if (!session) return;
+
+    // Ensure the session is subscribed to this conversation.
+    if (!this.sessions.getSubscriptions(session.sessionId).has(conversationId)) {
+      this.sendError(socket, "subscription_denied", "not subscribed to conversation", false, session.sessionId, requestId);
+      return;
+    }
+
+    try {
+      const typing = await startTyping({
+        orgId: session.orgId,
+        conversationId,
+        userId: session.userId,
+        expiresAt: new Date(Date.now() + this.typingTtlMs),
+      });
+
+      this.diagnostics.emit({
+        kind: "typing_started",
+        sessionId: session.sessionId,
+        conversationId,
+        userId: session.userId,
+      });
+
+      // Set auto-expiry timer.
+      this.clearTypingTimer(session.sessionId, conversationId);
+      const timerKey = `${session.sessionId}:${conversationId}`;
+      this.typingTimers.set(
+        timerKey,
+        setTimeout(() => {
+          this.handleTypingExpired(session.sessionId, conversationId);
+        }, this.typingTtlMs),
+      );
+
+      const event: RealtimeEvent = {
+        type: "event",
+        eventId: `typing:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`,
+        payload: {
+          eventType: "conversation.typing.updated",
+          orgId: session.orgId,
+          conversationId,
+          occurredAt: Date.now(),
+          actorId: session.userId,
+          data: {
+            userId: typing.userId,
+            status: typing.status,
+            expiresAt: typing.expiresAt.toISOString(),
+          },
+        },
+      };
+      this.publishToConversation(session.orgId, conversationId, event);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "typing start failed";
+      this.sendError(socket, "server_error", message, false, session.sessionId, requestId);
+    }
+  }
+
+  private async handleStopTyping(
+    socket: WebSocket,
+    connState: GatewayConnectionState,
+    conversationId: string,
+    requestId: string,
+  ): Promise<void> {
+    const session = this.requireSession(socket, connState, requestId);
+    if (!session) return;
+
+    try {
+      await stopTyping({
+        orgId: session.orgId,
+        conversationId,
+        userId: session.userId,
+      });
+
+      this.diagnostics.emit({
+        kind: "typing_stopped",
+        sessionId: session.sessionId,
+        conversationId,
+        userId: session.userId,
+      });
+
+      this.clearTypingTimer(session.sessionId, conversationId);
+
+      const event: RealtimeEvent = {
+        type: "event",
+        eventId: `typing:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`,
+        payload: {
+          eventType: "conversation.typing.updated",
+          orgId: session.orgId,
+          conversationId,
+          occurredAt: Date.now(),
+          actorId: session.userId,
+          data: { userId: null, status: null },
+        },
+      };
+      this.publishToConversation(session.orgId, conversationId, event);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "typing stop failed";
+      this.sendError(socket, "server_error", message, false, session.sessionId, requestId);
+    }
+  }
+
+  private handleTypingExpired(sessionId: string, conversationId: string): void {
+    const session = this.sessions.getSession(sessionId);
+    if (!session) return;
+
+    this.clearTypingTimer(sessionId, conversationId);
+
+    this.diagnostics.emit({
+      kind: "typing_expired",
+      sessionId,
+      conversationId,
+      userId: session.userId,
+    });
+
+    const event: RealtimeEvent = {
+      type: "event",
+      eventId: `typing:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`,
+      payload: {
+        eventType: "conversation.typing.updated",
+        orgId: session.orgId,
+        conversationId,
+        occurredAt: Date.now(),
+        actorId: session.userId,
+        data: { userId: null, status: null },
+      },
+    };
+    this.publishToConversation(session.orgId, conversationId, event);
+  }
+
+  private clearTypingTimer(sessionId: string, conversationId: string): void {
+    const timerKey = `${sessionId}:${conversationId}`;
+    const existing = this.typingTimers.get(timerKey);
+    if (existing) {
+      clearTimeout(existing);
+      this.typingTimers.delete(timerKey);
+    }
+  }
+
+  private clearAllTypingTimersForSession(sessionId: string): void {
+    for (const [key, timer] of this.typingTimers) {
+      if (key.startsWith(`${sessionId}:`)) {
+        clearTimeout(timer);
+        this.typingTimers.delete(key);
+      }
+    }
+  }
+
   // -------------------------------------------------------------------------
   // Disconnect / cleanup
   // -------------------------------------------------------------------------
@@ -392,12 +621,139 @@ export class MessagingGateway {
         sessionId: connState.sessionId,
         reason,
       });
-      // Transport disconnect detaches the socket but does NOT invalidate the
-      // logical session. Subscriptions survive so resume_session can reattach.
-      // Only idle expiry, token expiry, or explicit invalidation close the session.
       this.sessions.detachSession(connState.sessionId);
+      this.sessionSockets.delete(connState.sessionId);
+      // Publish typing stopped for any active typing sessions before clearing timers.
+      this.publishTypingStoppedForSession(connState.sessionId);
+      this.clearAllTypingTimersForSession(connState.sessionId);
     }
     this.wsConnections.delete(socket);
+  }
+
+  private publishTypingStoppedForSession(sessionId: string): void {
+    const session = this.sessions.getSession(sessionId);
+    if (!session) return;
+    for (const [key] of Array.from(this.typingTimers.entries())) {
+      if (!key.startsWith(`${sessionId}:`)) continue;
+      const conversationId = key.slice(sessionId.length + 1);
+      const event: import("./protocol").RealtimeEvent = {
+        type: "event",
+        eventId: `typing:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`,
+        payload: {
+          eventType: "conversation.typing.updated",
+          orgId: session.orgId,
+          conversationId,
+          occurredAt: Date.now(),
+          actorId: session.userId,
+          data: { userId: null, status: null },
+        },
+      };
+      this.publishToConversation(session.orgId, conversationId, event);
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Fanout
+  // -------------------------------------------------------------------------
+
+  /**
+   * Publish a message to all active sessions currently subscribed to a
+   * conversation.  Enforces org isolation — only sessions in `orgId` receive
+   * the message.
+   */
+  publishToConversation(orgId: string, conversationId: string, message: ServerMessage): void {
+    const sessions = this.sessions.getSessionsForConversation(conversationId);
+    let sent = 0;
+
+    for (const session of Array.from(sessions)) {
+      if (session.orgId !== orgId) continue;
+
+      const socket = this.sessionSockets.get(session.sessionId);
+      if (socket && socket.readyState === socket.OPEN) {
+        this.sendMessage(socket, message);
+        sent++;
+      } else {
+        this.diagnostics.emit({
+          kind: "event_dropped",
+          eventType: "conversation",
+          conversationId,
+          reason: "socket not open",
+          sessionId: session.sessionId,
+        });
+      }
+    }
+
+    this.diagnostics.emit({
+      kind: "event_published",
+      eventType: "conversation",
+      conversationId,
+      recipientCount: sent,
+    });
+  }
+
+  /**
+   * Publish a message to all active sessions in an org.
+   *
+   * Presence safety: if the message payload contains an `activeConversationId`,
+   * it is stripped for recipients who are not subscribed to that conversation.
+   */
+  publishToOrg(
+    orgId: string,
+    message: ServerMessage,
+    options?: { senderUserId?: string },
+  ): void {
+    const sessions = this.sessions.getSessionsByOrg(orgId);
+    let sent = 0;
+
+    for (const session of sessions) {
+      // Don't echo presence back to the sender.
+      if (options?.senderUserId && session.userId === options.senderUserId) continue;
+
+      const socket = this.sessionSockets.get(session.sessionId);
+      if (socket && socket.readyState === socket.OPEN) {
+        // Presence safety: strip activeConversationId for unauthorized viewers.
+        const safeMessage = this.scrubPresenceMessageForRecipient(message, session);
+        this.sendMessage(socket, safeMessage);
+        sent++;
+      }
+    }
+
+    this.diagnostics.emit({
+      kind: "event_published",
+      eventType: "presence",
+      conversationId: "_org",
+      recipientCount: sent,
+    });
+  }
+
+  private scrubPresenceMessageForRecipient(
+    message: ServerMessage,
+    recipientSession: import("./session").RealtimeSession,
+  ): ServerMessage {
+    if (message.type !== "event") return message;
+    const event = message as RealtimeEvent;
+    if (event.payload.eventType !== "conversation.presence.updated") return message;
+
+    const data = event.payload.data as Record<string, unknown> | undefined;
+    if (!data || !data.activeConversationId) return message;
+
+    const activeConversationId = data.activeConversationId as string;
+    const subs = this.sessions.getSubscriptions(recipientSession.sessionId);
+    if (subs.has(activeConversationId)) {
+      return message; // recipient is authorized to see the active conversation
+    }
+
+    // Strip activeConversationId for unauthorized recipients.
+    return {
+      ...event,
+      payload: {
+        ...event.payload,
+        data: {
+          ...data,
+          activeConversationId: undefined,
+        },
+      },
+    };
   }
 
   // -------------------------------------------------------------------------
@@ -475,6 +831,8 @@ export class MessagingGateway {
       const evicted = this.sessions.sweepExpiredSessions(this.idleTimeoutMs);
       for (const { sessionId, reason } of evicted) {
         this.diagnostics.emit({ kind: "session_sweep", sessionId, reason });
+        this.sessionSockets.delete(sessionId);
+        this.clearAllTypingTimersForSession(sessionId);
       }
     }, this.sweepIntervalMs);
   }

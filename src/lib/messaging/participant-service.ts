@@ -12,6 +12,7 @@ import {
   assertConversationAction,
   assertGovernanceAction,
 } from "./service-helpers";
+import { getRealtimePublisherOrNoop } from "./realtime/publisher";
 import type {
   AddParticipantInput,
   RemoveParticipantInput,
@@ -155,6 +156,22 @@ export async function addParticipant(
     return toParticipantRecord(participant);
   });
 
+  getRealtimePublisherOrNoop().publishConversationEvent(
+    input.orgId,
+    input.conversationId,
+    "conversation.membership.updated",
+    input.addedBy,
+    { change: "added", userId: input.userId, role: input.role, conversationId: input.conversationId },
+  );
+
+  getRealtimePublisherOrNoop().publishConversationEvent(
+    input.orgId,
+    input.conversationId,
+    "conversation.membership.updated",
+    input.updatedBy,
+    { change: "role_changed", userId: input.userId, role: input.role, conversationId: input.conversationId },
+  );
+
   return result;
 }
 
@@ -228,6 +245,14 @@ export async function removeParticipant(
 
     return toParticipantRecord(updated);
   });
+
+  getRealtimePublisherOrNoop().publishConversationEvent(
+    input.orgId,
+    input.conversationId,
+    "conversation.membership.updated",
+    input.removedBy,
+    { change: "removed", userId: input.userId, conversationId: input.conversationId },
+  );
 
   return result;
 }

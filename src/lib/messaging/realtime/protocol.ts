@@ -32,7 +32,10 @@ export type ClientCommand =
   | SubscribeConversationCommand
   | UnsubscribeConversationCommand
   | HeartbeatCommand
-  | ResumeSessionCommand;
+  | ResumeSessionCommand
+  | SetPresenceCommand
+  | StartTypingCommand
+  | StopTypingCommand;
 
 export interface SubscribeConversationCommand extends BaseCommand {
   type: "subscribe_conversation";
@@ -63,6 +66,28 @@ export interface ResumeSessionCommand extends BaseCommand {
   };
 }
 
+export interface SetPresenceCommand extends BaseCommand {
+  type: "set_presence";
+  payload: {
+    status: "online" | "away" | "offline";
+    activeConversationId?: string | null;
+  };
+}
+
+export interface StartTypingCommand extends BaseCommand {
+  type: "start_typing";
+  payload: {
+    conversationId: string;
+  };
+}
+
+export interface StopTypingCommand extends BaseCommand {
+  type: "stop_typing";
+  payload: {
+    conversationId: string;
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Server messages / events (Sprint 4.1)
 // ---------------------------------------------------------------------------
@@ -74,7 +99,8 @@ export type ServerMessage =
   | HeartbeatAckMessage
   | ResumeSessionResultMessage
   | ErrorMessage
-  | DisconnectMessage;
+  | DisconnectMessage
+  | RealtimeEvent;
 
 export interface SessionAckMessage extends BaseServerMessage {
   type: "session_ack";
@@ -141,6 +167,37 @@ export interface DisconnectMessage extends BaseServerMessage {
 }
 
 // ---------------------------------------------------------------------------
+// Realtime events (Sprint 4.2)
+// ---------------------------------------------------------------------------
+
+export type RealtimeEventType =
+  | "conversation.message.created"
+  | "conversation.message.edited"
+  | "conversation.message.deleted"
+  | "conversation.thread.created"
+  | "conversation.thread.replied"
+  | "conversation.thread.resolved"
+  | "conversation.presence.updated"
+  | "conversation.typing.updated"
+  | "conversation.governance.updated"
+  | "conversation.membership.updated";
+
+export interface RealtimeEvent extends BaseServerMessage {
+  type: "event";
+  eventId: string;
+  payload: {
+    eventType: RealtimeEventType;
+    orgId: string;
+    conversationId: string;
+    occurredAt: number;
+    actorId?: string;
+    /** Cursor seam for Sprint 4.3 replay. */
+    cursor?: string;
+    data: unknown;
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Error codes — safe, stable, and never leak internal implementation detail
 // ---------------------------------------------------------------------------
 
@@ -190,6 +247,26 @@ export function isValidClientCommand(obj: unknown): obj is ClientCommand {
         payload !== null &&
         typeof payload.sessionToken === "string" &&
         payload.sessionToken.length > 0
+      );
+    }
+    case "set_presence": {
+      const payload = o.payload as Record<string, unknown> | undefined;
+      if (typeof payload !== "object" || payload === null) return false;
+      const status = payload.status;
+      if (status !== "online" && status !== "away" && status !== "offline") return false;
+      if (payload.activeConversationId !== undefined && payload.activeConversationId !== null) {
+        if (typeof payload.activeConversationId !== "string") return false;
+      }
+      return true;
+    }
+    case "start_typing":
+    case "stop_typing": {
+      const payload = o.payload as Record<string, unknown> | undefined;
+      return (
+        typeof payload === "object" &&
+        payload !== null &&
+        typeof payload.conversationId === "string" &&
+        payload.conversationId.length > 0
       );
     }
     default:

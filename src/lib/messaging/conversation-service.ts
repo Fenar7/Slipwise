@@ -13,6 +13,7 @@ import {
   assertConversationAction,
   assertGovernanceAction,
 } from "./service-helpers";
+import { getRealtimePublisherOrNoop } from "./realtime/publisher";
 import type {
   CreateConversationInput,
   CreateConversationResult,
@@ -214,6 +215,14 @@ export async function createConversation(
     };
   });
 
+  getRealtimePublisherOrNoop().publishConversationEvent(
+    input.orgId,
+    input.conversationId,
+    "conversation.governance.updated",
+    input.unlockedBy,
+    { change: "unlocked", conversationId: input.conversationId },
+  );
+
   return result;
 }
 
@@ -256,6 +265,14 @@ export async function archiveConversation(
     return toConversationRecord(updated);
   });
 
+  getRealtimePublisherOrNoop().publishConversationEvent(
+    input.orgId,
+    input.conversationId,
+    "conversation.governance.updated",
+    input.archivedBy,
+    { change: "archived", conversationId: input.conversationId },
+  );
+
   return result;
 }
 
@@ -291,6 +308,14 @@ export async function renameConversation(
     return toConversationRecord(updated);
   });
 
+  getRealtimePublisherOrNoop().publishConversationEvent(
+    input.orgId,
+    input.conversationId,
+    "conversation.governance.updated",
+    input.actorId,
+    { change: "renamed", name: result.name, conversationId: input.conversationId },
+  );
+
   return result;
 }
 
@@ -325,6 +350,14 @@ export async function changeConversationVisibility(
 
     return toConversationRecord(updated);
   });
+
+  getRealtimePublisherOrNoop().publishConversationEvent(
+    input.orgId,
+    input.conversationId,
+    "conversation.governance.updated",
+    input.actorId,
+    { change: "visibility_changed", visibility: result.visibility, conversationId: input.conversationId },
+  );
 
   return result;
 }
@@ -367,6 +400,14 @@ export async function unarchiveConversation(
 
     return toConversationRecord(updated);
   });
+
+  getRealtimePublisherOrNoop().publishConversationEvent(
+    input.orgId,
+    input.conversationId,
+    "conversation.governance.updated",
+    input.unarchivedBy,
+    { change: "unarchived", conversationId: input.conversationId },
+  );
 
   return result;
 }
@@ -414,6 +455,14 @@ export async function lockConversation(
 
     return toConversationRecord(updated);
   });
+
+  getRealtimePublisherOrNoop().publishConversationEvent(
+    input.orgId,
+    input.conversationId,
+    "conversation.governance.updated",
+    input.lockedBy,
+    { change: "locked", reason: input.reason ?? null, conversationId: input.conversationId },
+  );
 
   return result;
 }
