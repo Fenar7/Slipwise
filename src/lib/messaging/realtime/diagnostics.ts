@@ -21,7 +21,14 @@ export type RealtimeDiagnosticEvent =
   | { kind: "heartbeat_expired"; sessionId: string; idleMs: number }
   | { kind: "disconnect"; sessionId: string; reason: string }
   | { kind: "session_sweep"; sessionId: string; reason: string }
-  | { kind: "command_rejected"; sessionId: string; commandType: string; reason: string };
+  | { kind: "command_rejected"; sessionId: string; commandType: string; reason: string }
+  // Sprint 4.2
+  | { kind: "event_published"; eventType: string; conversationId: string; recipientCount: number }
+  | { kind: "event_dropped"; eventType: string; conversationId: string; reason: string; sessionId?: string }
+  | { kind: "presence_updated"; sessionId: string; orgId: string; userId: string; status: string }
+  | { kind: "typing_started"; sessionId: string; conversationId: string; userId: string }
+  | { kind: "typing_stopped"; sessionId: string; conversationId: string; userId: string }
+  | { kind: "typing_expired"; sessionId: string; conversationId: string; userId: string };
 
 export interface RealtimeDiagnostics {
   emit(event: RealtimeDiagnosticEvent): void;
@@ -72,6 +79,30 @@ export class ConsoleRealtimeDiagnostics implements RealtimeDiagnostics {
         }
         case "command_rejected": {
           console.warn(`${base} session=${safeId(event.sessionId)} cmd=${event.commandType} reason=${event.reason}`);
+          break;
+        }
+        case "event_published": {
+          console.info(`${base} type=${event.eventType} conv=${safeId(event.conversationId)} recipients=${event.recipientCount}`);
+          break;
+        }
+        case "event_dropped": {
+          console.warn(`${base} type=${event.eventType} conv=${safeId(event.conversationId)} reason=${event.reason} session=${safeId(event.sessionId)}`);
+          break;
+        }
+        case "presence_updated": {
+          console.info(`${base} session=${safeId(event.sessionId)} org=${safeId(event.orgId)} user=${safeId(event.userId)} status=${event.status}`);
+          break;
+        }
+        case "typing_started": {
+          console.info(`${base} session=${safeId(event.sessionId)} conv=${safeId(event.conversationId)} user=${safeId(event.userId)}`);
+          break;
+        }
+        case "typing_stopped": {
+          console.info(`${base} session=${safeId(event.sessionId)} conv=${safeId(event.conversationId)} user=${safeId(event.userId)}`);
+          break;
+        }
+        case "typing_expired": {
+          console.info(`${base} session=${safeId(event.sessionId)} conv=${safeId(event.conversationId)} user=${safeId(event.userId)}`);
           break;
         }
       }

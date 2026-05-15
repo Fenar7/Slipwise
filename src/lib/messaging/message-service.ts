@@ -18,6 +18,7 @@ import type {
 import {
   assertConversationAction,
 } from "./service-helpers";
+import { getRealtimePublisherOrNoop } from "./realtime/publisher";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -243,6 +244,14 @@ export async function sendMessage(
     return toMessageRecord(message);
   });
 
+  getRealtimePublisherOrNoop().publishConversationEvent(
+    input.orgId,
+    input.conversationId,
+    "conversation.message.created",
+    input.authorId,
+    { messageId: result.id, threadId: result.threadId },
+  );
+
   return result;
 }
 
@@ -292,6 +301,14 @@ export async function editMessage(
     return toMessageRecord(updated);
   });
 
+  getRealtimePublisherOrNoop().publishConversationEvent(
+    input.orgId,
+    result.conversationId,
+    "conversation.message.edited",
+    input.actorId,
+    { messageId: result.id },
+  );
+
   return result;
 }
 
@@ -335,6 +352,14 @@ export async function softDeleteMessage(
 
     return toMessageRecord(updated);
   });
+
+  getRealtimePublisherOrNoop().publishConversationEvent(
+    input.orgId,
+    result.conversationId,
+    "conversation.message.deleted",
+    input.actorId,
+    { messageId: result.id },
+  );
 
   return result;
 }

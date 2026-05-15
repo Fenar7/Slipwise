@@ -17,6 +17,7 @@ import type {
 import {
   assertConversationAction,
 } from "./service-helpers";
+import { getRealtimePublisherOrNoop } from "./realtime/publisher";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -177,6 +178,14 @@ export async function createThread(
     return toThreadRecord(thread);
   });
 
+  getRealtimePublisherOrNoop().publishConversationEvent(
+    input.orgId,
+    input.conversationId,
+    "conversation.thread.created",
+    input.createdBy,
+    { threadId: result.id, anchorMessageId: input.anchorMessageId },
+  );
+
   return result;
 }
 
@@ -265,6 +274,14 @@ export async function replyToThread(
     return toMessageRecord(message);
   });
 
+  getRealtimePublisherOrNoop().publishConversationEvent(
+    input.orgId,
+    input.conversationId,
+    "conversation.thread.replied",
+    input.authorId,
+    { messageId: result.id, threadId: input.threadId },
+  );
+
   return result;
 }
 
@@ -301,6 +318,14 @@ export async function resolveThread(
 
     return toThreadRecord(updated);
   });
+
+  getRealtimePublisherOrNoop().publishConversationEvent(
+    input.orgId,
+    result.conversationId,
+    "conversation.thread.resolved",
+    input.resolvedBy,
+    { threadId: result.id },
+  );
 
   return result;
 }

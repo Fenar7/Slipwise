@@ -179,6 +179,26 @@ export async function stopTyping(
 }
 
 /**
+ * System-driven typing teardown. Deletes typing sessions without requiring
+ * active participant access. Used by gateway disconnect/expiry cleanup.
+ */
+export async function clearTypingForUser(
+  orgId: string,
+  conversationId: string,
+  userId: string,
+): Promise<void> {
+  const typing = await db.typingSession.findFirst({
+    where: typingOrgSafeWhere(orgId, conversationId, userId),
+  });
+
+  if (typing) {
+    await db.typingSession.delete({
+      where: { id: typing.id },
+    });
+  }
+}
+
+/**
  * List active typing sessions for a conversation.
  * Callers should filter out expired rows client-side or via a scheduled job.
  */

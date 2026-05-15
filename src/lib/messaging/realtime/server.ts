@@ -2,6 +2,7 @@ import "server-only";
 
 import { WebSocketServer } from "ws";
 import { MessagingGateway } from "./gateway";
+import { InMemoryRealtimePublisher, registerRealtimePublisher } from "./publisher";
 
 /**
  * Standalone messaging realtime server bootstrap.
@@ -56,6 +57,9 @@ export function createMessagingRealtimeServer(
   });
 
   gateway.attach(wss);
+
+  const publisher = new InMemoryRealtimePublisher(gateway);
+  registerRealtimePublisher(publisher);
 
   return {
     wss,

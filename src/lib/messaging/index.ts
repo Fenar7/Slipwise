@@ -333,6 +333,13 @@ export {
   createMessagingRealtimeServer,
 } from "./realtime/server";
 
+export {
+  InMemoryRealtimePublisher,
+  registerRealtimePublisher,
+  getRealtimePublisher,
+  getRealtimePublisherOrNoop,
+} from "./realtime";
+
 export type {
   BaseCommand,
   BaseServerMessage,
@@ -342,6 +349,9 @@ export type {
   UnsubscribeConversationCommand,
   HeartbeatCommand,
   ResumeSessionCommand,
+  SetPresenceCommand,
+  StartTypingCommand,
+  StopTypingCommand,
   SessionAckMessage,
   SubscriptionAckMessage,
   SubscriptionDeniedMessage,
@@ -349,6 +359,8 @@ export type {
   ResumeSessionResultMessage,
   ErrorMessage,
   DisconnectMessage,
+  RealtimeEvent,
+  RealtimeEventType,
   RealtimeErrorCode,
   RealtimeSessionClaims,
   MintTokenInput,
@@ -365,6 +377,7 @@ export type {
   RealtimeDiagnostics,
   GatewayOptions,
   GatewayConnectionState,
+  RealtimePublisher,
 } from "./realtime";
 
 export type {
