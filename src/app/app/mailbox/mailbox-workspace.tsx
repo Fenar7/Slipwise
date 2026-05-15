@@ -482,11 +482,27 @@ export function MailboxWorkspace() {
   }, [discardDraft]);
 
   const handleSendComposer = useCallback(async () => {
-    const result = await sendDraft();
+    if (!composer || composer.sendState === "sending" || composer.sendState === "sent") return;
+
+    setComposer((p) => (p ? { ...p, sendState: "sending" } : p));
+
+    const flushPayload = {
+      to: composer.to,
+      cc: composer.cc,
+      bcc: composer.bcc,
+      subject: composer.subject,
+      htmlBody: composer.bodyHtml,
+      textBody: null,
+      attachmentRefs: composer.attachments.map((a) => a.id),
+    };
+
+    const result = await sendDraft(flushPayload);
     if (result) {
       setComposer(null);
+    } else {
+      setComposer((p) => (p ? { ...p, sendState: "failed" } : p));
     }
-  }, [sendDraft]);
+  }, [composer, sendDraft]);
 
   const patchContext = useCallback((patch: Partial<LinkedContextState>) => {
     if (!selectedThreadId) return;

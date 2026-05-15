@@ -19,6 +19,7 @@ vi.mock("@/lib/db", () => ({
     mailboxDraft: {
       findFirst: vi.fn(),
       update: vi.fn(),
+      updateMany: vi.fn(),
     },
     mailboxThread: {
       findFirst: vi.fn(),
@@ -36,7 +37,8 @@ vi.mock("@/lib/db", () => ({
     $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => {
       const tx = {
         mailboxDraft: {
-          update: vi.fn().mockResolvedValue(makeDraftRecord({ status: "SENT" })),
+          updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+          findFirstOrThrow: vi.fn().mockResolvedValue(makeDraftRecord({ status: "SENT" })),
         },
         mailboxAuditEvent: {
           create: vi.fn(),
@@ -92,6 +94,10 @@ vi.mock("@/lib/mailbox/audit", () => ({
 
 vi.mock("@/lib/mailbox/provider-registry", () => ({
   getMailboxProviderAdapter: vi.fn(),
+}));
+
+vi.mock("@/lib/mailbox/sanitize-message-html", () => ({
+  sanitizeMessageHtml: vi.fn((html: string) => html.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")),
 }));
 
 import { requireIntegrationMemberRoute } from "@/app/api/integrations/_auth";
@@ -295,9 +301,9 @@ describe("sendDraft service", () => {
     expect(call.cc).toEqual([]);
   });
 
-  it("derives sender identity from the draft's mailbox connection", async () => {
+  it("derives sender identity from the mailbox connection, ignoring draft fromIdentity", async () => {
     mockDb.mailboxDraft.findFirst.mockResolvedValue(
-      makeDraftRecord({ fromIdentity: "connection@example.com" }),
+      makeDraftRecord({ fromIdentity: "forged@example.com" }),
     );
     mockDb.mailboxConnection.findFirst.mockResolvedValue(
       makeConnectionRecord({ emailAddress: "connection@example.com" }),
@@ -312,6 +318,32 @@ describe("sendDraft service", () => {
     expect(adapter.sendMessage).toHaveBeenCalledWith(
       expect.objectContaining({ from: "connection@example.com" }),
     );
+  });
+
+  it("rejects concurrent send attempts with a CAS guard", async () => {
+    mockDb.mailboxDraft.findFirst.mockResolvedValue(makeDraftRecord());
+    mockDb.mailboxConnection.findFirst.mockResolvedValue(makeConnectionRecord());
+    mockGetThreadDetail.mockResolvedValue(null);
+
+    mockDb.$transaction.mockImplementationOnce(async (fn: (tx: unknown) => Promise<unknown>) => {
+      const tx = {
+        mailboxDraft: {
+          updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+          findFirstOrThrow: vi.fn().mockResolvedValue(makeDraftRecord({ status: "SENT" })),
+        },
+        mailboxAuditEvent: {
+          create: vi.fn(),
+        },
+      };
+      return fn(tx);
+    });
+
+    const adapter = makeMockAdapter({ providerMessageId: "msg_1", providerThreadId: "t1", rfcMessageId: null });
+    mockGetAdapter.mockReturnValue(adapter);
+
+    await expect(
+      sendDraft({ orgId: ORG_ID, userId: USER_ID, role: "owner", draftId: DRAFT_ID }),
+    ).rejects.toThrow(/concurrent send detected/);
   });
 
   it("rejects send when draft is not ACTIVE", async () => {
@@ -457,6 +489,25 @@ describe("sendDraft service", () => {
 
     // Draft update should NOT have been called outside the transaction
     expect(mockDb.mailboxDraft.update).not.toHaveBeenCalled();
+    expect(mockDb.mailboxDraft.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("sanitizes outbound htmlBody before provider send", async () => {
+    const { sanitizeMessageHtml } = await import("@/lib/mailbox/sanitize-message-html");
+    mockDb.mailboxDraft.findFirst.mockResolvedValue(
+      makeDraftRecord({ htmlBody: "<script>alert('xss')</script><p>Hello</p>" }),
+    );
+    mockDb.mailboxConnection.findFirst.mockResolvedValue(makeConnectionRecord());
+    mockGetThreadDetail.mockResolvedValue(null);
+
+    const adapter = makeMockAdapter({ providerMessageId: "msg_1", providerThreadId: "t1", rfcMessageId: null });
+    mockGetAdapter.mockReturnValue(adapter);
+
+    await sendDraft({ orgId: ORG_ID, userId: USER_ID, role: "owner", draftId: DRAFT_ID });
+
+    expect(sanitizeMessageHtml).toHaveBeenCalledWith("<script>alert('xss')</script><p>Hello</p>");
+    const call = adapter.sendMessage.mock.calls[0][0];
+    expect(call.htmlBody).not.toContain("<script>");
   });
 
   it("does not include raw body content in audit metadata", async () => {

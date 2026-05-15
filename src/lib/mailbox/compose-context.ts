@@ -19,9 +19,8 @@ export interface ComposeContext {
   mailboxConnectionId: string;
   /** threadId being replied to / forwarded; null for new message */
   threadId?: string | null;
-  /** messageId being replied to / forwarded (optional, for future enrichment) */
+  /** Provider messageId being replied to / forwarded (optional, for threading) */
   replyToMessageId?: string | null;
-  fromIdentity?: string;
   to?: string[];
   cc?: string[];
   bcc?: string[];
@@ -67,7 +66,6 @@ export function normalizeCreateDraftInput(
     mode: context.mode,
     threadId: context.threadId ?? null,
     replyToMessageId: context.replyToMessageId ?? null,
-    fromIdentity: context.fromIdentity,
     to: dedupeAndTrimStrings(context.to),
     cc: dedupeAndTrimStrings(context.cc),
     bcc: dedupeAndTrimStrings(context.bcc),

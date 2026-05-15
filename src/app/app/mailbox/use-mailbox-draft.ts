@@ -9,7 +9,6 @@ export interface CreateDraftPayload {
   mode: DraftModeUppercase;
   threadId?: string | null;
   replyToMessageId?: string | null;
-  fromIdentity?: string;
   to?: string[];
   cc?: string[];
   bcc?: string[];
@@ -77,7 +76,7 @@ export interface UseMailboxDraftResult {
   lastKnownUpdatedAt: string | null;
   createDraft: (payload: CreateDraftPayload) => Promise<DraftResponse | null>;
   autosave: (payload: AutosavePayload) => Promise<AutosaveResult | null>;
-  sendDraft: () => Promise<SendDraftResult | null>;
+  sendDraft: (latestComposerState?: AutosavePayload) => Promise<SendDraftResult | null>;
   discardDraft: () => Promise<boolean>;
   cancelAutosave: () => void;
   clearError: () => void;
@@ -222,21 +221,32 @@ export function useMailboxDraft(): UseMailboxDraftResult {
     });
   }, [lastKnownUpdatedAt, performAutosave]);
 
-  const sendDraft = useCallback(async (): Promise<SendDraftResult | null> => {
+  /**
+   * Flush any pending autosave immediately, then send the draft.
+   * This ensures the latest composer edits are persisted before
+   * the server reads the draft as the authoritative send source.
+   */
+  const sendDraft = useCallback(async (latestComposerState?: AutosavePayload): Promise<SendDraftResult | null> => {
     const currentId = currentDraftIdRef.current;
     if (!currentId) {
       setError("No draft to send");
       return null;
     }
 
-    // Cancel any pending autosave before sending so a delayed save
-    // does not overwrite the draft after it has been sent.
-    cancelAutosave();
-
     setIsLoading(true);
     setError(null);
 
     try {
+      // Cancel pending debounce and flush latest state synchronously.
+      cancelAutosave();
+      if (latestComposerState) {
+        const flushPayload: AutosavePayload = {
+          ...latestComposerState,
+          lastKnownUpdatedAt: lastKnownUpdatedAt ?? latestComposerState.lastKnownUpdatedAt,
+        };
+        await performAutosave(currentId, flushPayload);
+      }
+
       const res = await fetch(`/api/mailbox/drafts/${encodeURIComponent(currentId)}/send`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -261,7 +271,7 @@ export function useMailboxDraft(): UseMailboxDraftResult {
     } finally {
       setIsLoading(false);
     }
-  }, [cancelAutosave]);
+  }, [cancelAutosave, lastKnownUpdatedAt, performAutosave]);
 
   const discardDraft = useCallback(async (): Promise<boolean> => {
     const currentId = currentDraftIdRef.current;

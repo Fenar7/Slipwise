@@ -367,7 +367,7 @@ export function MailboxReadingPane({
 
   const handleOpenReply = (mode: ComposeMode) => {
     const to = mode === "forward" ? [] : lastMessage.to;
-    onOpenReply(mode, detail.threadId, lastMessage.id, detail.subject, to);
+    onOpenReply(mode, detail.threadId, lastMessage.providerMessageId, detail.subject, to);
   };
 
   const showInlineReply =

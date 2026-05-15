@@ -269,7 +269,6 @@ export async function createOrRestoreDraft(
     mode,
     threadId = null,
     replyToMessageId = null,
-    fromIdentity,
     to,
     cc,
     bcc,
@@ -301,11 +300,12 @@ export async function createOrRestoreDraft(
     return { draft: toMailboxDraftReadShape(existing as unknown as import("./domain-types").MailboxDraftRecord), created: false };
   }
 
+  // Sender identity is server-authoritative: always use the connection email.
   const connection = await db.mailboxConnection.findFirst({
     where: { id: mailboxConnectionId, orgId },
     select: { emailAddress: true },
   });
-  const effectiveFromIdentity = fromIdentity ?? connection?.emailAddress ?? "";
+  const effectiveFromIdentity = connection?.emailAddress ?? "";
 
   // Derive defaults for thread-bound modes
   let defaults: { to: string[]; cc: string[]; bcc: string[]; subject: string; htmlBody: string } | null = null;

@@ -152,6 +152,7 @@ function mapMessageToItem(
 
   return {
     id: msg.id,
+    providerMessageId: msg.providerMessageId,
     threadId: msg.threadId,
     direction: msg.direction === "inbound" ? "inbound" : "outbound",
     from: fromName,

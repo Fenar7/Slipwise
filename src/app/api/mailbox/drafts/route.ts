@@ -19,7 +19,6 @@ export interface CreateDraftRequest {
   mode: MailboxDraftMode;
   threadId?: string | null;
   replyToMessageId?: string | null;
-  fromIdentity?: string;
   to?: string[];
   cc?: string[];
   bcc?: string[];
@@ -92,7 +91,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       mailboxConnectionId: body.mailboxConnectionId,
       threadId: body.threadId ?? null,
       replyToMessageId: body.replyToMessageId ?? null,
-      fromIdentity: body.fromIdentity,
       to: body.to,
       cc: body.cc,
       bcc: body.bcc,

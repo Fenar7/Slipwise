@@ -26,6 +26,7 @@ import { toMailboxDraftReadShape } from "./read-shapes";
 import type { MailboxDraftReadShape } from "./read-shapes";
 import type { MailboxDraftMode } from "./domain-types";
 import { DraftServiceError } from "./draft-service";
+import { sanitizeMessageHtml } from "./sanitize-message-html";
 
 // ─── Errors ───────────────────────────────────────────────────────────────────
 
@@ -164,15 +165,21 @@ export async function sendDraft(input: SendDraftInput): Promise<SendDraftResult>
 
   const adapter = getMailboxProviderAdapter(connection.provider);
 
+  // Authoritative sender identity comes from the mailbox connection, never from client input.
+  const authoritativeFrom = connection.emailAddress;
+
+  // Sprint 5.2: sanitize outbound HTML before MIME construction.
+  const sanitizedHtmlBody = sanitizeMessageHtml(draft.htmlBody ?? "");
+
   const sendResult = await adapter.sendMessage({
     orgId,
     tokenRef: connection.tokenRef,
-    from: draft.fromIdentity,
+    from: authoritativeFrom,
     to: draft.toRecipients as string[],
     cc: (draft.ccRecipients as string[]) ?? [],
     bcc: (draft.bccRecipients as string[]) ?? [],
     subject: draft.subject,
-    htmlBody: draft.htmlBody ?? "",
+    htmlBody: sanitizedHtmlBody,
     textBody: draft.textBody ?? null,
     threadContext,
   });
@@ -184,14 +191,23 @@ export async function sendDraft(input: SendDraftInput): Promise<SendDraftResult>
     );
   }
 
-  // Success: transition draft to SENT and write audit event
+  // Success: atomically transition draft to SENT using a compare-and-swap guard.
+  // The where clause ensures only one concurrent send attempt can succeed.
   const updatedDraft = await db.$transaction(async (tx: Prisma.TransactionClient) => {
-    const sent = await tx.mailboxDraft.update({
-      where: { id: draftId, orgId },
+    const updateResult = await tx.mailboxDraft.updateMany({
+      where: { id: draftId, orgId, status: "ACTIVE" },
       data: {
         status: "SENT",
         lastAutosavedAt: new Date(),
       },
+    });
+
+    if (updateResult.count === 0) {
+      throw new SendServiceError("Draft is no longer active; concurrent send detected", 409);
+    }
+
+    const sent = await tx.mailboxDraft.findFirstOrThrow({
+      where: { id: draftId, orgId },
     });
 
     const auditAction = mapModeToAuditAction(draft.mode as MailboxDraftMode);

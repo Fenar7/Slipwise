@@ -80,6 +80,8 @@ export interface MailboxAttachmentSummary {
 
 export interface MailboxMessageItem {
   id: string;
+  /** Provider-side message identifier used for reply threading */
+  providerMessageId: string;
   threadId: string;
   direction: MessageDirection;
   from: string;
