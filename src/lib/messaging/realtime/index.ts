@@ -27,6 +27,7 @@ export type {
   SetPresenceCommand,
   StartTypingCommand,
   StopTypingCommand,
+  AckEventsCommand,
   SessionAckMessage,
   SubscriptionAckMessage,
   SubscriptionDeniedMessage,
@@ -37,6 +38,7 @@ export type {
   RealtimeEvent,
   RealtimeEventType,
   RealtimeErrorCode,
+  TransportState,
 } from "./protocol";
 
 // Token
@@ -122,3 +124,54 @@ export type {
   ReplayResultStatus,
   ReplayConversationEventsResult,
 } from "./event-log-service";
+
+// Downstream seam (Sprint 4.4)
+export {
+  consumeDownstreamEvents,
+  recordConsumptionCheckpoint,
+  getConsumptionCheckpoint,
+  getDownstreamEventCount,
+  buildNotificationPayload,
+  buildSearchIndexPayload,
+  buildAnalyticsPayload,
+  DEFAULT_DOWNSTREAM_CONSUMPTION_LIMIT,
+} from "./downstream-seam";
+export type {
+  DownstreamConsumerType,
+  DownstreamEvent,
+  ConsumeDownstreamEventsInput,
+  ConsumeDownstreamEventsResult,
+  RecordConsumptionCheckpointInput,
+  ConsumptionCheckpoint,
+  NotificationEventPayload,
+  SearchIndexEventPayload,
+  AnalyticsEventPayload,
+} from "./downstream-seam";
+
+// Degraded mode (Sprint 4.4)
+export {
+  makeDegradedState,
+  makeHealthyState,
+  isAdvisoryDegradation,
+  requiresRehydration,
+} from "./degraded-mode";
+export type {
+  DegradedModeReason,
+  DegradedState,
+  HealthyState,
+  TransportHealthState,
+  ConnectionStateMessage,
+  DegradedModeMessage,
+} from "./degraded-mode";
+
+// Safety limits (Sprint 4.4)
+export {
+  DEFAULT_SAFETY_LIMITS,
+  SessionRateLimiter,
+  createBackpressureState,
+} from "./safety-limits";
+export type {
+  SafetyLimits,
+  RateLimitWindow,
+  BackpressureState,
+} from "./safety-limits";

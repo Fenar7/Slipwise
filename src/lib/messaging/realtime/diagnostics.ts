@@ -28,7 +28,20 @@ export type RealtimeDiagnosticEvent =
   | { kind: "presence_updated"; sessionId: string; orgId: string; userId: string; status: string }
   | { kind: "typing_started"; sessionId: string; conversationId: string; userId: string }
   | { kind: "typing_stopped"; sessionId: string; conversationId: string; userId: string }
-  | { kind: "typing_expired"; sessionId: string; conversationId: string; userId: string };
+  | { kind: "typing_expired"; sessionId: string; conversationId: string; userId: string }
+  // Sprint 4.4
+  | { kind: "downstream_event_consumed"; consumerType: string; orgId: string; eventCount: number; afterCursor?: string }
+  | { kind: "downstream_checkpoint_saved"; consumerType: string; orgId: string; cursor: string; conversationId?: string }
+  | { kind: "degraded_mode_entered"; sessionId: string; reason: string; rehydrateRecommended?: boolean }
+  | { kind: "degraded_mode_recovered"; sessionId: string; reason: string }
+  | { kind: "subscription_limit_denied"; sessionId: string; conversationId: string; currentCount: number; limit: number }
+  | { kind: "rate_limit_denied"; sessionId: string; commandType: string; remaining: number; resetAt: number }
+  | { kind: "backpressure_activated"; sessionId: string; reason: string; queuedEvents: number }
+  | { kind: "backpressure_released"; sessionId: string; queuedEvents: number }
+  | { kind: "presence_degraded"; sessionId: string; reason: string }
+  | { kind: "typing_degraded"; sessionId: string; reason: string }
+  | { kind: "replay_degraded"; sessionId: string; conversationId: string; reason: string }
+  | { kind: "fanout_degraded"; conversationId: string; reason: string; recipientCount: number };
 
 export interface RealtimeDiagnostics {
   emit(event: RealtimeDiagnosticEvent): void;
@@ -103,6 +116,55 @@ export class ConsoleRealtimeDiagnostics implements RealtimeDiagnostics {
         }
         case "typing_expired": {
           console.info(`${base} session=${safeId(event.sessionId)} conv=${safeId(event.conversationId)} user=${safeId(event.userId)}`);
+          break;
+        }
+        // Sprint 4.4
+        case "downstream_event_consumed": {
+          console.info(`${base} consumer=${event.consumerType} org=${safeId(event.orgId)} count=${event.eventCount} afterCursor=${event.afterCursor ?? "-"}`);
+          break;
+        }
+        case "downstream_checkpoint_saved": {
+          console.info(`${base} consumer=${event.consumerType} org=${safeId(event.orgId)} cursor=${event.cursor} conv=${safeId(event.conversationId)}`);
+          break;
+        }
+        case "degraded_mode_entered": {
+          console.warn(`${base} session=${safeId(event.sessionId)} reason=${event.reason} rehydrate=${event.rehydrateRecommended ?? false}`);
+          break;
+        }
+        case "degraded_mode_recovered": {
+          console.info(`${base} session=${safeId(event.sessionId)} reason=${event.reason}`);
+          break;
+        }
+        case "subscription_limit_denied": {
+          console.warn(`${base} session=${safeId(event.sessionId)} conv=${safeId(event.conversationId)} current=${event.currentCount} limit=${event.limit}`);
+          break;
+        }
+        case "rate_limit_denied": {
+          console.warn(`${base} session=${safeId(event.sessionId)} cmd=${event.commandType} remaining=${event.remaining} resetAt=${event.resetAt}`);
+          break;
+        }
+        case "backpressure_activated": {
+          console.warn(`${base} session=${safeId(event.sessionId)} reason=${event.reason} queued=${event.queuedEvents}`);
+          break;
+        }
+        case "backpressure_released": {
+          console.info(`${base} session=${safeId(event.sessionId)} queued=${event.queuedEvents}`);
+          break;
+        }
+        case "presence_degraded": {
+          console.warn(`${base} session=${safeId(event.sessionId)} reason=${event.reason}`);
+          break;
+        }
+        case "typing_degraded": {
+          console.warn(`${base} session=${safeId(event.sessionId)} reason=${event.reason}`);
+          break;
+        }
+        case "replay_degraded": {
+          console.warn(`${base} session=${safeId(event.sessionId)} conv=${safeId(event.conversationId)} reason=${event.reason}`);
+          break;
+        }
+        case "fanout_degraded": {
+          console.warn(`${base} conv=${safeId(event.conversationId)} reason=${event.reason} recipients=${event.recipientCount}`);
           break;
         }
       }

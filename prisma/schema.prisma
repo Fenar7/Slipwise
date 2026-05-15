@@ -6759,3 +6759,20 @@ model RetentionPolicy {
   @@index([orgId, isActive, lastAppliedAt])
   @@map("retention_policy")
 }
+
+/// Downstream consumer checkpoint for idempotent event consumption.
+/// Tracks the highest cursor each consumer has processed per org/conversation.
+model DownstreamConsumptionCheckpoint {
+  id             String   @id @default(cuid())
+  consumerType   String
+  orgId          String
+  conversationId String   @default("_global")
+  cursor         BigInt
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([consumerType, orgId, conversationId])
+  @@index([orgId, conversationId])
+  @@map("downstream_consumption_checkpoint")
+}

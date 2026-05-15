@@ -27,6 +27,14 @@ import {
 import { upsertPresence, startTyping, stopTyping, clearTypingForUser } from "../presence-service";
 import { replayConversationEvents } from "./event-log-service";
 import { db } from "@/lib/db";
+import {
+  type SafetyLimits,
+  SessionRateLimiter,
+  createBackpressureState,
+  type BackpressureState,
+  DEFAULT_SAFETY_LIMITS,
+} from "./safety-limits";
+import { type DegradedModeReason, makeDegradedState } from "./degraded-mode";
 
 /**
  * Messaging WebSocket Gateway.
@@ -55,12 +63,20 @@ export interface GatewayOptions {
   clockSkewSeconds?: number;
   /** Typing indicator TTL (ms). Default 5s. */
   typingTtlMs?: number;
+  /** Safety limits for subscriptions, rate limits, and backpressure. */
+  safetyLimits?: SafetyLimits;
 }
 
 export interface GatewayConnectionState {
   sessionId: string | null;
   connectedAt: number;
   lastActivityAt: number;
+}
+
+interface SessionAuxiliaryState {
+  rateLimiter: SessionRateLimiter;
+  backpressure: BackpressureState;
+  degradedReasons: Set<DegradedModeReason>;
 }
 
 export class MessagingGateway {
@@ -71,12 +87,15 @@ export class MessagingGateway {
   private sweepIntervalMs: number;
   private clockSkewSeconds: number;
   private typingTtlMs: number;
+  private safetyLimits: SafetyLimits;
   private sweepTimer: NodeJS.Timeout | null = null;
   private wsConnections = new WeakMap<WebSocket, GatewayConnectionState>();
   /** sessionId -> active socket.  Only one transport per session at a time. */
   private sessionSockets = new Map<string, WebSocket>();
   /** sessionId:conversationId -> typing expiry timer. */
   private typingTimers = new Map<string, NodeJS.Timeout>();
+  /** sessionId -> auxiliary state (rate limiter, backpressure, degraded flags). */
+  private sessionAux = new Map<string, SessionAuxiliaryState>();
 
   constructor(options: GatewayOptions) {
     this.tokenSecret = options.tokenSecret;
@@ -86,6 +105,7 @@ export class MessagingGateway {
     this.sweepIntervalMs = options.sweepIntervalMs ?? 30_000;
     this.clockSkewSeconds = options.clockSkewSeconds ?? 30;
     this.typingTtlMs = options.typingTtlMs ?? 5_000;
+    this.safetyLimits = options.safetyLimits ?? DEFAULT_SAFETY_LIMITS;
   }
 
   // -------------------------------------------------------------------------
@@ -111,6 +131,71 @@ export class MessagingGateway {
       clearTimeout(timer);
     }
     this.typingTimers.clear();
+    this.sessionAux.clear();
+  }
+
+  // -------------------------------------------------------------------------
+  // Sprint 4.4: auxiliary state helpers
+  // -------------------------------------------------------------------------
+
+  private getOrCreateAux(sessionId: string): SessionAuxiliaryState {
+    let aux = this.sessionAux.get(sessionId);
+    if (!aux) {
+      aux = {
+        rateLimiter: new SessionRateLimiter(this.safetyLimits),
+        backpressure: createBackpressureState(),
+        degradedReasons: new Set(),
+      };
+      this.sessionAux.set(sessionId, aux);
+    }
+    return aux;
+  }
+
+  private removeAux(sessionId: string): void {
+    this.sessionAux.delete(sessionId);
+  }
+
+  private isSubscriptionLimitReached(sessionId: string): boolean {
+    const subs = this.sessions.getSubscriptions(sessionId);
+    return subs.size >= this.safetyLimits.maxSubscriptionsPerSession;
+  }
+
+  private sendDegradedState(
+    socket: WebSocket,
+    reason: DegradedModeReason,
+    overrides?: { message?: string; retryAfterMs?: number; rehydrateRecommended?: boolean },
+  ): void {
+    const state = makeDegradedState(reason);
+    this.sendMessage(socket, {
+      type: "degraded",
+      payload: {
+        reason: state.reason,
+        message: overrides?.message ?? state.message,
+        retryAfterMs: overrides?.retryAfterMs ?? state.retryAfterMs,
+        rehydrateRecommended: overrides?.rehydrateRecommended ?? state.rehydrateRecommended,
+      },
+    });
+  }
+
+  private enterDegradedMode(sessionId: string, reason: DegradedModeReason, rehydrateRecommended?: boolean): void {
+    const aux = this.getOrCreateAux(sessionId);
+    aux.degradedReasons.add(reason);
+    this.diagnostics.emit({
+      kind: "degraded_mode_entered",
+      sessionId,
+      reason,
+      rehydrateRecommended,
+    });
+  }
+
+  private exitDegradedMode(sessionId: string, reason: DegradedModeReason): void {
+    const aux = this.getOrCreateAux(sessionId);
+    aux.degradedReasons.delete(reason);
+    this.diagnostics.emit({
+      kind: "degraded_mode_recovered",
+      sessionId,
+      reason,
+    });
   }
 
   // -------------------------------------------------------------------------
@@ -182,6 +267,23 @@ export class MessagingGateway {
     const command = parsed as ClientCommand;
     const requestId = command.requestId;
 
+    // Sprint 4.4: per-session command rate limiting.
+    if (connState.sessionId) {
+      const aux = this.getOrCreateAux(connState.sessionId);
+      const rateResult = aux.rateLimiter.checkCommandAllowed();
+      if (!rateResult.allowed) {
+        this.diagnostics.emit({
+          kind: "rate_limit_denied",
+          sessionId: connState.sessionId,
+          commandType: command.type,
+          remaining: rateResult.remaining,
+          resetAt: rateResult.resetAt,
+        });
+        this.sendError(socket, "rate_limited", "too many commands", false, connState.sessionId, requestId);
+        return;
+      }
+    }
+
     switch (command.type) {
       case "subscribe_conversation":
         void this.handleSubscribe(
@@ -216,6 +318,9 @@ export class MessagingGateway {
       case "stop_typing":
         void this.handleStopTyping(socket, connState, command.payload.conversationId, requestId);
         break;
+      case "ack_events":
+        this.handleAckEvents(socket, connState, command.payload, requestId);
+        break;
     }
   }
 
@@ -232,6 +337,20 @@ export class MessagingGateway {
   ): Promise<void> {
     const session = this.requireSession(socket, connState, requestId);
     if (!session) return;
+
+    // Sprint 4.4: enforce subscription limits.
+    if (this.isSubscriptionLimitReached(session.sessionId)) {
+      const currentCount = this.sessions.getSubscriptions(session.sessionId).size;
+      this.diagnostics.emit({
+        kind: "subscription_limit_denied",
+        sessionId: session.sessionId,
+        conversationId,
+        currentCount,
+        limit: this.safetyLimits.maxSubscriptionsPerSession,
+      });
+      this.sendDegradedState(socket, "subscription_limit_reached");
+      return;
+    }
 
     const authDetail = await authorizeConversationSubscription(session, conversationId);
     if (!authDetail.result.allowed) {
@@ -334,6 +453,32 @@ export class MessagingGateway {
       return;
     }
 
+    // Sprint 4.4: enforce resume rate limits per connection.
+    // Use a temporary aux keyed by socket until session is established.
+    const resumeKey = `resume:${connState.connectedAt}`;
+    let aux = this.sessionAux.get(resumeKey);
+    if (!aux) {
+      aux = {
+        rateLimiter: new SessionRateLimiter(this.safetyLimits),
+        backpressure: createBackpressureState(),
+        degradedReasons: new Set(),
+      };
+      this.sessionAux.set(resumeKey, aux);
+    }
+    const resumeCheck = aux.rateLimiter.checkResumeAllowed();
+    if (!resumeCheck.allowed) {
+      this.diagnostics.emit({
+        kind: "rate_limit_denied",
+        sessionId: resumeKey,
+        commandType: "resume_session",
+        remaining: resumeCheck.remaining,
+        resetAt: Date.now() + 60_000,
+      });
+      this.sendFatalError(socket, "rate_limited", "too many resume attempts", connState, requestId);
+      socket.close(1008, "rate limited");
+      return;
+    }
+
     const verifyResult = verifyRealtimeSessionToken(sessionToken, this.tokenSecret, {
       clockSkewSeconds: this.clockSkewSeconds,
     });
@@ -375,6 +520,9 @@ export class MessagingGateway {
     connState.sessionId = session.sessionId;
     this.sessions.updateHeartbeat(session.sessionId);
     this.sessionSockets.set(session.sessionId, socket);
+
+    // Clean up temporary resume rate limiter.
+    this.sessionAux.delete(`resume:${connState.connectedAt}`);
 
     this.diagnostics.emit({
       kind: "connect_success",
@@ -515,6 +663,21 @@ export class MessagingGateway {
     const session = this.requireSession(socket, connState, requestId);
     if (!session) return;
 
+    // Sprint 4.4: typing rate limit.
+    const aux = this.getOrCreateAux(session.sessionId);
+    const typingRate = aux.rateLimiter.checkTypingAllowed();
+    if (!typingRate.allowed) {
+      this.diagnostics.emit({
+        kind: "rate_limit_denied",
+        sessionId: session.sessionId,
+        commandType: "start_typing",
+        remaining: typingRate.remaining,
+        resetAt: typingRate.resetAt,
+      });
+      this.sendError(socket, "rate_limited", "typing rate limit exceeded", false, session.sessionId, requestId);
+      return;
+    }
+
     // Ensure the session is subscribed to this conversation.
     if (!this.sessions.getSubscriptions(session.sessionId).has(conversationId)) {
       this.sendError(socket, "subscription_denied", "not subscribed to conversation", false, session.sessionId, requestId);
@@ -613,6 +776,37 @@ export class MessagingGateway {
     }
   }
 
+  private handleAckEvents(
+    socket: WebSocket,
+    connState: GatewayConnectionState,
+    _payload: { lastEventId?: string; cursors?: Record<string, string> },
+    requestId: string,
+  ): void {
+    const session = this.requireSession(socket, connState, requestId);
+    if (!session) return;
+
+    const aux = this.getOrCreateAux(session.sessionId);
+    if (aux.backpressure.active && aux.backpressure.queuedEvents <= this.safetyLimits.maxEventQueueDepth / 2) {
+      aux.backpressure.active = false;
+      aux.backpressure.reason = null;
+      this.diagnostics.emit({
+        kind: "backpressure_released",
+        sessionId: session.sessionId,
+        queuedEvents: aux.backpressure.queuedEvents,
+      });
+      this.sendMessage(socket, {
+        type: "connection_state",
+        payload: { state: "connected" },
+      });
+    }
+
+    this.sendMessage(socket, {
+      type: "heartbeat_ack",
+      requestId,
+      payload: { serverTime: Date.now() },
+    });
+  }
+
   /**
    * Replay missed events for a subscription from a durable cursor.
    * Returns true if replay succeeded (or was not needed), false if the cursor
@@ -640,7 +834,15 @@ export class MessagingGateway {
           reason: `replay_${result.status}`,
           sessionId: session.sessionId,
         });
+        this.diagnostics.emit({
+          kind: "replay_degraded",
+          sessionId: session.sessionId,
+          conversationId,
+          reason: `replay_${result.status}`,
+        });
+        this.enterDegradedMode(session.sessionId, "replay_unavailable", true);
         this.sendError(socket, "replay_unavailable", `replay cursor ${result.status}`, false, session.sessionId);
+        this.sendDegradedState(socket, "replay_unavailable");
         return false;
       }
 
@@ -678,7 +880,15 @@ export class MessagingGateway {
         reason: message,
         sessionId: session.sessionId,
       });
+      this.diagnostics.emit({
+        kind: "replay_degraded",
+        sessionId: session.sessionId,
+        conversationId,
+        reason: message,
+      });
+      this.enterDegradedMode(session.sessionId, "replay_unavailable", true);
       this.sendError(socket, "replay_unavailable", message, false, session.sessionId);
+      this.sendDegradedState(socket, "replay_unavailable");
       return false;
     }
   }
@@ -744,6 +954,7 @@ export class MessagingGateway {
       });
       this.sessions.detachSession(connState.sessionId);
       this.sessionSockets.delete(connState.sessionId);
+      this.removeAux(connState.sessionId);
       // Teardown typing: clear persistence, publish stopped, and clear timers.
       void this.teardownTypingForSession(connState.sessionId);
     }
@@ -939,6 +1150,29 @@ export class MessagingGateway {
 
   private sendMessage(socket: WebSocket, message: ServerMessage): void {
     if (socket.readyState !== socket.OPEN) return;
+
+    // Sprint 4.4: backpressure tracking.
+    const connState = this.wsConnections.get(socket);
+    if (connState?.sessionId) {
+      const aux = this.getOrCreateAux(connState.sessionId);
+      if (aux.backpressure.active) {
+        aux.backpressure.droppedEvents++;
+        return;
+      }
+      aux.backpressure.queuedEvents++;
+      if (aux.backpressure.queuedEvents > this.safetyLimits.maxEventQueueDepth) {
+        aux.backpressure.active = true;
+        aux.backpressure.reason = "queue_full";
+        this.diagnostics.emit({
+          kind: "backpressure_activated",
+          sessionId: connState.sessionId,
+          reason: "queue_full",
+          queuedEvents: aux.backpressure.queuedEvents,
+        });
+        this.sendDegradedState(socket, "fanout_delayed");
+      }
+    }
+
     try {
       socket.send(JSON.stringify(message));
     } catch {
