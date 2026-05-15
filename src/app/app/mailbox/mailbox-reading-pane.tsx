@@ -343,6 +343,7 @@ interface MailboxReadingPaneProps {
   onCloseReply: () => void;
   onDiscardReply: () => void;
   onExpandReply: () => void;
+  onSendReply: () => void;
   onPatchComposer: (patch: Partial<MailboxComposerState>) => void;
   onOpenContext?: () => void;
   isActionLoading: boolean;
@@ -356,6 +357,7 @@ export function MailboxReadingPane({
   onCloseReply,
   onDiscardReply,
   onExpandReply,
+  onSendReply,
   onPatchComposer,
   onOpenContext,
   isActionLoading,
@@ -405,6 +407,7 @@ export function MailboxReadingPane({
               onClose={onCloseReply}
               onDiscard={onDiscardReply}
               onExpand={onExpandReply}
+              onSend={onSendReply}
               onModeChange={(mode) => {
                 const to = mode === "forward" ? [] : lastMessage.to;
                 onPatchComposer({ mode, to });

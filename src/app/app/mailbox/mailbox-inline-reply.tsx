@@ -30,11 +30,12 @@ interface InlineReplyProps {
   onClose: () => void;
   onDiscard: () => void;
   onExpand: () => void;
+  onSend: () => void;
   onModeChange: (mode: ComposeMode) => void;
   onChange: (patch: Partial<MailboxComposerState>) => void;
 }
 
-export function InlineReply({ state, onClose, onDiscard, onExpand, onModeChange, onChange }: InlineReplyProps) {
+export function InlineReply({ state, onClose, onDiscard, onExpand, onSend, onModeChange, onChange }: InlineReplyProps) {
   const removeAttachment = (id: string) =>
     onChange({ attachments: state.attachments.filter((a) => a.id !== id) });
 
@@ -172,7 +173,7 @@ export function InlineReply({ state, onClose, onDiscard, onExpand, onModeChange,
       <RichTextToolbar compact />
       <SendBar
         sendState={state.sendState}
-        onSend={() => onChange({ sendState: "sending" })}
+        onSend={onSend}
         deliveryMode={state.deliveryMode}
         scheduledSendAt={state.scheduledSendAt}
         scheduleLabel={state.scheduleLabel}
