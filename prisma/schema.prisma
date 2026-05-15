@@ -273,6 +273,7 @@ model Organization {
   conversationMeetings         ConversationMeeting[]
   calendarConnections          CalendarConnection[]
   messagingAuditEvents         MessagingAuditEvent[]
+  conversationEventLogs        ConversationEventLog[]
   retentionPolicies            RetentionPolicy[]
 
   @@index([entityGroupId])
@@ -6338,6 +6339,7 @@ model Conversation {
   tasks                 MessagingTask[]
   meetings              ConversationMeeting[]
   auditEvents           MessagingAuditEvent[]
+  eventLogs             ConversationEventLog[]
 
   /// Composite unique for org-safe child relations.
   @@unique([id, orgId])
@@ -6699,6 +6701,33 @@ model MessagingAuditEvent {
   @@index([orgId, action, createdAt])
   @@index([orgId, actorId, createdAt])
   @@map("messaging_audit_event")
+}
+
+/// Durable event log for realtime replay and downstream worker consumption.
+/// Each row represents a single replayable conversation event with a monotonic cursor.
+/// Events are append-only and scoped by org + conversation for safe replay.
+model ConversationEventLog {
+  id             String   @id @default(cuid())
+  orgId          String
+  conversationId String
+  eventType      String
+  /// Stable event identifier (same value used in the realtime envelope).
+  eventId        String   @unique
+  /// Monotonic cursor for per-conversation stream ordering.
+  cursor         BigInt
+  actorId        String?  @db.Uuid
+  /// Event payload — must not contain unauthorized hidden content.
+  payload        Json
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  conversation Conversation @relation(fields: [conversationId, orgId], references: [id, orgId], onDelete: Cascade)
+
+  @@unique([conversationId, cursor])
+  @@index([orgId, conversationId, cursor])
+  @@index([eventId])
+  @@index([createdAt])
+  @@map("conversation_event_log")
 }
 
 /// Retention policy configuration for an org.

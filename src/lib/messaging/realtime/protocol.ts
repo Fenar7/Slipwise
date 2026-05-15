@@ -41,6 +41,8 @@ export interface SubscribeConversationCommand extends BaseCommand {
   type: "subscribe_conversation";
   payload: {
     conversationId: string;
+    /** Cursor to replay missed events from (Sprint 4.3). */
+    lastSeenCursor?: string | null;
   };
 }
 
@@ -177,6 +179,7 @@ export type RealtimeEventType =
   | "conversation.thread.created"
   | "conversation.thread.replied"
   | "conversation.thread.resolved"
+  | "conversation.read_state.updated"
   | "conversation.presence.updated"
   | "conversation.typing.updated"
   | "conversation.governance.updated"
@@ -213,6 +216,7 @@ export type RealtimeErrorCode =
   | "session_expired"
   | "session_not_found"
   | "resume_unavailable"
+  | "replay_unavailable"
   | "server_error"
   | "connection_closed";
 
@@ -230,12 +234,12 @@ export function isValidClientCommand(obj: unknown): obj is ClientCommand {
     case "subscribe_conversation":
     case "unsubscribe_conversation": {
       const payload = o.payload as Record<string, unknown> | undefined;
-      return (
-        typeof payload === "object" &&
-        payload !== null &&
-        typeof payload.conversationId === "string" &&
-        payload.conversationId.length > 0
-      );
+      if (typeof payload !== "object" || payload === null) return false;
+      if (typeof payload.conversationId !== "string" || payload.conversationId.length === 0) return false;
+      if (payload.lastSeenCursor !== undefined && payload.lastSeenCursor !== null) {
+        if (typeof payload.lastSeenCursor !== "string" || payload.lastSeenCursor.length === 0) return false;
+      }
+      return true;
     }
     case "heartbeat": {
       return true; // payload is optional

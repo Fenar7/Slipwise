@@ -24,6 +24,7 @@ export interface RealtimePublisher {
     eventType: RealtimeEventType,
     actorId: string | undefined,
     data: unknown,
+    options?: { eventId?: string; cursor?: string },
   ): void;
 
   /** Publish a presence update to allowed viewers in the org. */
@@ -57,16 +58,18 @@ export class InMemoryRealtimePublisher implements RealtimePublisher {
     eventType: RealtimeEventType,
     actorId: string | undefined,
     data: unknown,
+    options?: { eventId?: string; cursor?: string },
   ): void {
     const event: RealtimeEvent = {
       type: "event",
-      eventId: `${eventType}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`,
+      eventId: options?.eventId ?? `${eventType}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`,
       payload: {
         eventType,
         orgId,
         conversationId,
         occurredAt: Date.now(),
         actorId,
+        cursor: options?.cursor,
         data,
       },
     };
