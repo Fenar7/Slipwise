@@ -350,6 +350,7 @@ export function MailboxWorkspace() {
     error: draftError,
     createDraft,
     autosave,
+    sendDraft,
     discardDraft,
     cancelAutosave,
   } = useMailboxDraft();
@@ -479,6 +480,13 @@ export function MailboxWorkspace() {
     await discardDraft();
     setComposer(null);
   }, [discardDraft]);
+
+  const handleSendComposer = useCallback(async () => {
+    const result = await sendDraft();
+    if (result) {
+      setComposer(null);
+    }
+  }, [sendDraft]);
 
   const patchContext = useCallback((patch: Partial<LinkedContextState>) => {
     if (!selectedThreadId) return;
@@ -722,6 +730,7 @@ export function MailboxWorkspace() {
                 onCloseReply={closeComposer}
                 onDiscardReply={handleDiscardComposer}
                 onExpandReply={expandComposer}
+                onSendReply={handleSendComposer}
                 onPatchComposer={patchComposer}
                 onOpenContext={() => setMobilePanel("context")}
                 isActionLoading={isActionLoading}
@@ -765,6 +774,7 @@ export function MailboxWorkspace() {
           onClose={closeComposer}
           onDiscard={handleDiscardComposer}
           onExpand={expandComposer}
+          onSend={handleSendComposer}
           onChange={patchComposer}
         />
       )}
@@ -776,6 +786,7 @@ export function MailboxWorkspace() {
           onClose={closeComposer}
           onDiscard={handleDiscardComposer}
           onCollapse={collapseComposer}
+          onSend={handleSendComposer}
           onChange={patchComposer}
         />
       )}

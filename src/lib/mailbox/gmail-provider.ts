@@ -48,13 +48,15 @@ const GMAIL_THREADS_URL = "https://gmail.googleapis.com/gmail/v1/users/me/thread
 const GMAIL_THREAD_URL = "https://gmail.googleapis.com/gmail/v1/users/me/threads";
 const GMAIL_HISTORY_URL = "https://gmail.googleapis.com/gmail/v1/users/me/history";
 const GMAIL_WATCH_URL = "https://gmail.googleapis.com/gmail/v1/users/me/watch";
+const GMAIL_SEND_URL = "https://www.googleapis.com/gmail/v1/users/me/messages/send";
 
 /**
- * Least-privilege scopes for Sprint 2.2 (auth lifecycle only).
- * Sprint 2.3+ will extend this list when send/reply is implemented.
+ * Least-privilege scopes for Gmail integration.
+ * Sprint 5.2 adds gmail.send for outbound send/reply/forward.
  */
 export const GMAIL_OAUTH_SCOPES = [
   "https://www.googleapis.com/auth/gmail.readonly",
+  "https://www.googleapis.com/auth/gmail.send",
   "https://www.googleapis.com/auth/userinfo.email",
   "https://www.googleapis.com/auth/userinfo.profile",
 ].join(" ");
@@ -553,6 +555,78 @@ export const gmailProviderAdapter: IMailboxProviderAdapter = {
   },
 
   /**
+   * Send an outbound message via Gmail.
+   *
+   * Constructs a MIME message with proper headers, base64url-encodes it, and
+   * sends via the Gmail users.messages.send endpoint.
+   *
+   * Reply threading:
+   * - threadContext.providerThreadId is passed as the Gmail threadId.
+   * - In-Reply-To and References headers are set from the original message
+   *   so Gmail threads the reply correctly.
+   */
+  async sendMessage({ orgId, tokenRef, from, to, cc, bcc, subject, htmlBody, textBody, threadContext }) {
+    const credential = await readMailboxCredential(orgId, tokenRef);
+    if (!credential) {
+      return { category: "auth_expired", safeMessage: "Credential not found for tokenRef", retryable: false };
+    }
+
+    const accessToken = await ensureValidAccessToken(orgId, tokenRef, credential);
+    if (isProviderError(accessToken)) return accessToken;
+
+    // Check token scope for send permission
+    const hasSendScope = credential.scope?.includes("gmail.send") ?? false;
+    if (!hasSendScope) {
+      return { category: "auth_insufficient", safeMessage: "Gmail token lacks gmail.send scope; reconnect required", retryable: false };
+    }
+
+    const mime = buildMimeMessage({ from, to, cc, bcc, subject, htmlBody, textBody, threadContext });
+    const raw = encodeBase64Url(mime);
+
+    const payload: Record<string, unknown> = { raw };
+    if (threadContext) {
+      payload.threadId = threadContext.providerThreadId;
+    }
+
+    const res = await fetch(GMAIL_SEND_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!res.ok) {
+      const errorCode = await parseGoogleErrorCode(res);
+      return mapGoogleError(res.status, errorCode);
+    }
+
+    const data = await res.json() as { id: string; threadId?: string };
+
+    // Extract the RFC Message-ID from the sent message by re-fetching
+    let rfcMessageId: string | null = null;
+    try {
+      const detailRes = await fetch(`${GMAIL_THREAD_URL}/${data.threadId ?? threadContext?.providerThreadId ?? ""}/messages/${data.id}`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (detailRes.ok) {
+        const detail = await detailRes.json() as GmailMessage;
+        const headers = detail.payload?.headers ?? [];
+        rfcMessageId = headers.find((h) => h.name === "Message-ID")?.value ?? null;
+      }
+    } catch {
+      // Best-effort: if re-fetch fails, rfcMessageId stays null.
+    }
+
+    return {
+      providerMessageId: data.id,
+      providerThreadId: data.threadId ?? threadContext?.providerThreadId ?? "",
+      rfcMessageId,
+    };
+  },
+
+  /**
    * Revoke Gmail authorization and clean up stored credentials.
    * Best-effort: does not throw if the provider revoke call fails.
    */
@@ -815,6 +889,93 @@ function decodeBase64(data: string): string {
   } catch {
     return "";
   }
+}
+
+function encodeBase64Url(data: string): string {
+  return Buffer.from(data)
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+}
+
+/**
+ * Build a simple MIME message for Gmail send.
+ *
+ * Sprint 5.2 implements text/html and text/plain bodies.
+ * Attachment MIME construction is a seam for Sprint 5.3.
+ *
+ * Reply threading headers (In-Reply-To, References) are included
+ * when threadContext is provided.
+ */
+function buildMimeMessage(params: {
+  from: string;
+  to: string[];
+  cc?: string[];
+  bcc?: string[];
+  subject: string;
+  htmlBody: string;
+  textBody?: string | null;
+  threadContext?: {
+    providerThreadId: string;
+    inReplyToRfcMessageId?: string | null;
+    references?: string[] | null;
+  } | null;
+}): string {
+  const boundary = `---- SlipwiseMail Boundary ${Math.random().toString(36).slice(2)}`;
+  const { from, to, cc, bcc, subject, htmlBody, textBody, threadContext } = params;
+
+  const headers: string[] = [];
+  headers.push(`From: ${from}`);
+  headers.push(`To: ${to.join(", ")}`);
+  if (cc && cc.length > 0) headers.push(`Cc: ${cc.join(", ")}`);
+  if (bcc && bcc.length > 0) headers.push(`Bcc: ${bcc.join(", ")}`);
+  headers.push(`Subject: ${subject}`);
+  headers.push("MIME-Version: 1.0");
+
+  if (threadContext?.inReplyToRfcMessageId) {
+    headers.push(`In-Reply-To: ${threadContext.inReplyToRfcMessageId}`);
+  }
+  if (threadContext?.references && threadContext.references.length > 0) {
+    headers.push(`References: ${threadContext.references.join(" ")}`);
+  }
+
+  const hasPlain = !!textBody;
+  const hasHtml = !!htmlBody;
+
+  if (hasPlain && hasHtml) {
+    headers.push(`Content-Type: multipart/alternative; boundary="${boundary}"`);
+    headers.push("");
+    headers.push(`--${boundary}`);
+    headers.push("Content-Type: text/plain; charset=\"UTF-8\"");
+    headers.push("Content-Transfer-Encoding: quoted-printable");
+    headers.push("");
+    headers.push(textBody!);
+    headers.push("");
+    headers.push(`--${boundary}`);
+    headers.push("Content-Type: text/html; charset=\"UTF-8\"");
+    headers.push("Content-Transfer-Encoding: quoted-printable");
+    headers.push("");
+    headers.push(htmlBody);
+    headers.push("");
+    headers.push(`--${boundary}--`);
+  } else if (hasHtml) {
+    headers.push("Content-Type: text/html; charset=\"UTF-8\"");
+    headers.push("Content-Transfer-Encoding: quoted-printable");
+    headers.push("");
+    headers.push(htmlBody);
+  } else if (hasPlain) {
+    headers.push("Content-Type: text/plain; charset=\"UTF-8\"");
+    headers.push("Content-Transfer-Encoding: quoted-printable");
+    headers.push("");
+    headers.push(textBody!);
+  } else {
+    headers.push("Content-Type: text/plain; charset=\"UTF-8\"");
+    headers.push("");
+    headers.push("");
+  }
+
+  return headers.join("\r\n");
 }
 
 async function ensureValidAccessToken(

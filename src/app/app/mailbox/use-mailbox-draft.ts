@@ -62,6 +62,12 @@ export interface AutosaveResult {
   stale: boolean;
 }
 
+export interface SendDraftResult {
+  draft: DraftResponse;
+  providerMessageId: string | null;
+  providerThreadId: string | null;
+}
+
 export interface UseMailboxDraftResult {
   isLoading: boolean;
   isAutosaving: boolean;
@@ -71,6 +77,7 @@ export interface UseMailboxDraftResult {
   lastKnownUpdatedAt: string | null;
   createDraft: (payload: CreateDraftPayload) => Promise<DraftResponse | null>;
   autosave: (payload: AutosavePayload) => Promise<AutosaveResult | null>;
+  sendDraft: () => Promise<SendDraftResult | null>;
   discardDraft: () => Promise<boolean>;
   cancelAutosave: () => void;
   clearError: () => void;
@@ -215,6 +222,47 @@ export function useMailboxDraft(): UseMailboxDraftResult {
     });
   }, [lastKnownUpdatedAt, performAutosave]);
 
+  const sendDraft = useCallback(async (): Promise<SendDraftResult | null> => {
+    const currentId = currentDraftIdRef.current;
+    if (!currentId) {
+      setError("No draft to send");
+      return null;
+    }
+
+    // Cancel any pending autosave before sending so a delayed save
+    // does not overwrite the draft after it has been sent.
+    cancelAutosave();
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const res = await fetch(`/api/mailbox/drafts/${encodeURIComponent(currentId)}/send`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({ error: "Unknown error" }))) as {
+          error?: string;
+        };
+        throw new Error(body.error ?? `HTTP ${res.status}`);
+      }
+
+      const data = (await res.json()) as SendDraftResult;
+      setDraftId(null);
+      setLastKnownUpdatedAt(null);
+      setLastAutosavedAt(null);
+      return data;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to send draft";
+      setError(message);
+      return null;
+    } finally {
+      setIsLoading(false);
+    }
+  }, [cancelAutosave]);
+
   const discardDraft = useCallback(async (): Promise<boolean> => {
     const currentId = currentDraftIdRef.current;
     if (!currentId) return false;
@@ -260,6 +308,7 @@ export function useMailboxDraft(): UseMailboxDraftResult {
     lastKnownUpdatedAt,
     createDraft,
     autosave,
+    sendDraft,
     discardDraft,
     cancelAutosave,
     clearError,

@@ -18,10 +18,11 @@ interface FloatingComposerProps {
   onClose: () => void;
   onDiscard: () => void;
   onExpand: () => void;
+  onSend: () => void;
   onChange: (patch: Partial<MailboxComposerState>) => void;
 }
 
-export function FloatingComposer({ state, onClose, onDiscard, onExpand, onChange }: FloatingComposerProps) {
+export function FloatingComposer({ state, onClose, onDiscard, onExpand, onSend, onChange }: FloatingComposerProps) {
   const [minimized, setMinimized] = useState(false);
 
   const removeAttachment = (id: string) =>
@@ -167,7 +168,7 @@ export function FloatingComposer({ state, onClose, onDiscard, onExpand, onChange
           <RichTextToolbar compact />
           <SendBar
             sendState={state.sendState}
-            onSend={() => onChange({ sendState: "sending" })}
+            onSend={onSend}
             deliveryMode={state.deliveryMode}
             scheduledSendAt={state.scheduledSendAt}
             scheduleLabel={state.scheduleLabel}
