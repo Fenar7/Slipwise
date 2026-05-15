@@ -36,7 +36,7 @@ export async function POST(
   }
 
   const file = formData.get("file");
-  if (!(file instanceof File)) {
+  if (!file || typeof file !== "object" || !("arrayBuffer" in file)) {
     return Response.json({ error: "Missing file field" }, { status: 400 });
   }
 
