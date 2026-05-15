@@ -1,28 +1,11 @@
-import { db } from "@/lib/db";
+// Phase 1 static shell: contact info uses static placeholders.
+// Future phases will wire org-specific support details from the layout context.
+const SUPPORT_EMAIL = "support@example.com";
+const SUPPORT_PHONE = "+91 00000 00000";
 
-export default async function ClientHubContactPage({
-  params,
-}: {
-  params: Promise<{ orgSlug: string }>;
-}) {
-  const { orgSlug } = await params;
-
-  const org = await db.organization.findUnique({
-    where: { slug: orgSlug },
-    select: {
-      name: true,
-      defaults: {
-        select: {
-          portalSupportEmail: true,
-          portalSupportPhone: true,
-        },
-      },
-    },
-  });
-
-  const supportEmail = org?.defaults?.portalSupportEmail ?? "support@example.com";
-  const supportPhone = org?.defaults?.portalSupportPhone ?? "+91 00000 00000";
-  const orgName = org?.name ?? "Our Team";
+export default async function ClientHubContactPage() {
+  const supportEmail = SUPPORT_EMAIL;
+  const supportPhone = SUPPORT_PHONE;
 
   return (
     <div className="space-y-8">

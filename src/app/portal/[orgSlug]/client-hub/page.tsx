@@ -31,7 +31,6 @@ export default async function ClientHubDashboardPage({
   params: Promise<{ orgSlug: string }>;
 }) {
   const { orgSlug } = await params;
-  const pendingInvoices = MOCK_INVOICES.filter((i) => i.status !== "PAID");
   const pendingQuotes = MOCK_QUOTES.filter((q) => q.status === "SENT");
 
   return (

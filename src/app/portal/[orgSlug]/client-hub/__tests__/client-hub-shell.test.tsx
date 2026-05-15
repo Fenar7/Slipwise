@@ -7,6 +7,7 @@
  */
 
 import { describe, it, expect, vi } from "vitest";
+import { renderToStaticMarkup } from "react-dom/server";
 
 const mockDb = vi.hoisted(() => ({
   organization: {
@@ -85,7 +86,5 @@ describe("ClientHubLayout", () => {
 });
 
 function renderToString(jsx: React.ReactElement): string {
-  // Minimal SSR-compatible render for structural assertions
-  const { renderToStaticMarkup } = require("react-dom/server");
   return renderToStaticMarkup(jsx);
 }

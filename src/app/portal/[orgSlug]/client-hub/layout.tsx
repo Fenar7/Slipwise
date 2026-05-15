@@ -55,15 +55,6 @@ export default async function ClientHubLayout({
   const logoUrl = branding?.logoUrl ?? org.logo;
   const showPoweredBy = !whiteLabel?.removeBranding;
 
-  const brandStyle = `
-    :root {
-      --hub-accent: ${accentColor};
-    }
-    .hub-accent-bg { background-color: var(--hub-accent); }
-    .hub-accent-text { color: var(--hub-accent); }
-    .hub-accent-border { border-color: var(--hub-accent); }
-  `;
-
   const navLinks = [
     { href: `/portal/${orgSlug}/client-hub`, label: "Dashboard" },
     { href: `/portal/${orgSlug}/client-hub/invoices`, label: "Invoices" },
@@ -75,8 +66,15 @@ export default async function ClientHubLayout({
   ];
 
   return (
-    <div className="flex min-h-screen flex-col bg-slate-50">
-      <style dangerouslySetInnerHTML={{ __html: brandStyle }} />
+    <div
+      className="flex min-h-screen flex-col bg-slate-50"
+      style={{ "--hub-accent": accentColor } as React.CSSProperties}
+    >
+      <style>{`
+        .hub-accent-bg { background-color: var(--hub-accent); }
+        .hub-accent-text { color: var(--hub-accent); }
+        .hub-accent-border { border-color: var(--hub-accent); }
+      `}</style>
 
       {/* Header */}
       <header className="border-b border-slate-200 bg-white">
