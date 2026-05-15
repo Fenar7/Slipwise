@@ -6043,6 +6043,8 @@ model MailboxDraft {
   mailboxConnectionId String
   /// threadId is nullable: null for new-message drafts.
   threadId            String?
+  /// messageId being replied to / forwarded. Part of canonical restore identity for thread-bound drafts.
+  replyToMessageId    String?
   mode                MailboxDraftMode
   fromIdentity        String // email address the draft sends from
   toRecipients        Json // string[]

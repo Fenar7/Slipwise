@@ -341,6 +341,7 @@ interface MailboxReadingPaneProps {
   composerState: MailboxComposerState | null;
   onOpenReply: (mode: ComposeMode, threadId: string, messageId: string, subject: string, to: string[]) => void;
   onCloseReply: () => void;
+  onDiscardReply: () => void;
   onExpandReply: () => void;
   onPatchComposer: (patch: Partial<MailboxComposerState>) => void;
   onOpenContext?: () => void;
@@ -353,6 +354,7 @@ export function MailboxReadingPane({
   composerState,
   onOpenReply,
   onCloseReply,
+  onDiscardReply,
   onExpandReply,
   onPatchComposer,
   onOpenContext,
@@ -401,6 +403,7 @@ export function MailboxReadingPane({
             <InlineReply
               state={composerState}
               onClose={onCloseReply}
+              onDiscard={onDiscardReply}
               onExpand={onExpandReply}
               onModeChange={(mode) => {
                 const to = mode === "forward" ? [] : lastMessage.to;

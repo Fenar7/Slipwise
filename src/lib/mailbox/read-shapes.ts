@@ -28,6 +28,7 @@ import type {
   MailboxThreadRecord,
   MailboxMessageRecord,
   MailboxAttachmentRecord,
+  MailboxDraftRecord,
 } from "./domain-types";
 import type {
   MailboxConnectionStatus,
@@ -36,6 +37,8 @@ import type {
   MailboxThreadLinkEntityType,
   MailboxThreadStatus,
   MailboxMessageDirection,
+  MailboxDraftMode,
+  MailboxDraftStatus,
 } from "./domain-types";
 
 // ─── Connection summary (member-facing) ──────────────────────────────────────
@@ -493,5 +496,55 @@ export function toMailboxThreadDetailReadShape(
     messages,
     createdAt: threadRecord.createdAt.toISOString(),
     updatedAt: threadRecord.updatedAt.toISOString(),
+  };
+}
+
+// ─── Draft read shape (Sprint 5.1) ────────────────────────────────────────────
+
+export interface MailboxDraftReadShape {
+  id: string;
+  orgId: string;
+  mailboxConnectionId: string;
+  threadId: string | null;
+  replyToMessageId: string | null;
+  mode: MailboxDraftMode;
+  fromIdentity: string;
+  to: string[];
+  cc: string[];
+  bcc: string[];
+  subject: string;
+  htmlBody: string;
+  textBody: string | null;
+  attachmentRefs: string[];
+  status: MailboxDraftStatus;
+  lastAutosavedAt: string | null;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export function toMailboxDraftReadShape(
+  record: MailboxDraftRecord,
+): MailboxDraftReadShape {
+  return {
+    id: record.id,
+    orgId: record.orgId,
+    mailboxConnectionId: record.mailboxConnectionId,
+    threadId: record.threadId ?? null,
+    replyToMessageId: record.replyToMessageId ?? null,
+    mode: record.mode,
+    fromIdentity: record.fromIdentity,
+    to: record.toRecipients,
+    cc: record.ccRecipients,
+    bcc: record.bccRecipients,
+    subject: record.subject,
+    htmlBody: record.htmlBody,
+    textBody: record.textBody,
+    attachmentRefs: record.attachmentRefs,
+    status: record.status,
+    lastAutosavedAt: record.lastAutosavedAt?.toISOString() ?? null,
+    createdBy: record.createdBy,
+    createdAt: record.createdAt.toISOString(),
+    updatedAt: record.updatedAt.toISOString(),
   };
 }
