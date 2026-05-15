@@ -215,14 +215,6 @@ export async function createConversation(
     };
   });
 
-  getRealtimePublisherOrNoop().publishConversationEvent(
-    input.orgId,
-    input.conversationId,
-    "conversation.governance.updated",
-    input.unlockedBy,
-    { change: "unlocked", conversationId: input.conversationId },
-  );
-
   return result;
 }
 

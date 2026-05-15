@@ -164,14 +164,6 @@ export async function addParticipant(
     { change: "added", userId: input.userId, role: input.role, conversationId: input.conversationId },
   );
 
-  getRealtimePublisherOrNoop().publishConversationEvent(
-    input.orgId,
-    input.conversationId,
-    "conversation.membership.updated",
-    input.updatedBy,
-    { change: "role_changed", userId: input.userId, role: input.role, conversationId: input.conversationId },
-  );
-
   return result;
 }
 
@@ -252,6 +244,13 @@ export async function removeParticipant(
     "conversation.membership.updated",
     input.removedBy,
     { change: "removed", userId: input.userId, conversationId: input.conversationId },
+  );
+
+  // Revoke live delivery for the removed participant immediately.
+  getRealtimePublisherOrNoop().pruneConversationSubscriptions(
+    input.orgId,
+    input.conversationId,
+    input.userId,
   );
 
   return result;

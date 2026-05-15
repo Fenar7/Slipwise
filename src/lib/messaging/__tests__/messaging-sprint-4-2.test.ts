@@ -78,10 +78,11 @@ vi.mock("../presence-service", () => ({
   upsertPresence: makeFn(),
   startTyping: makeFn(),
   stopTyping: makeFn(),
+  clearTypingForUser: makeFn(),
 }));
 
 import { db } from "@/lib/db";
-import { upsertPresence, startTyping, stopTyping } from "../presence-service";
+import { upsertPresence, startTyping, stopTyping, clearTypingForUser } from "../presence-service";
 
 // ─── Protocol ─────────────────────────────────────────────────────────────────
 import {
@@ -628,11 +629,178 @@ describe("MessagingGateway Sprint 4.2 integration", () => {
     wsA.close();
     wsB.close();
   });
+
+  it("removed participant does not receive future conversation fanout", async () => {
+    db.conversation.findFirst.mockResolvedValue(makeConversationRow());
+    db.conversationParticipant.findFirst.mockResolvedValue(makeParticipantRow());
+
+    const token1 = mintTestToken({ userId: USER_1 });
+    const ws1 = await wsConnect(`ws://localhost:${port}`);
+    wsSend(ws1, { type: "resume_session", requestId: "r0", payload: { sessionToken: token1.token } });
+    await wsNextMessage(ws1);
+    wsSend(ws1, { type: "subscribe_conversation", requestId: "r1", payload: { conversationId: CONV_ID } });
+    await wsNextMessage(ws1);
+
+    const token2 = mintTestToken({ userId: USER_2 });
+    const ws2 = await wsConnect(`ws://localhost:${port}`);
+    wsSend(ws2, { type: "resume_session", requestId: "s0", payload: { sessionToken: token2.token } });
+    await wsNextMessage(ws2);
+    wsSend(ws2, { type: "subscribe_conversation", requestId: "s1", payload: { conversationId: CONV_ID } });
+    await wsNextMessage(ws2);
+
+    const messages1: Array<Record<string, unknown>> = [];
+    ws1.on("message", (data) => messages1.push(JSON.parse(data.toString("utf8"))));
+
+    const messages2: Array<Record<string, unknown>> = [];
+    ws2.on("message", (data) => messages2.push(JSON.parse(data.toString("utf8"))));
+
+    // Simulate membership revocation for USER_2.
+    gateway.pruneSubscriptionsForUser(ORG_A, CONV_ID, USER_2);
+
+    gateway.publishToConversation(ORG_A, CONV_ID, {
+      type: "event",
+      eventId: "evt-1",
+      payload: {
+        eventType: "conversation.message.created",
+        orgId: ORG_A,
+        conversationId: CONV_ID,
+        occurredAt: Date.now(),
+        actorId: USER_1,
+        data: { messageId: "msg-1" },
+      },
+    });
+
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(messages1.length).toBeGreaterThan(0);
+    expect(messages2.length).toBe(0);
+
+    ws1.close();
+    ws2.close();
+  });
+
+  it("reconnect after removal cannot resume receiving events", async () => {
+    db.conversation.findFirst.mockResolvedValue(makeConversationRow());
+    db.conversationParticipant.findFirst.mockResolvedValue(makeParticipantRow());
+
+    const token = mintTestToken({ userId: USER_1 });
+
+    // First connection: authenticate and subscribe.
+    const ws1 = await wsConnect(`ws://localhost:${port}`);
+    wsSend(ws1, { type: "resume_session", requestId: "r0", payload: { sessionToken: token.token } });
+    await wsNextMessage(ws1);
+
+    wsSend(ws1, { type: "subscribe_conversation", requestId: "r1", payload: { conversationId: CONV_ID } });
+    await wsNextMessage(ws1);
+
+    // Abruptly close.
+    ws1.terminate();
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Simulate removal while offline.
+    gateway.pruneSubscriptionsForUser(ORG_A, CONV_ID, USER_1);
+
+    // Reconnect: the subscription was pruned, so there is nothing to reauth.
+    const ws2 = await wsConnect(`ws://localhost:${port}`);
+    const messages: Array<Record<string, unknown>> = [];
+    ws2.on("message", (data) => {
+      messages.push(JSON.parse(data.toString("utf8")));
+    });
+
+    wsSend(ws2, { type: "resume_session", requestId: "r2", payload: { sessionToken: token.token } });
+    const ack = (await wsNextMessage(ws2)) as Record<string, unknown>;
+    expect(ack.type).toBe("session_ack");
+
+    // Publish an event; the reconnected user should NOT receive it because
+    // the subscription was pruned while offline.
+    gateway.publishToConversation(ORG_A, CONV_ID, {
+      type: "event",
+      eventId: "evt-2",
+      payload: {
+        eventType: "conversation.message.created",
+        orgId: ORG_A,
+        conversationId: CONV_ID,
+        occurredAt: Date.now(),
+        actorId: USER_2,
+        data: { messageId: "msg-2" },
+      },
+    });
+
+    await new Promise((r) => setTimeout(r, 50));
+
+    const receivedEvents = messages.filter((m) => m.type === "event");
+    expect(receivedEvents.length).toBe(0);
+
+    ws2.close();
+  });
+
+  it("typing expiry clears persisted typing state, not just fanout timers", async () => {
+    db.conversation.findFirst.mockResolvedValue(makeConversationRow());
+    db.conversationParticipant.findFirst.mockResolvedValue(makeParticipantRow());
+    startTyping.mockResolvedValue({
+      id: "typ-1",
+      orgId: ORG_A,
+      conversationId: CONV_ID,
+      userId: USER_1,
+      status: "TYPING",
+      expiresAt: new Date(Date.now() + 300),
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    const token = mintTestToken();
+    const ws = await wsConnect(`ws://localhost:${port}`);
+    wsSend(ws, { type: "resume_session", requestId: "r0", payload: { sessionToken: token.token } });
+    await wsNextMessage(ws);
+
+    wsSend(ws, { type: "subscribe_conversation", requestId: "r1", payload: { conversationId: CONV_ID } });
+    await wsNextMessage(ws);
+
+    wsSend(ws, { type: "start_typing", requestId: "r2", payload: { conversationId: CONV_ID } });
+
+    // Wait for auto-expiry (ttl is 300ms).
+    await new Promise((r) => setTimeout(r, 500));
+
+    expect(clearTypingForUser).toHaveBeenCalledWith(ORG_A, CONV_ID, USER_1);
+
+    ws.close();
+  });
+
+  it("disconnect cleanup clears persisted typing state, not just fanout timers", async () => {
+    db.conversation.findFirst.mockResolvedValue(makeConversationRow());
+    db.conversationParticipant.findFirst.mockResolvedValue(makeParticipantRow());
+    startTyping.mockResolvedValue({
+      id: "typ-1",
+      orgId: ORG_A,
+      conversationId: CONV_ID,
+      userId: USER_1,
+      status: "TYPING",
+      expiresAt: new Date(Date.now() + 300),
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    const token = mintTestToken();
+    const ws1 = await wsConnect(`ws://localhost:${port}`);
+    wsSend(ws1, { type: "resume_session", requestId: "r0", payload: { sessionToken: token.token } });
+    await wsNextMessage(ws1);
+
+    wsSend(ws1, { type: "subscribe_conversation", requestId: "r1", payload: { conversationId: CONV_ID } });
+    await wsNextMessage(ws1);
+
+    wsSend(ws1, { type: "start_typing", requestId: "r2", payload: { conversationId: CONV_ID } });
+    await new Promise((r) => setTimeout(r, 50));
+
+    ws1.terminate();
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(clearTypingForUser).toHaveBeenCalledWith(ORG_A, CONV_ID, USER_1);
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Publisher unit tests
-// ═══════════════════════════════════════════════════════════════════════════════
+// ═════════════════════════════════════════════════════════════════════════════==
 
 describe("InMemoryRealtimePublisher", () => {
   it("builds correct conversation event envelope", () => {

@@ -24,7 +24,7 @@ import {
   type RealtimeDiagnostics,
   ConsoleRealtimeDiagnostics,
 } from "./diagnostics";
-import { upsertPresence, startTyping, stopTyping } from "../presence-service";
+import { upsertPresence, startTyping, stopTyping, clearTypingForUser } from "../presence-service";
 
 /**
  * Messaging WebSocket Gateway.
@@ -560,11 +560,18 @@ export class MessagingGateway {
     }
   }
 
-  private handleTypingExpired(sessionId: string, conversationId: string): void {
+  private async handleTypingExpired(sessionId: string, conversationId: string): Promise<void> {
     const session = this.sessions.getSession(sessionId);
     if (!session) return;
 
     this.clearTypingTimer(sessionId, conversationId);
+
+    // Clear persisted typing state so expiry is reflected in reads.
+    try {
+      await clearTypingForUser(session.orgId, conversationId, session.userId);
+    } catch {
+      // Best-effort cleanup; don't destabilize the gateway.
+    }
 
     this.diagnostics.emit({
       kind: "typing_expired",
@@ -597,15 +604,6 @@ export class MessagingGateway {
     }
   }
 
-  private clearAllTypingTimersForSession(sessionId: string): void {
-    for (const [key, timer] of this.typingTimers) {
-      if (key.startsWith(`${sessionId}:`)) {
-        clearTimeout(timer);
-        this.typingTimers.delete(key);
-      }
-    }
-  }
-
   // -------------------------------------------------------------------------
   // Disconnect / cleanup
   // -------------------------------------------------------------------------
@@ -623,19 +621,32 @@ export class MessagingGateway {
       });
       this.sessions.detachSession(connState.sessionId);
       this.sessionSockets.delete(connState.sessionId);
-      // Publish typing stopped for any active typing sessions before clearing timers.
-      this.publishTypingStoppedForSession(connState.sessionId);
-      this.clearAllTypingTimersForSession(connState.sessionId);
+      // Teardown typing: clear persistence, publish stopped, and clear timers.
+      void this.teardownTypingForSession(connState.sessionId);
     }
     this.wsConnections.delete(socket);
   }
 
-  private publishTypingStoppedForSession(sessionId: string): void {
+  private async teardownTypingForSession(sessionId: string): Promise<void> {
     const session = this.sessions.getSession(sessionId);
     if (!session) return;
-    for (const [key] of Array.from(this.typingTimers.entries())) {
-      if (!key.startsWith(`${sessionId}:`)) continue;
+
+    const entries = Array.from(this.typingTimers.entries()).filter(([key]) =>
+      key.startsWith(`${sessionId}:`),
+    );
+
+    for (const [key, timer] of entries) {
+      clearTimeout(timer);
+      this.typingTimers.delete(key);
       const conversationId = key.slice(sessionId.length + 1);
+
+      // Clear persisted typing state so disconnect is reflected in reads.
+      try {
+        await clearTypingForUser(session.orgId, conversationId, session.userId);
+      } catch {
+        // Best-effort cleanup.
+      }
+
       const event: import("./protocol").RealtimeEvent = {
         type: "event",
         eventId: `typing:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`,
@@ -661,12 +672,36 @@ export class MessagingGateway {
    * conversation.  Enforces org isolation — only sessions in `orgId` receive
    * the message.
    */
+  /**
+   * Remove all live subscriptions for a user from a conversation.
+   * Used when membership is revoked to cut off future delivery.
+   */
+  pruneSubscriptionsForUser(orgId: string, conversationId: string, userId: string): string[] {
+    const pruned = this.sessions.pruneSubscriptionsForUser(orgId, conversationId, userId);
+    for (const sessionId of pruned) {
+      this.diagnostics.emit({
+        kind: "subscription_denied",
+        sessionId,
+        conversationId,
+        reason: "membership_revoked",
+      });
+    }
+    return pruned;
+  }
+
+  /**
+   * Publish a message to all active sessions currently subscribed to a
+   * conversation.  Enforces org isolation and performs a narrow defense-in-depth
+   * check that the session still claims the subscription.
+   */
   publishToConversation(orgId: string, conversationId: string, message: ServerMessage): void {
     const sessions = this.sessions.getSessionsForConversation(conversationId);
     let sent = 0;
 
     for (const session of Array.from(sessions)) {
       if (session.orgId !== orgId) continue;
+      // Defense in depth: skip if the session no longer claims this subscription.
+      if (!session.subscriptions.has(conversationId)) continue;
 
       const socket = this.sessionSockets.get(session.sessionId);
       if (socket && socket.readyState === socket.OPEN) {
@@ -832,7 +867,7 @@ export class MessagingGateway {
       for (const { sessionId, reason } of evicted) {
         this.diagnostics.emit({ kind: "session_sweep", sessionId, reason });
         this.sessionSockets.delete(sessionId);
-        this.clearAllTypingTimersForSession(sessionId);
+        void this.teardownTypingForSession(sessionId);
       }
     }, this.sweepIntervalMs);
   }

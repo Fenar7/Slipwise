@@ -38,6 +38,13 @@ export interface RealtimePublisher {
     conversationId: string,
     typing: TypingSessionRecord | null,
   ): void;
+
+  /** Remove all live subscriptions for a user from a conversation. */
+  pruneConversationSubscriptions(
+    orgId: string,
+    conversationId: string,
+    userId: string,
+  ): void;
 }
 
 /** In-memory publisher for single-node deployments. */
@@ -114,6 +121,14 @@ export class InMemoryRealtimePublisher implements RealtimePublisher {
     };
     this.gateway.publishToConversation(orgId, conversationId, event);
   }
+
+  pruneConversationSubscriptions(
+    orgId: string,
+    conversationId: string,
+    userId: string,
+  ): void {
+    this.gateway.pruneSubscriptionsForUser(orgId, conversationId, userId);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -134,6 +149,7 @@ class NoopRealtimePublisher implements RealtimePublisher {
   publishConversationEvent(): void {}
   publishPresenceUpdate(): void {}
   publishTypingUpdate(): void {}
+  pruneConversationSubscriptions(): void {}
 }
 
 const noopPublisher = new NoopRealtimePublisher();

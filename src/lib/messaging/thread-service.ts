@@ -186,14 +186,6 @@ export async function createThread(
     { threadId: result.id, anchorMessageId: input.anchorMessageId },
   );
 
-  getRealtimePublisherOrNoop().publishConversationEvent(
-    input.orgId,
-    result.conversationId,
-    "conversation.thread.resolved",
-    input.resolvedBy,
-    { threadId: result.id },
-  );
-
   return result;
 }
 
@@ -326,6 +318,14 @@ export async function resolveThread(
 
     return toThreadRecord(updated);
   });
+
+  getRealtimePublisherOrNoop().publishConversationEvent(
+    input.orgId,
+    result.conversationId,
+    "conversation.thread.resolved",
+    input.resolvedBy,
+    { threadId: result.id },
+  );
 
   return result;
 }

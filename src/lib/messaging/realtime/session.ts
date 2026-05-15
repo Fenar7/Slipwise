@@ -60,6 +60,15 @@ export interface SessionRegistry {
   getStats(): SessionRegistryStats;
   getSessionsForConversation(conversationId: string): RealtimeSession[];
   getSessionsByOrg(orgId: string): RealtimeSession[];
+  /**
+   * Remove all subscriptions for a specific user from a conversation.
+   * Returns the list of affected session ids.
+   */
+  pruneSubscriptionsForUser(
+    orgId: string,
+    conversationId: string,
+    userId: string,
+  ): string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -250,5 +259,28 @@ export class InMemorySessionRegistry implements SessionRegistry {
       }
     }
     return result;
+  }
+
+  pruneSubscriptionsForUser(
+    orgId: string,
+    conversationId: string,
+    userId: string,
+  ): string[] {
+    const pruned: string[] = [];
+    for (const [sessionId, session] of this.sessions) {
+      if (session.orgId !== orgId || session.userId !== userId) continue;
+      if (!session.subscriptions.has(conversationId)) continue;
+
+      session.subscriptions.delete(conversationId);
+      const indexSet = this.subscriptionIndex.get(conversationId);
+      if (indexSet) {
+        indexSet.delete(sessionId);
+        if (indexSet.size === 0) {
+          this.subscriptionIndex.delete(conversationId);
+        }
+      }
+      pruned.push(sessionId);
+    }
+    return pruned;
   }
 }
