@@ -75,13 +75,13 @@ export function ClientWorkspaceRowView({
         <div className="flex flex-col gap-0.5">
           <div className="flex items-center gap-1.5">
             <Link
-              href={`/app/crm/customers/${client.id}`}
+              href={`/app/clients/${client.id}`}
               className="text-sm font-medium text-[var(--text-primary)] hover:text-[var(--brand-primary)] transition-colors"
             >
               {client.name}
             </Link>
             <Link
-              href={`/app/crm/customers/${client.id}`}
+              href={`/app/clients/${client.id}`}
               className="inline-flex items-center text-[var(--text-muted)] hover:text-[var(--brand-primary)] transition-colors"
               title="Open client detail"
             >
