@@ -262,6 +262,7 @@ model Organization {
   mailboxThreads               MailboxThread[]
   mailboxMessages              MailboxMessage[]
   mailboxSyncRuns              MailboxSyncRun[]
+  mailboxDraftAttachments      MailboxDraftAttachment[]
 
   @@index([entityGroupId])
   @@map("organization")
@@ -6065,7 +6066,9 @@ model MailboxDraft {
   /// Composite FK: references MailboxConnection[id, orgId] so a draft row cannot
   /// reference a connection from a different org at the database level.
   mailboxConnection MailboxConnection @relation(fields: [mailboxConnectionId, orgId], references: [id, orgId], onDelete: Cascade)
+  draftAttachments  MailboxDraftAttachment[]
 
+  @@unique([id, orgId])
   @@index([orgId, mailboxConnectionId, status])
   @@index([orgId, threadId])
   @@map("mailbox_draft")
@@ -6262,6 +6265,27 @@ model MailboxAttachment {
   @@unique([messageId, providerAttachmentId])
   @@index([messageId])
   @@map("mailbox_attachment")
+}
+
+/// Staged attachment for a draft before send.
+/// Storage references are resolved at send time; content is never stored inline.
+model MailboxDraftAttachment {
+  id         String   @id @default(cuid())
+  orgId      String
+  draftId    String
+  filename   String
+  mimeType   String
+  size       Int
+  isInline   Boolean  @default(false)
+  storageRef String
+  createdAt  DateTime @default(now())
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  draft        MailboxDraft @relation(fields: [draftId, orgId], references: [id, orgId], onDelete: Cascade)
+
+  @@unique([draftId, id])
+  @@index([orgId, draftId])
+  @@map("mailbox_draft_attachment")
 }
 
 /// Sync run bookkeeping for observability and retry safety.

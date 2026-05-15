@@ -294,6 +294,13 @@ export interface IMailboxProviderAdapter {
       inReplyToRfcMessageId?: string | null;
       references?: string[] | null;
     } | null;
+    attachments?: Array<{
+      filename: string;
+      mimeType: string;
+      size: number;
+      isInline: boolean;
+      contentBase64: string;
+    }>;
   }): Promise<
     | {
         providerMessageId: string;

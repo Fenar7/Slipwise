@@ -565,7 +565,7 @@ export const gmailProviderAdapter: IMailboxProviderAdapter = {
    * - In-Reply-To and References headers are set from the original message
    *   so Gmail threads the reply correctly.
    */
-  async sendMessage({ orgId, tokenRef, from, to, cc, bcc, subject, htmlBody, textBody, threadContext }) {
+  async sendMessage({ orgId, tokenRef, from, to, cc, bcc, subject, htmlBody, textBody, threadContext, attachments }) {
     const credential = await readMailboxCredential(orgId, tokenRef);
     if (!credential) {
       return { category: "auth_expired", safeMessage: "Credential not found for tokenRef", retryable: false };
@@ -580,7 +580,7 @@ export const gmailProviderAdapter: IMailboxProviderAdapter = {
       return { category: "auth_insufficient", safeMessage: "Gmail token lacks gmail.send scope; reconnect required", retryable: false };
     }
 
-    const mime = buildMimeMessage({ from, to, cc, bcc, subject, htmlBody, textBody, threadContext });
+    const mime = buildMimeMessage({ from, to, cc, bcc, subject, htmlBody, textBody, threadContext, attachments });
     const raw = encodeBase64Url(mime);
 
     const payload: Record<string, unknown> = { raw };
@@ -900,10 +900,10 @@ function encodeBase64Url(data: string): string {
 }
 
 /**
- * Build a simple MIME message for Gmail send.
+ * Build a MIME message for Gmail send.
  *
  * Sprint 5.2 implements text/html and text/plain bodies.
- * Attachment MIME construction is a seam for Sprint 5.3.
+ * Sprint 5.3 adds multipart/mixed attachment support.
  *
  * Reply threading headers (In-Reply-To, References) are included
  * when threadContext is provided.
@@ -921,9 +921,18 @@ function buildMimeMessage(params: {
     inReplyToRfcMessageId?: string | null;
     references?: string[] | null;
   } | null;
+  attachments?: Array<{
+    filename: string;
+    mimeType: string;
+    size: number;
+    isInline: boolean;
+    contentBase64: string;
+  }>;
 }): string {
-  const boundary = `---- SlipwiseMail Boundary ${Math.random().toString(36).slice(2)}`;
-  const { from, to, cc, bcc, subject, htmlBody, textBody, threadContext } = params;
+  const mixedBoundary = `---- SlipwiseMixed ${Math.random().toString(36).slice(2)}`;
+  const altBoundary = `---- SlipwiseAlt ${Math.random().toString(36).slice(2)}`;
+  const { from, to, cc, bcc, subject, htmlBody, textBody, threadContext, attachments } = params;
+  const hasAttachments = !!attachments && attachments.length > 0;
 
   const headers: string[] = [];
   headers.push(`From: ${from}`);
@@ -943,39 +952,81 @@ function buildMimeMessage(params: {
   const hasPlain = !!textBody;
   const hasHtml = !!htmlBody;
 
-  if (hasPlain && hasHtml) {
-    headers.push(`Content-Type: multipart/alternative; boundary="${boundary}"`);
+  function buildBodyPart(): string[] {
+    const parts: string[] = [];
+    if (hasPlain && hasHtml) {
+      parts.push(`Content-Type: multipart/alternative; boundary="${altBoundary}"`);
+      parts.push("");
+      parts.push(`--${altBoundary}`);
+      parts.push("Content-Type: text/plain; charset=\"UTF-8\"");
+      parts.push("Content-Transfer-Encoding: quoted-printable");
+      parts.push("");
+      parts.push(textBody!);
+      parts.push("");
+      parts.push(`--${altBoundary}`);
+      parts.push("Content-Type: text/html; charset=\"UTF-8\"");
+      parts.push("Content-Transfer-Encoding: quoted-printable");
+      parts.push("");
+      parts.push(htmlBody);
+      parts.push("");
+      parts.push(`--${altBoundary}--`);
+    } else if (hasHtml) {
+      parts.push("Content-Type: text/html; charset=\"UTF-8\"");
+      parts.push("Content-Transfer-Encoding: quoted-printable");
+      parts.push("");
+      parts.push(htmlBody);
+    } else if (hasPlain) {
+      parts.push("Content-Type: text/plain; charset=\"UTF-8\"");
+      parts.push("Content-Transfer-Encoding: quoted-printable");
+      parts.push("");
+      parts.push(textBody!);
+    } else {
+      parts.push("Content-Type: text/plain; charset=\"UTF-8\"");
+      parts.push("");
+      parts.push("");
+    }
+    return parts;
+  }
+
+  if (hasAttachments) {
+    headers.push(`Content-Type: multipart/mixed; boundary="${mixedBoundary}"`);
     headers.push("");
-    headers.push(`--${boundary}`);
-    headers.push("Content-Type: text/plain; charset=\"UTF-8\"");
-    headers.push("Content-Transfer-Encoding: quoted-printable");
+
+    headers.push(`--${mixedBoundary}`);
+    const bodyParts = buildBodyPart();
+    for (const part of bodyParts) {
+      headers.push(part);
+    }
+
+    for (const att of attachments!) {
+      headers.push("");
+      headers.push(`--${mixedBoundary}`);
+      headers.push(`Content-Type: ${att.mimeType}; name="${att.filename}"`);
+      headers.push("Content-Transfer-Encoding: base64");
+      const disposition = att.isInline ? "inline" : "attachment";
+      headers.push(`Content-Disposition: ${disposition}; filename="${att.filename}"`);
+      headers.push("");
+      headers.push(wrapBase64(att.contentBase64));
+    }
+
     headers.push("");
-    headers.push(textBody!);
-    headers.push("");
-    headers.push(`--${boundary}`);
-    headers.push("Content-Type: text/html; charset=\"UTF-8\"");
-    headers.push("Content-Transfer-Encoding: quoted-printable");
-    headers.push("");
-    headers.push(htmlBody);
-    headers.push("");
-    headers.push(`--${boundary}--`);
-  } else if (hasHtml) {
-    headers.push("Content-Type: text/html; charset=\"UTF-8\"");
-    headers.push("Content-Transfer-Encoding: quoted-printable");
-    headers.push("");
-    headers.push(htmlBody);
-  } else if (hasPlain) {
-    headers.push("Content-Type: text/plain; charset=\"UTF-8\"");
-    headers.push("Content-Transfer-Encoding: quoted-printable");
-    headers.push("");
-    headers.push(textBody!);
+    headers.push(`--${mixedBoundary}--`);
   } else {
-    headers.push("Content-Type: text/plain; charset=\"UTF-8\"");
-    headers.push("");
-    headers.push("");
+    const bodyParts = buildBodyPart();
+    for (const part of bodyParts) {
+      headers.push(part);
+    }
   }
 
   return headers.join("\r\n");
+}
+
+function wrapBase64(data: string): string {
+  const lines: string[] = [];
+  for (let i = 0; i < data.length; i += 76) {
+    lines.push(data.slice(i, i + 76));
+  }
+  return lines.join("\r\n");
 }
 
 async function ensureValidAccessToken(

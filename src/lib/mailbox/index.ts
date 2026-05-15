@@ -277,3 +277,20 @@ export {
   normalizeCreateDraftInput,
   normalizeAutosaveDraftInput,
 } from "./compose-context";
+
+// Sprint 5.3: Attachment handling
+export type {
+  StageDraftAttachmentInput,
+  RemoveDraftAttachmentInput,
+  ResolveAttachmentForSendResult,
+  GetAttachmentDownloadInput,
+} from "./attachment-service";
+export {
+  stageDraftAttachment,
+  removeDraftAttachment,
+  resolveAttachmentsForSend,
+  cleanupDraftAttachments,
+  getAttachmentDownloadUrl,
+  AttachmentServiceError,
+  isAttachmentServiceError,
+} from "./attachment-service";

@@ -8,6 +8,7 @@ import { toMailboxDraftReadShape } from "./read-shapes";
 import type { MailboxDraftReadShape } from "./read-shapes";
 import { logMailboxAuditTx } from "./audit";
 import type { MailboxDraftMode, MailboxDraftStatus } from "./domain-types";
+import { cleanupDraftAttachments } from "./attachment-service";
 
 // ─── Errors ───────────────────────────────────────────────────────────────────
 
@@ -477,6 +478,13 @@ export async function discardDraft(
       metadata: { draftId, previousStatus: draft.status },
     });
   });
+
+  // Best-effort cleanup of staged attachments after discard
+  try {
+    await cleanupDraftAttachments(orgId, draftId);
+  } catch {
+    // Non-fatal: attachments may be garbage-collected later
+  }
 
   return { success: true, draftId };
 }
