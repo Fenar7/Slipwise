@@ -67,6 +67,10 @@ vi.mock("@/lib/messaging/realtime/publisher", async (importOriginal) => {
   };
 });
 
+vi.mock("@/lib/messaging/realtime/event-log-service", () => ({
+  appendConversationEvent: vi.fn().mockResolvedValue({ eventId: "evt-1", cursor: BigInt(1) }),
+}));
+
 import { db } from "@/lib/db";
 import { getRealtimePublisherOrNoop } from "@/lib/messaging/realtime/publisher";
 
@@ -190,6 +194,7 @@ describe("Sprint 4.2 service fanout wiring", () => {
       "conversation.thread.created",
       USER_1,
       { threadId: THREAD_ID, anchorMessageId: MSG_ID },
+      expect.objectContaining({ eventId: expect.any(String), cursor: expect.any(String) }),
     );
   });
 
@@ -212,6 +217,7 @@ describe("Sprint 4.2 service fanout wiring", () => {
       "conversation.thread.resolved",
       USER_1,
       { threadId: THREAD_ID },
+      expect.objectContaining({ eventId: expect.any(String), cursor: expect.any(String) }),
     );
   });
 
@@ -242,6 +248,7 @@ describe("Sprint 4.2 service fanout wiring", () => {
       "conversation.membership.updated",
       USER_1,
       { change: "added", userId: USER_2, role: "MEMBER", conversationId: CONV_ID },
+      expect.objectContaining({ eventId: expect.any(String), cursor: expect.any(String) }),
     );
   });
 

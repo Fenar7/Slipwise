@@ -106,3 +106,19 @@ export {
 export type {
   RealtimePublisher,
 } from "./publisher";
+
+// Event log (Sprint 4.3)
+export {
+  appendConversationEvent,
+  replayConversationEvents,
+  generateMonotonicCursor,
+  DEFAULT_REPLAY_LIMIT,
+  DEFAULT_REPLAY_RETENTION_HOURS,
+} from "./event-log-service";
+export type {
+  AppendConversationEventInput,
+  AppendConversationEventResult,
+  ReplayConversationEvent,
+  ReplayResultStatus,
+  ReplayConversationEventsResult,
+} from "./event-log-service";

@@ -25,6 +25,8 @@ import {
   ConsoleRealtimeDiagnostics,
 } from "./diagnostics";
 import { upsertPresence, startTyping, stopTyping, clearTypingForUser } from "../presence-service";
+import { replayConversationEvents } from "./event-log-service";
+import { db } from "@/lib/db";
 
 /**
  * Messaging WebSocket Gateway.
@@ -182,7 +184,13 @@ export class MessagingGateway {
 
     switch (command.type) {
       case "subscribe_conversation":
-        void this.handleSubscribe(socket, connState, command.payload.conversationId, requestId);
+        void this.handleSubscribe(
+          socket,
+          connState,
+          command.payload.conversationId,
+          requestId,
+          command.payload.lastSeenCursor ?? undefined,
+        );
         break;
       case "unsubscribe_conversation":
         this.handleUnsubscribe(socket, connState, command.payload.conversationId, requestId);
@@ -191,7 +199,13 @@ export class MessagingGateway {
         this.handleHeartbeat(socket, connState, requestId);
         break;
       case "resume_session":
-        void this.handleResumeSession(socket, connState, command.payload.sessionToken, requestId);
+        void this.handleResumeSession(
+          socket,
+          connState,
+          command.payload.sessionToken,
+          requestId,
+          command.payload.lastSeenCursors ?? undefined,
+        );
         break;
       case "set_presence":
         void this.handleSetPresence(socket, connState, command.payload, requestId);
@@ -214,6 +228,7 @@ export class MessagingGateway {
     connState: GatewayConnectionState,
     conversationId: string,
     requestId: string,
+    lastSeenCursor?: string,
   ): Promise<void> {
     const session = this.requireSession(socket, connState, requestId);
     if (!session) return;
@@ -253,6 +268,11 @@ export class MessagingGateway {
         subscribedAt: Date.now(),
       },
     });
+
+    // Sprint 4.3: replay missed events if client provided a cursor.
+    if (lastSeenCursor) {
+      await this.replayForSubscription(socket, session, conversationId, lastSeenCursor);
+    }
   }
 
   private handleUnsubscribe(
@@ -306,6 +326,7 @@ export class MessagingGateway {
     connState: GatewayConnectionState,
     sessionToken: string,
     requestId: string,
+    lastSeenCursors?: Record<string, string>,
   ): Promise<void> {
     // If already authenticated, reject duplicate resume.
     if (connState.sessionId) {
@@ -374,6 +395,7 @@ export class MessagingGateway {
 
     // Re-authorize any existing subscriptions carried over from a previous connection.
     const existingSubs = this.sessions.getSubscriptions(session.sessionId);
+    const allowedSubs: string[] = [];
     for (const conversationId of existingSubs) {
       const reauthDetail = await reauthorizeConversationSubscription(session, conversationId);
       if (!reauthDetail.result.allowed) {
@@ -393,7 +415,38 @@ export class MessagingGateway {
             code: denied.code,
           },
         });
+      } else {
+        allowedSubs.push(conversationId);
       }
+    }
+
+    // Sprint 4.3: replay missed events for reauthorized subscriptions.
+    // Each conversation is replayed against its own cursor so that a stale or
+    // invalid cursor for conversation A never poisons replay for conversation B.
+    let rehydrateRecommended = false;
+    if (lastSeenCursors && allowedSubs.length > 0) {
+      for (const conversationId of allowedSubs) {
+        const cursor = lastSeenCursors[conversationId];
+        if (!cursor) continue; // no cursor for this conversation, skip replay
+        const replayOk = await this.replayForSubscription(socket, session, conversationId, cursor);
+        if (!replayOk) {
+          rehydrateRecommended = true;
+        }
+      }
+    }
+
+    // Send explicit resume result so the client knows whether continuity is satisfied.
+    if (lastSeenCursors && allowedSubs.length > 0) {
+      this.sendMessage(socket, {
+        type: "resume_session_result",
+        requestId,
+        payload: {
+          resumed: !rehydrateRecommended,
+          sessionId: session.sessionId,
+          serverTime: Date.now(),
+          rehydrateRecommended,
+        },
+      });
     }
   }
 
@@ -557,6 +610,76 @@ export class MessagingGateway {
     } catch (error) {
       const message = error instanceof Error ? error.message : "typing stop failed";
       this.sendError(socket, "server_error", message, false, session.sessionId, requestId);
+    }
+  }
+
+  /**
+   * Replay missed events for a subscription from a durable cursor.
+   * Returns true if replay succeeded (or was not needed), false if the cursor
+   * was invalid/stale and the client should rehydrate.
+   */
+  private async replayForSubscription(
+    socket: WebSocket,
+    session: import("./session").RealtimeSession,
+    conversationId: string,
+    lastSeenCursor: string,
+  ): Promise<boolean> {
+    try {
+      const result = await replayConversationEvents(db, {
+        orgId: session.orgId,
+        conversationId,
+        afterCursor: lastSeenCursor,
+        limit: 200,
+      });
+
+      if (result.status !== "ok") {
+        this.diagnostics.emit({
+          kind: "event_dropped",
+          eventType: "replay",
+          conversationId,
+          reason: `replay_${result.status}`,
+          sessionId: session.sessionId,
+        });
+        this.sendError(socket, "replay_unavailable", `replay cursor ${result.status}`, false, session.sessionId);
+        return false;
+      }
+
+      for (const event of result.events) {
+        const envelope: RealtimeEvent = {
+          type: "event",
+          eventId: event.eventId,
+          payload: {
+            eventType: event.eventType,
+            orgId: event.orgId,
+            conversationId: event.conversationId,
+            occurredAt: event.occurredAt,
+            actorId: event.actorId ?? undefined,
+            cursor: event.cursor.toString(),
+            data: event.payload,
+          },
+        };
+        this.sendMessage(socket, envelope);
+      }
+
+      this.diagnostics.emit({
+        kind: "event_published",
+        eventType: "replay",
+        conversationId,
+        recipientCount: result.events.length,
+      });
+
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "replay failed";
+      this.diagnostics.emit({
+        kind: "event_dropped",
+        eventType: "replay",
+        conversationId,
+        reason: message,
+        sessionId: session.sessionId,
+      });
+      this.sendError(socket, "replay_unavailable", message, false, session.sessionId);
+      return false;
     }
   }
 

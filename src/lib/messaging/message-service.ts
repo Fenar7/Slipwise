@@ -19,6 +19,7 @@ import {
   assertConversationAction,
 } from "./service-helpers";
 import { getRealtimePublisherOrNoop } from "./realtime/publisher";
+import { appendConversationEvent } from "./realtime/event-log-service";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -110,6 +111,8 @@ export async function listConversationMessages(
 export async function sendMessage(
   input: SendMessageInput,
 ): Promise<ConversationMessageRecord> {
+  let eventMeta: { eventId: string; cursor: bigint } | undefined;
+
   const result = await db.$transaction(async (tx) => {
     await assertConversationAction(
       tx,
@@ -241,6 +244,15 @@ export async function sendMessage(
       messageId: message.id,
     });
 
+    // Sprint 4.3: durable event log append for replay
+    eventMeta = await appendConversationEvent(tx, {
+      orgId: input.orgId,
+      conversationId: input.conversationId,
+      eventType: "conversation.message.created",
+      actorId: input.authorId,
+      payload: { messageId: message.id, threadId: message.threadId },
+    });
+
     return toMessageRecord(message);
   });
 
@@ -250,6 +262,7 @@ export async function sendMessage(
     "conversation.message.created",
     input.authorId,
     { messageId: result.id, threadId: result.threadId },
+    { eventId: eventMeta!.eventId, cursor: eventMeta!.cursor.toString() },
   );
 
   return result;
@@ -261,6 +274,8 @@ export async function sendMessage(
 export async function editMessage(
   input: EditMessageInput,
 ): Promise<ConversationMessageRecord> {
+  let eventMeta: { eventId: string; cursor: bigint } | undefined;
+
   const result = await db.$transaction(async (tx) => {
     const existing = await assertMessageInOrg(tx, input.orgId, input.messageId);
     await assertConversationAction(
@@ -298,6 +313,14 @@ export async function editMessage(
       messageId: updated.id,
     });
 
+    eventMeta = await appendConversationEvent(tx, {
+      orgId: input.orgId,
+      conversationId: existing.conversationId,
+      eventType: "conversation.message.edited",
+      actorId: input.actorId,
+      payload: { messageId: updated.id },
+    });
+
     return toMessageRecord(updated);
   });
 
@@ -307,6 +330,7 @@ export async function editMessage(
     "conversation.message.edited",
     input.actorId,
     { messageId: result.id },
+    { eventId: eventMeta!.eventId, cursor: eventMeta!.cursor.toString() },
   );
 
   return result;
@@ -318,6 +342,8 @@ export async function editMessage(
 export async function softDeleteMessage(
   input: DeleteMessageInput,
 ): Promise<ConversationMessageRecord> {
+  let eventMeta: { eventId: string; cursor: bigint } | undefined;
+
   const result = await db.$transaction(async (tx) => {
     const existing = await assertMessageInOrg(tx, input.orgId, input.messageId);
     await assertConversationAction(
@@ -350,6 +376,14 @@ export async function softDeleteMessage(
       messageId: updated.id,
     });
 
+    eventMeta = await appendConversationEvent(tx, {
+      orgId: input.orgId,
+      conversationId: existing.conversationId,
+      eventType: "conversation.message.deleted",
+      actorId: input.actorId,
+      payload: { messageId: updated.id },
+    });
+
     return toMessageRecord(updated);
   });
 
@@ -359,6 +393,7 @@ export async function softDeleteMessage(
     "conversation.message.deleted",
     input.actorId,
     { messageId: result.id },
+    { eventId: eventMeta!.eventId, cursor: eventMeta!.cursor.toString() },
   );
 
   return result;
