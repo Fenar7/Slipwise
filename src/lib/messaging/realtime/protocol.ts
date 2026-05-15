@@ -148,7 +148,6 @@ export type RealtimeErrorCode =
   | "auth_required"
   | "auth_invalid"
   | "auth_expired"
-  | "org_mismatch"
   | "subscription_denied"
   | "subscription_not_found"
   | "rate_limited"

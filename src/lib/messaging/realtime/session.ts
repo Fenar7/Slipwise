@@ -47,6 +47,11 @@ export interface SessionRegistry {
   updateHeartbeat(sessionId: string): boolean;
   addSubscription(sessionId: string, conversationId: string): boolean;
   removeSubscription(sessionId: string, conversationId: string): boolean;
+  /**
+   * Detach the transport connection from a session without invalidating it.
+   * Subscriptions are preserved so reconnect/resume can reattach.
+   */
+  detachSession(sessionId: string): boolean;
   closeSession(sessionId: string, reason: string): boolean;
   removeSession(sessionId: string): boolean;
   getSubscriptions(sessionId: string): Set<string>;
@@ -130,6 +135,14 @@ export class InMemorySessionRegistry implements SessionRegistry {
         this.subscriptionIndex.delete(conversationId);
       }
     }
+    return true;
+  }
+
+  detachSession(sessionId: string): boolean {
+    const session = this.sessions.get(sessionId);
+    if (!session || session.closed) return false;
+    // Transport disconnect does NOT close the logical session.
+    // Subscriptions remain intact for reconnect/resume.
     return true;
   }
 

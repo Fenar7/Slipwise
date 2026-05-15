@@ -329,6 +329,10 @@ export {
   MessagingGateway,
 } from "./realtime";
 
+export {
+  createMessagingRealtimeServer,
+} from "./realtime/server";
+
 export type {
   BaseCommand,
   BaseServerMessage,
@@ -355,8 +359,15 @@ export type {
   SessionRegistryStats,
   SessionRegistry,
   SubscriptionAuthResult,
+  SubscriptionAuthDiagnostic,
+  SubscriptionAuthDetail,
   RealtimeDiagnosticEvent,
   RealtimeDiagnostics,
   GatewayOptions,
   GatewayConnectionState,
 } from "./realtime";
+
+export type {
+  MessagingRealtimeServerOptions,
+  MessagingRealtimeServer,
+} from "./realtime/server";

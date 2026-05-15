@@ -24,6 +24,9 @@ import { ConsoleRealtimeDiagnostics } from "@/lib/messaging/realtime/diagnostics
  * Validates the caller's authenticated org context, applies rate limiting,
  * mints a short-lived realtime session token, and returns the connection
  * contract needed to open an authenticated WebSocket.
+ *
+ * The returned wsUrl is the explicitly configured MESSAGING_REALTIME_WS_URL.
+ * If the realtime transport is not configured, bootstrap fails closed.
  */
 
 const diagnostics = new ConsoleRealtimeDiagnostics();
@@ -40,17 +43,16 @@ function getTokenSecret(): string {
   return secret;
 }
 
-function buildWsUrl(): string {
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "";
-  // In development, assume ws:// on the same host/port.
-  // In production, a dedicated WSS endpoint should be configured.
-  const wsProtocol = appUrl.startsWith("https://") ? "wss://" : "ws://";
-  const host = appUrl.replace(/^https?:\/\//, "").replace(/\/$/, "");
-  if (!host) {
-    // Fallback for local dev without explicit APP_URL.
-    return "ws://localhost:3001/api/messaging/realtime/ws";
+function getConfiguredWsUrl(): string {
+  const wsUrl = process.env.MESSAGING_REALTIME_WS_URL;
+  if (!wsUrl || wsUrl.trim().length === 0) {
+    throw new MessagingApiError(
+      MessagingApiErrorCode.INTERNAL_ERROR,
+      "Realtime WebSocket endpoint is not configured.",
+      500,
+    );
   }
-  return `${wsProtocol}${host}/api/messaging/realtime/ws`;
+  return wsUrl.trim();
 }
 
 export async function POST(request: NextRequest): Promise<Response> {
@@ -59,6 +61,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     await applyMessagingRateLimit(request, context.orgId, "messagingGovernance");
 
     const secret = getTokenSecret();
+    const wsUrl = getConfiguredWsUrl();
     const sessionId = randomUUID();
 
     const result = mintRealtimeSessionToken(
@@ -85,7 +88,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     return messagingApiResponse({
       sessionToken: result.token,
       expiresAt: result.expiresAt,
-      wsUrl: buildWsUrl(),
+      wsUrl,
       sessionId: result.sessionId,
       serverTime: Math.floor(Date.now() / 1000),
       capabilities: ["subscribe_conversation", "heartbeat", "resume_session"],

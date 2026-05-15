@@ -6,14 +6,16 @@
  * - Short-lived realtime session token mint/verify
  * - Token expiry and malformed handling
  * - Protocol envelope validation
- * - Session registry lifecycle (create, heartbeat, subscribe, sweep)
+ * - Session registry lifecycle (create, heartbeat, subscribe, detach, sweep)
  * - Gateway connection auth (valid, expired, malformed tokens)
  * - Conversation subscription authorization (org boundary, membership, removed)
+ * - Safe subscription denial (no existence leakage)
  * - Heartbeat and idle expiry
+ * - Reconnect/resume after transport disconnect
  * - Unsubscribe semantics
  * - Safe error payloads (no secret leakage)
  * - Diagnostics safety
- * - Bootstrap endpoint auth and rate-limit behavior
+ * - Bootstrap endpoint auth, rate-limit, and truthful wsUrl behavior
  * - Phase 3 auth regression guard
  */
 
@@ -98,6 +100,9 @@ import {
 // ─── Gateway ──────────────────────────────────────────────────────────────────
 import { MessagingGateway } from "@/lib/messaging/realtime/gateway";
 
+// ─── Server ───────────────────────────────────────────────────────────────────
+import { createMessagingRealtimeServer } from "@/lib/messaging/realtime/server";
+
 // ─── Bootstrap route ──────────────────────────────────────────────────────────
 import { POST as bootstrapPost } from "@/app/api/messaging/realtime/bootstrap/route";
 
@@ -114,6 +119,7 @@ const USER_1 = "00000000-0000-0000-0000-000000000001";
 const USER_2 = "00000000-0000-0000-0000-000000000002";
 const CONV_ID = "conv-001";
 const SECRET = "test-secret-that-is-long-enough-for-hmac-256!!";
+const WS_URL = "wss://api.example.com/messaging/realtime";
 
 function makeConversationRow(overrides: Record<string, unknown> = {}) {
   return {
@@ -248,7 +254,6 @@ describe("Realtime session token contract", () => {
 
   it("rejects a future token", () => {
     const result = mintTestToken();
-    // Tamper with iat to make it far in the future, then re-sign
     const parts = result.token.split(".");
     const header = parts[0];
     const payload = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
@@ -348,8 +353,7 @@ describe("InMemorySessionRegistry", () => {
   });
 
   it("creates and retrieves a session", () => {
-    const token = mintTestToken();
-    const claims = verifyRealtimeSessionToken(token.token, SECRET).claims!;
+    const claims = verifyRealtimeSessionToken(mintTestToken().token, SECRET).claims!;
     const session = registry.createSession(claims);
     expect(session.userId).toBe(USER_1);
     expect(session.orgId).toBe(ORG_A);
@@ -385,6 +389,17 @@ describe("InMemorySessionRegistry", () => {
     expect(registry.removeSubscription(session.sessionId, CONV_ID)).toBe(false);
   });
 
+  it("detachSession preserves subscriptions and keeps session open", () => {
+    const claims = verifyRealtimeSessionToken(mintTestToken().token, SECRET).claims!;
+    const session = registry.createSession(claims);
+    registry.addSubscription(session.sessionId, CONV_ID);
+    const ok = registry.detachSession(session.sessionId);
+    expect(ok).toBe(true);
+    expect(session.closed).toBe(false);
+    expect(session.subscriptions.has(CONV_ID)).toBe(true);
+    expect(registry.getSubscriptions(session.sessionId).has(CONV_ID)).toBe(true);
+  });
+
   it("closeSession clears subscriptions and marks closed", () => {
     const claims = verifyRealtimeSessionToken(mintTestToken().token, SECRET).claims!;
     const sess = registry.createSession(claims);
@@ -398,7 +413,6 @@ describe("InMemorySessionRegistry", () => {
   it("sweepExpiredSessions evicts idle sessions", () => {
     const claims = verifyRealtimeSessionToken(mintTestToken({ ttlSeconds: 300 }).token, SECRET).claims!;
     const session = registry.createSession(claims);
-    // Force idle beyond threshold
     session.lastHeartbeatAt = Date.now() - DEFAULT_SESSION_IDLE_TIMEOUT_MS - 1000;
     const evicted = registry.sweepExpiredSessions(DEFAULT_SESSION_IDLE_TIMEOUT_MS);
     expect(evicted.length).toBe(1);
@@ -451,23 +465,26 @@ describe("Subscription authorization", () => {
     db.conversationParticipant.findFirst.mockResolvedValue(makeParticipantRow());
 
     const claims = verifyRealtimeSessionToken(mintTestToken().token, SECRET).claims!;
-    const result = await authorizeConversationSubscription(
+    const detail = await authorizeConversationSubscription(
       { ...claims, orgId: claims.org, sessionId: "s1", connectedAt: 0, lastHeartbeatAt: 0, expiresAt: 0, subscriptions: new Set(), closed: false, proxyGrantId: null, proxyScope: [] } as import("@/lib/messaging/realtime/session").RealtimeSession,
       CONV_ID,
     );
-    expect(result.allowed).toBe(true);
+    expect(detail.result.allowed).toBe(true);
   });
 
-  it("denies subscription across org boundary", async () => {
-    db.conversation.findFirst.mockResolvedValue(makeConversationRow({ orgId: ORG_B }));
+  it("denies subscription across org boundary with safe public denial", async () => {
+    // Conversation exists in ORG_B; session is ORG_A.
+    // Because the query is org-scoped, this returns null — same as nonexistent.
+    db.conversation.findFirst.mockResolvedValue(null);
 
-    const claims = mintTestToken({ orgId: ORG_A }).claims!;
-    const result = await authorizeConversationSubscription(
-      { ...claims, sessionId: "s1", connectedAt: 0, lastHeartbeatAt: 0, expiresAt: 0, subscriptions: new Set(), closed: false, proxyGrantId: null, proxyScope: [] } as import("@/lib/messaging/realtime/session").RealtimeSession,
+    const claims = verifyRealtimeSessionToken(mintTestToken({ orgId: ORG_A }).token, SECRET).claims!;
+    const detail = await authorizeConversationSubscription(
+      { ...claims, orgId: claims.org, sessionId: "s1", connectedAt: 0, lastHeartbeatAt: 0, expiresAt: 0, subscriptions: new Set(), closed: false, proxyGrantId: null, proxyScope: [] } as import("@/lib/messaging/realtime/session").RealtimeSession,
       CONV_ID,
     );
-    expect(result.allowed).toBe(false);
-    expect(result.code).toBe("org_mismatch");
+    expect(detail.result.allowed).toBe(false);
+    expect(detail.result.code).toBe("subscription_denied");
+    expect(detail.diagnostic).toBe("not_found");
   });
 
   it("denies subscription when user is not a participant", async () => {
@@ -475,12 +492,12 @@ describe("Subscription authorization", () => {
     db.conversationParticipant.findFirst.mockResolvedValue(null);
 
     const claims = verifyRealtimeSessionToken(mintTestToken().token, SECRET).claims!;
-    const result = await authorizeConversationSubscription(
+    const detail = await authorizeConversationSubscription(
       { ...claims, orgId: claims.org, sessionId: "s1", connectedAt: 0, lastHeartbeatAt: 0, expiresAt: 0, subscriptions: new Set(), closed: false, proxyGrantId: null, proxyScope: [] } as import("@/lib/messaging/realtime/session").RealtimeSession,
       CONV_ID,
     );
-    expect(result.allowed).toBe(false);
-    expect(result.code).toBe("subscription_denied");
+    expect(detail.result.allowed).toBe(false);
+    expect(detail.result.code).toBe("subscription_denied");
   });
 
   it("denies subscription when participant has left", async () => {
@@ -488,24 +505,46 @@ describe("Subscription authorization", () => {
     db.conversationParticipant.findFirst.mockResolvedValue(makeParticipantRow({ leftAt: new Date() }));
 
     const claims = verifyRealtimeSessionToken(mintTestToken().token, SECRET).claims!;
-    const result = await authorizeConversationSubscription(
+    const detail = await authorizeConversationSubscription(
       { ...claims, orgId: claims.org, sessionId: "s1", connectedAt: 0, lastHeartbeatAt: 0, expiresAt: 0, subscriptions: new Set(), closed: false, proxyGrantId: null, proxyScope: [] } as import("@/lib/messaging/realtime/session").RealtimeSession,
       CONV_ID,
     );
-    expect(result.allowed).toBe(false);
-    expect(result.code).toBe("subscription_denied");
+    expect(detail.result.allowed).toBe(false);
+    expect(detail.result.code).toBe("subscription_denied");
   });
 
   it("denies subscription when conversation not found", async () => {
     db.conversation.findFirst.mockResolvedValue(null);
 
-    const claims = mintTestToken().claims!;
-    const result = await authorizeConversationSubscription(
-      { ...claims, sessionId: "s1", connectedAt: 0, lastHeartbeatAt: 0, expiresAt: 0, subscriptions: new Set(), closed: false, proxyGrantId: null, proxyScope: [] } as import("@/lib/messaging/realtime/session").RealtimeSession,
+    const claims = verifyRealtimeSessionToken(mintTestToken().token, SECRET).claims!;
+    const detail = await authorizeConversationSubscription(
+      { ...claims, orgId: claims.org, sessionId: "s1", connectedAt: 0, lastHeartbeatAt: 0, expiresAt: 0, subscriptions: new Set(), closed: false, proxyGrantId: null, proxyScope: [] } as import("@/lib/messaging/realtime/session").RealtimeSession,
       CONV_ID,
     );
-    expect(result.allowed).toBe(false);
-    expect(result.code).toBe("subscription_denied");
+    expect(detail.result.allowed).toBe(false);
+    expect(detail.result.code).toBe("subscription_denied");
+    expect(detail.diagnostic).toBe("not_found");
+  });
+
+  it("foreign-org and nonexistent conversation produce the same public denial", async () => {
+    // Case 1: foreign org (org-scoped query returns null)
+    db.conversation.findFirst.mockResolvedValue(null);
+    const claims = verifyRealtimeSessionToken(mintTestToken({ orgId: ORG_A }).token, SECRET).claims!;
+    const detailA = await authorizeConversationSubscription(
+      { ...claims, orgId: claims.org, sessionId: "s1", connectedAt: 0, lastHeartbeatAt: 0, expiresAt: 0, subscriptions: new Set(), closed: false, proxyGrantId: null, proxyScope: [] } as import("@/lib/messaging/realtime/session").RealtimeSession,
+      CONV_ID,
+    );
+
+    // Case 2: truly nonexistent
+    db.conversation.findFirst.mockResolvedValue(null);
+    const detailB = await authorizeConversationSubscription(
+      { ...claims, orgId: claims.org, sessionId: "s2", connectedAt: 0, lastHeartbeatAt: 0, expiresAt: 0, subscriptions: new Set(), closed: false, proxyGrantId: null, proxyScope: [] } as import("@/lib/messaging/realtime/session").RealtimeSession,
+      "conv-does-not-exist",
+    );
+
+    expect(detailA.result.code).toBe(detailB.result.code);
+    expect(detailA.result.reason).toBe(detailB.result.reason);
+    expect(detailA.result.code).toBe("subscription_denied");
   });
 });
 
@@ -596,8 +635,9 @@ describe("MessagingGateway integration", () => {
     ws.close();
   });
 
-  it("denies subscription across org boundary", async () => {
-    db.conversation.findFirst.mockResolvedValue(makeConversationRow({ orgId: ORG_B }));
+  it("denies subscription across org boundary with safe code", async () => {
+    // Org-scoped query returns null → same denial as nonexistent.
+    db.conversation.findFirst.mockResolvedValue(null);
 
     const token = mintTestToken({ orgId: ORG_A });
     const ws = await wsConnect(`ws://localhost:${port}`);
@@ -607,7 +647,9 @@ describe("MessagingGateway integration", () => {
     wsSend(ws, { type: "subscribe_conversation", requestId: "r1", payload: { conversationId: CONV_ID } });
     const msg = (await wsNextMessage(ws)) as Record<string, unknown>;
     expect(msg.type).toBe("subscription_denied");
-    expect((msg.payload as Record<string, unknown>).code).toBe("org_mismatch");
+    expect((msg.payload as Record<string, unknown>).code).toBe("subscription_denied");
+    // Must NOT expose org_mismatch to the client.
+    expect((msg.payload as Record<string, unknown>).code).not.toBe("org_mismatch");
 
     ws.close();
   });
@@ -668,10 +710,8 @@ describe("MessagingGateway integration", () => {
     wsSend(ws, { type: "resume_session", requestId: "r0", payload: { sessionToken: token.token } });
     await wsNextMessage(ws);
 
-    // Wait longer than idle timeout + sweep interval
     await new Promise((r) => setTimeout(r, 900));
 
-    // Try heartbeat after expiry
     wsSend(ws, { type: "heartbeat", requestId: "r1" });
     const msg = (await wsNextMessage(ws)) as Record<string, unknown>;
     expect(msg.type).toBe("error");
@@ -724,6 +764,148 @@ describe("MessagingGateway integration", () => {
     expect((msg.payload as Record<string, unknown>).code).toBe("invalid_command");
     ws.close();
   });
+
+  it("reconnect with same token resumes session and preserves subscriptions", async () => {
+    db.conversation.findFirst.mockResolvedValue(makeConversationRow());
+    db.conversationParticipant.findFirst.mockResolvedValue(makeParticipantRow());
+
+    const token = mintTestToken();
+
+    // First connection: authenticate and subscribe.
+    const ws1 = await wsConnect(`ws://localhost:${port}`);
+    wsSend(ws1, { type: "resume_session", requestId: "r0", payload: { sessionToken: token.token } });
+    const ack1 = (await wsNextMessage(ws1)) as Record<string, unknown>;
+    expect(ack1.type).toBe("session_ack");
+
+    wsSend(ws1, { type: "subscribe_conversation", requestId: "r1", payload: { conversationId: CONV_ID } });
+    const sub1 = (await wsNextMessage(ws1)) as Record<string, unknown>;
+    expect(sub1.type).toBe("subscription_ack");
+
+    // Abruptly close the socket (simulates transient network loss).
+    ws1.terminate();
+
+    // Second connection: resume with the same still-valid token.
+    const ws2 = await wsConnect(`ws://localhost:${port}`);
+    wsSend(ws2, { type: "resume_session", requestId: "r2", payload: { sessionToken: token.token } });
+    const ack2 = (await wsNextMessage(ws2)) as Record<string, unknown>;
+    expect(ack2.type).toBe("session_ack");
+    expect((ack2.payload as Record<string, unknown>).sessionId).toBe(token.sessionId);
+
+    // Heartbeat should work on the resumed session.
+    wsSend(ws2, { type: "heartbeat", requestId: "r3" });
+    const hb = (await wsNextMessage(ws2)) as Record<string, unknown>;
+    expect(hb.type).toBe("heartbeat_ack");
+
+    ws2.close();
+  });
+
+  it("reconnect reauthorizes preserved subscriptions and prunes revoked ones", async () => {
+    // First connection: user is a member.
+    db.conversation.findFirst.mockResolvedValue(makeConversationRow());
+    db.conversationParticipant.findFirst.mockResolvedValue(makeParticipantRow());
+
+    const token = mintTestToken();
+    const ws1 = await wsConnect(`ws://localhost:${port}`);
+    wsSend(ws1, { type: "resume_session", requestId: "r0", payload: { sessionToken: token.token } });
+    await wsNextMessage(ws1);
+    wsSend(ws1, { type: "subscribe_conversation", requestId: "r1", payload: { conversationId: CONV_ID } });
+    await wsNextMessage(ws1);
+    ws1.terminate();
+
+    // Give the gateway event loop a tick to process the detach.
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Second connection: user has been removed.
+    db.conversationParticipant.findFirst.mockResolvedValue(null);
+
+    const ws2 = await wsConnect(`ws://localhost:${port}`);
+
+    // Collect all messages on ws2.
+    const messages: Array<Record<string, unknown>> = [];
+    ws2.on("message", (data) => {
+      messages.push(JSON.parse(data.toString("utf8")));
+    });
+
+    wsSend(ws2, { type: "resume_session", requestId: "r2", payload: { sessionToken: token.token } });
+
+    // Wait up to 2s for the reauth loop to push subscription_denied.
+    await new Promise<void>((resolve, reject) => {
+      const t = setTimeout(() => reject(new Error("timeout waiting for subscription_denied")), 2000);
+      const check = setInterval(() => {
+        if (messages.some((m) => m.type === "subscription_denied")) {
+          clearTimeout(t);
+          clearInterval(check);
+          resolve();
+        }
+      }, 10);
+    });
+
+    expect(messages[0].type).toBe("session_ack");
+    const denied = messages.find((m) => m.type === "subscription_denied")!;
+    expect(denied).toBeTruthy();
+    expect((denied.payload as Record<string, unknown>).conversationId).toBe(CONV_ID);
+
+    ws2.close();
+  });
+
+  it("cannot resume after session is swept for idle expiry", async () => {
+    const token = mintTestToken();
+    const ws1 = await wsConnect(`ws://localhost:${port}`);
+    wsSend(ws1, { type: "resume_session", requestId: "r0", payload: { sessionToken: token.token } });
+    await wsNextMessage(ws1);
+    ws1.terminate();
+
+    // Wait for sweep to evict the idle session.
+    await new Promise((r) => setTimeout(r, 900));
+
+    const ws2 = await wsConnect(`ws://localhost:${port}`);
+    wsSend(ws2, { type: "resume_session", requestId: "r1", payload: { sessionToken: token.token } });
+    const msg = (await wsNextMessage(ws2)) as Record<string, unknown>;
+    // Session was closed by sweep; idle expiry makes it unresumable.
+    expect(msg.type).toBe("error");
+    expect((msg.payload as Record<string, unknown>).code).toBe("session_not_found");
+    expect((msg.payload as Record<string, unknown>).fatal).toBe(true);
+
+    ws2.close();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Standalone server bootstrap
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe("createMessagingRealtimeServer", () => {
+  const originalEnv = process.env;
+
+  beforeEach(() => {
+    process.env = { ...originalEnv, MESSAGING_REALTIME_TOKEN_SECRET: SECRET };
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+  });
+
+  it("creates a server on the given port", async () => {
+    const server = createMessagingRealtimeServer({ port: 19998 });
+    const ws = await wsConnect("ws://localhost:19998");
+    expect(ws.readyState).toBe(WebSocket.OPEN);
+    ws.terminate();
+    await server.close();
+  });
+
+  it("throws when token secret is missing", () => {
+    delete process.env.MESSAGING_REALTIME_TOKEN_SECRET;
+    expect(() => createMessagingRealtimeServer({ port: 19997 })).toThrow(
+      "MESSAGING_REALTIME_TOKEN_SECRET",
+    );
+  });
+
+  it("throws when token secret is too short", () => {
+    process.env.MESSAGING_REALTIME_TOKEN_SECRET = "short";
+    expect(() => createMessagingRealtimeServer({ port: 19997 })).toThrow(
+      "too short",
+    );
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -735,7 +917,11 @@ describe("Realtime bootstrap endpoint", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    process.env = { ...originalEnv, MESSAGING_REALTIME_TOKEN_SECRET: SECRET };
+    process.env = {
+      ...originalEnv,
+      MESSAGING_REALTIME_TOKEN_SECRET: SECRET,
+      MESSAGING_REALTIME_WS_URL: WS_URL,
+    };
   });
 
   afterEach(() => {
@@ -761,7 +947,7 @@ describe("Realtime bootstrap endpoint", () => {
     expect(body.data.sessionToken).toBeTruthy();
     expect(body.data.sessionId).toBeTruthy();
     expect(body.data.expiresAt).toBeTruthy();
-    expect(body.data.wsUrl).toBeTruthy();
+    expect(body.data.wsUrl).toBe(WS_URL);
     expect(body.data.serverTime).toBeTruthy();
     expect(body.data.capabilities).toContain("subscribe_conversation");
   });
@@ -815,6 +1001,25 @@ describe("Realtime bootstrap endpoint", () => {
     expect(res.status).toBe(500);
   });
 
+  it("returns 500 when MESSAGING_REALTIME_WS_URL is not configured", async () => {
+    (rateLimitByOrg as ReturnType<typeof vi.fn>).mockResolvedValue({ success: true, remaining: 999 });
+    delete process.env.MESSAGING_REALTIME_WS_URL;
+    (getOrgContext as ReturnType<typeof vi.fn>).mockResolvedValue({
+      userId: USER_1,
+      orgId: ORG_A,
+      role: "member",
+      representedId: null,
+      proxyGrantId: null,
+      proxyScope: [],
+    });
+
+    const req = makeRequest("http://localhost/api/messaging/realtime/bootstrap", { method: "POST" });
+    const res = await bootstrapPost(req);
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.error.code).toBe("INTERNAL_ERROR");
+  });
+
   it("token returned from bootstrap verifies successfully", async () => {
     (rateLimitByOrg as ReturnType<typeof vi.fn>).mockResolvedValue({ success: true, remaining: 999 });
     (getOrgContext as ReturnType<typeof vi.fn>).mockResolvedValue({
@@ -845,7 +1050,7 @@ describe("Realtime diagnostics safety", () => {
   it("tokenFingerprint does not leak full token in diagnostics", () => {
     const token = mintTestToken().token;
     const fp = tokenFingerprint(token);
-    expect(token.startsWith(fp.slice(0, 4))).toBe(true); // only prefix
+    expect(token.startsWith(fp.slice(0, 4))).toBe(true);
     expect(fp.length).toBeLessThan(token.length);
   });
 
@@ -888,21 +1093,21 @@ describe("Realtime diagnostics safety", () => {
 describe("Phase 3 auth regression guard", () => {
   it("evaluateConversationAccess still default-denies for null participant", () => {
     const conversation = makeConversationRow();
-    const result = evaluateConversationAccess(conversation, null, "READ", "test");
+    const result = evaluateConversationAccess(conversation, null, "READ");
     expect(result.allowed).toBe(false);
   });
 
   it("evaluateConversationAccess still enforces org boundary", () => {
     const conversation = makeConversationRow({ orgId: ORG_B });
     const participant = makeParticipantRow({ orgId: ORG_A });
-    const result = evaluateConversationAccess(conversation, participant, "READ", "test");
+    const result = evaluateConversationAccess(conversation, participant, "READ");
     expect(result.allowed).toBe(false);
   });
 
   it("evaluateConversationAccess still allows read for active member", () => {
     const conversation = makeConversationRow();
     const participant = makeParticipantRow();
-    const result = evaluateConversationAccess(conversation, participant, "READ", "test");
+    const result = evaluateConversationAccess(conversation, participant, "READ");
     expect(result.allowed).toBe(true);
   });
 });

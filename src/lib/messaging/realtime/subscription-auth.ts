@@ -15,35 +15,51 @@ import type { RealtimeSession } from "./session";
  *
  * Default-deny: any lookup failure, org mismatch, or inactive membership
  * results in a denied subscription.
+ *
+ * Safety rule: the client-facing denial is always uniform. A conversation
+ * that does not exist, exists in another org, or is otherwise inaccessible
+ * produces the identical public response to prevent existence leakage.
  */
 
 export type SubscriptionAuthResult =
   | { allowed: true }
-  | { allowed: false; reason: string; code: "auth_required" | "subscription_denied" | "org_mismatch" | "server_error" };
+  | { allowed: false; reason: string; code: "subscription_denied" | "server_error" };
+
+/** Internal-only diagnostic detail for supportability. Never sent to clients. */
+export type SubscriptionAuthDiagnostic =
+  | "not_found"
+  | "org_mismatch"
+  | "not_member"
+  | "removed"
+  | "policy_denied"
+  | "server_error";
+
+export interface SubscriptionAuthDetail {
+  result: SubscriptionAuthResult;
+  /** Server-side diagnostic category for logs/support. */
+  diagnostic: SubscriptionAuthDiagnostic;
+}
 
 export async function authorizeConversationSubscription(
   session: RealtimeSession,
   conversationId: string,
-): Promise<SubscriptionAuthResult> {
+): Promise<SubscriptionAuthDetail> {
   try {
+    // Org-safe lookup: only find conversations within the session's org.
+    // This prevents cross-org existence leakage because a foreign-org row
+    // is indistinguishable from a nonexistent row.
     const conversation = await db.conversation.findFirst({
-      where: { id: conversationId },
+      where: { id: conversationId, orgId: session.orgId },
     });
 
     if (!conversation) {
       return {
-        allowed: false,
-        reason: "conversation not found or access denied",
-        code: "subscription_denied",
-      };
-    }
-
-    // Org boundary enforcement: session org must match conversation org.
-    if (conversation.orgId !== session.orgId) {
-      return {
-        allowed: false,
-        reason: "org boundary violation",
-        code: "org_mismatch",
+        result: {
+          allowed: false,
+          reason: "conversation not found or access denied",
+          code: "subscription_denied",
+        },
+        diagnostic: "not_found",
       };
     }
 
@@ -63,19 +79,32 @@ export async function authorizeConversationSubscription(
     );
 
     if (!result.allowed) {
+      let diagnostic: SubscriptionAuthDiagnostic = "policy_denied";
+      if (!participant) {
+        diagnostic = "not_member";
+      } else if (participant.leftAt !== null) {
+        diagnostic = "removed";
+      }
+
       return {
-        allowed: false,
-        reason: result.reason,
-        code: "subscription_denied",
+        result: {
+          allowed: false,
+          reason: result.reason,
+          code: "subscription_denied",
+        },
+        diagnostic,
       };
     }
 
-    return { allowed: true };
+    return { result: { allowed: true }, diagnostic: "policy_denied" };
   } catch (error) {
     return {
-      allowed: false,
-      reason: error instanceof Error ? error.message : "authorization check failed",
-      code: "server_error",
+      result: {
+        allowed: false,
+        reason: error instanceof Error ? error.message : "authorization check failed",
+        code: "server_error",
+      },
+      diagnostic: "server_error",
     };
   }
 }
@@ -89,6 +118,6 @@ export async function authorizeConversationSubscription(
 export async function reauthorizeConversationSubscription(
   session: RealtimeSession,
   conversationId: string,
-): Promise<SubscriptionAuthResult> {
+): Promise<SubscriptionAuthDetail> {
   return authorizeConversationSubscription(session, conversationId);
 }

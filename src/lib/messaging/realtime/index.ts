@@ -68,7 +68,11 @@ export {
   authorizeConversationSubscription,
   reauthorizeConversationSubscription,
 } from "./subscription-auth";
-export type { SubscriptionAuthResult } from "./subscription-auth";
+export type {
+  SubscriptionAuthResult,
+  SubscriptionAuthDiagnostic,
+  SubscriptionAuthDetail,
+} from "./subscription-auth";
 
 // Diagnostics
 export {

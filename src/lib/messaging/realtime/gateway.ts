@@ -168,7 +168,7 @@ export class MessagingGateway {
 
     switch (command.type) {
       case "subscribe_conversation":
-        this.handleSubscribe(socket, connState, command.payload.conversationId, requestId);
+        void this.handleSubscribe(socket, connState, command.payload.conversationId, requestId);
         break;
       case "unsubscribe_conversation":
         this.handleUnsubscribe(socket, connState, command.payload.conversationId, requestId);
@@ -177,7 +177,7 @@ export class MessagingGateway {
         this.handleHeartbeat(socket, connState, requestId);
         break;
       case "resume_session":
-        this.handleResumeSession(socket, connState, command.payload.sessionToken, requestId);
+        void this.handleResumeSession(socket, connState, command.payload.sessionToken, requestId);
         break;
     }
   }
@@ -195,9 +195,9 @@ export class MessagingGateway {
     const session = this.requireSession(socket, connState, requestId);
     if (!session) return;
 
-    const authResult = await authorizeConversationSubscription(session, conversationId);
-    if (!authResult.allowed) {
-      const denied = authResult as import("./subscription-auth").SubscriptionAuthResult & { allowed: false };
+    const authDetail = await authorizeConversationSubscription(session, conversationId);
+    if (!authDetail.result.allowed) {
+      const denied = authDetail.result as import("./subscription-auth").SubscriptionAuthResult & { allowed: false };
       this.diagnostics.emit({
         kind: "subscription_denied",
         sessionId: session.sessionId,
@@ -322,9 +322,14 @@ export class MessagingGateway {
       return;
     }
 
-    // If the session was evicted but the token is still valid, create a new session record.
     if (!session) {
+      // No existing session record — create a fresh one. This happens on first
+      // connect or when the prior session was fully evicted.
       session = this.sessions.createSession(claims);
+    } else {
+      // Reattaching to an existing logical session after transport disconnect.
+      // Heartbeat is updated below; subscriptions are preserved and reauthorized
+      // after the session_ack.
     }
 
     connState.sessionId = session.sessionId;
@@ -350,9 +355,9 @@ export class MessagingGateway {
     // Re-authorize any existing subscriptions carried over from a previous connection.
     const existingSubs = this.sessions.getSubscriptions(session.sessionId);
     for (const conversationId of existingSubs) {
-      const reauth = await reauthorizeConversationSubscription(session, conversationId);
-      if (!reauth.allowed) {
-        const denied = reauth as import("./subscription-auth").SubscriptionAuthResult & { allowed: false };
+      const reauthDetail = await reauthorizeConversationSubscription(session, conversationId);
+      if (!reauthDetail.result.allowed) {
+        const denied = reauthDetail.result as import("./subscription-auth").SubscriptionAuthResult & { allowed: false };
         this.sessions.removeSubscription(session.sessionId, conversationId);
         this.diagnostics.emit({
           kind: "subscription_denied",
@@ -387,9 +392,10 @@ export class MessagingGateway {
         sessionId: connState.sessionId,
         reason,
       });
-      // We close the session but keep the record briefly in case of reconnect.
-      // A sweep job will eventually remove stale closed sessions.
-      this.sessions.closeSession(connState.sessionId, reason);
+      // Transport disconnect detaches the socket but does NOT invalidate the
+      // logical session. Subscriptions survive so resume_session can reattach.
+      // Only idle expiry, token expiry, or explicit invalidation close the session.
+      this.sessions.detachSession(connState.sessionId);
     }
     this.wsConnections.delete(socket);
   }
