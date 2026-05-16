@@ -77,6 +77,8 @@ interface SessionAuxiliaryState {
   rateLimiter: SessionRateLimiter;
   backpressure: BackpressureState;
   degradedReasons: Set<DegradedModeReason>;
+  /** FIFO of unacknowledged event IDs for real backpressure tracking. */
+  sentEventIds: string[];
 }
 
 export class MessagingGateway {
@@ -145,6 +147,7 @@ export class MessagingGateway {
         rateLimiter: new SessionRateLimiter(this.safetyLimits),
         backpressure: createBackpressureState(),
         degradedReasons: new Set(),
+        sentEventIds: [],
       };
       this.sessionAux.set(sessionId, aux);
     }
@@ -245,14 +248,35 @@ export class MessagingGateway {
     connState: GatewayConnectionState,
     rawData: unknown,
   ): void {
-    let parsed: unknown;
+    let text: string;
     try {
-      const text =
+      text =
         typeof rawData === "string"
           ? rawData
           : rawData instanceof Buffer
             ? rawData.toString("utf8")
             : "";
+    } catch {
+      this.sendError(socket, "malformed_payload", "invalid payload encoding", false, connState.sessionId);
+      return;
+    }
+
+    // Sprint 4.4: enforce inbound payload size before parsing.
+    const byteLength = Buffer.byteLength(text, "utf8");
+    if (byteLength > this.safetyLimits.maxMessagePayloadBytes) {
+      this.diagnostics.emit({
+        kind: "payload_size_denied",
+        sessionId: connState.sessionId ?? "unknown",
+        byteLength,
+        limit: this.safetyLimits.maxMessagePayloadBytes,
+      });
+      this.sendFatalError(socket, "malformed_payload", `payload exceeds ${this.safetyLimits.maxMessagePayloadBytes} bytes`, connState);
+      socket.close(1009, "message too big");
+      return;
+    }
+
+    let parsed: unknown;
+    try {
       parsed = JSON.parse(text);
     } catch {
       this.sendError(socket, "malformed_payload", "invalid JSON", false, connState.sessionId);
@@ -462,6 +486,7 @@ export class MessagingGateway {
         rateLimiter: new SessionRateLimiter(this.safetyLimits),
         backpressure: createBackpressureState(),
         degradedReasons: new Set(),
+        sentEventIds: [],
       };
       this.sessionAux.set(resumeKey, aux);
     }
@@ -779,20 +804,41 @@ export class MessagingGateway {
   private handleAckEvents(
     socket: WebSocket,
     connState: GatewayConnectionState,
-    _payload: { lastEventId?: string; cursors?: Record<string, string> },
+    payload: { lastEventId?: string; cursors?: Record<string, string> },
     requestId: string,
   ): void {
     const session = this.requireSession(socket, connState, requestId);
     if (!session) return;
 
     const aux = this.getOrCreateAux(session.sessionId);
-    if (aux.backpressure.active && aux.backpressure.queuedEvents <= this.safetyLimits.maxEventQueueDepth / 2) {
+
+    // Sprint 4.4: ack_events must meaningfully reduce outstanding delivery backlog.
+    if (payload.lastEventId && aux.sentEventIds.length > 0) {
+      const idx = aux.sentEventIds.indexOf(payload.lastEventId);
+      if (idx !== -1) {
+        // Remove this event and all prior events from the outstanding queue.
+        aux.sentEventIds = aux.sentEventIds.slice(idx + 1);
+      } else {
+        // Event ID not in queue — client may be acking an old pruned event.
+        // Best-effort: assume at least one event was processed.
+        aux.sentEventIds.shift();
+      }
+      aux.backpressure.outstandingEvents = aux.sentEventIds.length;
+    } else if (payload.cursors && aux.sentEventIds.length > 0) {
+      // Per-conversation cursors serve as a general ack signal when no lastEventId is given.
+      // Best-effort: assume at least one event was processed.
+      aux.sentEventIds.shift();
+      aux.backpressure.outstandingEvents = aux.sentEventIds.length;
+    }
+
+    // Release backpressure if the outstanding backlog has dropped below the threshold.
+    if (aux.backpressure.active && aux.backpressure.outstandingEvents <= this.safetyLimits.maxEventQueueDepth / 2) {
       aux.backpressure.active = false;
       aux.backpressure.reason = null;
       this.diagnostics.emit({
         kind: "backpressure_released",
         sessionId: session.sessionId,
-        queuedEvents: aux.backpressure.queuedEvents,
+        outstandingEvents: aux.backpressure.outstandingEvents,
       });
       this.sendMessage(socket, {
         type: "connection_state",
@@ -1151,25 +1197,37 @@ export class MessagingGateway {
   private sendMessage(socket: WebSocket, message: ServerMessage): void {
     if (socket.readyState !== socket.OPEN) return;
 
-    // Sprint 4.4: backpressure tracking.
+    // Sprint 4.4: backpressure tracking based on actual unacknowledged events.
     const connState = this.wsConnections.get(socket);
     if (connState?.sessionId) {
       const aux = this.getOrCreateAux(connState.sessionId);
-      if (aux.backpressure.active) {
-        aux.backpressure.droppedEvents++;
-        return;
-      }
-      aux.backpressure.queuedEvents++;
-      if (aux.backpressure.queuedEvents > this.safetyLimits.maxEventQueueDepth) {
-        aux.backpressure.active = true;
-        aux.backpressure.reason = "queue_full";
-        this.diagnostics.emit({
-          kind: "backpressure_activated",
-          sessionId: connState.sessionId,
-          reason: "queue_full",
-          queuedEvents: aux.backpressure.queuedEvents,
-        });
-        this.sendDegradedState(socket, "fanout_delayed");
+
+      // Only count RealtimeEvent messages toward outstanding delivery backlog.
+      if (message.type === "event") {
+        const eventMsg = message as RealtimeEvent;
+        // If backpressure is active, drop this event but still allow control messages.
+        if (aux.backpressure.active) {
+          aux.backpressure.droppedEvents++;
+          return;
+        }
+        aux.sentEventIds.push(eventMsg.eventId);
+        // Cap queue to prevent unbounded growth if client never acks.
+        const maxTracked = this.safetyLimits.maxEventQueueDepth * 2;
+        if (aux.sentEventIds.length > maxTracked) {
+          aux.sentEventIds.shift();
+        }
+        aux.backpressure.outstandingEvents = aux.sentEventIds.length;
+        if (aux.backpressure.outstandingEvents > this.safetyLimits.maxEventQueueDepth) {
+          aux.backpressure.active = true;
+          aux.backpressure.reason = "queue_full";
+          this.diagnostics.emit({
+            kind: "backpressure_activated",
+            sessionId: connState.sessionId,
+            reason: "queue_full",
+            outstandingEvents: aux.backpressure.outstandingEvents,
+          });
+          this.sendDegradedState(socket, "fanout_delayed");
+        }
       }
     }
 

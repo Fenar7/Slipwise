@@ -20,6 +20,13 @@ import type { RealtimeEventType } from "./protocol";
  * - Consumers receive safe, structured event metadata sufficient for their
  *   domain needs, not full conversation snapshots.
  * - Retry-safe by contract: duplicate eventId delivery is expected and safe.
+ *
+ * Cursor model:
+ * - ConversationEventLog cursors are monotonic PER CONVERSATION only.
+ * - Cross-conversation ordering by cursor is meaningless and unsafe.
+ * - Per-conversation reads resume by cursor (valid within one stream).
+ * - Multi-conversation reads use a composite time-based token (createdAt, id)
+ *   which is valid across conversations because it reflects wall-clock ordering.
  */
 
 // ---------------------------------------------------------------------------
@@ -66,10 +73,28 @@ export interface ConsumeDownstreamEventsInput {
   consumerType: DownstreamConsumerType;
   /** Org partition — required for isolation. */
   orgId: string;
-  /** Optional: limit to specific conversations. */
+  /**
+   * Single conversation for cursor-ordered reads.
+   * If provided, ordering is by cursor (valid per-conversation stream).
+   */
+  conversationId?: string;
+  /**
+   * Multiple conversations for time-ordered reads.
+   * If provided, ordering is by createdAt then id (valid cross-conversation).
+   * Mutually exclusive with conversationId for cursor-based resume.
+   */
   conversationIds?: string[];
-  /** Read events after this cursor (exclusive). */
+  /**
+   * Resume token for single-conversation cursor-based reads.
+   * Only valid when conversationId is provided.
+   */
   afterCursor?: bigint;
+  /**
+   * Composite resume token for multi-conversation time-based reads.
+   * Only valid when conversationId is NOT provided.
+   */
+  afterCreatedAt?: Date;
+  afterId?: string;
   /** Maximum events to return per call. */
   limit?: number;
   /** Optional: filter by event types. */
@@ -80,8 +105,11 @@ export interface ConsumeDownstreamEventsResult {
   events: DownstreamEvent[];
   /** If true, more events exist beyond this window. */
   hasMore: boolean;
-  /** Cursor of the last returned event for resumption. */
+  /** Resume token for single-conversation cursor-based reads. */
   nextCursor?: bigint;
+  /** Composite resume token for multi-conversation time-based reads. */
+  nextCreatedAt?: Date;
+  nextId?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -91,17 +119,17 @@ export interface ConsumeDownstreamEventsResult {
 export interface RecordConsumptionCheckpointInput {
   consumerType: DownstreamConsumerType;
   orgId: string;
-  /** The highest cursor this consumer has successfully processed. */
+  /** The conversation whose cursor is being checkpointed. Required. */
+  conversationId: string;
+  /** The highest cursor this consumer has successfully processed in this conversation. */
   cursor: bigint;
-  /** Optional: per-conversation cursor tracking. */
-  conversationId?: string;
 }
 
 export interface ConsumptionCheckpoint {
   consumerType: DownstreamConsumerType;
   orgId: string;
   cursor: bigint;
-  conversationId: string | null;
+  conversationId: string;
   updatedAt: Date;
 }
 
@@ -121,33 +149,107 @@ export async function consumeDownstreamEvents(
 ): Promise<ConsumeDownstreamEventsResult> {
   const {
     orgId,
+    conversationId,
     conversationIds,
     afterCursor,
+    afterCreatedAt,
+    afterId,
     limit = DEFAULT_DOWNSTREAM_CONSUMPTION_LIMIT,
     eventTypes,
   } = input;
 
+  if (conversationId && conversationIds && conversationIds.length > 0) {
+    throw new Error(
+      "consumeDownstreamEvents: conversationId and conversationIds are mutually exclusive",
+    );
+  }
+
+  if (afterCursor !== undefined && (afterCreatedAt !== undefined || afterId !== undefined)) {
+    throw new Error(
+      "consumeDownstreamEvents: afterCursor and afterCreatedAt/afterId are mutually exclusive",
+    );
+  }
+
+  if (conversationId && (afterCreatedAt !== undefined || afterId !== undefined)) {
+    throw new Error(
+      "consumeDownstreamEvents: afterCreatedAt/afterId are only valid for multi-conversation reads",
+    );
+  }
+
+  // Per-conversation cursor-based read (valid ordering)
+  if (conversationId) {
+    const where: Prisma.ConversationEventLogWhereInput = {
+      orgId,
+      conversationId,
+      ...(afterCursor !== undefined ? { cursor: { gt: afterCursor } } : {}),
+      ...(eventTypes && eventTypes.length > 0
+        ? { eventType: { in: eventTypes } }
+        : {}),
+    };
+
+    const rows = await tx.conversationEventLog.findMany({
+      where,
+      orderBy: { cursor: "asc" },
+      take: limit + 1,
+    });
+
+    const hasMore = rows.length > limit;
+    const trimmed = hasMore ? rows.slice(0, limit) : rows;
+
+    const events = mapRowsToDownstreamEvents(trimmed);
+    const nextCursor = events.length > 0 ? events[events.length - 1].cursor : undefined;
+
+    return { events, hasMore, nextCursor };
+  }
+
+  // Multi-conversation or org-wide time-based read (valid cross-conversation ordering)
   const where: Prisma.ConversationEventLogWhereInput = {
     orgId,
     ...(conversationIds && conversationIds.length > 0
       ? { conversationId: { in: conversationIds } }
       : {}),
-    ...(afterCursor !== undefined ? { cursor: { gt: afterCursor } } : {}),
     ...(eventTypes && eventTypes.length > 0
       ? { eventType: { in: eventTypes } }
       : {}),
   };
 
+  if (afterCreatedAt) {
+    where.OR = [
+      { createdAt: { gt: afterCreatedAt } },
+      { createdAt: afterCreatedAt, id: { gt: afterId ?? "" } },
+    ];
+  }
+
   const rows = await tx.conversationEventLog.findMany({
     where,
-    orderBy: { cursor: "asc" },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     take: limit + 1,
   });
 
   const hasMore = rows.length > limit;
   const trimmed = hasMore ? rows.slice(0, limit) : rows;
 
-  const events: DownstreamEvent[] = trimmed.map((row) => ({
+  const events = mapRowsToDownstreamEvents(trimmed);
+  const lastRow = trimmed[trimmed.length - 1];
+  const nextCreatedAt = lastRow ? lastRow.createdAt : undefined;
+  const nextId = lastRow ? lastRow.id : undefined;
+
+  return { events, hasMore, nextCreatedAt, nextId };
+}
+
+function mapRowsToDownstreamEvents(
+  rows: Array<{
+    eventId: string;
+    cursor: bigint;
+    eventType: string;
+    orgId: string;
+    conversationId: string;
+    actorId: string | null;
+    payload: Prisma.JsonValue;
+    createdAt: Date;
+  }>,
+): DownstreamEvent[] {
+  return rows.map((row) => ({
     eventId: row.eventId,
     cursor: row.cursor,
     eventType: row.eventType as RealtimeEventType,
@@ -157,10 +259,6 @@ export async function consumeDownstreamEvents(
     occurredAt: row.createdAt.getTime(),
     payload: row.payload as unknown,
   }));
-
-  const nextCursor = events.length > 0 ? events[events.length - 1].cursor : undefined;
-
-  return { events, hasMore, nextCursor };
 }
 
 // ---------------------------------------------------------------------------
@@ -176,13 +274,13 @@ export async function recordConsumptionCheckpoint(
       consumerType_orgId_conversationId: {
         consumerType: input.consumerType,
         orgId: input.orgId,
-        conversationId: input.conversationId ?? "_global",
+        conversationId: input.conversationId,
       },
     },
     create: {
       consumerType: input.consumerType,
       orgId: input.orgId,
-      conversationId: input.conversationId ?? "_global",
+      conversationId: input.conversationId,
       cursor: input.cursor,
     },
     update: {
@@ -197,7 +295,7 @@ export async function getConsumptionCheckpoint(
   params: {
     consumerType: DownstreamConsumerType;
     orgId: string;
-    conversationId?: string;
+    conversationId: string;
   },
 ): Promise<ConsumptionCheckpoint | null> {
   const row = await tx.downstreamConsumptionCheckpoint.findUnique({
@@ -205,7 +303,7 @@ export async function getConsumptionCheckpoint(
       consumerType_orgId_conversationId: {
         consumerType: params.consumerType,
         orgId: params.orgId,
-        conversationId: params.conversationId ?? "_global",
+        conversationId: params.conversationId,
       },
     },
   });
@@ -216,7 +314,7 @@ export async function getConsumptionCheckpoint(
     consumerType: row.consumerType as DownstreamConsumerType,
     orgId: row.orgId,
     cursor: row.cursor,
-    conversationId: row.conversationId === "_global" ? null : row.conversationId,
+    conversationId: row.conversationId,
     updatedAt: row.updatedAt,
   };
 }

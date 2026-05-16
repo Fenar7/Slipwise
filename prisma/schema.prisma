@@ -6762,11 +6762,13 @@ model RetentionPolicy {
 
 /// Downstream consumer checkpoint for idempotent event consumption.
 /// Tracks the highest cursor each consumer has processed per org/conversation.
+/// Checkpointing is per-conversation only; there is no global cursor because
+/// ConversationEventLog cursors are monotonic per-conversation, not globally.
 model DownstreamConsumptionCheckpoint {
   id             String   @id @default(cuid())
   consumerType   String
   orgId          String
-  conversationId String   @default("_global")
+  conversationId String
   cursor         BigInt
   updatedAt      DateTime @updatedAt
 

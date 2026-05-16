@@ -36,8 +36,9 @@ export type RealtimeDiagnosticEvent =
   | { kind: "degraded_mode_recovered"; sessionId: string; reason: string }
   | { kind: "subscription_limit_denied"; sessionId: string; conversationId: string; currentCount: number; limit: number }
   | { kind: "rate_limit_denied"; sessionId: string; commandType: string; remaining: number; resetAt: number }
-  | { kind: "backpressure_activated"; sessionId: string; reason: string; queuedEvents: number }
-  | { kind: "backpressure_released"; sessionId: string; queuedEvents: number }
+  | { kind: "backpressure_activated"; sessionId: string; reason: string; outstandingEvents: number }
+  | { kind: "backpressure_released"; sessionId: string; outstandingEvents: number }
+  | { kind: "payload_size_denied"; sessionId: string; byteLength: number; limit: number }
   | { kind: "presence_degraded"; sessionId: string; reason: string }
   | { kind: "typing_degraded"; sessionId: string; reason: string }
   | { kind: "replay_degraded"; sessionId: string; conversationId: string; reason: string }
@@ -144,11 +145,15 @@ export class ConsoleRealtimeDiagnostics implements RealtimeDiagnostics {
           break;
         }
         case "backpressure_activated": {
-          console.warn(`${base} session=${safeId(event.sessionId)} reason=${event.reason} queued=${event.queuedEvents}`);
+          console.warn(`${base} session=${safeId(event.sessionId)} reason=${event.reason} outstanding=${event.outstandingEvents}`);
           break;
         }
         case "backpressure_released": {
-          console.info(`${base} session=${safeId(event.sessionId)} queued=${event.queuedEvents}`);
+          console.info(`${base} session=${safeId(event.sessionId)} outstanding=${event.outstandingEvents}`);
+          break;
+        }
+        case "payload_size_denied": {
+          console.warn(`${base} session=${safeId(event.sessionId)} byteLength=${event.byteLength} limit=${event.limit}`);
           break;
         }
         case "presence_degraded": {

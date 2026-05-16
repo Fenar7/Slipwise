@@ -124,8 +124,8 @@ export interface BackpressureState {
   active: boolean;
   /** Reason for backpressure. */
   reason: "queue_full" | "socket_slow" | "memory_pressure" | null;
-  /** Number of events currently queued for this session. */
-  queuedEvents: number;
+  /** Number of events sent but not yet acknowledged by the client. */
+  outstandingEvents: number;
   /** Number of events dropped due to backpressure in this session. */
   droppedEvents: number;
 }
@@ -134,7 +134,7 @@ export function createBackpressureState(): BackpressureState {
   return {
     active: false,
     reason: null,
-    queuedEvents: 0,
+    outstandingEvents: 0,
     droppedEvents: 0,
   };
 }
