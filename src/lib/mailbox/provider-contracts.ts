@@ -311,6 +311,27 @@ export interface IMailboxProviderAdapter {
   >;
 
   /**
+   * Fetch attachment bytes from the provider.
+   *
+   * Used for inbound message attachments that are not cached in local storage.
+   * The provider adapter is responsible for provider-specific authentication
+   * and binary retrieval. Returns raw bytes, filename, and MIME type.
+   */
+  fetchAttachment(params: {
+    orgId: string;
+    tokenRef: string;
+    providerMessageId: string;
+    providerAttachmentId: string;
+  }): Promise<
+    | {
+        bytes: Buffer;
+        filename: string;
+        mimeType: string;
+      }
+    | MailboxProviderError
+  >;
+
+  /**
    * Revoke provider authorization and clean up any push subscriptions.
    * Best-effort: should not throw if the provider is unreachable.
    */

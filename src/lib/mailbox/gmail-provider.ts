@@ -627,6 +627,46 @@ export const gmailProviderAdapter: IMailboxProviderAdapter = {
   },
 
   /**
+   * Fetch attachment bytes from Gmail.
+   *
+   * Uses the Gmail users.messages.attachments.get endpoint.
+   * Returns base64url-decoded bytes.
+   */
+  async fetchAttachment({ orgId, tokenRef, providerMessageId, providerAttachmentId }) {
+    const credential = await readMailboxCredential(orgId, tokenRef);
+    if (!credential) {
+      return { category: "auth_expired", safeMessage: "Credential not found for tokenRef", retryable: false };
+    }
+
+    const accessToken = await ensureValidAccessToken(orgId, tokenRef, credential);
+    if (isProviderError(accessToken)) return accessToken;
+
+    const url = `https://gmail.googleapis.com/gmail/v1/users/me/messages/${providerMessageId}/attachments/${providerAttachmentId}`;
+    const res = await fetch(url, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    if (!res.ok) {
+      if (res.status === 401) {
+        return { category: "auth_expired", safeMessage: "Gmail auth expired during attachment fetch", retryable: false };
+      }
+      if (res.status === 404) {
+        return { category: "not_found", safeMessage: "Attachment not found on Gmail", retryable: false };
+      }
+      return { category: "unknown", safeMessage: `Gmail attachment fetch failed: ${res.status}`, retryable: true };
+    }
+
+    const data = await res.json() as { data?: string; size?: number };
+    if (!data.data) {
+      return { category: "unknown", safeMessage: "Gmail attachment response missing data field", retryable: false };
+    }
+
+    const bytes = Buffer.from(data.data, "base64url");
+    return { bytes, filename: "", mimeType: "application/octet-stream" };
+  },
+
+  /**
    * Revoke Gmail authorization and clean up stored credentials.
    * Best-effort: does not throw if the provider revoke call fails.
    */
@@ -930,9 +970,16 @@ function buildMimeMessage(params: {
   }>;
 }): string {
   const mixedBoundary = `---- SlipwiseMixed ${Math.random().toString(36).slice(2)}`;
+  const relatedBoundary = `---- SlipwiseRelated ${Math.random().toString(36).slice(2)}`;
   const altBoundary = `---- SlipwiseAlt ${Math.random().toString(36).slice(2)}`;
   const { from, to, cc, bcc, subject, htmlBody, textBody, threadContext, attachments } = params;
   const hasAttachments = !!attachments && attachments.length > 0;
+  const inlineAttachments = attachments?.filter((a) => a.isInline) ?? [];
+  const fileAttachments = attachments?.filter((a) => !a.isInline) ?? [];
+  const hasInline = inlineAttachments.length > 0;
+  const hasFile = fileAttachments.length > 0;
+  const hasHtml = !!htmlBody;
+  const hasPlain = !!textBody;
 
   const headers: string[] = [];
   headers.push(`From: ${from}`);
@@ -949,68 +996,144 @@ function buildMimeMessage(params: {
     headers.push(`References: ${threadContext.references.join(" ")}`);
   }
 
-  const hasPlain = !!textBody;
-  const hasHtml = !!htmlBody;
+  function makeContentId(filename: string, index: number): string {
+    const safe = filename.replace(/[^a-zA-Z0-9.-]/g, "_").toLowerCase();
+    return `<slipwise-inline-${safe}-${index}>`;
+  }
+
+  function buildAlternativePart(): string[] {
+    const parts: string[] = [];
+    parts.push(`Content-Type: multipart/alternative; boundary="${altBoundary}"`);
+    parts.push("");
+    parts.push(`--${altBoundary}`);
+    parts.push("Content-Type: text/plain; charset=\"UTF-8\"");
+    parts.push("Content-Transfer-Encoding: quoted-printable");
+    parts.push("");
+    parts.push(textBody!);
+    parts.push("");
+    parts.push(`--${altBoundary}`);
+    parts.push("Content-Type: text/html; charset=\"UTF-8\"");
+    parts.push("Content-Transfer-Encoding: quoted-printable");
+    parts.push("");
+    parts.push(htmlBody);
+    parts.push("");
+    parts.push(`--${altBoundary}--`);
+    return parts;
+  }
+
+  function buildHtmlPart(): string[] {
+    const parts: string[] = [];
+    parts.push("Content-Type: text/html; charset=\"UTF-8\"");
+    parts.push("Content-Transfer-Encoding: quoted-printable");
+    parts.push("");
+    parts.push(htmlBody);
+    return parts;
+  }
+
+  function buildPlainPart(): string[] {
+    const parts: string[] = [];
+    parts.push("Content-Type: text/plain; charset=\"UTF-8\"");
+    parts.push("Content-Transfer-Encoding: quoted-printable");
+    parts.push("");
+    parts.push(textBody!);
+    return parts;
+  }
 
   function buildBodyPart(): string[] {
+    if (hasPlain && hasHtml) return buildAlternativePart();
+    if (hasHtml) return buildHtmlPart();
+    if (hasPlain) return buildPlainPart();
     const parts: string[] = [];
-    if (hasPlain && hasHtml) {
-      parts.push(`Content-Type: multipart/alternative; boundary="${altBoundary}"`);
-      parts.push("");
-      parts.push(`--${altBoundary}`);
-      parts.push("Content-Type: text/plain; charset=\"UTF-8\"");
-      parts.push("Content-Transfer-Encoding: quoted-printable");
-      parts.push("");
-      parts.push(textBody!);
-      parts.push("");
-      parts.push(`--${altBoundary}`);
-      parts.push("Content-Type: text/html; charset=\"UTF-8\"");
-      parts.push("Content-Transfer-Encoding: quoted-printable");
-      parts.push("");
-      parts.push(htmlBody);
-      parts.push("");
-      parts.push(`--${altBoundary}--`);
-    } else if (hasHtml) {
-      parts.push("Content-Type: text/html; charset=\"UTF-8\"");
-      parts.push("Content-Transfer-Encoding: quoted-printable");
-      parts.push("");
-      parts.push(htmlBody);
-    } else if (hasPlain) {
-      parts.push("Content-Type: text/plain; charset=\"UTF-8\"");
-      parts.push("Content-Transfer-Encoding: quoted-printable");
-      parts.push("");
-      parts.push(textBody!);
-    } else {
-      parts.push("Content-Type: text/plain; charset=\"UTF-8\"");
-      parts.push("");
-      parts.push("");
+    parts.push("Content-Type: text/plain; charset=\"UTF-8\"");
+    parts.push("");
+    parts.push("");
+    return parts;
+  }
+
+  function buildInlineAttachmentPart(att: typeof attachments![number], index: number): string[] {
+    const cid = makeContentId(att.filename, index);
+    const parts: string[] = [];
+    parts.push(`Content-Type: ${att.mimeType}; name="${att.filename}"`);
+    parts.push("Content-Transfer-Encoding: base64");
+    parts.push(`Content-ID: ${cid}`);
+    parts.push(`Content-Disposition: inline; filename="${att.filename}"`);
+    parts.push("");
+    parts.push(wrapBase64(att.contentBase64));
+    return parts;
+  }
+
+  function buildFileAttachmentPart(att: typeof attachments![number]): string[] {
+    const parts: string[] = [];
+    parts.push(`Content-Type: ${att.mimeType}; name="${att.filename}"`);
+    parts.push("Content-Transfer-Encoding: base64");
+    parts.push(`Content-Disposition: attachment; filename="${att.filename}"`);
+    parts.push("");
+    parts.push(wrapBase64(att.contentBase64));
+    return parts;
+  }
+
+  function buildRelatedPart(): string[] {
+    const parts: string[] = [];
+    parts.push(`Content-Type: multipart/related; boundary="${relatedBoundary}"`);
+    parts.push("");
+    parts.push(`--${relatedBoundary}`);
+    const bodyParts = buildBodyPart();
+    for (const part of bodyParts) {
+      parts.push(part);
     }
+    inlineAttachments.forEach((att, idx) => {
+      parts.push("");
+      parts.push(`--${relatedBoundary}`);
+      const inlineParts = buildInlineAttachmentPart(att, idx);
+      for (const part of inlineParts) {
+        parts.push(part);
+      }
+    });
+    parts.push("");
+    parts.push(`--${relatedBoundary}--`);
     return parts;
   }
 
   if (hasAttachments) {
-    headers.push(`Content-Type: multipart/mixed; boundary="${mixedBoundary}"`);
-    headers.push("");
-
-    headers.push(`--${mixedBoundary}`);
-    const bodyParts = buildBodyPart();
-    for (const part of bodyParts) {
-      headers.push(part);
-    }
-
-    for (const att of attachments!) {
+    if (hasInline && hasHtml) {
+      // Outer multipart/mixed: related part (HTML + inline) + file attachments
+      headers.push(`Content-Type: multipart/mixed; boundary="${mixedBoundary}"`);
       headers.push("");
       headers.push(`--${mixedBoundary}`);
-      headers.push(`Content-Type: ${att.mimeType}; name="${att.filename}"`);
-      headers.push("Content-Transfer-Encoding: base64");
-      const disposition = att.isInline ? "inline" : "attachment";
-      headers.push(`Content-Disposition: ${disposition}; filename="${att.filename}"`);
+      const relatedParts = buildRelatedPart();
+      for (const part of relatedParts) {
+        headers.push(part);
+      }
+      for (const att of fileAttachments) {
+        headers.push("");
+        headers.push(`--${mixedBoundary}`);
+        const fileParts = buildFileAttachmentPart(att);
+        for (const part of fileParts) {
+          headers.push(part);
+        }
+      }
       headers.push("");
-      headers.push(wrapBase64(att.contentBase64));
+      headers.push(`--${mixedBoundary}--`);
+    } else {
+      // No inline attachments or no HTML body: use simple multipart/mixed
+      headers.push(`Content-Type: multipart/mixed; boundary="${mixedBoundary}"`);
+      headers.push("");
+      headers.push(`--${mixedBoundary}`);
+      const bodyParts = buildBodyPart();
+      for (const part of bodyParts) {
+        headers.push(part);
+      }
+      for (const att of attachments!) {
+        headers.push("");
+        headers.push(`--${mixedBoundary}`);
+        const fileParts = buildFileAttachmentPart(att);
+        for (const part of fileParts) {
+          headers.push(part);
+        }
+      }
+      headers.push("");
+      headers.push(`--${mixedBoundary}--`);
     }
-
-    headers.push("");
-    headers.push(`--${mixedBoundary}--`);
   } else {
     const bodyParts = buildBodyPart();
     for (const part of bodyParts) {

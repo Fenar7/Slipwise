@@ -498,6 +498,7 @@ export async function getDraft(
 
   const draft = await db.mailboxDraft.findFirst({
     where: { id: draftId, orgId },
+    include: { draftAttachments: true },
   });
 
   if (!draft) return null;
@@ -548,6 +549,7 @@ export async function restoreDraft(
       createdBy: userId,
       status: "ACTIVE",
     },
+    include: { draftAttachments: true },
     orderBy: { updatedAt: "desc" },
   });
 
@@ -653,6 +655,7 @@ export async function listActiveDrafts(
       createdBy: userId,
       status: "ACTIVE",
     },
+    include: { draftAttachments: true },
     orderBy: { updatedAt: "desc" },
   });
 

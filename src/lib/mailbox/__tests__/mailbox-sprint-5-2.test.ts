@@ -27,6 +27,9 @@ vi.mock("@/lib/db", () => ({
       findFirst: vi.fn(),
       findMany: vi.fn(),
     },
+    mailboxDraftAttachment: {
+      findMany: vi.fn(),
+    },
     mailboxAuditEvent: {
       create: vi.fn(),
     },
@@ -59,6 +62,9 @@ const mockDb = db as unknown as {
   };
   mailboxConnection: {
     findFirst: ReturnType<typeof vi.fn>;
+    findMany: ReturnType<typeof vi.fn>;
+  };
+  mailboxDraftAttachment: {
     findMany: ReturnType<typeof vi.fn>;
   };
   mailboxAuditEvent: {
@@ -132,6 +138,7 @@ function makeDraftRecord(overrides: Partial<Record<string, unknown>> = {}) {
     htmlBody: "<p>Hello world</p>",
     textBody: null as string | null,
     attachmentRefs: [] as string[],
+    draftAttachments: [] as unknown[],
     createdBy: USER_ID,
     createdAt: new Date(),
     updatedAt: new Date(),
@@ -162,6 +169,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockRequireAuth.mockResolvedValue({ ok: true, ctx: { orgId: ORG_ID, userId: USER_ID, role: "owner" } });
   mockListConnections.mockResolvedValue({ accessible: [makeConnectionRecord()] });
+  mockDb.mailboxDraftAttachment.findMany.mockResolvedValue([]);
 });
 
 // ─── Send service tests ──────────────────────────────────────────────────────

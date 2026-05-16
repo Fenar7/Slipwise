@@ -284,6 +284,7 @@ export type {
   RemoveDraftAttachmentInput,
   ResolveAttachmentForSendResult,
   GetAttachmentDownloadInput,
+  GetMailboxAttachmentDownloadInput,
 } from "./attachment-service";
 export {
   stageDraftAttachment,
@@ -291,6 +292,10 @@ export {
   resolveAttachmentsForSend,
   cleanupDraftAttachments,
   getAttachmentDownloadUrl,
+  getMailboxAttachmentDownloadUrl,
   AttachmentServiceError,
   isAttachmentServiceError,
 } from "./attachment-service";
+export type {
+  MailboxDraftAttachmentReadShape,
+} from "./read-shapes";
