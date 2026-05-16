@@ -35,7 +35,8 @@ export type ClientCommand =
   | ResumeSessionCommand
   | SetPresenceCommand
   | StartTypingCommand
-  | StopTypingCommand;
+  | StopTypingCommand
+  | AckEventsCommand;
 
 export interface SubscribeConversationCommand extends BaseCommand {
   type: "subscribe_conversation";
@@ -91,6 +92,21 @@ export interface StopTypingCommand extends BaseCommand {
   };
 }
 
+/**
+ * Sprint 4.4: explicit event acknowledgment.
+ * Clients ack processed events so the server can track delivery progress
+ * and apply backpressure when needed.
+ */
+export interface AckEventsCommand extends BaseCommand {
+  type: "ack_events";
+  payload: {
+    /** Highest eventId the client has durably processed. */
+    lastEventId?: string;
+    /** Per-conversation highest cursors the client has durably processed. */
+    cursors?: Record<string, string>;
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Server messages / events (Sprint 4.1)
 // ---------------------------------------------------------------------------
@@ -103,7 +119,9 @@ export type ServerMessage =
   | ResumeSessionResultMessage
   | ErrorMessage
   | DisconnectMessage
-  | RealtimeEvent;
+  | RealtimeEvent
+  | ConnectionStateMessage
+  | DegradedModeMessage;
 
 export interface SessionAckMessage extends BaseServerMessage {
   type: "session_ack";
@@ -166,6 +184,42 @@ export interface DisconnectMessage extends BaseServerMessage {
     code: RealtimeErrorCode;
     /** If provided, client may attempt reconnect after this ms. */
     reconnectAfterMs?: number;
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Sprint 4.4: degraded mode and connection state
+// ---------------------------------------------------------------------------
+
+export type TransportState = "connected" | "degraded" | "disconnected";
+
+export type DegradedModeReason =
+  | "connection_lost"
+  | "replay_unavailable"
+  | "fanout_delayed"
+  | "presence_unavailable"
+  | "typing_unavailable"
+  | "subscription_limit_reached"
+  | "rate_limited";
+
+export interface ConnectionStateMessage extends BaseServerMessage {
+  type: "connection_state";
+  payload: {
+    state: TransportState;
+    reason?: DegradedModeReason;
+    message?: string;
+    retryAfterMs?: number;
+    rehydrateRecommended?: boolean;
+  };
+}
+
+export interface DegradedModeMessage extends BaseServerMessage {
+  type: "degraded";
+  payload: {
+    reason: DegradedModeReason;
+    message: string;
+    retryAfterMs?: number;
+    rehydrateRecommended?: boolean;
   };
 }
 
@@ -277,6 +331,19 @@ export function isValidClientCommand(obj: unknown): obj is ClientCommand {
         typeof payload.conversationId === "string" &&
         payload.conversationId.length > 0
       );
+    }
+    case "ack_events": {
+      const payload = o.payload as Record<string, unknown> | undefined;
+      if (typeof payload !== "object" || payload === null) return false;
+      if (payload.lastEventId !== undefined && typeof payload.lastEventId !== "string") return false;
+      if (payload.cursors !== undefined && payload.cursors !== null) {
+        if (typeof payload.cursors !== "object" || Array.isArray(payload.cursors)) return false;
+        for (const [key, val] of Object.entries(payload.cursors)) {
+          if (typeof key !== "string" || key.length === 0) return false;
+          if (typeof val !== "string" || val.length === 0) return false;
+        }
+      }
+      return true;
     }
     default:
       return false;
