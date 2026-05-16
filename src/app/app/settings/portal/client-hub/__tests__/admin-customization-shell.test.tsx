@@ -97,11 +97,11 @@ describe("ClientHubCustomizationPage", () => {
 
     fireEvent.click(screen.getByRole("tab", { name: "Preview" }));
     expect(screen.getByText("Preview Controls")).toBeInTheDocument();
-    expect(screen.getAllByText("Your business hub, beautifully organized").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText("Your Business Hub").length).toBeGreaterThanOrEqual(1);
 
     fireEvent.click(screen.getByRole("button", { name: "Contact" }));
     expect(screen.getByText("Preview Controls")).toBeInTheDocument();
-    expect(screen.getAllByText("Get in touch with the team behind your account").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText("Get in touch with our team - we're here to help").length).toBeGreaterThanOrEqual(1);
   });
 
   it("shows empty-org message when no active org", () => {

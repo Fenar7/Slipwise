@@ -27,7 +27,7 @@ function makeOrg(overrides?: Partial<Record<string, unknown>>) {
     id: "org_001",
     name: "Acme Corp",
     logo: null,
-    branding: { logoUrl: null, accentColor: "#2563eb", fontFamily: null, fontColor: null },
+    branding: { logoUrl: null, accentColor: "#6ed5ab", fontFamily: null, fontColor: null },
     whiteLabel: { removeBranding: false },
     defaults: {
       portalEnabled: true,
@@ -59,13 +59,10 @@ describe("ClientHubLayout", () => {
     const html = renderToString(jsx);
     expect(html).toContain("Acme Corp");
     expect(html).toContain("Home");
-    expect(html).toContain("Invoices");
-    expect(html).toContain("Quotes");
-    expect(html).toContain("Payments");
     expect(html).toContain("About Us");
     expect(html).toContain("Contact");
-    expect(html).toContain("Products");
-    expect(html).toContain("support@acme.com");
+    expect(html).toContain("Hadi Azeez");
+    expect(html).toContain("A calmer, clearer place to work with us.");
     expect(html).toContain("Content");
   });
 

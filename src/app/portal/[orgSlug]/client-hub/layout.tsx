@@ -74,10 +74,24 @@ export default async function ClientHubLayout({
 
   return (
     <div
+      data-client-hub-root
       className="flex min-h-screen flex-col bg-[radial-gradient(circle_at_top,_rgba(var(--hub-accent-rgb),0.16),_transparent_40%),linear-gradient(180deg,#fff7ef_0%,#fbfaf6_44%,#f7f8fb_100%)]"
       style={buildHubThemeStyle(accentColor)}
     >
-      <ClientHubHeader orgSlug={orgSlug} orgName={org.name} logoUrl={logoUrl} navItems={navItems} />
+      <style>{`
+        body:has([data-client-hub-root]) .portal-shell-header,
+        body:has([data-client-hub-root]) .portal-shell-footer {
+          display: none;
+        }
+
+        body:has([data-client-hub-root]) .portal-shell-main {
+          max-width: none;
+          width: 100%;
+          margin: 0;
+          padding: 0;
+        }
+      `}</style>
+      <ClientHubHeader orgName={org.name} logoUrl={logoUrl} navItems={navItems} />
       <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-8 sm:px-6 xl:px-8">{children}</main>
       <ClientHubFooter
         orgName={org.name}

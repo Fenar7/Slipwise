@@ -13,8 +13,8 @@ export const DEFAULT_CLIENT_HUB_CONFIG: ClientHubConfig = {
     removePoweredBy: false,
   },
   homeDashboard: {
-    heroTitle: "Your business hub, beautifully organized",
-    heroSubtitle: "Track invoices, review quotes, and stay close to your team from one polished workspace.",
+    heroTitle: "Your Business Hub",
+    heroSubtitle: "Welcome to your personalized client portal. Access your projects, invoices, and communicate with our team all in one place.",
     showOutstandingBalance: true,
     showPendingInvoices: true,
     showPendingQuotes: true,
@@ -47,11 +47,11 @@ export const DEFAULT_CLIENT_HUB_CONFIG: ClientHubConfig = {
     foundedYear: "",
   },
   contact: {
-    pageTitle: "Contact",
-    heading: "Get in touch with the team behind your account",
-    supportEmail: "support@acme.com",
-    supportPhone: "+91 98765 43210",
-    businessHours: "Mon – Fri, 9:00 AM – 6:00 PM IST",
+    pageTitle: "Contact Us",
+    heading: "Get in touch with our team - we're here to help",
+    supportEmail: "support@company.com",
+    supportPhone: "+971 XX XXX XXXX",
+    businessHours: "Monday - Friday: 9:00 AM - 6:00 PM GST",
     showMapPlaceholder: true,
   },
   products: {
