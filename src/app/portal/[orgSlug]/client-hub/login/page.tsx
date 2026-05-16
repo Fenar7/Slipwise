@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
-import { useParams } from "next/navigation";
 import Link from "next/link";
+import { useParams } from "next/navigation";
+import { useState } from "react";
 
 export default function ClientHubLoginPage() {
   const { orgSlug } = useParams<{ orgSlug: string }>();
@@ -11,8 +11,8 @@ export default function ClientHubLoginPage() {
   const [error, setError] = useState("");
   const [isPending, setIsPending] = useState(false);
 
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  function handleSubmit(event: React.FormEvent) {
+    event.preventDefault();
     setError("");
 
     const trimmed = email.trim();
@@ -22,96 +22,88 @@ export default function ClientHubLoginPage() {
     }
 
     setIsPending(true);
-    // Phase 1: static shell — simulate OTP request delay
     setTimeout(() => {
-      setIsPending(false);
       setSent(true);
+      setIsPending(false);
     }, 1200);
   }
 
   return (
-    <div className="flex min-h-[60vh] items-center justify-center px-4">
-      <div className="w-full max-w-md">
-        <div className="rounded-xl border border-slate-200 bg-white p-8 shadow-sm">
-          <div className="mb-6 text-center">
-            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-slate-100">
-              <svg className="h-6 w-6 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
-              </svg>
-            </div>
-            <h1 className="text-xl font-semibold text-slate-900">Client Hub Login</h1>
-            <p className="mt-1 text-sm text-slate-500">
-              Enter your email to receive a one-time verification code
-            </p>
+    <div className="mx-auto flex min-h-[72vh] w-full max-w-6xl items-center px-4 py-10 sm:px-6">
+      <div className="grid w-full gap-6 lg:grid-cols-[1.1fr_0.9fr]">
+        <section className="overflow-hidden rounded-[32px] border border-[var(--hub-border)] bg-[radial-gradient(circle_at_top,_rgba(var(--hub-accent-rgb),0.2),_transparent_48%),linear-gradient(135deg,rgba(255,248,239,0.96),rgba(255,255,255,0.92)_52%,rgba(var(--hub-accent-rgb),0.06)_100%)] p-8 shadow-[0_24px_80px_rgba(15,23,42,0.08)] sm:p-10">
+          <span className="inline-flex rounded-full bg-white/80 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-[var(--hub-text-strong)] ring-1 ring-[var(--hub-border)]">
+            Passwordless sign in
+          </span>
+          <h1 className="mt-6 max-w-xl text-4xl font-semibold tracking-[-0.05em] text-[var(--hub-text-strong)] sm:text-5xl">
+            Sign in to your client hub without a password.
+          </h1>
+          <p className="mt-4 max-w-lg text-base leading-8 text-[var(--hub-text-soft)]">
+            We’ll send a one-time code to the email connected to your client account so you can review invoices, quotes, and support details securely.
+          </p>
+          <div className="mt-8 grid gap-3 sm:grid-cols-3">
+            {[
+              "One-time verification code",
+              "No password to remember",
+              "Client portal access only",
+            ].map((item) => (
+              <div key={item} className="rounded-2xl border border-[var(--hub-border)] bg-white/78 px-4 py-3 text-sm font-medium text-[var(--hub-text-strong)]">
+                {item}
+              </div>
+            ))}
           </div>
+        </section>
+
+        <section className="rounded-[32px] border border-[var(--hub-border)] bg-white/90 p-8 shadow-[0_24px_80px_rgba(15,23,42,0.08)] sm:p-10">
+          <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[var(--hub-text-soft)]">Client access</p>
+          <h2 className="mt-3 text-3xl font-semibold tracking-[-0.04em] text-[var(--hub-text-strong)]">Enter your email</h2>
+          <p className="mt-2 text-sm leading-7 text-[var(--hub-text-soft)]">
+            We’ll send a six-digit code if this email belongs to a valid client contact.
+          </p>
 
           {sent ? (
-            <div className="rounded-lg border border-green-200 bg-green-50 p-4 text-center">
-              <svg className="mx-auto mb-2 h-8 w-8 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              <p className="text-sm font-medium text-green-800">
-                If an account exists with that email, we&apos;ve sent a verification code.
+            <div className="mt-8 rounded-[28px] border border-emerald-100 bg-emerald-50/80 p-6">
+              <p className="text-lg font-semibold text-emerald-900">Verification code sent</p>
+              <p className="mt-2 text-sm leading-7 text-emerald-800">
+                If an account exists for <span className="font-semibold">{email}</span>, the code should arrive shortly.
               </p>
-              <p className="mt-2 text-xs text-green-600">Please check your inbox. The code will expire in 15 minutes.</p>
               <Link
                 href={`/portal/${orgSlug}/client-hub/verify`}
-                className="mt-4 inline-flex rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-green-700"
+                className="mt-5 inline-flex rounded-2xl bg-[var(--hub-accent)] px-5 py-3 text-sm font-semibold text-slate-950 shadow-[0_18px_40px_rgba(var(--hub-accent-rgb),0.28)]"
               >
-                Enter Code
+                Continue to verification
               </Link>
             </div>
           ) : (
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="flex flex-col gap-1.5">
-                <label htmlFor="hub-email" className="text-xs font-semibold text-slate-700">
-                  Email address
+            <form onSubmit={handleSubmit} className="mt-8 space-y-5">
+              <div className="space-y-2">
+                <label htmlFor="client-hub-email" className="text-sm font-semibold text-[var(--hub-text-strong)]">
+                  Work email
                 </label>
                 <input
-                  id="hub-email"
+                  id="client-hub-email"
                   type="email"
-                  required
                   autoComplete="email"
-                  autoFocus
-                  placeholder="you@company.com"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--hub-accent)] focus:border-[var(--hub-accent)] disabled:bg-slate-50 disabled:cursor-not-allowed"
-                  disabled={isPending}
-                  aria-describedby={error ? "login-error" : undefined}
+                  onChange={(event) => setEmail(event.target.value)}
+                  placeholder="you@company.com"
+                  className="w-full rounded-2xl border border-[var(--hub-border)] bg-[#fbfaf6] px-4 py-3 text-sm text-[var(--hub-text-strong)] placeholder:text-[var(--hub-text-soft)] focus:border-[var(--hub-accent)] focus:outline-none focus:ring-2 focus:ring-[var(--hub-accent-wash)]"
                 />
               </div>
-
-              {error && (
-                <p id="login-error" className="text-xs text-red-600" role="alert">
-                  {error}
-                </p>
-              )}
-
+              {error && <p className="text-sm font-medium text-rose-600">{error}</p>}
               <button
                 type="submit"
                 disabled={isPending}
-                className="hub-accent-bg w-full rounded-xl px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--hub-accent)] focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full rounded-2xl bg-[var(--hub-accent)] px-5 py-3.5 text-sm font-semibold text-slate-950 shadow-[0_18px_40px_rgba(var(--hub-accent-rgb),0.28)] transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-70"
               >
-                {isPending ? (
-                  <span className="inline-flex items-center gap-2">
-                    <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                    </svg>
-                    Sending…
-                  </span>
-                ) : (
-                  "Send Verification Code"
-                )}
+                {isPending ? "Sending code…" : "Send verification code"}
               </button>
-
-              <p className="text-center text-xs text-slate-400">
-                We&apos;ll never share your email. No password required.
+              <p className="text-sm leading-7 text-[var(--hub-text-soft)]">
+                Static Phase 1 shell: this button simulates delivery only. Real authentication comes in a later phase.
               </p>
             </form>
           )}
-        </div>
+        </section>
       </div>
     </div>
   );

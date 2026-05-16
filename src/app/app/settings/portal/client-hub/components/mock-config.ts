@@ -4,154 +4,60 @@
  * labeled as mock data. No persistence or backend coupling.
  */
 
-export interface BrandingConfig {
-  accentColor: string;
-  logoUrl: string | null;
-  faviconUrl: string | null;
-  fontFamily: string;
-  removePoweredBy: boolean;
-}
-
-export interface HomeDashboardConfig {
-  heroTitle: string;
-  heroSubtitle: string;
-  showOutstandingBalance: boolean;
-  showPendingInvoices: boolean;
-  showPendingQuotes: boolean;
-  showQuickActions: boolean;
-  welcomeMessage: string;
-}
-
-export interface InvoicesConfig {
-  pageTitle: string;
-  pageDescription: string;
-  showDownloadAction: boolean;
-  showPayAction: boolean;
-  columns: string[];
-}
-
-export interface QuotesConfig {
-  pageTitle: string;
-  pageDescription: string;
-  showAcceptReject: boolean;
-  showDownloadAction: boolean;
-}
-
-export interface PaymentsConfig {
-  pageTitle: string;
-  pageDescription: string;
-  showPaymentMethods: boolean;
-  acceptedMethods: string[];
-}
-
-export interface AboutConfig {
-  pageTitle: string;
-  heading: string;
-  body: string;
-  showTeam: boolean;
-  showFoundedYear: boolean;
-  foundedYear: string;
-}
-
-export interface ContactConfig {
-  pageTitle: string;
-  heading: string;
-  supportEmail: string;
-  supportPhone: string;
-  businessHours: string;
-  showMapPlaceholder: boolean;
-  additionalContacts: { label: string; value: string }[];
-}
-
-export interface ProductsConfig {
-  pageTitle: string;
-  heading: string;
-  description: string;
-  showPricing: boolean;
-  showUnit: boolean;
-}
-
-export interface NavigationConfig {
-  showDashboard: boolean;
-  showInvoices: boolean;
-  showQuotes: boolean;
-  showPayments: boolean;
-  showAbout: boolean;
-  showContact: boolean;
-  showProducts: boolean;
-  footerText: string;
-  footerLinks: { label: string; href: string }[];
-}
-
-export interface ClientHubConfig {
-  branding: BrandingConfig;
-  homeDashboard: HomeDashboardConfig;
-  invoices: InvoicesConfig;
-  quotes: QuotesConfig;
-  payments: PaymentsConfig;
-  about: AboutConfig;
-  contact: ContactConfig;
-  products: ProductsConfig;
-  navigation: NavigationConfig;
-}
+import type { ClientHubConfig } from "@/app/portal/[orgSlug]/client-hub/components/customization-contract";
 
 export const DEFAULT_CLIENT_HUB_CONFIG: ClientHubConfig = {
   branding: {
-    accentColor: "#2563eb",
+    accentColor: "#6ed5ab",
     logoUrl: null,
-    faviconUrl: null,
-    fontFamily: "Inter",
     removePoweredBy: false,
   },
   homeDashboard: {
-    heroTitle: "Welcome to your Client Hub",
-    heroSubtitle: "Review invoices, respond to quotes, and stay on top of your account",
+    heroTitle: "Your business hub, beautifully organized",
+    heroSubtitle: "Track invoices, review quotes, and stay close to your team from one polished workspace.",
     showOutstandingBalance: true,
     showPendingInvoices: true,
     showPendingQuotes: true,
     showQuickActions: true,
-    welcomeMessage: "",
+    welcomeMessage: "Client Portal",
   },
   invoices: {
     pageTitle: "Invoices",
-    pageDescription: "View and manage your invoices",
+    pageDescription: "Review balances, due dates, and payment options in one place.",
     showDownloadAction: true,
     showPayAction: true,
-    columns: ["invoiceNumber", "date", "amount", "status"],
   },
   quotes: {
     pageTitle: "Quotes",
-    pageDescription: "Review and respond to your quotes",
+    pageDescription: "Review proposals, timelines, and next steps before you respond.",
     showAcceptReject: true,
     showDownloadAction: true,
   },
   payments: {
     pageTitle: "Payments",
-    pageDescription: "View your payment history and make new payments",
+    pageDescription: "See completed payments and choose how you want to settle open balances.",
     showPaymentMethods: true,
-    acceptedMethods: ["Bank Transfer", "UPI", "Card"],
+    acceptedMethods: ["Payment Link", "Bank Transfer", "UPI"],
   },
   about: {
     pageTitle: "About",
-    heading: "About Us",
-    body: "We are a trusted partner dedicated to delivering excellence in every engagement. Our team brings deep expertise and a commitment to your success.",
-    showTeam: false,
+    heading: "Built to make client collaboration feel effortless",
+    body: "We combine clear communication, dependable delivery, and thoughtful design so every invoice, quote, and client interaction feels simple and trustworthy.",
     showFoundedYear: false,
     foundedYear: "",
   },
   contact: {
     pageTitle: "Contact",
-    heading: "Get in Touch",
-    supportEmail: "support@company.com",
+    heading: "Get in touch with the team behind your account",
+    supportEmail: "support@acme.com",
     supportPhone: "+91 98765 43210",
     businessHours: "Mon – Fri, 9:00 AM – 6:00 PM IST",
     showMapPlaceholder: true,
-    additionalContacts: [],
   },
   products: {
     pageTitle: "Products & Services",
-    heading: "Our Offerings",
-    description: "Explore the products and services we offer to help your business grow.",
+    heading: "Products and services tailored to your growth",
+    description: "Explore the retained services, implementation packages, and strategic support we offer.",
     showPricing: true,
     showUnit: true,
   },
@@ -163,11 +69,7 @@ export const DEFAULT_CLIENT_HUB_CONFIG: ClientHubConfig = {
     showAbout: true,
     showContact: true,
     showProducts: true,
-    footerText: "All rights reserved.",
-    footerLinks: [
-      { label: "Privacy", href: "#" },
-      { label: "Terms", href: "#" },
-    ],
+    footerText: "A calmer, clearer place to work with us.",
   },
 };
 

@@ -36,12 +36,12 @@ async function renderAsyncDetailPage(
 describe("Client Hub Dashboard", () => {
   it("renders with summary cards and recent invoices", async () => {
     const html = await renderAsyncPage(DashboardPage);
-    expect(html).toContain("Welcome to your Client Hub");
-    expect(html).toContain("Outstanding Balance");
-    expect(html).toContain("Pending Invoices");
-    expect(html).toContain("Pending Quotes");
-    expect(html).toContain("Quick Actions");
-    expect(html).toContain("Recent Invoices");
+    expect(html).toContain("Your business hub, beautifully organized");
+    expect(html).toContain("Client Portal");
+    expect(html).toContain("Outstanding");
+    expect(html).toContain("Pending invoices");
+    expect(html).toContain("Recent invoices");
+    expect(html).toContain("Quotes awaiting response");
   });
 });
 
@@ -57,14 +57,15 @@ describe("Client Hub Invoices", () => {
   it("renders invoice detail for known invoice", async () => {
     const html = await renderAsyncDetailPage(InvoiceDetailPage, "inv-001");
     expect(html).toContain("Invoice #INV-2026-001");
-    expect(html).toContain("Payment Options");
-    expect(html).toContain("Card (Razorpay)");
+    expect(html).toContain("How would you like to pay?");
+    expect(html).toContain("Payment Link");
+    expect(html).toContain("Bank Transfer");
   });
 
   it("renders paid notice for paid invoice", async () => {
     const html = await renderAsyncDetailPage(InvoiceDetailPage, "inv-002");
     expect(html).toContain("paid in full");
-    expect(html).not.toContain("Payment Options");
+    expect(html).not.toContain("How would you like to pay?");
   });
 });
 
@@ -80,15 +81,15 @@ describe("Client Hub Quotes", () => {
   it("renders quote detail with response actions for sent quote", async () => {
     const html = await renderAsyncDetailPage(QuoteDetailPage, "qt-001");
     expect(html).toContain("Website Redesign Proposal");
-    expect(html).toContain("Your Response");
-    expect(html).toContain("Accept Quote");
+    expect(html).toContain("Your response");
+    expect(html).toContain("Accept quote");
     expect(html).toContain("Decline");
   });
 
   it("renders accepted notice for accepted quote", async () => {
     const html = await renderAsyncDetailPage(QuoteDetailPage, "qt-002");
     expect(html).toContain("accepted this quote");
-    expect(html).not.toContain("Your Response");
+    expect(html).not.toContain("Your response");
   });
 });
 
@@ -96,38 +97,37 @@ describe("Client Hub Payments", () => {
   it("renders payment history and outstanding summary", async () => {
     const html = await renderAsyncPage(PaymentsPage);
     expect(html).toContain("Payments");
-    expect(html).toContain("Total Paid");
+    expect(html).toContain("Total paid");
     expect(html).toContain("Outstanding");
-    expect(html).toContain("Payment History");
-    expect(html).toContain("Outstanding Invoices");
+    expect(html).toContain("Payment history");
+    expect(html).toContain("Outstanding invoices");
   });
 });
 
 describe("Client Hub About", () => {
   it("renders company story and values", async () => {
     const html = await renderAsyncPage(AboutPage);
-    expect(html).toContain("About Us");
-    expect(html).toContain("Our Story");
-    expect(html).toContain("Transparency");
-    expect(html).toContain("Quality");
-    expect(html).toContain("Partnership");
+    expect(html).toContain("Built to make client collaboration feel effortless");
+    expect(html).toContain("Clarity");
+    expect(html).toContain("Reliability");
+    expect(html).toContain("Relationship first");
   });
 });
 
 describe("Client Hub Contact", () => {
   it("renders contact methods and support info", async () => {
     const html = await renderAsyncPage(ContactPage);
-    expect(html).toContain("Contact Us");
+    expect(html).toContain("Contact");
     expect(html).toContain("Email");
     expect(html).toContain("Phone");
-    expect(html).toContain("Business Hours");
+    expect(html).toContain("Business hours");
   });
 });
 
 describe("Client Hub Products", () => {
   it("renders product catalog with mock data", async () => {
     const html = await renderAsyncPage(ProductsPage);
-    expect(html).toContain("Products &amp; Services");
+    expect(html).toContain("Products and services tailored to your growth");
     expect(html).toContain("Consulting Retainer");
     expect(html).toContain("Design System Build");
     expect(html).toContain("SEO &amp; Content Strategy");

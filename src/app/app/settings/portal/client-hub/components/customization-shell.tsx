@@ -58,35 +58,6 @@ const tabs: { id: TabId; label: string; icon: React.ElementType; previewPage?: s
   { id: "preview", label: "Preview", icon: Eye },
 ];
 
-function TabButton({
-  tab,
-  isActive,
-  onClick,
-}: {
-  tab: (typeof tabs)[number];
-  isActive: boolean;
-  onClick: () => void;
-}) {
-  const Icon = tab.icon;
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-left text-sm transition-colors",
-        isActive
-          ? "bg-[var(--surface-subtle)] font-medium text-[var(--text-primary)]"
-          : "text-[var(--text-secondary)] hover:bg-[var(--surface-subtle)] hover:text-[var(--text-primary)]"
-      )}
-      aria-selected={isActive}
-      role="tab"
-    >
-      <Icon className={cn("h-4 w-4 shrink-0", isActive ? "text-[var(--brand-primary)]" : "text-[var(--text-muted)]")} />
-      <span className="truncate">{tab.label}</span>
-    </button>
-  );
-}
-
 function StatusBadge({ children, tone = "neutral" }: { children: React.ReactNode; tone?: "neutral" | "amber" | "success" }) {
   const toneClasses = {
     neutral: "bg-slate-100 text-slate-600",
@@ -102,6 +73,7 @@ function StatusBadge({ children, tone = "neutral" }: { children: React.ReactNode
 
 export function CustomizationShell() {
   const [activeTab, setActiveTab] = useState<TabId>("branding");
+  const [activePreviewPage, setActivePreviewPage] = useState("dashboard");
   const [config, setConfig] = useState<ClientHubConfig>(DEFAULT_CLIENT_HUB_CONFIG);
   const [hasChanges, setHasChanges] = useState(false);
 
@@ -116,9 +88,15 @@ export function CustomizationShell() {
       setHasChanges(false);
     }
   }, []);
-
-  const activePreviewPage = tabs.find((t) => t.id === activeTab)?.previewPage ?? "dashboard";
   const isPreviewTab = activeTab === "preview";
+
+  const handleTabChange = useCallback((nextTab: TabId) => {
+    setActiveTab(nextTab);
+    const tabPreviewPage = tabs.find((tab) => tab.id === nextTab)?.previewPage;
+    if (tabPreviewPage) {
+      setActivePreviewPage(tabPreviewPage);
+    }
+  }, []);
 
   return (
     <div className="flex h-[calc(100vh-var(--topbar-height)-120px)] min-h-[600px] flex-col gap-6 lg:flex-row">
@@ -162,7 +140,7 @@ export function CustomizationShell() {
               type="button"
               role="tab"
               aria-selected={activeTab === tab.id}
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => handleTabChange(tab.id)}
               className={cn(
                 "whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
                 activeTab === tab.id
@@ -196,7 +174,7 @@ export function CustomizationShell() {
                       <button
                         key={t.id}
                         type="button"
-                        onClick={() => setActiveTab(t.id as TabId)}
+                        onClick={() => setActivePreviewPage(t.previewPage!)}
                         className={cn(
                           "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
                           activePreviewPage === t.previewPage

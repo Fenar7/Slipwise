@@ -58,11 +58,11 @@ describe("ClientHubLayout", () => {
     const jsx = await ClientHubLayout({ children: <div>Content</div>, params: Promise.resolve({ orgSlug: ORG_SLUG }) });
     const html = renderToString(jsx);
     expect(html).toContain("Acme Corp");
-    expect(html).toContain("Dashboard");
+    expect(html).toContain("Home");
     expect(html).toContain("Invoices");
     expect(html).toContain("Quotes");
     expect(html).toContain("Payments");
-    expect(html).toContain("About");
+    expect(html).toContain("About Us");
     expect(html).toContain("Contact");
     expect(html).toContain("Products");
     expect(html).toContain("support@acme.com");

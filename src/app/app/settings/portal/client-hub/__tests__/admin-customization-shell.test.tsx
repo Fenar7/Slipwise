@@ -92,6 +92,18 @@ describe("ClientHubCustomizationPage", () => {
     expect(screen.getAllByText("Preview only").length).toBeGreaterThanOrEqual(1);
   });
 
+  it("switches preview pages without leaving preview mode", () => {
+    render(<ClientHubCustomizationPage />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Preview" }));
+    expect(screen.getByText("Preview Controls")).toBeInTheDocument();
+    expect(screen.getAllByText("Your business hub, beautifully organized").length).toBeGreaterThanOrEqual(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Contact" }));
+    expect(screen.getByText("Preview Controls")).toBeInTheDocument();
+    expect(screen.getAllByText("Get in touch with the team behind your account").length).toBeGreaterThanOrEqual(1);
+  });
+
   it("shows empty-org message when no active org", () => {
     mockUseActiveOrg.mockReturnValueOnce({ activeOrg: null });
     render(<ClientHubCustomizationPage />);

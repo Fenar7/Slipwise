@@ -241,14 +241,6 @@ export function BrandingSection({ config, onChange }: SectionProps) {
             placeholder="https://cdn.example.com/logo.png"
           />
         </Field>
-        <Field label="Favicon URL" htmlFor="favicon-url" hint="Optional favicon for browser tabs.">
-          <TextInput
-            id="favicon-url"
-            value={config.branding.faviconUrl ?? ""}
-            onChange={(v) => setBranding({ faviconUrl: v || null })}
-            placeholder="https://cdn.example.com/favicon.ico"
-          />
-        </Field>
       </SectionCard>
 
       <SectionCard title="White Label" description="Control Slipwise branding visibility in the client hub.">
@@ -274,6 +266,14 @@ export function HomeDashboardSection({ config, onChange }: SectionProps) {
         </Field>
         <Field label="Hero Subtitle" htmlFor="hero-subtitle">
           <TextInput id="hero-subtitle" value={config.homeDashboard.heroSubtitle} onChange={(v) => setHome({ heroSubtitle: v })} />
+        </Field>
+        <Field label="Eyebrow Label" htmlFor="hero-welcome">
+          <TextInput
+            id="hero-welcome"
+            value={config.homeDashboard.welcomeMessage}
+            onChange={(v) => setHome({ welcomeMessage: v })}
+            placeholder="Client Portal"
+          />
         </Field>
       </SectionCard>
 
@@ -383,7 +383,6 @@ export function AboutSection({ config, onChange }: SectionProps) {
             <TextInput id="about-year" value={config.about.foundedYear} onChange={(v) => setAbout({ foundedYear: v })} placeholder="2018" />
           </Field>
         )}
-        <Toggle checked={config.about.showTeam} onChange={(v) => setAbout({ showTeam: v })} label="Show team section (Phase 2)" disabled />
       </SectionCard>
     </div>
   );
