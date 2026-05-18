@@ -12,6 +12,8 @@ import {
   assertConversationAction,
   assertGovernanceAction,
 } from "./service-helpers";
+import { getRealtimePublisherOrNoop } from "./realtime/publisher";
+import { appendConversationEvent } from "./realtime/event-log-service";
 import type {
   AddParticipantInput,
   RemoveParticipantInput,
@@ -92,6 +94,8 @@ export async function getParticipantByUserId(
 export async function addParticipant(
   input: AddParticipantInput,
 ): Promise<ConversationParticipantRecord> {
+  let eventMeta: { eventId: string; cursor: bigint } | undefined;
+
   const result = await db.$transaction(async (tx) => {
     await assertConversationAction(
       tx,
@@ -152,8 +156,25 @@ export async function addParticipant(
       conversationId: input.conversationId,
     });
 
+    eventMeta = await appendConversationEvent(tx, {
+      orgId: input.orgId,
+      conversationId: input.conversationId,
+      eventType: "conversation.membership.updated",
+      actorId: input.addedBy,
+      payload: { change: "added", userId: input.userId, role: input.role, conversationId: input.conversationId },
+    });
+
     return toParticipantRecord(participant);
   });
+
+  getRealtimePublisherOrNoop().publishConversationEvent(
+    input.orgId,
+    input.conversationId,
+    "conversation.membership.updated",
+    input.addedBy,
+    { change: "added", userId: input.userId, role: input.role, conversationId: input.conversationId },
+    { eventId: eventMeta!.eventId, cursor: eventMeta!.cursor.toString() },
+  );
 
   return result;
 }
@@ -164,6 +185,8 @@ export async function addParticipant(
 export async function removeParticipant(
   input: RemoveParticipantInput,
 ): Promise<ConversationParticipantRecord> {
+  let eventMeta: { eventId: string; cursor: bigint } | undefined;
+
   const result = await db.$transaction(async (tx) => {
     if (input.actorOrgRole || input.isPlatformAdmin) {
       await assertGovernanceAction(
@@ -226,8 +249,32 @@ export async function removeParticipant(
       conversationId: input.conversationId,
     });
 
+    eventMeta = await appendConversationEvent(tx, {
+      orgId: input.orgId,
+      conversationId: input.conversationId,
+      eventType: "conversation.membership.updated",
+      actorId: input.removedBy,
+      payload: { change: "removed", userId: input.userId, conversationId: input.conversationId },
+    });
+
     return toParticipantRecord(updated);
   });
+
+  getRealtimePublisherOrNoop().publishConversationEvent(
+    input.orgId,
+    input.conversationId,
+    "conversation.membership.updated",
+    input.removedBy,
+    { change: "removed", userId: input.userId, conversationId: input.conversationId },
+    { eventId: eventMeta!.eventId, cursor: eventMeta!.cursor.toString() },
+  );
+
+  // Revoke live delivery for the removed participant immediately.
+  getRealtimePublisherOrNoop().pruneConversationSubscriptions(
+    input.orgId,
+    input.conversationId,
+    input.userId,
+  );
 
   return result;
 }

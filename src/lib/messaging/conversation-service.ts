@@ -13,6 +13,8 @@ import {
   assertConversationAction,
   assertGovernanceAction,
 } from "./service-helpers";
+import { getRealtimePublisherOrNoop } from "./realtime/publisher";
+import { appendConversationEvent } from "./realtime/event-log-service";
 import type {
   CreateConversationInput,
   CreateConversationResult,
@@ -223,6 +225,8 @@ export async function createConversation(
 export async function archiveConversation(
   input: ArchiveConversationInput,
 ): Promise<ConversationRecord> {
+  let eventMeta: { eventId: string; cursor: bigint } | undefined;
+
   const result = await db.$transaction(async (tx) => {
     const { conversation: existing } = await assertGovernanceOrConversationAction(
       tx,
@@ -253,8 +257,25 @@ export async function archiveConversation(
       conversationId: updated.id,
     });
 
+    eventMeta = await appendConversationEvent(tx, {
+      orgId: input.orgId,
+      conversationId: input.conversationId,
+      eventType: "conversation.governance.updated",
+      actorId: input.archivedBy,
+      payload: { change: "archived", conversationId: input.conversationId },
+    });
+
     return toConversationRecord(updated);
   });
+
+  getRealtimePublisherOrNoop().publishConversationEvent(
+    input.orgId,
+    input.conversationId,
+    "conversation.governance.updated",
+    input.archivedBy,
+    { change: "archived", conversationId: input.conversationId },
+    { eventId: eventMeta!.eventId, cursor: eventMeta!.cursor.toString() },
+  );
 
   return result;
 }
@@ -265,6 +286,8 @@ export async function archiveConversation(
 export async function renameConversation(
   input: RenameConversationInput,
 ): Promise<ConversationRecord> {
+  let eventMeta: { eventId: string; cursor: bigint } | undefined;
+
   const result = await db.$transaction(async (tx) => {
     await assertConversationAction(
       tx,
@@ -288,8 +311,25 @@ export async function renameConversation(
       conversationId: updated.id,
     });
 
+    eventMeta = await appendConversationEvent(tx, {
+      orgId: input.orgId,
+      conversationId: input.conversationId,
+      eventType: "conversation.governance.updated",
+      actorId: input.actorId,
+      payload: { change: "renamed", name: updated.name, conversationId: input.conversationId },
+    });
+
     return toConversationRecord(updated);
   });
+
+  getRealtimePublisherOrNoop().publishConversationEvent(
+    input.orgId,
+    input.conversationId,
+    "conversation.governance.updated",
+    input.actorId,
+    { change: "renamed", name: result.name, conversationId: input.conversationId },
+    { eventId: eventMeta!.eventId, cursor: eventMeta!.cursor.toString() },
+  );
 
   return result;
 }
@@ -300,6 +340,8 @@ export async function renameConversation(
 export async function changeConversationVisibility(
   input: ChangeConversationVisibilityInput,
 ): Promise<ConversationRecord> {
+  let eventMeta: { eventId: string; cursor: bigint } | undefined;
+
   const result = await db.$transaction(async (tx) => {
     await assertConversationAction(
       tx,
@@ -323,8 +365,25 @@ export async function changeConversationVisibility(
       conversationId: updated.id,
     });
 
+    eventMeta = await appendConversationEvent(tx, {
+      orgId: input.orgId,
+      conversationId: input.conversationId,
+      eventType: "conversation.governance.updated",
+      actorId: input.actorId,
+      payload: { change: "visibility_changed", visibility: updated.visibility, conversationId: input.conversationId },
+    });
+
     return toConversationRecord(updated);
   });
+
+  getRealtimePublisherOrNoop().publishConversationEvent(
+    input.orgId,
+    input.conversationId,
+    "conversation.governance.updated",
+    input.actorId,
+    { change: "visibility_changed", visibility: result.visibility, conversationId: input.conversationId },
+    { eventId: eventMeta!.eventId, cursor: eventMeta!.cursor.toString() },
+  );
 
   return result;
 }
@@ -335,6 +394,8 @@ export async function changeConversationVisibility(
 export async function unarchiveConversation(
   input: UnarchiveConversationInput,
 ): Promise<ConversationRecord> {
+  let eventMeta: { eventId: string; cursor: bigint } | undefined;
+
   const result = await db.$transaction(async (tx) => {
     const { conversation: existing } = await assertGovernanceOrConversationAction(
       tx,
@@ -365,8 +426,25 @@ export async function unarchiveConversation(
       conversationId: updated.id,
     });
 
+    eventMeta = await appendConversationEvent(tx, {
+      orgId: input.orgId,
+      conversationId: input.conversationId,
+      eventType: "conversation.governance.updated",
+      actorId: input.unarchivedBy,
+      payload: { change: "unarchived", conversationId: input.conversationId },
+    });
+
     return toConversationRecord(updated);
   });
+
+  getRealtimePublisherOrNoop().publishConversationEvent(
+    input.orgId,
+    input.conversationId,
+    "conversation.governance.updated",
+    input.unarchivedBy,
+    { change: "unarchived", conversationId: input.conversationId },
+    { eventId: eventMeta!.eventId, cursor: eventMeta!.cursor.toString() },
+  );
 
   return result;
 }
@@ -378,6 +456,8 @@ export async function unarchiveConversation(
 export async function lockConversation(
   input: LockConversationInput,
 ): Promise<ConversationRecord> {
+  let eventMeta: { eventId: string; cursor: bigint } | undefined;
+
   const result = await db.$transaction(async (tx) => {
     const { conversation: existing } = await assertGovernanceOrConversationAction(
       tx,
@@ -412,8 +492,25 @@ export async function lockConversation(
       },
     });
 
+    eventMeta = await appendConversationEvent(tx, {
+      orgId: input.orgId,
+      conversationId: input.conversationId,
+      eventType: "conversation.governance.updated",
+      actorId: input.lockedBy,
+      payload: { change: "locked", reason: input.reason ?? null, conversationId: input.conversationId },
+    });
+
     return toConversationRecord(updated);
   });
+
+  getRealtimePublisherOrNoop().publishConversationEvent(
+    input.orgId,
+    input.conversationId,
+    "conversation.governance.updated",
+    input.lockedBy,
+    { change: "locked", reason: input.reason ?? null, conversationId: input.conversationId },
+    { eventId: eventMeta!.eventId, cursor: eventMeta!.cursor.toString() },
+  );
 
   return result;
 }

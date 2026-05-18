@@ -1,7 +1,6 @@
 import "server-only";
 
 import { db } from "@/lib/db";
-import type { Prisma } from "@/generated/prisma/client";
 import type { MessageMentionRecord, ConversationReadStateRecord } from "./domain-types";
 import {
   mentionOrgSafeWhere,
@@ -15,6 +14,8 @@ import type {
   MarkConversationReadInput,
 } from "./service-contracts";
 import { assertActiveParticipant } from "./service-helpers";
+import { getRealtimePublisherOrNoop } from "./realtime/publisher";
+import { appendConversationEvent } from "./realtime/event-log-service";
 
 // ─── Mentions ───────────────────────────────────────────────────────────────────
 
@@ -76,6 +77,8 @@ export async function listUnacknowledgedMentions(
 export async function updateReadState(
   input: UpdateReadStateInput,
 ): Promise<ConversationReadStateRecord> {
+  let eventMeta: { eventId: string; cursor: bigint } | undefined;
+
   const result = await db.$transaction(async (tx) => {
     await assertActiveParticipant(
       tx,
@@ -127,8 +130,33 @@ export async function updateReadState(
       conversationId: input.conversationId,
     });
 
+    eventMeta = await appendConversationEvent(tx, {
+      orgId: input.orgId,
+      conversationId: input.conversationId,
+      eventType: "conversation.read_state.updated",
+      actorId: input.userId,
+      payload: {
+        userId: input.userId,
+        lastReadMessageId: input.lastReadMessageId,
+        lastReadAt: input.lastReadAt.toISOString(),
+      },
+    });
+
     return toReadStateRecord(readState);
   });
+
+  getRealtimePublisherOrNoop().publishConversationEvent(
+    input.orgId,
+    input.conversationId,
+    "conversation.read_state.updated",
+    input.userId,
+    {
+      userId: input.userId,
+      lastReadMessageId: input.lastReadMessageId,
+      lastReadAt: input.lastReadAt.toISOString(),
+    },
+    { eventId: eventMeta!.eventId, cursor: eventMeta!.cursor.toString() },
+  );
 
   return result;
 }
@@ -140,6 +168,8 @@ export async function updateReadState(
 export async function markConversationRead(
   input: MarkConversationReadInput,
 ): Promise<ConversationReadStateRecord> {
+  let eventMeta: { eventId: string; cursor: bigint } | undefined;
+
   const result = await db.$transaction(async (tx) => {
     await assertActiveParticipant(
       tx,
@@ -188,8 +218,33 @@ export async function markConversationRead(
       conversationId: input.conversationId,
     });
 
+    eventMeta = await appendConversationEvent(tx, {
+      orgId: input.orgId,
+      conversationId: input.conversationId,
+      eventType: "conversation.read_state.updated",
+      actorId: input.userId,
+      payload: {
+        userId: input.userId,
+        lastReadMessageId: latestMessage?.id ?? null,
+        lastReadAt: input.readAt.toISOString(),
+      },
+    });
+
     return toReadStateRecord(readState);
   });
+
+  getRealtimePublisherOrNoop().publishConversationEvent(
+    input.orgId,
+    input.conversationId,
+    "conversation.read_state.updated",
+    input.userId,
+    {
+      userId: input.userId,
+      lastReadMessageId: result.lastReadMessageId,
+      lastReadAt: input.readAt.toISOString(),
+    },
+    { eventId: eventMeta!.eventId, cursor: eventMeta!.cursor.toString() },
+  );
 
   return result;
 }

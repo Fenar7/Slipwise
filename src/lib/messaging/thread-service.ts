@@ -17,6 +17,8 @@ import type {
 import {
   assertConversationAction,
 } from "./service-helpers";
+import { getRealtimePublisherOrNoop } from "./realtime/publisher";
+import { appendConversationEvent } from "./realtime/event-log-service";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -135,6 +137,8 @@ export async function listThreadReplies(
 export async function createThread(
   input: CreateThreadInput,
 ): Promise<ConversationThreadRecord> {
+  let eventMeta: { eventId: string; cursor: bigint } | undefined;
+
   const result = await db.$transaction(async (tx) => {
     await assertConversationAction(
       tx,
@@ -174,8 +178,25 @@ export async function createThread(
       threadId: thread.id,
     });
 
+    eventMeta = await appendConversationEvent(tx, {
+      orgId: input.orgId,
+      conversationId: input.conversationId,
+      eventType: "conversation.thread.created",
+      actorId: input.createdBy,
+      payload: { threadId: thread.id, anchorMessageId: input.anchorMessageId },
+    });
+
     return toThreadRecord(thread);
   });
+
+  getRealtimePublisherOrNoop().publishConversationEvent(
+    input.orgId,
+    input.conversationId,
+    "conversation.thread.created",
+    input.createdBy,
+    { threadId: result.id, anchorMessageId: input.anchorMessageId },
+    { eventId: eventMeta!.eventId, cursor: eventMeta!.cursor.toString() },
+  );
 
   return result;
 }
@@ -187,6 +208,8 @@ export async function createThread(
 export async function replyToThread(
   input: ReplyToThreadInput,
 ): Promise<ConversationMessageRecord> {
+  let eventMeta: { eventId: string; cursor: bigint } | undefined;
+
   const result = await db.$transaction(async (tx) => {
     const thread = await assertThreadInOrg(tx, input.orgId, input.threadId);
     await assertConversationAction(
@@ -262,8 +285,25 @@ export async function replyToThread(
       messageId: message.id,
     });
 
+    eventMeta = await appendConversationEvent(tx, {
+      orgId: input.orgId,
+      conversationId: input.conversationId,
+      eventType: "conversation.thread.replied",
+      actorId: input.authorId,
+      payload: { messageId: message.id, threadId: input.threadId },
+    });
+
     return toMessageRecord(message);
   });
+
+  getRealtimePublisherOrNoop().publishConversationEvent(
+    input.orgId,
+    input.conversationId,
+    "conversation.thread.replied",
+    input.authorId,
+    { messageId: result.id, threadId: input.threadId },
+    { eventId: eventMeta!.eventId, cursor: eventMeta!.cursor.toString() },
+  );
 
   return result;
 }
@@ -274,6 +314,8 @@ export async function replyToThread(
 export async function resolveThread(
   input: ResolveThreadInput,
 ): Promise<ConversationThreadRecord> {
+  let eventMeta: { eventId: string; cursor: bigint } | undefined;
+
   const result = await db.$transaction(async (tx) => {
     const thread = await assertThreadInOrg(tx, input.orgId, input.threadId);
     await assertConversationAction(
@@ -299,8 +341,25 @@ export async function resolveThread(
       threadId: updated.id,
     });
 
+    eventMeta = await appendConversationEvent(tx, {
+      orgId: input.orgId,
+      conversationId: thread.conversationId,
+      eventType: "conversation.thread.resolved",
+      actorId: input.resolvedBy,
+      payload: { threadId: updated.id },
+    });
+
     return toThreadRecord(updated);
   });
+
+  getRealtimePublisherOrNoop().publishConversationEvent(
+    input.orgId,
+    result.conversationId,
+    "conversation.thread.resolved",
+    input.resolvedBy,
+    { threadId: result.id },
+    { eventId: eventMeta!.eventId, cursor: eventMeta!.cursor.toString() },
+  );
 
   return result;
 }

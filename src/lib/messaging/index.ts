@@ -305,3 +305,82 @@ export {
   type ListConversationSummariesOptions,
   type GetConversationDetailOptions,
 } from "./read-models";
+
+// ─── Phase 4 Sprint 4.1: Realtime transport ───────────────────────────────────────
+
+export {
+  REALTIME_PROTOCOL_VERSION,
+  isValidClientCommand,
+  getCommandType,
+  getCommandRequestId,
+  REALTIME_TOKEN_ALGORITHM,
+  REALTIME_TOKEN_VERSION,
+  DEFAULT_REALTIME_TOKEN_TTL_SECONDS,
+  MAX_REALTIME_TOKEN_TTL_SECONDS,
+  mintRealtimeSessionToken,
+  verifyRealtimeSessionToken,
+  tokenFingerprint,
+  InMemorySessionRegistry,
+  DEFAULT_SESSION_IDLE_TIMEOUT_MS,
+  authorizeConversationSubscription,
+  reauthorizeConversationSubscription,
+  ConsoleRealtimeDiagnostics,
+  NoopRealtimeDiagnostics,
+  MessagingGateway,
+} from "./realtime";
+
+export {
+  createMessagingRealtimeServer,
+} from "./realtime/server";
+
+export {
+  InMemoryRealtimePublisher,
+  registerRealtimePublisher,
+  getRealtimePublisher,
+  getRealtimePublisherOrNoop,
+} from "./realtime";
+
+export type {
+  BaseCommand,
+  BaseServerMessage,
+  ClientCommand,
+  ServerMessage,
+  SubscribeConversationCommand,
+  UnsubscribeConversationCommand,
+  HeartbeatCommand,
+  ResumeSessionCommand,
+  SetPresenceCommand,
+  StartTypingCommand,
+  StopTypingCommand,
+  SessionAckMessage,
+  SubscriptionAckMessage,
+  SubscriptionDeniedMessage,
+  HeartbeatAckMessage,
+  ResumeSessionResultMessage,
+  ErrorMessage,
+  DisconnectMessage,
+  RealtimeEvent,
+  RealtimeEventType,
+  RealtimeErrorCode,
+  RealtimeSessionClaims,
+  MintTokenInput,
+  MintTokenResult,
+  VerifyTokenResult,
+  TokenVerificationError,
+  RealtimeSession,
+  SessionRegistryStats,
+  SessionRegistry,
+  SubscriptionAuthResult,
+  SubscriptionAuthDiagnostic,
+  SubscriptionAuthDetail,
+  RealtimeDiagnosticEvent,
+  RealtimeDiagnostics,
+  GatewayOptions,
+  GatewayConnectionState,
+  RealtimePublisher,
+} from "./realtime";
+
+export type {
+  MessagingRealtimeServerOptions,
+  MessagingRealtimeServer,
+} from "./realtime/server";
