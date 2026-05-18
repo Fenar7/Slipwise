@@ -390,6 +390,108 @@ function PendingQuotesCard({ orgSlug }: { orgSlug: string }) {
   );
 }
 
+function SummaryMetric({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: string;
+  hint: string;
+}) {
+  return (
+    <div className="rounded-[18px] border border-[var(--hub-border)] bg-[var(--hub-accent-wash)] px-5 py-4">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--hub-text-muted)]">{label}</p>
+      <p className="mt-3 text-2xl font-semibold tracking-[-0.03em] text-[var(--hub-text-strong)]">{value}</p>
+      <p className="mt-1 text-sm text-[var(--hub-text-soft)]">{hint}</p>
+    </div>
+  );
+}
+
+function WorkspacePanel({
+  title,
+  children,
+}: {
+  title: string;
+  children: ReactNode;
+}) {
+  return (
+    <ShellCard className="p-5">
+      <h3 className="text-sm font-semibold uppercase tracking-[0.14em] text-[var(--hub-text-muted)]">{title}</h3>
+      <div className="mt-4 space-y-3">{children}</div>
+    </ShellCard>
+  );
+}
+
+function WorkspaceAlertItem({
+  title,
+  detail,
+  tone = "default",
+}: {
+  title: string;
+  detail: string;
+  tone?: "default" | "accent" | "warning";
+}) {
+  const toneClass =
+    tone === "accent"
+      ? "border-[var(--hub-accent-soft)] bg-[var(--hub-accent-wash)]"
+      : tone === "warning"
+        ? "border-amber-100 bg-amber-50/60"
+        : "border-[var(--hub-border)] bg-white";
+
+  return (
+    <div className={`rounded-[16px] border px-4 py-3 ${toneClass}`}>
+      <p className="text-sm font-semibold text-[var(--hub-text-strong)]">{title}</p>
+      <p className="mt-1 text-sm text-[var(--hub-text-soft)]">{detail}</p>
+    </div>
+  );
+}
+
+function WorkspaceSupportRail({
+  orgSlug,
+  config,
+  primaryLabel,
+  primaryHref,
+}: {
+  orgSlug: string;
+  config: ClientHubConfig;
+  primaryLabel: string;
+  primaryHref: string;
+}) {
+  return (
+    <div className="space-y-4">
+      <WorkspacePanel title="Notification Overview">
+        <WorkspaceAlertItem title="1 quote awaiting response" detail="Review before 12 Nov 2025 to keep pricing locked." tone="accent" />
+        <WorkspaceAlertItem title="2 invoices need attention" detail="One invoice is overdue and one is partially paid." tone="warning" />
+        <WorkspaceAlertItem title="Support team available" detail="Email replies typically land within one business day." />
+      </WorkspacePanel>
+
+      <WorkspacePanel title="Quick Access">
+        <Link
+          href={primaryHref}
+          className="inline-flex w-full items-center justify-center rounded-xl border border-[var(--hub-border)] bg-white px-4 py-3 text-sm font-semibold text-[var(--hub-text-strong)] transition hover:bg-slate-50"
+        >
+          {primaryLabel}
+        </Link>
+        <Link
+          href={`/portal/${orgSlug}/client-hub/contact`}
+          className="inline-flex w-full items-center justify-center rounded-xl border border-[var(--hub-border)] bg-white px-4 py-3 text-sm font-semibold text-[var(--hub-text-strong)] transition hover:bg-slate-50"
+        >
+          Contact Support
+        </Link>
+      </WorkspacePanel>
+
+      <WorkspacePanel title="Support Desk">
+        <div className="rounded-[16px] border border-[var(--hub-border)] px-4 py-4">
+          <p className="text-sm font-semibold text-[var(--hub-text-strong)]">{config.contact.supportEmail}</p>
+          <p className="mt-1 text-sm text-[var(--hub-text-soft)]">{config.contact.supportPhone}</p>
+          <p className="mt-3 text-sm text-[var(--hub-text-soft)]">Mon–Fri, 9:00 AM – 6:00 PM GST</p>
+        </div>
+      </WorkspacePanel>
+    </div>
+  );
+}
+
 export function ClientHubHeader({
   orgName,
   logoUrl,
@@ -494,22 +596,47 @@ export function ClientHubInvoicesView({
 }) {
   const hubConfig = getHubConfig(config);
   const basePath = `/portal/${orgSlug}/client-hub/invoices`;
+  const dueSoon = MOCK_INVOICES.filter((invoice) => invoice.remainingAmount > 0).length;
 
   return (
-    <div className="grid gap-6 xl:grid-cols-[260px_1fr]">
+    <div className="grid gap-6 xl:grid-cols-[260px_minmax(0,1fr)_320px]">
       <Sidebar orgSlug={orgSlug} config={hubConfig} activePath={basePath} />
       <div className="space-y-6">
-        <PageHeader
-          title={hubConfig.invoices.pageTitle}
-          subtitle={hubConfig.invoices.pageDescription}
-          action={
-            <Link href={`/portal/${orgSlug}/client-hub/contact`} className="inline-flex items-center gap-2 rounded-xl border border-[var(--hub-border)] bg-white px-4 py-2.5 text-sm font-semibold text-[var(--hub-text-strong)] transition hover:bg-slate-50">
-              Need help?
-            </Link>
-          }
-        />
+        <ShellCard className="overflow-hidden">
+          <div className="border-b border-[var(--hub-border)] bg-[var(--hub-accent-wash)] px-6 py-6 sm:px-8">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <h1 className="text-4xl font-semibold tracking-[-0.04em] text-[var(--hub-text-strong)]">{hubConfig.invoices.pageTitle}</h1>
+                <p className="mt-2 max-w-2xl text-lg text-[var(--hub-text-soft)]">{hubConfig.invoices.pageDescription}</p>
+              </div>
+              <div className="flex flex-wrap gap-3">
+                <Link href={`/portal/${orgSlug}/client-hub/quotes`} className="inline-flex items-center rounded-xl border border-[var(--hub-border)] bg-white px-4 py-2.5 text-sm font-semibold text-[var(--hub-text-strong)] transition hover:bg-slate-50">
+                  Review Quotes
+                </Link>
+                <Link href={`/portal/${orgSlug}/client-hub/contact`} className="inline-flex items-center rounded-xl border border-[var(--hub-border)] bg-white px-4 py-2.5 text-sm font-semibold text-[var(--hub-text-strong)] transition hover:bg-slate-50">
+                  Need help?
+                </Link>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid gap-4 px-6 py-6 sm:px-8 lg:grid-cols-3">
+            <SummaryMetric label="Outstanding" value={formatCurrency(OUTSTANDING_BALANCE)} hint="Across open invoices" />
+            <SummaryMetric label="Invoices Open" value={`${dueSoon}`} hint="Ready for review or payment" />
+            <SummaryMetric label="Payment Options" value="3 methods" hint="Payment link, bank transfer, UPI" />
+          </div>
+        </ShellCard>
 
         <ShellCard className="overflow-hidden">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--hub-border)] px-6 py-5">
+            <div>
+              <h2 className="text-lg font-semibold text-[var(--hub-text-strong)]">Invoice List</h2>
+              <p className="mt-1 text-sm text-[var(--hub-text-soft)]">Track payment status, due dates, and what still needs action.</p>
+            </div>
+            <div className="rounded-full border border-[var(--hub-border)] bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-[var(--hub-text-soft)]">
+              {MOCK_INVOICES.length} records
+            </div>
+          </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -542,6 +669,13 @@ export function ClientHubInvoicesView({
           </div>
         </ShellCard>
       </div>
+
+      <WorkspaceSupportRail
+        orgSlug={orgSlug}
+        config={hubConfig}
+        primaryHref={`/portal/${orgSlug}/client-hub/payments`}
+        primaryLabel="View Payment Methods"
+      />
     </div>
   );
 }
@@ -700,12 +834,30 @@ export function ClientHubQuotesView({
 }) {
   const hubConfig = getHubConfig(config);
   const basePath = `/portal/${orgSlug}/client-hub/quotes`;
+  const openQuotes = MOCK_QUOTES.filter((quote) => quote.canRespond).length;
 
   return (
-    <div className="grid gap-6 xl:grid-cols-[260px_1fr]">
+    <div className="grid gap-6 xl:grid-cols-[260px_minmax(0,1fr)_320px]">
       <Sidebar orgSlug={orgSlug} config={hubConfig} activePath={basePath} />
       <div className="space-y-6">
-        <PageHeader title={hubConfig.quotes.pageTitle} subtitle={hubConfig.quotes.pageDescription} />
+        <ShellCard className="overflow-hidden">
+          <div className="border-b border-[var(--hub-border)] bg-[var(--hub-accent-wash)] px-6 py-6 sm:px-8">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <h1 className="text-4xl font-semibold tracking-[-0.04em] text-[var(--hub-text-strong)]">{hubConfig.quotes.pageTitle}</h1>
+                <p className="mt-2 max-w-2xl text-lg text-[var(--hub-text-soft)]">{hubConfig.quotes.pageDescription}</p>
+              </div>
+              <Link href={`/portal/${orgSlug}/client-hub/invoices`} className="inline-flex items-center rounded-xl border border-[var(--hub-border)] bg-white px-4 py-2.5 text-sm font-semibold text-[var(--hub-text-strong)] transition hover:bg-slate-50">
+                Go to Invoices
+              </Link>
+            </div>
+          </div>
+          <div className="grid gap-4 px-6 py-6 sm:px-8 lg:grid-cols-3">
+            <SummaryMetric label="Awaiting Reply" value={`${openQuotes}`} hint="Quotations still awaiting your decision" />
+            <SummaryMetric label="Accepted" value={`${MOCK_QUOTES.length - openQuotes}`} hint="Already confirmed this cycle" />
+            <SummaryMetric label="Avg. Quote Value" value={formatCurrency(Math.round(MOCK_QUOTES.reduce((sum, quote) => sum + quote.totalAmount, 0) / MOCK_QUOTES.length))} hint="Based on current mock proposals" />
+          </div>
+        </ShellCard>
         <div className="space-y-4">
           {MOCK_QUOTES.map((quote) => (
             <ShellCard key={quote.id} className="p-5 sm:p-6">
@@ -728,6 +880,13 @@ export function ClientHubQuotesView({
           ))}
         </div>
       </div>
+
+      <WorkspaceSupportRail
+        orgSlug={orgSlug}
+        config={hubConfig}
+        primaryHref={`/portal/${orgSlug}/client-hub/quotes/${MOCK_QUOTES[0]?.id ?? "qt-001"}`}
+        primaryLabel="Open Pending Quote"
+      />
     </div>
   );
 }
@@ -865,7 +1024,7 @@ export function ClientHubPaymentsView({
   const basePath = `/portal/${orgSlug}/client-hub/payments`;
 
   return (
-    <div className="grid gap-6 xl:grid-cols-[260px_1fr]">
+    <div className="grid gap-6 xl:grid-cols-[260px_minmax(0,1fr)_320px]">
       <Sidebar orgSlug={orgSlug} config={hubConfig} activePath={basePath} />
       <div className="space-y-6">
         <PageHeader title={hubConfig.payments.pageTitle} subtitle={hubConfig.payments.pageDescription} />
@@ -910,6 +1069,13 @@ export function ClientHubPaymentsView({
           </div>
         </ShellCard>
       </div>
+
+      <WorkspaceSupportRail
+        orgSlug={orgSlug}
+        config={hubConfig}
+        primaryHref={`/portal/${orgSlug}/client-hub/invoices`}
+        primaryLabel="Review Open Invoices"
+      />
     </div>
   );
 }
