@@ -42,7 +42,13 @@ export type RealtimeDiagnosticEvent =
   | { kind: "presence_degraded"; sessionId: string; reason: string }
   | { kind: "typing_degraded"; sessionId: string; reason: string }
   | { kind: "replay_degraded"; sessionId: string; conversationId: string; reason: string }
-  | { kind: "fanout_degraded"; conversationId: string; reason: string; recipientCount: number };
+  | { kind: "fanout_degraded"; conversationId: string; reason: string; recipientCount: number }
+  // Sprint 4.5: reconnect/replay integrity and duplicate session diagnostics
+  | { kind: "session_duplicate_closed"; sessionId: string; reason: string }
+  | { kind: "reconnect_advised"; sessionId: string; reason: string; rehydrateRecommended?: boolean }
+  | { kind: "replay_cursor_validated"; sessionId: string; conversationId: string; cursor: string; eventCount: number }
+  | { kind: "replay_cursor_rejected"; sessionId: string; conversationId: string; cursor: string; reason: string }
+  | { kind: "event_dropped_backpressure"; sessionId: string; eventId: string; conversationId: string; reason: string };
 
 export interface RealtimeDiagnostics {
   emit(event: RealtimeDiagnosticEvent): void;
@@ -170,6 +176,26 @@ export class ConsoleRealtimeDiagnostics implements RealtimeDiagnostics {
         }
         case "fanout_degraded": {
           console.warn(`${base} conv=${safeId(event.conversationId)} reason=${event.reason} recipients=${event.recipientCount}`);
+          break;
+        }
+        case "session_duplicate_closed": {
+          console.warn(`${base} session=${safeId(event.sessionId)} reason=${event.reason}`);
+          break;
+        }
+        case "reconnect_advised": {
+          console.info(`${base} session=${safeId(event.sessionId)} reason=${event.reason} rehydrate=${event.rehydrateRecommended ?? false}`);
+          break;
+        }
+        case "replay_cursor_validated": {
+          console.info(`${base} session=${safeId(event.sessionId)} conv=${safeId(event.conversationId)} cursor=${event.cursor} events=${event.eventCount}`);
+          break;
+        }
+        case "replay_cursor_rejected": {
+          console.warn(`${base} session=${safeId(event.sessionId)} conv=${safeId(event.conversationId)} cursor=${event.cursor} reason=${event.reason}`);
+          break;
+        }
+        case "event_dropped_backpressure": {
+          console.warn(`${base} session=${safeId(event.sessionId)} eventId=${safeId(event.eventId)} conv=${safeId(event.conversationId)} reason=${event.reason}`);
           break;
         }
       }

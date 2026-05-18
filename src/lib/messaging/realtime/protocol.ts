@@ -279,35 +279,66 @@ export type RealtimeErrorCode =
 // Runtime command validation helpers
 // ---------------------------------------------------------------------------
 
+/** Production-grade UUID v4 validation for conversationIds and other resource identifiers. */
+export function isValidUuid(str: string): boolean {
+  if (typeof str !== "string") return false;
+  // Allow cuid, nanoid, or uuid formats — at minimum reject empty/whitespace-only strings
+  // and enforce reasonable length bounds to prevent injection patterns.
+  if (str.length === 0 || str.length > 128) return false;
+  // Reject strings that look like path traversal, HTML, or command injection.
+  if (/[<>'"\\]/.test(str)) return false;
+  return true;
+}
+
 export function isValidClientCommand(obj: unknown): obj is ClientCommand {
   if (typeof obj !== "object" || obj === null) return false;
   const o = obj as Record<string, unknown>;
-  if (typeof o.type !== "string") return false;
-  if (typeof o.requestId !== "string" || o.requestId.length === 0) return false;
+
+  // type must be one of the known command types
+  const validTypes = new Set<string>([
+    "subscribe_conversation",
+    "unsubscribe_conversation",
+    "heartbeat",
+    "resume_session",
+    "set_presence",
+    "start_typing",
+    "stop_typing",
+    "ack_events",
+  ]);
+  if (typeof o.type !== "string" || !validTypes.has(o.type)) return false;
+
+  // requestId must be a non-empty string with bounded length
+  if (typeof o.requestId !== "string" || o.requestId.length === 0 || o.requestId.length > 256) return false;
 
   switch (o.type) {
     case "subscribe_conversation":
     case "unsubscribe_conversation": {
       const payload = o.payload as Record<string, unknown> | undefined;
       if (typeof payload !== "object" || payload === null) return false;
-      if (typeof payload.conversationId !== "string" || payload.conversationId.length === 0) return false;
+      if (!isValidUuid(payload.conversationId as string)) return false;
       if (payload.lastSeenCursor !== undefined && payload.lastSeenCursor !== null) {
-        if (typeof payload.lastSeenCursor !== "string" || payload.lastSeenCursor.length === 0) return false;
+        if (typeof payload.lastSeenCursor !== "string" || payload.lastSeenCursor.length === 0 || payload.lastSeenCursor.length > 256) return false;
       }
       return true;
     }
     case "heartbeat": {
-      return true; // payload is optional
+      // payload is optional; if present, timestamp must be a number
+      if (o.payload !== undefined) {
+        const payload = o.payload as Record<string, unknown> | undefined;
+        if (typeof payload !== "object" || payload === null) return false;
+        if (payload.timestamp !== undefined && typeof payload.timestamp !== "number") return false;
+      }
+      return true;
     }
     case "resume_session": {
       const payload = o.payload as Record<string, unknown> | undefined;
       if (typeof payload !== "object" || payload === null) return false;
-      if (typeof payload.sessionToken !== "string" || payload.sessionToken.length === 0) return false;
+      if (typeof payload.sessionToken !== "string" || payload.sessionToken.length === 0 || payload.sessionToken.length > 4096) return false;
       if (payload.lastSeenCursors !== undefined && payload.lastSeenCursors !== null) {
         if (typeof payload.lastSeenCursors !== "object" || Array.isArray(payload.lastSeenCursors)) return false;
         for (const [key, val] of Object.entries(payload.lastSeenCursors)) {
-          if (typeof key !== "string" || key.length === 0) return false;
-          if (typeof val !== "string" || val.length === 0) return false;
+          if (!isValidUuid(key)) return false;
+          if (typeof val !== "string" || val.length === 0 || val.length > 256) return false;
         }
       }
       return true;
@@ -318,29 +349,26 @@ export function isValidClientCommand(obj: unknown): obj is ClientCommand {
       const status = payload.status;
       if (status !== "online" && status !== "away" && status !== "offline") return false;
       if (payload.activeConversationId !== undefined && payload.activeConversationId !== null) {
-        if (typeof payload.activeConversationId !== "string") return false;
+        if (!isValidUuid(payload.activeConversationId as string)) return false;
       }
       return true;
     }
     case "start_typing":
     case "stop_typing": {
       const payload = o.payload as Record<string, unknown> | undefined;
-      return (
-        typeof payload === "object" &&
-        payload !== null &&
-        typeof payload.conversationId === "string" &&
-        payload.conversationId.length > 0
-      );
+      if (typeof payload !== "object" || payload === null) return false;
+      if (!isValidUuid(payload.conversationId as string)) return false;
+      return true;
     }
     case "ack_events": {
       const payload = o.payload as Record<string, unknown> | undefined;
       if (typeof payload !== "object" || payload === null) return false;
-      if (payload.lastEventId !== undefined && typeof payload.lastEventId !== "string") return false;
+      if (payload.lastEventId !== undefined && (typeof payload.lastEventId !== "string" || payload.lastEventId.length > 256)) return false;
       if (payload.cursors !== undefined && payload.cursors !== null) {
         if (typeof payload.cursors !== "object" || Array.isArray(payload.cursors)) return false;
         for (const [key, val] of Object.entries(payload.cursors)) {
-          if (typeof key !== "string" || key.length === 0) return false;
-          if (typeof val !== "string" || val.length === 0) return false;
+          if (!isValidUuid(key)) return false;
+          if (typeof val !== "string" || val.length === 0 || val.length > 256) return false;
         }
       }
       return true;

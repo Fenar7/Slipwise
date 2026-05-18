@@ -239,13 +239,13 @@ export function verifyRealtimeSessionToken(
 
   const typedClaims: RealtimeSessionClaims = {
     v: REALTIME_TOKEN_VERSION,
-    sub: String(c.sub),
-    org: String(c.org),
-    role: String(c.role),
-    rep: c.rep == null ? null : String(c.rep),
-    pg: c.pg == null ? null : String(c.pg),
+    sub: typeof c.sub === "string" ? c.sub : String(c.sub),
+    org: typeof c.org === "string" ? c.org : String(c.org),
+    role: typeof c.role === "string" ? c.role : String(c.role),
+    rep: c.rep == null ? null : typeof c.rep === "string" ? c.rep : String(c.rep),
+    pg: c.pg == null ? null : typeof c.pg === "string" ? c.pg : String(c.pg),
     ps: Array.isArray(c.ps) ? c.ps.filter((s): s is string => typeof s === "string") : [],
-    sid: String(c.sid),
+    sid: typeof c.sid === "string" ? c.sid : String(c.sid),
     iat,
     exp,
   };

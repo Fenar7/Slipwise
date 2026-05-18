@@ -12,6 +12,7 @@ import "server-only";
 export {
   REALTIME_PROTOCOL_VERSION,
   isValidClientCommand,
+  isValidUuid,
   getCommandType,
   getCommandRequestId,
 } from "./protocol";

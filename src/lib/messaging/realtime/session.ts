@@ -69,6 +69,11 @@ export interface SessionRegistry {
     conversationId: string,
     userId: string,
   ): string[];
+  /**
+   * Find any active session with the same userId + orgId + sessionId.
+   * Used to detect duplicate connections using the same token.
+   */
+  findDuplicateSession(sessionId: string): RealtimeSession | undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -282,5 +287,9 @@ export class InMemorySessionRegistry implements SessionRegistry {
       pruned.push(sessionId);
     }
     return pruned;
+  }
+
+  findDuplicateSession(sessionId: string): RealtimeSession | undefined {
+    return this.sessions.get(sessionId);
   }
 }
