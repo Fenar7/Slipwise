@@ -1,5 +1,5 @@
 import Link from "next/link";
-import type { CSSProperties, ReactNode } from "react";
+import type { CSSProperties, ReactNode, SVGProps } from "react";
 import type { ClientHubConfig } from "./customization-contract";
 import {
   getMockInvoice,
@@ -16,7 +16,7 @@ import {
 import { DEFAULT_CLIENT_HUB_CONFIG } from "@/app/app/settings/portal/client-hub/components/mock-config";
 import { PaymentMethodSelector } from "./payment-method-selector";
 
-export const DEFAULT_HUB_ACCENT = "#7bdcb5";
+export const DEFAULT_HUB_ACCENT = "#e8401e";
 
 type NavItem = {
   href: string;
@@ -45,7 +45,7 @@ function hexToRgb(hex: string) {
     : normalized;
 
   if (!/^[0-9a-fA-F]{6}$/.test(value)) {
-    return { r: 123, g: 220, b: 181 };
+    return { r: 232, g: 64, b: 30 };
   }
 
   return {
@@ -62,16 +62,47 @@ export function buildHubThemeStyle(accentColor: string): CSSProperties {
   return {
     "--hub-accent": accent,
     "--hub-accent-rgb": `${r} ${g} ${b}`,
-    "--hub-accent-soft": `rgba(${r}, ${g}, ${b}, 0.14)`,
-    "--hub-accent-faint": `rgba(${r}, ${g}, ${b}, 0.07)`,
-    "--hub-accent-wash": `rgba(${r}, ${g}, ${b}, 0.04)`,
-    "--hub-text-strong": "#162033",
-    "--hub-text-soft": "#62708a",
-    "--hub-text-muted": "#97a3b8",
-    "--hub-border": "rgba(21, 32, 51, 0.1)",
+    "--hub-accent-soft": `rgba(${r}, ${g}, ${b}, 0.12)`,
+    "--hub-accent-faint": `rgba(${r}, ${g}, ${b}, 0.06)`,
+    "--hub-accent-wash": `rgba(${r}, ${g}, ${b}, 0.025)`,
+    "--hub-text-strong": "#222222",
+    "--hub-text-soft": "#575760",
+    "--hub-text-muted": "#adadad",
+    "--hub-border": "rgba(34, 34, 34, 0.09)",
+    "--hub-surface": "#fffdf9",
+    "--hub-surface-soft": "#faf6f1",
     "--hub-card-shadow": "none",
-    "--hub-hero-gradient": `radial-gradient(circle at 50% 0%, rgba(${r},${g},${b},0.18) 0%, rgba(232,196,180,0.55) 34%, rgba(255,248,241,0.98) 70%)`,
+    "--hub-hero-gradient": "radial-gradient(circle at 50% 12%, rgba(135, 121, 163, 0.28) 0%, rgba(233, 175, 150, 0.52) 34%, rgba(248, 226, 208, 0.76) 64%, rgba(251, 247, 242, 0.98) 100%)",
   } as CSSProperties;
+}
+
+function Glyph({
+  name,
+  className = "h-4 w-4",
+}: {
+  name: "home" | "invoice" | "quote" | "payment" | "products" | "download" | "print" | "arrow";
+  className?: string;
+}) {
+  const base = { className, fill: "none", viewBox: "0 0 24 24", stroke: "currentColor", strokeWidth: 1.8 } as SVGProps<SVGSVGElement>;
+
+  switch (name) {
+    case "home":
+      return <svg {...base}><path strokeLinecap="round" strokeLinejoin="round" d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1v-9.5Z" /></svg>;
+    case "invoice":
+      return <svg {...base}><path strokeLinecap="round" strokeLinejoin="round" d="M7 3h7l4 4v14H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z" /><path strokeLinecap="round" strokeLinejoin="round" d="M14 3v5h5M9 12h6M9 16h6" /></svg>;
+    case "quote":
+      return <svg {...base}><path strokeLinecap="round" strokeLinejoin="round" d="M7 4h10a2 2 0 0 1 2 2v12l-3-2-3 2-3-2-3 2V6a2 2 0 0 1 2-2Z" /><path strokeLinecap="round" strokeLinejoin="round" d="M9 9h6M9 12.5h4" /></svg>;
+    case "payment":
+      return <svg {...base}><rect x="3" y="6" width="18" height="12" rx="2.5" /><path strokeLinecap="round" strokeLinejoin="round" d="M3 10h18M8 15h3" /></svg>;
+    case "products":
+      return <svg {...base}><path strokeLinecap="round" strokeLinejoin="round" d="m12 3 8 4.5-8 4.5L4 7.5 12 3Z" /><path strokeLinecap="round" strokeLinejoin="round" d="M4 12l8 4.5 8-4.5M4 16.5 12 21l8-4.5" /></svg>;
+    case "download":
+      return <svg {...base}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v10m0 0 4-4m-4 4-4-4M5 19h14" /></svg>;
+    case "print":
+      return <svg {...base}><path strokeLinecap="round" strokeLinejoin="round" d="M7 9V4h10v5M7 14H5a2 2 0 0 1-2-2v-1.5A2.5 2.5 0 0 1 5.5 8h13A2.5 2.5 0 0 1 21 10.5V12a2 2 0 0 1-2 2h-2" /><path strokeLinecap="round" strokeLinejoin="round" d="M7 12h10v8H7z" /></svg>;
+    case "arrow":
+      return <svg {...base}><path strokeLinecap="round" strokeLinejoin="round" d="m9 6 6 6-6 6" /></svg>;
+  }
 }
 
 export function getHubConfig(config?: ClientHubConfig) {
@@ -127,7 +158,7 @@ function ShellCard({
   children: ReactNode;
   className?: string;
 }) {
-  return <section className={`rounded-[22px] border border-[var(--hub-border)] bg-white ${className}`}>{children}</section>;
+  return <section className={`rounded-[20px] border border-[var(--hub-border)] bg-[var(--hub-surface)] ${className}`}>{children}</section>;
 }
 
 function StatusPill({
@@ -170,7 +201,7 @@ function TopNav({
   navItems: NavItem[];
 }) {
   return (
-    <header className="border-b border-[var(--hub-border)] bg-white">
+    <header className="border-b border-[var(--hub-border)] bg-[var(--hub-surface)]/95 backdrop-blur">
       <div className="mx-auto flex w-full max-w-[1480px] items-center justify-between gap-6 px-6 py-3.5 lg:px-10">
         <div className="flex items-center gap-4">
           {logoUrl ? (
@@ -189,7 +220,7 @@ function TopNav({
 
         <nav className="hidden items-center gap-10 md:flex" aria-label="Client hub top navigation">
           {navItems.map((item) => (
-            <Link key={item.href} href={item.href} className="text-sm font-semibold text-[var(--hub-text-strong)] transition-colors hover:text-[var(--hub-accent)]">
+            <Link key={item.href} href={item.href} className="rounded-full px-3 py-2 text-sm font-semibold text-[var(--hub-text-strong)] transition-colors hover:bg-[var(--hub-surface-soft)] hover:text-[var(--hub-accent)]">
               {item.label}
             </Link>
           ))}
@@ -197,7 +228,7 @@ function TopNav({
 
         <div className="flex items-center gap-3">
           <div className="hidden items-center gap-3 rounded-full border border-[var(--hub-border)] bg-white px-3 py-1.5 md:flex">
-            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--hub-accent-soft)] text-xs font-bold text-[var(--hub-text-strong)]">HA</span>
+            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--hub-accent-faint)] text-xs font-bold text-[var(--hub-accent)]">HA</span>
             <span className="text-sm font-semibold text-[var(--hub-text-strong)]">Hadi Azeez</span>
           </div>
           <button type="button" className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#172036] text-white">
@@ -221,9 +252,16 @@ function Sidebar({
   activePath: string;
 }) {
   const items = getSidebarItems(orgSlug, config);
+  const iconMap: Record<string, "home" | "invoice" | "quote" | "payment" | "products"> = {
+    Home: "home",
+    Invoices: "invoice",
+    Quotes: "quote",
+    Payments: "payment",
+    "Products & Services": "products",
+  };
 
   return (
-    <ShellCard className="sticky top-8 h-fit p-4">
+    <ShellCard className="sticky top-8 h-fit p-5">
       <nav className="space-y-2" aria-label="Client hub sidebar">
         {items.map((item) => {
           const isActive = activePath === item.href || activePath.startsWith(`${item.href}/`);
@@ -231,17 +269,17 @@ function Sidebar({
             <Link
               key={item.href}
               href={item.href}
-              className={`flex items-center gap-3 rounded-[18px] border px-4 py-3 text-sm font-medium transition-colors ${
+              className={`flex items-center gap-3 rounded-[18px] border px-4 py-3.5 text-sm font-medium transition-colors ${
                 isActive
-                  ? "border-[var(--hub-accent-soft)] bg-[var(--hub-accent-wash)] text-[var(--hub-text-strong)]"
+                  ? "border-[var(--hub-border)] bg-[var(--hub-surface-soft)] text-[var(--hub-text-strong)]"
                   : "border-transparent text-[var(--hub-text-soft)] hover:border-[var(--hub-border)] hover:bg-slate-50"
               }`}
             >
-              <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full border text-xs font-semibold ${isActive ? "border-[var(--hub-accent-soft)] bg-[var(--hub-accent-faint)] text-[var(--hub-accent)]" : "border-[var(--hub-border)] bg-white text-[var(--hub-text-muted)]"}`}>
-                {item.shortLabel}
+              <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full border ${isActive ? "border-[var(--hub-accent-soft)] bg-white text-[var(--hub-accent)]" : "border-[var(--hub-border)] bg-white text-[var(--hub-text-muted)]"}`}>
+                <Glyph name={iconMap[item.label]} className="h-4 w-4" />
               </span>
               <span className="truncate">{item.label}</span>
-              {isActive && <span className="ml-auto h-2 w-2 rounded-full bg-[var(--hub-accent)]" />}
+              {isActive && <span className="ml-auto h-2.5 w-2.5 rounded-full bg-[var(--hub-accent)]" />}
             </Link>
           );
         })}
@@ -258,13 +296,14 @@ function DashboardHero({ orgSlug, config }: { orgSlug: string; config: ClientHub
   ];
 
   return (
-    <section className="relative overflow-hidden rounded-[24px] border border-[var(--hub-border)] px-6 py-12 text-center sm:px-10 sm:py-16" style={{ background: "var(--hub-hero-gradient)" }}>
+    <section className="relative overflow-hidden rounded-[28px] border border-[var(--hub-border)] px-6 py-12 text-center sm:px-10 sm:py-16" style={{ background: "var(--hub-hero-gradient)" }}>
       <StatusPill className="bg-white text-[var(--hub-text-strong)] ring-[var(--hub-border)]">{config.homeDashboard.welcomeMessage}</StatusPill>
       <h1 className="mx-auto mt-5 max-w-3xl text-4xl font-semibold tracking-[-0.04em] text-[var(--hub-text-strong)] sm:text-5xl lg:text-6xl">{config.homeDashboard.heroTitle}</h1>
       <p className="mx-auto mt-4 max-w-2xl text-lg leading-8 text-[var(--hub-text-soft)] sm:text-xl">{config.homeDashboard.heroSubtitle}</p>
       <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
         {actions.map((action) => (
-          <Link key={action.href} href={action.href} className="inline-flex items-center gap-2 rounded-2xl border border-[var(--hub-border)] bg-white px-5 py-2.5 text-sm font-semibold text-[var(--hub-text-strong)] transition hover:bg-slate-50">
+          <Link key={action.href} href={action.href} className="inline-flex items-center gap-2 rounded-2xl border border-[var(--hub-border)] bg-white px-5 py-3 text-sm font-semibold text-[var(--hub-text-strong)] transition hover:bg-slate-50">
+            <Glyph name={action.label.includes("Invoice") ? "invoice" : action.label.includes("Quote") ? "quote" : "products"} />
             {action.label}
           </Link>
         ))}
@@ -278,7 +317,7 @@ function DashboardActionBoard({ orgSlug }: { orgSlug: string }) {
   const pendingQuote = MOCK_QUOTES.find((qt) => qt.canRespond);
 
   return (
-    <ShellCard className="p-6">
+    <ShellCard className="p-7">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold text-[var(--hub-text-strong)]">Take Actions</h2>
         <span className="flex h-6 min-w-6 items-center justify-center rounded-full bg-[var(--hub-accent-faint)] px-2 text-xs font-bold text-[var(--hub-accent)]">
@@ -288,8 +327,10 @@ function DashboardActionBoard({ orgSlug }: { orgSlug: string }) {
 
       <div className="mt-5 space-y-3">
         {pendingInvoice && (
-          <div className="flex items-center gap-4 rounded-[18px] border border-[var(--hub-border)] p-4">
-            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-emerald-100 bg-emerald-50 text-emerald-600">I</span>
+          <div className="flex items-center gap-4 rounded-[18px] border border-[var(--hub-border)] bg-white p-4">
+            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-[var(--hub-accent-soft)] bg-[var(--hub-accent-faint)] text-[var(--hub-accent)]">
+              <Glyph name="invoice" />
+            </span>
             <div className="min-w-0 flex-1">
               <p className="text-base font-semibold text-[var(--hub-text-strong)]">Pay {PENDING_INVOICES_COUNT} invoice{PENDING_INVOICES_COUNT !== 1 ? "s" : ""}</p>
               <p className="text-sm text-[var(--hub-text-soft)]">{formatCurrency(pendingInvoice.remainingAmount)} pending</p>
@@ -301,8 +342,10 @@ function DashboardActionBoard({ orgSlug }: { orgSlug: string }) {
         )}
 
         {pendingQuote && (
-          <div className="flex items-center gap-4 rounded-[18px] border border-[var(--hub-border)] p-4">
-            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-sky-100 bg-sky-50 text-sky-600">Q</span>
+          <div className="flex items-center gap-4 rounded-[18px] border border-[var(--hub-border)] bg-white p-4">
+            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-[var(--hub-accent-soft)] bg-[var(--hub-accent-faint)] text-[var(--hub-accent)]">
+              <Glyph name="quote" />
+            </span>
             <div className="min-w-0 flex-1">
               <p className="text-base font-semibold text-[var(--hub-text-strong)]">Respond to {PENDING_QUOTES_COUNT} quote{PENDING_QUOTES_COUNT !== 1 ? "s" : ""}</p>
               <p className="text-sm text-[var(--hub-text-soft)]">Awaiting your response</p>
@@ -320,7 +363,7 @@ function DashboardActionBoard({ orgSlug }: { orgSlug: string }) {
 function SupportCard({ orgSlug, config }: { orgSlug: string; config: ClientHubConfig }) {
   return (
     <ShellCard className="overflow-hidden">
-      <div className="h-40 border-b border-[var(--hub-border)] bg-cover bg-center" style={{ backgroundImage: "linear-gradient(135deg, rgba(var(--hub-accent-rgb), 0.14), rgba(21, 32, 51, 0.08)), url('https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&w=1200&q=80')" }} />
+      <div className="h-40 border-b border-[var(--hub-border)] bg-cover bg-center" style={{ backgroundImage: "linear-gradient(135deg, rgba(232,64,30,0.12), rgba(21,32,51,0.06)), url('https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&w=1200&q=80')" }} />
       <div className="p-6">
         <h3 className="text-lg font-semibold text-[var(--hub-text-strong)]">About Us</h3>
         <p className="mt-3 text-sm leading-7 text-[var(--hub-text-soft)]">{config.about.body}</p>
@@ -400,7 +443,7 @@ function SummaryMetric({
   hint: string;
 }) {
   return (
-    <div className="rounded-[18px] border border-[var(--hub-border)] bg-[var(--hub-accent-wash)] px-5 py-4">
+    <div className="rounded-[18px] border border-[var(--hub-border)] bg-white px-5 py-4">
       <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--hub-text-muted)]">{label}</p>
       <p className="mt-3 text-2xl font-semibold tracking-[-0.03em] text-[var(--hub-text-strong)]">{value}</p>
       <p className="mt-1 text-sm text-[var(--hub-text-soft)]">{hint}</p>
@@ -417,7 +460,7 @@ function WorkspacePanel({
 }) {
   return (
     <ShellCard className="p-5">
-      <h3 className="text-sm font-semibold uppercase tracking-[0.14em] text-[var(--hub-text-muted)]">{title}</h3>
+      <h3 className="text-lg font-semibold tracking-[-0.02em] text-[var(--hub-text-strong)]">{title}</h3>
       <div className="mt-4 space-y-3">{children}</div>
     </ShellCard>
   );
@@ -434,7 +477,7 @@ function WorkspaceAlertItem({
 }) {
   const toneClass =
     tone === "accent"
-      ? "border-[var(--hub-accent-soft)] bg-[var(--hub-accent-wash)]"
+      ? "border-[var(--hub-accent-soft)] bg-[var(--hub-accent-faint)]"
       : tone === "warning"
         ? "border-amber-100 bg-amber-50/60"
         : "border-[var(--hub-border)] bg-white";
@@ -603,7 +646,7 @@ export function ClientHubInvoicesView({
       <Sidebar orgSlug={orgSlug} config={hubConfig} activePath={basePath} />
       <div className="space-y-6">
         <ShellCard className="overflow-hidden">
-          <div className="border-b border-[var(--hub-border)] bg-[var(--hub-accent-wash)] px-6 py-6 sm:px-8">
+          <div className="border-b border-[var(--hub-border)] bg-[var(--hub-surface-soft)] px-6 py-6 sm:px-8">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
               <div>
                 <h1 className="text-4xl font-semibold tracking-[-0.04em] text-[var(--hub-text-strong)]">{hubConfig.invoices.pageTitle}</h1>
@@ -701,13 +744,13 @@ export function ClientHubInvoiceDetailView({
         <span className="text-[var(--hub-text-strong)]">#{invoice.invoiceNumber}</span>
       </nav>
 
-      <section className="overflow-hidden border border-[var(--hub-border)] px-6 py-12 text-center text-white sm:px-10 sm:py-16" style={{ background: `linear-gradient(135deg, var(--hub-accent), rgba(var(--hub-accent-rgb), 0.85))` }}>
+      <section className="overflow-hidden rounded-[28px] border border-[var(--hub-border)] px-6 py-12 text-center sm:px-10 sm:py-16" style={{ background: "var(--hub-hero-gradient)" }}>
         <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-[24px] bg-white ring-1 ring-white/50">
           <span className="text-lg font-bold text-[var(--hub-accent)]">{invoice.fromName.charAt(0)}</span>
         </div>
-        <p className="mt-5 text-xs font-semibold uppercase tracking-[0.2em] text-white/80">{invoice.fromName}</p>
-        <h1 className="mt-6 text-4xl font-semibold tracking-[-0.04em] sm:text-5xl">Hi {invoice.clientName},</h1>
-        <p className="mx-auto mt-4 max-w-xl text-lg leading-8 text-white/90">Your payment of {formatCurrency(amountDue)} is due on {invoice.dueDate}.</p>
+        <p className="mt-5 text-xs font-semibold uppercase tracking-[0.2em] text-[var(--hub-text-soft)]">{invoice.fromName}</p>
+        <h1 className="mt-6 text-4xl font-semibold tracking-[-0.04em] text-[var(--hub-text-strong)] sm:text-5xl">Hi {invoice.clientName},</h1>
+        <p className="mx-auto mt-4 max-w-xl text-lg leading-8 text-[var(--hub-text-soft)]">Your payment of {formatCurrency(amountDue)} is due on {invoice.dueDate}.</p>
       </section>
 
       <div className="-mt-16 px-2 sm:px-4">
@@ -718,8 +761,8 @@ export function ClientHubInvoiceDetailView({
               <StatusPill className={getStatusStyles(invoice.status)}>{invoice.status.replace(/_/g, " ")}</StatusPill>
             </div>
             <div className="flex items-center gap-2 text-[var(--hub-text-muted)]">
-              <button type="button" className="flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--hub-border)] bg-white text-[var(--hub-text-soft)] transition hover:bg-slate-50" aria-label="Print invoice">🖨</button>
-              <button type="button" className="flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--hub-border)] bg-white text-[var(--hub-text-soft)] transition hover:bg-slate-50" aria-label="Download invoice">↓</button>
+              <button type="button" className="flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--hub-border)] bg-white text-[var(--hub-text-soft)] transition hover:bg-slate-50" aria-label="Print invoice"><Glyph name="print" /></button>
+              <button type="button" className="flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--hub-border)] bg-white text-[var(--hub-text-soft)] transition hover:bg-slate-50" aria-label="Download invoice"><Glyph name="download" /></button>
             </div>
           </div>
 
@@ -740,7 +783,7 @@ export function ClientHubInvoiceDetailView({
 
           {invoice.remainingAmount > 0 && (
             <div className="px-6 pb-6 sm:px-8 sm:pb-8">
-              <Link href={`/portal/${orgSlug}/client-hub/invoices/${invoice.id}/payment`} className="inline-flex w-full items-center justify-center rounded-2xl bg-[var(--hub-accent)] px-6 py-4 text-base font-semibold text-[#152033] transition hover:brightness-[0.98]">
+              <Link href={`/portal/${orgSlug}/client-hub/invoices/${invoice.id}/payment`} className="inline-flex w-full items-center justify-center rounded-2xl bg-[var(--hub-accent)] px-6 py-4 text-base font-semibold text-white transition hover:brightness-[0.98]">
                 PAY NOW
               </Link>
             </div>
@@ -841,7 +884,7 @@ export function ClientHubQuotesView({
       <Sidebar orgSlug={orgSlug} config={hubConfig} activePath={basePath} />
       <div className="space-y-6">
         <ShellCard className="overflow-hidden">
-          <div className="border-b border-[var(--hub-border)] bg-[var(--hub-accent-wash)] px-6 py-6 sm:px-8">
+          <div className="border-b border-[var(--hub-border)] bg-[var(--hub-surface-soft)] px-6 py-6 sm:px-8">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
               <div>
                 <h1 className="text-4xl font-semibold tracking-[-0.04em] text-[var(--hub-text-strong)]">{hubConfig.quotes.pageTitle}</h1>
@@ -912,14 +955,14 @@ export function ClientHubQuoteDetailView({
         <span className="text-[var(--hub-text-strong)]">#{quote.quoteNumber}</span>
       </nav>
 
-      <section className="overflow-hidden border border-[var(--hub-border)] px-6 py-12 text-center text-white sm:px-10 sm:py-16" style={{ background: `linear-gradient(135deg, var(--hub-accent), rgba(var(--hub-accent-rgb), 0.85))` }}>
+      <section className="overflow-hidden rounded-[28px] border border-[var(--hub-border)] px-6 py-12 text-center sm:px-10 sm:py-16" style={{ background: "var(--hub-hero-gradient)" }}>
         <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-[24px] bg-white ring-1 ring-white/50">
           <span className="text-lg font-bold text-[var(--hub-accent)]">Q</span>
         </div>
-        <p className="mt-5 text-xs font-semibold uppercase tracking-[0.2em] text-white/80">Quotation</p>
-        <h1 className="mt-6 text-4xl font-semibold tracking-[-0.04em] sm:text-5xl">Hi Hadi Azeez,</h1>
-        <p className="mx-auto mt-4 max-w-xl text-lg leading-8 text-white/90">Please review the quotation details below.</p>
-        <p className="mx-auto mt-3 max-w-xl text-base font-medium text-white/80">{quote.title}</p>
+        <p className="mt-5 text-xs font-semibold uppercase tracking-[0.2em] text-[var(--hub-text-soft)]">Quotation</p>
+        <h1 className="mt-6 text-4xl font-semibold tracking-[-0.04em] text-[var(--hub-text-strong)] sm:text-5xl">Hi Hadi Azeez,</h1>
+        <p className="mx-auto mt-4 max-w-xl text-lg leading-8 text-[var(--hub-text-soft)]">Please review the quotation details below.</p>
+        <p className="mx-auto mt-3 max-w-xl text-base font-medium text-[var(--hub-text-strong)]">{quote.title}</p>
       </section>
 
       <div className="-mt-16 px-2 sm:px-4">
@@ -930,8 +973,8 @@ export function ClientHubQuoteDetailView({
               <StatusPill className={getStatusStyles(quote.status)}>{quote.status}</StatusPill>
             </div>
             <div className="flex items-center gap-2 text-[var(--hub-text-muted)]">
-              <button type="button" className="flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--hub-border)] bg-white text-[var(--hub-text-soft)] transition hover:bg-slate-50" aria-label="Print quote">🖨</button>
-              <button type="button" className="flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--hub-border)] bg-white text-[var(--hub-text-soft)] transition hover:bg-slate-50" aria-label="Download quote">↓</button>
+              <button type="button" className="flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--hub-border)] bg-white text-[var(--hub-text-soft)] transition hover:bg-slate-50" aria-label="Print quote"><Glyph name="print" /></button>
+              <button type="button" className="flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--hub-border)] bg-white text-[var(--hub-text-soft)] transition hover:bg-slate-50" aria-label="Download quote"><Glyph name="download" /></button>
             </div>
           </div>
 
@@ -954,7 +997,7 @@ export function ClientHubQuoteDetailView({
             <div className="px-6 pb-6 sm:px-8 sm:pb-8">
               <h3 className="mb-3 text-sm font-semibold uppercase tracking-[0.14em] text-[var(--hub-text-muted)]">Your Response</h3>
               <div className="grid gap-3 sm:grid-cols-2">
-                <button type="button" disabled className="inline-flex items-center justify-center rounded-xl bg-[var(--hub-accent)] px-6 py-3.5 text-sm font-semibold text-[#152033] disabled:cursor-not-allowed disabled:opacity-80">
+                <button type="button" disabled className="inline-flex items-center justify-center rounded-xl bg-[var(--hub-accent)] px-6 py-3.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-80">
                   Accept Quote
                 </button>
                 <button type="button" disabled className="inline-flex items-center justify-center rounded-xl border border-rose-200 bg-rose-50 px-6 py-3.5 text-sm font-semibold text-rose-700 disabled:cursor-not-allowed disabled:opacity-80">

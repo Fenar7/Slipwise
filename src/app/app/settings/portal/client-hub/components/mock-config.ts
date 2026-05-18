@@ -8,7 +8,7 @@ import type { ClientHubConfig } from "@/app/portal/[orgSlug]/client-hub/componen
 
 export const DEFAULT_CLIENT_HUB_CONFIG: ClientHubConfig = {
   branding: {
-    accentColor: "#6ed5ab",
+    accentColor: "#e8401e",
     logoUrl: null,
     removePoweredBy: false,
   },

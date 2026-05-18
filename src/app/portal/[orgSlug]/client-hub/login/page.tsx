@@ -69,7 +69,7 @@ export default function ClientHubLoginPage() {
               <button
                 type="submit"
                 disabled={isPending}
-                className="w-full rounded-2xl bg-[var(--hub-accent)] px-5 py-3.5 text-sm font-semibold text-[#152033] transition hover:brightness-[0.98] disabled:cursor-not-allowed disabled:opacity-70"
+                className="w-full rounded-2xl bg-[var(--hub-accent)] px-5 py-3.5 text-sm font-semibold text-white transition hover:brightness-[0.98] disabled:cursor-not-allowed disabled:opacity-70"
               >
                 {isPending ? "Sending code…" : "Send verification code"}
               </button>
@@ -111,7 +111,7 @@ export default function ClientHubLoginPage() {
             </p>
             <Link
               href={`/portal/${orgSlug}/client-hub/verify`}
-              className="mt-6 inline-flex w-full items-center justify-center rounded-2xl bg-[var(--hub-accent)] px-5 py-3.5 text-sm font-semibold text-[#152033] shadow-[0_12px_32px_rgba(var(--hub-accent-rgb),0.22)] transition hover:-translate-y-0.5"
+              className="mt-6 inline-flex w-full items-center justify-center rounded-2xl bg-[var(--hub-accent)] px-5 py-3.5 text-sm font-semibold text-white transition hover:brightness-[0.98]"
             >
               Continue to verification
             </Link>

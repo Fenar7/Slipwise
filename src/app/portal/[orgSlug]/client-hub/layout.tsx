@@ -75,7 +75,7 @@ export default async function ClientHubLayout({
   return (
     <div
       data-client-hub-root
-      className="flex min-h-screen flex-col bg-[#fbfbf8]"
+      className="flex min-h-screen flex-col bg-[var(--hub-surface-soft)]"
       style={buildHubThemeStyle(accentColor)}
     >
       <style>{`
