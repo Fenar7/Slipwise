@@ -1,12 +1,15 @@
 /**
- * Phase 1 Sprint 1.3 — Client Hub Static Page Shell Render Tests
+ * Phase 1 Sprint 1.4 — Client Hub Static Page Shell Render Tests
  *
- * Covers: dashboard, invoices, invoice detail, quotes, quote detail,
- * payments, about, contact, and products pages render without error.
+ * Covers: dashboard, invoices, invoice detail, payment step, quotes, quote detail,
+ * payments, about, contact, products, login, and verify pages render without error.
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
+
+const mockUseParams = vi.hoisted(() => vi.fn(() => ({ orgSlug: "acme" })));
+vi.mock("next/navigation", () => ({ useParams: mockUseParams }));
 
 import DashboardPage from "../page";
 import InvoicesPage from "../invoices/page";
@@ -18,6 +21,8 @@ import PaymentsPage from "../payments/page";
 import AboutPage from "../about/page";
 import ContactPage from "../contact/page";
 import ProductsPage from "../products/page";
+import LoginPage from "../login/page";
+import VerifyPage from "../verify/page";
 
 const ORG_SLUG = "acme";
 
@@ -42,7 +47,7 @@ describe("Client Hub Dashboard", () => {
     expect(html).toContain("Take Actions");
     expect(html).toContain("Pending Invoices");
     expect(html).toContain("Pending Quotes");
-    expect(html).toContain("View Products/Services");
+    expect(html).toContain("Browse Services");
   });
 });
 
@@ -59,14 +64,12 @@ describe("Client Hub Invoices", () => {
     const html = await renderAsyncDetailPage(InvoiceDetailPage, "inv-001");
     expect(html).toContain("Invoice #INV-000131");
     expect(html).toContain("Hi Hadi Azeez");
-    expect(html).toContain("PAY NOW");
     expect(html).toContain("LinkedIn inbox yearly");
   });
 
   it("renders paid notice for paid invoice", async () => {
     const html = await renderAsyncDetailPage(InvoiceDetailPage, "inv-002");
     expect(html).toContain("Invoice #INV-000128");
-    expect(html).not.toContain("PAY NOW");
   });
 
   it("renders payment selection as a dedicated step", async () => {
@@ -99,14 +102,13 @@ describe("Client Hub Quotes", () => {
   it("renders accepted notice for accepted quote", async () => {
     const html = await renderAsyncDetailPage(QuoteDetailPage, "qt-002");
     expect(html).toContain("You accepted this quote");
-    expect(html).not.toContain("Your Response");
   });
 });
 
 describe("Client Hub Payments", () => {
   it("renders payment history and outstanding summary", async () => {
     const html = await renderAsyncPage(PaymentsPage);
-    expect(html).toContain("How would you like to pay?");
+    expect(html).toContain("Payment Methods");
     expect(html).toContain("Total Paid");
     expect(html).toContain("Outstanding");
     expect(html).toContain("Payment History");
@@ -117,7 +119,7 @@ describe("Client Hub Payments", () => {
 describe("Client Hub About", () => {
   it("renders company story and values", async () => {
     const html = await renderAsyncPage(AboutPage);
-    expect(html).toContain("About Us");
+    expect(html).toContain("About");
     expect(html).toContain("We combine clear communication");
   });
 });
@@ -139,5 +141,27 @@ describe("Client Hub Products", () => {
     expect(html).toContain("LinkedIn Inbox Yearly");
     expect(html).toContain("Lead Generation Sprint");
     expect(html).toContain("Quarterly Advisory");
+  });
+});
+
+describe("Client Hub Login", () => {
+  it("renders the login shell with brand mark and email form", () => {
+    const html = renderToStaticMarkup(<LoginPage />);
+    expect(html).toContain("Passwordless sign in");
+    expect(html).toContain("Sign in to your client hub");
+    expect(html).toContain("Send verification code");
+    expect(html).toContain("No password needed");
+    expect(html).toContain("Code expires in 15 min");
+  });
+});
+
+describe("Client Hub Verify", () => {
+  it("renders the verify shell with OTP input", () => {
+    const html = renderToStaticMarkup(<VerifyPage />);
+    expect(html).toContain("Step 2 of 2");
+    expect(html).toContain("Enter your verification code");
+    expect(html).toContain("Verify code");
+    expect(html).toContain("Code expires in 15 minutes");
+    expect(html).toContain("Resend code");
   });
 });

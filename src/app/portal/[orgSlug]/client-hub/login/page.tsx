@@ -29,52 +29,28 @@ export default function ClientHubLoginPage() {
   }
 
   return (
-    <div className="mx-auto flex min-h-[72vh] w-full max-w-6xl items-center px-4 py-10 sm:px-6">
-      <div className="grid w-full gap-6 lg:grid-cols-[1.1fr_0.9fr]">
-        <section className="overflow-hidden rounded-[32px] border border-[var(--hub-border)] bg-[radial-gradient(circle_at_top,_rgba(var(--hub-accent-rgb),0.2),_transparent_48%),linear-gradient(135deg,rgba(255,248,239,0.96),rgba(255,255,255,0.92)_52%,rgba(var(--hub-accent-rgb),0.06)_100%)] p-8 shadow-[0_24px_80px_rgba(15,23,42,0.08)] sm:p-10">
-          <span className="inline-flex rounded-full bg-white/80 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-[var(--hub-text-strong)] ring-1 ring-[var(--hub-border)]">
-            Passwordless sign in
-          </span>
-          <h1 className="mt-6 max-w-xl text-4xl font-semibold tracking-[-0.05em] text-[var(--hub-text-strong)] sm:text-5xl">
-            Sign in to your client hub without a password.
-          </h1>
-          <p className="mt-4 max-w-lg text-base leading-8 text-[var(--hub-text-soft)]">
-            We’ll send a one-time code to the email connected to your client account so you can review invoices, quotes, and support details securely.
-          </p>
-          <div className="mt-8 grid gap-3 sm:grid-cols-3">
-            {[
-              "One-time verification code",
-              "No password to remember",
-              "Client portal access only",
-            ].map((item) => (
-              <div key={item} className="rounded-2xl border border-[var(--hub-border)] bg-white/78 px-4 py-3 text-sm font-medium text-[var(--hub-text-strong)]">
-                {item}
-              </div>
-            ))}
-          </div>
-        </section>
+    <div className="mx-auto flex w-full max-w-lg flex-col items-center justify-center py-12 sm:py-16">
+      {/* Brand mark */}
+      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white text-xl font-bold text-[var(--hub-accent)] shadow-sm ring-1 ring-[var(--hub-border)]">
+        {orgSlug.charAt(0).toUpperCase()}
+      </div>
+      <p className="mt-4 text-sm font-semibold text-[var(--hub-text-strong)]">{orgSlug}</p>
 
-        <section className="rounded-[32px] border border-[var(--hub-border)] bg-white/90 p-8 shadow-[0_24px_80px_rgba(15,23,42,0.08)] sm:p-10">
-          <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[var(--hub-text-soft)]">Client access</p>
-          <h2 className="mt-3 text-3xl font-semibold tracking-[-0.04em] text-[var(--hub-text-strong)]">Enter your email</h2>
-          <p className="mt-2 text-sm leading-7 text-[var(--hub-text-soft)]">
-            We’ll send a six-digit code if this email belongs to a valid client contact.
-          </p>
-
-          {sent ? (
-            <div className="mt-8 rounded-[28px] border border-emerald-100 bg-emerald-50/80 p-6">
-              <p className="text-lg font-semibold text-emerald-900">Verification code sent</p>
-              <p className="mt-2 text-sm leading-7 text-emerald-800">
-                If an account exists for <span className="font-semibold">{email}</span>, the code should arrive shortly.
+      <div className="mt-8 w-full rounded-[32px] border border-[var(--hub-border)] bg-white/90 p-8 shadow-[var(--hub-card-shadow)] sm:p-10">
+        {!sent ? (
+          <>
+            <div className="text-center">
+              <span className="inline-flex rounded-full bg-[var(--hub-accent-faint)] px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-[var(--hub-accent)]">
+                Passwordless sign in
+              </span>
+              <h1 className="mt-5 text-2xl font-semibold tracking-[-0.04em] text-[var(--hub-text-strong)] sm:text-3xl">
+                Sign in to your client hub
+              </h1>
+              <p className="mx-auto mt-3 max-w-sm text-sm leading-7 text-[var(--hub-text-soft)]">
+                We&apos;ll send a one-time code to your email so you can review invoices, quotes, and support details securely.
               </p>
-              <Link
-                href={`/portal/${orgSlug}/client-hub/verify`}
-                className="mt-5 inline-flex rounded-2xl bg-[var(--hub-accent)] px-5 py-3 text-sm font-semibold text-slate-950 shadow-[0_18px_40px_rgba(var(--hub-accent-rgb),0.28)]"
-              >
-                Continue to verification
-              </Link>
             </div>
-          ) : (
+
             <form onSubmit={handleSubmit} className="mt-8 space-y-5">
               <div className="space-y-2">
                 <label htmlFor="client-hub-email" className="text-sm font-semibold text-[var(--hub-text-strong)]">
@@ -87,23 +63,68 @@ export default function ClientHubLoginPage() {
                   value={email}
                   onChange={(event) => setEmail(event.target.value)}
                   placeholder="you@company.com"
-                  className="w-full rounded-2xl border border-[var(--hub-border)] bg-[#fbfaf6] px-4 py-3 text-sm text-[var(--hub-text-strong)] placeholder:text-[var(--hub-text-soft)] focus:border-[var(--hub-accent)] focus:outline-none focus:ring-2 focus:ring-[var(--hub-accent-wash)]"
+                  className="w-full rounded-2xl border border-[var(--hub-border)] bg-[#fbfaf6] px-4 py-3.5 text-sm text-[var(--hub-text-strong)] placeholder:text-[var(--hub-text-muted)] transition focus:border-[var(--hub-accent)] focus:outline-none focus:ring-2 focus:ring-[var(--hub-accent-faint)]"
                 />
               </div>
               {error && <p className="text-sm font-medium text-rose-600">{error}</p>}
               <button
                 type="submit"
                 disabled={isPending}
-                className="w-full rounded-2xl bg-[var(--hub-accent)] px-5 py-3.5 text-sm font-semibold text-slate-950 shadow-[0_18px_40px_rgba(var(--hub-accent-rgb),0.28)] transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-70"
+                className="w-full rounded-2xl bg-[var(--hub-accent)] px-5 py-3.5 text-sm font-semibold text-[#152033] shadow-[0_12px_32px_rgba(var(--hub-accent-rgb),0.22)] transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-70"
               >
                 {isPending ? "Sending code…" : "Send verification code"}
               </button>
-              <p className="text-sm leading-7 text-[var(--hub-text-soft)]">
-                Static Phase 1 shell: this button simulates delivery only. Real authentication comes in a later phase.
-              </p>
             </form>
-          )}
-        </section>
+
+            <div className="mt-6 border-t border-[var(--hub-border)] pt-5">
+              <div className="flex items-center justify-center gap-6 text-xs text-[var(--hub-text-muted)]">
+                <span className="flex items-center gap-1.5">
+                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
+                  </svg>
+                  No password needed
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  Code expires in 15 min
+                </span>
+              </div>
+              <p className="mt-4 text-center text-xs text-[var(--hub-text-muted)]">
+                Static Phase 1 shell — this button simulates delivery only.
+              </p>
+            </div>
+          </>
+        ) : (
+          <div className="text-center">
+            <span className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
+              <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
+              </svg>
+            </span>
+            <h2 className="mt-5 text-2xl font-semibold tracking-[-0.04em] text-[var(--hub-text-strong)]">
+              Check your email
+            </h2>
+            <p className="mx-auto mt-3 max-w-sm text-sm leading-7 text-[var(--hub-text-soft)]">
+              We sent a verification code to <span className="font-semibold text-[var(--hub-text-strong)]">{email}</span>.
+              Enter it on the next screen to continue.
+            </p>
+            <Link
+              href={`/portal/${orgSlug}/client-hub/verify`}
+              className="mt-6 inline-flex w-full items-center justify-center rounded-2xl bg-[var(--hub-accent)] px-5 py-3.5 text-sm font-semibold text-[#152033] shadow-[0_12px_32px_rgba(var(--hub-accent-rgb),0.22)] transition hover:-translate-y-0.5"
+            >
+              Continue to verification
+            </Link>
+            <button
+              type="button"
+              onClick={() => setSent(false)}
+              className="mt-4 text-sm font-medium text-[var(--hub-text-muted)] transition hover:text-[var(--hub-text-strong)]"
+            >
+              Use a different email
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
