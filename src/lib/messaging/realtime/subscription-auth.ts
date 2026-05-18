@@ -27,6 +27,7 @@ export type SubscriptionAuthResult =
 
 /** Internal-only diagnostic detail for supportability. Never sent to clients. */
 export type SubscriptionAuthDiagnostic =
+  | "allowed"
   | "not_found"
   | "org_mismatch"
   | "not_member"
@@ -96,7 +97,7 @@ export async function authorizeConversationSubscription(
       };
     }
 
-    return { result: { allowed: true }, diagnostic: "policy_denied" };
+    return { result: { allowed: true }, diagnostic: "allowed" };
   } catch (error) {
     return {
       result: {

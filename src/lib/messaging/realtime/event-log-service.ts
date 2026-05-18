@@ -1,5 +1,6 @@
 import "server-only";
 
+import { randomBytes } from "crypto";
 import type { Prisma } from "@/generated/prisma/client";
 import type { RealtimeEventType } from "./protocol";
 
@@ -76,7 +77,7 @@ export async function appendConversationEvent(
   tx: Prisma.TransactionClient,
   input: AppendConversationEventInput,
 ): Promise<AppendConversationEventResult> {
-  const eventId = `${input.eventType}:${Date.now()}:${Math.random().toString(36).slice(2, 10)}`;
+  const eventId = `${input.eventType}:${Date.now()}:${randomBytes(8).toString("hex")}`;
 
   for (let attempt = 0; attempt < MAX_APPEND_RETRIES; attempt++) {
     const cursor = await generateMonotonicCursor(tx, input.conversationId);
