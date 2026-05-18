@@ -294,11 +294,39 @@ export interface IMailboxProviderAdapter {
       inReplyToRfcMessageId?: string | null;
       references?: string[] | null;
     } | null;
+    attachments?: Array<{
+      filename: string;
+      mimeType: string;
+      size: number;
+      isInline: boolean;
+      contentBase64: string;
+    }>;
   }): Promise<
     | {
         providerMessageId: string;
         providerThreadId: string;
         rfcMessageId: string | null;
+      }
+    | MailboxProviderError
+  >;
+
+  /**
+   * Fetch attachment bytes from the provider.
+   *
+   * Used for inbound message attachments that are not cached in local storage.
+   * The provider adapter is responsible for provider-specific authentication
+   * and binary retrieval. Returns raw bytes, filename, and MIME type.
+   */
+  fetchAttachment(params: {
+    orgId: string;
+    tokenRef: string;
+    providerMessageId: string;
+    providerAttachmentId: string;
+  }): Promise<
+    | {
+        bytes: Buffer;
+        filename: string;
+        mimeType: string;
       }
     | MailboxProviderError
   >;

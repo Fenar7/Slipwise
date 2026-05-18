@@ -501,6 +501,15 @@ export function toMailboxThreadDetailReadShape(
 
 // ─── Draft read shape (Sprint 5.1) ────────────────────────────────────────────
 
+export interface MailboxDraftAttachmentReadShape {
+  id: string;
+  filename: string;
+  mimeType: string;
+  size: number;
+  isInline: boolean;
+  createdAt: string;
+}
+
 export interface MailboxDraftReadShape {
   id: string;
   orgId: string;
@@ -515,7 +524,9 @@ export interface MailboxDraftReadShape {
   subject: string;
   htmlBody: string;
   textBody: string | null;
+  /** @deprecated Use attachments (typed draft attachment metadata) instead. */
   attachmentRefs: string[];
+  attachments: MailboxDraftAttachmentReadShape[];
   status: MailboxDraftStatus;
   lastAutosavedAt: string | null;
   createdBy: string;
@@ -523,9 +534,23 @@ export interface MailboxDraftReadShape {
   updatedAt: string;
 }
 
+function toMailboxDraftAttachmentReadShape(
+  record: import("./domain-types").MailboxDraftAttachmentRecord,
+): MailboxDraftAttachmentReadShape {
+  return {
+    id: record.id,
+    filename: record.filename,
+    mimeType: record.mimeType,
+    size: record.size,
+    isInline: record.isInline,
+    createdAt: record.createdAt.toISOString(),
+  };
+}
+
 export function toMailboxDraftReadShape(
   record: MailboxDraftRecord,
 ): MailboxDraftReadShape {
+  const draftAttachments = record.draftAttachments ?? [];
   return {
     id: record.id,
     orgId: record.orgId,
@@ -541,6 +566,7 @@ export function toMailboxDraftReadShape(
     htmlBody: record.htmlBody,
     textBody: record.textBody,
     attachmentRefs: record.attachmentRefs,
+    attachments: draftAttachments.map(toMailboxDraftAttachmentReadShape),
     status: record.status,
     lastAutosavedAt: record.lastAutosavedAt?.toISOString() ?? null,
     createdBy: record.createdBy,

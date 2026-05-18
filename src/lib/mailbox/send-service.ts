@@ -26,6 +26,11 @@ import { toMailboxDraftReadShape } from "./read-shapes";
 import type { MailboxDraftReadShape } from "./read-shapes";
 import type { MailboxDraftMode } from "./domain-types";
 import { DraftServiceError } from "./draft-service";
+import {
+  resolveAttachmentsForSend,
+  cleanupDraftAttachments,
+  isAttachmentServiceError,
+} from "./attachment-service";
 
 // ─── Errors ───────────────────────────────────────────────────────────────────
 
@@ -162,6 +167,17 @@ export async function sendDraft(input: SendDraftInput): Promise<SendDraftResult>
     }
   }
 
+  // Resolve staged attachments for the send path
+  let attachmentPayload: Awaited<ReturnType<typeof resolveAttachmentsForSend>> = [];
+  try {
+    attachmentPayload = await resolveAttachmentsForSend(orgId, draftId);
+  } catch (err) {
+    if (isAttachmentServiceError(err)) {
+      throw new SendServiceError(err.message, err.statusCode);
+    }
+    throw new SendServiceError("Failed to resolve attachments for send", 500);
+  }
+
   const adapter = getMailboxProviderAdapter(connection.provider);
 
   const sendResult = await adapter.sendMessage({
@@ -175,6 +191,7 @@ export async function sendDraft(input: SendDraftInput): Promise<SendDraftResult>
     htmlBody: draft.htmlBody ?? "",
     textBody: draft.textBody ?? null,
     threadContext,
+    attachments: attachmentPayload,
   });
 
   if (isMailboxProviderError(sendResult)) {
@@ -208,11 +225,19 @@ export async function sendDraft(input: SendDraftInput): Promise<SendDraftResult>
         mode: draft.mode,
         providerMessageId: sendResult.providerMessageId,
         providerThreadId: sendResult.providerThreadId,
+        attachmentCount: attachmentPayload.length,
       },
     });
 
     return sent;
   });
+
+  // Best-effort cleanup of staged attachments after send
+  try {
+    await cleanupDraftAttachments(orgId, draftId);
+  } catch {
+    // Non-fatal: attachments may be garbage-collected later
+  }
 
   return {
     draft: toMailboxDraftReadShape(updatedDraft as unknown as import("./domain-types").MailboxDraftRecord),
