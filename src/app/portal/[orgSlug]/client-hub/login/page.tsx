@@ -29,18 +29,17 @@ export default function ClientHubLoginPage() {
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-lg flex-col items-center justify-center py-12 sm:py-16">
-      {/* Brand mark */}
-      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white text-xl font-bold text-[var(--hub-accent)] shadow-sm ring-1 ring-[var(--hub-border)]">
+    <div className="mx-auto flex w-full max-w-md flex-col items-center justify-center py-14 sm:py-20">
+      <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-[var(--hub-border)] bg-white text-xl font-bold text-[var(--hub-accent)]">
         {orgSlug.charAt(0).toUpperCase()}
       </div>
-      <p className="mt-4 text-sm font-semibold text-[var(--hub-text-strong)]">{orgSlug}</p>
+      <p className="mt-4 text-sm font-semibold capitalize text-[var(--hub-text-strong)]">{orgSlug}</p>
 
-      <div className="mt-8 w-full rounded-[32px] border border-[var(--hub-border)] bg-white/90 p-8 shadow-[var(--hub-card-shadow)] sm:p-10">
+      <div className="mt-8 w-full rounded-[22px] border border-[var(--hub-border)] bg-white p-8 sm:p-10">
         {!sent ? (
           <>
             <div className="text-center">
-              <span className="inline-flex rounded-full bg-[var(--hub-accent-faint)] px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-[var(--hub-accent)]">
+              <span className="inline-flex rounded-full border border-[var(--hub-border)] bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-[var(--hub-accent)]">
                 Passwordless sign in
               </span>
               <h1 className="mt-5 text-2xl font-semibold tracking-[-0.04em] text-[var(--hub-text-strong)] sm:text-3xl">
@@ -63,14 +62,14 @@ export default function ClientHubLoginPage() {
                   value={email}
                   onChange={(event) => setEmail(event.target.value)}
                   placeholder="you@company.com"
-                  className="w-full rounded-2xl border border-[var(--hub-border)] bg-[#fbfaf6] px-4 py-3.5 text-sm text-[var(--hub-text-strong)] placeholder:text-[var(--hub-text-muted)] transition focus:border-[var(--hub-accent)] focus:outline-none focus:ring-2 focus:ring-[var(--hub-accent-faint)]"
+                  className="w-full rounded-2xl border border-[var(--hub-border)] bg-white px-4 py-3.5 text-sm text-[var(--hub-text-strong)] placeholder:text-[var(--hub-text-muted)] transition focus:border-[var(--hub-accent)] focus:outline-none"
                 />
               </div>
               {error && <p className="text-sm font-medium text-rose-600">{error}</p>}
               <button
                 type="submit"
                 disabled={isPending}
-                className="w-full rounded-2xl bg-[var(--hub-accent)] px-5 py-3.5 text-sm font-semibold text-[#152033] shadow-[0_12px_32px_rgba(var(--hub-accent-rgb),0.22)] transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-70"
+                className="w-full rounded-2xl bg-[var(--hub-accent)] px-5 py-3.5 text-sm font-semibold text-[#152033] transition hover:brightness-[0.98] disabled:cursor-not-allowed disabled:opacity-70"
               >
                 {isPending ? "Sending code…" : "Send verification code"}
               </button>
@@ -126,6 +125,7 @@ export default function ClientHubLoginPage() {
           </div>
         )}
       </div>
+      <p className="mt-8 text-center text-xs text-[var(--hub-text-muted)]">© 2026 Slipwise. All rights reserved.</p>
     </div>
   );
 }

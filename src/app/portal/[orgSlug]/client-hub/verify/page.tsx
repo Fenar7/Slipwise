@@ -12,7 +12,7 @@ function OtpSlots({ value }: { value: string }) {
       {slots.map((slot, index) => (
         <div
           key={index}
-          className="flex h-12 items-center justify-center rounded-xl border border-[var(--hub-border)] bg-[#fbfaf6] text-lg font-semibold text-[var(--hub-text-strong)] shadow-[inset_0_1px_0_rgba(255,255,255,0.6)] sm:h-14"
+          className="flex h-12 items-center justify-center rounded-xl border border-[var(--hub-border)] bg-white text-lg font-semibold text-[var(--hub-text-strong)] sm:h-14"
         >
           {slot || <span className="text-[var(--hub-text-muted)]">•</span>}
         </div>
@@ -47,8 +47,8 @@ export default function ClientHubVerifyPage() {
 
   if (verified) {
     return (
-      <div className="mx-auto flex w-full max-w-lg flex-col items-center justify-center py-12 sm:py-16">
-        <div className="w-full rounded-[32px] border border-emerald-100 bg-[radial-gradient(circle_at_top,_rgba(var(--hub-accent-rgb),0.12),_transparent_42%),linear-gradient(180deg,#f3fff8_0%,#ffffff_100%)] p-8 text-center shadow-[var(--hub-card-shadow)] sm:p-10">
+      <div className="mx-auto flex w-full max-w-md flex-col items-center justify-center py-14 sm:py-20">
+        <div className="w-full rounded-[22px] border border-emerald-100 bg-white p-8 text-center sm:p-10">
           <span className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
             <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
@@ -62,7 +62,7 @@ export default function ClientHubVerifyPage() {
           </p>
           <Link
             href={`/portal/${orgSlug}/client-hub`}
-            className="mt-6 inline-flex w-full items-center justify-center rounded-2xl bg-[var(--hub-accent)] px-5 py-3.5 text-sm font-semibold text-[#152033] shadow-[0_12px_32px_rgba(var(--hub-accent-rgb),0.22)] transition hover:-translate-y-0.5"
+            className="mt-6 inline-flex w-full items-center justify-center rounded-2xl bg-[var(--hub-accent)] px-5 py-3.5 text-sm font-semibold text-[#152033] transition hover:brightness-[0.98]"
           >
             Continue to dashboard
           </Link>
@@ -72,16 +72,15 @@ export default function ClientHubVerifyPage() {
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-lg flex-col items-center justify-center py-12 sm:py-16">
-      {/* Brand mark */}
-      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white text-xl font-bold text-[var(--hub-accent)] shadow-sm ring-1 ring-[var(--hub-border)]">
+    <div className="mx-auto flex w-full max-w-md flex-col items-center justify-center py-14 sm:py-20">
+      <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-[var(--hub-border)] bg-white text-xl font-bold text-[var(--hub-accent)]">
         {orgSlug.charAt(0).toUpperCase()}
       </div>
-      <p className="mt-4 text-sm font-semibold text-[var(--hub-text-strong)]">{orgSlug}</p>
+      <p className="mt-4 text-sm font-semibold capitalize text-[var(--hub-text-strong)]">{orgSlug}</p>
 
-      <div className="mt-8 w-full rounded-[32px] border border-[var(--hub-border)] bg-white/90 p-8 shadow-[var(--hub-card-shadow)] sm:p-10">
+      <div className="mt-8 w-full rounded-[22px] border border-[var(--hub-border)] bg-white p-8 sm:p-10">
         <div className="text-center">
-          <span className="inline-flex rounded-full bg-[var(--hub-accent-faint)] px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-[var(--hub-accent)]">
+          <span className="inline-flex rounded-full border border-[var(--hub-border)] bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-[var(--hub-accent)]">
             Step 2 of 2
           </span>
           <h1 className="mt-5 text-2xl font-semibold tracking-[-0.04em] text-[var(--hub-text-strong)] sm:text-3xl">
@@ -117,7 +116,7 @@ export default function ClientHubVerifyPage() {
               maxLength={6}
               value={code}
               onChange={(event) => setCode(event.target.value.replace(/\D/g, ""))}
-              className="mt-3 w-full rounded-2xl border border-[var(--hub-border)] bg-[#fbfaf6] px-4 py-3 text-center text-lg font-semibold tracking-[0.3em] text-[var(--hub-text-strong)] transition focus:border-[var(--hub-accent)] focus:outline-none focus:ring-2 focus:ring-[var(--hub-accent-faint)]"
+              className="mt-3 w-full rounded-2xl border border-[var(--hub-border)] bg-white px-4 py-3 text-center text-lg font-semibold tracking-[0.3em] text-[var(--hub-text-strong)] transition focus:border-[var(--hub-accent)] focus:outline-none"
               placeholder="000000"
             />
           </div>
@@ -125,7 +124,7 @@ export default function ClientHubVerifyPage() {
           <button
             type="submit"
             disabled={isPending}
-            className="w-full rounded-2xl bg-[var(--hub-accent)] px-5 py-3.5 text-sm font-semibold text-[#152033] shadow-[0_12px_32px_rgba(var(--hub-accent-rgb),0.22)] transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-70"
+            className="w-full rounded-2xl bg-[var(--hub-accent)] px-5 py-3.5 text-sm font-semibold text-[#152033] transition hover:brightness-[0.98] disabled:cursor-not-allowed disabled:opacity-70"
           >
             {isPending ? "Verifying…" : "Verify code"}
           </button>
@@ -151,6 +150,7 @@ export default function ClientHubVerifyPage() {
           </Link>
         </div>
       </div>
+      <p className="mt-8 text-center text-xs text-[var(--hub-text-muted)]">© 2026 Slipwise. All rights reserved.</p>
     </div>
   );
 }
