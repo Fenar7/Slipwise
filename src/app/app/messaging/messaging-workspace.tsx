@@ -19,6 +19,17 @@ import type {
   MessagingNotification,
 } from "./types";
 import { MOCK_NOTIFICATIONS } from "./mock-data";
+import { useConversationList } from "./lib/use-conversation-list";
+import { useConversationDetail } from "./lib/use-conversation-detail";
+import { useRealtimeBootstrap } from "./lib/use-realtime-bootstrap";
+import {
+  toFrontendChannel,
+  toFrontendDM,
+  toFrontendGroup,
+  toActiveConversation,
+  toFrontendMessages,
+} from "./lib/mappers";
+import type { ApiConversationSummary } from "./lib/mappers";
 import { useWorkspaceTopBar } from "@/components/layout/workspace-topbar-context";
 import { cn } from "@/lib/utils";
 
@@ -119,6 +130,35 @@ export function MessagingWorkspace() {
   };
 
   const activeConversation = activeConversations[state.activeSection] ?? null;
+
+  const {
+    channels: liveChannels,
+    dms: liveDms,
+    groups: liveGroups,
+    loading: listLoading,
+    error: listError,
+    empty: listEmpty,
+  } = useConversationList();
+
+  const { detail: activeDetail } = useConversationDetail(
+    activeConversation?.id ?? null
+  );
+
+  const { degraded: realtimeDegraded } = useRealtimeBootstrap();
+
+  function enrichSelected(summary: ApiConversationSummary, kind: "channel" | "dm" | "group"): ActiveConversation {
+    const conv = toActiveConversation(summary, kind);
+    if (activeDetail && activeDetail.id === summary.id) {
+      conv.canSend = activeDetail.canSend;
+    }
+    return conv;
+  }
+
+  const sectionChannels = liveChannels.map((s) => toFrontendChannel(s));
+  const sectionDms = liveDms.map((s) => toFrontendDM(s));
+  const sectionGroups = liveGroups.map((s) => toFrontendGroup(s));
+
+  const messages = activeDetail ? toFrontendMessages(activeDetail) : undefined;
 
   // Sections that use the Sprint 1.2 two-column conversation layout
   const isConversationSection =
@@ -221,22 +261,49 @@ export function MessagingWorkspace() {
                 style={{ borderColor: "#E0E0E0" }}
                 data-testid="conversation-list-column"
               >
-                {state.activeSection === "channels" && (
+                {listLoading && (
+                  <div className="flex flex-1 items-center justify-center">
+                    <p className="text-xs text-gray-400">Loading conversations…</p>
+                  </div>
+                )}
+                {listError && (
+                  <div className="flex flex-1 items-center justify-center px-4 text-center">
+                    <p className="text-xs font-semibold text-red-600">{listError}</p>
+                  </div>
+                )}
+                {listEmpty && (
+                  <div className="flex flex-1 items-center justify-center px-4 text-center">
+                    <p className="text-xs font-semibold">No conversations yet</p>
+                  </div>
+                )}
+                {!listLoading && !listError && !listEmpty && state.activeSection === "channels" && (
                   <ChannelConversationList
                     activeConversationId={activeConversation?.id ?? null}
-                    onSelect={handleConversationSelect}
+                    onSelect={(conv) => {
+                      const summary = liveChannels.find((c) => c.id === conv.id);
+                      if (summary) handleConversationSelect(enrichSelected(summary, "channel"));
+                    }}
+                    channels={sectionChannels}
                   />
                 )}
-                {state.activeSection === "dms" && (
+                {!listLoading && !listError && !listEmpty && state.activeSection === "dms" && (
                   <DMConversationList
                     activeConversationId={activeConversation?.id ?? null}
-                    onSelect={handleConversationSelect}
+                    onSelect={(conv) => {
+                      const summary = liveDms.find((c) => c.id === conv.id);
+                      if (summary) handleConversationSelect(enrichSelected(summary, "dm"));
+                    }}
+                    dms={sectionDms}
                   />
                 )}
-                {state.activeSection === "groups" && (
+                {!listLoading && !listError && !listEmpty && state.activeSection === "groups" && (
                   <GroupConversationList
                     activeConversationId={activeConversation?.id ?? null}
-                    onSelect={handleConversationSelect}
+                    onSelect={(conv) => {
+                      const summary = liveGroups.find((c) => c.id === conv.id);
+                      if (summary) handleConversationSelect(enrichSelected(summary, "group"));
+                    }}
+                    groups={sectionGroups}
                   />
                 )}
               </div>
@@ -252,7 +319,9 @@ export function MessagingWorkspace() {
                       ? "dm"
                       : "group"
                   }
-                  degraded={false}
+                  degraded={realtimeDegraded}
+                  messages={messages}
+                  canSend={activeDetail?.canSend ?? activeConversation?.canSend ?? true}
                 />
               </div>
             </div>

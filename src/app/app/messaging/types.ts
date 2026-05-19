@@ -191,6 +191,12 @@ export interface ActiveConversation {
   threadOpen: boolean;
   /** The message ID whose thread is open, if any */
   threadAnchorMessageId: string | null;
+  /** Backend-derived: ISO timestamp when conversation was archived, or null */
+  archivedAt?: string | null;
+  /** Backend-derived: ISO timestamp when conversation was locked, or null */
+  lockedAt?: string | null;
+  /** Backend-derived: whether the current user can send messages */
+  canSend?: boolean;
 }
 
 /**
