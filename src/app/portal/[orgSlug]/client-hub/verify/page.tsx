@@ -12,7 +12,7 @@ function OtpSlots({ value }: { value: string }) {
       {slots.map((slot, index) => (
         <div
           key={index}
-          className="flex h-12 items-center justify-center rounded-xl border border-[var(--hub-border)] bg-white text-lg font-semibold text-[var(--hub-text-strong)] sm:h-14"
+          className="flex h-11 items-center justify-center rounded-lg border border-[var(--hub-border)] bg-white text-base font-semibold text-[var(--hub-text-strong)] sm:h-12"
         >
           {slot || <span className="text-[var(--hub-text-muted)]">•</span>}
         </div>
@@ -48,21 +48,21 @@ export default function ClientHubVerifyPage() {
   if (verified) {
     return (
       <div className="mx-auto flex w-full max-w-md flex-col items-center justify-center py-14 sm:py-20">
-        <div className="w-full rounded-[22px] border border-emerald-100 bg-white p-8 text-center sm:p-10">
-          <span className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
-            <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <div className="w-full rounded-2xl border border-emerald-100 bg-white p-8 text-center shadow-[var(--hub-card-shadow)] sm:p-10">
+          <span className="inline-flex h-11 w-11 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
+            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
             </svg>
           </span>
-          <h1 className="mt-5 text-2xl font-semibold tracking-[-0.04em] text-[var(--hub-text-strong)] sm:text-3xl">
+          <h1 className="mt-5 text-2xl font-semibold tracking-[-0.03em] text-[var(--hub-text-strong)] sm:text-[28px]">
             You&apos;re ready to continue
           </h1>
-          <p className="mx-auto mt-3 max-w-sm text-sm leading-7 text-[var(--hub-text-soft)]">
+          <p className="mx-auto mt-3 max-w-sm text-[13px] leading-6 text-[var(--hub-text-soft)]">
             In the live product, this is where the authenticated client session would continue to the hub dashboard.
           </p>
           <Link
             href={`/portal/${orgSlug}/client-hub`}
-            className="mt-6 inline-flex w-full items-center justify-center rounded-2xl bg-[var(--hub-accent)] px-5 py-3.5 text-sm font-semibold text-white transition hover:brightness-[0.98]"
+            className="mt-6 inline-flex w-full items-center justify-center rounded-xl bg-[var(--hub-accent)] px-5 py-3 text-[13px] font-semibold text-white transition hover:brightness-[0.97]"
           >
             Continue to dashboard
           </Link>
@@ -73,27 +73,27 @@ export default function ClientHubVerifyPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-md flex-col items-center justify-center py-14 sm:py-20">
-      <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-[var(--hub-border)] bg-white text-xl font-bold text-[var(--hub-accent)]">
+      <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-[var(--hub-border)] bg-white text-lg font-bold text-[var(--hub-accent)] shadow-[var(--hub-card-shadow)]">
         {orgSlug.charAt(0).toUpperCase()}
       </div>
-      <p className="mt-4 text-sm font-semibold capitalize text-[var(--hub-text-strong)]">{orgSlug}</p>
+      <p className="mt-3 text-sm font-semibold capitalize text-[var(--hub-text-strong)]">{orgSlug}</p>
 
-      <div className="mt-8 w-full rounded-[22px] border border-[var(--hub-border)] bg-white p-8 sm:p-10">
+      <div className="mt-8 w-full rounded-2xl border border-[var(--hub-border)] bg-white p-8 shadow-[var(--hub-card-shadow)] sm:p-10">
         <div className="text-center">
-          <span className="inline-flex rounded-full border border-[var(--hub-border)] bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-[var(--hub-accent)]">
+          <span className="inline-flex rounded-full border border-[var(--hub-border)] bg-[var(--hub-surface-soft)] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--hub-accent)]">
             Step 2 of 2
           </span>
-          <h1 className="mt-5 text-2xl font-semibold tracking-[-0.04em] text-[var(--hub-text-strong)] sm:text-3xl">
+          <h1 className="mt-5 text-2xl font-semibold tracking-[-0.03em] text-[var(--hub-text-strong)] sm:text-[28px]">
             Enter your verification code
           </h1>
-          <p className="mx-auto mt-3 max-w-sm text-sm leading-7 text-[var(--hub-text-soft)]">
+          <p className="mx-auto mt-3 max-w-sm text-[13px] leading-6 text-[var(--hub-text-soft)]">
             We sent a six-digit code to your email. Enter it below to complete the static sign-in preview.
           </p>
         </div>
 
         <form onSubmit={handleSubmit} className="mt-8 space-y-5">
           <div>
-            <label htmlFor="client-hub-otp" className="text-sm font-semibold text-[var(--hub-text-strong)]">
+            <label htmlFor="client-hub-otp" className="text-[13px] font-semibold text-[var(--hub-text-strong)]">
               Verification code
             </label>
             <div className="mt-3">
@@ -116,7 +116,7 @@ export default function ClientHubVerifyPage() {
               maxLength={6}
               value={code}
               onChange={(event) => setCode(event.target.value.replace(/\D/g, ""))}
-              className="mt-3 w-full rounded-2xl border border-[var(--hub-border)] bg-white px-4 py-3 text-center text-lg font-semibold tracking-[0.3em] text-[var(--hub-text-strong)] transition focus:border-[var(--hub-accent)] focus:outline-none"
+              className="mt-3 w-full rounded-xl border border-[var(--hub-border)] bg-white px-4 py-3 text-center text-base font-semibold tracking-[0.3em] text-[var(--hub-text-strong)] transition focus:border-[var(--hub-accent)] focus:outline-none focus:ring-1 focus:ring-[var(--hub-accent-soft)]"
               placeholder="000000"
             />
           </div>
@@ -124,13 +124,13 @@ export default function ClientHubVerifyPage() {
           <button
             type="submit"
             disabled={isPending}
-            className="w-full rounded-2xl bg-[var(--hub-accent)] px-5 py-3.5 text-sm font-semibold text-white transition hover:brightness-[0.98] disabled:cursor-not-allowed disabled:opacity-70"
+            className="w-full rounded-xl bg-[var(--hub-accent)] px-5 py-3 text-[13px] font-semibold text-white transition hover:brightness-[0.97] disabled:cursor-not-allowed disabled:opacity-70"
           >
             {isPending ? "Verifying…" : "Verify code"}
           </button>
         </form>
 
-        <div className="mt-6 flex items-center justify-between gap-4 border-t border-[var(--hub-border)] pt-5 text-sm">
+        <div className="mt-6 flex items-center justify-between gap-4 border-t border-[var(--hub-border)] pt-5 text-[13px]">
           <span className="text-[var(--hub-text-muted)]">Code expires in 15 minutes</span>
           <button
             type="button"
@@ -141,7 +141,7 @@ export default function ClientHubVerifyPage() {
           </button>
         </div>
 
-        <div className="mt-4 text-center text-sm">
+        <div className="mt-4 text-center text-[13px]">
           <Link
             href={`/portal/${orgSlug}/client-hub/login`}
             className="font-medium text-[var(--hub-text-muted)] transition hover:text-[var(--hub-text-strong)]"
@@ -150,7 +150,7 @@ export default function ClientHubVerifyPage() {
           </Link>
         </div>
       </div>
-      <p className="mt-8 text-center text-xs text-[var(--hub-text-muted)]">© 2026 Slipwise. All rights reserved.</p>
+      <p className="mt-8 text-center text-[11px] text-[var(--hub-text-muted)]">© 2026 Slipwise. All rights reserved.</p>
     </div>
   );
 }

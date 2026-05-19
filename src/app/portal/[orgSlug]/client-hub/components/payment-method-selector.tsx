@@ -12,7 +12,7 @@ function ShellCard({
   className?: string;
 }) {
   return (
-    <section className={`rounded-[22px] border border-[var(--hub-border)] bg-white ${className}`}>{children}</section>
+    <section className={`rounded-2xl border border-[var(--hub-border)] bg-white shadow-[var(--hub-card-shadow)] ${className}`}>{children}</section>
   );
 }
 
@@ -39,21 +39,19 @@ export function PaymentMethodSelector({
 
   return (
     <div className="space-y-6">
-      {/* Amount due */}
       <div className="text-center">
-        <p className="text-sm font-medium text-[var(--hub-text-soft)]">Amount Due</p>
-        <h1 className="mt-3 text-5xl font-semibold tracking-[-0.05em] text-[var(--hub-text-strong)] sm:text-6xl">
+        <p className="text-[13px] font-medium text-[var(--hub-text-soft)]">Amount Due</p>
+        <h1 className="mt-3 text-4xl font-semibold tracking-[-0.04em] text-[var(--hub-text-strong)] sm:text-5xl">
           {formatCurrency(amountDue)}
         </h1>
-        <p className="mt-2 text-sm text-[var(--hub-text-soft)]">
+        <p className="mt-2 text-[13px] text-[var(--hub-text-soft)]">
           Invoice #{invoice.invoiceNumber} · Due {invoice.dueDate}
         </p>
       </div>
 
-      {/* Payment methods */}
       <section>
-        <h2 className="text-center text-3xl font-semibold tracking-[-0.03em] text-[var(--hub-text-strong)]">How would you like to pay?</h2>
-        <div className="mt-6 grid gap-4 sm:grid-cols-2">
+        <h2 className="text-center text-2xl font-semibold tracking-[-0.03em] text-[var(--hub-text-strong)] sm:text-[28px]">How would you like to pay?</h2>
+        <div className="mt-6 grid gap-3 sm:grid-cols-2">
           {methods.map((method) => {
             const isSelected = selectedMethod === method.id;
             return (
@@ -61,17 +59,17 @@ export function PaymentMethodSelector({
                 key={method.id}
                 type="button"
                 onClick={() => setSelectedMethod(isSelected ? null : method.id)}
-                className={`flex items-start gap-4 rounded-[20px] border px-6 py-5 text-left transition ${
+                className={`flex items-start gap-4 rounded-xl border px-5 py-4 text-left transition ${
                   isSelected
                     ? "border-[var(--hub-accent)] bg-[var(--hub-accent-faint)]"
                     : "border-[var(--hub-border)] bg-white hover:border-[var(--hub-accent-soft)]"
                 }`}
               >
-                <div>
-                  <p className="text-base font-semibold text-[var(--hub-text-strong)]">{method.label}</p>
-                  <p className="mt-1 text-sm text-[var(--hub-text-soft)]">{method.description}</p>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold text-[var(--hub-text-strong)]">{method.label}</p>
+                  <p className="mt-1 text-[13px] text-[var(--hub-text-soft)]">{method.description}</p>
                 </div>
-                <span className={`ml-auto mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition ${isSelected ? "border-[var(--hub-accent)] bg-[var(--hub-accent)] text-white" : "border-[var(--hub-border)] bg-white text-transparent"}`}>
+                <span className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition ${isSelected ? "border-[var(--hub-accent)] bg-[var(--hub-accent)] text-white" : "border-[var(--hub-border)] bg-white text-transparent"}`}>
                   <span className="h-2.5 w-2.5 rounded-full bg-current" />
                 </span>
               </button>
@@ -80,11 +78,10 @@ export function PaymentMethodSelector({
         </div>
       </section>
 
-      {/* Instructions panel */}
       {selectedMethod === "Bank Transfer" && (
         <ShellCard className="p-6">
-          <h3 className="text-base font-semibold text-[var(--hub-text-strong)]">Payment Instructions</h3>
-          <div className="mt-4 space-y-3 text-sm text-[var(--hub-text-soft)]">
+          <h3 className="text-sm font-semibold text-[var(--hub-text-strong)]">Payment Instructions</h3>
+          <div className="mt-4 space-y-3 text-[13px] text-[var(--hub-text-soft)]">
             <div className="flex justify-between border-b border-[var(--hub-border)] pb-3">
               <span>Bank Name</span>
               <span className="font-medium text-[var(--hub-text-strong)]">Emirates NBD</span>
@@ -106,7 +103,7 @@ export function PaymentMethodSelector({
               <span className="font-medium text-[var(--hub-text-strong)]">{invoice.invoiceNumber}</span>
             </div>
           </div>
-          <p className="mt-4 text-xs text-[var(--hub-text-muted)]">
+          <p className="mt-4 text-[11px] text-[var(--hub-text-muted)]">
             Please include the invoice number in your transfer reference. Transfers typically take 1–2 business days to
             process.
           </p>
@@ -115,8 +112,8 @@ export function PaymentMethodSelector({
 
       {selectedMethod === "Payment Link" && (
         <ShellCard className="p-6">
-          <h3 className="text-base font-semibold text-[var(--hub-text-strong)]">Payment Instructions</h3>
-          <div className="mt-4 rounded-[18px] border border-[var(--hub-border)] px-5 py-10 text-center text-sm text-[var(--hub-text-muted)]">
+          <h3 className="text-sm font-semibold text-[var(--hub-text-strong)]">Payment Instructions</h3>
+          <div className="mt-4 rounded-xl border border-[var(--hub-border)] bg-[var(--hub-surface-soft)]/40 px-5 py-10 text-center text-[13px] text-[var(--hub-text-muted)]">
             Secure redirect instructions will appear here in the live product.
           </div>
         </ShellCard>
@@ -124,8 +121,8 @@ export function PaymentMethodSelector({
 
       {selectedMethod === "UPI" && (
         <ShellCard className="p-6">
-          <h3 className="text-base font-semibold text-[var(--hub-text-strong)]">Payment Instructions</h3>
-          <div className="mt-4 rounded-[18px] border border-[var(--hub-border)] px-5 py-10 text-center text-sm text-[var(--hub-text-muted)]">
+          <h3 className="text-sm font-semibold text-[var(--hub-text-strong)]">Payment Instructions</h3>
+          <div className="mt-4 rounded-xl border border-[var(--hub-border)] bg-[var(--hub-surface-soft)]/40 px-5 py-10 text-center text-[13px] text-[var(--hub-text-muted)]">
             UPI instructions will appear here in the live product.
           </div>
         </ShellCard>
