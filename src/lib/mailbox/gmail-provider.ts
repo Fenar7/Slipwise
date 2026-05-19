@@ -565,7 +565,7 @@ export const gmailProviderAdapter: IMailboxProviderAdapter = {
    * - In-Reply-To and References headers are set from the original message
    *   so Gmail threads the reply correctly.
    */
-  async sendMessage({ orgId, tokenRef, from, to, cc, bcc, subject, htmlBody, textBody, threadContext, attachments }) {
+  async sendMessage({ orgId, tokenRef, from, to, cc, bcc, subject, htmlBody, textBody, threadContext, attachments, correlationKey, rfcMessageId }) {
     const credential = await readMailboxCredential(orgId, tokenRef);
     if (!credential) {
       return { category: "auth_expired", safeMessage: "Credential not found for tokenRef", retryable: false };
@@ -580,7 +580,7 @@ export const gmailProviderAdapter: IMailboxProviderAdapter = {
       return { category: "auth_insufficient", safeMessage: "Gmail token lacks gmail.send scope; reconnect required", retryable: false };
     }
 
-    const mime = buildMimeMessage({ from, to, cc, bcc, subject, htmlBody, textBody, threadContext, attachments });
+    const mime = buildMimeMessage({ from, to, cc, bcc, subject, htmlBody, textBody, threadContext, attachments, correlationKey, rfcMessageId });
     const raw = encodeBase64Url(mime);
 
     const payload: Record<string, unknown> = { raw };
@@ -605,7 +605,7 @@ export const gmailProviderAdapter: IMailboxProviderAdapter = {
     const data = await res.json() as { id: string; threadId?: string };
 
     // Extract the RFC Message-ID from the sent message by re-fetching
-    let rfcMessageId: string | null = null;
+    let extractedRfcMessageId: string | null = null;
     try {
       const detailRes = await fetch(`${GMAIL_THREAD_URL}/${data.threadId ?? threadContext?.providerThreadId ?? ""}/messages/${data.id}`, {
         headers: { Authorization: `Bearer ${accessToken}` },
@@ -613,7 +613,7 @@ export const gmailProviderAdapter: IMailboxProviderAdapter = {
       if (detailRes.ok) {
         const detail = await detailRes.json() as GmailMessage;
         const headers = detail.payload?.headers ?? [];
-        rfcMessageId = headers.find((h) => h.name === "Message-ID")?.value ?? null;
+        extractedRfcMessageId = headers.find((h) => h.name === "Message-ID")?.value ?? null;
       }
     } catch {
       // Best-effort: if re-fetch fails, rfcMessageId stays null.
@@ -622,8 +622,57 @@ export const gmailProviderAdapter: IMailboxProviderAdapter = {
     return {
       providerMessageId: data.id,
       providerThreadId: data.threadId ?? threadContext?.providerThreadId ?? "",
-      rfcMessageId,
+      rfcMessageId: extractedRfcMessageId ?? rfcMessageId ?? null,
     };
+  },
+
+  /**
+   * Reconcile a prior send attempt by searching Gmail for the message.
+   * Uses the RFC Message-ID header to look up the sent message.
+   * Sprint 5.4: resolves PENDING_RECONCILIATION send attempts.
+   */
+  async reconcileSend({ orgId, tokenRef, correlationKey, rfcMessageId }) {
+    const credential = await readMailboxCredential(orgId, tokenRef);
+    if (!credential) {
+      return { category: "auth_expired", safeMessage: "Credential not found for tokenRef", retryable: false };
+    }
+
+    const accessToken = await ensureValidAccessToken(orgId, tokenRef, credential);
+    if (isProviderError(accessToken)) return accessToken;
+
+    // Search Gmail for the message by its RFC Message-ID header.
+    // If no rfcMessageId is available, fall back to correlationKey in the
+    // X-Slipwise-Correlation header (less reliable, best-effort).
+    const query = rfcMessageId
+      ? `rfc822msgid:${rfcMessageId.replace(/[<>]/g, "")}`
+      : `X-Slipwise-Correlation:${correlationKey}`;
+
+    const searchUrl = `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(query)}`;
+    try {
+      const searchRes = await fetch(searchUrl, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+
+      if (!searchRes.ok) {
+        const errorCode = await parseGoogleErrorCode(searchRes);
+        return mapGoogleError(searchRes.status, errorCode);
+      }
+
+      const searchData = await searchRes.json() as { messages?: Array<{ id: string; threadId: string }> };
+      if (!searchData.messages || searchData.messages.length === 0) {
+        return { found: false, providerMessageId: null, providerThreadId: null, rfcMessageId: null };
+      }
+
+      const match = searchData.messages[0];
+      return {
+        found: true,
+        providerMessageId: match.id,
+        providerThreadId: match.threadId,
+        rfcMessageId: rfcMessageId ?? null,
+      };
+    } catch {
+      return { category: "provider_unavailable", safeMessage: "Gmail search failed during reconciliation", retryable: true };
+    }
   },
 
   /**
@@ -968,11 +1017,13 @@ function buildMimeMessage(params: {
     isInline: boolean;
     contentBase64: string;
   }>;
+  correlationKey?: string;
+  rfcMessageId?: string;
 }): string {
   const mixedBoundary = `---- SlipwiseMixed ${Math.random().toString(36).slice(2)}`;
   const relatedBoundary = `---- SlipwiseRelated ${Math.random().toString(36).slice(2)}`;
   const altBoundary = `---- SlipwiseAlt ${Math.random().toString(36).slice(2)}`;
-  const { from, to, cc, bcc, subject, htmlBody, textBody, threadContext, attachments } = params;
+  const { from, to, cc, bcc, subject, htmlBody, textBody, threadContext, attachments, correlationKey, rfcMessageId } = params;
   const hasAttachments = !!attachments && attachments.length > 0;
   const inlineAttachments = attachments?.filter((a) => a.isInline) ?? [];
   const fileAttachments = attachments?.filter((a) => !a.isInline) ?? [];
@@ -988,6 +1039,8 @@ function buildMimeMessage(params: {
   if (bcc && bcc.length > 0) headers.push(`Bcc: ${bcc.join(", ")}`);
   headers.push(`Subject: ${subject}`);
   headers.push("MIME-Version: 1.0");
+  if (rfcMessageId) headers.push(`Message-ID: ${rfcMessageId}`);
+  if (correlationKey) headers.push(`X-Slipwise-Correlation: ${correlationKey}`);
 
   if (threadContext?.inReplyToRfcMessageId) {
     headers.push(`In-Reply-To: ${threadContext.inReplyToRfcMessageId}`);
