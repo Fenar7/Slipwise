@@ -5,11 +5,27 @@ import { requireIntegrationMemberRoute } from "@/app/api/integrations/_auth";
 import { rateLimitByOrg } from "@/lib/rate-limit";
 import { sendDraft, SendServiceError } from "@/lib/mailbox/send-service";
 
-export interface SendDraftResponse {
-  draft: Record<string, unknown>;
-  providerMessageId: string | null;
-  providerThreadId: string | null;
-}
+export type SendDraftResponse =
+  | {
+      status: "sent";
+      draft: Record<string, unknown>;
+      providerMessageId: string;
+      providerThreadId: string | null;
+      rfcMessageId: string | null;
+      sendAttemptId: string;
+    }
+  | {
+      status: "pending_reconciliation";
+      sendAttemptId: string;
+      retryAfter: number;
+      reason: string;
+    }
+  | {
+      status: "failed";
+      sendAttemptId: string;
+      reason: string;
+      retryable: boolean;
+    };
 
 export interface SendDraftErrorResponse {
   error: string;
@@ -51,11 +67,33 @@ export async function POST(
       draftId,
     });
 
-    return NextResponse.json({
-      draft: result.draft as unknown as Record<string, unknown>,
-      providerMessageId: result.providerMessageId,
-      providerThreadId: result.providerThreadId,
-    } satisfies SendDraftResponse);
+    switch (result.status) {
+      case "sent":
+        return NextResponse.json({
+          status: "sent",
+          draft: result.draft as unknown as Record<string, unknown>,
+          providerMessageId: result.providerMessageId,
+          providerThreadId: result.providerThreadId,
+          rfcMessageId: result.rfcMessageId,
+          sendAttemptId: result.sendAttemptId,
+        }, { status: 200 });
+
+      case "pending_reconciliation":
+        return NextResponse.json({
+          status: "pending_reconciliation",
+          sendAttemptId: result.sendAttemptId,
+          retryAfter: result.retryAfter,
+          reason: result.reason,
+        }, { status: 202 });
+
+      case "failed":
+        return NextResponse.json({
+          status: "failed",
+          sendAttemptId: result.sendAttemptId,
+          reason: result.reason,
+          retryable: result.retryable,
+        }, { status: 422 });
+    }
   } catch (error) {
     if (error instanceof SendServiceError) {
       return NextResponse.json(

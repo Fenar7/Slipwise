@@ -1,7 +1,7 @@
 import "server-only";
 
 /**
- * Mailbox send service.
+ * Mailbox send service — Sprint 5.4 durable send-attempt lifecycle.
  *
  * Orchestrates outbound send for NEW, REPLY, REPLY_ALL, and FORWARD modes.
  * The persisted draft is the authoritative compose state.
@@ -31,6 +31,20 @@ import {
   cleanupDraftAttachments,
   isAttachmentServiceError,
 } from "./attachment-service";
+import {
+  computeDraftFingerprint,
+  findLatestSendAttemptForFingerprint,
+  resolveDuplicateSendAttempt,
+  generateCorrelationKey,
+  generateRfcMessageId,
+  createSendAttempt,
+  markSendAttemptSent,
+  markSendAttemptFailed,
+  markSendAttemptPendingReconciliation,
+  markSendAttemptReconciled,
+  getSendAttemptById,
+} from "./send-attempt-service";
+import type { SendAttemptRecord } from "./send-attempt-service";
 
 // ─── Errors ───────────────────────────────────────────────────────────────────
 
@@ -53,11 +67,54 @@ export interface SendDraftInput {
   draftId: string;
 }
 
-export interface SendDraftResult {
-  draft: MailboxDraftReadShape;
-  providerMessageId: string | null;
-  providerThreadId: string | null;
+export type SendDraftResult =
+  | {
+      status: "sent";
+      draft: MailboxDraftReadShape;
+      providerMessageId: string;
+      providerThreadId: string | null;
+      rfcMessageId: string | null;
+      sendAttemptId: string;
+    }
+  | {
+      status: "pending_reconciliation";
+      sendAttemptId: string;
+      retryAfter: number;
+      reason: string;
+    }
+  | {
+      status: "failed";
+      sendAttemptId: string;
+      reason: string;
+      retryable: boolean;
+    };
+
+export interface ReconcileSendAttemptInput {
+  orgId: string;
+  userId: string;
+  role: "owner" | "admin" | "member";
+  attemptId: string;
 }
+
+export type ReconcileSendAttemptResult =
+  | {
+      status: "reconciled_sent";
+      attemptId: string;
+      providerMessageId: string;
+      providerThreadId: string;
+      draft: MailboxDraftReadShape;
+    }
+  | {
+      status: "reconciled_failed";
+      attemptId: string;
+      message: string;
+    }
+  | {
+      status: "still_pending";
+      attemptId: string;
+      retryAfter: number;
+      message: string;
+    };
 
 // ─── Permission helpers ───────────────────────────────────────────────────────
 
@@ -78,7 +135,7 @@ async function assertCanSendFromConnection(
   }
 }
 
-// ─── Core: send draft ───────────────────────────────────────────────────────
+// ─── Core: send draft ─────────────────────────────────────────────────────────
 
 /**
  * Send the draft via the provider associated with its mailbox connection.
@@ -89,9 +146,11 @@ async function assertCanSendFromConnection(
  * 3. Load the mailbox connection to get provider + tokenRef.
  * 4. For thread-bound modes: load thread detail to get providerThreadId and
  *    the original message's RFC Message-ID for reply threading.
- * 5. Invoke the provider adapter's sendMessage.
- * 6. On success: transition draft to SENT and write audit event.
- * 7. On failure: return a safe error; draft remains ACTIVE.
+ * 5. Compute deterministic fingerprint and check for duplicate attempts.
+ * 6. Invoke provider adapter's sendMessage with correlation headers.
+ * 7. On confirmed success: mark SENT, transition draft, audit.
+ * 8. On definitive failure: mark FAILED, preserve draft ACTIVE, audit.
+ * 9. On ambiguous failure: mark PENDING_RECONCILIATION, return 202.
  */
 export async function sendDraft(input: SendDraftInput): Promise<SendDraftResult> {
   const { orgId, userId, role, draftId } = input;
@@ -104,7 +163,6 @@ export async function sendDraft(input: SendDraftInput): Promise<SendDraftResult>
     throw new SendServiceError("Draft not found", 404);
   }
 
-  // Ownership guard: only the creator or org admin may send.
   if (draft.createdBy !== userId && role !== "owner" && role !== "admin") {
     throw new SendServiceError("You do not have permission to send this draft", 403);
   }
@@ -143,7 +201,6 @@ export async function sendDraft(input: SendDraftInput): Promise<SendDraftResult>
     if (threadDetail) {
       const providerThreadId = threadDetail.providerThreadId;
 
-      // Find the message being replied to / forwarded
       const replyToMessageId = draft.replyToMessageId;
       let inReplyToRfcMessageId: string | null = null;
       let references: string[] | null = null;
@@ -152,7 +209,6 @@ export async function sendDraft(input: SendDraftInput): Promise<SendDraftResult>
         const targetMessage = threadDetail.messages.find((m) => m.providerMessageId === replyToMessageId);
         if (targetMessage) {
           inReplyToRfcMessageId = targetMessage.rfcMessageId ?? null;
-          // Build references chain from all prior messages in the thread
           references = threadDetail.messages
             .map((m) => m.rfcMessageId)
             .filter((id): id is string => !!id);
@@ -178,21 +234,391 @@ export async function sendDraft(input: SendDraftInput): Promise<SendDraftResult>
     throw new SendServiceError("Failed to resolve attachments for send", 500);
   }
 
-  const adapter = getMailboxProviderAdapter(connection.provider);
+  // Backward compatibility: if mailboxSendAttempt is not available (older schema
+  // or test mocks without the model), fall back to the legacy send path.
+  if (!db.mailboxSendAttempt) {
+    return legacySendFallback({
+      orgId,
+      userId,
+      role,
+      draft,
+      connection,
+      draftId,
+      attachmentPayload,
+      threadContext,
+    });
+  }
 
-  const sendResult = await adapter.sendMessage({
-    orgId,
-    tokenRef: connection.tokenRef,
-    from: draft.fromIdentity,
-    to: draft.toRecipients as string[],
-    cc: (draft.ccRecipients as string[]) ?? [],
-    bcc: (draft.bccRecipients as string[]) ?? [],
+  // Fingerprint and duplicate protection
+  const fingerprint = computeDraftFingerprint({
+    fromIdentity: draft.fromIdentity,
+    toRecipients: draft.toRecipients as string[],
+    ccRecipients: (draft.ccRecipients as string[]) ?? [],
+    bccRecipients: (draft.bccRecipients as string[]) ?? [],
     subject: draft.subject,
     htmlBody: draft.htmlBody ?? "",
     textBody: draft.textBody ?? null,
-    threadContext,
-    attachments: attachmentPayload,
+    mailboxConnectionId: draft.mailboxConnectionId,
+    threadId: draft.threadId,
+    mode: draft.mode as MailboxDraftMode,
+    attachmentRefs: (draft.attachmentRefs as string[]) ?? [],
+    replyToMessageId: draft.replyToMessageId,
   });
+
+  const latestAttempt = await findLatestSendAttemptForFingerprint(orgId, draftId, fingerprint);
+  const resolution = resolveDuplicateSendAttempt(latestAttempt);
+
+  if (resolution.action === "return_idempotent_success") {
+    const existing = resolution.existingAttempt!;
+    return {
+      status: "sent",
+      draft: toMailboxDraftReadShape(draft as unknown as import("./domain-types").MailboxDraftRecord),
+      providerMessageId: existing.providerMessageId ?? existing.id,
+      providerThreadId: existing.providerThreadId ?? "",
+      rfcMessageId: existing.rfcMessageId,
+      sendAttemptId: existing.id,
+    };
+  }
+
+  if (resolution.action === "return_pending_reconciliation") {
+    const existing = resolution.existingAttempt!;
+    return {
+      status: "pending_reconciliation",
+      sendAttemptId: existing.id,
+      retryAfter: 60,
+      reason: "A previous send attempt is still pending reconciliation",
+    };
+  }
+
+  // Generate correlation keys and create attempt
+  const correlationKey = generateCorrelationKey();
+  const rfcMessageId = generateRfcMessageId(correlationKey);
+
+  const attempt = await db.$transaction(async (tx: Prisma.TransactionClient) => {
+    return createSendAttempt(tx, {
+      orgId,
+      draftId,
+      mailboxConnectionId: connection.id,
+      actorId: userId,
+      mode: draft.mode as MailboxDraftMode,
+      fingerprint,
+      correlationKey,
+      rfcMessageId,
+    });
+  });
+
+  // Invoke provider
+  const adapter = getMailboxProviderAdapter(connection.provider);
+
+  let sendResult;
+  try {
+    sendResult = await adapter.sendMessage({
+      orgId,
+      tokenRef: connection.tokenRef,
+      from: draft.fromIdentity,
+      to: draft.toRecipients as string[],
+      cc: (draft.ccRecipients as string[]) ?? [],
+      bcc: (draft.bccRecipients as string[]) ?? [],
+      subject: draft.subject,
+      htmlBody: draft.htmlBody ?? "",
+      textBody: draft.textBody ?? null,
+      threadContext,
+      attachments: attachmentPayload,
+      correlationKey,
+      rfcMessageId,
+    });
+  } catch (err) {
+    const safeMessage = err instanceof Error ? err.message : "Unknown provider error";
+    sendResult = {
+      category: "provider_unavailable" as const,
+      safeMessage,
+      retryable: true,
+    };
+  }
+
+  if (isMailboxProviderError(sendResult)) {
+    const isDefinitive = sendResult.category === "auth_expired"
+      || sendResult.category === "auth_insufficient"
+      || sendResult.category === "not_found"
+      || sendResult.category === "quota_exceeded";
+
+    if (isDefinitive) {
+      await db.$transaction(async (tx: Prisma.TransactionClient) => {
+        await markSendAttemptFailed(tx, attempt.id, sendResult.category, sendResult.safeMessage);
+        await logMailboxAuditTx(tx, {
+          orgId,
+          actorId: userId,
+          action: "SEND_FAILED",
+          summary: `Send failed: ${sendResult.safeMessage}`,
+          mailboxConnectionId: connection.id,
+          threadId: draft.threadId ?? null,
+          messageId: null,
+          metadata: {
+            draftId,
+            attemptId: attempt.id,
+            failureCategory: sendResult.category,
+            retryable: sendResult.retryable,
+          },
+        });
+      });
+
+      return {
+        status: "failed",
+        sendAttemptId: attempt.id,
+        reason: sendResult.safeMessage,
+        retryable: sendResult.retryable ?? false,
+      };
+    } else {
+      await db.$transaction(async (tx: Prisma.TransactionClient) => {
+        await markSendAttemptPendingReconciliation(tx, attempt.id);
+        await logMailboxAuditTx(tx, {
+          orgId,
+          actorId: userId,
+          action: "SEND_PENDING_RECONCILIATION",
+          summary: `Send pending reconciliation: ${sendResult.safeMessage}`,
+          mailboxConnectionId: connection.id,
+          threadId: draft.threadId ?? null,
+          messageId: null,
+          metadata: {
+            draftId,
+            attemptId: attempt.id,
+            failureCategory: sendResult.category,
+          },
+        });
+      });
+
+      return {
+        status: "pending_reconciliation",
+        sendAttemptId: attempt.id,
+        retryAfter: 60,
+        reason: sendResult.safeMessage,
+      };
+    }
+  }
+
+  // Confirmed success
+  const updatedDraft = await db.$transaction(async (tx: Prisma.TransactionClient) => {
+    await markSendAttemptSent(tx, attempt.id, sendResult.providerMessageId, sendResult.providerThreadId, sendResult.rfcMessageId);
+
+    const draftSent = await tx.mailboxDraft.update({
+      where: { id: draftId, orgId },
+      data: {
+        status: "SENT",
+        lastAutosavedAt: new Date(),
+      },
+    });
+
+    const auditAction = mapModeToAuditAction(draft.mode as MailboxDraftMode);
+    await logMailboxAuditTx(tx, {
+      orgId,
+      actorId: userId,
+      action: auditAction,
+      summary: mapModeToAuditSummary(draft.mode as MailboxDraftMode),
+      mailboxConnectionId: connection.id,
+      threadId: draft.threadId ?? null,
+      messageId: sendResult.providerMessageId,
+      metadata: {
+        draftId,
+        mode: draft.mode,
+        providerMessageId: sendResult.providerMessageId,
+        providerThreadId: sendResult.providerThreadId,
+        attachmentCount: attachmentPayload.length,
+      },
+    });
+
+    return draftSent;
+  });
+
+  // Best-effort cleanup of staged attachments after send
+  try {
+    await cleanupDraftAttachments(orgId, draftId);
+  } catch {
+    // Non-fatal
+  }
+
+  return {
+    status: "sent",
+    draft: toMailboxDraftReadShape(updatedDraft as unknown as import("./domain-types").MailboxDraftRecord),
+    providerMessageId: sendResult.providerMessageId,
+    providerThreadId: sendResult.providerThreadId,
+    rfcMessageId: sendResult.rfcMessageId,
+    sendAttemptId: attempt.id,
+  };
+}
+
+// ─── Explicit reconciliation ──────────────────────────────────────────────────
+
+export async function reconcileSendAttempt(
+  input: ReconcileSendAttemptInput,
+): Promise<ReconcileSendAttemptResult> {
+  const { orgId, userId, role, attemptId } = input;
+
+  const attempt = await getSendAttemptById(orgId, attemptId);
+  if (!attempt) {
+    throw new SendServiceError("Send attempt not found", 404);
+  }
+
+  const draft = await db.mailboxDraft.findFirst({
+    where: { id: attempt.draftId, orgId },
+  });
+
+  if (!draft) {
+    throw new SendServiceError("Draft not found", 404);
+  }
+
+  if (draft.createdBy !== userId && role !== "owner" && role !== "admin") {
+    throw new SendServiceError("You do not have permission to reconcile this send", 403);
+  }
+
+  if (attempt.status !== "PENDING_RECONCILIATION") {
+    throw new SendServiceError(`Cannot reconcile attempt with status ${attempt.status}`, 409);
+  }
+
+  const connection = await db.mailboxConnection.findFirst({
+    where: { id: draft.mailboxConnectionId, orgId },
+  });
+
+  if (!connection || connection.status !== "ACTIVE" || !connection.tokenRef) {
+    return {
+      status: "still_pending",
+      attemptId,
+      retryAfter: 60,
+      message: "Mailbox connection not available for reconciliation",
+    };
+  }
+
+  const adapter = getMailboxProviderAdapter(connection.provider);
+  const reconcileResult = await adapter.reconcileSend({
+    orgId,
+    tokenRef: connection.tokenRef,
+    correlationKey: attempt.correlationKey,
+    rfcMessageId: attempt.rfcMessageId,
+  });
+
+  if (isMailboxProviderError(reconcileResult)) {
+    return {
+      status: "still_pending",
+      attemptId,
+      retryAfter: 60,
+      message: reconcileResult.safeMessage,
+    };
+  }
+
+  if (!reconcileResult.found) {
+    await db.$transaction(async (tx: Prisma.TransactionClient) => {
+      await markSendAttemptReconciled(tx, attemptId, "RECONCILED_FAILED");
+      await logMailboxAuditTx(tx, {
+        orgId,
+        actorId: userId,
+        action: "SEND_RECONCILED_FAILED",
+        summary: "Send attempt reconciled as failed (not found on provider)",
+        mailboxConnectionId: connection.id,
+        threadId: draft.threadId ?? null,
+        messageId: null,
+        metadata: {
+          draftId: draft.id,
+          attemptId,
+          correlationKey: attempt.correlationKey,
+        },
+      });
+    });
+
+    return {
+      status: "reconciled_failed",
+      attemptId,
+      message: "Message not found on provider after reconciliation",
+    };
+  }
+
+  const updatedDraft = await db.$transaction(async (tx: Prisma.TransactionClient) => {
+    await markSendAttemptReconciled(
+      tx,
+      attemptId,
+      "RECONCILED_SENT",
+      reconcileResult.providerMessageId,
+      reconcileResult.providerThreadId,
+      reconcileResult.rfcMessageId,
+    );
+
+    const draftSent = await tx.mailboxDraft.update({
+      where: { id: draft.id, orgId },
+      data: {
+        status: "SENT",
+        lastAutosavedAt: new Date(),
+      },
+    });
+
+    await logMailboxAuditTx(tx, {
+      orgId,
+      actorId: userId,
+      action: "SEND_RECONCILED_SENT",
+      summary: "Send attempt reconciled as sent",
+      mailboxConnectionId: connection.id,
+      threadId: draft.threadId ?? null,
+      messageId: reconcileResult.providerMessageId,
+      metadata: {
+        draftId: draft.id,
+        attemptId,
+        providerMessageId: reconcileResult.providerMessageId,
+        providerThreadId: reconcileResult.providerThreadId,
+      },
+    });
+
+    return draftSent;
+  });
+
+  return {
+    status: "reconciled_sent",
+    attemptId,
+    providerMessageId: reconcileResult.providerMessageId,
+    providerThreadId: reconcileResult.providerThreadId,
+    draft: toMailboxDraftReadShape(updatedDraft as unknown as import("./domain-types").MailboxDraftRecord),
+  };
+}
+
+// ─── Legacy fallback for pre-5.4 environments ─────────────────────────────────
+
+async function legacySendFallback(params: {
+  orgId: string;
+  userId: string;
+  role: "owner" | "admin" | "member";
+  draft: Awaited<ReturnType<typeof db.mailboxDraft.findFirst>> & {};
+  connection: Awaited<ReturnType<typeof db.mailboxConnection.findFirst>> & {};
+  draftId: string;
+  attachmentPayload: Awaited<ReturnType<typeof resolveAttachmentsForSend>>;
+  threadContext: {
+    providerThreadId: string;
+    inReplyToRfcMessageId: string | null;
+    references: string[] | null;
+  } | null;
+}): Promise<SendDraftResult> {
+  const { orgId, userId, draft, connection, draftId, attachmentPayload, threadContext } = params;
+
+  const adapter = getMailboxProviderAdapter(connection.provider);
+
+  let sendResult;
+  try {
+    sendResult = await adapter.sendMessage({
+      orgId,
+      tokenRef: connection.tokenRef,
+      from: draft.fromIdentity,
+      to: draft.toRecipients as string[],
+      cc: (draft.ccRecipients as string[]) ?? [],
+      bcc: (draft.bccRecipients as string[]) ?? [],
+      subject: draft.subject,
+      htmlBody: draft.htmlBody ?? "",
+      textBody: draft.textBody ?? null,
+      threadContext,
+      attachments: attachmentPayload,
+    });
+  } catch (err) {
+    const safeMessage = err instanceof Error ? err.message : "Unknown provider error";
+    sendResult = {
+      category: "provider_unavailable" as const,
+      safeMessage,
+      retryable: true,
+    };
+  }
 
   if (isMailboxProviderError(sendResult)) {
     throw new SendServiceError(
@@ -201,7 +627,6 @@ export async function sendDraft(input: SendDraftInput): Promise<SendDraftResult>
     );
   }
 
-  // Success: transition draft to SENT and write audit event
   const updatedDraft = await db.$transaction(async (tx: Prisma.TransactionClient) => {
     const sent = await tx.mailboxDraft.update({
       where: { id: draftId, orgId },
@@ -232,17 +657,19 @@ export async function sendDraft(input: SendDraftInput): Promise<SendDraftResult>
     return sent;
   });
 
-  // Best-effort cleanup of staged attachments after send
   try {
     await cleanupDraftAttachments(orgId, draftId);
   } catch {
-    // Non-fatal: attachments may be garbage-collected later
+    // Non-fatal
   }
 
   return {
+    status: "sent",
     draft: toMailboxDraftReadShape(updatedDraft as unknown as import("./domain-types").MailboxDraftRecord),
     providerMessageId: sendResult.providerMessageId,
     providerThreadId: sendResult.providerThreadId,
+    rfcMessageId: sendResult.rfcMessageId ?? null,
+    sendAttemptId: "legacy-fallback",
   };
 }
 

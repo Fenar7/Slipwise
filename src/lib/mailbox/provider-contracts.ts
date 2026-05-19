@@ -301,12 +301,37 @@ export interface IMailboxProviderAdapter {
       isInline: boolean;
       contentBase64: string;
     }>;
+    /** Slipwise correlation key for durable send-attempt tracking (Sprint 5.4). */
+    correlationKey?: string;
+    /** Pre-generated RFC Message-ID header value (Sprint 5.4). */
+    rfcMessageId?: string;
   }): Promise<
     | {
         providerMessageId: string;
         providerThreadId: string;
         rfcMessageId: string | null;
       }
+    | MailboxProviderError
+  >;
+
+  /**
+   * Reconcile a prior send attempt by looking up the message on the provider.
+   * Returns whether the message exists and its provider identifiers.
+   * Sprint 5.4: used to resolve PENDING_RECONCILIATION send attempts.
+   */
+  reconcileSend(params: {
+    orgId: string;
+    tokenRef: string;
+    correlationKey: string;
+    rfcMessageId: string | null;
+  }): Promise<
+    | {
+        found: true;
+        providerMessageId: string;
+        providerThreadId: string;
+        rfcMessageId: string | null;
+      }
+    | { found: false; providerMessageId: null; providerThreadId: null; rfcMessageId: null }
     | MailboxProviderError
   >;
 
