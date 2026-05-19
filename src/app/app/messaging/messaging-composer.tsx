@@ -375,6 +375,12 @@ export interface MessagingComposerProps {
    * specific UI state without user interaction.
    */
   simulatedState?: ComposerState;
+  /** Live send handler — Sprint 5.2 */
+  onSend?: (body: string) => void;
+  /** Whether a message is currently being sent */
+  sending?: boolean;
+  /** Error from last send attempt */
+  sendError?: string | null;
 }
 
 export function MessagingComposer({
@@ -383,6 +389,9 @@ export function MessagingComposer({
   restricted = false,
   restrictedReason,
   simulatedState,
+  onSend,
+  sending = false,
+  sendError,
 }: MessagingComposerProps) {
   const [inputValue, setInputValue] = React.useState("");
   const [stagedFiles, setStagedFiles] = React.useState<AttachedFile[]>([]);
@@ -446,6 +455,11 @@ export function MessagingComposer({
           />
         )}
 
+        {sendError && (
+          <div className="mb-2 rounded-lg bg-red-50 px-3 py-1.5 text-xs text-red-700" data-testid="composer-send-error">
+            {sendError}
+          </div>
+        )}
         <div
           className="flex flex-col rounded-xl border bg-white transition-shadow focus-within:shadow-sm focus-within:border-gray-300"
           style={{ borderColor: "#E0E0E0" }}
@@ -473,6 +487,7 @@ export function MessagingComposer({
               data-placeholder={placeholder}
               data-testid="composer-input"
               onInput={(e) => setInputValue(e.currentTarget.textContent ?? "")}
+              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && onSend && displayHasContent && !sending) { e.preventDefault(); onSend(inputValue); setInputValue(""); }}}
             />
           </div>
 
@@ -557,16 +572,17 @@ export function MessagingComposer({
               type="button"
               className={cn(
                 "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626] focus-visible:ring-offset-1",
-                displayHasContent
+                displayHasContent && !sending
                   ? "bg-[#DC2626] text-white hover:bg-red-700 cursor-pointer"
                   : "bg-gray-100 text-[#79747E] cursor-not-allowed opacity-60"
               )}
-              disabled={!displayHasContent}
+              disabled={!displayHasContent || sending}
               aria-label="Send message"
               data-testid="composer-send-btn"
+              onClick={() => { if (onSend && displayHasContent && !sending) { onSend(inputValue); setInputValue(""); } }}
             >
               <Send className="h-3 w-3" />
-              <span>Send</span>
+              <span>{sending ? "Sending…" : "Send"}</span>
             </button>
           </div>
         </div>

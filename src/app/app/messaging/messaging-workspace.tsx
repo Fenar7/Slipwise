@@ -21,6 +21,9 @@ import type {
 import { MOCK_NOTIFICATIONS } from "./mock-data";
 import { useConversationList } from "./lib/use-conversation-list";
 import { useConversationDetail } from "./lib/use-conversation-detail";
+import { useSendMessage } from "./lib/use-send-message";
+import { useSendThreadReply } from "./lib/use-send-thread-reply";
+import { useMarkRead } from "./lib/use-mark-read";
 import { useRealtimeBootstrap } from "./lib/use-realtime-bootstrap";
 import {
   toFrontendChannel,
@@ -138,11 +141,33 @@ export function MessagingWorkspace() {
     loading: listLoading,
     error: listError,
     empty: listEmpty,
+    refresh: refreshList,
   } = useConversationList();
 
-  const { detail: activeDetail } = useConversationDetail(
-    activeConversation?.id ?? null
-  );
+  const activeConvId = activeConversation?.id ?? null;
+  const { detail: activeDetail, refresh: refreshDetail } = useConversationDetail(activeConvId);
+
+  const { send: sendMessage, sending: sendingMessage, error: sendError, clearError: clearSendError } = useSendMessage();
+  const { send: sendReply, sending: sendingReply, error: replyError, clearError: clearReplyError } = useSendThreadReply();
+  const { markRead, marking: markingRead, error: markReadError } = useMarkRead();
+  const lastMarkedRef = React.useRef<Record<string, number>>({});
+
+  // Sprint 5.2: mark read when opening a conversation with unread messages.
+  // Per-conversation tracking prevents re-marking unless unreadCount grows.
+  // Only update lastMarkedRef on successful server write so failures can retry.
+  React.useEffect(() => {
+    if (!activeConvId || !activeDetail) return;
+    const unread = activeDetail.readState?.unreadCount ?? 0;
+    const lastMarked = lastMarkedRef.current[activeConvId] ?? -1;
+    if (unread > 0 && unread !== lastMarked && !markingRead) {
+      markRead(activeConvId).then((result) => {
+        if (result) {
+          lastMarkedRef.current[activeConvId] = unread;
+          refreshList();
+        }
+      });
+    }
+  }, [activeConvId, activeDetail, markRead, markingRead, refreshList]);
 
   const { degraded: realtimeDegraded } = useRealtimeBootstrap();
 
@@ -321,7 +346,30 @@ export function MessagingWorkspace() {
                   }
                   degraded={realtimeDegraded}
                   messages={messages}
+                  detail={activeDetail}
                   canSend={activeDetail?.canSend ?? activeConversation?.canSend ?? true}
+                  sending={sendingMessage}
+                  sendError={sendError}
+                  onSend={async (body: string, threadId?: string | null) => {
+                    clearSendError();
+                    const result = await sendMessage(activeConvId!, body, threadId);
+                    if (result && activeConvId) {
+                      await refreshDetail();
+                      await refreshList();
+                    }
+                    return result;
+                  }}
+                  onReply={async (threadId: string, body: string) => {
+                    clearReplyError();
+                    const result = await sendReply(activeConvId!, threadId, body);
+                    if (result && activeConvId) {
+                      await refreshDetail();
+                      await refreshList();
+                    }
+                    return result;
+                  }}
+                  sendingReply={sendingReply}
+                  replyError={replyError}
                 />
               </div>
             </div>

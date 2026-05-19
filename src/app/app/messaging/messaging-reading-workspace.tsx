@@ -30,10 +30,6 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import type { ActiveConversation, ConversationMessage, PresenceStatus } from "./types";
-import {
-  getMessagesForConversation,
-  getThreadRepliesForMessage,
-} from "./mock-data";
 import { MessagingComposer } from "./messaging-composer";
 import { MessagingThreadPanel } from "./messaging-thread-panel";
 import { MessagingChannelDetail } from "./messaging-channel-detail";
@@ -41,6 +37,8 @@ import { MessagingGroupDetail } from "./messaging-group-detail";
 import { MentionText } from "./messaging-mention-text";
 import { MessagingMessageActions } from "./messaging-message-actions";
 import { MessagingEmojiPicker } from "./messaging-emoji-picker";
+import { useThreadReplies } from "./lib/use-thread-replies";
+import type { ApiConversationDetail } from "./lib/mappers";
 
 // ─── Shared primitives ────────────────────────────────────────────────────────
 
@@ -614,14 +612,19 @@ function ChannelWorkspace({
   onCloseDetail,
   messages: externalMessages,
   canSend,
+  sending,
+  sendError,
+  onSend,
+  onReply,
+  sendingReply,
+  replyError,
+  threadReplies: externalThreadReplies,
 }: WorkspaceBodyProps) {
-  const channelMessages = externalMessages ?? getMessagesForConversation(conversation.id);
+  const channelMessages = externalMessages ?? [];
   const anchorMsg = threadAnchorMessageId
     ? channelMessages.find((m) => m.id === threadAnchorMessageId) ?? null
     : null;
-  const threadReplies = threadAnchorMessageId
-    ? getThreadRepliesForMessage(threadAnchorMessageId)
-    : [];
+  const threadReplies = externalThreadReplies ?? [];
 
   return (
     <div className="flex flex-1 overflow-hidden" data-testid="channel-workspace">
@@ -650,7 +653,7 @@ function ChannelWorkspace({
           threadAnchorMessageId={threadAnchorMessageId}
           onOpenThread={onOpenThread}
         />
-        <MessagingComposer placeholder={`Message #${conversation.name}`} isAccessible={canSend} />
+        <MessagingComposer placeholder={`Message #${conversation.name}`} isAccessible={canSend} onSend={onSend} sending={sending} sendError={sendError} />
       </div>
 
       {/* Thread panel */}
@@ -659,6 +662,9 @@ function ChannelWorkspace({
             anchorMessage={anchorMsg}
             replies={threadReplies}
             onClose={onCloseThread}
+            onReply={onReply ? (body) => onReply(conversation.id, body) : undefined}
+            sendingReply={sendingReply}
+            replyError={replyError}
           />
         ) : (
         <div
@@ -707,8 +713,14 @@ function DMWorkspace({
   onToggleDetail,
   messages: externalMessages,
   canSend,
+  sending,
+  sendError,
+  onSend,
+  onReply,
+  sendingReply,
+  replyError,
 }: WorkspaceBodyProps) {
-  const dmMessages = externalMessages ?? getMessagesForConversation(conversation.id);
+  const dmMessages = externalMessages ?? [];
   return (
     <div className="flex flex-1 overflow-hidden" data-testid="dm-workspace">
       <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
@@ -750,7 +762,7 @@ function DMWorkspace({
           threadAnchorMessageId={threadAnchorMessageId}
           onOpenThread={onOpenThread}
         />
-        <MessagingComposer placeholder={`Message ${conversation.name}`} isAccessible={canSend} />
+        <MessagingComposer placeholder={`Message ${conversation.name}`} isAccessible={canSend} onSend={onSend} sending={sending} sendError={sendError} />
       </div>
       {threadOpen && (
         <div
@@ -793,14 +805,19 @@ function GroupWorkspace({
   onCloseDetail,
   messages: externalMessages,
   canSend,
+  sending,
+  sendError,
+  onSend,
+  onReply,
+  sendingReply,
+  replyError,
+  threadReplies: externalThreadReplies,
 }: WorkspaceBodyProps) {
-  const groupMessages = externalMessages ?? getMessagesForConversation(conversation.id);
+  const groupMessages = externalMessages ?? [];
   const anchorMsg = threadAnchorMessageId
     ? groupMessages.find((m) => m.id === threadAnchorMessageId) ?? null
     : null;
-  const threadReplies = threadAnchorMessageId
-    ? getThreadRepliesForMessage(threadAnchorMessageId)
-    : [];
+  const threadReplies = externalThreadReplies ?? [];
 
   return (
     <div className="flex flex-1 overflow-hidden" data-testid="group-workspace">
@@ -828,13 +845,16 @@ function GroupWorkspace({
           threadAnchorMessageId={threadAnchorMessageId}
           onOpenThread={onOpenThread}
         />
-        <MessagingComposer placeholder={`Message ${conversation.name}`} isAccessible={canSend} />
+        <MessagingComposer placeholder={`Message ${conversation.name}`} isAccessible={canSend} onSend={onSend} sending={sending} sendError={sendError} />
       </div>
       {threadOpen && anchorMsg && (
         <MessagingThreadPanel
           anchorMessage={anchorMsg}
           replies={threadReplies}
           onClose={onCloseThread}
+          onReply={onReply ? (body) => onReply(conversation.id, body) : undefined}
+          sendingReply={sendingReply}
+          replyError={replyError}
         />
       )}
       {detailOpen && (
@@ -857,7 +877,14 @@ interface WorkspaceBodyProps {
   onToggleDetail: () => void;
   onCloseDetail: () => void;
   messages?: ConversationMessage[];
-  canSend: boolean;
+  canSend?: boolean;
+  sending?: boolean;
+  sendError?: string | null;
+  onSend?: (body: string, threadId?: string | null) => Promise<{ id: string } | null>;
+  onReply?: (threadId: string, body: string) => Promise<{ id: string } | null>;
+  sendingReply?: boolean;
+  replyError?: string | null;
+  threadReplies?: ConversationMessage[];
 }
 
 // ─── Main export ──────────────────────────────────────────────────────────────
@@ -868,6 +895,13 @@ interface MessagingReadingWorkspaceProps {
   degraded?: boolean;
   messages?: ConversationMessage[];
   canSend?: boolean;
+  sending?: boolean;
+  sendError?: string | null;
+  onSend?: (body: string, threadId?: string | null) => Promise<{ id: string } | null>;
+  onReply?: (threadId: string, body: string) => Promise<{ id: string } | null>;
+  sendingReply?: boolean;
+  replyError?: string | null;
+  detail?: ApiConversationDetail | null;
 }
 
 export function MessagingReadingWorkspace({
@@ -876,10 +910,24 @@ export function MessagingReadingWorkspace({
   degraded,
   messages: externalMessages,
   canSend = true,
+  sending = false,
+  sendError,
+  onSend,
+  onReply,
+  sendingReply = false,
+  replyError,
+  detail,
 }: MessagingReadingWorkspaceProps) {
   const [threadAnchorMessageId, setThreadAnchorMessageId] = React.useState<string | null>(null);
   const [threadOpen, setThreadOpen] = React.useState(false);
   const [detailOpen, setDetailOpen] = React.useState(false);
+
+  // Sprint 5.2: live thread replies via dedicated backend endpoint.
+  const { replies: liveThreadReplies } = useThreadReplies(
+    conversation?.id ?? null,
+    threadAnchorMessageId,
+    detail ?? null,
+  );
 
   // Reset thread and detail state when conversation changes
   React.useEffect(() => {
@@ -976,6 +1024,12 @@ export function MessagingReadingWorkspace({
     onCloseDetail: () => setDetailOpen(false),
     messages: externalMessages,
     canSend,
+    sending,
+    sendError,
+    onSend,
+    onReply,
+    sendingReply,
+    replyError,
   };
 
   return (

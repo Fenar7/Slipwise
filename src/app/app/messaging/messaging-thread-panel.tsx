@@ -355,7 +355,12 @@ function ThreadAnchorMessage({ message }: { message: ConversationMessage }) {
 
 // ─── Thread reply composer ────────────────────────────────────────────────────
 
-function ThreadReplyComposer() {
+interface ThreadReplyComposerProps {
+  onReply?: (body: string) => void;
+  sendingReply?: boolean;
+}
+
+function ThreadReplyComposer({ onReply, sendingReply = false }: ThreadReplyComposerProps) {
   return (
     <div
       className="shrink-0 border-t px-3 py-2.5"
@@ -370,12 +375,19 @@ function ThreadReplyComposer() {
           role="textbox"
           aria-label="Reply in thread"
           aria-multiline="true"
-          contentEditable
+          contentEditable={!sendingReply}
           suppressContentEditableWarning
           className="flex-1 text-xs outline-none empty:before:content-[attr(data-placeholder)] empty:before:text-[#C4C4C4]"
           style={{ color: "#1C1B1F" }}
-          data-placeholder="Reply in thread…"
+          data-placeholder={sendingReply ? "Sending…" : "Reply in thread…"}
           data-testid="thread-reply-input"
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey && onReply) {
+              e.preventDefault();
+              onReply(e.currentTarget.textContent ?? "");
+              e.currentTarget.textContent = "";
+            }
+          }}
         />
         <Paperclip className="h-3.5 w-3.5 shrink-0" style={{ color: "#C4C4C4" }} />
       </div>
@@ -389,12 +401,21 @@ export interface MessagingThreadPanelProps {
   anchorMessage: ConversationMessage;
   replies: ConversationMessage[];
   onClose: () => void;
+  /** Live reply handler — Sprint 5.2 */
+  onReply?: (body: string) => void;
+  /** Whether a reply is currently being sent */
+  sendingReply?: boolean;
+  /** Error from last reply attempt */
+  replyError?: string | null;
 }
 
 export function MessagingThreadPanel({
   anchorMessage,
   replies,
   onClose,
+  onReply,
+  sendingReply = false,
+  replyError,
 }: MessagingThreadPanelProps) {
   const [editState, setEditState] = React.useState<EditState | null>(null);
 
@@ -497,7 +518,7 @@ export function MessagingThreadPanel({
       </div>
 
       {/* Reply composer */}
-      <ThreadReplyComposer />
+      <ThreadReplyComposer onReply={onReply} sendingReply={sendingReply} />
     </div>
   );
 }
