@@ -28,6 +28,7 @@ import type {
   MailboxThreadRecord,
   MailboxMessageRecord,
   MailboxAttachmentRecord,
+  MailboxDraftRecord,
 } from "./domain-types";
 import type {
   MailboxConnectionStatus,
@@ -36,6 +37,8 @@ import type {
   MailboxThreadLinkEntityType,
   MailboxThreadStatus,
   MailboxMessageDirection,
+  MailboxDraftMode,
+  MailboxDraftStatus,
 } from "./domain-types";
 
 // ─── Connection summary (member-facing) ──────────────────────────────────────
@@ -493,5 +496,81 @@ export function toMailboxThreadDetailReadShape(
     messages,
     createdAt: threadRecord.createdAt.toISOString(),
     updatedAt: threadRecord.updatedAt.toISOString(),
+  };
+}
+
+// ─── Draft read shape (Sprint 5.1) ────────────────────────────────────────────
+
+export interface MailboxDraftAttachmentReadShape {
+  id: string;
+  filename: string;
+  mimeType: string;
+  size: number;
+  isInline: boolean;
+  createdAt: string;
+}
+
+export interface MailboxDraftReadShape {
+  id: string;
+  orgId: string;
+  mailboxConnectionId: string;
+  threadId: string | null;
+  replyToMessageId: string | null;
+  mode: MailboxDraftMode;
+  fromIdentity: string;
+  to: string[];
+  cc: string[];
+  bcc: string[];
+  subject: string;
+  htmlBody: string;
+  textBody: string | null;
+  /** @deprecated Use attachments (typed draft attachment metadata) instead. */
+  attachmentRefs: string[];
+  attachments: MailboxDraftAttachmentReadShape[];
+  status: MailboxDraftStatus;
+  lastAutosavedAt: string | null;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+function toMailboxDraftAttachmentReadShape(
+  record: import("./domain-types").MailboxDraftAttachmentRecord,
+): MailboxDraftAttachmentReadShape {
+  return {
+    id: record.id,
+    filename: record.filename,
+    mimeType: record.mimeType,
+    size: record.size,
+    isInline: record.isInline,
+    createdAt: record.createdAt.toISOString(),
+  };
+}
+
+export function toMailboxDraftReadShape(
+  record: MailboxDraftRecord,
+): MailboxDraftReadShape {
+  const draftAttachments = record.draftAttachments ?? [];
+  return {
+    id: record.id,
+    orgId: record.orgId,
+    mailboxConnectionId: record.mailboxConnectionId,
+    threadId: record.threadId ?? null,
+    replyToMessageId: record.replyToMessageId ?? null,
+    mode: record.mode,
+    fromIdentity: record.fromIdentity,
+    to: record.toRecipients,
+    cc: record.ccRecipients,
+    bcc: record.bccRecipients,
+    subject: record.subject,
+    htmlBody: record.htmlBody,
+    textBody: record.textBody,
+    attachmentRefs: record.attachmentRefs,
+    attachments: draftAttachments.map(toMailboxDraftAttachmentReadShape),
+    status: record.status,
+    lastAutosavedAt: record.lastAutosavedAt?.toISOString() ?? null,
+    createdBy: record.createdBy,
+    createdAt: record.createdAt.toISOString(),
+    updatedAt: record.updatedAt.toISOString(),
   };
 }

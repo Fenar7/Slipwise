@@ -48,13 +48,15 @@ const GMAIL_THREADS_URL = "https://gmail.googleapis.com/gmail/v1/users/me/thread
 const GMAIL_THREAD_URL = "https://gmail.googleapis.com/gmail/v1/users/me/threads";
 const GMAIL_HISTORY_URL = "https://gmail.googleapis.com/gmail/v1/users/me/history";
 const GMAIL_WATCH_URL = "https://gmail.googleapis.com/gmail/v1/users/me/watch";
+const GMAIL_SEND_URL = "https://www.googleapis.com/gmail/v1/users/me/messages/send";
 
 /**
- * Least-privilege scopes for Sprint 2.2 (auth lifecycle only).
- * Sprint 2.3+ will extend this list when send/reply is implemented.
+ * Least-privilege scopes for Gmail integration.
+ * Sprint 5.2 adds gmail.send for outbound send/reply/forward.
  */
 export const GMAIL_OAUTH_SCOPES = [
   "https://www.googleapis.com/auth/gmail.readonly",
+  "https://www.googleapis.com/auth/gmail.send",
   "https://www.googleapis.com/auth/userinfo.email",
   "https://www.googleapis.com/auth/userinfo.profile",
 ].join(" ");
@@ -553,6 +555,167 @@ export const gmailProviderAdapter: IMailboxProviderAdapter = {
   },
 
   /**
+   * Send an outbound message via Gmail.
+   *
+   * Constructs a MIME message with proper headers, base64url-encodes it, and
+   * sends via the Gmail users.messages.send endpoint.
+   *
+   * Reply threading:
+   * - threadContext.providerThreadId is passed as the Gmail threadId.
+   * - In-Reply-To and References headers are set from the original message
+   *   so Gmail threads the reply correctly.
+   */
+  async sendMessage({ orgId, tokenRef, from, to, cc, bcc, subject, htmlBody, textBody, threadContext, attachments, correlationKey, rfcMessageId }) {
+    const credential = await readMailboxCredential(orgId, tokenRef);
+    if (!credential) {
+      return { category: "auth_expired", safeMessage: "Credential not found for tokenRef", retryable: false };
+    }
+
+    const accessToken = await ensureValidAccessToken(orgId, tokenRef, credential);
+    if (isProviderError(accessToken)) return accessToken;
+
+    // Check token scope for send permission
+    const hasSendScope = credential.scope?.includes("gmail.send") ?? false;
+    if (!hasSendScope) {
+      return { category: "auth_insufficient", safeMessage: "Gmail token lacks gmail.send scope; reconnect required", retryable: false };
+    }
+
+    const mime = buildMimeMessage({ from, to, cc, bcc, subject, htmlBody, textBody, threadContext, attachments, correlationKey, rfcMessageId });
+    const raw = encodeBase64Url(mime);
+
+    const payload: Record<string, unknown> = { raw };
+    if (threadContext) {
+      payload.threadId = threadContext.providerThreadId;
+    }
+
+    const res = await fetch(GMAIL_SEND_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!res.ok) {
+      const errorCode = await parseGoogleErrorCode(res);
+      return mapGoogleError(res.status, errorCode);
+    }
+
+    const data = await res.json() as { id: string; threadId?: string };
+
+    // Extract the RFC Message-ID from the sent message by re-fetching
+    let extractedRfcMessageId: string | null = null;
+    try {
+      const detailRes = await fetch(`${GMAIL_THREAD_URL}/${data.threadId ?? threadContext?.providerThreadId ?? ""}/messages/${data.id}`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (detailRes.ok) {
+        const detail = await detailRes.json() as GmailMessage;
+        const headers = detail.payload?.headers ?? [];
+        extractedRfcMessageId = headers.find((h) => h.name === "Message-ID")?.value ?? null;
+      }
+    } catch {
+      // Best-effort: if re-fetch fails, rfcMessageId stays null.
+    }
+
+    return {
+      providerMessageId: data.id,
+      providerThreadId: data.threadId ?? threadContext?.providerThreadId ?? "",
+      rfcMessageId: extractedRfcMessageId ?? rfcMessageId ?? null,
+    };
+  },
+
+  /**
+   * Reconcile a prior send attempt by searching Gmail for the message.
+   * Uses the RFC Message-ID header to look up the sent message.
+   * Sprint 5.4: resolves PENDING_RECONCILIATION send attempts.
+   */
+  async reconcileSend({ orgId, tokenRef, correlationKey, rfcMessageId }) {
+    const credential = await readMailboxCredential(orgId, tokenRef);
+    if (!credential) {
+      return { category: "auth_expired", safeMessage: "Credential not found for tokenRef", retryable: false };
+    }
+
+    const accessToken = await ensureValidAccessToken(orgId, tokenRef, credential);
+    if (isProviderError(accessToken)) return accessToken;
+
+    // Search Gmail for the message by its RFC Message-ID header.
+    // If no rfcMessageId is available, fall back to correlationKey in the
+    // X-Slipwise-Correlation header (less reliable, best-effort).
+    const query = rfcMessageId
+      ? `rfc822msgid:${rfcMessageId.replace(/[<>]/g, "")}`
+      : `X-Slipwise-Correlation:${correlationKey}`;
+
+    const searchUrl = `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(query)}`;
+    try {
+      const searchRes = await fetch(searchUrl, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+
+      if (!searchRes.ok) {
+        const errorCode = await parseGoogleErrorCode(searchRes);
+        return mapGoogleError(searchRes.status, errorCode);
+      }
+
+      const searchData = await searchRes.json() as { messages?: Array<{ id: string; threadId: string }> };
+      if (!searchData.messages || searchData.messages.length === 0) {
+        return { found: false, providerMessageId: null, providerThreadId: null, rfcMessageId: null };
+      }
+
+      const match = searchData.messages[0];
+      return {
+        found: true,
+        providerMessageId: match.id,
+        providerThreadId: match.threadId,
+        rfcMessageId: rfcMessageId ?? null,
+      };
+    } catch {
+      return { category: "provider_unavailable", safeMessage: "Gmail search failed during reconciliation", retryable: true };
+    }
+  },
+
+  /**
+   * Fetch attachment bytes from Gmail.
+   *
+   * Uses the Gmail users.messages.attachments.get endpoint.
+   * Returns base64url-decoded bytes.
+   */
+  async fetchAttachment({ orgId, tokenRef, providerMessageId, providerAttachmentId }) {
+    const credential = await readMailboxCredential(orgId, tokenRef);
+    if (!credential) {
+      return { category: "auth_expired", safeMessage: "Credential not found for tokenRef", retryable: false };
+    }
+
+    const accessToken = await ensureValidAccessToken(orgId, tokenRef, credential);
+    if (isProviderError(accessToken)) return accessToken;
+
+    const url = `https://gmail.googleapis.com/gmail/v1/users/me/messages/${providerMessageId}/attachments/${providerAttachmentId}`;
+    const res = await fetch(url, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    if (!res.ok) {
+      if (res.status === 401) {
+        return { category: "auth_expired", safeMessage: "Gmail auth expired during attachment fetch", retryable: false };
+      }
+      if (res.status === 404) {
+        return { category: "not_found", safeMessage: "Attachment not found on Gmail", retryable: false };
+      }
+      return { category: "unknown", safeMessage: `Gmail attachment fetch failed: ${res.status}`, retryable: true };
+    }
+
+    const data = await res.json() as { data?: string; size?: number };
+    if (!data.data) {
+      return { category: "unknown", safeMessage: "Gmail attachment response missing data field", retryable: false };
+    }
+
+    const bytes = Buffer.from(data.data, "base64url");
+    return { bytes, filename: "", mimeType: "application/octet-stream" };
+  },
+
+  /**
    * Revoke Gmail authorization and clean up stored credentials.
    * Best-effort: does not throw if the provider revoke call fails.
    */
@@ -815,6 +978,231 @@ function decodeBase64(data: string): string {
   } catch {
     return "";
   }
+}
+
+function encodeBase64Url(data: string): string {
+  return Buffer.from(data)
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+}
+
+/**
+ * Build a MIME message for Gmail send.
+ *
+ * Sprint 5.2 implements text/html and text/plain bodies.
+ * Sprint 5.3 adds multipart/mixed attachment support.
+ *
+ * Reply threading headers (In-Reply-To, References) are included
+ * when threadContext is provided.
+ */
+function buildMimeMessage(params: {
+  from: string;
+  to: string[];
+  cc?: string[];
+  bcc?: string[];
+  subject: string;
+  htmlBody: string;
+  textBody?: string | null;
+  threadContext?: {
+    providerThreadId: string;
+    inReplyToRfcMessageId?: string | null;
+    references?: string[] | null;
+  } | null;
+  attachments?: Array<{
+    filename: string;
+    mimeType: string;
+    size: number;
+    isInline: boolean;
+    contentBase64: string;
+  }>;
+  correlationKey?: string;
+  rfcMessageId?: string;
+}): string {
+  const mixedBoundary = `---- SlipwiseMixed ${Math.random().toString(36).slice(2)}`;
+  const relatedBoundary = `---- SlipwiseRelated ${Math.random().toString(36).slice(2)}`;
+  const altBoundary = `---- SlipwiseAlt ${Math.random().toString(36).slice(2)}`;
+  const { from, to, cc, bcc, subject, htmlBody, textBody, threadContext, attachments, correlationKey, rfcMessageId } = params;
+  const hasAttachments = !!attachments && attachments.length > 0;
+  const inlineAttachments = attachments?.filter((a) => a.isInline) ?? [];
+  const fileAttachments = attachments?.filter((a) => !a.isInline) ?? [];
+  const hasInline = inlineAttachments.length > 0;
+  const hasFile = fileAttachments.length > 0;
+  const hasHtml = !!htmlBody;
+  const hasPlain = !!textBody;
+
+  const headers: string[] = [];
+  headers.push(`From: ${from}`);
+  headers.push(`To: ${to.join(", ")}`);
+  if (cc && cc.length > 0) headers.push(`Cc: ${cc.join(", ")}`);
+  if (bcc && bcc.length > 0) headers.push(`Bcc: ${bcc.join(", ")}`);
+  headers.push(`Subject: ${subject}`);
+  headers.push("MIME-Version: 1.0");
+  if (rfcMessageId) headers.push(`Message-ID: ${rfcMessageId}`);
+  if (correlationKey) headers.push(`X-Slipwise-Correlation: ${correlationKey}`);
+
+  if (threadContext?.inReplyToRfcMessageId) {
+    headers.push(`In-Reply-To: ${threadContext.inReplyToRfcMessageId}`);
+  }
+  if (threadContext?.references && threadContext.references.length > 0) {
+    headers.push(`References: ${threadContext.references.join(" ")}`);
+  }
+
+  function makeContentId(filename: string, index: number): string {
+    const safe = filename.replace(/[^a-zA-Z0-9.-]/g, "_").toLowerCase();
+    return `<slipwise-inline-${safe}-${index}>`;
+  }
+
+  function buildAlternativePart(): string[] {
+    const parts: string[] = [];
+    parts.push(`Content-Type: multipart/alternative; boundary="${altBoundary}"`);
+    parts.push("");
+    parts.push(`--${altBoundary}`);
+    parts.push("Content-Type: text/plain; charset=\"UTF-8\"");
+    parts.push("Content-Transfer-Encoding: quoted-printable");
+    parts.push("");
+    parts.push(textBody!);
+    parts.push("");
+    parts.push(`--${altBoundary}`);
+    parts.push("Content-Type: text/html; charset=\"UTF-8\"");
+    parts.push("Content-Transfer-Encoding: quoted-printable");
+    parts.push("");
+    parts.push(htmlBody);
+    parts.push("");
+    parts.push(`--${altBoundary}--`);
+    return parts;
+  }
+
+  function buildHtmlPart(): string[] {
+    const parts: string[] = [];
+    parts.push("Content-Type: text/html; charset=\"UTF-8\"");
+    parts.push("Content-Transfer-Encoding: quoted-printable");
+    parts.push("");
+    parts.push(htmlBody);
+    return parts;
+  }
+
+  function buildPlainPart(): string[] {
+    const parts: string[] = [];
+    parts.push("Content-Type: text/plain; charset=\"UTF-8\"");
+    parts.push("Content-Transfer-Encoding: quoted-printable");
+    parts.push("");
+    parts.push(textBody!);
+    return parts;
+  }
+
+  function buildBodyPart(): string[] {
+    if (hasPlain && hasHtml) return buildAlternativePart();
+    if (hasHtml) return buildHtmlPart();
+    if (hasPlain) return buildPlainPart();
+    const parts: string[] = [];
+    parts.push("Content-Type: text/plain; charset=\"UTF-8\"");
+    parts.push("");
+    parts.push("");
+    return parts;
+  }
+
+  function buildInlineAttachmentPart(att: typeof attachments![number], index: number): string[] {
+    const cid = makeContentId(att.filename, index);
+    const parts: string[] = [];
+    parts.push(`Content-Type: ${att.mimeType}; name="${att.filename}"`);
+    parts.push("Content-Transfer-Encoding: base64");
+    parts.push(`Content-ID: ${cid}`);
+    parts.push(`Content-Disposition: inline; filename="${att.filename}"`);
+    parts.push("");
+    parts.push(wrapBase64(att.contentBase64));
+    return parts;
+  }
+
+  function buildFileAttachmentPart(att: typeof attachments![number]): string[] {
+    const parts: string[] = [];
+    parts.push(`Content-Type: ${att.mimeType}; name="${att.filename}"`);
+    parts.push("Content-Transfer-Encoding: base64");
+    parts.push(`Content-Disposition: attachment; filename="${att.filename}"`);
+    parts.push("");
+    parts.push(wrapBase64(att.contentBase64));
+    return parts;
+  }
+
+  function buildRelatedPart(): string[] {
+    const parts: string[] = [];
+    parts.push(`Content-Type: multipart/related; boundary="${relatedBoundary}"`);
+    parts.push("");
+    parts.push(`--${relatedBoundary}`);
+    const bodyParts = buildBodyPart();
+    for (const part of bodyParts) {
+      parts.push(part);
+    }
+    inlineAttachments.forEach((att, idx) => {
+      parts.push("");
+      parts.push(`--${relatedBoundary}`);
+      const inlineParts = buildInlineAttachmentPart(att, idx);
+      for (const part of inlineParts) {
+        parts.push(part);
+      }
+    });
+    parts.push("");
+    parts.push(`--${relatedBoundary}--`);
+    return parts;
+  }
+
+  if (hasAttachments) {
+    if (hasInline && hasHtml) {
+      // Outer multipart/mixed: related part (HTML + inline) + file attachments
+      headers.push(`Content-Type: multipart/mixed; boundary="${mixedBoundary}"`);
+      headers.push("");
+      headers.push(`--${mixedBoundary}`);
+      const relatedParts = buildRelatedPart();
+      for (const part of relatedParts) {
+        headers.push(part);
+      }
+      for (const att of fileAttachments) {
+        headers.push("");
+        headers.push(`--${mixedBoundary}`);
+        const fileParts = buildFileAttachmentPart(att);
+        for (const part of fileParts) {
+          headers.push(part);
+        }
+      }
+      headers.push("");
+      headers.push(`--${mixedBoundary}--`);
+    } else {
+      // No inline attachments or no HTML body: use simple multipart/mixed
+      headers.push(`Content-Type: multipart/mixed; boundary="${mixedBoundary}"`);
+      headers.push("");
+      headers.push(`--${mixedBoundary}`);
+      const bodyParts = buildBodyPart();
+      for (const part of bodyParts) {
+        headers.push(part);
+      }
+      for (const att of attachments!) {
+        headers.push("");
+        headers.push(`--${mixedBoundary}`);
+        const fileParts = buildFileAttachmentPart(att);
+        for (const part of fileParts) {
+          headers.push(part);
+        }
+      }
+      headers.push("");
+      headers.push(`--${mixedBoundary}--`);
+    }
+  } else {
+    const bodyParts = buildBodyPart();
+    for (const part of bodyParts) {
+      headers.push(part);
+    }
+  }
+
+  return headers.join("\r\n");
+}
+
+function wrapBase64(data: string): string {
+  const lines: string[] = [];
+  for (let i = 0; i < data.length; i += 76) {
+    lines.push(data.slice(i, i + 76));
+  }
+  return lines.join("\r\n");
 }
 
 async function ensureValidAccessToken(

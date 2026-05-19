@@ -270,6 +270,93 @@ export interface IMailboxProviderAdapter {
   }): Promise<MailboxWatchRenewalResult | MailboxProviderError>;
 
   /**
+   * Send an outbound message via the provider.
+   *
+   * The mailbox core provides the full compose intent; the adapter is
+   * responsible for constructing provider-specific payloads (MIME,
+   * API request shapes, threading headers, etc.).
+   *
+   * Returns the provider-side message identifier and thread identifier
+   * so the mailbox core can correlate the sent message later.
+   */
+  sendMessage(params: {
+    orgId: string;
+    tokenRef: string;
+    from: string;
+    to: string[];
+    cc?: string[];
+    bcc?: string[];
+    subject: string;
+    htmlBody: string;
+    textBody?: string | null;
+    threadContext?: {
+      providerThreadId: string;
+      inReplyToRfcMessageId?: string | null;
+      references?: string[] | null;
+    } | null;
+    attachments?: Array<{
+      filename: string;
+      mimeType: string;
+      size: number;
+      isInline: boolean;
+      contentBase64: string;
+    }>;
+    /** Slipwise correlation key for durable send-attempt tracking (Sprint 5.4). */
+    correlationKey?: string;
+    /** Pre-generated RFC Message-ID header value (Sprint 5.4). */
+    rfcMessageId?: string;
+  }): Promise<
+    | {
+        providerMessageId: string;
+        providerThreadId: string;
+        rfcMessageId: string | null;
+      }
+    | MailboxProviderError
+  >;
+
+  /**
+   * Reconcile a prior send attempt by looking up the message on the provider.
+   * Returns whether the message exists and its provider identifiers.
+   * Sprint 5.4: used to resolve PENDING_RECONCILIATION send attempts.
+   */
+  reconcileSend(params: {
+    orgId: string;
+    tokenRef: string;
+    correlationKey: string;
+    rfcMessageId: string | null;
+  }): Promise<
+    | {
+        found: true;
+        providerMessageId: string;
+        providerThreadId: string;
+        rfcMessageId: string | null;
+      }
+    | { found: false; providerMessageId: null; providerThreadId: null; rfcMessageId: null }
+    | MailboxProviderError
+  >;
+
+  /**
+   * Fetch attachment bytes from the provider.
+   *
+   * Used for inbound message attachments that are not cached in local storage.
+   * The provider adapter is responsible for provider-specific authentication
+   * and binary retrieval. Returns raw bytes, filename, and MIME type.
+   */
+  fetchAttachment(params: {
+    orgId: string;
+    tokenRef: string;
+    providerMessageId: string;
+    providerAttachmentId: string;
+  }): Promise<
+    | {
+        bytes: Buffer;
+        filename: string;
+        mimeType: string;
+      }
+    | MailboxProviderError
+  >;
+
+  /**
    * Revoke provider authorization and clean up any push subscriptions.
    * Best-effort: should not throw if the provider is unreachable.
    */

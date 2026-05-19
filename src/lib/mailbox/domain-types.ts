@@ -94,6 +94,7 @@ export interface MailboxDraftRecord {
   orgId: string;
   mailboxConnectionId: string;
   threadId: string | null;
+  replyToMessageId: string | null;
   mode: MailboxDraftMode;
   fromIdentity: string;
   toRecipients: string[];
