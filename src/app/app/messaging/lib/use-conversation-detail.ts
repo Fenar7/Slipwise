@@ -11,11 +11,11 @@ export function useConversationDetail(conversationId: string | null) {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
-  const load = useCallback(async (id: string) => {
+  const load = useCallback(async (id: string, preserve = false) => {
     if (abortRef.current) abortRef.current.abort();
     const ctrl = new AbortController();
     abortRef.current = ctrl;
-    setLoading(true); setErrorType("none"); setErrorMessage(null); setDetail(null);
+    setLoading(true); setErrorType("none"); setErrorMessage(null); if (!preserve) setDetail(null);
     try {
       const res = await fetch(`/api/messaging/conversations/${id}`, {
         credentials: "same-origin", signal: ctrl.signal,
@@ -45,5 +45,7 @@ export function useConversationDetail(conversationId: string | null) {
     return () => { if (abortRef.current) abortRef.current.abort(); };
   }, [conversationId, load]);
 
-  return { detail, loading, errorType, errorMessage };
+  const refresh = useCallback(() => { if (conversationId) load(conversationId, true); }, [conversationId, load]);
+
+  return { detail, loading, errorType, errorMessage, refresh };
 }

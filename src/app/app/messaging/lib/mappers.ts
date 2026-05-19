@@ -98,7 +98,7 @@ export interface ApiConversationDetail {
   /** Optional profile enrichment — present when backend resolves display names */
   participantProfiles?: ApiParticipantProfile[];
   messages: ApiMessage[];
-  threads: unknown[];
+  threads: Array<{ id: string; conversationId: string; anchorMessageId: string; title: string | null; replyCount: number; resolvedAt: string | null; createdAt: string }>;
   readState: ApiReadState | null;
 }
 
@@ -182,7 +182,55 @@ export function toFrontendMessages(detail: ApiConversationDetail): ConversationM
       profileByUserId.set(p.userId, p);
     }
   }
+  // Build a lookup for thread metadata by anchor message id
+  const threadByAnchor = new Map<string, { replyCount: number }>();
+  for (const t of detail.threads) {
+    threadByAnchor.set(t.anchorMessageId, { replyCount: t.replyCount });
+  }
+  const seenIds = new Set<string>();
   return detail.messages.map((msg) => {
+    if (seenIds.has(msg.id)) return null;
+    seenIds.add(msg.id);
+    const profile = profileByUserId.get(msg.authorId);
+    const authorName = msg.authorName ?? profile?.name ?? msg.authorId.slice(0, 8);
+    const authorInitials = msg.authorInitials ?? profile?.avatarInitials ?? makeInitials(authorName);
+    const threadMeta = threadByAnchor.get(msg.id);
+    return {
+      id: msg.id,
+      authorId: msg.authorId,
+      authorName,
+      authorInitials,
+      authorRole: "member",
+      body: msg.body,
+      sentAt: msg.createdAt,
+      hasThread: !!threadMeta,
+      threadReplyCount: threadMeta?.replyCount ?? 0,
+      reactions: msg.reactionSummary.map(
+        (r): MessageReaction => ({
+          emoji: r.value,
+          count: r.count,
+          reactedByCurrentUser: r.reactedByCurrentUser,
+        }),
+      ),
+      attachmentRef: msg.attachmentCount > 0
+        ? `${msg.attachmentCount} attachment${msg.attachmentCount > 1 ? "s" : ""}`
+        : null,
+      mentionsCurrentUser: false,
+    };
+  }).filter(Boolean) as ConversationMessage[];
+}
+
+export function toFrontendThreadReplies(replies: ApiMessage[], detail: ApiConversationDetail): ConversationMessage[] {
+  const profileByUserId = new Map<string, ApiParticipantProfile>();
+  if (detail.participantProfiles) {
+    for (const p of detail.participantProfiles) {
+      profileByUserId.set(p.userId, p);
+    }
+  }
+  const seenIds = new Set<string>();
+  return replies.map((msg) => {
+    if (seenIds.has(msg.id)) return null;
+    seenIds.add(msg.id);
     const profile = profileByUserId.get(msg.authorId);
     const authorName = msg.authorName ?? profile?.name ?? msg.authorId.slice(0, 8);
     const authorInitials = msg.authorInitials ?? profile?.avatarInitials ?? makeInitials(authorName);
@@ -208,7 +256,7 @@ export function toFrontendMessages(detail: ApiConversationDetail): ConversationM
         : null,
       mentionsCurrentUser: false,
     };
-  });
+  }).filter(Boolean) as ConversationMessage[];
 }
 
 function makeInitials(name: string): string {
