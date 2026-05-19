@@ -165,6 +165,56 @@ function RestrictedWorkspace({ conversation }: { conversation: ActiveConversatio
   );
 }
 
+function ArchivedWorkspace({ conversation }: { conversation: ActiveConversation }) {
+  return (
+    <div
+      className="flex flex-col items-center justify-center gap-5 px-10 text-center"
+      data-testid="reading-workspace-archived"
+    >
+      <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gray-50 border border-gray-200">
+        <Lock className="h-5 w-5 text-gray-400" />
+      </div>
+      <div className="space-y-1">
+        <p className="text-sm font-semibold" style={{ color: "#1C1B1F" }}>
+          Archived conversation
+        </p>
+        <p className="text-xs leading-relaxed max-w-[14rem]" style={{ color: "#79747E" }}>
+          This conversation was archived on{" "}
+          {conversation.archivedAt
+            ? new Date(conversation.archivedAt).toLocaleDateString()
+            : "an unknown date"}
+          .
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function LockedWorkspace({ conversation }: { conversation: ActiveConversation }) {
+  return (
+    <div
+      className="flex flex-col items-center justify-center gap-5 px-10 text-center"
+      data-testid="reading-workspace-locked"
+    >
+      <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gray-50 border border-gray-200">
+        <Lock className="h-5 w-5 text-gray-400" />
+      </div>
+      <div className="space-y-1">
+        <p className="text-sm font-semibold" style={{ color: "#1C1B1F" }}>
+          Locked conversation
+        </p>
+        <p className="text-xs leading-relaxed max-w-[14rem]" style={{ color: "#79747E" }}>
+          This conversation was locked on{" "}
+          {conversation.lockedAt
+            ? new Date(conversation.lockedAt).toLocaleDateString()
+            : "an unknown date"}
+          . Only admins can post.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 // ─── Workspace header ─────────────────────────────────────────────────────────
 
 interface WorkspaceHeaderProps {
@@ -562,8 +612,10 @@ function ChannelWorkspace({
   detailOpen,
   onToggleDetail,
   onCloseDetail,
+  messages: externalMessages,
+  canSend,
 }: WorkspaceBodyProps) {
-  const channelMessages = getMessagesForConversation(conversation.id);
+  const channelMessages = externalMessages ?? getMessagesForConversation(conversation.id);
   const anchorMsg = threadAnchorMessageId
     ? channelMessages.find((m) => m.id === threadAnchorMessageId) ?? null
     : null;
@@ -598,7 +650,7 @@ function ChannelWorkspace({
           threadAnchorMessageId={threadAnchorMessageId}
           onOpenThread={onOpenThread}
         />
-        <MessagingComposer placeholder={`Message #${conversation.name}`} isAccessible={true} />
+        <MessagingComposer placeholder={`Message #${conversation.name}`} isAccessible={canSend} />
       </div>
 
       {/* Thread panel */}
@@ -653,8 +705,10 @@ function DMWorkspace({
   onToggleThread,
   detailOpen,
   onToggleDetail,
+  messages: externalMessages,
+  canSend,
 }: WorkspaceBodyProps) {
-  const dmMessages = getMessagesForConversation(conversation.id);
+  const dmMessages = externalMessages ?? getMessagesForConversation(conversation.id);
   return (
     <div className="flex flex-1 overflow-hidden" data-testid="dm-workspace">
       <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
@@ -696,7 +750,7 @@ function DMWorkspace({
           threadAnchorMessageId={threadAnchorMessageId}
           onOpenThread={onOpenThread}
         />
-        <MessagingComposer placeholder={`Message ${conversation.name}`} isAccessible={true} />
+        <MessagingComposer placeholder={`Message ${conversation.name}`} isAccessible={canSend} />
       </div>
       {threadOpen && (
         <div
@@ -737,8 +791,10 @@ function GroupWorkspace({
   detailOpen,
   onToggleDetail,
   onCloseDetail,
+  messages: externalMessages,
+  canSend,
 }: WorkspaceBodyProps) {
-  const groupMessages = getMessagesForConversation(conversation.id);
+  const groupMessages = externalMessages ?? getMessagesForConversation(conversation.id);
   const anchorMsg = threadAnchorMessageId
     ? groupMessages.find((m) => m.id === threadAnchorMessageId) ?? null
     : null;
@@ -772,7 +828,7 @@ function GroupWorkspace({
           threadAnchorMessageId={threadAnchorMessageId}
           onOpenThread={onOpenThread}
         />
-        <MessagingComposer placeholder={`Message ${conversation.name}`} isAccessible={true} />
+        <MessagingComposer placeholder={`Message ${conversation.name}`} isAccessible={canSend} />
       </div>
       {threadOpen && anchorMsg && (
         <MessagingThreadPanel
@@ -800,6 +856,8 @@ interface WorkspaceBodyProps {
   detailOpen: boolean;
   onToggleDetail: () => void;
   onCloseDetail: () => void;
+  messages?: ConversationMessage[];
+  canSend: boolean;
 }
 
 // ─── Main export ──────────────────────────────────────────────────────────────
@@ -808,12 +866,16 @@ interface MessagingReadingWorkspaceProps {
   conversation: ActiveConversation | null;
   sectionKind?: "channel" | "dm" | "group";
   degraded?: boolean;
+  messages?: ConversationMessage[];
+  canSend?: boolean;
 }
 
 export function MessagingReadingWorkspace({
   conversation,
   sectionKind,
   degraded,
+  messages: externalMessages,
+  canSend = true,
 }: MessagingReadingWorkspaceProps) {
   const [threadAnchorMessageId, setThreadAnchorMessageId] = React.useState<string | null>(null);
   const [threadOpen, setThreadOpen] = React.useState(false);
@@ -858,6 +920,30 @@ export function MessagingReadingWorkspace({
     );
   }
 
+  if (conversation.archivedAt) {
+    return (
+      <div
+        className="flex flex-1 flex-col items-center justify-center overflow-hidden bg-white"
+        data-testid="reading-workspace"
+      >
+        {degraded && <DegradedBanner />}
+        <ArchivedWorkspace conversation={conversation} />
+      </div>
+    );
+  }
+
+  if (conversation.lockedAt) {
+    return (
+      <div
+        className="flex flex-1 flex-col items-center justify-center overflow-hidden bg-white"
+        data-testid="reading-workspace"
+      >
+        {degraded && <DegradedBanner />}
+        <LockedWorkspace conversation={conversation} />
+      </div>
+    );
+  }
+
   if (!conversation.isAccessible) {
     return (
       <div
@@ -888,6 +974,8 @@ export function MessagingReadingWorkspace({
       });
     },
     onCloseDetail: () => setDetailOpen(false),
+    messages: externalMessages,
+    canSend,
   };
 
   return (

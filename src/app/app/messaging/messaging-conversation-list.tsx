@@ -148,16 +148,19 @@ function ListHeader({
 interface ChannelListProps {
   activeConversationId: string | null;
   onSelect: (conv: ActiveConversation) => void;
+  channels?: MessagingChannel[];
 }
 
 export function ChannelConversationList({
   activeConversationId,
   onSelect,
+  channels: liveChannels,
 }: ChannelListProps) {
   const [search, setSearch] = React.useState("");
   const [showCreate, setShowCreate] = React.useState(false);
 
-  const filtered = MOCK_CHANNELS.filter((ch) =>
+  const source = liveChannels ?? MOCK_CHANNELS;
+  const filtered = source.filter((ch) =>
     ch.name.toLowerCase().includes(search.toLowerCase())
   );
 
@@ -184,7 +187,7 @@ export function ChannelConversationList({
     >
       <ListHeader
         title="Channels"
-        subtitle={`${MOCK_CHANNELS.length} channels · ${MOCK_CHANNELS.filter((c) => c.visibility === "private").length} private`}
+        subtitle={`${source.length} channels · ${source.filter((c) => c.visibility === "private").length} private`}
         actionLabel="New channel"
         onAction={() => setShowCreate(true)}
         searchPlaceholder="Find a channel…"
@@ -302,12 +305,14 @@ function ChannelRow({
 interface DMListProps {
   activeConversationId: string | null;
   onSelect: (conv: ActiveConversation) => void;
+  dms?: DirectMessage[];
 }
 
-export function DMConversationList({ activeConversationId, onSelect }: DMListProps) {
+export function DMConversationList({ activeConversationId, onSelect, dms: liveDms }: DMListProps) {
   const [search, setSearch] = React.useState("");
 
-  const filtered = MOCK_DMS.filter((dm) =>
+  const source = liveDms ?? MOCK_DMS;
+  const filtered = source.filter((dm) =>
     dm.participant.name.toLowerCase().includes(search.toLowerCase())
   );
 
@@ -435,14 +440,16 @@ function DMRow({
 interface GroupListProps {
   activeConversationId: string | null;
   onSelect: (conv: ActiveConversation) => void;
+  groups?: MessagingGroup[];
 }
 
-export function GroupConversationList({ activeConversationId, onSelect }: GroupListProps) {
+export function GroupConversationList({ activeConversationId, onSelect, groups: liveGroups }: GroupListProps) {
   const [search, setSearch] = React.useState("");
   const [showCreate, setShowCreate] = React.useState(false);
 
-  const filtered = MOCK_GROUPS.filter((grp) =>
-    grp.name.toLowerCase().includes(search.toLowerCase())
+  const source = liveGroups ?? MOCK_GROUPS;
+  const filtered = source.filter((g) =>
+    g.name.toLowerCase().includes(search.toLowerCase())
   );
 
   function handleSelect(grp: MessagingGroup) {
