@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { uploadFileServer } from "@/lib/storage/upload-server";
+import { mintUploadToken } from "@/lib/messaging/service-helpers";
 import {
   requireMessagingApiContext,
   messagingApiResponse,
   handleMessagingApiError,
   applyMessagingRateLimit,
-  parseMessagingApiError,
 } from "../../_utils";
 
 export const runtime = "nodejs";
@@ -39,12 +39,15 @@ function deriveMimeCategory(mimeType: string): string {
  * POST /api/messaging/attachments/upload
  *
  * Accepts a multipart file upload, stores it securely in the attachments
- * bucket, and returns an opaque storageRef that clients pass to
- * send-message / reply-to-thread endpoints.
+ * bucket, and returns an opaque storageRef + uploadToken for authenticated
+ * attachment linkage.
+ *
+ * Sprint 5.5 hardening: returns an uploadToken binding { orgId, userId, storageRef }
+ * so downstream message/reply routes can reject forged linkage.
  */
 export async function POST(request: NextRequest) {
   try {
-    const { orgId } = await requireMessagingApiContext();
+    const { orgId, userId } = await requireMessagingApiContext();
     await applyMessagingRateLimit(request, orgId, "messagingUpload");
 
     const contentType = request.headers.get("content-type") ?? "";
@@ -91,8 +94,11 @@ export async function POST(request: NextRequest) {
       mimeType,
     );
 
+    const uploadToken = mintUploadToken(orgId, userId, savedKey);
+
     return messagingApiResponse({
       storageRef: savedKey,
+      uploadToken,
       fileName,
       mimeType,
       mimeCategory: deriveMimeCategory(mimeType),

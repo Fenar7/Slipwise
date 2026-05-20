@@ -3,6 +3,7 @@ import { useState, useCallback, useRef } from "react";
 
 export interface UploadedAttachment {
   storageRef: string;
+  uploadToken: string;
   fileName: string;
   mimeType: string;
   mimeCategory: string;

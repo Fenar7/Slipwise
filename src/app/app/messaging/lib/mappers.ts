@@ -70,6 +70,13 @@ export interface ApiMessage {
   deletedAt: string | null;
   reactionSummary: ApiReactionSummaryItem[];
   attachmentCount: number;
+  attachments?: Array<{
+    id: string;
+    fileName: string;
+    mimeType: string;
+    sizeBytes: number;
+    scanStatus: string;
+  }>;
   mentionsCurrentUser?: boolean;
   createdAt: string;
 }
@@ -218,6 +225,14 @@ export function toFrontendMessages(detail: ApiConversationDetail): ConversationM
       attachmentRef: msg.attachmentCount > 0
         ? `${msg.attachmentCount} attachment${msg.attachmentCount > 1 ? "s" : ""}`
         : null,
+      attachmentRecords: (msg.attachments ?? []).map((att) => ({
+        id: att.id,
+        name: att.fileName,
+        mimeType: att.mimeType,
+        mimeCategory: deriveMimeCategory(att.mimeType),
+        sizeBytes: att.sizeBytes,
+        scanStatus: att.scanStatus,
+      })),
       mentionsCurrentUser: msg.mentionsCurrentUser ?? false,
     };
   }).filter(Boolean) as ConversationMessage[];
@@ -257,9 +272,24 @@ export function toFrontendThreadReplies(replies: ApiMessage[], detail: ApiConver
       attachmentRef: msg.attachmentCount > 0
         ? `${msg.attachmentCount} attachment${msg.attachmentCount > 1 ? "s" : ""}`
         : null,
+      attachmentRecords: (msg.attachments ?? []).map((att) => ({
+        id: att.id,
+        name: att.fileName,
+        mimeType: att.mimeType,
+        mimeCategory: deriveMimeCategory(att.mimeType),
+        sizeBytes: att.sizeBytes,
+        scanStatus: att.scanStatus,
+      })),
       mentionsCurrentUser: msg.mentionsCurrentUser ?? false,
     };
   }).filter(Boolean) as ConversationMessage[];
+}
+
+function deriveMimeCategory(mimeType: string): string {
+  if (mimeType.startsWith("image/")) return "image";
+  if (mimeType.includes("spreadsheet") || mimeType.includes("excel") || mimeType === "text/csv") return "spreadsheet";
+  if (mimeType === "application/pdf" || mimeType.startsWith("text/") || mimeType.includes("word") || mimeType.includes("document")) return "document";
+  return "other";
 }
 
 function makeInitials(name: string): string {

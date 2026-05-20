@@ -90,7 +90,7 @@ describe("Sprint 5.5 — attachments service correctness", () => {
       authorId: "user-1",
       body: "check attachment",
       attachments: [
-        { storageRef: "org/messaging/file.pdf", fileName: "file.pdf", mimeType: "application/pdf", sizeBytes: 1024 },
+        { uploadToken: "valid-token", storageRef: "org/messaging/file.pdf", fileName: "file.pdf", mimeType: "application/pdf", sizeBytes: 1024 },
       ],
     });
 
@@ -125,8 +125,8 @@ describe("Sprint 5.5 — attachments service correctness", () => {
       authorId: "user-1",
       body: "multi attachment",
       attachments: [
-        { storageRef: "org/messaging/a.pdf", fileName: "a.pdf", mimeType: "application/pdf", sizeBytes: 100 },
-        { storageRef: "org/messaging/b.png", fileName: "b.png", mimeType: "image/png", sizeBytes: 200 },
+        { uploadToken: "t1", storageRef: "org/messaging/a.pdf", fileName: "a.pdf", mimeType: "application/pdf", sizeBytes: 100 },
+        { uploadToken: "t2", storageRef: "org/messaging/b.png", fileName: "b.png", mimeType: "image/png", sizeBytes: 200 },
       ],
     });
 
@@ -158,7 +158,7 @@ describe("Sprint 5.5 — attachments service correctness", () => {
       authorId: "user-1",
       body: "reply with file",
       attachments: [
-        { storageRef: "org/messaging/image.jpg", fileName: "image.jpg", mimeType: "image/jpeg", sizeBytes: 2048, thumbnailRef: "thumb.jpg" },
+        { uploadToken: "t3", storageRef: "org/messaging/image.jpg", fileName: "image.jpg", mimeType: "image/jpeg", sizeBytes: 2048, thumbnailRef: "thumb.jpg" },
       ],
     });
 
@@ -185,7 +185,7 @@ describe("Sprint 5.5 — attachments service correctness", () => {
     expect(db.conversationAttachment.createMany).not.toHaveBeenCalled();
   });
 
-  it("attachment send still succeeds when no attachments provided (backward compat)", async () => {
+  it("sendMessage still works without attachments (backward compat)", async () => {
     db.conversationParticipant.findMany.mockResolvedValue([{ userId: "user-2" }]);
     db.conversationParticipant.count.mockResolvedValue(2);
     db.conversationMessage.create.mockResolvedValue({

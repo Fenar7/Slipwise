@@ -32,7 +32,7 @@ import {
 } from "lucide-react";
 import type { ActiveConversation, ConversationMessage, MentionSuggestion, PresenceStatus } from "./types";
 import { MessagingComposer } from "./messaging-composer";
-import { MessagingThreadPanel } from "./messaging-thread-panel";
+import { MessagingThreadPanel, type ThreadReplyAttachmentPayload } from "./messaging-thread-panel";
 import { MessagingChannelDetail } from "./messaging-channel-detail";
 import { MessagingGroupDetail } from "./messaging-group-detail";
 import { MentionText } from "./messaging-mention-text";
@@ -551,7 +551,19 @@ function MessageRow({ message, isThreadAnchor, onOpenThread, onDownloadAttachmen
         </p>
 
         {/* Attachment */}
-        {message.attachmentRef && <AttachmentChip name={message.attachmentRef} />}
+        {message.attachmentRecords && message.attachmentRecords.length > 0 && (
+          <div className="mt-1.5 flex flex-wrap gap-1">
+            {message.attachmentRecords.map((att) => (
+              <AttachmentChip
+                key={att.id}
+                name={att.name}
+                attachmentId={att.id}
+                onDownload={onDownloadAttachment ?? undefined}
+                scanStatus={att.scanStatus}
+              />
+            ))}
+          </div>
+        )}
 
         {/* Reactions */}
         <ReactionChips reactions={message.reactions} />
@@ -645,6 +657,7 @@ function MessageFeed({ messages, threadAnchorMessageId, onOpenThread, onDownload
           message={msg}
           isThreadAnchor={threadAnchorMessageId === msg.id}
           onOpenThread={onOpenThread}
+          onDownloadAttachment={onDownloadAttachment}
         />
       ))}
       {/* Bottom padding so last message isn't flush against composer */}
@@ -723,9 +736,10 @@ function ChannelWorkspace({
             replies={threadReplies}
             onClose={onCloseThread}
             onReply={onReply && detail && threadAnchorMessageId
-              ? (body) => {
+              ? (body, attachments) => {
                   const threadId = detail.threads.find((thread) => thread.anchorMessageId === threadAnchorMessageId)?.id ?? threadAnchorMessageId;
-                  return onReply(threadId, body);
+                  const attPayloads = attachments?.map(a => ({ storageRef: a.storageRef, uploadToken: a.uploadToken, fileName: a.fileName, mimeType: a.mimeType, sizeBytes: a.sizeBytes }));
+                  return onReply(threadId, body, attPayloads?.length ? ({ attachments: attPayloads, mentions: undefined }) : undefined);
                 }
               : undefined}
             sendingReply={sendingReply}
@@ -965,7 +979,7 @@ interface WorkspaceBodyProps {
   onReply?: (
     threadId: string,
     body: string,
-    options?: { mentions?: Array<{ userId: string; offsetStart: number; offsetEnd: number }> },
+    options?: { mentions?: Array<{ userId: string; offsetStart: number; offsetEnd: number }>; attachments?: Array<{ storageRef: string; uploadToken: string; fileName: string; mimeType: string; sizeBytes: number }> },
   ) => Promise<{ id: string } | null>;
   sendingReply?: boolean;
   replyError?: string | null;
@@ -976,6 +990,7 @@ interface WorkspaceBodyProps {
   onReact?: (messageId: string, emoji: string) => void;
   onEdit?: (messageId: string, body: string) => void;
   onDelete?: (messageId: string) => void;
+  onDownloadAttachment?: (attachmentId: string) => Promise<{ signedUrl: string } | null>;
 }
 
 // ─── Main export ──────────────────────────────────────────────────────────────
@@ -995,7 +1010,7 @@ interface MessagingReadingWorkspaceProps {
   onReply?: (
     threadId: string,
     body: string,
-    options?: { mentions?: Array<{ userId: string; offsetStart: number; offsetEnd: number }>; attachments?: Array<{ storageRef: string; fileName: string; mimeType: string; sizeBytes: number }> },
+    options?: { mentions?: Array<{ userId: string; offsetStart: number; offsetEnd: number }>; attachments?: Array<{ storageRef: string; uploadToken: string; fileName: string; mimeType: string; sizeBytes: number }> },
   ) => Promise<{ id: string } | null>;
   sendingReply?: boolean;
   replyError?: string | null;

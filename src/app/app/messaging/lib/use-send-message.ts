@@ -18,6 +18,7 @@ export interface MentionPayload {
 
 export interface AttachmentPayload {
   storageRef: string;
+  uploadToken: string;
   fileName: string;
   mimeType: string;
   sizeBytes: number;

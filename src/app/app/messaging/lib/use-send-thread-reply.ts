@@ -18,6 +18,7 @@ export interface ThreadMentionPayload {
 
 export interface ThreadAttachmentPayload {
   storageRef: string;
+  uploadToken: string;
   fileName: string;
   mimeType: string;
   sizeBytes: number;

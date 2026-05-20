@@ -30,7 +30,7 @@ describe("useAttachmentUpload", () => {
   it("uploads a file and adds to staged files", async () => {
     vi.stubGlobal("fetch", mockFetch({
       success: true,
-      data: { storageRef: "org/messaging/test.png", fileName: "test.png", mimeType: "image/png", mimeCategory: "image", sizeBytes: 512 },
+      data: { storageRef: "org/messaging/test.png", uploadToken: "tok-1", fileName: "test.png", mimeType: "image/png", mimeCategory: "image", sizeBytes: 512 },
     }, 201));
 
     const { result } = renderHook(() => useAttachmentUpload());
@@ -69,7 +69,7 @@ describe("useAttachmentUpload", () => {
   it("allows removing a staged file", async () => {
     vi.stubGlobal("fetch", mockFetch({
       success: true,
-      data: { storageRef: "org/messaging/a.png", fileName: "a.png", mimeType: "image/png", mimeCategory: "image", sizeBytes: 100 },
+      data: { storageRef: "org/messaging/a.png", uploadToken: "tok-a", fileName: "a.png", mimeType: "image/png", mimeCategory: "image", sizeBytes: 100 },
     }, 201));
 
     const { result } = renderHook(() => useAttachmentUpload());
@@ -85,7 +85,7 @@ describe("useAttachmentUpload", () => {
   it("clearAll resets state", async () => {
     vi.stubGlobal("fetch", mockFetch({
       success: true,
-      data: { storageRef: "org/messaging/b.png", fileName: "b.png", mimeType: "image/png", mimeCategory: "image", sizeBytes: 100 },
+      data: { storageRef: "org/messaging/b.png", uploadToken: "tok-b", fileName: "b.png", mimeType: "image/png", mimeCategory: "image", sizeBytes: 100 },
     }, 201));
 
     const { result } = renderHook(() => useAttachmentUpload());
@@ -112,7 +112,7 @@ describe("useSendMessage with attachments", () => {
     await act(async () => {
       sent = await result.current.send("conv-1", "test message", null, {
         attachments: [
-          { storageRef: "org/test.pdf", fileName: "test.pdf", mimeType: "application/pdf", sizeBytes: 1024 },
+          { storageRef: "org/test.pdf", uploadToken: "tok-msg", fileName: "test.pdf", mimeType: "application/pdf", sizeBytes: 1024 },
         ],
       });
     });
@@ -149,7 +149,7 @@ describe("useSendThreadReply with attachments", () => {
     await act(async () => {
       sent = await result.current.send("conv-1", "thread-1", "reply with file", {
         attachments: [
-          { storageRef: "org/file.pdf", fileName: "file.pdf", mimeType: "application/pdf", sizeBytes: 2048 },
+          { storageRef: "org/file.pdf", uploadToken: "tok-reply", fileName: "file.pdf", mimeType: "application/pdf", sizeBytes: 2048 },
         ],
       });
     });
@@ -231,5 +231,65 @@ describe("useAttachmentFiles", () => {
     });
 
     expect(data).toBeNull();
+  });
+});
+
+
+// ─── Thread reply attachment flow (Sprint 5.5) ────────────────────────────
+
+describe("Thread reply attachment flow", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("useSendThreadReply includes uploadToken in attachment payload", async () => {
+    vi.stubGlobal("fetch", mockFetch({ success: true, data: { id: "reply-2" } }, 201));
+
+    const { result } = renderHook(() => useSendThreadReply());
+    let sent: { id: string } | null = null;
+
+    await act(async () => {
+      sent = await result.current.send("conv-1", "thread-1", "reply with tokens", {
+        attachments: [
+          { storageRef: "org/img.jpg", uploadToken: "tok-img", fileName: "img.jpg", mimeType: "image/jpeg", sizeBytes: 4096 },
+        ],
+      });
+    });
+
+    expect(sent).not.toBeNull();
+    expect(sent!.id).toBe("reply-2");
+  });
+
+  it("thread reply with attachments includes them in fetch body", async () => {
+    const fetchMock = mockFetch({ success: true, data: { id: "reply-3" } }, 201);
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result } = renderHook(() => useSendThreadReply());
+    await act(async () => {
+      await result.current.send("conv-1", "thread-1", "file attached", {
+        attachments: [
+          { storageRef: "org/doc.pdf", uploadToken: "tok-doc", fileName: "doc.pdf", mimeType: "application/pdf", sizeBytes: 2048 },
+        ],
+      });
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        body: expect.stringContaining("uploadToken"),
+      }),
+    );
+  });
+
+  it("thread reply without attachments still works (backward compat)", async () => {
+    vi.stubGlobal("fetch", mockFetch({ success: true, data: { id: "reply-4" } }, 201));
+
+    const { result } = renderHook(() => useSendThreadReply());
+    let sent: { id: string } | null = null;
+
+    await act(async () => {
+      sent = await result.current.send("conv-1", "thread-1", "text only");
+    });
+
+    expect(sent).not.toBeNull();
+    expect(sent!.id).toBe("reply-4");
   });
 });

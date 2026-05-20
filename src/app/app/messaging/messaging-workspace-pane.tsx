@@ -23,6 +23,7 @@ import { MessagingFilesPanel } from "./messaging-files-panel";
 
 interface MessagingWorkspacePaneProps {
   activeSection: MessagingSection;
+  conversationId?: string | null;
 }
 
 const CARD_BUTTON_CLASS =
@@ -303,7 +304,7 @@ function DefaultPane() {
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export function MessagingWorkspacePane({ activeSection }: MessagingWorkspacePaneProps) {
+export function MessagingWorkspacePane({ activeSection, conversationId }: MessagingWorkspacePaneProps) {
   return (
     <div className="flex flex-col flex-1 min-w-0 h-full overflow-hidden" data-testid="messaging-workspace-pane">
       {activeSection === "channels" && <ChannelsPane />}
@@ -313,7 +314,7 @@ export function MessagingWorkspacePane({ activeSection }: MessagingWorkspacePane
       {activeSection === "meetings" && (
         <MessagingMeetingPanel calendarConnection={MOCK_CALENDAR_CONNECTION} />
       )}
-      {activeSection === "files" && <MessagingFilesPanel />}
+      {activeSection === "files" && <MessagingFilesPanel conversationId={conversationId} />}
       {activeSection === "admin" && <MessagingAdminPanel />}
     </div>
   );

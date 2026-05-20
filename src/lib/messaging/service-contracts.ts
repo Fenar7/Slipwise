@@ -170,6 +170,7 @@ export interface UpdateParticipantRoleInput {
 // ─── Attachment descriptor ────────────────────────────────────────────────────
 
 export interface MessageAttachmentDescriptor {
+  uploadToken: string;
   storageRef: string;
   fileName: string;
   mimeType: string;
