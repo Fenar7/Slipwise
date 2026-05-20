@@ -14,6 +14,8 @@
     "db:deploy": "prisma migrate deploy",
     "db:status": "prisma migrate status",
     "db:check": "bash scripts/check-db-migrations.sh",
+    "predev": "prisma generate",
+    "prebuild": "prisma generate",
     "postinstall": "prisma generate",
     "supabase:start": "bash scripts/supabase-start.sh",
     "supabase:stop": "bash scripts/supabase-stop.sh",
