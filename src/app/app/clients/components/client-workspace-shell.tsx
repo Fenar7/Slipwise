@@ -1,37 +1,48 @@
-"use client";
-
-import { useState } from "react";
 import { ClientWorkspaceHeader } from "./client-workspace-header";
 import { ClientWorkspaceTable } from "./client-workspace-table";
 import { ClientWorkspaceEmpty } from "./client-workspace-empty";
-import { MOCK_CLIENTS } from "./client-workspace-mock-data";
-import type { ClientFilter } from "./client-workspace-mock-data";
+import type { ClientFilter, ClientWorkspaceRow } from "./client-workspace-mock-data";
 
-export function ClientWorkspaceShell() {
-  const [searchQuery, setSearchQuery] = useState("");
-  const [activeFilter, setActiveFilter] = useState<ClientFilter>("all");
+interface ClientWorkspaceShellProps {
+  clients: ClientWorkspaceRow[];
+  total: number;
+  page: number;
+  totalPages: number;
+  searchQuery: string;
+  activeFilter: ClientFilter;
+  sort?: { key: "name" | "outstandingBalance" | "lastActivityAt"; dir: "asc" | "desc" } | undefined;
+}
 
-  // In Phase 1 this uses static mock data. Later sprints will wire real queries.
-  const clients = MOCK_CLIENTS;
+export function ClientWorkspaceShell({
+  clients,
+  total,
+  page,
+  totalPages,
+  searchQuery,
+  activeFilter,
+  sort,
+}: ClientWorkspaceShellProps) {
+  const hasAnyClients = total > 0;
 
   return (
     <div className="space-y-5">
       <ClientWorkspaceHeader
         searchQuery={searchQuery}
-        onSearchChange={setSearchQuery}
         activeFilter={activeFilter}
-        onFilterChange={setActiveFilter}
-        resultCount={clients.length}
+        resultCount={total}
       />
 
-      {clients.length === 0 ? (
+      {!hasAnyClients ? (
         <ClientWorkspaceEmpty />
       ) : (
         <ClientWorkspaceTable
           clients={clients}
+          total={total}
+          page={page}
+          totalPages={totalPages}
           searchQuery={searchQuery}
           activeFilter={activeFilter}
-          pageSize={10}
+          sort={sort}
         />
       )}
     </div>

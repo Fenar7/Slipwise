@@ -1,5 +1,3 @@
-"use client";
-
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { StatusBadge } from "@/components/dashboard/status-badge";
@@ -20,8 +18,6 @@ import {
 
 interface ClientWorkspaceRowProps {
   client: ClientWorkspaceRow;
-  selected?: boolean;
-  onSelect?: (id: string, checked: boolean) => void;
 }
 
 function formatCurrency(amount: number) {
@@ -33,8 +29,8 @@ function formatCurrency(amount: number) {
   }).format(amount);
 }
 
-function formatLastActivity(iso: string) {
-  const date = new Date(iso);
+function formatLastActivity(value: Date | string) {
+  const date = value instanceof Date ? value : new Date(value);
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();
   const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
@@ -51,26 +47,21 @@ function formatLastActivity(iso: string) {
 
 export function ClientWorkspaceRowView({
   client,
-  selected,
-  onSelect,
 }: ClientWorkspaceRowProps) {
   const lifecycle = client.lifecycleStage ?? "PROSPECT";
   const lifecycleVariant = LIFECYCLE_VARIANTS[lifecycle] ?? "neutral";
 
   return (
     <tr className="group transition-colors hover:bg-[var(--surface-selected)]">
-      {/* Selection */}
       <td className="px-3 py-2.5">
         <input
           type="checkbox"
-          checked={selected}
-          onChange={(e) => onSelect?.(client.id, e.target.checked)}
+          disabled
           className="h-3.5 w-3.5 rounded border-[var(--border-default)] text-[var(--brand-primary)] focus:ring-[var(--focus-ring)]"
           aria-label={`Select ${client.name}`}
         />
       </td>
 
-      {/* Client name + contact */}
       <td className="px-3 py-2.5">
         <div className="flex flex-col gap-0.5">
           <div className="flex items-center gap-1.5">
@@ -88,13 +79,14 @@ export function ClientWorkspaceRowView({
               <ArrowUpRight className="h-3 w-3" />
             </Link>
           </div>
-          <span className="text-xs text-[var(--text-muted)]">
-            {client.contactName}
-          </span>
+          {client.contactName && (
+            <span className="text-xs text-[var(--text-muted)]">
+              {client.contactName}
+            </span>
+          )}
         </div>
       </td>
 
-      {/* Email */}
       <td className="px-3 py-2.5">
         <div className="flex items-center gap-1.5 text-sm text-[var(--text-secondary)]">
           <Mail className="h-3 w-3 shrink-0 text-[var(--text-muted)]" />
@@ -102,7 +94,6 @@ export function ClientWorkspaceRowView({
         </div>
       </td>
 
-      {/* Phone */}
       <td className="px-3 py-2.5">
         <div className="flex items-center gap-1.5 text-sm text-[var(--text-secondary)]">
           <Phone className="h-3 w-3 shrink-0 text-[var(--text-muted)]" />
@@ -110,7 +101,6 @@ export function ClientWorkspaceRowView({
         </div>
       </td>
 
-      {/* Portal status */}
       <td className="px-3 py-2.5">
         <StatusBadge
           variant={PORTAL_STATUS_VARIANTS[client.portalStatus] ?? "neutral"}
@@ -119,14 +109,12 @@ export function ClientWorkspaceRowView({
         </StatusBadge>
       </td>
 
-      {/* Lifecycle */}
       <td className="px-3 py-2.5">
         <StatusBadge variant={lifecycleVariant}>
           {lifecycle.replace(/_/g, " ")}
         </StatusBadge>
       </td>
 
-      {/* Outstanding balance */}
       <td className="px-3 py-2.5 text-right">
         <span
           className={cn(
@@ -140,7 +128,6 @@ export function ClientWorkspaceRowView({
         </span>
       </td>
 
-      {/* Documents summary */}
       <td className="px-3 py-2.5">
         <div className="flex items-center gap-3 text-xs text-[var(--text-muted)]">
           <span className="inline-flex items-center gap-1" title="Invoices">
@@ -154,14 +141,12 @@ export function ClientWorkspaceRowView({
         </div>
       </td>
 
-      {/* Last activity */}
       <td className="px-3 py-2.5">
         <span className="text-xs text-[var(--text-muted)] whitespace-nowrap">
           {formatLastActivity(client.lastActivityAt)}
         </span>
       </td>
 
-      {/* Quick actions */}
       <td className="px-3 py-2.5 text-right">
         <div className="flex items-center justify-end gap-1 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 focus-within:opacity-100">
           <Link

@@ -1,7 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { ClientWorkspaceShell } from "../components/client-workspace-shell";
-import { ClientWorkspaceHeader } from "../components/client-workspace-header";
 import { ClientWorkspaceTable } from "../components/client-workspace-table";
 import { ClientWorkspaceEmpty } from "../components/client-workspace-empty";
 import { MOCK_CLIENTS } from "../components/client-workspace-mock-data";
@@ -17,76 +16,41 @@ vi.mock("next/link", () => ({
   }) => <a href={href}>{children}</a>,
 }));
 
+// Mock next/navigation for header
+vi.mock("next/navigation", () => ({
+  useSearchParams: () => new URLSearchParams(),
+  useRouter: () => ({ replace: vi.fn() }),
+}));
+
 describe("ClientWorkspaceShell", () => {
-  it("renders the workspace shell with header and table", () => {
-    render(<ClientWorkspaceShell />);
+  it("renders the workspace shell with real data props", () => {
+    render(
+      <ClientWorkspaceShell
+        clients={MOCK_CLIENTS}
+        total={MOCK_CLIENTS.length}
+        page={1}
+        totalPages={1}
+        searchQuery=""
+        activeFilter="all"
+      />
+    );
     expect(screen.getByRole("heading", { name: /Clients/i })).toBeInTheDocument();
     expect(screen.getByPlaceholderText(/Search clients/i)).toBeInTheDocument();
     expect(screen.getByText(/Acme Manufacturing Ltd/i)).toBeInTheDocument();
   });
 
-  it("filters rows by search query", () => {
-    render(<ClientWorkspaceShell />);
-    const input = screen.getByPlaceholderText(/Search clients/i);
-    fireEvent.change(input, { target: { value: "Acme" } });
-    expect(screen.getByText(/Acme Manufacturing Ltd/i)).toBeInTheDocument();
-    expect(screen.queryByText(/Beta Logistics/i)).not.toBeInTheDocument();
-  });
-
-  it("switches filter chips", () => {
-    render(<ClientWorkspaceShell />);
-    const activeChip = screen.getByRole("button", { name: /Active/i });
-    fireEvent.click(activeChip);
-    // Active filter should reduce visible rows (only 5+ active/won in mock data)
-    expect(screen.getAllByText(/Active/i).length).toBeGreaterThan(0);
-  });
-});
-
-describe("ClientWorkspaceHeader", () => {
-  it("renders search, filters, and actions", () => {
+  it("renders empty state when no clients", () => {
     render(
-      <ClientWorkspaceHeader
+      <ClientWorkspaceShell
+        clients={[]}
+        total={0}
+        page={1}
+        totalPages={1}
         searchQuery=""
-        onSearchChange={vi.fn()}
         activeFilter="all"
-        onFilterChange={vi.fn()}
-        resultCount={10}
       />
     );
-    expect(screen.getByRole("heading", { name: /Clients/i })).toBeInTheDocument();
-    expect(screen.getByRole("search")).toBeInTheDocument();
-    expect(screen.getByText(/Add Client/i)).toBeInTheDocument();
-    expect(screen.getByText(/Showing/i)).toBeInTheDocument();
-    expect(screen.getByText("10")).toBeInTheDocument();
-  });
-
-  it("calls onSearchChange when typing", () => {
-    const onSearchChange = vi.fn();
-    render(
-      <ClientWorkspaceHeader
-        searchQuery=""
-        onSearchChange={onSearchChange}
-        activeFilter="all"
-        onFilterChange={vi.fn()}
-        resultCount={10}
-      />
-    );
-    const input = screen.getByPlaceholderText(/Search clients/i);
-    fireEvent.change(input, { target: { value: "test" } });
-    expect(onSearchChange).toHaveBeenCalledWith("test");
-  });
-
-  it("shows active filter pill when not all", () => {
-    render(
-      <ClientWorkspaceHeader
-        searchQuery=""
-        onSearchChange={vi.fn()}
-        activeFilter="active"
-        onFilterChange={vi.fn()}
-        resultCount={5}
-      />
-    );
-    expect(screen.getAllByText(/Active/i).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText(/No clients yet/i)).toBeInTheDocument();
   });
 });
 
@@ -95,9 +59,11 @@ describe("ClientWorkspaceTable", () => {
     render(
       <ClientWorkspaceTable
         clients={MOCK_CLIENTS}
+        total={MOCK_CLIENTS.length}
+        page={1}
+        totalPages={2}
         searchQuery=""
         activeFilter="all"
-        pageSize={5}
       />
     );
     expect(screen.getByText(/Acme Manufacturing Ltd/i)).toBeInTheDocument();
@@ -107,27 +73,15 @@ describe("ClientWorkspaceTable", () => {
   it("shows empty state when no matches", () => {
     render(
       <ClientWorkspaceTable
-        clients={MOCK_CLIENTS}
+        clients={[]}
+        total={0}
+        page={1}
+        totalPages={1}
         searchQuery="zzzzzzzzz"
         activeFilter="all"
-        pageSize={5}
       />
     );
     expect(screen.getByText(/No clients match your filters/i)).toBeInTheDocument();
-  });
-
-  it("paginates to next page", () => {
-    render(
-      <ClientWorkspaceTable
-        clients={MOCK_CLIENTS}
-        searchQuery=""
-        activeFilter="all"
-        pageSize={5}
-      />
-    );
-    const nextBtn = screen.getByRole("button", { name: /Next/i });
-    fireEvent.click(nextBtn);
-    expect(screen.getByText(/2 \/ 2/i)).toBeInTheDocument();
   });
 });
 
