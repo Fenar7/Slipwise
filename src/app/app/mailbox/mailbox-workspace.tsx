@@ -611,13 +611,13 @@ export function MailboxWorkspace() {
         {/* ── Desktop left rail (xl+) — single instance, always in DOM ── */}
         {/* On xl+: shown inline. On <xl: hidden (drawer has its own copy via portal). */}
         <div className="hidden xl:flex xl:shrink-0" aria-hidden="false">
-          <MailboxLeftRail connections={connections} />
+          <MailboxLeftRail connections={connections} onCompose={openNewCompose} />
         </div>
 
         {/* ── Rail drawer for tablet + mobile — separate instance, aria-hidden when closed ── */}
         <div className="xl:hidden" aria-hidden={!isRailOpen}>
           <MailboxRailDrawer isOpen={isRailOpen} onClose={() => setIsRailOpen(false)}>
-            <MailboxLeftRail connections={connections} />
+            <MailboxLeftRail connections={connections} onCompose={openNewCompose} />
           </MailboxRailDrawer>
         </div>
 
