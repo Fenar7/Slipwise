@@ -43,12 +43,16 @@ vi.mock("@/lib/db", () => {
   const conversationMessage = {
     findFirst: vi.fn(),
   };
+  const member = {
+    findMany: vi.fn(),
+  };
   const db = {
     conversation,
     conversationParticipant,
     messagingAuditEvent,
     conversationThread,
     conversationMessage,
+    member,
     $transaction: vi.fn().mockImplementation(async (fn: (tx: typeof db) => Promise<unknown>) => fn(db)),
   };
   return { db };
@@ -76,7 +80,7 @@ import { getRealtimePublisherOrNoop } from "@/lib/messaging/realtime/publisher";
 
 import { createConversation } from "@/lib/messaging/conversation-service";
 import { createThread, resolveThread } from "@/lib/messaging/thread-service";
-import { addParticipant, removeParticipant } from "@/lib/messaging/participant-service";
+import { addParticipant, removeParticipant, updateParticipantRole } from "@/lib/messaging/participant-service";
 
 const mockPublisher = getRealtimePublisherOrNoop() as {
   publishConversationEvent: ReturnType<typeof vi.fn>;
@@ -231,6 +235,7 @@ describe("Sprint 4.2 service fanout wiring", () => {
         return null;
       },
     );
+    db.member.findMany.mockResolvedValue([{ userId: USER_2 }]);
     db.conversationParticipant.create.mockResolvedValue(makeParticipantRow({ userId: USER_2, role: "MEMBER" }));
 
     await addParticipant({
@@ -280,6 +285,75 @@ describe("Sprint 4.2 service fanout wiring", () => {
       ORG_A,
       CONV_ID,
       USER_2,
+    );
+  });
+
+  it("addParticipant rejects invalid or cross-org user IDs", async () => {
+    db.conversation.findFirst.mockResolvedValue(makeConversationRow());
+    db.conversationParticipant.findFirst.mockImplementation(
+      (args: { where: { userId?: string } }) => {
+        if (args.where.userId === USER_1) {
+          return makeParticipantRow({ userId: USER_1, role: "OWNER" });
+        }
+        return null;
+      },
+    );
+    // Simulate org has only USER_1 as a member; USER_2 is NOT a member
+    db.member.findMany.mockResolvedValue([{ userId: USER_1 }]);
+
+    await expect(
+      addParticipant({
+        orgId: ORG_A,
+        conversationId: CONV_ID,
+        userId: USER_2,
+        role: "MEMBER",
+        addedBy: USER_1,
+      }),
+    ).rejects.toThrow("addParticipant: invalid or unauthorized participants");
+
+    // Ensure no participant was created
+    expect(db.conversationParticipant.create).not.toHaveBeenCalled();
+    expect(mockPublisher.publishConversationEvent).not.toHaveBeenCalled();
+  });
+
+  it("updateParticipantRole publishes membership.updated with change: role_changed", async () => {
+    db.conversation.findFirst.mockResolvedValue(makeConversationRow());
+    db.conversationParticipant.findFirst.mockImplementation(
+      (args: { where: { userId?: string } }) => {
+        if (args.where.userId === USER_1) {
+          return makeParticipantRow({ userId: USER_1, role: "OWNER" });
+        }
+        if (args.where.userId === USER_2) {
+          return makeParticipantRow({ userId: USER_2, role: "MEMBER" });
+        }
+        return null;
+      },
+    );
+    db.conversationParticipant.count.mockResolvedValue(2);
+    db.conversationParticipant.update.mockResolvedValue(makeParticipantRow({ userId: USER_2, role: "ADMIN" }));
+
+    await updateParticipantRole({
+      orgId: ORG_A,
+      conversationId: CONV_ID,
+      userId: USER_2,
+      role: "ADMIN",
+      updatedBy: USER_1,
+    });
+
+    expect(mockPublisher.publishConversationEvent).toHaveBeenCalledTimes(1);
+    expect(mockPublisher.publishConversationEvent).toHaveBeenCalledWith(
+      ORG_A,
+      CONV_ID,
+      "conversation.membership.updated",
+      USER_1,
+      expect.objectContaining({
+        change: "role_changed",
+        userId: USER_2,
+        role: "ADMIN",
+        previousRole: "MEMBER",
+        conversationId: CONV_ID,
+      }),
+      expect.objectContaining({ eventId: expect.any(String), cursor: expect.any(String) }),
     );
   });
 });

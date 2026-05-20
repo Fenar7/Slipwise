@@ -38,6 +38,78 @@ function assertConversationExists(
 }
 
 /**
+ * Find an existing one-to-one DM between two users in an org.
+ * Returns the conversation record if found, null otherwise.
+ */
+async function findExistingDM(
+  tx: Prisma.TransactionClient,
+  orgId: string,
+  userA: string,
+  userB: string,
+): Promise<Prisma.ConversationGetPayload<Record<string, never>> | null> {
+  const candidates = await tx.conversation.findMany({
+    where: {
+      orgId,
+      type: "DM",
+      participants: {
+        some: {
+          userId: userA,
+          leftAt: null,
+        },
+      },
+    },
+  });
+
+  for (const conv of candidates) {
+    const activeParticipants = await tx.conversationParticipant.findMany({
+      where: {
+        conversationId: conv.id,
+        orgId,
+        leftAt: null,
+      },
+    });
+    if (
+      activeParticipants.length === 2 &&
+      activeParticipants.some((p) => p.userId === userA) &&
+      activeParticipants.some((p) => p.userId === userB)
+    ) {
+      return conv;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Validate that all provided userIds are active members of the org.
+ */
+export async function assertValidOrgMembers(
+  tx: Prisma.TransactionClient,
+  orgId: string,
+  userIds: string[],
+  context: string,
+): Promise<void> {
+  if (userIds.length === 0) return;
+
+  const members = await tx.member.findMany({
+    where: {
+      organizationId: orgId,
+      userId: { in: userIds },
+    },
+    select: { userId: true },
+  });
+
+  const validIds = new Set(members.map((m) => m.userId));
+  const invalid = userIds.filter((id) => !validIds.has(id));
+
+  if (invalid.length > 0) {
+    throw new Error(
+      `${context}: invalid or unauthorized participants: ${invalid.join(", ")}`,
+    );
+  }
+}
+
+/**
  * Choose the correct assertion helper based on whether admin override
  * context is provided.  If actorOrgRole or isPlatformAdmin are present,
  * use the governance-aware path; otherwise fall back to the standard
@@ -127,6 +199,7 @@ export async function listConversationsForUser(
 /**
  * Create a new conversation and add the creator as OWNER.
  * For DMs, enforces exactly two participants (creator + dmPeerId) and null visibility.
+ * Duplicate DMs for the same pair are prevented server-side.
  */
 export async function createConversation(
   input: CreateConversationInput,
@@ -140,6 +213,30 @@ export async function createConversation(
       if (input.visibility !== null && input.visibility !== undefined) {
         throw new Error("DM conversations must not have visibility set");
       }
+      if (input.dmPeerId === input.createdBy) {
+        throw new Error("DM peer cannot be the creator");
+      }
+
+      // Validate peer is an org member
+      await assertValidOrgMembers(tx, input.orgId, [input.dmPeerId], "createConversation");
+
+      // Prevent duplicate DMs: if a DM already exists between these two users,
+      // return the existing conversation instead of creating a new one.
+      const existing = await findExistingDM(tx, input.orgId, input.createdBy, input.dmPeerId);
+      if (existing) {
+        const existingParticipants = await tx.conversationParticipant.findMany({
+          where: participantOrgSafeWhere(input.orgId, existing.id),
+        });
+        return {
+          conversation: toConversationRecord(existing),
+          participants: existingParticipants.map(toParticipantRecord),
+        };
+      }
+    }
+
+    // For channels/groups, validate initial participants are org members
+    if (input.type !== "DM" && input.initialParticipantIds && input.initialParticipantIds.length > 0) {
+      await assertValidOrgMembers(tx, input.orgId, input.initialParticipantIds, "createConversation");
     }
 
     // Create conversation
@@ -169,9 +266,6 @@ export async function createConversation(
     ];
 
     if (input.type === "DM") {
-      if (input.dmPeerId === input.createdBy) {
-        throw new Error("DM peer cannot be the creator");
-      }
       participantData.push({
         orgId: input.orgId,
         userId: input.dmPeerId as string,

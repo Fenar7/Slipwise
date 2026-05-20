@@ -59,6 +59,7 @@ function createMockDetail(overrides: Partial<ApiConversationDetail> = {}): ApiCo
     }],
     threads: [],
     readState: { lastReadMessageId: null, lastReadAt: null, unreadCount: 0, isMuted: false },
+    currentUserId: "user-1",
     ...overrides,
   };
 }

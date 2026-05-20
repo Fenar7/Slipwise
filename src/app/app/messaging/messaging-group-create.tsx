@@ -1,28 +1,29 @@
 "use client";
 
 /**
- * MessagingGroupCreate — Sprint 1.4
+ * MessagingGroupCreate — Sprint 5.3
  *
- * Modal for creating a new group. Same overlay pattern as channel create.
+ * Modal for creating a new group. Uses real org members for the picker.
  */
 
 import React from "react";
 import { cn } from "@/lib/utils";
 import { X, Search, Plus, Check } from "lucide-react";
-import { MOCK_PARTICIPANTS } from "./mock-data";
-
-const PICKER_MEMBERS = MOCK_PARTICIPANTS.slice(0, 4);
+import { useOrgMembers } from "./lib/use-org-members";
 
 interface MessagingGroupCreateProps {
   onClose: () => void;
+  onCreate: (payload: { name: string; visibility: "PUBLIC" | "PRIVATE"; initialParticipantIds: string[] }) => void;
+  creating?: boolean;
 }
 
-export function MessagingGroupCreate({ onClose }: MessagingGroupCreateProps) {
+export function MessagingGroupCreate({ onClose, onCreate, creating }: MessagingGroupCreateProps) {
   const [groupName, setGroupName] = React.useState("");
   const [privacy, setPrivacy] = React.useState<"private" | "public">("private");
   const [memberSearch, setMemberSearch] = React.useState("");
   const [addedMemberIds, setAddedMemberIds] = React.useState<string[]>([]);
   const [dropdownOpen, setDropdownOpen] = React.useState(false);
+  const { members, loading } = useOrgMembers();
 
   React.useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
@@ -34,13 +35,13 @@ export function MessagingGroupCreate({ onClose }: MessagingGroupCreateProps) {
 
   const hasContent = groupName.trim().length > 0;
 
-  const filteredMembers = PICKER_MEMBERS.filter(
+  const filteredMembers = members.filter(
     (m) =>
       m.name.toLowerCase().includes(memberSearch.toLowerCase()) &&
       !addedMemberIds.includes(m.id)
   );
 
-  const addedMembers = PICKER_MEMBERS.filter((m) => addedMemberIds.includes(m.id));
+  const addedMembers = members.filter((m) => addedMemberIds.includes(m.id));
 
   function addMember(id: string) {
     setAddedMemberIds((prev) => [...prev, id]);
@@ -49,6 +50,15 @@ export function MessagingGroupCreate({ onClose }: MessagingGroupCreateProps) {
 
   function removeMember(id: string) {
     setAddedMemberIds((prev) => prev.filter((x) => x !== id));
+  }
+
+  function handleSubmit() {
+    if (!hasContent || creating) return;
+    onCreate({
+      name: groupName.trim(),
+      visibility: privacy === "public" ? "PUBLIC" : "PRIVATE",
+      initialParticipantIds: addedMemberIds,
+    });
   }
 
   return (
@@ -65,7 +75,6 @@ export function MessagingGroupCreate({ onClose }: MessagingGroupCreateProps) {
         aria-modal="true"
         aria-label="Create group"
       >
-        {/* Header */}
         <div className="flex items-center justify-between border-b px-5 py-4" style={{ borderColor: "#E0E0E0" }}>
           <h2 className="text-sm font-bold" style={{ color: "#1C1B1F" }}>
             Create a group
@@ -81,15 +90,9 @@ export function MessagingGroupCreate({ onClose }: MessagingGroupCreateProps) {
           </button>
         </div>
 
-        {/* Body */}
         <div className="px-5 py-5 space-y-4">
-          {/* Group name */}
           <div className="space-y-1.5">
-            <label
-              htmlFor="group-name"
-              className="text-xs font-semibold"
-              style={{ color: "#49454F" }}
-            >
+            <label htmlFor="group-name" className="text-xs font-semibold" style={{ color: "#49454F" }}>
               Group name <span className="text-[#DC2626]">*</span>
             </label>
             <input
@@ -105,7 +108,6 @@ export function MessagingGroupCreate({ onClose }: MessagingGroupCreateProps) {
             />
           </div>
 
-          {/* Privacy toggle */}
           <div className="space-y-1.5">
             <label className="text-xs font-semibold" style={{ color: "#49454F" }}>
               Privacy
@@ -146,16 +148,12 @@ export function MessagingGroupCreate({ onClose }: MessagingGroupCreateProps) {
             </div>
           </div>
 
-          {/* Member picker */}
           <div className="space-y-1.5">
             <label className="text-xs font-semibold" style={{ color: "#49454F" }}>
               Add members
             </label>
             <div className="relative">
-              <div
-                className="flex items-center gap-2 rounded-lg border bg-white px-3 py-2 transition-colors focus-within:border-[#DC2626]"
-                style={{ borderColor: "#E0E0E0" }}
-              >
+              <div className="flex items-center gap-2 rounded-lg border bg-white px-3 py-2 transition-colors focus-within:border-[#DC2626]" style={{ borderColor: "#E0E0E0" }}>
                 <Search className="h-3 w-3 shrink-0 text-[#79747E]" />
                 <input
                   type="text"
@@ -174,11 +172,8 @@ export function MessagingGroupCreate({ onClose }: MessagingGroupCreateProps) {
               </div>
 
               {dropdownOpen && filteredMembers.length > 0 && (
-                <div
-                  className="absolute left-0 right-0 top-full z-10 mt-1 rounded-lg border bg-white shadow-lg overflow-hidden"
-                  style={{ borderColor: "#E0E0E0" }}
-                  data-testid="group-member-dropdown"
-                >
+                <div className="absolute left-0 right-0 top-full z-10 mt-1 rounded-lg border bg-white shadow-lg overflow-hidden max-h-60 overflow-y-auto" style={{ borderColor: "#E0E0E0" }} data-testid="group-member-dropdown">
+                  {loading && <div className="px-3 py-2 text-xs text-gray-400">Loading…</div>}
                   {filteredMembers.map((m) => (
                     <button
                       key={m.id}
@@ -228,11 +223,7 @@ export function MessagingGroupCreate({ onClose }: MessagingGroupCreateProps) {
           </div>
         </div>
 
-        {/* Footer */}
-        <div
-          className="flex items-center justify-end gap-2 border-t px-5 py-4"
-          style={{ borderColor: "#E0E0E0" }}
-        >
+        <div className="flex items-center justify-end gap-2 border-t px-5 py-4" style={{ borderColor: "#E0E0E0" }}>
           <button
             type="button"
             className="rounded-lg px-4 py-2 text-xs font-semibold transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]"
@@ -245,15 +236,16 @@ export function MessagingGroupCreate({ onClose }: MessagingGroupCreateProps) {
             type="button"
             className={cn(
               "rounded-lg px-4 py-2 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]",
-              hasContent
+              hasContent && !creating
                 ? "bg-[#DC2626] text-white hover:bg-red-700"
                 : "bg-gray-100 text-[#79747E] cursor-not-allowed"
             )}
-            disabled={!hasContent}
-            aria-disabled={!hasContent}
+            disabled={!hasContent || creating}
+            aria-disabled={!hasContent || creating}
             data-testid="group-create-submit"
+            onClick={handleSubmit}
           >
-            Create group
+            {creating ? "Creating…" : "Create group"}
           </button>
         </div>
       </div>

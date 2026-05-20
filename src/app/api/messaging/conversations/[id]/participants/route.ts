@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { listParticipantsForConversation } from "@/lib/messaging";
+import { listParticipantsForConversation, addParticipant, isValidParticipantRole } from "@/lib/messaging";
 import {
   requireMessagingApiContext,
   messagingApiResponse,
@@ -29,6 +29,40 @@ export async function GET(
     );
 
     return messagingApiResponse({ participants });
+  } catch (error) {
+    return handleMessagingApiError(error);
+  }
+}
+
+/**
+ * POST /api/messaging/conversations/:id/participants
+ * Add a participant to a conversation.
+ */
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  try {
+    const { orgId, userId } = await requireMessagingApiContext();
+    const { id } = await params;
+    const body = (await request.json()) as Record<string, unknown>;
+
+    const targetUserId = typeof body.userId === "string" ? body.userId : "";
+    const role = isValidParticipantRole(body.role) ? body.role : "MEMBER";
+
+    if (!targetUserId) {
+      throw new Error("userId is required");
+    }
+
+    const participant = await addParticipant({
+      orgId,
+      conversationId: id,
+      userId: targetUserId,
+      role,
+      addedBy: userId,
+    });
+
+    return messagingApiResponse({ participant });
   } catch (error) {
     return handleMessagingApiError(error);
   }

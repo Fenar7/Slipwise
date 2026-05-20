@@ -18,8 +18,11 @@ import {
   Trash2,
 } from "lucide-react";
 import type { ActiveConversation, GroupPanelTab, ChannelMember } from "./types";
-import { MOCK_CHANNEL_MEMBERS } from "./mock-data";
+
 import { RadioPill } from "./messaging-ui-primitives";
+import type { ApiConversationDetail } from "./lib/mappers";
+import { useGovernanceActions } from "./lib/use-governance-actions";
+import { canGovern, isOwner } from "./lib/use-participant-role";
 
 // ─── Shared primitives ────────────────────────────────────────────────────────
 
@@ -112,9 +115,9 @@ function GroupDetailHeader({
 
 // ─── GroupInfoTab ─────────────────────────────────────────────────────────────
 
-function GroupInfoTab({ conversation }: { conversation: ActiveConversation }) {
+function GroupInfoTab({ conversation, detail }: { conversation: ActiveConversation; detail?: ApiConversationDetail | null }) {
   const isPrivate = conversation.groupIsPrivate ?? false;
-  const memberCount = conversation.groupMemberCount ?? MOCK_CHANNEL_MEMBERS.length;
+  const memberCount = detail?.participants?.length ?? conversation.groupMemberCount ?? 0;
 
   return (
     <div className="flex-1 overflow-y-auto px-4 py-4 space-y-5" data-testid="group-info-tab">
@@ -167,10 +170,22 @@ function GroupInfoTab({ conversation }: { conversation: ActiveConversation }) {
 
 // ─── GroupMembersTab ──────────────────────────────────────────────────────────
 
-function GroupMembersTab() {
+function GroupMembersTab({ detail }: { detail?: ApiConversationDetail | null }) {
   const [search, setSearch] = React.useState("");
 
-  const filtered = MOCK_CHANNEL_MEMBERS.filter((m) =>
+  const realMembers: ChannelMember[] | undefined = detail?.participants
+    .filter((p) => p.isActive)
+    .map((p) => ({
+      id: p.id,
+      name: p.displayName ?? p.userId.slice(0, 8),
+      avatarInitials: p.userId.slice(0, 2).toUpperCase(),
+      role: (p.role.toLowerCase() as ChannelMember["role"]) ?? "member",
+      presence: "offline" as ChannelMember["presence"],
+      joinedAt: p.joinedAt,
+    }));
+
+  const members = realMembers ?? [];
+  const filtered = members.filter((m) =>
     m.name.toLowerCase().includes(search.toLowerCase())
   );
 
@@ -197,7 +212,17 @@ function GroupMembersTab() {
 
       {/* Member list */}
       <div className="flex-1 overflow-y-auto py-2">
-        {filtered.map((member) => (
+        {detail === undefined && (
+          <div className="flex flex-1 items-center justify-center px-4 py-6 text-center">
+            <p className="text-xs" style={{ color: "#79747E" }}>Loading members…</p>
+          </div>
+        )}
+        {detail === null && (
+          <div className="flex flex-1 items-center justify-center px-4 py-6 text-center">
+            <p className="text-xs" style={{ color: "#79747E" }}>Members unavailable.</p>
+          </div>
+        )}
+        {detail !== undefined && detail !== null && filtered.map((member) => (
           <div
             key={member.id}
             className="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 transition-colors"
@@ -241,7 +266,7 @@ function GroupMembersTab() {
             </button>
           </div>
         ))}
-        {filtered.length === 0 && (
+        {detail !== undefined && detail !== null && filtered.length === 0 && (
           <div className="px-4 py-6 text-center">
             <p className="text-xs" style={{ color: "#79747E" }}>No members match your search.</p>
           </div>
@@ -265,10 +290,15 @@ function GroupMembersTab() {
 
 // ─── GroupSettingsTab ─────────────────────────────────────────────────────────
 
-function GroupSettingsTab({ conversation }: { conversation: ActiveConversation }) {
+function GroupSettingsTab({ conversation, detail, onRefresh }: { conversation: ActiveConversation; detail?: ApiConversationDetail | null; onRefresh?: () => void }) {
   const [privacy, setPrivacy] = React.useState<"private" | "public">(
     conversation.groupIsPrivate ? "private" : "public"
   );
+  const { archive, unarchive, lock, unlock, acting } = useGovernanceActions();
+  const governanceCapable = canGovern(detail);
+  const isConversationOwner = isOwner(detail);
+  const isArchived = !!conversation.archivedAt;
+  const isLocked = !!conversation.lockedAt;
 
   return (
     <div className="flex-1 overflow-y-auto px-4 py-4 space-y-5" data-testid="group-settings-tab">
@@ -319,17 +349,84 @@ function GroupSettingsTab({ conversation }: { conversation: ActiveConversation }
       {/* Divider */}
       <div className="h-px" style={{ background: "#F0F0F0" }} />
 
+      {/* Governance actions */}
+      {governanceCapable && (
+        <div className="space-y-2">
+          {!isArchived ? (
+            <button
+              type="button"
+              disabled={acting}
+              onClick={async () => {
+                const ok = await archive(conversation.id);
+                if (ok) onRefresh?.();
+              }}
+              className="w-full rounded-lg border px-4 py-2.5 text-xs font-semibold transition-colors hover:bg-amber-50 hover:border-amber-300 hover:text-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 disabled:opacity-50"
+              style={{ borderColor: "#E0E0E0", color: "#49454F" }}
+              data-testid="group-archive-btn"
+            >
+              Archive group
+            </button>
+          ) : (
+            <button
+              type="button"
+              disabled={acting}
+              onClick={async () => {
+                const ok = await unarchive(conversation.id);
+                if (ok) onRefresh?.();
+              }}
+              className="w-full rounded-lg border px-4 py-2.5 text-xs font-semibold transition-colors hover:bg-emerald-50 hover:border-emerald-300 hover:text-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 disabled:opacity-50"
+              style={{ borderColor: "#E0E0E0", color: "#49454F" }}
+              data-testid="group-unarchive-btn"
+            >
+              Unarchive group
+            </button>
+          )}
+
+          {!isLocked ? (
+            <button
+              type="button"
+              disabled={acting}
+              onClick={async () => {
+                const ok = await lock(conversation.id);
+                if (ok) onRefresh?.();
+              }}
+              className="w-full rounded-lg border px-4 py-2.5 text-xs font-semibold transition-colors hover:bg-gray-50 hover:border-gray-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400 disabled:opacity-50"
+              style={{ borderColor: "#E0E0E0", color: "#49454F" }}
+              data-testid="group-lock-btn"
+            >
+              Lock group
+            </button>
+          ) : (
+            <button
+              type="button"
+              disabled={acting}
+              onClick={async () => {
+                const ok = await unlock(conversation.id);
+                if (ok) onRefresh?.();
+              }}
+              className="w-full rounded-lg border px-4 py-2.5 text-xs font-semibold transition-colors hover:bg-emerald-50 hover:border-emerald-300 hover:text-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 disabled:opacity-50"
+              style={{ borderColor: "#E0E0E0", color: "#49454F" }}
+              data-testid="group-unlock-btn"
+            >
+              Unlock group
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Disband */}
-      <button
-        type="button"
-        className="w-full rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-xs font-semibold text-[#DC2626] transition-colors hover:bg-red-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]"
-        data-testid="group-disband-btn"
-      >
-        <span className="flex items-center justify-center gap-2">
-          <Trash2 className="h-3.5 w-3.5" />
-          Disband group
-        </span>
-      </button>
+      {isConversationOwner && (
+        <button
+          type="button"
+          className="w-full rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-xs font-semibold text-[#DC2626] transition-colors hover:bg-red-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]"
+          data-testid="group-disband-btn"
+        >
+          <span className="flex items-center justify-center gap-2">
+            <Trash2 className="h-3.5 w-3.5" />
+            Disband group
+          </span>
+        </button>
+      )}
     </div>
   );
 }
@@ -339,11 +436,15 @@ function GroupSettingsTab({ conversation }: { conversation: ActiveConversation }
 interface MessagingGroupDetailProps {
   conversation: ActiveConversation;
   onClose: () => void;
+  detail?: ApiConversationDetail | null;
+  onRefresh?: () => void;
 }
 
 export function MessagingGroupDetail({
   conversation,
   onClose,
+  detail,
+  onRefresh,
 }: MessagingGroupDetailProps) {
   const [activeTab, setActiveTab] = React.useState<GroupPanelTab>("info");
 
@@ -360,9 +461,9 @@ export function MessagingGroupDetail({
         groupName={conversation.name}
       />
 
-      {activeTab === "info" && <GroupInfoTab conversation={conversation} />}
-      {activeTab === "members" && <GroupMembersTab />}
-      {activeTab === "settings" && <GroupSettingsTab conversation={conversation} />}
+      {activeTab === "info" && <GroupInfoTab conversation={conversation} detail={detail} />}
+      {activeTab === "members" && <GroupMembersTab detail={detail} />}
+      {activeTab === "settings" && <GroupSettingsTab conversation={conversation} detail={detail} onRefresh={onRefresh} />}
     </div>
   );
 }

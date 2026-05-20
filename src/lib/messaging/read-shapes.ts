@@ -215,6 +215,7 @@ export interface ConversationDetail {
   messages: MessageSummary[];
   threads: ThreadSummary[];
   readState: ReadStateSummary | null;
+  currentUserId: string;
 }
 
 export interface ThreadSummary {
@@ -290,6 +291,7 @@ export function toConversationDetail(input: ConversationDetailInput): Conversati
           isMuted: readState.isMuted,
         }
       : null,
+    currentUserId,
   };
 }
 
