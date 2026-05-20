@@ -10,6 +10,12 @@ export interface SendMessageResult {
   createdAt: string;
 }
 
+export interface MentionPayload {
+  userId: string;
+  offsetStart: number;
+  offsetEnd: number;
+}
+
 export function useSendMessage() {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -19,6 +25,7 @@ export function useSendMessage() {
     conversationId: string,
     body: string,
     threadId?: string | null,
+    mentions?: MentionPayload[],
   ): Promise<SendMessageResult | null> => {
     const guardKey = `${conversationId}::${Date.now()}`;
     guardRef.current = guardKey;
@@ -29,7 +36,7 @@ export function useSendMessage() {
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ body, threadId: threadId ?? null }),
+        body: JSON.stringify({ body, threadId: threadId ?? null, mentions: mentions ?? [] }),
       });
       const payload = await res.json();
       if (guardRef.current !== guardKey) return null;

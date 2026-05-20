@@ -10,6 +10,12 @@ export interface SendThreadReplyResult {
   createdAt: string;
 }
 
+export interface ThreadMentionPayload {
+  userId: string;
+  offsetStart: number;
+  offsetEnd: number;
+}
+
 export function useSendThreadReply() {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -19,6 +25,7 @@ export function useSendThreadReply() {
     conversationId: string,
     threadId: string,
     body: string,
+    mentions?: ThreadMentionPayload[],
   ): Promise<SendThreadReplyResult | null> => {
     const guardKey = `${conversationId}:${threadId}::${Date.now()}`;
     guardRef.current = guardKey;
@@ -29,7 +36,7 @@ export function useSendThreadReply() {
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ body }),
+        body: JSON.stringify({ body, mentions: mentions ?? [] }),
       });
       const payload = await res.json();
       if (guardRef.current !== guardKey) return null;

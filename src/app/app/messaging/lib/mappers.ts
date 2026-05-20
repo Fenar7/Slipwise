@@ -70,6 +70,7 @@ export interface ApiMessage {
   deletedAt: string | null;
   reactionSummary: ApiReactionSummaryItem[];
   attachmentCount: number;
+  mentionsCurrentUser?: boolean;
   createdAt: string;
 }
 
@@ -217,7 +218,7 @@ export function toFrontendMessages(detail: ApiConversationDetail): ConversationM
       attachmentRef: msg.attachmentCount > 0
         ? `${msg.attachmentCount} attachment${msg.attachmentCount > 1 ? "s" : ""}`
         : null,
-      mentionsCurrentUser: false,
+      mentionsCurrentUser: msg.mentionsCurrentUser ?? false,
     };
   }).filter(Boolean) as ConversationMessage[];
 }
@@ -256,7 +257,7 @@ export function toFrontendThreadReplies(replies: ApiMessage[], detail: ApiConver
       attachmentRef: msg.attachmentCount > 0
         ? `${msg.attachmentCount} attachment${msg.attachmentCount > 1 ? "s" : ""}`
         : null,
-      mentionsCurrentUser: false,
+      mentionsCurrentUser: msg.mentionsCurrentUser ?? false,
     };
   }).filter(Boolean) as ConversationMessage[];
 }

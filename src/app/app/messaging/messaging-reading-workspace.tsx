@@ -29,7 +29,7 @@ import {
   Smile,
   AlertTriangle,
 } from "lucide-react";
-import type { ActiveConversation, ConversationMessage, PresenceStatus } from "./types";
+import type { ActiveConversation, ConversationMessage, MentionSuggestion, PresenceStatus } from "./types";
 import { MessagingComposer } from "./messaging-composer";
 import { MessagingThreadPanel } from "./messaging-thread-panel";
 import { MessagingChannelDetail } from "./messaging-channel-detail";
@@ -621,6 +621,7 @@ function ChannelWorkspace({
   threadReplies: externalThreadReplies,
   detail,
   onRefreshDetail,
+  participants,
 }: WorkspaceBodyProps) {
   const channelMessages = externalMessages ?? [];
   const anchorMsg = threadAnchorMessageId
@@ -655,7 +656,7 @@ function ChannelWorkspace({
           threadAnchorMessageId={threadAnchorMessageId}
           onOpenThread={onOpenThread}
         />
-        <MessagingComposer placeholder={`Message #${conversation.name}`} isAccessible={canSend} onSend={onSend} sending={sending} sendError={sendError} />
+        <MessagingComposer placeholder={`Message #${conversation.name}`} isAccessible={canSend} onSend={onSend} sending={sending} sendError={sendError} conversationId={conversation.id} participants={participants} />
       </div>
 
       {/* Thread panel */}
@@ -664,7 +665,12 @@ function ChannelWorkspace({
             anchorMessage={anchorMsg}
             replies={threadReplies}
             onClose={onCloseThread}
-            onReply={onReply ? (body) => onReply(conversation.id, body) : undefined}
+            onReply={onReply && detail && threadAnchorMessageId
+              ? (body) => {
+                  const threadId = detail.threads.find((thread) => thread.anchorMessageId === threadAnchorMessageId)?.id ?? threadAnchorMessageId;
+                  return onReply(threadId, body);
+                }
+              : undefined}
             sendingReply={sendingReply}
             replyError={replyError}
           />
@@ -721,6 +727,7 @@ function DMWorkspace({
   onReply,
   sendingReply,
   replyError,
+  participants,
 }: WorkspaceBodyProps) {
   const dmMessages = externalMessages ?? [];
   return (
@@ -764,7 +771,7 @@ function DMWorkspace({
           threadAnchorMessageId={threadAnchorMessageId}
           onOpenThread={onOpenThread}
         />
-        <MessagingComposer placeholder={`Message ${conversation.name}`} isAccessible={canSend} onSend={onSend} sending={sending} sendError={sendError} />
+        <MessagingComposer placeholder={`Message ${conversation.name}`} isAccessible={canSend} onSend={onSend} sending={sending} sendError={sendError} conversationId={conversation.id} participants={participants} />
       </div>
       {threadOpen && (
         <div
@@ -816,6 +823,7 @@ function GroupWorkspace({
   threadReplies: externalThreadReplies,
   detail,
   onRefreshDetail,
+  participants,
 }: WorkspaceBodyProps) {
   const groupMessages = externalMessages ?? [];
   const anchorMsg = threadAnchorMessageId
@@ -849,14 +857,19 @@ function GroupWorkspace({
           threadAnchorMessageId={threadAnchorMessageId}
           onOpenThread={onOpenThread}
         />
-        <MessagingComposer placeholder={`Message ${conversation.name}`} isAccessible={canSend} onSend={onSend} sending={sending} sendError={sendError} />
+        <MessagingComposer placeholder={`Message ${conversation.name}`} isAccessible={canSend} onSend={onSend} sending={sending} sendError={sendError} conversationId={conversation.id} participants={participants} />
       </div>
       {threadOpen && anchorMsg && (
         <MessagingThreadPanel
           anchorMessage={anchorMsg}
           replies={threadReplies}
           onClose={onCloseThread}
-          onReply={onReply ? (body) => onReply(conversation.id, body) : undefined}
+          onReply={onReply && detail && threadAnchorMessageId
+            ? (body) => {
+                const threadId = detail.threads.find((thread) => thread.anchorMessageId === threadAnchorMessageId)?.id ?? threadAnchorMessageId;
+                return onReply(threadId, body);
+              }
+            : undefined}
           sendingReply={sendingReply}
           replyError={replyError}
         />
@@ -884,13 +897,24 @@ interface WorkspaceBodyProps {
   canSend?: boolean;
   sending?: boolean;
   sendError?: string | null;
-  onSend?: (body: string, threadId?: string | null) => Promise<{ id: string } | null>;
-  onReply?: (threadId: string, body: string) => Promise<{ id: string } | null>;
+  onSend?: (
+    body: string,
+    options?: { mentions?: Array<{ userId: string; offsetStart: number; offsetEnd: number }> },
+  ) => Promise<{ id: string } | null>;
+  onReply?: (
+    threadId: string,
+    body: string,
+    options?: { mentions?: Array<{ userId: string; offsetStart: number; offsetEnd: number }> },
+  ) => Promise<{ id: string } | null>;
   sendingReply?: boolean;
   replyError?: string | null;
   threadReplies?: ConversationMessage[];
   detail?: ApiConversationDetail | null;
   onRefreshDetail?: () => void;
+  participants?: MentionSuggestion[];
+  onReact?: (messageId: string, emoji: string) => void;
+  onEdit?: (messageId: string, body: string) => void;
+  onDelete?: (messageId: string) => void;
 }
 
 // ─── Main export ──────────────────────────────────────────────────────────────
@@ -903,12 +927,20 @@ interface MessagingReadingWorkspaceProps {
   canSend?: boolean;
   sending?: boolean;
   sendError?: string | null;
-  onSend?: (body: string, threadId?: string | null) => Promise<{ id: string } | null>;
-  onReply?: (threadId: string, body: string) => Promise<{ id: string } | null>;
+  onSend?: (
+    body: string,
+    options?: { mentions?: Array<{ userId: string; offsetStart: number; offsetEnd: number }> },
+  ) => Promise<{ id: string } | null>;
+  onReply?: (
+    threadId: string,
+    body: string,
+    options?: { mentions?: Array<{ userId: string; offsetStart: number; offsetEnd: number }> },
+  ) => Promise<{ id: string } | null>;
   sendingReply?: boolean;
   replyError?: string | null;
   detail?: ApiConversationDetail | null;
   onRefreshDetail?: () => void;
+  participants?: MentionSuggestion[];
 }
 
 export function MessagingReadingWorkspace({
@@ -925,15 +957,20 @@ export function MessagingReadingWorkspace({
   replyError,
   detail,
   onRefreshDetail,
+  participants,
 }: MessagingReadingWorkspaceProps) {
   const [threadAnchorMessageId, setThreadAnchorMessageId] = React.useState<string | null>(null);
   const [threadOpen, setThreadOpen] = React.useState(false);
   const [detailOpen, setDetailOpen] = React.useState(false);
+  const activeThreadId = React.useMemo(() => {
+    if (!detail || !threadAnchorMessageId) return null;
+    return detail.threads.find((thread) => thread.anchorMessageId === threadAnchorMessageId)?.id ?? null;
+  }, [detail, threadAnchorMessageId]);
 
   // Sprint 5.2: live thread replies via dedicated backend endpoint.
   const { replies: liveThreadReplies } = useThreadReplies(
     conversation?.id ?? null,
-    threadAnchorMessageId,
+    activeThreadId,
     detail ?? null,
   );
 
@@ -1038,8 +1075,10 @@ export function MessagingReadingWorkspace({
     onReply,
     sendingReply,
     replyError,
+    threadReplies: liveThreadReplies,
     detail,
     onRefreshDetail,
+    participants,
   };
 
   return (

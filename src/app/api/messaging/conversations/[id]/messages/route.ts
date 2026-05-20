@@ -73,6 +73,27 @@ function parseAttachments(raw: unknown): Array<{ storageRef: string; fileName: s
   });
 }
 
+function parseMentions(raw: unknown): Array<{ userId: string; offsetStart: number; offsetEnd: number }> | undefined {
+  if (!Array.isArray(raw) || raw.length === 0) return undefined;
+  return raw.map((item) => {
+    if (typeof item !== "object" || item === null) {
+      throw new Error("mentions: each item must be an object");
+    }
+    const mention = item as Record<string, unknown>;
+    if (typeof mention.userId !== "string" || mention.userId.trim().length === 0) {
+      throw new Error("mentions: userId is required");
+    }
+    if (!Number.isInteger(mention.offsetStart) || !Number.isInteger(mention.offsetEnd)) {
+      throw new Error("mentions: offsetStart and offsetEnd must be integers");
+    }
+    return {
+      userId: mention.userId.trim(),
+      offsetStart: mention.offsetStart as number,
+      offsetEnd: mention.offsetEnd as number,
+    };
+  });
+}
+
 /**
  * POST /api/messaging/conversations/:id/messages
  * Send a message (top-level or thread reply).
@@ -94,6 +115,7 @@ export async function POST(
         : null;
 
     const attachments = parseAttachments(body.attachments);
+    const mentions = parseMentions(body.mentions);
 
     const message = await sendMessage({
       orgId,
@@ -106,6 +128,7 @@ export async function POST(
           ? (body.contentMeta as Record<string, unknown>)
           : null,
       attachments,
+      mentions,
     });
 
     return messagingApiResponse(message, 201);

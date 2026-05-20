@@ -47,6 +47,7 @@ import type {
   PresenceStatus,
 } from "./types";
 import { MOCK_PARTICIPANTS } from "./mock-data";
+import { useDrafts } from "./lib/use-drafts";
 
 // ─── Static mock data for popovers ───────────────────────────────────────────
 
@@ -95,6 +96,25 @@ const MOCK_STAGED_FILES: AttachedFile[] = [
   { id: "f1", name: "Q2-Reconciliation-Draft.xlsx", sizeLabel: "248 KB", mimeCategory: "spreadsheet" },
   { id: "f2", name: "Meeting-Notes.pdf", sizeLabel: "84 KB", mimeCategory: "document" },
 ];
+
+function extractMentionPayload(
+  body: string,
+  suggestions: MentionSuggestion[],
+): Array<{ userId: string; offsetStart: number; offsetEnd: number }> {
+  const mentions: Array<{ userId: string; offsetStart: number; offsetEnd: number }> = [];
+  for (const suggestion of suggestions) {
+    const token = `@${suggestion.name}`;
+    let searchFrom = 0;
+    while (searchFrom < body.length) {
+      const offsetStart = body.indexOf(token, searchFrom);
+      if (offsetStart === -1) break;
+      const offsetEnd = offsetStart + token.length;
+      mentions.push({ userId: suggestion.userId, offsetStart, offsetEnd });
+      searchFrom = offsetEnd;
+    }
+  }
+  return mentions.sort((a, b) => a.offsetStart - b.offsetStart);
+}
 
 // ─── Shared primitives ────────────────────────────────────────────────────────
 
@@ -375,12 +395,21 @@ export interface MessagingComposerProps {
    * specific UI state without user interaction.
    */
   simulatedState?: ComposerState;
-  /** Live send handler — Sprint 5.2 */
-  onSend?: (body: string) => void;
+  /** Live send handler — Sprint 5.2/5.4 */
+  onSend?: (
+    body: string,
+    options?: { mentions?: Array<{ userId: string; offsetStart: number; offsetEnd: number }> },
+  ) => void | Promise<unknown>;
   /** Whether a message is currently being sent */
   sending?: boolean;
   /** Error from last send attempt */
   sendError?: string | null;
+  /** Conversation id for draft scoping — Sprint 5.4 */
+  conversationId?: string;
+  /** Thread id for thread-reply draft scoping — Sprint 5.4 */
+  threadId?: string | null;
+  /** Real participants for @mention autocomplete — Sprint 5.4 */
+  participants?: MentionSuggestion[];
 }
 
 export function MessagingComposer({
@@ -392,6 +421,9 @@ export function MessagingComposer({
   onSend,
   sending = false,
   sendError,
+  conversationId,
+  threadId,
+  participants,
 }: MessagingComposerProps) {
   const [inputValue, setInputValue] = React.useState("");
   const [stagedFiles, setStagedFiles] = React.useState<AttachedFile[]>([]);
@@ -399,14 +431,55 @@ export function MessagingComposer({
     "mention" | "slash" | null
   >(simulatedState === "mention-popover" ? "mention" : simulatedState === "slash-popover" ? "slash" : null);
 
+  const { fetchDraft, saveDraft, deleteDraft } = useDrafts();
+  const inputRef = React.useRef<HTMLDivElement>(null);
+  const saveTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const mentionSuggestions = participants && participants.length > 0
+    ? participants
+    : MOCK_MENTION_SUGGESTIONS;
+
   const hasContent = inputValue.trim().length > 0 || stagedFiles.length > 0;
+
+  // Sprint 5.4: load draft on mount / conversation change
+  React.useEffect(() => {
+    if (!conversationId) return;
+    let cancelled = false;
+    fetchDraft(conversationId, threadId ?? null).then((draft) => {
+      if (cancelled || !draft) return;
+      setInputValue(draft.body);
+      if (inputRef.current) {
+        inputRef.current.textContent = draft.body;
+      }
+    });
+    return () => { cancelled = true; };
+  }, [conversationId, threadId]);
+
+  // Sprint 5.4: auto-save draft with 1.5s debounce
+  React.useEffect(() => {
+    if (!conversationId || inputValue.trim().length === 0) return;
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      saveDraft(conversationId, inputValue, threadId ?? null);
+    }, 1500);
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    };
+  }, [inputValue, conversationId, threadId]);
 
   function handleRemoveFile(id: string) {
     setStagedFiles((prev) => prev.filter((f) => f.id !== id));
   }
 
-  function handleMentionSelect(_s: MentionSuggestion) {
+  function handleMentionSelect(s: MentionSuggestion) {
     setActivePopover(null);
+    setInputValue((prev) => {
+      const updated = prev ? `${prev} @${s.name} ` : `@${s.name} `;
+      if (inputRef.current) {
+        inputRef.current.textContent = updated;
+      }
+      return updated;
+    });
   }
 
   function handleSlashSelect(_cmd: SlashCommand) {
@@ -419,6 +492,21 @@ export function MessagingComposer({
 
   function toggleSlashPopover() {
     setActivePopover((prev) => (prev === "slash" ? null : "slash"));
+  }
+
+  async function handleSend() {
+    if (!onSend || !displayHasContent || sending) return;
+    const mentions = extractMentionPayload(inputValue, mentionSuggestions);
+    if (mentions.length > 0) {
+      await onSend(inputValue, { mentions });
+    } else {
+      await onSend(inputValue);
+    }
+    setInputValue("");
+    if (inputRef.current) inputRef.current.textContent = "";
+    if (conversationId) {
+      deleteDraft(conversationId, threadId ?? null);
+    }
   }
 
   // Simulate staged files when simulatedState is "has-content"
@@ -444,7 +532,7 @@ export function MessagingComposer({
         {/* Popovers — rendered above the composer */}
         {activePopover === "mention" && (
           <MentionPopover
-            suggestions={MOCK_MENTION_SUGGESTIONS}
+            suggestions={mentionSuggestions}
             onSelect={handleMentionSelect}
           />
         )}
@@ -477,6 +565,7 @@ export function MessagingComposer({
             data-testid="composer-input-area"
           >
             <div
+              ref={inputRef}
               role="textbox"
               aria-label={placeholder}
               aria-multiline="true"
@@ -487,7 +576,7 @@ export function MessagingComposer({
               data-placeholder={placeholder}
               data-testid="composer-input"
               onInput={(e) => setInputValue(e.currentTarget.textContent ?? "")}
-              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && onSend && displayHasContent && !sending) { e.preventDefault(); onSend(inputValue); setInputValue(""); }}}
+              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && onSend && displayHasContent && !sending) { e.preventDefault(); handleSend(); }}}
             />
           </div>
 
@@ -579,7 +668,7 @@ export function MessagingComposer({
               disabled={!displayHasContent || sending}
               aria-label="Send message"
               data-testid="composer-send-btn"
-              onClick={() => { if (onSend && displayHasContent && !sending) { onSend(inputValue); setInputValue(""); } }}
+              onClick={handleSend}
             >
               <Send className="h-3 w-3" />
               <span>{sending ? "Sending…" : "Send"}</span>

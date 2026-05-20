@@ -223,6 +223,7 @@ export interface ReplyToThreadInput {
   body: string;
   contentMeta?: Record<string, unknown> | null;
   attachments?: MessageAttachmentDescriptor[];
+  mentions?: Array<{ userId: string; offsetStart: number; offsetEnd: number }>;
 }
 
 export interface ResolveThreadInput {
