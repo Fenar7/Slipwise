@@ -13,7 +13,7 @@
  * - Workspace integration (empty thread list, reconnect banner wiring)
  */
 
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 let mockPathname = "/app/mailbox";
@@ -83,6 +83,72 @@ vi.mock("../use-mailbox-threads", () => ({
   }),
 }));
 
+function buildThreadDetail(threadId: string) {
+  const thread = ALL_MOCK_THREADS.find((candidate) => candidate.id === threadId);
+  const detail = threadId ? MOCK_THREAD_DETAILS[threadId as keyof typeof MOCK_THREAD_DETAILS] : null;
+  if (!thread || !detail) return null;
+
+  return {
+    id: thread.id,
+    mailboxConnectionId: thread.mailboxConnectionId,
+    subject: thread.subject,
+    participants: thread.participants.map((participant) => ({
+      email: participant.email,
+      displayName: participant.displayName,
+    })),
+    unreadCount: thread.unreadCount,
+    status: thread.status,
+    assigneeId: thread.assigneeId,
+    isFlagged: thread.isFlagged,
+    previewSnippet: thread.previewSnippet,
+    attachmentCount: thread.attachmentCount,
+    createdAt: thread.createdAt,
+    updatedAt: thread.updatedAt,
+    links: [],
+    suggestions: [],
+    messages: detail.messages.map((message) => ({
+      id: message.id,
+      threadId: detail.threadId,
+      providerMessageId: `provider-${message.id}`,
+      rfcMessageId: null,
+      direction: message.direction,
+      from: message.fromEmail
+        ? { email: message.fromEmail, displayName: message.from }
+        : null,
+      to: message.to.map((email) => ({ email, displayName: null })),
+      cc: [],
+      bcc: [],
+      subject: message.subject,
+      snippet: message.bodyHtml.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim(),
+      sentAt: message.sentAt,
+      receivedAt: message.direction === "inbound" ? message.sentAt : null,
+      attachmentCount: message.attachments.length,
+      createdAt: message.sentAt,
+      updatedAt: message.sentAt,
+      attachments: message.attachments.map((attachment) => ({
+        id: attachment.id,
+        messageId: message.id,
+        providerAttachmentId: `provider-${attachment.id}`,
+        filename: attachment.filename,
+        mimeType: attachment.mimeType,
+        size: 1024,
+        isInline: false,
+        storageRef: null,
+      })),
+    })),
+  };
+}
+
+vi.mock("../use-mailbox-thread-detail", () => ({
+  useMailboxThreadDetail: vi.fn((threadId: string | null) => ({
+    detail: threadId ? buildThreadDetail(threadId) : null,
+    isLoading: false,
+    error: null,
+    isNotFound: false,
+    refetch: vi.fn(),
+  })),
+}));
+
 // ─── Component imports ────────────────────────────────────────────────────────
 
 import {
@@ -123,6 +189,7 @@ import { MailboxWorkspace } from "../mailbox-workspace";
 import { MailboxReadingPaneEmpty } from "../mailbox-reading-pane-empty";
 import { MailboxThreadList } from "../mailbox-thread-list";
 import { MailboxSettingsPageContent } from "../settings/page";
+import { MOCK_THREAD_DETAILS } from "../mock-data";
 
 function renderWorkspaceAtPath(pathname: string) {
   mockPathname = pathname;
@@ -824,10 +891,10 @@ describe("MailboxWorkspace Sprint 1.6 integration", () => {
   });
 
   it("shows current smart view context inside the filter panel", () => {
-    renderWorkspaceAtPath("/app/mailbox/linked");
+    renderWorkspaceAtPath("/app/mailbox/unread");
     fireEvent.click(screen.getByRole("button", { name: /filter threads/i }));
 
-    expect(screen.getByText(/refine linked without leaving the current mailbox view/i)).toBeInTheDocument();
+    expect(screen.getByText(/refine unread without leaving the current mailbox view\./i)).toBeInTheDocument();
   });
 
   it("shows a mailbox empty state for drafts routes instead of a blank list", () => {
@@ -840,22 +907,26 @@ describe("MailboxWorkspace Sprint 1.6 integration", () => {
     expect(screen.getByText(/support · spam is empty/i)).toBeInTheDocument();
   });
 
-  it("opens a narrow-viewport context panel from the reading pane", () => {
+  it("opens a narrow-viewport context panel from the reading pane", async () => {
     renderWorkspaceAtPath("/app/mailbox");
     fireEvent.click(screen.getAllByRole("option")[0]);
-    fireEvent.click(screen.getByRole("button", { name: /view thread context/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /view thread context/i }));
 
-    expect(screen.getByTestId("context-panel")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByTestId("context-panel")).toBeInTheDocument();
+    });
     expect(screen.getByText(/billing context/i)).toBeInTheDocument();
   });
 
-  it("returns from context panel to the reading pane on mobile back", () => {
+  it("returns from context panel to the reading pane on mobile back", async () => {
     renderWorkspaceAtPath("/app/mailbox");
     fireEvent.click(screen.getAllByRole("option")[0]);
-    fireEvent.click(screen.getByRole("button", { name: /view thread context/i }));
-    fireEvent.click(screen.getByRole("button", { name: /back/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /view thread context/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /back/i }));
 
-    expect(screen.getByTestId("mailbox-reading-pane-active")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByTestId("mailbox-reading-pane-active")).toBeInTheDocument();
+    });
   });
 });
 

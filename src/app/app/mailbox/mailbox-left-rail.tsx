@@ -227,9 +227,13 @@ function MailboxAccountGroup({ group }: { group: MailboxGroup }) {
 
 interface MailboxLeftRailProps {
   connections?: MailboxConnection[];
+  onCompose?: () => void;
 }
 
-export function MailboxLeftRail({ connections = MOCK_CONNECTIONS }: MailboxLeftRailProps) {
+export function MailboxLeftRail({
+  connections = MOCK_CONNECTIONS,
+  onCompose,
+}: MailboxLeftRailProps) {
   const groups = buildMailboxGroups(connections);
 
   return (
@@ -247,6 +251,8 @@ export function MailboxLeftRail({ connections = MOCK_CONNECTIONS }: MailboxLeftR
           Mailbox
         </span>
         <button
+          type="button"
+          onClick={onCompose}
           className="flex h-6 w-6 items-center justify-center rounded-md transition-colors hover:bg-[#F1F3F7]"
           title="Compose new message"
           aria-label="Compose new message"

@@ -2,7 +2,7 @@
  * Sprint 1.3 tests — Compose, reply, and forward flows.
  * Extends Sprint 1.1/1.2 coverage; does not replace them.
  */
-import { render, screen, fireEvent, within } from "@testing-library/react";
+import { render, screen, fireEvent, within, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 let mockPathname = "/app/mailbox";
@@ -69,6 +69,109 @@ vi.mock("../use-mailbox-threads", () => ({
       refetch: vi.fn(),
       loadMore: vi.fn(),
     };
+  }),
+}));
+
+function buildThreadDetail(threadId: string) {
+  const thread = ALL_MOCK_THREADS.find((candidate) => candidate.id === threadId);
+  const detail = threadId ? MOCK_THREAD_DETAILS[threadId as keyof typeof MOCK_THREAD_DETAILS] : null;
+  if (!thread || !detail) return null;
+
+  return {
+    id: thread.id,
+    mailboxConnectionId: thread.mailboxConnectionId,
+    subject: thread.subject,
+    participants: thread.participants.map((participant) => ({
+      email: participant.email,
+      displayName: participant.displayName,
+    })),
+    unreadCount: thread.unreadCount,
+    status: thread.status,
+    assigneeId: thread.assigneeId,
+    isFlagged: thread.isFlagged,
+    previewSnippet: thread.previewSnippet,
+    attachmentCount: thread.attachmentCount,
+    createdAt: thread.createdAt,
+    updatedAt: thread.updatedAt,
+    links: [],
+    suggestions: [],
+    messages: detail.messages.map((message) => ({
+      id: message.id,
+      threadId: detail.threadId,
+      providerMessageId: `provider-${message.id}`,
+      rfcMessageId: null,
+      direction: message.direction,
+      from: message.fromEmail
+        ? { email: message.fromEmail, displayName: message.from }
+        : null,
+      to: message.to.map((email) => ({ email, displayName: null })),
+      cc: [],
+      bcc: [],
+      subject: message.subject,
+      snippet: message.bodyHtml.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim(),
+      sentAt: message.sentAt,
+      receivedAt: message.direction === "inbound" ? message.sentAt : null,
+      attachmentCount: message.attachments.length,
+      createdAt: message.sentAt,
+      updatedAt: message.sentAt,
+      attachments: message.attachments.map((attachment) => ({
+        id: attachment.id,
+        messageId: message.id,
+        providerAttachmentId: `provider-${attachment.id}`,
+        filename: attachment.filename,
+        mimeType: attachment.mimeType,
+        size: 1024,
+        isInline: false,
+        storageRef: null,
+      })),
+    })),
+  };
+}
+
+vi.mock("../use-mailbox-thread-detail", () => ({
+  useMailboxThreadDetail: vi.fn((threadId: string | null) => ({
+    detail: threadId ? buildThreadDetail(threadId) : null,
+    isLoading: false,
+    error: null,
+    isNotFound: false,
+    refetch: vi.fn(),
+  })),
+}));
+
+vi.mock("../use-mailbox-draft", () => ({
+  useMailboxDraft: () => ({
+    isLoading: false,
+    isAutosaving: false,
+    error: null,
+    draftId: null,
+    lastAutosavedAt: null,
+    lastKnownUpdatedAt: null,
+    createDraft: vi.fn(async (payload) => ({
+      id: "draft-test-1",
+      orgId: "org_1",
+      mailboxConnectionId: payload.mailboxConnectionId,
+      threadId: payload.threadId ?? null,
+      replyToMessageId: payload.replyToMessageId ?? null,
+      mode: payload.mode,
+      fromIdentity: payload.fromIdentity ?? payload.mailboxConnectionId,
+      to: payload.to ?? [],
+      cc: payload.cc ?? [],
+      bcc: payload.bcc ?? [],
+      subject: payload.subject ?? "",
+      htmlBody: payload.htmlBody ?? "",
+      textBody: payload.textBody ?? null,
+      attachmentRefs: payload.attachmentRefs ?? [],
+      status: "draft",
+      lastAutosavedAt: null,
+      createdBy: "user-1",
+      createdAt: "2026-05-19T00:00:00Z",
+      updatedAt: "2026-05-19T00:00:00Z",
+    })),
+    autosave: vi.fn(async () => null),
+    sendDraft: vi.fn(async () => null),
+    discardDraft: vi.fn(async () => true),
+    cancelAutosave: vi.fn(),
+    clearError: vi.fn(),
   }),
 }));
 
@@ -861,27 +964,30 @@ describe("MailboxWorkspace — Sprint 1.3 compose integration", () => {
     expect(screen.queryByTestId("floating-composer")).not.toBeInTheDocument();
   });
 
-  it("clicking Compose button opens floating composer", () => {
+  it("clicking Compose button opens floating composer", async () => {
     renderWorkspaceAtPath();
     // Command bar compose button (last one — left rail has a + button too)
     const composeBtns = screen.getAllByRole("button", { name: /compose new message/i });
     fireEvent.click(composeBtns[composeBtns.length - 1]);
-    expect(screen.getByTestId("floating-composer")).toBeInTheDocument();
+    expect(await screen.findByTestId("floating-composer")).toBeInTheDocument();
   });
 
-  it("floating composer shows New message title", () => {
+  it("floating composer shows New message title", async () => {
     renderWorkspaceAtPath();
     const composeBtns = screen.getAllByRole("button", { name: /compose new message/i });
     fireEvent.click(composeBtns[composeBtns.length - 1]);
-    expect(screen.getByText("New message")).toBeInTheDocument();
+    expect(await screen.findByText("New message")).toBeInTheDocument();
   });
 
-  it("closing floating composer removes it", () => {
+  it("closing floating composer removes it", async () => {
     renderWorkspaceAtPath();
     const composeBtns = screen.getAllByRole("button", { name: /compose new message/i });
     fireEvent.click(composeBtns[composeBtns.length - 1]);
+    await screen.findByTestId("floating-composer");
     fireEvent.click(screen.getByRole("button", { name: /close composer/i }));
-    expect(screen.queryByTestId("floating-composer")).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByTestId("floating-composer")).not.toBeInTheDocument();
+    });
   });
 
   it("no expanded composer visible initially", () => {
@@ -889,26 +995,27 @@ describe("MailboxWorkspace — Sprint 1.3 compose integration", () => {
     expect(screen.queryByTestId("expanded-composer")).not.toBeInTheDocument();
   });
 
-  it("selecting a thread shows reply-prompt in reading pane", () => {
+  it("selecting a thread shows reply-prompt in reading pane", async () => {
     renderWorkspaceAtPath();
     const options = screen.getAllByRole("option");
     fireEvent.click(options[0]);
-    expect(screen.getByTestId("reply-prompt")).toBeInTheDocument();
+    expect(await screen.findByTestId("reply-prompt")).toBeInTheDocument();
   });
 
-  it("clicking reply-prompt opens inline reply", () => {
+  it("clicking reply-prompt opens inline reply", async () => {
     renderWorkspaceAtPath();
     const options = screen.getAllByRole("option");
     fireEvent.click(options[0]);
+    await screen.findByTestId("reply-prompt");
     fireEvent.click(screen.getByTestId("reply-prompt"));
-    expect(screen.getByTestId("inline-reply")).toBeInTheDocument();
+    expect(await screen.findByTestId("inline-reply")).toBeInTheDocument();
   });
 
-  it("compose from a mailbox-specific route uses that mailbox identity", () => {
+  it("compose from a mailbox-specific route uses that mailbox identity", async () => {
     renderWorkspaceAtPath("/app/mailbox/support/inbox");
     const composeButtons = screen.getAllByRole("button", { name: /compose new message/i });
     fireEvent.click(composeButtons[composeButtons.length - 1]);
-    const composer = screen.getByTestId("floating-composer");
+    const composer = await screen.findByTestId("floating-composer");
     expect(within(composer).getByText("Support")).toBeInTheDocument();
     expect(within(composer).getByText("support@acmecorp.com")).toBeInTheDocument();
   });
@@ -920,28 +1027,34 @@ describe("MailboxWorkspace — Sprint 1.3 compose integration", () => {
     expect(screen.getByText(/1 thread/i)).toBeInTheDocument();
   });
 
-  it("clears a stale selected thread when route changes to a different mailbox", () => {
+  it("clears a stale selected thread when route changes to a different mailbox", async () => {
     const { rerender } = renderWorkspaceAtPath("/app/mailbox");
     fireEvent.click(screen.getAllByRole("option")[0]);
-    expect(screen.getByLabelText(/thread: invoice #inv-2026-0412/i)).toBeInTheDocument();
+    expect(await screen.findByLabelText(/thread: invoice #inv-2026-0412/i)).toBeInTheDocument();
 
     mockPathname = "/app/mailbox/support/inbox";
     rerender(<MailboxWorkspace />);
 
-    expect(screen.queryByLabelText(/thread: invoice #inv-2026-0412/i)).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByLabelText(/thread: invoice #inv-2026-0412/i)).not.toBeInTheDocument();
+    });
     expect(screen.getByLabelText(/no thread selected/i)).toBeInTheDocument();
   });
 
-  it("collapsed expanded inline reply returns to inline instead of disappearing", () => {
+  it("collapsed expanded inline reply returns to inline instead of disappearing", async () => {
     renderWorkspaceAtPath();
     fireEvent.click(screen.getAllByRole("option")[0]);
+    await screen.findByTestId("reply-prompt");
     fireEvent.click(screen.getByTestId("reply-prompt"));
+    await screen.findByTestId("inline-reply");
     fireEvent.click(screen.getByRole("button", { name: /expand composer/i }));
-    expect(screen.getByTestId("expanded-composer")).toBeInTheDocument();
+    expect(await screen.findByTestId("expanded-composer")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /collapse to floating/i }));
 
-    expect(screen.queryByTestId("expanded-composer")).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByTestId("expanded-composer")).not.toBeInTheDocument();
+    });
     expect(screen.getByTestId("inline-reply")).toBeInTheDocument();
   });
 
