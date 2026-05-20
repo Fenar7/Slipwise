@@ -255,6 +255,31 @@ export interface AcknowledgeMentionInput {
   userId: string;
 }
 
+// ─── Draft service contracts ────────────────────────────────────────────────
+
+export interface SaveDraftInput {
+  orgId: string;
+  conversationId: string;
+  threadId?: string | null;
+  userId: string;
+  body: string;
+  contentMeta?: Record<string, unknown> | null;
+}
+
+export interface GetDraftInput {
+  orgId: string;
+  conversationId: string;
+  threadId?: string | null;
+  userId: string;
+}
+
+export interface DeleteDraftInput {
+  orgId: string;
+  conversationId: string;
+  threadId?: string | null;
+  userId: string;
+}
+
 // ─── Read state service contracts ────────────────────────────────────────────
 
 export interface UpdateReadStateInput {
