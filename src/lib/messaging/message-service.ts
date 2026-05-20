@@ -153,6 +153,20 @@ export async function sendMessage(
       if (invalidMention) {
         throw new Error(`sendMessage: mentioned user is not an active participant: ${invalidMention}`);
       }
+
+      // Validate offset ranges fall within message body length and are ordered correctly
+      const bodyLen = input.body.length;
+      for (const m of input.mentions) {
+        if (m.offsetStart < 0 || m.offsetEnd > bodyLen || m.offsetStart >= m.offsetEnd) {
+          throw new Error(
+            `sendMessage: mention offset range [${m.offsetStart}, ${m.offsetEnd}] is out of bounds for body length ${bodyLen}`,
+          );
+        }
+        const span = input.body.slice(m.offsetStart, m.offsetEnd);
+        if (!span.startsWith("@")) {
+          throw new Error("sendMessage: mention span must start with '@'");
+        }
+      }
     }
 
     const participantCount = await countActiveParticipants(

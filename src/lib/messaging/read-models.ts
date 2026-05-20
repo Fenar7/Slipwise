@@ -171,7 +171,7 @@ export async function getConversationDetail(
 
   // Fetch reactions and attachment counts for all messages in one batch
   const messageIds = messages.map((m) => m.id);
-  const [reactionsRows, attachmentRows] = await Promise.all([
+  const [reactionsRows, attachmentRows, mentionRows] = await Promise.all([
     messageIds.length > 0
       ? db.messageReaction.findMany({
           where: {
@@ -185,6 +185,16 @@ export async function getConversationDetail(
           where: {
             orgId,
             messageId: { in: messageIds },
+          },
+          select: { messageId: true },
+        })
+      : Promise.resolve([]),
+    messageIds.length > 0
+      ? db.messageMention.findMany({
+          where: {
+            orgId,
+            messageId: { in: messageIds },
+            mentionedUserId: userId,
           },
           select: { messageId: true },
         })
@@ -204,11 +214,17 @@ export async function getConversationDetail(
     attachmentCountByMessageId.set(row.messageId, count + 1);
   }
 
+  const mentionCurrentUserByMessageId = new Map<string, boolean>();
+  for (const row of mentionRows) {
+    mentionCurrentUserByMessageId.set(row.messageId, true);
+  }
+
   return toConversationDetail({
     record: conversation,
     participants,
     messages,
     messageReactions: reactionsByMessageId,
+    mentionCurrentUserByMessageId,
     threads,
     readState,
     currentUserId: userId,

@@ -411,18 +411,25 @@ export function MessagingWorkspace() {
                   canSend={activeDetail?.canSend ?? activeConversation?.canSend ?? true}
                   sending={sendingMessage}
                   sendError={sendError}
-                  onSend={async (body: string, threadId?: string | null) => {
+                  onSend={async (
+                    body: string,
+                    options?: { mentions?: Array<{ userId: string; offsetStart: number; offsetEnd: number }> },
+                  ) => {
                     clearSendError();
-                    const result = await sendMessage(activeConvId!, body, threadId);
+                    const result = await sendMessage(activeConvId!, body, null, options?.mentions);
                     if (result && activeConvId) {
                       await refreshDetail();
                       await refreshList();
                     }
                     return result;
                   }}
-                  onReply={async (threadId: string, body: string) => {
+                  onReply={async (
+                    threadId: string,
+                    body: string,
+                    options?: { mentions?: Array<{ userId: string; offsetStart: number; offsetEnd: number }> },
+                  ) => {
                     clearReplyError();
-                    const result = await sendReply(activeConvId!, threadId, body);
+                    const result = await sendReply(activeConvId!, threadId, body, options?.mentions);
                     if (result && activeConvId) {
                       await refreshDetail();
                       await refreshList();

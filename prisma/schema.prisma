@@ -263,6 +263,7 @@ model Organization {
   conversationParticipants     ConversationParticipant[]
   conversationMessages         ConversationMessage[]
   conversationThreads          ConversationThread[]
+  conversationDrafts           ConversationDraft[]
   messageReactions             MessageReaction[]
   messageMentions              MessageMention[]
   conversationReadStates       ConversationReadState[]
@@ -274,6 +275,7 @@ model Organization {
   calendarConnections          CalendarConnection[]
   messagingAuditEvents         MessagingAuditEvent[]
   conversationEventLogs        ConversationEventLog[]
+  downstreamConsumptionCheckpoints DownstreamConsumptionCheckpoint[]
   retentionPolicies            RetentionPolicy[]
 
   @@index([entityGroupId])
@@ -6340,6 +6342,7 @@ model Conversation {
   meetings              ConversationMeeting[]
   auditEvents           MessagingAuditEvent[]
   eventLogs             ConversationEventLog[]
+  drafts                ConversationDraft[]
 
   /// Composite unique for org-safe child relations.
   @@unique([id, orgId])
@@ -6439,6 +6442,7 @@ model ConversationThread {
   conversation Conversation          @relation(fields: [conversationId, orgId], references: [id, orgId], onDelete: Cascade)
   anchorMessage ConversationMessage  @relation("ThreadAnchor", fields: [anchorMessageId, conversationId, orgId], references: [id, conversationId, orgId], onDelete: Cascade)
   replies      ConversationMessage[]
+  drafts       ConversationDraft[]
 
   /// Composite unique for org-safe child relations.
   @@unique([id, orgId])
@@ -6490,6 +6494,30 @@ model MessageMention {
   @@index([orgId, mentionedUserId, acknowledged])
   @@index([orgId, messageId])
   @@map("message_mention")
+}
+
+/// A per-user draft scoped to a conversation and optional thread.
+/// This is the durable source of truth for draft continuity and recovery.
+model ConversationDraft {
+  id             String   @id @default(cuid())
+  orgId          String
+  conversationId String
+  threadId       String?
+  userId         String   @db.Uuid
+  body           String   @db.Text
+  contentMeta    Json?
+  updatedAt      DateTime @updatedAt
+  createdAt      DateTime @default(now())
+
+  organization Organization         @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  conversation Conversation         @relation(fields: [conversationId, orgId], references: [id, orgId], onDelete: Cascade)
+  thread       ConversationThread?  @relation(fields: [threadId, orgId], references: [id, orgId], onDelete: Cascade)
+
+  @@unique([id, orgId])
+  @@unique([orgId, conversationId, userId, threadId])
+  @@index([orgId, userId, updatedAt])
+  @@index([orgId, conversationId, threadId])
+  @@map("conversation_draft")
 }
 
 /// Explicit read-state per participant per conversation.

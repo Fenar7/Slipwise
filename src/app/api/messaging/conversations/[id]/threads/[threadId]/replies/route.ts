@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { listThreadReplies, replyToThread } from "@/lib/messaging";
+import { db } from "@/lib/db";
 import {
   requireMessagingApiContext,
   messagingApiResponse,
@@ -40,6 +41,27 @@ function parseAttachments(raw: unknown): Array<{ storageRef: string; fileName: s
   });
 }
 
+function parseMentions(raw: unknown): Array<{ userId: string; offsetStart: number; offsetEnd: number }> | undefined {
+  if (!Array.isArray(raw) || raw.length === 0) return undefined;
+  return raw.map((item) => {
+    if (typeof item !== "object" || item === null) {
+      throw new Error("mentions: each item must be an object");
+    }
+    const mention = item as Record<string, unknown>;
+    if (typeof mention.userId !== "string" || mention.userId.trim().length === 0) {
+      throw new Error("mentions: userId is required");
+    }
+    if (!Number.isInteger(mention.offsetStart) || !Number.isInteger(mention.offsetEnd)) {
+      throw new Error("mentions: offsetStart and offsetEnd must be integers");
+    }
+    return {
+      userId: mention.userId.trim(),
+      offsetStart: mention.offsetStart as number,
+      offsetEnd: mention.offsetEnd as number,
+    };
+  });
+}
+
 /**
  * GET /api/messaging/conversations/:id/threads/:threadId/replies
  * List replies for a specific thread.
@@ -59,7 +81,25 @@ export async function GET(
       listThreadReplies(orgId, conversationId, threadId, userId),
     );
 
-    return messagingApiResponse({ replies });
+    const replyIds = replies.map((reply) => reply.id);
+    const mentionRows = replyIds.length
+      ? await db.messageMention.findMany({
+          where: {
+            orgId,
+            messageId: { in: replyIds },
+            mentionedUserId: userId,
+          },
+          select: { messageId: true },
+        })
+      : [];
+    const mentionedMessageIds = new Set(mentionRows.map((row: { messageId: string }) => row.messageId));
+
+    return messagingApiResponse({
+      replies: replies.map((reply) => ({
+        ...reply,
+        mentionsCurrentUser: mentionedMessageIds.has(reply.id),
+      })),
+    });
   } catch (error) {
     return handleMessagingApiError(error);
   }
@@ -84,6 +124,7 @@ export async function POST(
 
     const messageBody = requireStringField(body.body, "body", 10000);
     const attachments = parseAttachments(body.attachments);
+    const mentions = parseMentions(body.mentions);
 
     const message = await replyToThread({
       orgId,
@@ -96,6 +137,7 @@ export async function POST(
           ? (body.contentMeta as Record<string, unknown>)
           : null,
       attachments,
+      mentions,
     });
 
     return messagingApiResponse(message, 201);

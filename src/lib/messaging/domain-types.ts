@@ -205,6 +205,20 @@ export interface MessageMentionRecord {
   createdAt: Date;
 }
 
+// ─── Draft ────────────────────────────────────────────────────────────────────
+
+export interface ConversationDraftRecord {
+  id: string;
+  orgId: string;
+  conversationId: string;
+  threadId: string | null;
+  userId: string;
+  body: string;
+  contentMeta: Record<string, unknown> | null;
+  updatedAt: Date;
+  createdAt: Date;
+}
+
 // ─── Read State ───────────────────────────────────────────────────────────────
 
 export interface ConversationReadStateRecord {

@@ -223,6 +223,7 @@ export interface ReplyToThreadInput {
   body: string;
   contentMeta?: Record<string, unknown> | null;
   attachments?: MessageAttachmentDescriptor[];
+  mentions?: Array<{ userId: string; offsetStart: number; offsetEnd: number }>;
 }
 
 export interface ResolveThreadInput {
@@ -252,6 +253,31 @@ export interface RemoveReactionInput {
 export interface AcknowledgeMentionInput {
   orgId: string;
   mentionId: string;
+  userId: string;
+}
+
+// ─── Draft service contracts ────────────────────────────────────────────────
+
+export interface SaveDraftInput {
+  orgId: string;
+  conversationId: string;
+  threadId?: string | null;
+  userId: string;
+  body: string;
+  contentMeta?: Record<string, unknown> | null;
+}
+
+export interface GetDraftInput {
+  orgId: string;
+  conversationId: string;
+  threadId?: string | null;
+  userId: string;
+}
+
+export interface DeleteDraftInput {
+  orgId: string;
+  conversationId: string;
+  threadId?: string | null;
   userId: string;
 }
 
