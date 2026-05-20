@@ -10,7 +10,7 @@ export default async function PortalLayout({
 }) {
   const { orgSlug } = await params;
 
-  const org = await db.organization.findUnique({
+  let org = await db.organization.findUnique({
     where: { slug: orgSlug },
     select: {
       id: true,
@@ -34,7 +34,27 @@ export default async function PortalLayout({
     },
   });
 
-  if (!org || !org.defaults?.portalEnabled) {
+  // Phase 1 Sprint 1.4: allow static preview for 'acme' in local dev
+  const isDevPreview = orgSlug === "acme" && process.env.NODE_ENV === "development";
+
+  if (isDevPreview && !org) {
+    org = {
+      id: "org_preview",
+      name: "Acme Corporation",
+      logo: null,
+      branding: { logoUrl: null, accentColor: "#2563eb", fontFamily: null, fontColor: null },
+      whiteLabel: { removeBranding: false },
+      defaults: {
+        portalEnabled: true,
+        portalHeaderMessage: null,
+        portalSupportEmail: "support@acme.com",
+        portalSupportPhone: "+91 98765 43210",
+        portalQuoteAcceptanceEnabled: true,
+      },
+    } as typeof org;
+  }
+
+  if (!isDevPreview && (!org || !org.defaults?.portalEnabled)) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
         <div className="max-w-md w-full rounded-xl border border-slate-200 bg-white p-8 text-center shadow-sm">
@@ -80,7 +100,7 @@ export default async function PortalLayout({
       <style dangerouslySetInnerHTML={{ __html: brandStyle }} />
 
       {/* Header */}
-      <header className="border-b border-slate-200 bg-white">
+      <header className="portal-shell-header border-b border-slate-200 bg-white">
         {defaults.portalHeaderMessage && (
           <div className="portal-accent-bg px-4 py-2 text-center text-xs font-medium text-white">
             {defaults.portalHeaderMessage}
@@ -186,12 +206,12 @@ export default async function PortalLayout({
       </header>
 
       {/* Main */}
-      <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-8 sm:px-6">
+      <main className="portal-shell-main mx-auto w-full max-w-5xl flex-1 px-4 py-8 sm:px-6">
         {children}
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-slate-200 bg-white">
+      <footer className="portal-shell-footer border-t border-slate-200 bg-white">
         <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6">
           <div className="flex flex-col items-center justify-between gap-3 text-sm text-slate-500 sm:flex-row">
             <p>&copy; {new Date().getFullYear()} {org.name}. All rights reserved.</p>

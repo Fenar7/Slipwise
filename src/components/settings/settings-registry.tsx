@@ -32,6 +32,7 @@ import {
   Users,
   Wallet,
   Webhook,
+  LayoutTemplate,
 } from "lucide-react";
 
 export type SettingsNavVisibility = "primary" | "secondary" | "contextual";
@@ -460,6 +461,17 @@ export const settingsRouteEntries: SettingsRouteEntry[] = [
     keywords: ["readiness", "checklist", "launch"],
     navVisibility: "secondary",
     parentId: "portal",
+  },
+  {
+    id: "client-hub-customization",
+    groupId: "portal-external",
+    label: "Client Hub Customization",
+    description: "Customize branding, content, and experience for your client-facing hub.",
+    href: "/app/settings/portal/client-hub",
+    icon: LayoutTemplate,
+    keywords: ["client hub", "customization", "branding", "portal theme", "client experience"],
+    navVisibility: "primary",
+    statusBadge: "Beta",
   },
   {
     id: "partners",
