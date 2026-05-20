@@ -16,6 +16,18 @@ export interface MentionPayload {
   offsetEnd: number;
 }
 
+export interface AttachmentPayload {
+  storageRef: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+}
+
+export interface SendMessageOptions {
+  mentions?: MentionPayload[];
+  attachments?: AttachmentPayload[];
+}
+
 export function useSendMessage() {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -25,7 +37,7 @@ export function useSendMessage() {
     conversationId: string,
     body: string,
     threadId?: string | null,
-    mentions?: MentionPayload[],
+    options?: SendMessageOptions,
   ): Promise<SendMessageResult | null> => {
     const guardKey = `${conversationId}::${Date.now()}`;
     guardRef.current = guardKey;
@@ -36,7 +48,12 @@ export function useSendMessage() {
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ body, threadId: threadId ?? null, mentions: mentions ?? [] }),
+        body: JSON.stringify({
+          body,
+          threadId: threadId ?? null,
+          mentions: options?.mentions ?? [],
+          attachments: options?.attachments ?? [],
+        }),
       });
       const payload = await res.json();
       if (guardRef.current !== guardKey) return null;
