@@ -84,7 +84,7 @@ export function mapThreadToRowData(
   // Derive assignee label
   let assignee: string | undefined;
   if (thread.assigneeId) {
-    assignee = thread.assigneeId === ctx.currentUserId ? "You" : "Assigned";
+    assignee = thread.assigneeId === ctx.currentUserId ? "You" : (thread.assigneeName ?? "Assigned");
   }
 
   return {
@@ -184,7 +184,7 @@ export function mapThreadDetailToUI(
   const assignee = detail.assigneeId
     ? detail.assigneeId === ctx.currentUserId
       ? "You"
-      : "Assigned"
+      : (detail.assigneeName ?? "Assigned")
     : null;
 
   const messages = detail.messages.map((msg, idx) =>

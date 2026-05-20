@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect, useMemo } from "react";
 import { usePathname } from "next/navigation";
+import { useSupabaseSession } from "@/hooks/use-supabase-session";
 import { MailboxLeftRail } from "./mailbox-left-rail";
 import { MailboxCommandBar } from "./mailbox-command-bar";
 import { MailboxThreadList } from "./mailbox-thread-list";
@@ -305,10 +306,8 @@ export function MailboxWorkspace() {
     return map;
   }, [connections]);
 
-  // TODO: Sprint 4.1 does not have current user ID from auth context in this component.
-  // Using empty string means assignee will show as "Assigned" rather than "You".
-  // This will be resolved when auth context is wired into the mailbox workspace.
-  const currentUserId = "";
+  const { user } = useSupabaseSession();
+  const currentUserId = user?.id ?? "";
 
   const mappedThreads = useMemo(() => {
     const ctx = { connectionMap, currentUserId };
@@ -381,7 +380,21 @@ export function MailboxWorkspace() {
   const connectedMailboxCount = connections.filter((conn) => conn.status !== "disconnected").length;
 
   const selectedContext: LinkedContextState | null = selectedThreadId
-    ? { ...(MOCK_LINKED_CONTEXT[selectedThreadId] ?? null), ...(contextOverrides[selectedThreadId] ?? {}) } as LinkedContextState
+    ? {
+        ...(MOCK_LINKED_CONTEXT[selectedThreadId] ?? {
+          threadId: selectedThreadId,
+          links: [],
+          suggestions: [],
+          assignee: null,
+          status: "open" as const,
+          statusChangedAt: null,
+          internalNote: "",
+        }),
+        ...(contextOverrides[selectedThreadId] ?? {}),
+        // Override assignee and status with authoritative thread data
+        assignee: selectedDetail?.assignee ?? null,
+        status: selectedDetail?.status ?? "open",
+      } as LinkedContextState
     : null;
 
   const defaultComposeConnection =
@@ -488,13 +501,35 @@ export function MailboxWorkspace() {
     }
   }, [sendDraft]);
 
-  const patchContext = useCallback((patch: Partial<LinkedContextState>) => {
-    if (!selectedThreadId) return;
-    setContextOverrides((prev) => ({
-      ...prev,
-      [selectedThreadId]: { ...(prev[selectedThreadId] ?? {}), ...patch },
-    }));
-  }, [selectedThreadId]);
+  const patchContext = useCallback(
+    (patch: Partial<LinkedContextState>) => {
+      if (!selectedThreadId) return;
+
+      // Sprint 6.2: assignment and status changes go to the backend
+      if (patch.status !== undefined) {
+        void performAction(selectedThreadId, "set_status", {
+          status: patch.status.toUpperCase(),
+        });
+        return;
+      }
+
+      if (patch.assignee !== undefined) {
+        if (patch.assignee === null) {
+          void performAction(selectedThreadId, "unassign");
+        } else {
+          void performAction(selectedThreadId, "assign", { assigneeId: "self" });
+        }
+        return;
+      }
+
+      // Linked records and internal notes remain local-only (Sprint 6.1)
+      setContextOverrides((prev) => ({
+        ...prev,
+        [selectedThreadId]: { ...(prev[selectedThreadId] ?? {}), ...patch },
+      }));
+    },
+    [selectedThreadId, performAction],
+  );
 
   const addFilter = useCallback((filter: ActiveFilter) => {
     setFilterState((prev) => ({
