@@ -25,7 +25,7 @@ import {
   Calendar,
 } from "lucide-react";
 import type { ActiveConversation, ChannelPanelTab, ChannelMember, PinnedMessage } from "./types";
-import { MOCK_CHANNEL_MEMBERS, MOCK_PINNED_MESSAGES } from "./mock-data";
+import { MOCK_PINNED_MESSAGES } from "./mock-data";
 import { RadioPill } from "./messaging-ui-primitives";
 import type { ApiConversationDetail } from "./lib/mappers";
 import { useGovernanceActions } from "./lib/use-governance-actions";
@@ -146,7 +146,7 @@ interface ChannelInfoTabProps {
 
 function ChannelInfoTab({ conversation, detail }: ChannelInfoTabProps) {
   const isPrivate = conversation.channelVisibility === "private";
-  const memberCount = detail?.participants?.length ?? MOCK_CHANNEL_MEMBERS.length;
+  const memberCount = detail?.participants?.length ?? 0;
 
   return (
     <div className="flex-1 overflow-y-auto px-4 py-4 space-y-5" data-testid="channel-info-tab">
@@ -242,8 +242,8 @@ function ChannelMembersTab({ detail }: ChannelMembersTabProps) {
       joinedAt: p.joinedAt,
     }));
 
-  const source = realMembers ?? MOCK_CHANNEL_MEMBERS;
-  const filtered = source.filter((m) =>
+  const members = realMembers ?? [];
+  const filtered = members.filter((m) =>
     m.name.toLowerCase().includes(search.toLowerCase())
   );
 
@@ -271,7 +271,17 @@ function ChannelMembersTab({ detail }: ChannelMembersTabProps) {
 
       {/* Member list */}
       <div className="flex-1 overflow-y-auto py-2">
-        {filtered.map((member) => (
+        {detail === undefined && (
+          <div className="flex flex-1 items-center justify-center px-4 py-6 text-center">
+            <p className="text-xs" style={{ color: "#79747E" }}>Loading members…</p>
+          </div>
+        )}
+        {detail === null && (
+          <div className="flex flex-1 items-center justify-center px-4 py-6 text-center">
+            <p className="text-xs" style={{ color: "#79747E" }}>Members unavailable.</p>
+          </div>
+        )}
+        {detail !== undefined && detail !== null && filtered.map((member) => (
           <div
             key={member.id}
             className="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 transition-colors"
@@ -323,7 +333,7 @@ function ChannelMembersTab({ detail }: ChannelMembersTabProps) {
             </button>
           </div>
         ))}
-        {filtered.length === 0 && (
+        {detail !== undefined && detail !== null && filtered.length === 0 && (
           <div className="px-4 py-6 text-center">
             <p className="text-xs" style={{ color: "#79747E" }}>No members match your search.</p>
           </div>

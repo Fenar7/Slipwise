@@ -83,7 +83,7 @@ async function findExistingDM(
 /**
  * Validate that all provided userIds are active members of the org.
  */
-async function assertValidOrgMembers(
+export async function assertValidOrgMembers(
   tx: Prisma.TransactionClient,
   orgId: string,
   userIds: string[],

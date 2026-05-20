@@ -19,7 +19,10 @@ vi.mock("motion/react", () => ({
 }));
 
 import { MessagingWorkspace } from "../messaging-workspace";
+import { MessagingChannelDetail } from "../messaging-channel-detail";
+import { MessagingGroupDetail } from "../messaging-group-detail";
 import type { ApiConversationSummary, ApiConversationDetail } from "../lib/mappers";
+import type { ActiveConversation } from "../types";
 
 function createMockSummary(overrides: Partial<ApiConversationSummary> = {}): ApiConversationSummary {
   return {
@@ -481,5 +484,60 @@ describe("Sprint 5.3 — live channel, DM, and group creation", () => {
     fireEvent.click(screen.getByTestId("channel-archive-btn"));
 
     await waitFor(() => expect(fetchCalls.some((c) => c.url.includes("/archive"))).toBe(true));
+  });
+
+  it("channel detail members tab shows loading when detail is absent, not mock data", async () => {
+    const conv: ActiveConversation = {
+      id: "ch-1", kind: "channel", name: "finance", subtitle: "",
+      channelVisibility: "public", isAccessible: true,
+      threadOpen: false, threadAnchorMessageId: null,
+    };
+    render(<MessagingChannelDetail conversation={conv} onClose={vi.fn()} detail={undefined} />);
+
+    fireEvent.click(screen.getByTestId("channel-tab-members"));
+    await waitFor(() => expect(screen.getByText("Loading members…")).toBeInTheDocument());
+
+    // Should not render any mock member rows
+    expect(screen.queryByTestId("channel-member-row-mock-1")).not.toBeInTheDocument();
+  });
+
+  it("group detail members tab shows unavailable when detail is null, not mock data", async () => {
+    const conv: ActiveConversation = {
+      id: "grp-1", kind: "group", name: "Q2 Planning", subtitle: "",
+      groupMemberCount: 3, groupIsPrivate: false, isAccessible: true,
+      threadOpen: false, threadAnchorMessageId: null,
+    };
+    render(<MessagingGroupDetail conversation={conv} onClose={vi.fn()} detail={null} />);
+
+    fireEvent.click(screen.getByTestId("group-tab-members"));
+    await waitFor(() => expect(screen.getByText("Members unavailable.")).toBeInTheDocument());
+
+    // Should not render any mock member rows
+    expect(screen.queryByTestId("group-member-row-mock-1")).not.toBeInTheDocument();
+  });
+
+  it("post-create selection resolves to authoritative conversation from list hydration", async () => {
+    render(<MessagingWorkspace />);
+    await waitFor(() => expect(screen.getByText("finance")).toBeInTheDocument());
+
+    const channelList = screen.getByTestId("conv-list-channels");
+    const plusBtn = within(channelList).getByLabelText("New channel");
+    fireEvent.click(plusBtn);
+
+    await waitFor(() => expect(screen.getByTestId("channel-create-modal")).toBeInTheDocument());
+
+    fireEvent.change(screen.getByTestId("channel-name-input"), { target: { value: "marketing" } });
+    fireEvent.click(screen.getByTestId("channel-create-submit"));
+
+    await waitFor(() => expect(screen.queryByTestId("channel-create-modal")).not.toBeInTheDocument());
+
+    // Verify the list refresh was triggered after create
+    const listRefreshes = fetchCalls.filter(
+      (c) => c.url === "/api/messaging/conversations" && (!c.init || c.init.method !== "POST")
+    );
+    expect(listRefreshes.length).toBeGreaterThanOrEqual(2); // initial + post-create refresh
+
+    // The selected conversation should appear with authoritative data from the list
+    await waitFor(() => expect(screen.getAllByText("marketing").length).toBeGreaterThanOrEqual(1));
   });
 });

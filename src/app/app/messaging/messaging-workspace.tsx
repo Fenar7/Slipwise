@@ -347,16 +347,7 @@ export function MessagingWorkspace() {
                       clearCreateError();
                       const result = await createConversation("CHANNEL", payload);
                       if (result) {
-                        handleConversationSelect({
-                          id: result.id,
-                          kind: "channel",
-                          name: result.name ?? "New channel",
-                          subtitle: "",
-                          channelVisibility: payload.visibility === "PRIVATE" ? "private" : "public",
-                          isAccessible: true,
-                          threadOpen: false,
-                          threadAnchorMessageId: null,
-                        });
+                        setPendingCreateId(result.id);
                         refreshList();
                       }
                     }}
@@ -375,15 +366,7 @@ export function MessagingWorkspace() {
                       clearCreateError();
                       const result = await createConversation("DM", { dmPeerId });
                       if (result) {
-                        handleConversationSelect({
-                          id: result.id,
-                          kind: "dm",
-                          name: result.name ?? "Direct message",
-                          subtitle: "Direct message",
-                          isAccessible: true,
-                          threadOpen: false,
-                          threadAnchorMessageId: null,
-                        });
+                        setPendingCreateId(result.id);
                         refreshList();
                       }
                     }}
@@ -402,17 +385,7 @@ export function MessagingWorkspace() {
                       clearCreateError();
                       const result = await createConversation("GROUP", payload);
                       if (result) {
-                        handleConversationSelect({
-                          id: result.id,
-                          kind: "group",
-                          name: result.name ?? "New group",
-                          subtitle: "",
-                          groupMemberCount: 1,
-                          groupIsPrivate: payload.visibility === "PRIVATE",
-                          isAccessible: true,
-                          threadOpen: false,
-                          threadAnchorMessageId: null,
-                        });
+                        setPendingCreateId(result.id);
                         refreshList();
                       }
                     }}
