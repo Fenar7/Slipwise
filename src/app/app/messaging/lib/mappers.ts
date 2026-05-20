@@ -100,6 +100,8 @@ export interface ApiConversationDetail {
   messages: ApiMessage[];
   threads: Array<{ id: string; conversationId: string; anchorMessageId: string; title: string | null; replyCount: number; resolvedAt: string | null; createdAt: string }>;
   readState: ApiReadState | null;
+  /** The userId of the current authenticated viewer */
+  currentUserId: string;
 }
 
 export function toFrontendChannel(summary: ApiConversationSummary): MessagingChannel {

@@ -1,33 +1,30 @@
 "use client";
 
 /**
- * MessagingChannelCreate — Sprint 1.4
+ * MessagingChannelCreate — Sprint 5.3
  *
- * Modal for creating a new channel. Centered overlay, not a route change.
+ * Modal for creating a new channel. Uses real org members for the picker.
  */
 
 import React from "react";
 import { cn } from "@/lib/utils";
 import { X, Hash, Search, Plus, Check } from "lucide-react";
-import { MOCK_PARTICIPANTS } from "./mock-data";
-
-// ─── Static team members for the picker ──────────────────────────────────────
-
-const PICKER_MEMBERS = MOCK_PARTICIPANTS.slice(0, 4);
-
-// ─── Main export ──────────────────────────────────────────────────────────────
+import { useOrgMembers } from "./lib/use-org-members";
 
 interface MessagingChannelCreateProps {
   onClose: () => void;
+  onCreate: (payload: { name: string; description: string | null; visibility: "PUBLIC" | "PRIVATE"; initialParticipantIds: string[] }) => void;
+  creating?: boolean;
 }
 
-export function MessagingChannelCreate({ onClose }: MessagingChannelCreateProps) {
+export function MessagingChannelCreate({ onClose, onCreate, creating }: MessagingChannelCreateProps) {
   const [channelName, setChannelName] = React.useState("");
   const [description, setDescription] = React.useState("");
   const [visibility, setVisibility] = React.useState<"public" | "private">("public");
   const [memberSearch, setMemberSearch] = React.useState("");
   const [addedMemberIds, setAddedMemberIds] = React.useState<string[]>([]);
   const [dropdownOpen, setDropdownOpen] = React.useState(false);
+  const { members, loading } = useOrgMembers();
 
   React.useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
@@ -39,13 +36,13 @@ export function MessagingChannelCreate({ onClose }: MessagingChannelCreateProps)
 
   const hasContent = channelName.trim().length > 0;
 
-  const filteredMembers = PICKER_MEMBERS.filter(
+  const filteredMembers = members.filter(
     (m) =>
       m.name.toLowerCase().includes(memberSearch.toLowerCase()) &&
       !addedMemberIds.includes(m.id)
   );
 
-  const addedMembers = PICKER_MEMBERS.filter((m) => addedMemberIds.includes(m.id));
+  const addedMembers = members.filter((m) => addedMemberIds.includes(m.id));
 
   function addMember(id: string) {
     setAddedMemberIds((prev) => [...prev, id]);
@@ -56,8 +53,17 @@ export function MessagingChannelCreate({ onClose }: MessagingChannelCreateProps)
     setAddedMemberIds((prev) => prev.filter((x) => x !== id));
   }
 
+  function handleSubmit() {
+    if (!hasContent || creating) return;
+    onCreate({
+      name: channelName.trim(),
+      description: description.trim() || null,
+      visibility: visibility === "public" ? "PUBLIC" : "PRIVATE",
+      initialParticipantIds: addedMemberIds,
+    });
+  }
+
   return (
-    /* Backdrop */
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
       data-testid="channel-create-modal"
@@ -65,14 +71,12 @@ export function MessagingChannelCreate({ onClose }: MessagingChannelCreateProps)
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      {/* Modal card */}
       <div
         className="relative w-full max-w-md rounded-xl bg-white shadow-xl overflow-hidden"
         role="dialog"
         aria-modal="true"
         aria-label="Create channel"
       >
-        {/* Header */}
         <div className="flex items-center justify-between border-b px-5 py-4" style={{ borderColor: "#E0E0E0" }}>
           <h2 className="text-sm font-bold" style={{ color: "#1C1B1F" }}>
             Create a channel
@@ -88,21 +92,12 @@ export function MessagingChannelCreate({ onClose }: MessagingChannelCreateProps)
           </button>
         </div>
 
-        {/* Body */}
         <div className="px-5 py-5 space-y-4">
-          {/* Channel name */}
           <div className="space-y-1.5">
-            <label
-              htmlFor="channel-name"
-              className="text-xs font-semibold"
-              style={{ color: "#49454F" }}
-            >
+            <label htmlFor="channel-name" className="text-xs font-semibold" style={{ color: "#49454F" }}>
               Channel name <span className="text-[#DC2626]">*</span>
             </label>
-            <div
-              className="flex items-center gap-2 rounded-lg border bg-white px-3 py-2 transition-colors focus-within:border-[#DC2626]"
-              style={{ borderColor: "#E0E0E0" }}
-            >
+            <div className="flex items-center gap-2 rounded-lg border bg-white px-3 py-2 transition-colors focus-within:border-[#DC2626]" style={{ borderColor: "#E0E0E0" }}>
               <Hash className="h-3.5 w-3.5 shrink-0 text-[#79747E]" />
               <input
                 id="channel-name"
@@ -121,13 +116,8 @@ export function MessagingChannelCreate({ onClose }: MessagingChannelCreateProps)
             </p>
           </div>
 
-          {/* Description */}
           <div className="space-y-1.5">
-            <label
-              htmlFor="channel-description"
-              className="text-xs font-semibold"
-              style={{ color: "#49454F" }}
-            >
+            <label htmlFor="channel-description" className="text-xs font-semibold" style={{ color: "#49454F" }}>
               Description <span className="text-[#79747E] font-normal">(optional)</span>
             </label>
             <textarea
@@ -142,7 +132,6 @@ export function MessagingChannelCreate({ onClose }: MessagingChannelCreateProps)
             />
           </div>
 
-          {/* Visibility */}
           <div className="space-y-1.5">
             <label className="text-xs font-semibold" style={{ color: "#49454F" }}>
               Visibility
@@ -188,16 +177,12 @@ export function MessagingChannelCreate({ onClose }: MessagingChannelCreateProps)
             )}
           </div>
 
-          {/* Member picker */}
           <div className="space-y-1.5">
             <label className="text-xs font-semibold" style={{ color: "#49454F" }}>
               Add members
             </label>
             <div className="relative">
-              <div
-                className="flex items-center gap-2 rounded-lg border bg-white px-3 py-2 transition-colors focus-within:border-[#DC2626]"
-                style={{ borderColor: "#E0E0E0" }}
-              >
+              <div className="flex items-center gap-2 rounded-lg border bg-white px-3 py-2 transition-colors focus-within:border-[#DC2626]" style={{ borderColor: "#E0E0E0" }}>
                 <Search className="h-3 w-3 shrink-0 text-[#79747E]" />
                 <input
                   type="text"
@@ -215,13 +200,9 @@ export function MessagingChannelCreate({ onClose }: MessagingChannelCreateProps)
                 />
               </div>
 
-              {/* Dropdown */}
               {dropdownOpen && filteredMembers.length > 0 && (
-                <div
-                  className="absolute left-0 right-0 top-full z-10 mt-1 rounded-lg border bg-white shadow-lg overflow-hidden"
-                  style={{ borderColor: "#E0E0E0" }}
-                  data-testid="channel-member-dropdown"
-                >
+                <div className="absolute left-0 right-0 top-full z-10 mt-1 rounded-lg border bg-white shadow-lg overflow-hidden max-h-60 overflow-y-auto" style={{ borderColor: "#E0E0E0" }} data-testid="channel-member-dropdown">
+                  {loading && <div className="px-3 py-2 text-xs text-gray-400">Loading…</div>}
                   {filteredMembers.map((m) => (
                     <button
                       key={m.id}
@@ -246,7 +227,6 @@ export function MessagingChannelCreate({ onClose }: MessagingChannelCreateProps)
               )}
             </div>
 
-            {/* Added member chips */}
             {addedMembers.length > 0 && (
               <div className="flex flex-wrap gap-1.5 mt-2" data-testid="channel-added-members">
                 {addedMembers.map((m) => (
@@ -272,11 +252,7 @@ export function MessagingChannelCreate({ onClose }: MessagingChannelCreateProps)
           </div>
         </div>
 
-        {/* Footer */}
-        <div
-          className="flex items-center justify-end gap-2 border-t px-5 py-4"
-          style={{ borderColor: "#E0E0E0" }}
-        >
+        <div className="flex items-center justify-end gap-2 border-t px-5 py-4" style={{ borderColor: "#E0E0E0" }}>
           <button
             type="button"
             className="rounded-lg px-4 py-2 text-xs font-semibold transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]"
@@ -289,15 +265,16 @@ export function MessagingChannelCreate({ onClose }: MessagingChannelCreateProps)
             type="button"
             className={cn(
               "rounded-lg px-4 py-2 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]",
-              hasContent
+              hasContent && !creating
                 ? "bg-[#DC2626] text-white hover:bg-red-700"
                 : "bg-gray-100 text-[#79747E] cursor-not-allowed"
             )}
-            disabled={!hasContent}
-            aria-disabled={!hasContent}
+            disabled={!hasContent || creating}
+            aria-disabled={!hasContent || creating}
             data-testid="channel-create-submit"
+            onClick={handleSubmit}
           >
-            Create channel
+            {creating ? "Creating…" : "Create channel"}
           </button>
         </div>
       </div>

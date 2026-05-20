@@ -33,6 +33,7 @@ import {
   toFrontendMessages,
 } from "./lib/mappers";
 import type { ApiConversationSummary } from "./lib/mappers";
+import { useCreateConversation } from "./lib/use-create-conversation";
 import { useWorkspaceTopBar } from "@/components/layout/workspace-topbar-context";
 import { cn } from "@/lib/utils";
 
@@ -81,6 +82,7 @@ export function MessagingWorkspace() {
   const [notifOpen, setNotifOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [notifications, setNotifications] = useState<MessagingNotification[]>(MOCK_NOTIFICATIONS);
+  const [pendingCreateId, setPendingCreateId] = useState<string | null>(null);
 
   const unreadCount = notifications.filter((n) => !n.read).length;
 
@@ -125,12 +127,12 @@ export function MessagingWorkspace() {
     setState((prev) => ({ ...prev, commandBarOpen: !prev.commandBarOpen }));
   };
 
-  const handleConversationSelect = (conv: ActiveConversation) => {
+  const handleConversationSelect = React.useCallback((conv: ActiveConversation) => {
     setActiveConversations((prev) => ({
       ...prev,
       [state.activeSection]: conv,
     }));
-  };
+  }, [state.activeSection]);
 
   const activeConversation = activeConversations[state.activeSection] ?? null;
 
@@ -145,7 +147,7 @@ export function MessagingWorkspace() {
   } = useConversationList();
 
   const activeConvId = activeConversation?.id ?? null;
-  const { detail: activeDetail, refresh: refreshDetail } = useConversationDetail(activeConvId);
+  const { detail: activeDetail, refresh: refreshDetail, errorType: detailErrorType } = useConversationDetail(activeConvId);
 
   const { send: sendMessage, sending: sendingMessage, error: sendError, clearError: clearSendError } = useSendMessage();
   const { send: sendReply, sending: sendingReply, error: replyError, clearError: clearReplyError } = useSendThreadReply();
@@ -171,19 +173,51 @@ export function MessagingWorkspace() {
 
   const { degraded: realtimeDegraded } = useRealtimeBootstrap();
 
-  function enrichSelected(summary: ApiConversationSummary, kind: "channel" | "dm" | "group"): ActiveConversation {
+  const { create: createConversation, creating: creatingConversation, error: createError, clearError: clearCreateError } = useCreateConversation();
+
+  const enrichSelected = React.useCallback((summary: ApiConversationSummary, kind: "channel" | "dm" | "group"): ActiveConversation => {
     const conv = toActiveConversation(summary, kind);
     if (activeDetail && activeDetail.id === summary.id) {
       conv.canSend = activeDetail.canSend;
     }
     return conv;
-  }
+  }, [activeDetail]);
+
+  // Sprint 5.3: after creating a conversation, refresh the list and select it
+  // when it appears in the hydrated summaries.
+  React.useEffect(() => {
+    if (!pendingCreateId) return;
+    const all = [...liveChannels, ...liveDms, ...liveGroups];
+    const found = all.find((c) => c.id === pendingCreateId);
+    if (found) {
+      const kind = found.type === "CHANNEL" ? "channel" : found.type === "DM" ? "dm" : "group";
+      handleConversationSelect(enrichSelected(found, kind));
+      setPendingCreateId(null);
+    }
+  }, [liveChannels, liveDms, liveGroups, pendingCreateId, handleConversationSelect, enrichSelected]);
 
   const sectionChannels = liveChannels.map((s) => toFrontendChannel(s));
   const sectionDms = liveDms.map((s) => toFrontendDM(s));
   const sectionGroups = liveGroups.map((s) => toFrontendGroup(s));
 
   const messages = activeDetail ? toFrontendMessages(activeDetail) : undefined;
+
+  // Sprint 5.3: membership-sensitive transitions.
+  // If the detail endpoint returns a restricted error, the current user is no
+  // longer an active participant. Force the conversation into an inaccessible
+  // state so the workspace renders the restricted pane instead of flashing
+  // unauthorized detail.
+  const displayConversation = React.useMemo(() => {
+    if (!activeConversation) return null;
+    if (detailErrorType === "restricted") {
+      return {
+        ...activeConversation,
+        isAccessible: false,
+        restrictedReason: "You no longer have access to this conversation.",
+      };
+    }
+    return activeConversation;
+  }, [activeConversation, detailErrorType]);
 
   // Sections that use the Sprint 1.2 two-column conversation layout
   const isConversationSection =
@@ -309,6 +343,24 @@ export function MessagingWorkspace() {
                       if (summary) handleConversationSelect(enrichSelected(summary, "channel"));
                     }}
                     channels={sectionChannels}
+                    onCreateChannel={async (payload) => {
+                      clearCreateError();
+                      const result = await createConversation("CHANNEL", payload);
+                      if (result) {
+                        handleConversationSelect({
+                          id: result.id,
+                          kind: "channel",
+                          name: result.name ?? "New channel",
+                          subtitle: "",
+                          channelVisibility: payload.visibility === "PRIVATE" ? "private" : "public",
+                          isAccessible: true,
+                          threadOpen: false,
+                          threadAnchorMessageId: null,
+                        });
+                        refreshList();
+                      }
+                    }}
+                    creatingChannel={creatingConversation}
                   />
                 )}
                 {!listLoading && !listError && !listEmpty && state.activeSection === "dms" && (
@@ -319,6 +371,23 @@ export function MessagingWorkspace() {
                       if (summary) handleConversationSelect(enrichSelected(summary, "dm"));
                     }}
                     dms={sectionDms}
+                    onCreateDM={async (dmPeerId) => {
+                      clearCreateError();
+                      const result = await createConversation("DM", { dmPeerId });
+                      if (result) {
+                        handleConversationSelect({
+                          id: result.id,
+                          kind: "dm",
+                          name: result.name ?? "Direct message",
+                          subtitle: "Direct message",
+                          isAccessible: true,
+                          threadOpen: false,
+                          threadAnchorMessageId: null,
+                        });
+                        refreshList();
+                      }
+                    }}
+                    creatingDM={creatingConversation}
                   />
                 )}
                 {!listLoading && !listError && !listEmpty && state.activeSection === "groups" && (
@@ -329,6 +398,25 @@ export function MessagingWorkspace() {
                       if (summary) handleConversationSelect(enrichSelected(summary, "group"));
                     }}
                     groups={sectionGroups}
+                    onCreateGroup={async (payload) => {
+                      clearCreateError();
+                      const result = await createConversation("GROUP", payload);
+                      if (result) {
+                        handleConversationSelect({
+                          id: result.id,
+                          kind: "group",
+                          name: result.name ?? "New group",
+                          subtitle: "",
+                          groupMemberCount: 1,
+                          groupIsPrivate: payload.visibility === "PRIVATE",
+                          isAccessible: true,
+                          threadOpen: false,
+                          threadAnchorMessageId: null,
+                        });
+                        refreshList();
+                      }
+                    }}
+                    creatingGroup={creatingConversation}
                   />
                 )}
               </div>
@@ -336,7 +424,7 @@ export function MessagingWorkspace() {
               {/* Reading workspace */}
               <div className="flex min-h-0 flex-1 overflow-hidden">
                 <MessagingReadingWorkspace
-                  conversation={activeConversation}
+                  conversation={displayConversation}
                   sectionKind={
                     state.activeSection === "channels"
                       ? "channel"
@@ -370,6 +458,10 @@ export function MessagingWorkspace() {
                   }}
                   sendingReply={sendingReply}
                   replyError={replyError}
+                  onRefreshDetail={async () => {
+                    await refreshDetail();
+                    await refreshList();
+                  }}
                 />
               </div>
             </div>

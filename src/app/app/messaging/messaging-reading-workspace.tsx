@@ -619,6 +619,8 @@ function ChannelWorkspace({
   sendingReply,
   replyError,
   threadReplies: externalThreadReplies,
+  detail,
+  onRefreshDetail,
 }: WorkspaceBodyProps) {
   const channelMessages = externalMessages ?? [];
   const anchorMsg = threadAnchorMessageId
@@ -694,7 +696,7 @@ function ChannelWorkspace({
 
       {/* Detail panel */}
       {detailOpen && (
-        <MessagingChannelDetail conversation={conversation} onClose={onCloseDetail} />
+        <MessagingChannelDetail conversation={conversation} onClose={onCloseDetail} detail={detail} onRefresh={onRefreshDetail} />
       )}
     </div>
   );
@@ -812,6 +814,8 @@ function GroupWorkspace({
   sendingReply,
   replyError,
   threadReplies: externalThreadReplies,
+  detail,
+  onRefreshDetail,
 }: WorkspaceBodyProps) {
   const groupMessages = externalMessages ?? [];
   const anchorMsg = threadAnchorMessageId
@@ -858,7 +862,7 @@ function GroupWorkspace({
         />
       )}
       {detailOpen && (
-        <MessagingGroupDetail conversation={conversation} onClose={onCloseDetail} />
+        <MessagingGroupDetail conversation={conversation} onClose={onCloseDetail} detail={detail} onRefresh={onRefreshDetail} />
       )}
     </div>
   );
@@ -885,6 +889,8 @@ interface WorkspaceBodyProps {
   sendingReply?: boolean;
   replyError?: string | null;
   threadReplies?: ConversationMessage[];
+  detail?: ApiConversationDetail | null;
+  onRefreshDetail?: () => void;
 }
 
 // ─── Main export ──────────────────────────────────────────────────────────────
@@ -902,6 +908,7 @@ interface MessagingReadingWorkspaceProps {
   sendingReply?: boolean;
   replyError?: string | null;
   detail?: ApiConversationDetail | null;
+  onRefreshDetail?: () => void;
 }
 
 export function MessagingReadingWorkspace({
@@ -917,6 +924,7 @@ export function MessagingReadingWorkspace({
   sendingReply = false,
   replyError,
   detail,
+  onRefreshDetail,
 }: MessagingReadingWorkspaceProps) {
   const [threadAnchorMessageId, setThreadAnchorMessageId] = React.useState<string | null>(null);
   const [threadOpen, setThreadOpen] = React.useState(false);
@@ -1030,6 +1038,8 @@ export function MessagingReadingWorkspace({
     onReply,
     sendingReply,
     replyError,
+    detail,
+    onRefreshDetail,
   };
 
   return (
