@@ -105,7 +105,7 @@ const ACTION_PLANS: Record<ThreadAction, ActionPlan> = {
 
 // ─── Permission helper ──────────────────────────────────────────────────────────
 
-async function assertCanMutateThread(
+export async function assertCanMutateThread(
   orgId: string,
   userId: string,
   role: "owner" | "admin" | "member",

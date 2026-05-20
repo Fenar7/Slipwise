@@ -62,6 +62,33 @@ function encodeCursor(lastMessageAt: Date, id: string): string {
   ).toString("base64");
 }
 
+async function enrichThreadsWithAssigneeNames(
+  threads: import("./read-shapes").MailboxThreadReadShape[],
+): Promise<import("./read-shapes").MailboxThreadReadShape[]> {
+  const ids = threads.map((t) => t.assigneeId).filter(Boolean) as string[];
+  if (ids.length === 0) return threads;
+  const profiles = await db.profile.findMany({
+    where: { id: { in: ids } },
+    select: { id: true, name: true },
+  });
+  const map = new Map(profiles.map((p) => [p.id, p.name]));
+  return threads.map((t) => ({
+    ...t,
+    assigneeName: t.assigneeId ? (map.get(t.assigneeId) ?? null) : null,
+  }));
+}
+
+async function enrichDetailWithAssigneeName(
+  detail: import("./read-shapes").MailboxThreadDetailReadShape,
+): Promise<import("./read-shapes").MailboxThreadDetailReadShape> {
+  if (!detail.assigneeId) return detail;
+  const profile = await db.profile.findFirst({
+    where: { id: detail.assigneeId },
+    select: { name: true },
+  });
+  return { ...detail, assigneeName: profile?.name ?? null };
+}
+
 /**
  * List mailbox threads for an org member.
  *
@@ -208,11 +235,9 @@ export async function listMailboxThreads(
   // Total count (without pagination)
   const totalCount = await db.mailboxThread.count({ where });
 
-  return {
-    threads: pageRows.map(toMailboxThreadReadShape),
-    nextCursor,
-    totalCount,
-  };
+  const mappedThreads = pageRows.map(toMailboxThreadReadShape);
+  const threads = await enrichThreadsWithAssigneeNames(mappedThreads);
+  return { threads, nextCursor, totalCount };
 }
 
 /**
@@ -242,7 +267,9 @@ export async function getMailboxThread(
   });
 
   if (!row) return null;
-  return toMailboxThreadReadShape(row);
+  const mapped = toMailboxThreadReadShape(row);
+  const [enriched] = await enrichThreadsWithAssigneeNames([mapped]);
+  return enriched;
 }
 
 /**
@@ -289,9 +316,6 @@ export async function getMailboxThreadDetail(
     attachmentMap.set(msg.id, msg.attachments ?? []);
   }
 
-  return toMailboxThreadDetailReadShape(
-    threadRow,
-    messages,
-    attachmentMap,
-  );
+  const detail = toMailboxThreadDetailReadShape(threadRow, messages, attachmentMap);
+  return enrichDetailWithAssigneeName(detail);
 }

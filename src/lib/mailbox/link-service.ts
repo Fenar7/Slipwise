@@ -29,6 +29,7 @@ export class LinkServiceError extends Error {
 export interface LinkedRecordSummary {
   id: string;
   entityType: MailboxThreadLinkEntityType;
+  entityId: string;
   entityRef: string;
   entityLabel: string;
   entityMeta: string;
@@ -126,6 +127,7 @@ export async function createThreadLink(params: {
   return {
     id: link.id,
     entityType: link.entityType,
+    entityId,
     entityRef: record.ref,
     entityLabel: record.label,
     entityMeta: record.meta,
@@ -253,6 +255,7 @@ export async function setPrimaryLink(params: {
   return {
     id: updated.id,
     entityType: updated.entityType,
+    entityId: link.entityId,
     entityRef: record.ref,
     entityLabel: record.label,
     entityMeta: record.meta,
@@ -298,6 +301,7 @@ export async function listThreadLinks(params: {
       links.push({
         id: row.id,
         entityType: row.entityType,
+        entityId: row.entityId,
         entityRef: record.ref,
         entityLabel: record.label,
         entityMeta: record.meta,
@@ -448,6 +452,7 @@ async function suggestLinks(
       suggestions.push({
         id: `suggest_customer_${c.id}`,
         entityType: "CUSTOMER",
+        entityId: c.id,
         entityRef: c.email ?? c.phone ?? c.id.slice(-6),
         entityLabel: c.name,
         entityMeta: c.email ? `Matched by email: ${c.email}` : "Matched by contact",
@@ -480,6 +485,7 @@ async function suggestLinks(
       suggestions.push({
         id: `suggest_invoice_${inv.id}`,
         entityType: "INVOICE",
+        entityId: inv.id,
         entityRef: inv.invoiceNumber ?? inv.id.slice(-6),
         entityLabel: inv.customer?.name ?? "Invoice",
         entityMeta: `₹${inv.totalAmount.toString()} · ${inv.status}`,
@@ -506,6 +512,7 @@ async function suggestLinks(
       suggestions.push({
         id: `suggest_quote_${q.id}`,
         entityType: "QUOTE",
+        entityId: q.id,
         entityRef: q.quoteNumber,
         entityLabel: q.title,
         entityMeta: `₹${q.totalAmount.toString()} · ${q.status}`,

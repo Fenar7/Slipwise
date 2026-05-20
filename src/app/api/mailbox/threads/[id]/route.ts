@@ -31,9 +31,9 @@ export async function GET(
     );
   }
 
-  const limitResult = await rateLimitByOrg(org.id, "mailbox:thread-detail", {
+  const limitResult = await rateLimitByOrg(org.id, {
     maxRequests: 120,
-    window: 60,
+    window: "60 s",
   });
 
   if (!limitResult.success) {
