@@ -47,6 +47,7 @@ describe("Sprint 2.1 — Canonical client list workspace", () => {
         total={1}
         page={1}
         totalPages={1}
+        unfilteredTotal={1}
         searchQuery=""
         activeFilter="all"
       />
@@ -80,6 +81,7 @@ describe("Sprint 2.1 — Canonical client list workspace", () => {
         total={1}
         page={1}
         totalPages={1}
+        unfilteredTotal={1}
         searchQuery=""
         activeFilter="all"
       />
@@ -89,13 +91,14 @@ describe("Sprint 2.1 — Canonical client list workspace", () => {
     expect(screen.getAllByText(/—/).length).toBeGreaterThanOrEqual(2);
   });
 
-  it("renders empty state when total is 0", () => {
+  it("renders true empty state when org has no customers at all", () => {
     render(
       <ClientWorkspaceShell
         clients={[]}
         total={0}
         page={1}
         totalPages={1}
+        unfilteredTotal={0}
         searchQuery=""
         activeFilter="all"
       />
@@ -108,18 +111,20 @@ describe("Sprint 2.1 — Canonical client list workspace", () => {
     );
   });
 
-  it("renders empty state when no clients exist and query is present", () => {
+  it("renders filtered no-match state when org has customers but query matches none", () => {
     render(
       <ClientWorkspaceShell
         clients={[]}
         total={0}
         page={1}
         totalPages={1}
+        unfilteredTotal={10}
         searchQuery="nonexistent"
         activeFilter="all"
       />
     );
-    expect(screen.getByText(/No clients yet/i)).toBeInTheDocument();
+    expect(screen.queryByText(/No clients yet/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/No clients match your search/i)).toBeInTheDocument();
   });
 
   it("shows portal status badges correctly", () => {
@@ -142,6 +147,22 @@ describe("Sprint 2.1 — Canonical client list workspace", () => {
       expect(screen.getByText(label)).toBeInTheDocument();
       unmount();
     }
+  });
+
+  it("does not treat revoked portal tokens as enabled", () => {
+    const { unmount } = render(
+      <ClientWorkspaceRowView
+        client={{
+          ...MOCK_CLIENTS[0],
+          id: "cust_revoked",
+          email: "test@example.com",
+          portalStatus: "invited",
+        }}
+      />
+    );
+    expect(screen.queryByText("Hub Active")).not.toBeInTheDocument();
+    expect(screen.getByText("Invite Sent")).toBeInTheDocument();
+    unmount();
   });
 
   it("renders quick action links with valid hrefs", () => {
@@ -173,10 +194,26 @@ describe("Sprint 2.1 — Canonical client list workspace", () => {
         total={100}
         page={5}
         totalPages={10}
+        unfilteredTotal={100}
         searchQuery=""
         activeFilter="all"
       />
     );
     expect(screen.getByText(/5 \/ 10/i)).toBeInTheDocument();
+  });
+
+  it("search placeholder accurately reflects backend search fields", () => {
+    render(
+      <ClientWorkspaceShell
+        clients={MOCK_CLIENTS}
+        total={MOCK_CLIENTS.length}
+        page={1}
+        totalPages={1}
+        unfilteredTotal={MOCK_CLIENTS.length}
+        searchQuery=""
+        activeFilter="all"
+      />
+    );
+    expect(screen.getByPlaceholderText(/Search clients by name, email, or phone/i)).toBeInTheDocument();
   });
 });

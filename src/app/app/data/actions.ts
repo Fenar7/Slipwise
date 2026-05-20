@@ -5,6 +5,10 @@ import { requireOrgContext } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 import { setCustomerDefaultTags, setVendorDefaultTags } from "@/lib/tags/assignment-service";
 
+function escapeSqlLike(input: string): string {
+  return input.replace(/[%_\\]/g, "\\$&").replace(/'/g, "''");
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export type ActionResult<T> = 
@@ -125,71 +129,162 @@ export type ClientFilter =
   | "portal-enabled"
   | "portal-disabled";
 
+export type SortKey = "name" | "outstandingBalance" | "lastActivityAt";
+export type SortDir = "asc" | "desc";
+
 export async function listCustomers(params?: {
   search?: string;
   page?: number;
   limit?: number;
   filter?: ClientFilter;
+  sort?: { key: SortKey; dir: SortDir };
 }) {
   const { orgId } = await requireOrgContext();
-  const page = params?.page ?? 1;
+  const page = Math.max(1, Number.isFinite(params?.page) && params!.page! > 0 ? params!.page! : 1);
   const limit = params?.limit ?? 20;
   const skip = (page - 1) * limit;
-
-  const lifecycleFilter =
-    params?.filter && params.filter !== "all" && !params.filter.startsWith("portal")
-      ? params.filter
-      : undefined;
+  const filter = params?.filter ?? "all";
+  const sort = params?.sort;
 
   const where: Record<string, unknown> = {
     organizationId: orgId,
   };
+
   if (params?.search) {
     where.OR = [
       { name: { contains: params.search, mode: "insensitive" } },
       { email: { contains: params.search, mode: "insensitive" } },
+      { phone: { contains: params.search, mode: "insensitive" } },
     ];
   }
-  if (lifecycleFilter === "active") {
+
+  if (filter === "active") {
     where.lifecycleStage = { in: ["ACTIVE", "WON"] };
-  } else if (lifecycleFilter === "prospect") {
+  } else if (filter === "prospect") {
     where.lifecycleStage = { in: ["PROSPECT", "QUALIFIED"] };
-  } else if (lifecycleFilter === "at-risk") {
+  } else if (filter === "at-risk") {
     where.lifecycleStage = { in: ["AT_RISK", "NEGOTIATION"] };
-  } else if (lifecycleFilter === "churned") {
+  } else if (filter === "churned") {
     where.lifecycleStage = "CHURNED";
   }
 
-  const [rawCustomers, total] = await Promise.all([
-    db.customer.findMany({
-      where: where as Parameters<typeof db.customer.findMany>[0]["where"],
-      skip,
-      take: limit,
-      orderBy: { name: "asc" },
-      include: {
-        _count: { select: { invoices: true, quotes: true } },
-        portalTokens: { select: { id: true }, take: 1 },
+  if (filter === "portal-enabled") {
+    where.portalTokens = {
+      some: {
+        isRevoked: false,
+        expiresAt: { gt: new Date() },
       },
-    }),
-    db.customer.count({ where: where as Parameters<typeof db.customer.count>[0]["where"] }),
-  ]);
+    };
+  } else if (filter === "portal-disabled") {
+    where.NOT = {
+      portalTokens: {
+        some: {
+          isRevoked: false,
+          expiresAt: { gt: new Date() },
+        },
+      },
+    };
+  }
+
+  let rawCustomers: Array<Awaited<ReturnType<typeof db.customer.findMany>>[number]>;
+  let total: number;
+
+  if (sort?.key === "outstandingBalance") {
+    const dir = sort.dir === "asc" ? "ASC" : "DESC";
+    const conditions = [`c."organizationId" = '${orgId}'`];
+    if (params?.search) {
+      const esc = escapeSqlLike(params.search);
+      conditions.push(`(c.name ILIKE '%${esc}%' OR c.email ILIKE '%${esc}%' OR c.phone ILIKE '%${esc}%')`);
+    }
+    if (filter === "active") {
+      conditions.push(`c."lifecycleStage" IN ('ACTIVE', 'WON')`);
+    } else if (filter === "prospect") {
+      conditions.push(`c."lifecycleStage" IN ('PROSPECT', 'QUALIFIED')`);
+    } else if (filter === "at-risk") {
+      conditions.push(`c."lifecycleStage" IN ('AT_RISK', 'NEGOTIATION')`);
+    } else if (filter === "churned") {
+      conditions.push(`c."lifecycleStage" = 'CHURNED'`);
+    } else if (filter === "portal-enabled") {
+      conditions.push(`EXISTS (SELECT 1 FROM "customer_portal_token" t WHERE t."customerId" = c.id AND t."isRevoked" = false AND t."expiresAt" > NOW())`);
+    } else if (filter === "portal-disabled") {
+      conditions.push(`NOT EXISTS (SELECT 1 FROM "customer_portal_token" t WHERE t."customerId" = c.id AND t."isRevoked" = false AND t."expiresAt" > NOW())`);
+    }
+    const whereSql = conditions.join(" AND ");
+    const countResult = await db.$queryRawUnsafe<Array<{ count: bigint }>>(
+      `SELECT COUNT(*)::bigint as count FROM "customer" c WHERE ${whereSql}`
+    );
+    total = Number(countResult[0].count);
+    const idResult = await db.$queryRawUnsafe<Array<{ id: string }>>(
+      `SELECT c.id FROM "customer" c WHERE ${whereSql} ORDER BY (COALESCE(c."totalInvoiced", 0) - COALESCE(c."totalPaid", 0)) ${dir} LIMIT ${limit} OFFSET ${skip}`
+    );
+    const ids = idResult.map((r) => r.id);
+    if (ids.length === 0) {
+      rawCustomers = [];
+    } else {
+      const records = await db.customer.findMany({
+        where: {
+          id: { in: ids },
+          organizationId: orgId,
+        },
+        include: {
+          _count: { select: { invoices: true, quotes: true } },
+          portalTokens: {
+            select: { id: true, isRevoked: true, expiresAt: true },
+            take: 1,
+            orderBy: { createdAt: "desc" },
+          },
+        },
+      });
+      const recordMap = new Map(records.map((r) => [r.id, r]));
+      rawCustomers = ids.map((id) => recordMap.get(id)!).filter(Boolean) as typeof records;
+    }
+  } else {
+    let orderBy: NonNullable<Parameters<typeof db.customer.findMany>[0]>["orderBy"];
+    if (sort?.key === "name") {
+      orderBy = { name: sort.dir };
+    } else if (sort?.key === "lastActivityAt") {
+      orderBy = [
+        { lastInteractionAt: sort.dir },
+        { updatedAt: sort.dir },
+      ];
+    } else {
+      orderBy = { name: "asc" };
+    }
+    [rawCustomers, total] = await Promise.all([
+      db.customer.findMany({
+        where: where as NonNullable<Parameters<typeof db.customer.findMany>[0]>["where"],
+        skip,
+        take: limit,
+        orderBy,
+        include: {
+          _count: { select: { invoices: true, quotes: true } },
+          portalTokens: {
+            select: { id: true, isRevoked: true, expiresAt: true },
+            take: 1,
+            orderBy: { createdAt: "desc" },
+          },
+        },
+      }),
+      db.customer.count({ where: where as NonNullable<Parameters<typeof db.customer.count>[0]>["where"] }),
+    ]);
+  }
 
   const customers = rawCustomers.map((c) => {
     const customer = c as typeof c & {
       _count: { invoices: number; quotes: number };
-      portalTokens: { id: string }[];
+      portalTokens: { id: string; isRevoked: boolean; expiresAt: Date }[];
     };
     const outstandingBalance = Number(customer.totalInvoiced) - Number(customer.totalPaid);
     const lastActivityAt = customer.lastInteractionAt ?? customer.updatedAt;
-
     const hasEmail = !!customer.email;
-    const hasPortalToken = customer.portalTokens.length > 0;
-    const portalStatus = hasPortalToken
+    const hasValidToken = customer.portalTokens.some(
+      (t) => !t.isRevoked && t.expiresAt > new Date()
+    );
+    const portalStatus: "enabled" | "invited" | "ineligible" = hasValidToken
       ? "enabled"
       : hasEmail
         ? "invited"
         : "ineligible";
-
     return {
       ...customer,
       outstandingBalance,
@@ -200,22 +295,11 @@ export async function listCustomers(params?: {
     };
   });
 
-  let filteredCustomers = customers;
-  if (params?.filter?.startsWith("portal")) {
-    filteredCustomers = customers.filter((c) => {
-      if (params.filter === "portal-enabled") return c.portalStatus === "enabled";
-      if (params.filter === "portal-disabled") return c.portalStatus !== "enabled";
-      return true;
-    });
-  }
-
   return {
-    customers: filteredCustomers,
-    total: params?.filter?.startsWith("portal") ? filteredCustomers.length : total,
+    customers,
+    total,
     page,
-    totalPages: Math.ceil(
-      (params?.filter?.startsWith("portal") ? filteredCustomers.length : total) / limit
-    ),
+    totalPages: Math.max(1, Math.ceil(total / limit)),
   };
 }
 

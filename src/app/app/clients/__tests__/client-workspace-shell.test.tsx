@@ -30,6 +30,7 @@ describe("ClientWorkspaceShell", () => {
         total={MOCK_CLIENTS.length}
         page={1}
         totalPages={1}
+        unfilteredTotal={MOCK_CLIENTS.length}
         searchQuery=""
         activeFilter="all"
       />
@@ -39,18 +40,35 @@ describe("ClientWorkspaceShell", () => {
     expect(screen.getByText(/Acme Manufacturing Ltd/i)).toBeInTheDocument();
   });
 
-  it("renders empty state when no clients", () => {
+  it("renders true empty state when org has no customers at all", () => {
     render(
       <ClientWorkspaceShell
         clients={[]}
         total={0}
         page={1}
         totalPages={1}
+        unfilteredTotal={0}
         searchQuery=""
         activeFilter="all"
       />
     );
     expect(screen.getByText(/No clients yet/i)).toBeInTheDocument();
+  });
+
+  it("renders filtered no-match state when org has customers but filter matches none", () => {
+    render(
+      <ClientWorkspaceShell
+        clients={[]}
+        total={0}
+        page={1}
+        totalPages={1}
+        unfilteredTotal={10}
+        searchQuery="zzzzzzzzz"
+        activeFilter="all"
+      />
+    );
+    expect(screen.queryByText(/No clients yet/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/No clients match your search/i)).toBeInTheDocument();
   });
 });
 

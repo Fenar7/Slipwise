@@ -122,7 +122,7 @@ export function ClientWorkspaceHeader({
               type="text"
               value={draftSearch}
               onChange={(e) => setDraftSearch(e.target.value)}
-              placeholder="Search clients by name, email, phone…"
+              placeholder="Search clients by name, email, or phone"
               className={cn(
                 "w-full rounded-lg border border-[var(--border-default)] bg-white py-2 pl-9 pr-9 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] transition-colors focus:border-[var(--brand-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--focus-ring)]",
                 isPending && "opacity-70"

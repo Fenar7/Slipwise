@@ -23,9 +23,14 @@ function parseSort(sort?: string): { key: "name" | "outstandingBalance" | "lastA
   return { key: key as "name" | "outstandingBalance" | "lastActivityAt", dir: dir === "asc" ? "asc" : "desc" };
 }
 
+function safePage(raw?: string): number {
+  const n = parseInt(raw || "1", 10);
+  return Number.isFinite(n) && n > 0 ? n : 1;
+}
+
 async function ClientsWorkspaceLoader({ searchParams }: ClientsPageProps) {
   const params = await searchParams;
-  const page = Math.max(1, parseInt(params.page || "1", 10));
+  const page = safePage(params.page);
   const filter = (params.filter || "all") as ClientFilter;
   const search = params.search || undefined;
   const sort = parseSort(params.sort);
@@ -35,31 +40,18 @@ async function ClientsWorkspaceLoader({ searchParams }: ClientsPageProps) {
     filter,
     page,
     limit: 20,
+    sort,
   });
 
-  let sortedCustomers = customers;
-  if (sort) {
-    sortedCustomers = [...customers].sort((a, b) => {
-      let cmp = 0;
-      if (sort.key === "name") {
-        cmp = a.name.localeCompare(b.name);
-      } else if (sort.key === "outstandingBalance") {
-        cmp = a.outstandingBalance - b.outstandingBalance;
-      } else if (sort.key === "lastActivityAt") {
-        const aTime = new Date(a.lastActivityAt).getTime();
-        const bTime = new Date(b.lastActivityAt).getTime();
-        cmp = aTime - bTime;
-      }
-      return sort.dir === "asc" ? cmp : -cmp;
-    });
-  }
+  const { total: unfilteredTotal } = await listCustomers({ page: 1, limit: 1 });
 
   return (
     <ClientWorkspaceShell
-      clients={sortedCustomers}
+      clients={customers}
       total={total}
       page={page}
       totalPages={totalPages}
+      unfilteredTotal={unfilteredTotal}
       searchQuery={search || ""}
       activeFilter={filter}
       sort={sort}
