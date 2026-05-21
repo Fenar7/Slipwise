@@ -27,6 +27,7 @@ import { useMailboxThreadDetail } from "./use-mailbox-thread-detail";
 import { useThreadAction } from "./use-thread-action";
 import type { ThreadAction } from "./use-thread-action";
 import { useMailboxDraft } from "./use-mailbox-draft";
+import { useAssignableMembers } from "./use-assignable-members";
 import { ThreadNotFoundEmpty } from "./mailbox-empty-states";
 import type { ThreadRowData } from "./mailbox-thread-list";
 import type {
@@ -354,6 +355,9 @@ export function MailboxWorkspace() {
     cancelAutosave,
   } = useMailboxDraft();
 
+  // Sprint 6.2: fetch assignable org members for the context panel picker
+  const { members: assignableMembers } = useAssignableMembers();
+
   const handleThreadAction = useCallback(
     (threadId: string, action: ThreadAction) => {
       void performAction(threadId, action);
@@ -386,6 +390,7 @@ export function MailboxWorkspace() {
           links: [],
           suggestions: [],
           assignee: null,
+          assigneeId: null,
           status: "open" as const,
           statusChangedAt: null,
           internalNote: "",
@@ -393,6 +398,7 @@ export function MailboxWorkspace() {
         ...(contextOverrides[selectedThreadId] ?? {}),
         // Override assignee and status with authoritative thread data
         assignee: selectedDetail?.assignee ?? null,
+        assigneeId: selectedDetail?.assigneeId ?? null,
         status: selectedDetail?.status ?? "open",
       } as LinkedContextState
     : null;
@@ -516,8 +522,9 @@ export function MailboxWorkspace() {
       if (patch.assignee !== undefined) {
         if (patch.assignee === null) {
           void performAction(selectedThreadId, "unassign");
-        } else {
-          void performAction(selectedThreadId, "assign", { assigneeId: "self" });
+        } else if (patch.assigneeId) {
+          // Real teammate assignment (or self via "Assign to me")
+          void performAction(selectedThreadId, "assign", { assigneeId: patch.assigneeId });
         }
         return;
       }
@@ -787,7 +794,7 @@ export function MailboxWorkspace() {
             data-testid="mailbox-context-panel-container"
           >
             {selectedContext ? (
-              <MailboxContextPanel context={selectedContext} onPatch={patchContext} />
+              <MailboxContextPanel context={selectedContext} onPatch={patchContext} members={assignableMembers} currentUserId={currentUserId} />
             ) : (
               <MailboxContextPanelEmpty />
             )}

@@ -167,6 +167,19 @@ vi.mock("../use-thread-action", () => ({
   }),
 }));
 
+vi.mock("../use-assignable-members", () => ({
+  useAssignableMembers: () => ({
+    members: [
+      { id: "m1", userId: "user_self", name: "Current User", email: "me@acme.com", avatarUrl: null },
+      { id: "m2", userId: "user_other", name: "Priya Sharma", email: "priya@acme.com", avatarUrl: null },
+      { id: "m3", userId: "user_third", name: "Arjun Patel", email: "arjun@acme.com", avatarUrl: null },
+    ],
+    isLoading: false,
+    error: null,
+    refetch: vi.fn(),
+  }),
+}));
+
 vi.mock("../use-mailbox-draft", () => ({
   useMailboxDraft: () => ({
     draft: null,
@@ -232,18 +245,35 @@ describe("Mailbox Sprint 6.2 — Assignment workflow UI", () => {
     expect(pendingBtn.getAttribute("aria-pressed")).toBe("true");
   });
 
-  it("fires assign API action when clicking 'Assign to someone…'", async () => {
+  it("fires assign API action with real teammate userId when selecting from picker", async () => {
     render(<MailboxWorkspace />);
     fireEvent.click(screen.getByText("Unassigned thread"));
 
+    // Open the assignee dropdown
+    const assignBtn = await waitFor(() => screen.getByTestId("assign-btn"));
+    fireEvent.click(assignBtn);
+
+    // Select a real teammate
+    const teammateOption = await screen.findByTestId("assign-option-user_other");
+    fireEvent.click(teammateOption);
+
     await waitFor(() => {
-      expect(screen.getByTestId("assign-btn")).toBeInTheDocument();
+      expect(mockPerformAction).toHaveBeenCalledWith("t3", "assign", { assigneeId: "user_other" });
     });
+  });
 
-    fireEvent.click(screen.getByTestId("assign-btn"));
+  it("fires assign API action with current userId when clicking 'Assign to me'", async () => {
+    render(<MailboxWorkspace />);
+    fireEvent.click(screen.getByText("Unassigned thread"));
+
+    const assignBtn = await waitFor(() => screen.getByTestId("assign-btn"));
+    fireEvent.click(assignBtn);
+
+    const selfOption = await screen.findByTestId("assign-self-option");
+    fireEvent.click(selfOption);
 
     await waitFor(() => {
-      expect(mockPerformAction).toHaveBeenCalledWith("t3", "assign", { assigneeId: "self" });
+      expect(mockPerformAction).toHaveBeenCalledWith("t3", "assign", { assigneeId: "user_self" });
     });
   });
 
@@ -251,11 +281,11 @@ describe("Mailbox Sprint 6.2 — Assignment workflow UI", () => {
     render(<MailboxWorkspace />);
     fireEvent.click(screen.getByText("Invoice overdue"));
 
-    await waitFor(() => {
-      expect(screen.getByLabelText("Unassign")).toBeInTheDocument();
-    });
-
-    fireEvent.click(screen.getByLabelText("Unassign"));
+    // The assignee chip shows the current assignee; click the X inside it
+    const chip = await waitFor(() => screen.getByTestId("assignee-chip"));
+    const unassignBtn = chip.querySelector('[aria-label="Unassign"]') as HTMLElement;
+    expect(unassignBtn).toBeTruthy();
+    fireEvent.click(unassignBtn);
 
     await waitFor(() => {
       expect(mockPerformAction).toHaveBeenCalledWith("t1", "unassign");

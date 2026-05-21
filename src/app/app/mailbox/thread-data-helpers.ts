@@ -203,6 +203,7 @@ export function mapThreadDetailToUI(
     status: detail.status.toLowerCase() as "open" | "pending" | "closed" | "archived",
     isFlagged: detail.isFlagged,
     assignee,
+    assigneeId: detail.assigneeId ?? null,
     mailboxLabel,
     mailboxColor,
     participantsSummary: buildParticipantsSummary(detail.participants),
