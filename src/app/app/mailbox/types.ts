@@ -102,6 +102,8 @@ export interface MailboxThreadDetail {
   subject: string;
   status: ThreadStatus;
   assignee: string | null;
+  /** Real userId for API calls; null when unassigned */
+  assigneeId: string | null;
   isFlagged: boolean;
   mailboxLabel: string;
   mailboxColor: string;
@@ -224,6 +226,8 @@ export interface LinkedContextState {
   /** Suggested links not yet confirmed */
   suggestions: ThreadLinkSummary[];
   assignee: string | null;
+  /** Real userId for API calls; null when unassigned */
+  assigneeId: string | null;
   status: ThreadStatus;
   /** ISO timestamp of last status change */
   statusChangedAt: string | null;

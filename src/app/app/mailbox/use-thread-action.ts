@@ -8,12 +8,24 @@ export type ThreadAction =
   | "archive"
   | "unarchive"
   | "flag"
-  | "unflag";
+  | "unflag"
+  | "assign"
+  | "unassign"
+  | "set_status";
+
+export type ThreadActionPayload =
+  | { assigneeId: string }
+  | { status: string }
+  | undefined;
 
 export interface UseThreadActionResult {
   isLoading: boolean;
   error: string | null;
-  performAction: (threadId: string, action: ThreadAction) => Promise<boolean>;
+  performAction: (
+    threadId: string,
+    action: ThreadAction,
+    payload?: ThreadActionPayload,
+  ) => Promise<boolean>;
 }
 
 export interface ThreadActionResponse {
@@ -29,7 +41,11 @@ export function useThreadAction(
   const [error, setError] = useState<string | null>(null);
 
   const performAction = useCallback(
-    async (threadId: string, action: ThreadAction): Promise<boolean> => {
+    async (
+      threadId: string,
+      action: ThreadAction,
+      payload?: ThreadActionPayload,
+    ): Promise<boolean> => {
       setIsLoading(true);
       setError(null);
 
@@ -39,7 +55,7 @@ export function useThreadAction(
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ action }),
+            body: JSON.stringify({ action, ...(payload ?? {}) }),
           },
         );
 

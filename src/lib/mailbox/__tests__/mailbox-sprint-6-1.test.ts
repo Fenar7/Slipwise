@@ -15,7 +15,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 vi.mock("server-only", () => ({}));
 
@@ -216,8 +216,8 @@ function makeLinkRecord(overrides: Partial<Record<string, unknown>> = {}) {
 function mockAuth(ok = true) {
   mockRequireAuth.mockResolvedValue(
     ok
-      ? { ok: true, org: { id: ORG_ID }, user: { id: USER_ID }, role: "member" }
-      : { ok: false, error: "Unauthorized", status: 401 }
+      ? { ok: true, ctx: { orgId: ORG_ID, userId: USER_ID, role: "member", representedId: null, proxyGrantId: null, proxyScope: [] } }
+      : { ok: false, response: new NextResponse(JSON.stringify({ error: "Unauthorized" }), { status: 401 }) }
   );
 }
 

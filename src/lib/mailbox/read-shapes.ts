@@ -303,6 +303,7 @@ export interface MailboxThreadReadShape {
   unreadCount: number;
   status: MailboxThreadStatus;
   assigneeId: string | null;
+  assigneeName: string | null;
   isFlagged: boolean;
   previewSnippet: string;
   attachmentCount: number;
@@ -371,6 +372,7 @@ export function toMailboxThreadReadShape(
     unreadCount: record.unreadCount,
     status: record.status,
     assigneeId: record.assigneeId ?? null,
+    assigneeName: null,
     isFlagged: record.isFlagged,
     previewSnippet: record.previewSnippet ?? "",
     attachmentCount: record.attachmentCount ?? 0,
@@ -447,6 +449,7 @@ export interface MailboxThreadDetailReadShape {
   unreadCount: number;
   status: MailboxThreadStatus;
   assigneeId: string | null;
+  assigneeName: string | null;
   isFlagged: boolean;
   previewSnippet: string;
   attachmentCount: number;
@@ -490,6 +493,7 @@ export function toMailboxThreadDetailReadShape(
     unreadCount: threadRecord.unreadCount,
     status: threadRecord.status,
     assigneeId: threadRecord.assigneeId ?? null,
+    assigneeName: null,
     isFlagged: threadRecord.isFlagged,
     previewSnippet: threadRecord.previewSnippet ?? "",
     attachmentCount: threadRecord.attachmentCount ?? 0,

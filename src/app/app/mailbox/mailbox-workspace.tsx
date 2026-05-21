@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect, useMemo } from "react";
 import { usePathname } from "next/navigation";
+import { useSupabaseSession } from "@/hooks/use-supabase-session";
 import { MailboxLeftRail } from "./mailbox-left-rail";
 import { MailboxCommandBar } from "./mailbox-command-bar";
 import { MailboxThreadList } from "./mailbox-thread-list";
@@ -26,6 +27,7 @@ import { useMailboxThreadDetail } from "./use-mailbox-thread-detail";
 import { useThreadAction } from "./use-thread-action";
 import type { ThreadAction } from "./use-thread-action";
 import { useMailboxDraft } from "./use-mailbox-draft";
+import { useAssignableMembers } from "./use-assignable-members";
 import { ThreadNotFoundEmpty } from "./mailbox-empty-states";
 import type { ThreadRowData } from "./mailbox-thread-list";
 import type {
@@ -305,10 +307,8 @@ export function MailboxWorkspace() {
     return map;
   }, [connections]);
 
-  // TODO: Sprint 4.1 does not have current user ID from auth context in this component.
-  // Using empty string means assignee will show as "Assigned" rather than "You".
-  // This will be resolved when auth context is wired into the mailbox workspace.
-  const currentUserId = "";
+  const { user } = useSupabaseSession();
+  const currentUserId = user?.id ?? "";
 
   const mappedThreads = useMemo(() => {
     const ctx = { connectionMap, currentUserId };
@@ -355,6 +355,9 @@ export function MailboxWorkspace() {
     cancelAutosave,
   } = useMailboxDraft();
 
+  // Sprint 6.2: fetch assignable org members for the context panel picker
+  const { members: assignableMembers } = useAssignableMembers();
+
   const handleThreadAction = useCallback(
     (threadId: string, action: ThreadAction) => {
       void performAction(threadId, action);
@@ -381,7 +384,23 @@ export function MailboxWorkspace() {
   const connectedMailboxCount = connections.filter((conn) => conn.status !== "disconnected").length;
 
   const selectedContext: LinkedContextState | null = selectedThreadId
-    ? { ...(MOCK_LINKED_CONTEXT[selectedThreadId] ?? null), ...(contextOverrides[selectedThreadId] ?? {}) } as LinkedContextState
+    ? {
+        ...(MOCK_LINKED_CONTEXT[selectedThreadId] ?? {
+          threadId: selectedThreadId,
+          links: [],
+          suggestions: [],
+          assignee: null,
+          assigneeId: null,
+          status: "open" as const,
+          statusChangedAt: null,
+          internalNote: "",
+        }),
+        ...(contextOverrides[selectedThreadId] ?? {}),
+        // Override assignee and status with authoritative thread data
+        assignee: selectedDetail?.assignee ?? null,
+        assigneeId: selectedDetail?.assigneeId ?? null,
+        status: selectedDetail?.status ?? "open",
+      } as LinkedContextState
     : null;
 
   const defaultComposeConnection =
@@ -488,13 +507,36 @@ export function MailboxWorkspace() {
     }
   }, [sendDraft]);
 
-  const patchContext = useCallback((patch: Partial<LinkedContextState>) => {
-    if (!selectedThreadId) return;
-    setContextOverrides((prev) => ({
-      ...prev,
-      [selectedThreadId]: { ...(prev[selectedThreadId] ?? {}), ...patch },
-    }));
-  }, [selectedThreadId]);
+  const patchContext = useCallback(
+    (patch: Partial<LinkedContextState>) => {
+      if (!selectedThreadId) return;
+
+      // Sprint 6.2: assignment and status changes go to the backend
+      if (patch.status !== undefined) {
+        void performAction(selectedThreadId, "set_status", {
+          status: patch.status.toUpperCase(),
+        });
+        return;
+      }
+
+      if (patch.assignee !== undefined) {
+        if (patch.assignee === null) {
+          void performAction(selectedThreadId, "unassign");
+        } else if (patch.assigneeId) {
+          // Real teammate assignment (or self via "Assign to me")
+          void performAction(selectedThreadId, "assign", { assigneeId: patch.assigneeId });
+        }
+        return;
+      }
+
+      // Linked records and internal notes remain local-only (Sprint 6.1)
+      setContextOverrides((prev) => ({
+        ...prev,
+        [selectedThreadId]: { ...(prev[selectedThreadId] ?? {}), ...patch },
+      }));
+    },
+    [selectedThreadId, performAction],
+  );
 
   const addFilter = useCallback((filter: ActiveFilter) => {
     setFilterState((prev) => ({
@@ -752,7 +794,7 @@ export function MailboxWorkspace() {
             data-testid="mailbox-context-panel-container"
           >
             {selectedContext ? (
-              <MailboxContextPanel context={selectedContext} onPatch={patchContext} />
+              <MailboxContextPanel context={selectedContext} onPatch={patchContext} members={assignableMembers} currentUserId={currentUserId} />
             ) : (
               <MailboxContextPanelEmpty />
             )}
