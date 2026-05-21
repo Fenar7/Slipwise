@@ -19,6 +19,21 @@ import type {
   MessagingNotification,
 } from "./types";
 import { MOCK_NOTIFICATIONS } from "./mock-data";
+import { useConversationList } from "./lib/use-conversation-list";
+import { useConversationDetail } from "./lib/use-conversation-detail";
+import { useSendMessage } from "./lib/use-send-message";
+import { useSendThreadReply } from "./lib/use-send-thread-reply";
+import { useMarkRead } from "./lib/use-mark-read";
+import { useRealtimeBootstrap } from "./lib/use-realtime-bootstrap";
+import {
+  toFrontendChannel,
+  toFrontendDM,
+  toFrontendGroup,
+  toActiveConversation,
+  toFrontendMessages,
+} from "./lib/mappers";
+import type { ApiConversationSummary } from "./lib/mappers";
+import { useCreateConversation } from "./lib/use-create-conversation";
 import { useWorkspaceTopBar } from "@/components/layout/workspace-topbar-context";
 import { cn } from "@/lib/utils";
 
@@ -67,6 +82,7 @@ export function MessagingWorkspace() {
   const [notifOpen, setNotifOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [notifications, setNotifications] = useState<MessagingNotification[]>(MOCK_NOTIFICATIONS);
+  const [pendingCreateId, setPendingCreateId] = useState<string | null>(null);
 
   const unreadCount = notifications.filter((n) => !n.read).length;
 
@@ -111,14 +127,97 @@ export function MessagingWorkspace() {
     setState((prev) => ({ ...prev, commandBarOpen: !prev.commandBarOpen }));
   };
 
-  const handleConversationSelect = (conv: ActiveConversation) => {
+  const handleConversationSelect = React.useCallback((conv: ActiveConversation) => {
     setActiveConversations((prev) => ({
       ...prev,
       [state.activeSection]: conv,
     }));
-  };
+  }, [state.activeSection]);
 
   const activeConversation = activeConversations[state.activeSection] ?? null;
+
+  const {
+    channels: liveChannels,
+    dms: liveDms,
+    groups: liveGroups,
+    loading: listLoading,
+    error: listError,
+    empty: listEmpty,
+    refresh: refreshList,
+  } = useConversationList();
+
+  const activeConvId = activeConversation?.id ?? null;
+  const { detail: activeDetail, refresh: refreshDetail, errorType: detailErrorType } = useConversationDetail(activeConvId);
+
+  const { send: sendMessage, sending: sendingMessage, error: sendError, clearError: clearSendError } = useSendMessage();
+  const { send: sendReply, sending: sendingReply, error: replyError, clearError: clearReplyError } = useSendThreadReply();
+  const { markRead, marking: markingRead, error: markReadError } = useMarkRead();
+  const lastMarkedRef = React.useRef<Record<string, number>>({});
+
+  // Sprint 5.2: mark read when opening a conversation with unread messages.
+  // Per-conversation tracking prevents re-marking unless unreadCount grows.
+  // Only update lastMarkedRef on successful server write so failures can retry.
+  React.useEffect(() => {
+    if (!activeConvId || !activeDetail) return;
+    const unread = activeDetail.readState?.unreadCount ?? 0;
+    const lastMarked = lastMarkedRef.current[activeConvId] ?? -1;
+    if (unread > 0 && unread !== lastMarked && !markingRead) {
+      markRead(activeConvId).then((result) => {
+        if (result) {
+          lastMarkedRef.current[activeConvId] = unread;
+          refreshList();
+        }
+      });
+    }
+  }, [activeConvId, activeDetail, markRead, markingRead, refreshList]);
+
+  const { degraded: realtimeDegraded } = useRealtimeBootstrap();
+
+  const { create: createConversation, creating: creatingConversation, error: createError, clearError: clearCreateError } = useCreateConversation();
+
+  const enrichSelected = React.useCallback((summary: ApiConversationSummary, kind: "channel" | "dm" | "group"): ActiveConversation => {
+    const conv = toActiveConversation(summary, kind);
+    if (activeDetail && activeDetail.id === summary.id) {
+      conv.canSend = activeDetail.canSend;
+    }
+    return conv;
+  }, [activeDetail]);
+
+  // Sprint 5.3: after creating a conversation, refresh the list and select it
+  // when it appears in the hydrated summaries.
+  React.useEffect(() => {
+    if (!pendingCreateId) return;
+    const all = [...liveChannels, ...liveDms, ...liveGroups];
+    const found = all.find((c) => c.id === pendingCreateId);
+    if (found) {
+      const kind = found.type === "CHANNEL" ? "channel" : found.type === "DM" ? "dm" : "group";
+      handleConversationSelect(enrichSelected(found, kind));
+      setPendingCreateId(null);
+    }
+  }, [liveChannels, liveDms, liveGroups, pendingCreateId, handleConversationSelect, enrichSelected]);
+
+  const sectionChannels = liveChannels.map((s) => toFrontendChannel(s));
+  const sectionDms = liveDms.map((s) => toFrontendDM(s));
+  const sectionGroups = liveGroups.map((s) => toFrontendGroup(s));
+
+  const messages = activeDetail ? toFrontendMessages(activeDetail) : undefined;
+
+  // Sprint 5.3: membership-sensitive transitions.
+  // If the detail endpoint returns a restricted error, the current user is no
+  // longer an active participant. Force the conversation into an inaccessible
+  // state so the workspace renders the restricted pane instead of flashing
+  // unauthorized detail.
+  const displayConversation = React.useMemo(() => {
+    if (!activeConversation) return null;
+    if (detailErrorType === "restricted") {
+      return {
+        ...activeConversation,
+        isAccessible: false,
+        restrictedReason: "You no longer have access to this conversation.",
+      };
+    }
+    return activeConversation;
+  }, [activeConversation, detailErrorType]);
 
   // Sections that use the Sprint 1.2 two-column conversation layout
   const isConversationSection =
@@ -221,22 +320,76 @@ export function MessagingWorkspace() {
                 style={{ borderColor: "#E0E0E0" }}
                 data-testid="conversation-list-column"
               >
-                {state.activeSection === "channels" && (
+                {listLoading && (
+                  <div className="flex flex-1 items-center justify-center">
+                    <p className="text-xs text-gray-400">Loading conversations…</p>
+                  </div>
+                )}
+                {listError && (
+                  <div className="flex flex-1 items-center justify-center px-4 text-center">
+                    <p className="text-xs font-semibold text-red-600">{listError}</p>
+                  </div>
+                )}
+                {listEmpty && (
+                  <div className="flex flex-1 items-center justify-center px-4 text-center">
+                    <p className="text-xs font-semibold">No conversations yet</p>
+                  </div>
+                )}
+                {!listLoading && !listError && !listEmpty && state.activeSection === "channels" && (
                   <ChannelConversationList
                     activeConversationId={activeConversation?.id ?? null}
-                    onSelect={handleConversationSelect}
+                    onSelect={(conv) => {
+                      const summary = liveChannels.find((c) => c.id === conv.id);
+                      if (summary) handleConversationSelect(enrichSelected(summary, "channel"));
+                    }}
+                    channels={sectionChannels}
+                    onCreateChannel={async (payload) => {
+                      clearCreateError();
+                      const result = await createConversation("CHANNEL", payload);
+                      if (result) {
+                        setPendingCreateId(result.id);
+                        refreshList();
+                      }
+                    }}
+                    creatingChannel={creatingConversation}
                   />
                 )}
-                {state.activeSection === "dms" && (
+                {!listLoading && !listError && !listEmpty && state.activeSection === "dms" && (
                   <DMConversationList
                     activeConversationId={activeConversation?.id ?? null}
-                    onSelect={handleConversationSelect}
+                    onSelect={(conv) => {
+                      const summary = liveDms.find((c) => c.id === conv.id);
+                      if (summary) handleConversationSelect(enrichSelected(summary, "dm"));
+                    }}
+                    dms={sectionDms}
+                    onCreateDM={async (dmPeerId) => {
+                      clearCreateError();
+                      const result = await createConversation("DM", { dmPeerId });
+                      if (result) {
+                        setPendingCreateId(result.id);
+                        refreshList();
+                      }
+                    }}
+                    creatingDM={creatingConversation}
                   />
                 )}
-                {state.activeSection === "groups" && (
+                {!listLoading && !listError && !listEmpty && state.activeSection === "groups" && (
                   <GroupConversationList
                     activeConversationId={activeConversation?.id ?? null}
-                    onSelect={handleConversationSelect}
+                    onSelect={(conv) => {
+                      const summary = liveGroups.find((c) => c.id === conv.id);
+                      if (summary) handleConversationSelect(enrichSelected(summary, "group"));
+                    }}
+                    groups={sectionGroups}
+                    onCreateGroup={async (payload) => {
+                      clearCreateError();
+                      const result = await createConversation("GROUP", payload);
+                      if (result) {
+                        setPendingCreateId(result.id);
+                        refreshList();
+                      }
+                    }}
+                    creatingGroup={creatingConversation}
                   />
                 )}
               </div>
@@ -244,7 +397,7 @@ export function MessagingWorkspace() {
               {/* Reading workspace */}
               <div className="flex min-h-0 flex-1 overflow-hidden">
                 <MessagingReadingWorkspace
-                  conversation={activeConversation}
+                  conversation={displayConversation}
                   sectionKind={
                     state.activeSection === "channels"
                       ? "channel"
@@ -252,13 +405,49 @@ export function MessagingWorkspace() {
                       ? "dm"
                       : "group"
                   }
-                  degraded={false}
+                  degraded={realtimeDegraded}
+                  messages={messages}
+                  detail={activeDetail}
+                  canSend={activeDetail?.canSend ?? activeConversation?.canSend ?? true}
+                  sending={sendingMessage}
+                  sendError={sendError}
+                  onSend={async (
+                    body: string,
+                    options?: { mentions?: Array<{ userId: string; offsetStart: number; offsetEnd: number }> },
+                  ) => {
+                    clearSendError();
+                    const result = await sendMessage(activeConvId!, body, null, options?.mentions?.length ? { mentions: options.mentions } : undefined);
+                    if (result && activeConvId) {
+                      await refreshDetail();
+                      await refreshList();
+                    }
+                    return result;
+                  }}
+                  onReply={async (
+                    threadId: string,
+                    body: string,
+                    options?: { mentions?: Array<{ userId: string; offsetStart: number; offsetEnd: number }> },
+                  ) => {
+                    clearReplyError();
+                    const result = await sendReply(activeConvId!, threadId, body, options?.mentions?.length ? { mentions: options.mentions } : undefined);
+                    if (result && activeConvId) {
+                      await refreshDetail();
+                      await refreshList();
+                    }
+                    return result;
+                  }}
+                  sendingReply={sendingReply}
+                  replyError={replyError}
+                  onRefreshDetail={async () => {
+                    await refreshDetail();
+                    await refreshList();
+                  }}
                 />
               </div>
             </div>
           ) : (
             /* Sprint 1.1 pane for tasks / meetings / files / admin */
-            <MessagingWorkspacePane activeSection={state.activeSection} />
+            <MessagingWorkspacePane activeSection={state.activeSection} conversationId={activeConvId} />
           )}
         </div>
 

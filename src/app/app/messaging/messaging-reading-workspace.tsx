@@ -28,19 +28,18 @@ import {
   FileSpreadsheet,
   Smile,
   AlertTriangle,
+  Loader2,
 } from "lucide-react";
-import type { ActiveConversation, ConversationMessage, PresenceStatus } from "./types";
-import {
-  getMessagesForConversation,
-  getThreadRepliesForMessage,
-} from "./mock-data";
+import type { ActiveConversation, ConversationMessage, MentionSuggestion, PresenceStatus } from "./types";
 import { MessagingComposer } from "./messaging-composer";
-import { MessagingThreadPanel } from "./messaging-thread-panel";
+import { MessagingThreadPanel, type ThreadReplyAttachmentPayload } from "./messaging-thread-panel";
 import { MessagingChannelDetail } from "./messaging-channel-detail";
 import { MessagingGroupDetail } from "./messaging-group-detail";
 import { MentionText } from "./messaging-mention-text";
 import { MessagingMessageActions } from "./messaging-message-actions";
 import { MessagingEmojiPicker } from "./messaging-emoji-picker";
+import { useThreadReplies } from "./lib/use-thread-replies";
+import type { ApiConversationDetail } from "./lib/mappers";
 
 // ─── Shared primitives ────────────────────────────────────────────────────────
 
@@ -161,6 +160,56 @@ function RestrictedWorkspace({ conversation }: { conversation: ActiveConversatio
       >
         Request access
       </button>
+    </div>
+  );
+}
+
+function ArchivedWorkspace({ conversation }: { conversation: ActiveConversation }) {
+  return (
+    <div
+      className="flex flex-col items-center justify-center gap-5 px-10 text-center"
+      data-testid="reading-workspace-archived"
+    >
+      <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gray-50 border border-gray-200">
+        <Lock className="h-5 w-5 text-gray-400" />
+      </div>
+      <div className="space-y-1">
+        <p className="text-sm font-semibold" style={{ color: "#1C1B1F" }}>
+          Archived conversation
+        </p>
+        <p className="text-xs leading-relaxed max-w-[14rem]" style={{ color: "#79747E" }}>
+          This conversation was archived on{" "}
+          {conversation.archivedAt
+            ? new Date(conversation.archivedAt).toLocaleDateString()
+            : "an unknown date"}
+          .
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function LockedWorkspace({ conversation }: { conversation: ActiveConversation }) {
+  return (
+    <div
+      className="flex flex-col items-center justify-center gap-5 px-10 text-center"
+      data-testid="reading-workspace-locked"
+    >
+      <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gray-50 border border-gray-200">
+        <Lock className="h-5 w-5 text-gray-400" />
+      </div>
+      <div className="space-y-1">
+        <p className="text-sm font-semibold" style={{ color: "#1C1B1F" }}>
+          Locked conversation
+        </p>
+        <p className="text-xs leading-relaxed max-w-[14rem]" style={{ color: "#79747E" }}>
+          This conversation was locked on{" "}
+          {conversation.lockedAt
+            ? new Date(conversation.lockedAt).toLocaleDateString()
+            : "an unknown date"}
+          . Only admins can post.
+        </p>
+      </div>
     </div>
   );
 }
@@ -303,18 +352,70 @@ function WorkspaceHeader({ conversation, threadOpen, onToggleThread, detailOpen,
 
 // ─── Attachment chip ──────────────────────────────────────────────────────────
 
-function AttachmentChip({ name }: { name: string }) {
+interface AttachmentChipProps {
+  name: string;
+  attachmentId?: string;
+  onDownload?: (attachmentId: string) => Promise<{ signedUrl: string } | null>;
+  scanStatus?: string;
+}
+
+function AttachmentChip({ name, attachmentId, onDownload, scanStatus }: AttachmentChipProps) {
+  const [downloadError, setDownloadError] = React.useState(false);
   const isSpreadsheet = name.endsWith(".xlsx") || name.endsWith(".csv");
+  const isBlocked = scanStatus === "BLOCKED";
   const Icon = isSpreadsheet ? FileSpreadsheet : FileText;
+
+  async function handleClick() {
+    if (!attachmentId || !onDownload) return;
+    setDownloadError(false);
+    const result = await onDownload(attachmentId);
+    if (!result) {
+      setDownloadError(true);
+      return;
+    }
+    window.open(result.signedUrl, "_blank");
+  }
+
   return (
-    <div
-      className="mt-2 inline-flex items-center gap-2 rounded-lg border bg-gray-50 px-2.5 py-1.5 text-xs"
-      style={{ borderColor: "#E8E8E8" }}
-    >
-      <Icon className="h-3.5 w-3.5 shrink-0 text-[#79747E]" />
-      <span className="font-medium truncate max-w-[180px]" style={{ color: "#1C1B1F" }}>
-        {name}
-      </span>
+    <div className="mt-2 inline-flex items-center gap-2">
+      {isBlocked ? (
+        <span
+          className="inline-flex items-center gap-1 rounded-lg border bg-red-50 px-2.5 py-1.5 text-xs"
+          style={{ borderColor: "#FECACA" }}
+          title="This attachment was blocked by security scan"
+        >
+          <AlertTriangle className="h-3 w-3 shrink-0 text-red-600" />
+          <span className="text-red-700">Blocked attachment</span>
+        </span>
+      ) : scanStatus === "PENDING" ? (
+        <span
+          className="inline-flex items-center gap-1 rounded-lg border bg-amber-50 px-2.5 py-1.5 text-xs"
+          style={{ borderColor: "#FDE68A" }}
+        >
+          <Loader2 className="h-3 w-3 shrink-0 animate-spin text-amber-600" />
+          <span className="text-amber-700">Scanning…</span>
+        </span>
+      ) : (
+        <button
+          type="button"
+          onClick={handleClick}
+          className={downloadError ? "opacity-60" : "hover:bg-gray-100"}
+          style={{ border: "none" }}
+        >
+          <div
+            className="inline-flex items-center gap-2 rounded-lg border bg-gray-50 px-2.5 py-1.5 text-xs hover:bg-gray-100 transition-colors"
+            style={{ borderColor: "#E8E8E8" }}
+          >
+            <Icon className="h-3.5 w-3.5 shrink-0 text-[#79747E]" />
+            <span className="font-medium truncate max-w-[180px]" style={{ color: "#1C1B1F" }}>
+              {name}
+            </span>
+          </div>
+        </button>
+      )}
+      {downloadError && (
+        <span className="text-[10px] text-red-600">Access denied</span>
+      )}
     </div>
   );
 }
@@ -401,9 +502,10 @@ interface MessageRowProps {
   message: ConversationMessage;
   isThreadAnchor: boolean;
   onOpenThread: (msgId: string) => void;
+  onDownloadAttachment?: (attachmentId: string) => Promise<{ signedUrl: string } | null>;
 }
 
-function MessageRow({ message, isThreadAnchor, onOpenThread }: MessageRowProps) {
+function MessageRow({ message, isThreadAnchor, onOpenThread, onDownloadAttachment }: MessageRowProps) {
   const [emojiOpen, setEmojiOpen] = React.useState(false);
   const [actionsOpen, setActionsOpen] = React.useState(false);
 
@@ -449,7 +551,19 @@ function MessageRow({ message, isThreadAnchor, onOpenThread }: MessageRowProps) 
         </p>
 
         {/* Attachment */}
-        {message.attachmentRef && <AttachmentChip name={message.attachmentRef} />}
+        {message.attachmentRecords && message.attachmentRecords.length > 0 && (
+          <div className="mt-1.5 flex flex-wrap gap-1">
+            {message.attachmentRecords.map((att) => (
+              <AttachmentChip
+                key={att.id}
+                name={att.name}
+                attachmentId={att.id}
+                onDownload={onDownloadAttachment ?? undefined}
+                scanStatus={att.scanStatus}
+              />
+            ))}
+          </div>
+        )}
 
         {/* Reactions */}
         <ReactionChips reactions={message.reactions} />
@@ -517,9 +631,10 @@ interface MessageFeedProps {
   messages: ConversationMessage[];
   threadAnchorMessageId: string | null;
   onOpenThread: (msgId: string) => void;
+  onDownloadAttachment?: (attachmentId: string) => Promise<{ signedUrl: string } | null>;
 }
 
-function MessageFeed({ messages, threadAnchorMessageId, onOpenThread }: MessageFeedProps) {
+function MessageFeed({ messages, threadAnchorMessageId, onOpenThread, onDownloadAttachment }: MessageFeedProps) {
   const feedRef = React.useRef<HTMLDivElement>(null);
 
   // Scroll to bottom on mount (simulates arriving at latest messages)
@@ -542,6 +657,7 @@ function MessageFeed({ messages, threadAnchorMessageId, onOpenThread }: MessageF
           message={msg}
           isThreadAnchor={threadAnchorMessageId === msg.id}
           onOpenThread={onOpenThread}
+          onDownloadAttachment={onDownloadAttachment}
         />
       ))}
       {/* Bottom padding so last message isn't flush against composer */}
@@ -562,14 +678,25 @@ function ChannelWorkspace({
   detailOpen,
   onToggleDetail,
   onCloseDetail,
+  messages: externalMessages,
+  canSend,
+  sending,
+  sendError,
+  onSend,
+  onReply,
+  sendingReply,
+  replyError,
+  threadReplies: externalThreadReplies,
+  detail,
+  onRefreshDetail,
+  participants,
+  onDownloadAttachment,
 }: WorkspaceBodyProps) {
-  const channelMessages = getMessagesForConversation(conversation.id);
+  const channelMessages = externalMessages ?? [];
   const anchorMsg = threadAnchorMessageId
     ? channelMessages.find((m) => m.id === threadAnchorMessageId) ?? null
     : null;
-  const threadReplies = threadAnchorMessageId
-    ? getThreadRepliesForMessage(threadAnchorMessageId)
-    : [];
+  const threadReplies = externalThreadReplies ?? [];
 
   return (
     <div className="flex flex-1 overflow-hidden" data-testid="channel-workspace">
@@ -597,8 +724,9 @@ function ChannelWorkspace({
           messages={channelMessages}
           threadAnchorMessageId={threadAnchorMessageId}
           onOpenThread={onOpenThread}
+          onDownloadAttachment={onDownloadAttachment}
         />
-        <MessagingComposer placeholder={`Message #${conversation.name}`} isAccessible={true} />
+        <MessagingComposer placeholder={`Message #${conversation.name}`} isAccessible={canSend} onSend={onSend} sending={sending} sendError={sendError} conversationId={conversation.id} participants={participants} />
       </div>
 
       {/* Thread panel */}
@@ -607,6 +735,15 @@ function ChannelWorkspace({
             anchorMessage={anchorMsg}
             replies={threadReplies}
             onClose={onCloseThread}
+            onReply={onReply && detail && threadAnchorMessageId
+              ? (body, attachments) => {
+                  const threadId = detail.threads.find((thread) => thread.anchorMessageId === threadAnchorMessageId)?.id ?? threadAnchorMessageId;
+                  const attPayloads = attachments?.map(a => ({ storageRef: a.storageRef, uploadToken: a.uploadToken, fileName: a.fileName, mimeType: a.mimeType, sizeBytes: a.sizeBytes }));
+                  return onReply(threadId, body, attPayloads?.length ? ({ attachments: attPayloads, mentions: undefined }) : undefined);
+                }
+              : undefined}
+            sendingReply={sendingReply}
+            replyError={replyError}
           />
         ) : (
         <div
@@ -636,7 +773,7 @@ function ChannelWorkspace({
 
       {/* Detail panel */}
       {detailOpen && (
-        <MessagingChannelDetail conversation={conversation} onClose={onCloseDetail} />
+        <MessagingChannelDetail conversation={conversation} onClose={onCloseDetail} detail={detail} onRefresh={onRefreshDetail} />
       )}
     </div>
   );
@@ -653,8 +790,18 @@ function DMWorkspace({
   onToggleThread,
   detailOpen,
   onToggleDetail,
+  messages: externalMessages,
+  canSend,
+  sending,
+  sendError,
+  onSend,
+  onReply,
+  sendingReply,
+  replyError,
+  participants,
+  onDownloadAttachment,
 }: WorkspaceBodyProps) {
-  const dmMessages = getMessagesForConversation(conversation.id);
+  const dmMessages = externalMessages ?? [];
   return (
     <div className="flex flex-1 overflow-hidden" data-testid="dm-workspace">
       <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
@@ -695,8 +842,9 @@ function DMWorkspace({
           messages={dmMessages}
           threadAnchorMessageId={threadAnchorMessageId}
           onOpenThread={onOpenThread}
+          onDownloadAttachment={onDownloadAttachment}
         />
-        <MessagingComposer placeholder={`Message ${conversation.name}`} isAccessible={true} />
+        <MessagingComposer placeholder={`Message ${conversation.name}`} isAccessible={canSend} onSend={onSend} sending={sending} sendError={sendError} conversationId={conversation.id} participants={participants} />
       </div>
       {threadOpen && (
         <div
@@ -737,14 +885,25 @@ function GroupWorkspace({
   detailOpen,
   onToggleDetail,
   onCloseDetail,
+  messages: externalMessages,
+  canSend,
+  sending,
+  sendError,
+  onSend,
+  onReply,
+  sendingReply,
+  replyError,
+  threadReplies: externalThreadReplies,
+  detail,
+  onRefreshDetail,
+  participants,
+  onDownloadAttachment,
 }: WorkspaceBodyProps) {
-  const groupMessages = getMessagesForConversation(conversation.id);
+  const groupMessages = externalMessages ?? [];
   const anchorMsg = threadAnchorMessageId
     ? groupMessages.find((m) => m.id === threadAnchorMessageId) ?? null
     : null;
-  const threadReplies = threadAnchorMessageId
-    ? getThreadRepliesForMessage(threadAnchorMessageId)
-    : [];
+  const threadReplies = externalThreadReplies ?? [];
 
   return (
     <div className="flex flex-1 overflow-hidden" data-testid="group-workspace">
@@ -771,18 +930,27 @@ function GroupWorkspace({
           messages={groupMessages}
           threadAnchorMessageId={threadAnchorMessageId}
           onOpenThread={onOpenThread}
+          onDownloadAttachment={onDownloadAttachment}
         />
-        <MessagingComposer placeholder={`Message ${conversation.name}`} isAccessible={true} />
+        <MessagingComposer placeholder={`Message ${conversation.name}`} isAccessible={canSend} onSend={onSend} sending={sending} sendError={sendError} conversationId={conversation.id} participants={participants} />
       </div>
       {threadOpen && anchorMsg && (
         <MessagingThreadPanel
           anchorMessage={anchorMsg}
           replies={threadReplies}
           onClose={onCloseThread}
+          onReply={onReply && detail && threadAnchorMessageId
+            ? (body) => {
+                const threadId = detail.threads.find((thread) => thread.anchorMessageId === threadAnchorMessageId)?.id ?? threadAnchorMessageId;
+                return onReply(threadId, body);
+              }
+            : undefined}
+          sendingReply={sendingReply}
+          replyError={replyError}
         />
       )}
       {detailOpen && (
-        <MessagingGroupDetail conversation={conversation} onClose={onCloseDetail} />
+        <MessagingGroupDetail conversation={conversation} onClose={onCloseDetail} detail={detail} onRefresh={onRefreshDetail} />
       )}
     </div>
   );
@@ -800,6 +968,29 @@ interface WorkspaceBodyProps {
   detailOpen: boolean;
   onToggleDetail: () => void;
   onCloseDetail: () => void;
+  messages?: ConversationMessage[];
+  canSend?: boolean;
+  sending?: boolean;
+  sendError?: string | null;
+  onSend?: (
+    body: string,
+    options?: { mentions?: Array<{ userId: string; offsetStart: number; offsetEnd: number }> },
+  ) => Promise<{ id: string } | null>;
+  onReply?: (
+    threadId: string,
+    body: string,
+    options?: { mentions?: Array<{ userId: string; offsetStart: number; offsetEnd: number }>; attachments?: Array<{ storageRef: string; uploadToken: string; fileName: string; mimeType: string; sizeBytes: number }> },
+  ) => Promise<{ id: string } | null>;
+  sendingReply?: boolean;
+  replyError?: string | null;
+  threadReplies?: ConversationMessage[];
+  detail?: ApiConversationDetail | null;
+  onRefreshDetail?: () => void;
+  participants?: MentionSuggestion[];
+  onReact?: (messageId: string, emoji: string) => void;
+  onEdit?: (messageId: string, body: string) => void;
+  onDelete?: (messageId: string) => void;
+  onDownloadAttachment?: (attachmentId: string) => Promise<{ signedUrl: string } | null>;
 }
 
 // ─── Main export ──────────────────────────────────────────────────────────────
@@ -808,16 +999,58 @@ interface MessagingReadingWorkspaceProps {
   conversation: ActiveConversation | null;
   sectionKind?: "channel" | "dm" | "group";
   degraded?: boolean;
+  messages?: ConversationMessage[];
+  canSend?: boolean;
+  sending?: boolean;
+  sendError?: string | null;
+  onSend?: (
+    body: string,
+    options?: { mentions?: Array<{ userId: string; offsetStart: number; offsetEnd: number }>; attachments?: Array<{ storageRef: string; fileName: string; mimeType: string; sizeBytes: number }> },
+  ) => Promise<{ id: string } | null>;
+  onReply?: (
+    threadId: string,
+    body: string,
+    options?: { mentions?: Array<{ userId: string; offsetStart: number; offsetEnd: number }>; attachments?: Array<{ storageRef: string; uploadToken: string; fileName: string; mimeType: string; sizeBytes: number }> },
+  ) => Promise<{ id: string } | null>;
+  sendingReply?: boolean;
+  replyError?: string | null;
+  detail?: ApiConversationDetail | null;
+  onRefreshDetail?: () => void;
+  participants?: MentionSuggestion[];
+  onDownloadAttachment?: (attachmentId: string) => Promise<{ signedUrl: string } | null>;
 }
 
 export function MessagingReadingWorkspace({
   conversation,
   sectionKind,
   degraded,
+  messages: externalMessages,
+  canSend = true,
+  sending = false,
+  sendError,
+  onSend,
+  onReply,
+  sendingReply = false,
+  replyError,
+  detail,
+  onRefreshDetail,
+  participants,
+  onDownloadAttachment,
 }: MessagingReadingWorkspaceProps) {
   const [threadAnchorMessageId, setThreadAnchorMessageId] = React.useState<string | null>(null);
   const [threadOpen, setThreadOpen] = React.useState(false);
   const [detailOpen, setDetailOpen] = React.useState(false);
+  const activeThreadId = React.useMemo(() => {
+    if (!detail || !threadAnchorMessageId) return null;
+    return detail.threads.find((thread) => thread.anchorMessageId === threadAnchorMessageId)?.id ?? null;
+  }, [detail, threadAnchorMessageId]);
+
+  // Sprint 5.2: live thread replies via dedicated backend endpoint.
+  const { replies: liveThreadReplies } = useThreadReplies(
+    conversation?.id ?? null,
+    activeThreadId,
+    detail ?? null,
+  );
 
   // Reset thread and detail state when conversation changes
   React.useEffect(() => {
@@ -858,6 +1091,30 @@ export function MessagingReadingWorkspace({
     );
   }
 
+  if (conversation.archivedAt) {
+    return (
+      <div
+        className="flex flex-1 flex-col items-center justify-center overflow-hidden bg-white"
+        data-testid="reading-workspace"
+      >
+        {degraded && <DegradedBanner />}
+        <ArchivedWorkspace conversation={conversation} />
+      </div>
+    );
+  }
+
+  if (conversation.lockedAt) {
+    return (
+      <div
+        className="flex flex-1 flex-col items-center justify-center overflow-hidden bg-white"
+        data-testid="reading-workspace"
+      >
+        {degraded && <DegradedBanner />}
+        <LockedWorkspace conversation={conversation} />
+      </div>
+    );
+  }
+
   if (!conversation.isAccessible) {
     return (
       <div
@@ -888,6 +1145,19 @@ export function MessagingReadingWorkspace({
       });
     },
     onCloseDetail: () => setDetailOpen(false),
+    messages: externalMessages,
+    canSend,
+    sending,
+    sendError,
+    onSend,
+    onReply,
+    sendingReply,
+    replyError,
+    threadReplies: liveThreadReplies,
+    detail,
+    onRefreshDetail,
+    participants,
+    onDownloadAttachment,
   };
 
   return (

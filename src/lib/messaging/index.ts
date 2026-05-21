@@ -259,6 +259,13 @@ export {
   removeReaction,
 } from "./reaction-service";
 
+// Draft service
+export {
+  getDraft,
+  saveDraft,
+  deleteDraft,
+} from "./draft-service";
+
 // Mention / Read-state service
 export {
   acknowledgeMention,

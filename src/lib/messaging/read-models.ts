@@ -171,7 +171,7 @@ export async function getConversationDetail(
 
   // Fetch reactions and attachment counts for all messages in one batch
   const messageIds = messages.map((m) => m.id);
-  const [reactionsRows, attachmentRows] = await Promise.all([
+  const [reactionsRows, attachmentRows, mentionRows] = await Promise.all([
     messageIds.length > 0
       ? db.messageReaction.findMany({
           where: {
@@ -186,6 +186,23 @@ export async function getConversationDetail(
             orgId,
             messageId: { in: messageIds },
           },
+          select: {
+            id: true,
+            messageId: true,
+            fileName: true,
+            mimeType: true,
+            sizeBytes: true,
+            scanStatus: true,
+          },
+        })
+      : Promise.resolve([]),
+    messageIds.length > 0
+      ? db.messageMention.findMany({
+          where: {
+            orgId,
+            messageId: { in: messageIds },
+            mentionedUserId: userId,
+          },
           select: { messageId: true },
         })
       : Promise.resolve([]),
@@ -198,10 +215,26 @@ export async function getConversationDetail(
     reactionsByMessageId.set(row.messageId, list);
   }
 
-  const attachmentCountByMessageId = new Map<string, number>();
+  const attachmentsByMessageId = new Map<string, Array<{ id: string; fileName: string; mimeType: string; sizeBytes: number; scanStatus: string }>>();
   for (const row of attachmentRows) {
-    const count = attachmentCountByMessageId.get(row.messageId) ?? 0;
-    attachmentCountByMessageId.set(row.messageId, count + 1);
+    const list = attachmentsByMessageId.get(row.messageId) ?? [];
+    list.push({
+      id: row.id,
+      fileName: row.fileName,
+      mimeType: row.mimeType,
+      sizeBytes: row.sizeBytes,
+      scanStatus: row.scanStatus,
+    });
+    attachmentsByMessageId.set(row.messageId, list);
+  }
+  const attachmentCountByMessageId = new Map<string, number>();
+  for (const [msgId, atts] of attachmentsByMessageId.entries()) {
+    attachmentCountByMessageId.set(msgId, atts.length);
+  }
+
+  const mentionCurrentUserByMessageId = new Map<string, boolean>();
+  for (const row of mentionRows) {
+    mentionCurrentUserByMessageId.set(row.messageId, true);
   }
 
   return toConversationDetail({
@@ -209,10 +242,12 @@ export async function getConversationDetail(
     participants,
     messages,
     messageReactions: reactionsByMessageId,
+    mentionCurrentUserByMessageId,
     threads,
     readState,
     currentUserId: userId,
     attachmentCountByMessageId,
+    attachmentsByMessageId,
   });
 }
 

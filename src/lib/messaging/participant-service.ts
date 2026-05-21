@@ -12,6 +12,7 @@ import {
   assertConversationAction,
   assertGovernanceAction,
 } from "./service-helpers";
+import { assertValidOrgMembers } from "./conversation-service";
 import { getRealtimePublisherOrNoop } from "./realtime/publisher";
 import { appendConversationEvent } from "./realtime/event-log-service";
 import type {
@@ -105,6 +106,9 @@ export async function addParticipant(
       "ADD_PARTICIPANT",
       "addParticipant",
     );
+
+    // Validate target user is an active org member before adding.
+    await assertValidOrgMembers(tx, input.orgId, [input.userId], "addParticipant");
 
     const existing = await tx.conversationParticipant.findFirst({
       where: {
@@ -285,6 +289,9 @@ export async function removeParticipant(
 export async function updateParticipantRole(
   input: UpdateParticipantRoleInput,
 ): Promise<ConversationParticipantRecord> {
+  let eventMeta: { eventId: string; cursor: bigint } | undefined;
+  let previousRole: string | undefined;
+
   const result = await db.$transaction(async (tx) => {
     await assertConversationAction(
       tx,
@@ -318,6 +325,8 @@ export async function updateParticipantRole(
       }
     }
 
+    previousRole = existing.role;
+
     const updated = await tx.conversationParticipant.update({
       where: { id: existing.id },
       data: { role: input.role },
@@ -331,8 +340,37 @@ export async function updateParticipantRole(
       conversationId: input.conversationId,
     });
 
+    eventMeta = await appendConversationEvent(tx, {
+      orgId: input.orgId,
+      conversationId: input.conversationId,
+      eventType: "conversation.membership.updated",
+      actorId: input.updatedBy,
+      payload: {
+        change: "role_changed",
+        userId: input.userId,
+        role: input.role,
+        previousRole,
+        conversationId: input.conversationId,
+      },
+    });
+
     return toParticipantRecord(updated);
   });
+
+  getRealtimePublisherOrNoop().publishConversationEvent(
+    input.orgId,
+    input.conversationId,
+    "conversation.membership.updated",
+    input.updatedBy,
+    {
+      change: "role_changed",
+      userId: input.userId,
+      role: input.role,
+      previousRole,
+      conversationId: input.conversationId,
+    },
+    { eventId: eventMeta!.eventId, cursor: eventMeta!.cursor.toString() },
+  );
 
   return result;
 }

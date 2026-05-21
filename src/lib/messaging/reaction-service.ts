@@ -7,6 +7,8 @@ import { reactionOrgSafeWhere, messageOrgSafeWhere } from "./org-safe-helpers";
 import { toReactionRecord } from "./mappers";
 import { logMessagingAuditTx } from "./audit";
 import type { AddReactionInput, RemoveReactionInput } from "./service-contracts";
+import { appendConversationEvent } from "./realtime/event-log-service";
+import { getRealtimePublisherOrNoop } from "./realtime/publisher";
 import {
   assertConversationAction,
 } from "./service-helpers";
@@ -52,8 +54,11 @@ export async function listReactionsForMessage(
 export async function addReaction(
   input: AddReactionInput,
 ): Promise<MessageReactionRecord> {
+  let eventMeta: { eventId: string; cursor: bigint } | undefined;
+  let conversationId = "";
   const result = await db.$transaction(async (tx) => {
     const message = await assertMessageInOrg(tx, input.orgId, input.messageId);
+    conversationId = message.conversationId;
     await assertConversationAction(
       tx,
       input.orgId,
@@ -94,8 +99,27 @@ export async function addReaction(
       messageId: input.messageId,
     });
 
+    eventMeta = await appendConversationEvent(tx, {
+      orgId: input.orgId,
+      conversationId: message.conversationId,
+      eventType: "conversation.message.reaction.added",
+      actorId: input.userId,
+      payload: { messageId: input.messageId, value: input.value },
+    });
+
     return toReactionRecord(reaction);
   });
+
+  if (eventMeta) {
+    getRealtimePublisherOrNoop().publishConversationEvent(
+      input.orgId,
+      conversationId,
+      "conversation.message.reaction.added",
+      input.userId,
+      { messageId: input.messageId, value: input.value },
+      { eventId: eventMeta.eventId, cursor: eventMeta.cursor.toString() },
+    );
+  }
 
   return result;
 }
@@ -107,8 +131,11 @@ export async function addReaction(
 export async function removeReaction(
   input: RemoveReactionInput,
 ): Promise<MessageReactionRecord | null> {
+  let eventMeta: { eventId: string; cursor: bigint } | undefined;
+  let conversationId = "";
   const result = await db.$transaction(async (tx) => {
     const message = await assertMessageInOrg(tx, input.orgId, input.messageId);
+    conversationId = message.conversationId;
     await assertConversationAction(
       tx,
       input.orgId,
@@ -143,8 +170,27 @@ export async function removeReaction(
       messageId: input.messageId,
     });
 
+    eventMeta = await appendConversationEvent(tx, {
+      orgId: input.orgId,
+      conversationId: message.conversationId,
+      eventType: "conversation.message.reaction.removed",
+      actorId: input.userId,
+      payload: { messageId: input.messageId, value: input.value },
+    });
+
     return toReactionRecord(existing);
   });
+
+  if (result && eventMeta) {
+    getRealtimePublisherOrNoop().publishConversationEvent(
+      input.orgId,
+      conversationId,
+      "conversation.message.reaction.removed",
+      input.userId,
+      { messageId: input.messageId, value: input.value },
+      { eventId: eventMeta.eventId, cursor: eventMeta.cursor.toString() },
+    );
+  }
 
   return result;
 }

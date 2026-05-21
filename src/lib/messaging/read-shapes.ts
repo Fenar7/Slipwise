@@ -109,6 +109,14 @@ export interface MessageSummary {
   deletedAt: string | null;
   reactionSummary: Array<{ value: string; count: number; reactedByCurrentUser: boolean }>;
   attachmentCount: number;
+  attachments?: Array<{
+    id: string;
+    fileName: string;
+    mimeType: string;
+    sizeBytes: number;
+    scanStatus: string;
+  }>;
+  mentionsCurrentUser: boolean;
   createdAt: string;
 }
 
@@ -117,10 +125,18 @@ export interface MessageSummaryInput {
   reactions: MessageReactionRecord[];
   currentUserId: string;
   attachmentCount?: number;
+  attachments?: Array<{
+    id: string;
+    fileName: string;
+    mimeType: string;
+    sizeBytes: number;
+    scanStatus: string;
+  }>;
+  mentionsCurrentUser?: boolean;
 }
 
 export function toMessageSummary(input: MessageSummaryInput): MessageSummary {
-  const { record, reactions, currentUserId, attachmentCount = 0 } = input;
+  const { record, reactions, currentUserId, attachmentCount = 0, mentionsCurrentUser = false, attachments: msgAttachments } = input;
 
   const reactionMap = new Map<string, { count: number; reactedByCurrentUser: boolean }>();
   for (const reaction of reactions) {
@@ -156,6 +172,8 @@ export function toMessageSummary(input: MessageSummaryInput): MessageSummary {
     deletedAt: record.deletedAt?.toISOString() ?? null,
     reactionSummary,
     attachmentCount,
+    attachments: msgAttachments,
+    mentionsCurrentUser,
     createdAt: record.createdAt.toISOString(),
   };
 }
@@ -215,6 +233,7 @@ export interface ConversationDetail {
   messages: MessageSummary[];
   threads: ThreadSummary[];
   readState: ReadStateSummary | null;
+  currentUserId: string;
 }
 
 export interface ThreadSummary {
@@ -239,14 +258,27 @@ export interface ConversationDetailInput {
   participants: ConversationParticipantRecord[];
   messages: ConversationMessageRecord[];
   messageReactions: Map<string, MessageReactionRecord[]>;
+  mentionCurrentUserByMessageId?: Map<string, boolean>;
   threads: ConversationThreadRecord[];
   readState: ConversationReadStateRecord | null;
   currentUserId: string;
   attachmentCountByMessageId?: Map<string, number>;
+  attachmentsByMessageId?: Map<string, Array<{ id: string; fileName: string; mimeType: string; sizeBytes: number; scanStatus: string }>>;
 }
 
 export function toConversationDetail(input: ConversationDetailInput): ConversationDetail {
-  const { record, participants, messages, messageReactions, threads, readState, currentUserId, attachmentCountByMessageId } = input;
+  const {
+    record,
+    participants,
+    messages,
+    messageReactions,
+    mentionCurrentUserByMessageId,
+    threads,
+    readState,
+    currentUserId,
+    attachmentCountByMessageId,
+    attachmentsByMessageId,
+  } = input;
 
   const activeParticipants = participants.filter((p) => participantIsActive(p));
 
@@ -271,6 +303,7 @@ export function toConversationDetail(input: ConversationDetailInput): Conversati
         reactions: messageReactions.get(msg.id) ?? [],
         currentUserId,
         attachmentCount: attachmentCountByMessageId?.get(msg.id) ?? 0,
+        mentionsCurrentUser: mentionCurrentUserByMessageId?.get(msg.id) ?? false,
       }),
     ),
     threads: threads.map((t) => ({
@@ -290,6 +323,7 @@ export function toConversationDetail(input: ConversationDetailInput): Conversati
           isMuted: readState.isMuted,
         }
       : null,
+    currentUserId,
   };
 }
 

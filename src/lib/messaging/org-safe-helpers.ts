@@ -71,6 +71,25 @@ export function mentionOrgSafeWhere(orgId: string, mentionedUserId?: string) {
   return where;
 }
 
+// ─── Draft helpers ────────────────────────────────────────────────────────────
+
+export function draftOrgSafeWhere(
+  orgId: string,
+  conversationId: string,
+  userId: string,
+  threadId?: string | null,
+) {
+  const where: { orgId: string; conversationId: string; userId: string; threadId?: string | null } = {
+    orgId,
+    conversationId,
+    userId,
+  };
+  if (threadId !== undefined) {
+    where.threadId = threadId;
+  }
+  return where;
+}
+
 // ─── Read state helpers ───────────────────────────────────────────────────────
 
 export function readStateOrgSafeWhere(

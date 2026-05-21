@@ -37,6 +37,7 @@ import {
 } from "./mock-data";
 import { MessagingChannelCreate } from "./messaging-channel-create";
 import { MessagingGroupCreate } from "./messaging-group-create";
+import { MessagingDMCreate } from "./messaging-dm-create";
 
 // ─── Shared primitives ────────────────────────────────────────────────────────
 
@@ -117,6 +118,7 @@ function ListHeader({
           style={{ color: "#79747E" }}
           aria-label={actionLabel}
           title={actionLabel}
+          onClick={onAction}
         >
           <Plus className="h-4 w-4" />
         </button>
@@ -148,16 +150,23 @@ function ListHeader({
 interface ChannelListProps {
   activeConversationId: string | null;
   onSelect: (conv: ActiveConversation) => void;
+  channels?: MessagingChannel[];
+  onCreateChannel?: (payload: { name: string; description: string | null; visibility: "PUBLIC" | "PRIVATE"; initialParticipantIds: string[] }) => void;
+  creatingChannel?: boolean;
 }
 
 export function ChannelConversationList({
   activeConversationId,
   onSelect,
+  channels: liveChannels,
+  onCreateChannel,
+  creatingChannel,
 }: ChannelListProps) {
   const [search, setSearch] = React.useState("");
   const [showCreate, setShowCreate] = React.useState(false);
 
-  const filtered = MOCK_CHANNELS.filter((ch) =>
+  const source = liveChannels ?? MOCK_CHANNELS;
+  const filtered = source.filter((ch) =>
     ch.name.toLowerCase().includes(search.toLowerCase())
   );
 
@@ -184,7 +193,7 @@ export function ChannelConversationList({
     >
       <ListHeader
         title="Channels"
-        subtitle={`${MOCK_CHANNELS.length} channels · ${MOCK_CHANNELS.filter((c) => c.visibility === "private").length} private`}
+        subtitle={`${source.length} channels · ${source.filter((c) => c.visibility === "private").length} private`}
         actionLabel="New channel"
         onAction={() => setShowCreate(true)}
         searchPlaceholder="Find a channel…"
@@ -227,7 +236,16 @@ export function ChannelConversationList({
           </button>
         </div>
       </div>
-      {showCreate && <MessagingChannelCreate onClose={() => setShowCreate(false)} />}
+      {showCreate && (
+        <MessagingChannelCreate
+          onClose={() => setShowCreate(false)}
+          onCreate={(payload) => {
+            setShowCreate(false);
+            onCreateChannel?.(payload);
+          }}
+          creating={creatingChannel}
+        />
+      )}
     </div>
   );
 }
@@ -302,12 +320,17 @@ function ChannelRow({
 interface DMListProps {
   activeConversationId: string | null;
   onSelect: (conv: ActiveConversation) => void;
+  dms?: DirectMessage[];
+  onCreateDM?: (dmPeerId: string) => void;
+  creatingDM?: boolean;
 }
 
-export function DMConversationList({ activeConversationId, onSelect }: DMListProps) {
+export function DMConversationList({ activeConversationId, onSelect, dms: liveDms, onCreateDM, creatingDM }: DMListProps) {
   const [search, setSearch] = React.useState("");
+  const [showCreate, setShowCreate] = React.useState(false);
 
-  const filtered = MOCK_DMS.filter((dm) =>
+  const source = liveDms ?? MOCK_DMS;
+  const filtered = source.filter((dm) =>
     dm.participant.name.toLowerCase().includes(search.toLowerCase())
   );
 
@@ -331,9 +354,9 @@ export function DMConversationList({ activeConversationId, onSelect }: DMListPro
     >
       <ListHeader
         title="Direct Messages"
-        subtitle={`${MOCK_DMS.length} conversations`}
+        subtitle={`${source.length} conversations`}
         actionLabel="New direct message"
-        onAction={() => {}}
+        onAction={() => setShowCreate(true)}
         searchPlaceholder="Find a person…"
         searchValue={search}
         onSearchChange={setSearch}
@@ -355,11 +378,21 @@ export function DMConversationList({ activeConversationId, onSelect }: DMListPro
             type="button"
             className="w-full rounded-lg border border-dashed px-3 py-2 text-xs font-medium transition-colors hover:border-[#DC2626] hover:text-[#DC2626] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]"
             style={{ borderColor: "#E0E0E0", color: "#79747E" }}
+            onClick={() => setShowCreate(true)}
           >
             Start a new message…
           </button>
         </div>
       </div>
+      {showCreate && (
+        <MessagingDMCreate
+          onClose={() => setShowCreate(false)}
+          onCreate={(dmPeerId) => {
+            setShowCreate(false);
+            onCreateDM?.(dmPeerId);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -435,14 +468,18 @@ function DMRow({
 interface GroupListProps {
   activeConversationId: string | null;
   onSelect: (conv: ActiveConversation) => void;
+  groups?: MessagingGroup[];
+  onCreateGroup?: (payload: { name: string; visibility: "PUBLIC" | "PRIVATE"; initialParticipantIds: string[] }) => void;
+  creatingGroup?: boolean;
 }
 
-export function GroupConversationList({ activeConversationId, onSelect }: GroupListProps) {
+export function GroupConversationList({ activeConversationId, onSelect, groups: liveGroups, onCreateGroup, creatingGroup }: GroupListProps) {
   const [search, setSearch] = React.useState("");
   const [showCreate, setShowCreate] = React.useState(false);
 
-  const filtered = MOCK_GROUPS.filter((grp) =>
-    grp.name.toLowerCase().includes(search.toLowerCase())
+  const source = liveGroups ?? MOCK_GROUPS;
+  const filtered = source.filter((g) =>
+    g.name.toLowerCase().includes(search.toLowerCase())
   );
 
   function handleSelect(grp: MessagingGroup) {
@@ -466,7 +503,7 @@ export function GroupConversationList({ activeConversationId, onSelect }: GroupL
     >
       <ListHeader
         title="Groups"
-        subtitle={`${MOCK_GROUPS.length} groups · ${MOCK_GROUPS.filter((g) => g.isPrivate).length} private`}
+        subtitle={`${source.length} groups · ${source.filter((g) => g.isPrivate).length} private`}
         actionLabel="New group"
         onAction={() => setShowCreate(true)}
         searchPlaceholder="Find a group…"
@@ -486,7 +523,16 @@ export function GroupConversationList({ activeConversationId, onSelect }: GroupL
           <EmptySearch label="No groups match your search." />
         )}
       </div>
-      {showCreate && <MessagingGroupCreate onClose={() => setShowCreate(false)} />}
+      {showCreate && (
+        <MessagingGroupCreate
+          onClose={() => setShowCreate(false)}
+          onCreate={(payload) => {
+            setShowCreate(false);
+            onCreateGroup?.(payload);
+          }}
+          creating={creatingGroup}
+        />
+      )}
     </div>
   );
 }

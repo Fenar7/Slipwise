@@ -158,8 +158,17 @@ export interface ConversationMessage {
   threadReplyCount: number;
   /** Reaction chips — static display only in Phase 1 */
   reactions: MessageReaction[];
-  /** Attachment hint — no real upload in Phase 1 */
+  /** Attachment hint — legacy count string for backward compat */
   attachmentRef: string | null;
+  /** Real attachment records from the backend (Sprint 5.5) */
+  attachmentRecords: Array<{
+    id: string;
+    name: string;
+    mimeType: string;
+    mimeCategory: string;
+    sizeBytes: number;
+    scanStatus: string;
+  }>;
   /** Whether the current viewer is mentioned */
   mentionsCurrentUser: boolean;
 }
@@ -191,6 +200,12 @@ export interface ActiveConversation {
   threadOpen: boolean;
   /** The message ID whose thread is open, if any */
   threadAnchorMessageId: string | null;
+  /** Backend-derived: ISO timestamp when conversation was archived, or null */
+  archivedAt?: string | null;
+  /** Backend-derived: ISO timestamp when conversation was locked, or null */
+  lockedAt?: string | null;
+  /** Backend-derived: whether the current user can send messages */
+  canSend?: boolean;
 }
 
 /**

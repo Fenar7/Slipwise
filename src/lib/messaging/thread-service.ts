@@ -225,6 +225,36 @@ export async function replyToThread(
       throw new Error("replyToThread: thread does not belong to conversation");
     }
 
+    if (input.mentions && input.mentions.length > 0) {
+      const mentionedUserIds = [...new Set(input.mentions.map((mention) => mention.userId))];
+      const activeParticipants = await tx.conversationParticipant.findMany({
+        where: {
+          orgId: input.orgId,
+          conversationId: input.conversationId,
+          userId: { in: mentionedUserIds },
+          leftAt: null,
+        },
+        select: { userId: true },
+      });
+      const activeUserIds = new Set(activeParticipants.map((participant) => participant.userId));
+      const invalidMention = mentionedUserIds.find((userId) => !activeUserIds.has(userId));
+      if (invalidMention) {
+        throw new Error(`replyToThread: mentioned user is not an active participant: ${invalidMention}`);
+      }
+      const bodyLen = input.body.length;
+      for (const mention of input.mentions) {
+        if (mention.offsetStart < 0 || mention.offsetEnd > bodyLen || mention.offsetStart >= mention.offsetEnd) {
+          throw new Error(
+            `replyToThread: mention offset range [${mention.offsetStart}, ${mention.offsetEnd}] is out of bounds for body length ${bodyLen}`,
+          );
+        }
+        const span = input.body.slice(mention.offsetStart, mention.offsetEnd);
+        if (!span.startsWith("@")) {
+          throw new Error("replyToThread: mention span must start with '@'");
+        }
+      }
+    }
+
     const participantCount = await tx.conversationParticipant.count({
       where: {
         orgId: input.orgId,
@@ -244,6 +274,19 @@ export async function replyToThread(
         participantCountAtSend: participantCount,
       },
     });
+
+    if (input.mentions && input.mentions.length > 0) {
+      await tx.messageMention.createMany({
+        data: input.mentions.map((mention) => ({
+          orgId: input.orgId,
+          messageId: message.id,
+          mentionedUserId: mention.userId,
+          offsetStart: mention.offsetStart,
+          offsetEnd: mention.offsetEnd,
+        })),
+        skipDuplicates: true,
+      });
+    }
 
     await tx.conversationThread.update({
       where: { id: input.threadId, orgId: input.orgId },

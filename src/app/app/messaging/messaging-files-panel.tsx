@@ -9,10 +9,15 @@ import {
   Paperclip,
   Link,
   MoreVertical,
+  Download,
+  Eye,
+  Lock,
+  AlertTriangle,
+  Loader2,
 } from "lucide-react";
-import type { MessagingFile, FileFilterCategory, FileSortOrder } from "./types";
-import { MOCK_FILES } from "./mock-data";
+import type { FileFilterCategory, FileSortOrder } from "./types";
 import { RadioPill } from "./messaging-ui-primitives";
+import { useAttachmentFiles, type AttachmentFileSummary } from "./lib/use-attachment-files";
 
 const CATEGORY_OPTIONS: { value: FileFilterCategory; label: string }[] = [
   { value: "all", label: "All" },
@@ -28,8 +33,8 @@ const SORT_OPTIONS: { value: FileSortOrder; label: string }[] = [
   { value: "name", label: "Name" },
 ];
 
-function fileIconConfig(category: MessagingFile["category"]) {
-  switch (category) {
+function fileIconConfig(mimeCategory: AttachmentFileSummary["mimeCategory"]) {
+  switch (mimeCategory) {
     case "document":
       return { Icon: FileText, bg: "bg-blue-50", color: "text-blue-600" };
     case "image":
@@ -50,34 +55,58 @@ function formatFileDate(iso: string): string {
   });
 }
 
-export function MessagingFilesPanel() {
+export interface MessagingFilesPanelProps {
+  conversationId?: string | null;
+}
+
+export function MessagingFilesPanel({ conversationId }: MessagingFilesPanelProps) {
   const [category, setCategory] = React.useState<FileFilterCategory>("all");
   const [sort, setSort] = React.useState<FileSortOrder>("newest");
+  const [downloading, setDownloading] = React.useState<string | null>(null);
+  const [openError, setOpenError] = React.useState<string | null>(null);
 
-  const filtered = React.useMemo(() => {
-    let list =
-      category === "all"
-        ? [...MOCK_FILES]
-        : MOCK_FILES.filter((f) => f.category === category);
+  const { files, loading, error, fetchFiles, fetchDownloadUrl, clearError } = useAttachmentFiles();
 
+  React.useEffect(() => {
+    if (conversationId) {
+      fetchFiles(conversationId, { category: category === "all" ? undefined : category, sort });
+    }
+  }, [conversationId, category, sort]);
+
+  // Client-side filtering/sorting for real-time responsiveness after data is cached
+  const displayFiles = React.useMemo(() => {
+    let list = [...files];
+    if (category !== "all") {
+      list = list.filter((f) => f.mimeCategory === category);
+    }
     list.sort((a, b) => {
-      if (sort === "newest") {
-        return b.uploadedAt.localeCompare(a.uploadedAt);
-      }
-      if (sort === "oldest") {
-        return a.uploadedAt.localeCompare(b.uploadedAt);
-      }
+      if (sort === "newest") return b.uploadedAt.localeCompare(a.uploadedAt);
+      if (sort === "oldest") return a.uploadedAt.localeCompare(b.uploadedAt);
       return a.name.localeCompare(b.name);
     });
-
     return list;
-  }, [category, sort]);
+  }, [files, category, sort]);
+
+  async function handleDownload(attachment: AttachmentFileSummary) {
+    setDownloading(attachment.id);
+    setOpenError(null);
+    try {
+      const result = await fetchDownloadUrl(attachment.id);
+      if (!result) {
+        setOpenError("Access denied or file unavailable.");
+        return;
+      }
+      window.open(result.signedUrl, "_blank");
+    } catch {
+      setOpenError("Failed to open file.");
+    } finally {
+      setDownloading(null);
+    }
+  }
 
   return (
     <div className="flex flex-col h-full" data-testid="file-panel">
-      {/* Sprint 1.1 regression compat */}
       <div className="sr-only" aria-hidden="true" data-testid="messaging-pane-files" />
-      {/* Header */}
       <div
         className="flex flex-col gap-3 border-b px-6 py-4"
         style={{ borderColor: "#E0E0E0" }}
@@ -88,7 +117,7 @@ export function MessagingFilesPanel() {
               Files
             </h2>
             <p className="text-xs mt-0.5" style={{ color: "#79747E" }}>
-              {MOCK_FILES.length} shared files
+              {files.length} shared files
             </p>
           </div>
           <RadioPill
@@ -118,19 +147,43 @@ export function MessagingFilesPanel() {
         </div>
       </div>
 
-      {/* File list */}
       <div className="flex-1 overflow-y-auto px-6 py-4 space-y-2">
-        {filtered.length === 0 ? (
-          <div
-            className="py-8 text-center text-sm"
-            style={{ color: "#79747E" }}
-            data-testid="file-list-empty"
-          >
-            No files match this filter.
+        {loading && (
+          <div className="flex items-center gap-3 py-8 justify-center" data-testid="file-list-loading">
+            <Loader2 className="h-4 w-4 animate-spin text-[#DC2626]" />
+            <span className="text-sm" style={{ color: "#79747E" }}>Loading files…</span>
           </div>
+        )}
+
+        {error && (
+          <div className="py-4 px-3 rounded-lg bg-red-50 text-xs text-red-700" data-testid="file-list-error">
+            {error}
+            <button onClick={clearError} className="ml-2 underline">Dismiss</button>
+          </div>
+        )}
+
+        {openError && (
+          <div className="py-2 px-3 rounded-lg bg-amber-50 text-xs text-amber-700" data-testid="file-open-error">
+            {openError}
+            <button onClick={() => setOpenError(null)} className="ml-2 underline">Dismiss</button>
+          </div>
+        )}
+
+        {!loading && !error && displayFiles.length === 0 ? (
+          conversationId ? (
+            <div className="py-8 text-center text-sm" style={{ color: "#79747E" }} data-testid="file-list-empty">
+              No files shared in this conversation yet.
+            </div>
+          ) : (
+            <div className="py-8 text-center text-sm" style={{ color: "#79747E" }} data-testid="file-list-empty">
+              Select a conversation to view shared files.
+            </div>
+          )
         ) : (
-          filtered.map((file) => {
-            const { Icon, bg, color } = fileIconConfig(file.category);
+          displayFiles.map((file) => {
+            const { Icon, bg, color } = fileIconConfig(file.mimeCategory);
+            const isBlocked = file.scanStatus === "BLOCKED";
+            const isPending = file.scanStatus === "PENDING";
             return (
               <div
                 key={file.id}
@@ -155,23 +208,47 @@ export function MessagingFilesPanel() {
                     {file.name}
                   </p>
                   <p className="text-xs mt-0.5" style={{ color: "#79747E" }}>
-                    {file.sizeLabel} · {file.uploadedBy} · {formatFileDate(file.uploadedAt)}
+                    {file.sizeLabel} · {formatFileDate(file.uploadedAt)}
                   </p>
-                  {file.conversationRef && (
-                    <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-gray-50 px-2 py-0.5 text-[10px] font-medium" style={{ borderColor: "#E0E0E0", color: "#79747E", borderWidth: 1 }}>
-                      <Link className="h-2.5 w-2.5" />
-                      in {file.conversationRef}
+                  {isPending && (
+                    <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-600">
+                      <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                      Scanning…
+                    </span>
+                  )}
+                  {isBlocked && (
+                    <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-medium text-red-600">
+                      <Lock className="h-2.5 w-2.5" />
+                      Blocked
                     </span>
                   )}
                 </div>
-                <button
-                  type="button"
-                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]"
-                  aria-label="File options"
-                  data-testid={`file-actions-${file.id}`}
-                >
-                  <MoreVertical className="h-4 w-4" style={{ color: "#79747E" }} />
-                </button>
+                <div className="flex items-center gap-1 shrink-0">
+                  {!isBlocked && (
+                    <button
+                      type="button"
+                      disabled={downloading === file.id}
+                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]"
+                      aria-label={`Download ${file.name}`}
+                      data-testid={`file-download-${file.id}`}
+                      onClick={() => handleDownload(file)}
+                    >
+                      {downloading === file.id ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin text-[#79747E]" />
+                      ) : (
+                        <Download className="h-3.5 w-3.5" style={{ color: "#79747E" }} />
+                      )}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]"
+                    aria-label="File options"
+                    data-testid={`file-actions-${file.id}`}
+                  >
+                    <MoreVertical className="h-4 w-4" style={{ color: "#79747E" }} />
+                  </button>
+                </div>
               </div>
             );
           })

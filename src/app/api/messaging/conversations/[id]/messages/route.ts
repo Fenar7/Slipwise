@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { listConversationMessages, sendMessage } from "@/lib/messaging";
+import { verifyUploadToken } from "@/lib/messaging/service-helpers";
 import {
   requireMessagingApiContext,
   messagingApiResponse,
@@ -44,15 +45,18 @@ export async function GET(
   }
 }
 
-function parseAttachments(raw: unknown): Array<{ storageRef: string; fileName: string; mimeType: string; sizeBytes: number; thumbnailRef?: string | null }> | undefined {
+function parseAttachments(raw: unknown, orgId: string, userId: string): Array<{ storageRef: string; fileName: string; mimeType: string; sizeBytes: number; uploadToken: string; thumbnailRef?: string | null }> | undefined {
   if (!Array.isArray(raw) || raw.length === 0) return undefined;
-  return raw.map((item) => {
+  return raw.map((item, index) => {
     if (typeof item !== "object" || item === null) {
       throw new Error("attachments: each item must be an object");
     }
     const att = item as Record<string, unknown>;
     if (typeof att.storageRef !== "string" || att.storageRef.trim().length === 0) {
       throw new Error("attachments: storageRef is required");
+    }
+    if (typeof att.uploadToken !== "string" || att.uploadToken.trim().length === 0) {
+      throw new Error("attachments: uploadToken is required");
     }
     if (typeof att.fileName !== "string" || att.fileName.trim().length === 0) {
       throw new Error("attachments: fileName is required");
@@ -63,8 +67,12 @@ function parseAttachments(raw: unknown): Array<{ storageRef: string; fileName: s
     if (typeof att.sizeBytes !== "number" || att.sizeBytes < 0 || !Number.isFinite(att.sizeBytes)) {
       throw new Error("attachments: sizeBytes must be a non-negative number");
     }
+    if (!verifyUploadToken(orgId, userId, att.storageRef.trim(), att.uploadToken.trim())) {
+      throw new Error(`attachments: uploadToken invalid or expired for item ${index}`);
+    }
     return {
       storageRef: att.storageRef.trim(),
+      uploadToken: att.uploadToken.trim(),
       fileName: att.fileName.trim(),
       mimeType: att.mimeType.trim(),
       sizeBytes: att.sizeBytes,
@@ -73,9 +81,34 @@ function parseAttachments(raw: unknown): Array<{ storageRef: string; fileName: s
   });
 }
 
+function parseMentions(raw: unknown): Array<{ userId: string; offsetStart: number; offsetEnd: number }> | undefined {
+  if (!Array.isArray(raw) || raw.length === 0) return undefined;
+  return raw.map((item) => {
+    if (typeof item !== "object" || item === null) {
+      throw new Error("mentions: each item must be an object");
+    }
+    const mention = item as Record<string, unknown>;
+    if (typeof mention.userId !== "string" || mention.userId.trim().length === 0) {
+      throw new Error("mentions: userId is required");
+    }
+    if (!Number.isInteger(mention.offsetStart) || !Number.isInteger(mention.offsetEnd)) {
+      throw new Error("mentions: offsetStart and offsetEnd must be integers");
+    }
+    return {
+      userId: mention.userId.trim(),
+      offsetStart: mention.offsetStart as number,
+      offsetEnd: mention.offsetEnd as number,
+    };
+  });
+}
+
 /**
  * POST /api/messaging/conversations/:id/messages
  * Send a message (top-level or thread reply).
+ *
+ * Sprint 5.5 hardening: attachment items must include a valid uploadToken
+ * proven to originate from an authorized messaging upload for the current
+ * user and org. Client-supplied storageRef/metadata alone are not trusted.
  */
 export async function POST(
   request: NextRequest,
@@ -93,7 +126,8 @@ export async function POST(
         ? body.threadId.trim()
         : null;
 
-    const attachments = parseAttachments(body.attachments);
+    const attachments = parseAttachments(body.attachments, orgId, userId);
+    const mentions = parseMentions(body.mentions);
 
     const message = await sendMessage({
       orgId,
@@ -106,6 +140,7 @@ export async function POST(
           ? (body.contentMeta as Record<string, unknown>)
           : null,
       attachments,
+      mentions,
     });
 
     return messagingApiResponse(message, 201);

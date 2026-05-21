@@ -20,6 +20,7 @@ import type {
   MessageReaction,
   MessageMention,
   ConversationReadState,
+  ConversationDraft,
   PresenceSession,
   TypingSession,
   ConversationAttachment,
@@ -38,6 +39,7 @@ import type {
   MessageReactionRecord,
   MessageMentionRecord,
   ConversationReadStateRecord,
+  ConversationDraftRecord,
   PresenceSessionRecord,
   TypingSessionRecord,
   ConversationAttachmentRecord,
@@ -151,6 +153,22 @@ export function toMentionRecord(row: MessageMention): MessageMentionRecord {
     offsetEnd: row.offsetEnd,
     acknowledged: row.acknowledged,
     acknowledgedAt: row.acknowledgedAt ?? null,
+    createdAt: row.createdAt,
+  };
+}
+
+// ─── Draft ────────────────────────────────────────────────────────────────────
+
+export function toDraftRecord(row: ConversationDraft): ConversationDraftRecord {
+  return {
+    id: row.id,
+    orgId: row.orgId,
+    conversationId: row.conversationId,
+    threadId: row.threadId ?? null,
+    userId: row.userId,
+    body: row.body,
+    contentMeta: (row.contentMeta as Record<string, unknown> | null) ?? null,
+    updatedAt: row.updatedAt,
     createdAt: row.createdAt,
   };
 }
