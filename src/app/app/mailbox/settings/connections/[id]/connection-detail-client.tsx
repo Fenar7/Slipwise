@@ -9,67 +9,11 @@ import {
   AlertTriangle,
   ShieldCheck,
   Users,
-  Lock,
   Trash2,
   RefreshCw,
-  ChevronDown,
 } from "lucide-react";
-import type { MailboxPermissionPolicy, DisconnectConfirmState } from "../../../types";
+import type { DisconnectConfirmState } from "../../../types";
 import { MailboxConnectFlow } from "../../mailbox-connect-flow";
-
-// ─── Permission row ───────────────────────────────────────────────────────────
-
-type AccessLevel = MailboxPermissionPolicy["readAccess"];
-
-const ACCESS_LABELS: Record<AccessLevel, string> = {
-  org_admins_only: "Admins only",
-  all_members: "All members",
-  specific_roles: "Specific roles",
-};
-
-function PermissionRow({
-  label,
-  description,
-  value,
-  onChange,
-  adminOnly = false,
-}: {
-  label: string;
-  description: string;
-  value: AccessLevel;
-  onChange: (v: AccessLevel) => void;
-  adminOnly?: boolean;
-}) {
-  const options: AccessLevel[] = ["org_admins_only", "all_members", "specific_roles"];
-  return (
-    <div className="flex items-start justify-between gap-4 py-4 border-b last:border-0" style={{ borderColor: "#F1F3F7" }}>
-      <div className="min-w-0">
-        <p className="text-sm font-medium text-[#0F172A]">{label}</p>
-        <p className="mt-0.5 text-xs text-[#64748B]">{description}</p>
-      </div>
-      {adminOnly ? (
-        <div className="flex shrink-0 items-center gap-1.5 rounded-lg border border-[#E2E5EA] bg-[#F7F8FB] px-3 py-1.5">
-          <Lock className="h-3.5 w-3.5 text-[#94A3B8]" aria-hidden="true" />
-          <span className="text-xs font-semibold text-[#64748B]">Admins only</span>
-        </div>
-      ) : (
-        <div className="relative shrink-0">
-          <select
-            value={value}
-            onChange={(e) => onChange(e.target.value as AccessLevel)}
-            className="appearance-none rounded-lg border border-[#D1D5DB] bg-white py-1.5 pl-3 pr-8 text-xs font-medium text-[#0F172A] outline-none focus:border-[#16294D] focus:ring-2 focus:ring-[rgba(22,41,77,0.12)]"
-            aria-label={`${label} access level`}
-          >
-            {options.map((opt) => (
-              <option key={opt} value={opt}>{ACCESS_LABELS[opt]}</option>
-            ))}
-          </select>
-          <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#64748B]" aria-hidden="true" />
-        </div>
-      )}
-    </div>
-  );
-}
 
 // ─── Disconnect confirmation ──────────────────────────────────────────────────
 
@@ -170,6 +114,20 @@ interface FetchedConnection {
   lastSyncError: string | null;
   connectedBy: string;
   provider: string;
+  visibilityPolicy: string;
+}
+
+function formatVisibilityPolicy(policy: string): string {
+  switch (policy) {
+    case "org_shared":
+      return "Shared with organization";
+    case "admin_only":
+      return "Admins only";
+    case "restricted":
+      return "Restricted";
+    default:
+      return policy;
+  }
 }
 
 export function ConnectionDetailClient({ connectionId }: ConnectionDetailClientProps) {
@@ -177,7 +135,6 @@ export function ConnectionDetailClient({ connectionId }: ConnectionDetailClientP
   const [isLoading, setIsLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
 
-  const [policy, setPolicy] = useState<MailboxPermissionPolicy | null>(null);
   const [disconnectState, setDisconnectState] = useState<DisconnectConfirmState>("idle");
   const [showReconnect, setShowReconnect] = useState(false);
   const [disconnectError, setDisconnectError] = useState<string | null>(null);
@@ -200,16 +157,6 @@ export function ConnectionDetailClient({ connectionId }: ConnectionDetailClientP
           const conn = data.connection ?? null;
           if (!cancelled) {
             setConnection(conn);
-            if (conn) {
-              // Derive a local policy placeholder until full policy backend is wired
-              setPolicy({
-                connectionId: conn.id,
-                readAccess: "all_members",
-                sendAccess: "all_members",
-                manageAccess: "org_admins_only",
-                accessSummary: "All members can read and reply",
-              });
-            }
           }
         }
       } catch (err) {
@@ -234,7 +181,6 @@ export function ConnectionDetailClient({ connectionId }: ConnectionDetailClientP
           throw new Error(`Disconnect failed: ${res.status}`);
         }
         setDisconnectState("disconnected");
-        // Redirect back to settings after a short delay
         window.setTimeout(() => {
           window.location.href = "/app/mailbox/settings";
         }, 1200);
@@ -268,7 +214,7 @@ export function ConnectionDetailClient({ connectionId }: ConnectionDetailClientP
     );
   }
 
-  if (!connection || !policy) {
+  if (!connection) {
     return (
       <div className="mx-auto max-w-2xl px-6 py-8" data-testid="connection-not-found">
         <p className="text-sm text-[#64748B]">Mailbox connection not found.</p>
@@ -280,9 +226,6 @@ export function ConnectionDetailClient({ connectionId }: ConnectionDetailClientP
   }
 
   const needsReconnect = connection.status === "reconnect_required" || connection.status === "RECONNECT_REQUIRED";
-
-  const patchPolicy = (patch: Partial<typeof policy>) =>
-    setPolicy((prev) => prev ? { ...prev, ...patch } : prev);
 
   return (
     <div className="mx-auto max-w-2xl px-6 py-8" data-testid="connection-detail-page">
@@ -358,69 +301,18 @@ export function ConnectionDetailClient({ connectionId }: ConnectionDetailClientP
         </dl>
       </section>
 
-      {/* Permissions */}
-      <section className="mb-6 rounded-xl border border-[#E2E5EA] bg-white p-5" aria-label="Mailbox permissions">
-        <div className="mb-1 flex items-center gap-2">
-          <ShieldCheck className="h-4 w-4 text-[#16294D]" aria-hidden="true" />
-          <h2 className="text-sm font-bold text-[#0F172A]">Permissions</h2>
-        </div>
-        <p className="mb-4 text-xs text-[#64748B]">
-          Control who in your organization can access and use this mailbox.
-        </p>
-
-        <div>
-          <PermissionRow
-            label="Read access"
-            description="Who can read threads in this mailbox"
-            value={policy.readAccess}
-            onChange={(v) => patchPolicy({ readAccess: v })}
-          />
-          <PermissionRow
-            label="Reply / send access"
-            description="Who can reply and send from this mailbox"
-            value={policy.sendAccess}
-            onChange={(v) => patchPolicy({ sendAccess: v })}
-          />
-          <PermissionRow
-            label="Manage access"
-            description="Who can change settings and disconnect this mailbox"
-            value={policy.manageAccess}
-            onChange={() => {}}
-            adminOnly
-          />
-        </div>
-
-        <div className="mt-4 flex items-center gap-3">
-          <button
-            onClick={() => {
-              // Permissions are not yet persisted to backend;
-              // avoid showing a fake success state.
-            }}
-            className="rounded-lg px-4 py-2 text-sm font-semibold text-white transition-colors hover:opacity-90"
-            style={{ background: "#16294D" }}
-            aria-label="Save permission changes"
-            data-testid="save-permissions-btn"
-          >
-            Save changes
-          </button>
-          {disconnectError && (
-            <span className="text-xs text-red-600">{disconnectError}</span>
-          )}
-        </div>
-      </section>
-
-      {/* Visibility note */}
-      <section className="mb-6 rounded-xl border border-[#E2E5EA] bg-white p-5" aria-label="Visibility">
+      {/* Visibility — read-only truthful state */}
+      <section className="mb-6 rounded-xl border border-[#E2E5EA] bg-white p-5" aria-label="Mailbox visibility">
         <div className="mb-1 flex items-center gap-2">
           <Users className="h-4 w-4 text-[#16294D]" aria-hidden="true" />
           <h2 className="text-sm font-bold text-[#0F172A]">Visibility</h2>
         </div>
         <p className="text-xs text-[#64748B]">
-          This mailbox is visible to members based on the read access setting above. Members without read access will not see this mailbox in their left rail or thread views.
+          This mailbox is visible to members based on the visibility policy set for this connection.
         </p>
         <div className="mt-3 rounded-lg border border-[#E2E5EA] bg-[#F7F8FB] px-3 py-2.5 text-xs text-[#334155]">
           <span className="font-semibold">Current visibility:</span>{" "}
-          {ACCESS_LABELS[policy.readAccess]}
+          {formatVisibilityPolicy(connection.visibilityPolicy)}
         </div>
       </section>
 
@@ -444,6 +336,9 @@ export function ConnectionDetailClient({ connectionId }: ConnectionDetailClientP
             setDisconnectError(null);
           }}
         />
+        {disconnectError && (
+          <p className="mt-2 text-xs text-red-600">{disconnectError}</p>
+        )}
       </section>
 
       {/* Reconnect flow modal */}

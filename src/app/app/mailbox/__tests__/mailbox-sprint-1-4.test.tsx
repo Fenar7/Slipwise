@@ -4,7 +4,7 @@
  *
  * Updated for Phase 6 fix: settings and connect flows now use real APIs.
  */
-import { render, screen, fireEvent, act, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
 const mockSearchParams = new URLSearchParams();
@@ -258,9 +258,9 @@ describe("MailboxConnectFlow — pre_connect step", () => {
     expect(screen.getByTestId("connect-step-pre-connect")).toBeInTheDocument();
   });
 
-  it("renders mailbox label input", () => {
+  it("does not render unused mailbox label input", () => {
     render(<MailboxConnectFlow onClose={vi.fn()} />);
-    expect(screen.getByRole("textbox", { name: /mailbox display name/i })).toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: /mailbox display name/i })).not.toBeInTheDocument();
   });
 
   it("renders Gmail permissions disclosure", () => {
@@ -331,6 +331,11 @@ describe("MailboxConnectFlow — reconnect mode", () => {
     fireEvent.click(screen.getByTestId("reconnect-authorize-btn"));
     expect(screen.getByTestId("connect-step-authorizing")).toBeInTheDocument();
   });
+
+  it("does not render unused mailbox label input in reconnect mode", () => {
+    render(<MailboxConnectFlow onClose={vi.fn()} reconnectEmail="accounts@acmecorp.com" />);
+    expect(screen.queryByRole("textbox", { name: /mailbox display name/i })).not.toBeInTheDocument();
+  });
 });
 
 // ─── ConnectionDetailClient ───────────────────────────────────────────────────
@@ -373,45 +378,32 @@ describe("ConnectionDetailClient", () => {
     });
   });
 
-  it("renders permissions section", async () => {
+  it("renders visibility section with truthful policy", async () => {
     mockFetchConnection(mockAdminConnections[0]);
     render(<ConnectionDetailClient connectionId="conn_billing" />);
     await waitFor(() => {
-      expect(screen.getByRole("region", { name: /mailbox permissions/i })).toBeInTheDocument();
+      expect(screen.getByRole("region", { name: /mailbox visibility/i })).toBeInTheDocument();
     });
+    expect(screen.getByText(/shared with organization/i)).toBeInTheDocument();
   });
 
-  it("renders read access select", async () => {
+  it("does not render fake editable permission controls", async () => {
     mockFetchConnection(mockAdminConnections[0]);
     render(<ConnectionDetailClient connectionId="conn_billing" />);
     await waitFor(() => {
-      expect(screen.getByRole("combobox", { name: /read access/i })).toBeInTheDocument();
+      expect(screen.getByTestId("connection-detail-page")).toBeInTheDocument();
     });
+    expect(screen.queryByRole("combobox", { name: /read access/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: /reply \/ send access/i })).not.toBeInTheDocument();
   });
 
-  it("renders send access select", async () => {
+  it("does not render fake save permissions button", async () => {
     mockFetchConnection(mockAdminConnections[0]);
     render(<ConnectionDetailClient connectionId="conn_billing" />);
     await waitFor(() => {
-      expect(screen.getByRole("combobox", { name: /reply \/ send access/i })).toBeInTheDocument();
+      expect(screen.getByTestId("connection-detail-page")).toBeInTheDocument();
     });
-  });
-
-  it("manage access is locked (admin only)", async () => {
-    mockFetchConnection(mockAdminConnections[0]);
-    render(<ConnectionDetailClient connectionId="conn_billing" />);
-    await waitFor(() => {
-      const adminOnlyElements = screen.getAllByText("Admins only");
-      expect(adminOnlyElements.length).toBeGreaterThanOrEqual(1);
-    });
-  });
-
-  it("renders visibility section", async () => {
-    mockFetchConnection(mockAdminConnections[0]);
-    render(<ConnectionDetailClient connectionId="conn_billing" />);
-    await waitFor(() => {
-      expect(screen.getByRole("region", { name: /visibility/i })).toBeInTheDocument();
-    });
+    expect(screen.queryByTestId("save-permissions-btn")).not.toBeInTheDocument();
   });
 
   it("renders danger zone", async () => {
@@ -498,14 +490,6 @@ describe("ConnectionDetailClient", () => {
     render(<ConnectionDetailClient connectionId="conn_unknown" />);
     await waitFor(() => {
       expect(screen.getByTestId("connection-not-found")).toBeInTheDocument();
-    });
-  });
-
-  it("save permissions button renders", async () => {
-    mockFetchConnection(mockAdminConnections[0]);
-    render(<ConnectionDetailClient connectionId="conn_billing" />);
-    await waitFor(() => {
-      expect(screen.getByTestId("save-permissions-btn")).toBeInTheDocument();
     });
   });
 });

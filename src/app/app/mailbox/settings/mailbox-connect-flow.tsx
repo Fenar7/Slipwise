@@ -31,7 +31,6 @@ export function MailboxConnectFlow({ onClose, reconnectEmail }: MailboxConnectFl
   const [step, setStep] = useState<ConnectFlowStep>(
     reconnectEmail ? "reconnect_required" : "pre_connect"
   );
-  const [labelInput, setLabelInput] = useState("");
 
   const isReconnect = !!reconnectEmail;
   const title = isReconnect ? "Reconnect Gmail mailbox" : "Connect a Gmail mailbox";
@@ -68,8 +67,6 @@ export function MailboxConnectFlow({ onClose, reconnectEmail }: MailboxConnectFl
         <div className="px-6 py-6">
           {step === "pre_connect" && (
             <PreConnectStep
-              labelInput={labelInput}
-              onLabelChange={setLabelInput}
               onAuthorize={() => setStep("authorizing")}
               onCancel={onClose}
             />
@@ -82,11 +79,10 @@ export function MailboxConnectFlow({ onClose, reconnectEmail }: MailboxConnectFl
             />
           )}
           {step === "authorizing" && (
-            <AuthorizingStep onRedirect={onClose} />
+            <AuthorizingStep />
           )}
           {step === "success" && (
             <SuccessStep
-              displayName={labelInput || null}
               email={reconnectEmail ?? null}
               onDone={onClose}
             />
@@ -106,13 +102,9 @@ export function MailboxConnectFlow({ onClose, reconnectEmail }: MailboxConnectFl
 // ─── Step: Pre-connect ────────────────────────────────────────────────────────
 
 function PreConnectStep({
-  labelInput,
-  onLabelChange,
   onAuthorize,
   onCancel,
 }: {
-  labelInput: string;
-  onLabelChange: (v: string) => void;
   onAuthorize: () => void;
   onCancel: () => void;
 }) {
@@ -121,25 +113,6 @@ function PreConnectStep({
       <p className="text-sm text-[#334155]">
         Connect a Gmail mailbox to Slipwise so your team can read, reply, and manage customer email from one place.
       </p>
-
-      {/* Label input */}
-      <div className="mt-5 space-y-1.5">
-        <label htmlFor="mailbox-label" className="block text-sm font-medium text-[#0F172A]">
-          Mailbox display name
-        </label>
-        <input
-          id="mailbox-label"
-          type="text"
-          value={labelInput}
-          onChange={(e) => onLabelChange(e.target.value)}
-          placeholder="e.g. Billing, Support, Accounts"
-          className="w-full rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm text-[#0F172A] placeholder-[#94A3B8] outline-none focus:border-[#16294D] focus:ring-2 focus:ring-[rgba(22,41,77,0.12)]"
-          aria-label="Mailbox display name"
-        />
-        <p className="text-xs text-[#64748B]">
-          This name appears in the mailbox left rail and thread views.
-        </p>
-      </div>
 
       {/* Permissions disclosure */}
       <div className="mt-5 rounded-xl border border-[#E2E5EA] bg-[#F7F8FB] p-4">
@@ -239,14 +212,14 @@ function ReconnectStep({
 
 // ─── Step: Authorizing ────────────────────────────────────────────────────────
 
-function AuthorizingStep({ onRedirect }: { onRedirect: () => void }) {
+function AuthorizingStep() {
   useEffect(() => {
     // Brief delay so the user sees the redirecting state before navigation
     const timer = window.setTimeout(() => {
       window.location.href = "/api/mailbox/gmail/connect";
     }, 400);
     return () => window.clearTimeout(timer);
-  }, [onRedirect]);
+  }, []);
 
   return (
     <div className="flex flex-col items-center gap-4 py-6 text-center" data-testid="connect-step-authorizing">
@@ -264,11 +237,9 @@ function AuthorizingStep({ onRedirect }: { onRedirect: () => void }) {
 // ─── Step: Success ────────────────────────────────────────────────────────────
 
 function SuccessStep({
-  displayName,
   email,
   onDone,
 }: {
-  displayName: string | null;
   email: string | null;
   onDone: () => void;
 }) {
@@ -283,10 +254,6 @@ function SuccessStep({
           {email ? (
             <>
               <strong>{email}</strong> is now connected to Slipwise.
-            </>
-          ) : displayName ? (
-            <>
-              The <strong>{displayName}</strong> mailbox is now connected to Slipwise.
             </>
           ) : (
             <>Your Gmail mailbox is now connected to Slipwise.</>
