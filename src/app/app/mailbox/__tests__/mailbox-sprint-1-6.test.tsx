@@ -932,7 +932,7 @@ describe("MailboxWorkspace Sprint 1.6 integration", () => {
 
 describe("MailboxSettingsPageContent Sprint 1.6 integration", () => {
   it("shows no-mailboxes empty state when there are no mailbox connections", () => {
-    render(<MailboxSettingsPageContent summaries={[]} />);
+    render(<MailboxSettingsPageContent connections={[]} />);
     expect(screen.getByTestId("settings-empty-state")).toBeInTheDocument();
     expect(screen.getByTestId("empty-no-mailboxes")).toBeInTheDocument();
   });

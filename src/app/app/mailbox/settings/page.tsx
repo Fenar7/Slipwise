@@ -15,10 +15,11 @@ import {
   Clock,
   Mail,
 } from "lucide-react";
-import { MOCK_ADMIN_SUMMARIES } from "../mock-data";
-import type { MailboxAdminSummary, MailboxConnectionStatus } from "../types";
+import type { MailboxAdminConnection, MailboxConnectionStatus } from "../types";
 import { NoMailboxesEmpty } from "../mailbox-empty-states";
 import { MailboxConnectFlow } from "./mailbox-connect-flow";
+import { useMailboxAdminConnections } from "../use-mailbox-admin-connections";
+import { SettingsPageSkeleton } from "../mailbox-skeleton-states";
 
 // ─── Status badge ─────────────────────────────────────────────────────────────
 
@@ -72,8 +73,20 @@ function formatLastSync(iso: string | null): string {
   });
 }
 
-function ConnectionCard({ summary }: { summary: MailboxAdminSummary }) {
-  const { connection, policy } = summary;
+function formatVisibilityPolicy(policy: string): string {
+  switch (policy) {
+    case "org_shared":
+      return "Shared with org";
+    case "admin_only":
+      return "Admins only";
+    case "restricted":
+      return "Restricted";
+    default:
+      return policy;
+  }
+}
+
+function ConnectionCard({ connection }: { connection: MailboxAdminConnection }) {
   const isHealthy = connection.status === "connected";
   const needsReconnect = connection.status === "reconnect_required";
 
@@ -165,17 +178,9 @@ function ConnectionCard({ summary }: { summary: MailboxAdminSummary }) {
           <p className="text-[10px] font-semibold uppercase tracking-wide text-[#94A3B8]">Access</p>
           <p className="mt-0.5 flex items-center gap-1 text-xs font-medium text-[#334155]">
             <ShieldCheck className="h-3 w-3" aria-hidden="true" />
-            {policy.accessSummary}
+            {formatVisibilityPolicy(connection.visibilityPolicy)}
           </p>
         </div>
-        {isHealthy && (
-          <div>
-            <p className="text-[10px] font-semibold uppercase tracking-wide text-[#94A3B8]">Threads</p>
-            <p className="mt-0.5 text-xs font-medium text-[#334155]">
-              {connection.inboxCount} in inbox · {connection.unreadCount} unread
-            </p>
-          </div>
-        )}
       </div>
     </div>
   );
@@ -184,12 +189,35 @@ function ConnectionCard({ summary }: { summary: MailboxAdminSummary }) {
 // ─── Main settings page ───────────────────────────────────────────────────────
 
 export function MailboxSettingsPageContent({
-  summaries = MOCK_ADMIN_SUMMARIES,
+  connections = [],
+  isLoading = false,
+  error = null,
 }: {
-  summaries?: MailboxAdminSummary[];
+  connections?: MailboxAdminConnection[];
+  isLoading?: boolean;
+  error?: string | null;
 }) {
   const [showConnectFlow, setShowConnectFlow] = useState(false);
-  const hasConnections = summaries.length > 0;
+  const hasConnections = connections.length > 0;
+
+  if (isLoading) {
+    return (
+      <div className="mx-auto max-w-3xl px-6 py-8" data-testid="mailbox-settings-page">
+        <SettingsPageSkeleton />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="mx-auto max-w-3xl px-6 py-8" data-testid="mailbox-settings-page">
+        <div className="rounded-xl border border-red-200 bg-red-50 p-5">
+          <p className="text-sm font-semibold text-red-800">Failed to load mailbox connections</p>
+          <p className="mt-1 text-xs text-red-700">{error}</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-8" data-testid="mailbox-settings-page">
@@ -231,8 +259,8 @@ export function MailboxSettingsPageContent({
 
           {/* Connection cards */}
           <div className="space-y-4" data-testid="connection-list">
-            {summaries.map((summary) => (
-              <ConnectionCard key={summary.connection.id} summary={summary} />
+            {connections.map((connection) => (
+              <ConnectionCard key={connection.id} connection={connection} />
             ))}
           </div>
         </>
@@ -251,5 +279,6 @@ export function MailboxSettingsPageContent({
 }
 
 export default function MailboxSettingsPage() {
-  return <MailboxSettingsPageContent />;
+  const { connections, isLoading, error } = useMailboxAdminConnections();
+  return <MailboxSettingsPageContent connections={connections} isLoading={isLoading} error={error} />;
 }

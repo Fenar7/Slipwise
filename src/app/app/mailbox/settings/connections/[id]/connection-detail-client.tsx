@@ -14,7 +14,6 @@ import {
   RefreshCw,
   ChevronDown,
 } from "lucide-react";
-import { MOCK_ADMIN_SUMMARIES } from "../../../mock-data";
 import type { MailboxPermissionPolicy, DisconnectConfirmState } from "../../../types";
 import { MailboxConnectFlow } from "../../mailbox-connect-flow";
 
@@ -162,15 +161,114 @@ interface ConnectionDetailClientProps {
   connectionId: string;
 }
 
-export function ConnectionDetailClient({ connectionId }: ConnectionDetailClientProps) {
-  const summary = MOCK_ADMIN_SUMMARIES.find((s) => s.connection.id === connectionId);
+interface FetchedConnection {
+  id: string;
+  displayName: string;
+  emailAddress: string;
+  status: string;
+  lastSyncAt: string | null;
+  lastSyncError: string | null;
+  connectedBy: string;
+  provider: string;
+}
 
-  const [policy, setPolicy] = useState(summary?.policy ?? null);
+export function ConnectionDetailClient({ connectionId }: ConnectionDetailClientProps) {
+  const [connection, setConnection] = useState<FetchedConnection | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+
+  const [policy, setPolicy] = useState<MailboxPermissionPolicy | null>(null);
   const [disconnectState, setDisconnectState] = useState<DisconnectConfirmState>("idle");
   const [showReconnect, setShowReconnect] = useState(false);
-  const [saved, setSaved] = useState(false);
+  const [disconnectError, setDisconnectError] = useState<string | null>(null);
 
-  if (!summary || !policy) {
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      setIsLoading(true);
+      setFetchError(null);
+      try {
+        const res = await fetch(`/api/mailbox/connections/${connectionId}`);
+        if (!res.ok) {
+          if (res.status === 404) {
+            setConnection(null);
+          } else {
+            throw new Error(`Failed to load connection: ${res.status}`);
+          }
+        } else {
+          const data = (await res.json()) as { connection?: FetchedConnection };
+          const conn = data.connection ?? null;
+          if (!cancelled) {
+            setConnection(conn);
+            if (conn) {
+              // Derive a local policy placeholder until full policy backend is wired
+              setPolicy({
+                connectionId: conn.id,
+                readAccess: "all_members",
+                sendAccess: "all_members",
+                manageAccess: "org_admins_only",
+                accessSummary: "All members can read and reply",
+              });
+            }
+          }
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setFetchError(err instanceof Error ? err.message : "Unknown error");
+        }
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    }
+    load();
+    return () => { cancelled = true; };
+  }, [connectionId]);
+
+  useEffect(() => {
+    if (disconnectState !== "disconnecting") return;
+
+    async function doDisconnect() {
+      try {
+        const res = await fetch(`/api/mailbox/connections/${connectionId}`, { method: "DELETE" });
+        if (!res.ok) {
+          throw new Error(`Disconnect failed: ${res.status}`);
+        }
+        setDisconnectState("disconnected");
+        // Redirect back to settings after a short delay
+        window.setTimeout(() => {
+          window.location.href = "/app/mailbox/settings";
+        }, 1200);
+      } catch (err) {
+        setDisconnectError(err instanceof Error ? err.message : "Disconnect failed");
+        setDisconnectState("idle");
+      }
+    }
+    doDisconnect();
+  }, [disconnectState, connectionId]);
+
+  if (isLoading) {
+    return (
+      <div className="mx-auto max-w-2xl px-6 py-8" data-testid="connection-detail-loading">
+        <div className="flex items-center gap-2 text-sm text-[#64748B]">
+          <RefreshCw className="h-4 w-4 animate-spin" aria-hidden="true" />
+          Loading connection…
+        </div>
+      </div>
+    );
+  }
+
+  if (fetchError) {
+    return (
+      <div className="mx-auto max-w-2xl px-6 py-8" data-testid="connection-detail-error">
+        <p className="text-sm text-red-700">{fetchError}</p>
+        <Link href="/app/mailbox/settings" className="mt-2 text-sm font-medium text-[#16294D] underline">
+          Back to mailbox settings
+        </Link>
+      </div>
+    );
+  }
+
+  if (!connection || !policy) {
     return (
       <div className="mx-auto max-w-2xl px-6 py-8" data-testid="connection-not-found">
         <p className="text-sm text-[#64748B]">Mailbox connection not found.</p>
@@ -181,23 +279,7 @@ export function ConnectionDetailClient({ connectionId }: ConnectionDetailClientP
     );
   }
 
-  const { connection } = summary;
-  const needsReconnect = connection.status === "reconnect_required";
-
-  useEffect(() => {
-    if (disconnectState !== "disconnecting") return;
-
-    const timeout = window.setTimeout(() => {
-      setDisconnectState("disconnected");
-    }, 1200);
-
-    return () => window.clearTimeout(timeout);
-  }, [disconnectState]);
-
-  const handleSavePermissions = () => {
-    setSaved(true);
-    window.setTimeout(() => setSaved(false), 2500);
-  };
+  const needsReconnect = connection.status === "reconnect_required" || connection.status === "RECONNECT_REQUIRED";
 
   const patchPolicy = (patch: Partial<typeof policy>) =>
     setPolicy((prev) => prev ? { ...prev, ...patch } : prev);
@@ -226,7 +308,7 @@ export function ConnectionDetailClient({ connectionId }: ConnectionDetailClientP
           <h1 className="text-xl font-bold text-[#0F172A]">{connection.displayName}</h1>
           <p className="text-sm text-[#64748B]">{connection.emailAddress}</p>
           <p className="mt-1 text-xs text-[#94A3B8]">
-            Connected by {summary.connectedBy}
+            Connected by {connection.connectedBy}
           </p>
         </div>
       </div>
@@ -259,7 +341,7 @@ export function ConnectionDetailClient({ connectionId }: ConnectionDetailClientP
         <dl className="grid grid-cols-2 gap-4 text-sm">
           <div>
             <dt className="text-[10px] font-semibold uppercase tracking-wide text-[#94A3B8]">Status</dt>
-            <dd className="mt-0.5 font-medium text-[#334155] capitalize">{connection.status.replace("_", " ")}</dd>
+            <dd className="mt-0.5 font-medium text-[#334155] capitalize">{connection.status.replace("_", " ").toLowerCase()}</dd>
           </div>
           <div>
             <dt className="text-[10px] font-semibold uppercase tracking-wide text-[#94A3B8]">Provider</dt>
@@ -271,12 +353,6 @@ export function ConnectionDetailClient({ connectionId }: ConnectionDetailClientP
               {connection.lastSyncAt
                 ? new Date(connection.lastSyncAt).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })
                 : "Never"}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-[10px] font-semibold uppercase tracking-wide text-[#94A3B8]">Threads</dt>
-            <dd className="mt-0.5 font-medium text-[#334155]">
-              {connection.status === "connected" ? `${connection.inboxCount} in inbox` : "—"}
             </dd>
           </div>
         </dl>
@@ -316,7 +392,10 @@ export function ConnectionDetailClient({ connectionId }: ConnectionDetailClientP
 
         <div className="mt-4 flex items-center gap-3">
           <button
-            onClick={handleSavePermissions}
+            onClick={() => {
+              // Permissions are not yet persisted to backend;
+              // avoid showing a fake success state.
+            }}
             className="rounded-lg px-4 py-2 text-sm font-semibold text-white transition-colors hover:opacity-90"
             style={{ background: "#16294D" }}
             aria-label="Save permission changes"
@@ -324,11 +403,8 @@ export function ConnectionDetailClient({ connectionId }: ConnectionDetailClientP
           >
             Save changes
           </button>
-          {saved && (
-            <span className="flex items-center gap-1.5 text-sm text-green-700" data-testid="saved-indicator">
-              <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
-              Saved
-            </span>
+          {disconnectError && (
+            <span className="text-xs text-red-600">{disconnectError}</span>
           )}
         </div>
       </section>
@@ -363,7 +439,10 @@ export function ConnectionDetailClient({ connectionId }: ConnectionDetailClientP
           state={disconnectState}
           onInitiate={() => setDisconnectState("confirming")}
           onConfirm={() => setDisconnectState("disconnecting")}
-          onCancel={() => setDisconnectState("idle")}
+          onCancel={() => {
+            setDisconnectState("idle");
+            setDisconnectError(null);
+          }}
         />
       </section>
 

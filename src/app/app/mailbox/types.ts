@@ -198,6 +198,22 @@ export interface MailboxAdminSummary {
   connectedBy: string;
 }
 
+/** Real admin connection shape returned by /api/mailbox/connections */
+export interface MailboxAdminConnection {
+  id: string;
+  orgId: string;
+  provider: MailboxProvider;
+  /** URL slug derived from connection id */
+  slug: string;
+  emailAddress: string;
+  displayName: string;
+  status: MailboxConnectionStatus;
+  lastSyncAt: string | null;
+  lastSyncError: string | null;
+  connectedBy: string;
+  visibilityPolicy: string;
+}
+
 export type DisconnectConfirmState = "idle" | "confirming" | "disconnecting" | "disconnected";
 export type ReconnectConfirmState = "idle" | "confirming" | "reconnecting";
 

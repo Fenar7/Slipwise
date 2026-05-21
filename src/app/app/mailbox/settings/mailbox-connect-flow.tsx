@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import {
   X,
@@ -82,7 +82,7 @@ export function MailboxConnectFlow({ onClose, reconnectEmail }: MailboxConnectFl
             />
           )}
           {step === "authorizing" && (
-            <AuthorizingStep onSuccess={() => setStep("success")} onFail={() => setStep("failed")} />
+            <AuthorizingStep onRedirect={onClose} />
           )}
           {step === "success" && (
             <SuccessStep
@@ -239,40 +239,23 @@ function ReconnectStep({
 
 // ─── Step: Authorizing ────────────────────────────────────────────────────────
 
-function AuthorizingStep({
-  onSuccess,
-  onFail,
-}: {
-  onSuccess: () => void;
-  onFail: () => void;
-}) {
+function AuthorizingStep({ onRedirect }: { onRedirect: () => void }) {
+  useEffect(() => {
+    // Brief delay so the user sees the redirecting state before navigation
+    const timer = window.setTimeout(() => {
+      window.location.href = "/api/mailbox/gmail/connect";
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [onRedirect]);
+
   return (
     <div className="flex flex-col items-center gap-4 py-6 text-center" data-testid="connect-step-authorizing">
       <Loader2 className="h-10 w-10 animate-spin text-[#16294D]" aria-hidden="true" />
       <div>
-        <p className="text-sm font-semibold text-[#0F172A]">Waiting for Google authorization…</p>
+        <p className="text-sm font-semibold text-[#0F172A]">Redirecting to Google…</p>
         <p className="mt-1 text-xs text-[#64748B]">
-          Complete the authorization in the Google window. This page will update automatically.
+          Complete the authorization in the Google window. You will return to Slipwise when finished.
         </p>
-      </div>
-      {/* Static demo controls — not shown in production */}
-      <div className="flex gap-2 border-t pt-4" style={{ borderColor: "#F1F3F7" }}>
-        <button
-          onClick={onSuccess}
-          className="rounded-lg bg-green-600 px-3 py-1.5 text-xs font-semibold text-white"
-          aria-label="Simulate success"
-          data-testid="simulate-success-btn"
-        >
-          Simulate success
-        </button>
-        <button
-          onClick={onFail}
-          className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white"
-          aria-label="Simulate failure"
-          data-testid="simulate-failure-btn"
-        >
-          Simulate failure
-        </button>
       </div>
     </div>
   );
