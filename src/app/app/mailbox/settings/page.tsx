@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
   CheckCircle2,
@@ -20,6 +21,71 @@ import { NoMailboxesEmpty } from "../mailbox-empty-states";
 import { MailboxConnectFlow } from "./mailbox-connect-flow";
 import { useMailboxAdminConnections } from "../use-mailbox-admin-connections";
 import { SettingsPageSkeleton } from "../mailbox-skeleton-states";
+
+// ─── Callback feedback banner ─────────────────────────────────────────────────
+
+const CALLBACK_ERROR_MESSAGES: Record<string, string> = {
+  gmail_wrong_account:
+    "The Google account you authorized does not match the mailbox being reconnected. Please sign in with the same account that was originally connected.",
+  gmail_invalid_state:
+    "The authorization request was invalid or expired. Please try connecting again.",
+  gmail_state_expired:
+    "The authorization session expired. Please try connecting again.",
+  gmail_auth_required:
+    "You must be signed in to connect a mailbox.",
+  gmail_rate_limited:
+    "Too many connection attempts. Please wait a moment and try again.",
+  gmail_failed:
+    "Gmail authorization failed. Please try again.",
+  gmail_missing_params:
+    "The authorization response from Google was incomplete. Please try again.",
+  gmail_connection_not_found:
+    "The mailbox you were trying to reconnect was not found. It may have been removed.",
+};
+
+function CallbackFeedbackBanner() {
+  const searchParams = useSearchParams();
+  const connectedParam = searchParams.get("connected");
+  const errorParam = searchParams.get("error");
+
+  if (connectedParam === "gmail" || connectedParam === "gmail_reconnected") {
+    const isReconnect = connectedParam === "gmail_reconnected";
+    return (
+      <div
+        className="mb-6 flex items-center gap-3 rounded-xl border border-green-200 bg-green-50 px-4 py-3"
+        data-testid="callback-success-banner"
+        role="status"
+        aria-live="polite"
+      >
+        <CheckCircle2 className="h-4 w-4 shrink-0 text-green-600" aria-hidden="true" />
+        <p className="text-sm font-medium text-green-800">
+          {isReconnect
+            ? "Mailbox reconnected successfully. Sync will resume shortly."
+            : "Gmail mailbox connected. Initial sync will begin shortly."}
+        </p>
+      </div>
+    );
+  }
+
+  if (errorParam) {
+    const message =
+      CALLBACK_ERROR_MESSAGES[errorParam] ??
+      "An error occurred during Gmail authorization. Please try again.";
+    return (
+      <div
+        className="mb-6 flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3"
+        data-testid="callback-error-banner"
+        role="alert"
+        aria-live="assertive"
+      >
+        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" aria-hidden="true" />
+        <p className="text-sm font-medium text-red-800">{message}</p>
+      </div>
+    );
+  }
+
+  return null;
+}
 
 // ─── Status badge ─────────────────────────────────────────────────────────────
 
@@ -221,6 +287,9 @@ export function MailboxSettingsPageContent({
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-8" data-testid="mailbox-settings-page">
+      {/* Callback feedback banner (from OAuth redirect) */}
+      <CallbackFeedbackBanner />
+
       {/* Page header */}
       <div className="mb-6 flex items-start justify-between gap-4">
         <div>

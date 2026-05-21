@@ -57,7 +57,7 @@ function DisconnectPanel({
           <div>
             <p className="text-sm font-bold text-red-900">Disconnect {displayName}?</p>
             <p className="mt-1 text-sm text-red-800">
-              This will remove Slipwise's access to this Gmail mailbox. Existing thread data will be retained, but new sync will stop immediately. This action requires re-authorization to undo.
+              This will end this mailbox&apos;s connection on Slipwise and stop all new sync immediately. Slipwise will attempt to revoke its Google authorization — if that succeeds, no further access occurs. Existing thread data is retained.
             </p>
           </div>
         </div>
@@ -329,7 +329,7 @@ export function ConnectionDetailClient({ connectionId }: ConnectionDetailClientP
       >
         <h2 className="mb-1 text-sm font-bold text-red-700">Danger zone</h2>
         <p className="mb-4 text-xs text-[#64748B]">
-          Disconnecting this mailbox will stop all sync and remove Slipwise's access. Existing thread data is retained but will no longer update.
+          Disconnecting stops all sync immediately and ends this mailbox&apos;s session on Slipwise. Slipwise will attempt to revoke its Google authorization. Existing thread data is retained but will no longer update.
         </p>
         <DisconnectPanel
           displayName={connection.displayName}

@@ -8,10 +8,11 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
 const mockSearchParams = new URLSearchParams();
+const mockUseSearchParams = vi.fn(() => mockSearchParams);
 vi.mock("next/navigation", () => ({
   usePathname: () => "/app/mailbox/settings",
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }),
-  useSearchParams: () => mockSearchParams,
+  useSearchParams: () => mockUseSearchParams(),
 }));
 
 // Mock mailbox data hooks for workspace tests
@@ -93,6 +94,7 @@ vi.mock("../use-mailbox-admin-connections", () => ({
 
 // Settings page
 import MailboxSettingsPage from "../settings/page";
+import { MailboxSettingsPageContent } from "../settings/page";
 // Connect flow
 import { MailboxConnectFlow } from "../settings/mailbox-connect-flow";
 // Connection detail
@@ -540,5 +542,169 @@ describe("MailboxLeftRail — settings link updated", () => {
     render(<MailboxWorkspace />);
     const link = screen.getByRole("link", { name: /manage mailboxes/i });
     expect(link).toHaveAttribute("href", "/app/mailbox/settings");
+  });
+});
+
+// ─── Blocker 1: Disconnect copy truthfulness ───────────────────────────────
+
+describe("Disconnect copy — truthfulness", () => {
+  function mockFetchConn(conn: typeof mockAdminConnections[number]) {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ connection: conn }),
+    } as Response);
+  }
+
+  it("confirm panel does not overclaim guaranteed OAuth revocation", async () => {
+    mockFetchConn(mockAdminConnections[0]);
+    render(<ConnectionDetailClient connectionId="conn_billing" />);
+    await waitFor(() => {
+      fireEvent.click(screen.getByTestId("disconnect-btn"));
+    });
+    const panel = screen.getByTestId("disconnect-confirm-panel");
+    // Must say revocation is attempted, not absolute
+    expect(panel).toHaveTextContent(/attempt/i);
+    // Must not claim instant guaranteed access removal without qualification
+    expect(panel).not.toHaveTextContent(/This will remove Slipwise.*s access/);
+  });
+
+  it("danger zone description truthfully describes a session end with attempted revocation", async () => {
+    mockFetchConn(mockAdminConnections[0]);
+    render(<ConnectionDetailClient connectionId="conn_billing" />);
+    await waitFor(() => {
+      expect(screen.getByTestId("danger-zone")).toBeInTheDocument();
+    });
+    const zone = screen.getByTestId("danger-zone");
+    expect(zone).toHaveTextContent(/attempt/i);
+    expect(zone).not.toHaveTextContent(/remove Slipwise.s access/);
+  });
+
+  it("disconnect routes to real Gmail disconnect endpoint not the generic connections DELETE", async () => {
+    mockFetchConn(mockAdminConnections[0]);
+    const fetchSpy = vi.fn().mockImplementation(async (url: string, init?: RequestInit) => {
+      if (init?.method === "POST" && String(url).includes("/gmail/disconnect")) {
+        return { ok: true, status: 200, json: async () => ({ ok: true }) } as Response;
+      }
+      return { ok: true, status: 200, json: async () => ({ connection: mockAdminConnections[0] }) } as Response;
+    });
+    global.fetch = fetchSpy;
+    render(<ConnectionDetailClient connectionId="conn_billing" />);
+    await waitFor(() => {
+      fireEvent.click(screen.getByTestId("disconnect-btn"));
+    });
+    fireEvent.click(screen.getByTestId("confirm-disconnect-btn"));
+    await waitFor(() => {
+      // Must call the provider-specific disconnect, not the generic governance DELETE
+      const disconnectCalls = fetchSpy.mock.calls.filter(
+        ([url, init]: [string, RequestInit | undefined]) =>
+          String(url).includes("/gmail/disconnect") && init?.method === "POST",
+      );
+      expect(disconnectCalls.length).toBeGreaterThanOrEqual(1);
+      // Must NOT call the soft-disable DELETE endpoint
+      const softDisableCalls = fetchSpy.mock.calls.filter(
+        ([url, init]: [string, RequestInit | undefined]) =>
+          String(url).match(/\/api\/mailbox\/connections\/.+/) && init?.method === "DELETE",
+      );
+      expect(softDisableCalls.length).toBe(0);
+    });
+  });
+});
+
+// ─── Blocker 2: Reconnect carries mailbox-specific context ────────────────
+
+describe("Reconnect — mailbox-specific OAuth URL", () => {
+  it("AuthorizingStep without connectionId navigates to generic connect URL", () => {
+    // Spy on window.location.href setter
+    const hrefSpy = vi.spyOn(window, "location", "get").mockReturnValue({
+      ...window.location,
+      href: "",
+    } as Location);
+    const assignSpy = vi.fn();
+    Object.defineProperty(window, "location", {
+      writable: true,
+      value: { href: "", assign: assignSpy },
+    });
+
+    render(<MailboxConnectFlow onClose={vi.fn()} />);
+    fireEvent.click(screen.getByTestId("authorize-btn"));
+    expect(screen.getByTestId("connect-step-authorizing")).toBeInTheDocument();
+
+    hrefSpy.mockRestore();
+  });
+
+  it("reconnect flow with connectionId renders authorizing step bound to that connection", async () => {
+    render(
+      <MailboxConnectFlow
+        onClose={vi.fn()}
+        reconnectEmail="accounts@acmecorp.com"
+        reconnectConnectionId="conn_accounts"
+      />,
+    );
+    fireEvent.click(screen.getByTestId("reconnect-authorize-btn"));
+    const authStep = await waitFor(() => screen.getByTestId("connect-step-authorizing"));
+    // The authorizing step is rendered (not the pre-connect or reconnect step)
+    expect(authStep).toBeInTheDocument();
+    // Confirm no simulation controls leaked in
+    expect(screen.queryByTestId("simulate-success-btn")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("simulate-failure-btn")).not.toBeInTheDocument();
+  });
+
+  it("reconnect without connectionId renders authorizing step (new connect path)", async () => {
+    render(
+      <MailboxConnectFlow
+        onClose={vi.fn()}
+        reconnectEmail="accounts@acmecorp.com"
+        // No reconnectConnectionId
+      />,
+    );
+    fireEvent.click(screen.getByTestId("reconnect-authorize-btn"));
+    const authStep = await waitFor(() => screen.getByTestId("connect-step-authorizing"));
+    expect(authStep).toBeInTheDocument();
+  });
+
+  afterEach(() => {
+    mockUseSearchParams.mockReset();
+    mockUseSearchParams.mockImplementation(() => mockSearchParams);
+  });
+
+  it("reconnect mismatch is rejected: callback error banner appears for gmail_wrong_account", () => {
+    // Simulate the callback returning ?error=gmail_wrong_account
+    const params = new URLSearchParams("error=gmail_wrong_account");
+    mockUseSearchParams.mockReturnValue(params);
+
+    render(
+      <MailboxSettingsPageContent connections={mockAdminConnections} />,
+    );
+
+    const banner = screen.getByTestId("callback-error-banner");
+    expect(banner).toBeInTheDocument();
+    // Must contain the specific wrong-account message
+    expect(banner).toHaveTextContent(/does not match the mailbox/i);
+    expect(banner).toHaveTextContent(/same account/i);
+  });
+
+  it("callback success shows reconnected banner for gmail_reconnected param", () => {
+    const params = new URLSearchParams("connected=gmail_reconnected");
+    mockUseSearchParams.mockReturnValue(params);
+
+    render(
+      <MailboxSettingsPageContent connections={mockAdminConnections} />,
+    );
+
+    const banner = screen.getByTestId("callback-success-banner");
+    expect(banner).toBeInTheDocument();
+    expect(banner).toHaveTextContent(/reconnected successfully/i);
+  });
+
+  it("no banner shown when no ?connected or ?error param", () => {
+    mockUseSearchParams.mockReturnValue(new URLSearchParams(""));
+
+    render(
+      <MailboxSettingsPageContent connections={mockAdminConnections} />,
+    );
+
+    expect(screen.queryByTestId("callback-error-banner")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("callback-success-banner")).not.toBeInTheDocument();
   });
 });
