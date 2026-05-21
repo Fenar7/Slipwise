@@ -16,14 +16,14 @@ export function ClientWorkspaceEmpty() {
       </p>
       <div className="mt-6 flex items-center gap-3">
         <Link
-          href="/app/data/customers/new"
+          href="/app/clients/new"
           className="inline-flex items-center gap-1.5 rounded-xl bg-[var(--brand-cta)] px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#B91C1C] shadow-[0_1px_3px_rgba(220,38,38,0.25)]"
         >
           <Plus className="h-4 w-4" />
           Add Client
         </Link>
         <Link
-          href="/app/data/customers/new"
+          href="/app/clients/new"
           className="inline-flex items-center rounded-xl border border-[var(--border-default)] bg-white px-4 py-2.5 text-sm font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--surface-subtle)]"
         >
           Import

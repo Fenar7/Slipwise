@@ -120,7 +120,7 @@ export function ClientDetailRail({ client }: ClientDetailRailProps) {
             New Quote
           </Link>
           <Link
-            href={`/app/data/customers/${client.id}`}
+            href={`/app/clients/${client.id}/edit`}
             className="inline-flex items-center gap-2 rounded-lg border border-[var(--border-default)] bg-white px-3 py-2 text-xs font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--surface-subtle)]"
           >
             <FileText className="h-3.5 w-3.5" />

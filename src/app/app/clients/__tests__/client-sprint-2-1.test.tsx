@@ -108,7 +108,7 @@ describe("Sprint 2.1 — Canonical client list workspace", () => {
     const addLinks = screen.getAllByRole("link", { name: /Add Client/i });
     expect(addLinks[addLinks.length - 1]).toHaveAttribute(
       "href",
-      "/app/data/customers/new"
+      "/app/clients/new"
     );
   });
 
@@ -184,7 +184,7 @@ describe("Sprint 2.1 — Canonical client list workspace", () => {
     const editLink = screen.getByRole("link", { name: /Edit/i });
     expect(editLink).toHaveAttribute(
       "href",
-      `/app/data/customers/${MOCK_CLIENTS[0].id}`
+      `/app/clients/${MOCK_CLIENTS[0].id}/edit`
     );
   });
 
