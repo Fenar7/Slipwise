@@ -57,7 +57,7 @@ export const suiteNavItems: NavItem[] = [
     suite: "data",
     icon: Database,
     children: [
-      { href: "/app/data/customers", label: "Customers" },
+      { href: "/app/clients", label: "Clients" },
       { href: "/app/data/vendors", label: "Vendors" },
       { href: "/app/data/employees", label: "Employees" },
       { href: "/app/data/salary-presets", label: "Salary Presets" },
@@ -189,7 +189,7 @@ export const suiteNavItems: NavItem[] = [
     icon: Users,
     children: [
       { href: "/app/clients", label: "Workspace" },
-      { href: "/app/data/customers", label: "Master Data" },
+      { href: "/app/clients", label: "Client List" },
     ],
   },
   {
@@ -199,7 +199,7 @@ export const suiteNavItems: NavItem[] = [
     icon: Users,
     children: [
       { href: "/app/crm", label: "Dashboard" },
-      { href: "/app/data/customers", label: "Customers" },
+      { href: "/app/clients", label: "Clients" },
       { href: "/app/data/vendors", label: "Vendors" },
     ],
   },

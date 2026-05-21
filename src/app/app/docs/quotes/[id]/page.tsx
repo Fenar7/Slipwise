@@ -167,7 +167,7 @@ export default async function QuoteDetailPage({
               <div className="border-t border-[var(--border-soft)] px-6 py-5 sm:px-8 grid grid-cols-2 gap-6">
                 <div>
                   <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)] mb-2">Customer</h3>
-                  <Link href={`/app/data/customers/${quote.customer.id}`} className="font-medium text-[var(--brand-primary)] hover:underline">
+                  <Link href={`/app/clients/${quote.customer.id}`} className="font-medium text-[var(--brand-primary)] hover:underline">
                     {quote.customer.name}
                   </Link>
                   {quote.customer.email && (

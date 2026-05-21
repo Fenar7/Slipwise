@@ -91,7 +91,7 @@ export default async function CrmPage() {
       type: "note" as const,
       title: n.content.slice(0, 80),
       meta: n.entityType === "customer" ? "Customer note" : "Vendor note",
-      href: n.entityType === "customer" ? `/app/crm/customers/${n.entityId}` : `/app/crm/vendors/${n.entityId}`,
+      href: n.entityType === "customer" ? `/app/clients/${n.entityId}` : `/app/crm/vendors/${n.entityId}`,
       rightText: new Date(n.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" }),
       sortTime: new Date(n.createdAt).getTime(),
     })),
@@ -140,7 +140,7 @@ export default async function CrmPage() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Link
-            href="/app/data/customers/new"
+            href="/app/clients/new"
             className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--brand-primary)] px-3 py-2 text-xs font-medium text-white transition-colors hover:opacity-90"
           >
             <Plus className="h-3.5 w-3.5" />
@@ -180,7 +180,7 @@ export default async function CrmPage() {
                     </div>
                     <div>
                       <Link
-                        href={`/app/crm/customers/${c.id}`}
+                        href={`/app/clients/${c.id}`}
                         className="text-sm font-medium text-[var(--text-primary)] hover:text-[var(--brand-primary)]"
                       >
                         {c.name}
@@ -206,7 +206,7 @@ export default async function CrmPage() {
                     </div>
                     <div>
                       <Link
-                        href={`/app/crm/customers/${c.id}`}
+                        href={`/app/clients/${c.id}`}
                         className="text-sm font-medium text-[var(--text-primary)] hover:text-[var(--brand-primary)]"
                       >
                         {c.name}
@@ -269,7 +269,7 @@ export default async function CrmPage() {
                   {data.upcomingFollowUps.map((c) => (
                     <ActivityItem
                       key={c.id}
-                      href={`/app/crm/customers/${c.id}`}
+                      href={`/app/clients/${c.id}`}
                       title={c.name}
                       meta={c.email ?? undefined}
                       badge={
@@ -291,7 +291,7 @@ export default async function CrmPage() {
           {/* Customer Lifecycle */}
           <DashboardSection
             title="Customer Lifecycle"
-            action={{ href: "/app/data/customers", label: "View Customers →" }}
+            action={{ href: "/app/clients", label: "View Customers →" }}
           >
             <ContentPanel padding="none">
               {data.lifecycleBreakdown.length === 0 ? (
@@ -370,7 +370,7 @@ export default async function CrmPage() {
                 </li>
                 <li>
                   <Link
-                    href="/app/data/customers"
+                    href="/app/clients"
                     className="flex items-center gap-3 px-5 py-3 text-sm font-medium text-[var(--text-primary)] transition-colors hover:bg-[var(--surface-subtle)]"
                   >
                     <Users className="h-4 w-4 text-[var(--brand-primary)]" />

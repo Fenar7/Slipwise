@@ -67,12 +67,15 @@ function getPageActions(pathname: string): PageAction[] {
   }
   if (pathname === "/app/data" || pathname === "/app/data/") {
     return [
-      { label: "Add Customer", href: "/app/data/customers/new", icon: Users },
+      { label: "Add Client", href: "/app/clients/new", icon: Users },
       { label: "Add Vendor", href: "/app/data/vendors/new", icon: Building2 },
     ];
   }
-  if (pathname.startsWith("/app/data/customers")) {
-    return [{ label: "Add Customer", href: "/app/data/customers/new", icon: Plus }];
+  if (pathname === "/app/clients" || pathname === "/app/clients/") {
+    return [{ label: "Add Client", href: "/app/clients/new", icon: Plus }];
+  }
+  if (pathname.startsWith("/app/clients/")) {
+    return [{ label: "Clients", href: "/app/clients", icon: Users }];
   }
   if (pathname.startsWith("/app/data/vendors")) {
     return [{ label: "Add Vendor", href: "/app/data/vendors/new", icon: Plus }];
