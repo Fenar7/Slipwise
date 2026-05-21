@@ -1,6 +1,6 @@
-// Sprint 1.1 static fixture: Client Workspace shell data.
-// This is intentionally mock data for the Phase 1 static UX shell.
-// It will be replaced by real data queries in later sprints.
+// Shared types and test fixtures for the Client Workspace.
+// MOCK_CLIENTS is kept for unit-test support only.
+// The live path uses real data from listCustomers() in src/app/app/data/actions.ts.
 
 export type ClientFilter =
   | "all"
@@ -14,9 +14,9 @@ export type ClientFilter =
 export interface ClientWorkspaceRow {
   id: string;
   name: string;
-  contactName: string;
-  email: string;
-  phone: string;
+  contactName?: string;
+  email: string | null;
+  phone: string | null;
   portalStatus: "enabled" | "invited" | "disabled" | "ineligible";
   lifecycleStage:
     | "PROSPECT"
@@ -29,7 +29,7 @@ export interface ClientWorkspaceRow {
   outstandingBalance: number;
   invoiceCount: number;
   quoteCount: number;
-  lastActivityAt: string; // ISO date
+  lastActivityAt: Date | string;
 }
 
 export const MOCK_CLIENTS: ClientWorkspaceRow[] = [

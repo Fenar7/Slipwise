@@ -1,14 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useState, useTransition } from "react";
 import Link from "next/link";
+import { useSearchParams, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
   Search,
   Plus,
-  Upload,
-  SlidersHorizontal,
   X,
 } from "lucide-react";
 
@@ -26,24 +25,65 @@ const FILTER_CHIPS: { key: ClientFilter; label: string }[] = [
 
 interface ClientWorkspaceHeaderProps {
   searchQuery: string;
-  onSearchChange: (value: string) => void;
   activeFilter: ClientFilter;
-  onFilterChange: (filter: ClientFilter) => void;
   resultCount: number;
+}
+
+function buildQueryString(
+  base: URLSearchParams,
+  overrides: Record<string, string | undefined>
+): string {
+  const next = new URLSearchParams(base);
+  for (const [key, value] of Object.entries(overrides)) {
+    if (value === undefined || value === "") {
+      next.delete(key);
+    } else {
+      next.set(key, value);
+    }
+  }
+  if ("filter" in overrides || "search" in overrides) {
+    next.delete("page");
+  }
+  const qs = next.toString();
+  return qs ? `?${qs}` : "";
 }
 
 export function ClientWorkspaceHeader({
   searchQuery,
-  onSearchChange,
   activeFilter,
-  onFilterChange,
   resultCount,
 }: ClientWorkspaceHeaderProps) {
-  const [showFilters, setShowFilters] = useState(false);
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const [isPending, startTransition] = useTransition();
+  const [draftSearch, setDraftSearch] = useState(searchQuery);
+
+  const navigate = useCallback(
+    (overrides: Record<string, string | undefined>) => {
+      const qs = buildQueryString(searchParams, overrides);
+      startTransition(() => {
+        router.replace(`/app/clients${qs}`);
+      });
+    },
+    [router, searchParams]
+  );
+
+  const handleSearchSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    navigate({ search: draftSearch || undefined });
+  };
+
+  const handleClearSearch = () => {
+    setDraftSearch("");
+    navigate({ search: undefined });
+  };
+
+  const handleFilterChange = (filter: ClientFilter) => {
+    navigate({ filter: filter === "all" ? undefined : filter });
+  };
 
   return (
     <div className="space-y-4">
-      {/* Top bar: title + primary actions */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-xl font-semibold tracking-tight text-[var(--text-primary)]">
@@ -60,29 +100,12 @@ export function ClientWorkspaceHeader({
               Add Client
             </Link>
           </Button>
-          <Button variant="secondary" size="sm" className="gap-1.5" asChild>
-            <Link href="/app/data/customers">
-              <Upload className="h-3.5 w-3.5" />
-              Import
-            </Link>
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="gap-1.5"
-            onClick={() => setShowFilters((s) => !s)}
-            aria-expanded={showFilters}
-          >
-            <SlidersHorizontal className="h-3.5 w-3.5" />
-            Filters
-          </Button>
         </div>
       </div>
 
-      {/* Search + quick filter chips */}
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <form
-          onSubmit={(e) => e.preventDefault()}
+          onSubmit={handleSearchSubmit}
           className="flex gap-2 max-w-md flex-1"
           role="search"
         >
@@ -90,15 +113,18 @@ export function ClientWorkspaceHeader({
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-muted)]" />
             <input
               type="text"
-              value={searchQuery}
-              onChange={(e) => onSearchChange(e.target.value)}
-              placeholder="Search clients by name, email, phone…"
-              className="w-full rounded-lg border border-[var(--border-default)] bg-white py-2 pl-9 pr-9 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] transition-colors focus:border-[var(--brand-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--focus-ring)]"
+              value={draftSearch}
+              onChange={(e) => setDraftSearch(e.target.value)}
+              placeholder="Search clients by name, email, or phone"
+              className={cn(
+                "w-full rounded-lg border border-[var(--border-default)] bg-white py-2 pl-9 pr-9 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] transition-colors focus:border-[var(--brand-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--focus-ring)]",
+                isPending && "opacity-70"
+              )}
             />
-            {searchQuery && (
+            {draftSearch && (
               <button
                 type="button"
-                onClick={() => onSearchChange("")}
+                onClick={handleClearSearch}
                 className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-[var(--text-muted)] hover:text-[var(--text-primary)]"
                 aria-label="Clear search"
               >
@@ -112,7 +138,7 @@ export function ClientWorkspaceHeader({
           {FILTER_CHIPS.map((chip) => (
             <button
               key={chip.key}
-              onClick={() => onFilterChange(chip.key)}
+              onClick={() => handleFilterChange(chip.key)}
               className={cn(
                 "shrink-0 rounded-full border px-3 py-1 text-xs font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]",
                 activeFilter === chip.key
@@ -126,7 +152,6 @@ export function ClientWorkspaceHeader({
         </div>
       </div>
 
-      {/* Result count + active filter summary */}
       <div className="flex items-center justify-between text-xs text-[var(--text-muted)]">
         <span>
           Showing{" "}
@@ -138,7 +163,7 @@ export function ClientWorkspaceHeader({
         <div className="flex items-center gap-2">
           {activeFilter !== "all" && (
             <button
-              onClick={() => onFilterChange("all")}
+              onClick={() => handleFilterChange("all")}
               className="inline-flex items-center gap-1 rounded-md bg-[var(--surface-subtle)] px-2 py-1 text-[0.65rem] font-medium text-[var(--text-secondary)] hover:bg-[var(--border-soft)] transition-colors"
             >
               {FILTER_CHIPS.find((c) => c.key === activeFilter)?.label}
@@ -147,10 +172,10 @@ export function ClientWorkspaceHeader({
           )}
           {searchQuery && (
             <button
-              onClick={() => onSearchChange("")}
+              onClick={handleClearSearch}
               className="inline-flex items-center gap-1 rounded-md bg-[var(--surface-subtle)] px-2 py-1 text-[0.65rem] font-medium text-[var(--text-secondary)] hover:bg-[var(--border-soft)] transition-colors"
             >
-              Search: “{searchQuery}”
+              Search: "{searchQuery}"
               <X className="h-3 w-3" />
             </button>
           )}

@@ -23,7 +23,7 @@ export function ClientWorkspaceEmpty() {
           Add Client
         </Link>
         <Link
-          href="/app/data/customers"
+          href="/app/data/customers/new"
           className="inline-flex items-center rounded-xl border border-[var(--border-default)] bg-white px-4 py-2.5 text-sm font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--surface-subtle)]"
         >
           Import
