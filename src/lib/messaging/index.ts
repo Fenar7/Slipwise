@@ -397,5 +397,5 @@ export type {
 } from "./realtime/server";
 
 // Errors
-export { ConversationAccessError } from "./errors";
+export { ConversationAccessError, InvalidInputError, NotFoundError } from "./errors";
 

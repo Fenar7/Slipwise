@@ -310,7 +310,7 @@ export function MessagingWorkspacePane({ activeSection, conversationId }: Messag
       {activeSection === "channels" && <ChannelsPane />}
       {activeSection === "dms" && <DirectMessagesPane />}
       {activeSection === "groups" && <GroupsPane />}
-      {activeSection === "tasks" && <MessagingTaskPanel />}
+      {activeSection === "tasks" && <MessagingTaskPanel conversationId={conversationId} />}
       {activeSection === "meetings" && (
         <MessagingMeetingPanel calendarConnection={MOCK_CALENDAR_CONNECTION} />
       )}
