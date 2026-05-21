@@ -395,3 +395,7 @@ export type {
   MessagingRealtimeServerOptions,
   MessagingRealtimeServer,
 } from "./realtime/server";
+
+// Errors
+export { ConversationAccessError } from "./errors";
+

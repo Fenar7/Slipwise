@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import type { MessagingTaskRecord } from "./domain-types";
 import { participantOrgSafeWhere } from "./org-safe-helpers";
 import { toTaskRecord } from "./mappers";
+import { ConversationAccessError } from "./errors";
 
 export async function listTasksForConversation(
   orgId: string,
@@ -18,7 +19,7 @@ export async function listTasksForConversation(
   });
 
   if (!membership) {
-    throw new Error("listTasksForConversation: active participant access required");
+    throw new ConversationAccessError("listTasksForConversation: active participant access required");
   }
 
   const rows = await db.messagingTask.findMany({

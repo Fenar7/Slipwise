@@ -3,6 +3,7 @@ import "server-only";
 import { NextResponse } from "next/server";
 import { getOrgContext, type OrgContext } from "@/lib/auth";
 import { rateLimitByOrg, rateLimitByIp, RATE_LIMITS } from "@/lib/rate-limit";
+import { ConversationAccessError } from "@/lib/messaging";
 
 export const MessagingApiErrorCode = {
   UNAUTHORIZED: "UNAUTHORIZED",
@@ -99,6 +100,9 @@ export async function safeRead<T>(promise: Promise<T>): Promise<T> {
   try {
     return await promise;
   } catch (error) {
+    if (error instanceof ConversationAccessError) {
+      throw new MessagingNotFoundError("Conversation not found or access denied.");
+    }
     if (error instanceof Error) {
       const msg = error.message;
       if (
