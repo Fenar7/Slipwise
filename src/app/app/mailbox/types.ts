@@ -252,6 +252,19 @@ export interface SmartViewDef {
   description: string;
 }
 
+export const ACTIVE_FILTER_FIELDS = ["mailbox", "status", "assignee", "linked", "unread", "flagged"] as const;
+
+export const SUPPORTED_SAVED_VIEW_SMART_VIEW_IDS = [
+  "all-inboxes",
+  "unread",
+  "assigned-to-me",
+  "unassigned",
+  "flagged",
+  "waiting",
+] as const;
+
+export type SupportedSavedViewSmartViewId = (typeof SUPPORTED_SAVED_VIEW_SMART_VIEW_IDS)[number];
+
 export type FilterField = "mailbox" | "status" | "assignee" | "linked" | "unread" | "flagged";
 
 export interface ActiveFilter {

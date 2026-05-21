@@ -21,8 +21,11 @@ import {
   AlertTriangle,
   RefreshCw,
   Plus,
+  Bookmark,
+  X,
 } from "lucide-react";
 import type { MailboxConnection, MailboxGroup, MailboxTreeItem } from "./types";
+import type { SavedViewItem } from "./use-mailbox-saved-views";
 import { GLOBAL_SMART_VIEWS, MOCK_CONNECTIONS } from "./mock-data";
 
 const ICON_MAP: Record<string, React.ElementType> = {
@@ -72,6 +75,31 @@ function HealthBadge({ status }: { status: MailboxConnection["status"] }) {
     );
   }
   return null;
+}
+
+function resolveSavedViewBaseHref(smartViewId: SavedViewItem["smartViewId"]): string {
+  if (!smartViewId || smartViewId === "all-inboxes") {
+    return "/app/mailbox";
+  }
+
+  return GLOBAL_SMART_VIEWS.find((item) => item.id === smartViewId)?.href ?? "/app/mailbox";
+}
+
+export function buildSavedViewHref(view: SavedViewItem): string {
+  const params = new URLSearchParams();
+
+  if (view.searchQuery.trim()) {
+    params.set("q", view.searchQuery.trim());
+  }
+
+  for (const filter of view.filters) {
+    params.set(`f_${filter.field}`, filter.value);
+  }
+
+  const query = params.toString();
+  const baseHref = resolveSavedViewBaseHref(view.smartViewId);
+
+  return query ? `${baseHref}?${query}` : baseHref;
 }
 
 function NavItem({ item, depth = 0 }: { item: MailboxTreeItem; depth?: number }) {
@@ -228,11 +256,15 @@ function MailboxAccountGroup({ group }: { group: MailboxGroup }) {
 interface MailboxLeftRailProps {
   connections?: MailboxConnection[];
   onCompose?: () => void;
+  savedViews?: SavedViewItem[];
+  onDeleteSavedView?: (id: string) => Promise<void>;
 }
 
 export function MailboxLeftRail({
   connections = MOCK_CONNECTIONS,
   onCompose,
+  savedViews = [],
+  onDeleteSavedView,
 }: MailboxLeftRailProps) {
   const groups = buildMailboxGroups(connections);
 
@@ -274,6 +306,43 @@ export function MailboxLeftRail({
             ))}
           </ul>
         </div>
+
+        {/* Saved views */}
+        {savedViews.length > 0 && (
+          <div className="mb-3">
+            <p className="mb-1 px-2.5 text-[10px] font-semibold uppercase tracking-widest text-[#94A3B8]">
+              Saved Views
+            </p>
+            <ul className="space-y-0.5">
+              {savedViews.map((view) => (
+                <li key={view.id}>
+                  <Link
+                    href={buildSavedViewHref(view)}
+                    className="group flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs font-medium text-[#64748B] transition-colors hover:bg-[#F1F3F7] hover:text-[#0F172A]"
+                    title={view.label}
+                  >
+                    <Bookmark className="h-3.5 w-3.5 shrink-0" />
+                    <span className="truncate">{view.label}</span>
+                    {onDeleteSavedView && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          void onDeleteSavedView(view.id);
+                        }}
+                        className="ml-auto hidden h-4 w-4 items-center justify-center rounded hover:bg-[#E2E5EA] group-hover:flex"
+                        aria-label={`Delete ${view.label}`}
+                      >
+                        <X className="h-3 w-3 text-[#94A3B8]" />
+                      </button>
+                    )}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {/* Divider */}
         <div className="my-2 border-t" style={{ borderColor: "#E2E5EA" }} />

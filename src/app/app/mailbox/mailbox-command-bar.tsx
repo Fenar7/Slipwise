@@ -1,9 +1,9 @@
 "use client";
 
 import { useState, useRef } from "react";
-import { Search, X, SlidersHorizontal, PenSquare } from "lucide-react";
+import { Search, X, SlidersHorizontal, PenSquare, Bookmark } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { ActiveFilter, ActiveFilterState } from "./types";
+import type { ActiveFilter, ActiveFilterState, SupportedSavedViewSmartViewId } from "./types";
 
 interface MailboxCommandBarProps {
   activeViewLabel: string;
@@ -16,6 +16,8 @@ interface MailboxCommandBarProps {
   filterState?: ActiveFilterState;
   isFilterPanelOpen?: boolean;
   onToggleFilterPanel?: () => void;
+  onSaveView?: (params: { label: ActiveFilter["label"]; filters: ActiveFilter[]; searchQuery?: string; smartViewId?: SupportedSavedViewSmartViewId | null }) => Promise<unknown>;
+  smartViewId?: SupportedSavedViewSmartViewId;
 }
 
 export function MailboxCommandBar({
@@ -29,6 +31,8 @@ export function MailboxCommandBar({
   filterState,
   isFilterPanelOpen = false,
   onToggleFilterPanel,
+  onSaveView,
+  smartViewId,
 }: MailboxCommandBarProps) {
   const [focused, setFocused] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -122,6 +126,31 @@ export function MailboxCommandBar({
           </span>
         )}
       </button>
+
+      {/* Save view button */}
+      {onSaveView && (
+        <button
+          type="button"
+          onClick={async () => {
+            const label = window.prompt("Save view as:");
+            if (!label) return;
+            await onSaveView({
+              label,
+              filters: filterState?.filters ?? [],
+              searchQuery: filterState?.searchQuery,
+              smartViewId: smartViewId ?? null,
+            });
+          }}
+          className={cn(
+            "flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border transition-colors",
+            "border-[#E2E5EA] bg-white text-[#64748B] hover:border-[#D1D5DB] hover:bg-[#F7F8FB]"
+          )}
+          title="Save current view"
+          aria-label="Save current view"
+        >
+          <Bookmark className="h-3.5 w-3.5" />
+        </button>
+      )}
 
       {/* Compose button */}
       <button
