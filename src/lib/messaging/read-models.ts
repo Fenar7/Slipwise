@@ -26,9 +26,11 @@ import {
   toConversationSummary,
   toConversationDetail,
   toMessageDetail,
+  toTaskSummary,
   type ConversationSummary,
   type ConversationDetail,
   type MessageDetail,
+  type TaskSummary,
 } from "./read-shapes";
 import {
   getConversationById,
@@ -43,6 +45,9 @@ import {
 import {
   getReadState,
 } from "./mention-readstate-service";
+import {
+  listTasksForConversation,
+} from "./task-service";
 
 // ─── Conversation list read model ───────────────────────────────────────────────
 
@@ -300,5 +305,59 @@ export async function getMessageDetail(
     reactions,
     mentions,
     attachments,
+  });
+}
+
+
+// ─── Task summaries read model ──────────────────────────────────────────────────
+
+export async function getConversationTaskSummaries(
+  orgId: string,
+  conversationId: string,
+  userId: string,
+): Promise<TaskSummary[]> {
+  const records = await listTasksForConversation(orgId, conversationId, userId);
+
+  if (records.length === 0) {
+    return [];
+  }
+
+  const assigneeIds = Array.from(
+    new Set(records.map((r) => r.assigneeId).filter((id): id is string => id !== null)),
+  );
+  const creatorIds = Array.from(
+    new Set(records.map((r) => r.createdBy)),
+  );
+  const allUserIds = Array.from(new Set([...assigneeIds, ...creatorIds]));
+
+  const profiles =
+    allUserIds.length > 0
+      ? await db.profile.findMany({
+          where: { id: { in: allUserIds } },
+          select: { id: true, name: true },
+        })
+      : [];
+
+  const profileById = new Map<string, { name: string }>();
+  for (const p of profiles) {
+    profileById.set(p.id, p);
+  }
+
+  function getInitials(name: string | null): string | null {
+    if (!name) return null;
+    const parts = name.trim().split(/\s+/);
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  }
+
+  return records.map((record) => {
+    const assignee = record.assigneeId ? profileById.get(record.assigneeId) ?? null : null;
+    const creator = profileById.get(record.createdBy) ?? null;
+    return toTaskSummary({
+      record,
+      assigneeName: assignee?.name ?? null,
+      assigneeAvatarInitials: getInitials(assignee?.name ?? null),
+      createdByName: creator?.name ?? null,
+    });
   });
 }
