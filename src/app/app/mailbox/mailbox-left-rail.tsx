@@ -77,6 +77,31 @@ function HealthBadge({ status }: { status: MailboxConnection["status"] }) {
   return null;
 }
 
+function resolveSavedViewBaseHref(smartViewId: SavedViewItem["smartViewId"]): string {
+  if (!smartViewId || smartViewId === "all-inboxes") {
+    return "/app/mailbox";
+  }
+
+  return GLOBAL_SMART_VIEWS.find((item) => item.id === smartViewId)?.href ?? "/app/mailbox";
+}
+
+export function buildSavedViewHref(view: SavedViewItem): string {
+  const params = new URLSearchParams();
+
+  if (view.searchQuery.trim()) {
+    params.set("q", view.searchQuery.trim());
+  }
+
+  for (const filter of view.filters) {
+    params.set(`f_${filter.field}`, filter.value);
+  }
+
+  const query = params.toString();
+  const baseHref = resolveSavedViewBaseHref(view.smartViewId);
+
+  return query ? `${baseHref}?${query}` : baseHref;
+}
+
 function NavItem({ item, depth = 0 }: { item: MailboxTreeItem; depth?: number }) {
   const pathname = usePathname();
   const isActive =
@@ -231,11 +256,15 @@ function MailboxAccountGroup({ group }: { group: MailboxGroup }) {
 interface MailboxLeftRailProps {
   connections?: MailboxConnection[];
   onCompose?: () => void;
+  savedViews?: SavedViewItem[];
+  onDeleteSavedView?: (id: string) => Promise<void>;
 }
 
 export function MailboxLeftRail({
   connections = MOCK_CONNECTIONS,
   onCompose,
+  savedViews = [],
+  onDeleteSavedView,
 }: MailboxLeftRailProps) {
   const groups = buildMailboxGroups(connections);
 
@@ -288,8 +317,8 @@ export function MailboxLeftRail({
               {savedViews.map((view) => (
                 <li key={view.id}>
                   <Link
-                    href={`/app/mailbox?${new URLSearchParams({ q: view.searchQuery, ...Object.fromEntries(view.filters.map((f) => [`f_${f.field}`, f.value])) }).toString()}`}
-                    className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs font-medium text-[#64748B] transition-colors hover:bg-[#F1F3F7] hover:text-[#0F172A]"
+                    href={buildSavedViewHref(view)}
+                    className="group flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs font-medium text-[#64748B] transition-colors hover:bg-[#F1F3F7] hover:text-[#0F172A]"
                     title={view.label}
                   >
                     <Bookmark className="h-3.5 w-3.5 shrink-0" />
@@ -300,7 +329,7 @@ export function MailboxLeftRail({
                         onClick={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
-                          onDeleteSavedView(view.id);
+                          void onDeleteSavedView(view.id);
                         }}
                         className="ml-auto hidden h-4 w-4 items-center justify-center rounded hover:bg-[#E2E5EA] group-hover:flex"
                         aria-label={`Delete ${view.label}`}

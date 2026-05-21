@@ -40,6 +40,7 @@ import type {
   ActiveFilter,
   LinkedContextState,
   MailboxResponsivePanel,
+  SupportedSavedViewSmartViewId,
 } from "./types";
 
 // Minimal connection shape for composer and filters
@@ -268,13 +269,13 @@ function resolveSmartViewDescription(pathname: string): { label: string; descrip
   };
 }
 
-function resolveSmartViewId(pathname: string): string | undefined {
+function resolveSmartViewId(pathname: string): SupportedSavedViewSmartViewId | undefined {
   const smartView = GLOBAL_SMART_VIEWS.find(
     (view) =>
       view.href !== "/app/mailbox" &&
       (pathname === view.href || pathname.startsWith(`${view.href}/`)),
   );
-  return smartView?.id;
+  return smartView?.id as SupportedSavedViewSmartViewId | undefined;
 }
 
 export function MailboxWorkspace() {

@@ -1,14 +1,14 @@
 "use client";
 
 import { useState, useCallback, useEffect } from "react";
-import type { ActiveFilter } from "./types";
+import type { ActiveFilter, SupportedSavedViewSmartViewId } from "./types";
 
 export interface SavedViewItem {
   id: string;
   label: string;
   filters: ActiveFilter[];
   searchQuery: string;
-  smartViewId: string | null;
+  smartViewId: SupportedSavedViewSmartViewId | null;
   createdAt: string;
 }
 
@@ -20,7 +20,7 @@ export interface UseMailboxSavedViewsReturn {
     label: string;
     filters: ActiveFilter[];
     searchQuery?: string;
-    smartViewId?: string | null;
+    smartViewId?: SupportedSavedViewSmartViewId | null;
   }) => Promise<void>;
   deleteView: (id: string) => Promise<void>;
 }
@@ -54,7 +54,7 @@ export function useMailboxSavedViews(): UseMailboxSavedViewsReturn {
       label: string;
       filters: ActiveFilter[];
       searchQuery?: string;
-      smartViewId?: string | null;
+      smartViewId?: SupportedSavedViewSmartViewId | null;
     }) => {
       setError(null);
       try {

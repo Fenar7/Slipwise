@@ -3,7 +3,7 @@
 import { useState, useRef } from "react";
 import { Search, X, SlidersHorizontal, PenSquare, Bookmark } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { ActiveFilter, ActiveFilterState } from "./types";
+import type { ActiveFilter, ActiveFilterState, SupportedSavedViewSmartViewId } from "./types";
 
 interface MailboxCommandBarProps {
   activeViewLabel: string;
@@ -16,8 +16,8 @@ interface MailboxCommandBarProps {
   filterState?: ActiveFilterState;
   isFilterPanelOpen?: boolean;
   onToggleFilterPanel?: () => void;
-  onSaveView?: (params: { label: string; filters: import("./types").ActiveFilter[]; searchQuery?: string; smartViewId?: string | null }) => Promise<unknown>;
-  smartViewId?: string;
+  onSaveView?: (params: { label: ActiveFilter["label"]; filters: ActiveFilter[]; searchQuery?: string; smartViewId?: SupportedSavedViewSmartViewId | null }) => Promise<unknown>;
+  smartViewId?: SupportedSavedViewSmartViewId;
 }
 
 export function MailboxCommandBar({
