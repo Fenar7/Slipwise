@@ -944,9 +944,17 @@ function extractBodies(part: GmailMessagePart | null): { htmlBody: string; textB
   };
 }
 
-function extractAttachments(part: GmailMessagePart | null): Array<{ providerAttachmentId: string; filename: string; mimeType: string; size: number; isInline: boolean }> {
+type GmailAttachment = {
+  providerAttachmentId: string;
+  filename: string;
+  mimeType: string;
+  size: number;
+  isInline: boolean;
+};
+
+function extractAttachments(part: GmailMessagePart | null): GmailAttachment[] {
   if (!part) return [];
-  const attachments: Array<{ providerAttachmentId: string; filename: string; mimeType: string; size: number; isInline: boolean }> = [];
+  const attachments: GmailAttachment[] = [];
 
   function walk(p: GmailMessagePart) {
     const mimeType = p.mimeType ?? "";
@@ -1103,7 +1111,7 @@ function buildMimeMessage(params: {
     return parts;
   }
 
-  function buildInlineAttachmentPart(att: typeof attachments![number], index: number): string[] {
+  function buildInlineAttachmentPart(att: GmailAttachment, index: number): string[] {
     const cid = makeContentId(att.filename, index);
     const parts: string[] = [];
     parts.push(`Content-Type: ${att.mimeType}; name="${att.filename}"`);
@@ -1115,7 +1123,7 @@ function buildMimeMessage(params: {
     return parts;
   }
 
-  function buildFileAttachmentPart(att: typeof attachments![number]): string[] {
+  function buildFileAttachmentPart(att: GmailAttachment): string[] {
     const parts: string[] = [];
     parts.push(`Content-Type: ${att.mimeType}; name="${att.filename}"`);
     parts.push("Content-Transfer-Encoding: base64");
