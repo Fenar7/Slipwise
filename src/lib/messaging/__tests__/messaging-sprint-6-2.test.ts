@@ -158,26 +158,6 @@ describe("Sprint 6.2 Service layer — Tasks Work Coordination", () => {
         taskId: "task-1",
         status: "DONE",
         actorId: "user-1",
-        conversationId: "conv-1",
-      });
-
-      await expect(promise).rejects.toThrow("Task not found");
-      await expect(promise).rejects.toThrow(NotFoundError);
-    });
-
-    it("throws NotFoundError if task conversationId does not match URL conversationId", async () => {
-      (db.messagingTask.findUnique as any).mockResolvedValue({
-        id: "task-1",
-        conversationId: "conv-other",
-        status: "OPEN",
-      });
-
-      const promise = updateTaskStatus({
-        orgId: "org-1",
-        taskId: "task-1",
-        status: "DONE",
-        actorId: "user-1",
-        conversationId: "conv-1",
       });
 
       await expect(promise).rejects.toThrow("Task not found");
@@ -198,7 +178,6 @@ describe("Sprint 6.2 Service layer — Tasks Work Coordination", () => {
           taskId: "task-1",
           status: "DONE",
           actorId: "user-1",
-          conversationId: "conv-1",
         })
       ).rejects.toThrow(ConversationAccessError);
     });
@@ -235,7 +214,6 @@ describe("Sprint 6.2 Service layer — Tasks Work Coordination", () => {
         taskId: "task-1",
         status: "DONE",
         actorId: "user-actor",
-        conversationId: "conv-1",
       });
 
       expect(result.status).toBe("DONE");
@@ -286,7 +264,6 @@ describe("Sprint 6.2 Service layer — Tasks Work Coordination", () => {
         taskId: "task-1",
         status: "IN_PROGRESS",
         actorId: "user-actor",
-        conversationId: "conv-1",
       });
 
       expect(result.status).toBe("IN_PROGRESS");
@@ -339,7 +316,6 @@ describe("Sprint 6.2 Service layer — Tasks Work Coordination", () => {
         taskId: "task-1",
         assigneeId: "user-assignee",
         actorId: "user-actor",
-        conversationId: "conv-1",
       });
 
       expect(result.assigneeId).toBe("user-assignee");
@@ -347,25 +323,6 @@ describe("Sprint 6.2 Service layer — Tasks Work Coordination", () => {
         where: { id: "task-1" },
         data: { assigneeId: "user-assignee" },
       });
-    });
-
-    it("throws NotFoundError if task conversationId does not match URL conversationId", async () => {
-      (db.messagingTask.findUnique as any).mockResolvedValue({
-        id: "task-1",
-        conversationId: "conv-other",
-        status: "OPEN",
-      });
-
-      const promise = assignTask({
-        orgId: "org-1",
-        taskId: "task-1",
-        assigneeId: "user-assignee",
-        actorId: "user-actor",
-        conversationId: "conv-1",
-      });
-
-      await expect(promise).rejects.toThrow("Task not found");
-      await expect(promise).rejects.toThrow(NotFoundError);
     });
   });
 
@@ -413,7 +370,7 @@ describe("Sprint 6.2 Service layer — Tasks Work Coordination", () => {
 
       await expect(
         updateTaskStatus({
-          orgId: "org-1", taskId: "task-1", status: "DONE", actorId: "user-1", conversationId: "conv-1",
+          orgId: "org-1", taskId: "task-1", status: "DONE", actorId: "user-1",
         })
       ).rejects.toThrow("updateTaskStatus: conversation is archived");
     });
@@ -429,7 +386,7 @@ describe("Sprint 6.2 Service layer — Tasks Work Coordination", () => {
 
       await expect(
         updateTaskStatus({
-          orgId: "org-1", taskId: "task-1", status: "DONE", actorId: "user-1", conversationId: "conv-1",
+          orgId: "org-1", taskId: "task-1", status: "DONE", actorId: "user-1",
         })
       ).rejects.toThrow("updateTaskStatus: conversation is locked");
     });
@@ -445,7 +402,7 @@ describe("Sprint 6.2 Service layer — Tasks Work Coordination", () => {
 
       await expect(
         assignTask({
-          orgId: "org-1", taskId: "task-1", assigneeId: "user-2", actorId: "user-1", conversationId: "conv-1",
+          orgId: "org-1", taskId: "task-1", assigneeId: "user-2", actorId: "user-1",
         })
       ).rejects.toThrow("assignTask: conversation is archived");
     });

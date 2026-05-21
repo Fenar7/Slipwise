@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { AlertTriangle, Clock, Link, MoreHorizontal, ArrowLeft, Plus, CheckSquare, MessageSquare } from "lucide-react";
+import { AlertTriangle, Clock, Link, MoreHorizontal, ArrowLeft, Trash2, Pencil, Plus, CheckSquare, MessageSquare } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { RadioPill } from "./messaging-ui-primitives";
 import { MessagingTaskCreate } from "./messaging-task-create";
@@ -162,16 +162,12 @@ function TaskDetailPanel({ task, onBack, participants, onUpdateStatus, onAssign 
           </div>
         )}
 
-        {/* Originating message link */}
-        {task.originatingMessageId && (
+        {/* Conversation link */}
+        {task.conversationRef && (
           <div className="flex items-center gap-1.5 rounded-lg bg-gray-50 border px-3 py-2" style={{ borderColor: "#E0E0E0" }}>
             <Link className="h-3.5 w-3.5 shrink-0" style={{ color: "#79747E" }} />
-            <span
-              className="text-xs"
-              data-testid="task-origin-link"
-              style={{ color: "#79747E" }}
-            >
-              Originating from a message in this conversation
+            <span className="text-xs" style={{ color: "#79747E" }}>
+              Linked to: <span className="font-semibold" style={{ color: "#1C1B1F" }}>{task.conversationRef}</span>
             </span>
           </div>
         )}
@@ -185,6 +181,14 @@ function TaskDetailPanel({ task, onBack, participants, onUpdateStatus, onAssign 
 
       {/* Actions */}
       <div className="flex items-center gap-2 border-t px-6 py-4" style={{ borderColor: "#E0E0E0" }}>
+        <button
+          type="button"
+          aria-label="Edit task"
+          className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]"
+          style={{ borderColor: "#E0E0E0", color: "#49454F" }}
+        >
+          <Pencil className="h-3.5 w-3.5" /> Edit
+        </button>
         {task.status !== "done" && (
           <button
             type="button"
@@ -197,6 +201,12 @@ function TaskDetailPanel({ task, onBack, participants, onUpdateStatus, onAssign 
             Mark as done
           </button>
         )}
+        <button
+          type="button"
+          className="ml-auto flex items-center gap-1.5 rounded-lg border border-red-200 px-3 py-1.5 text-xs font-semibold text-[#DC2626] hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]"
+        >
+          <Trash2 className="h-3.5 w-3.5" /> Delete task
+        </button>
       </div>
     </div>
   );
@@ -262,7 +272,6 @@ export function MessagingTaskPanel({ conversationId }: MessagingTaskPanelProps) 
       description: t.description,
       createdAt: t.createdAt,
       createdBy: t.createdByName ?? t.createdBy,
-      originatingMessageId: t.originatingMessageId,
     };
   }, []);
 
