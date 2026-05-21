@@ -898,6 +898,9 @@ export interface ClientDetail {
   recentInvoices: ClientDocumentSummary[];
   recentQuotes: ClientDocumentSummary[];
   recentActivity: ClientActivity[];
+  defaultTagAssignments?: Array<{
+    tag: { id: string; name: string; slug: string; color: string | null };
+  }>;
 }
 
 export async function getClientDetail(id: string): Promise<ClientDetail | null> {
@@ -1173,5 +1176,13 @@ export async function getClientDetail(id: string): Promise<ClientDetail | null> 
     recentInvoices,
     recentQuotes,
     recentActivity,
+    defaultTagAssignments: customer.defaultTagAssignments?.map(a => ({
+      tag: {
+        id: a.tag.id,
+        name: a.tag.name,
+        slug: a.tag.slug,
+        color: a.tag.color,
+      }
+    })) || [],
   };
 }

@@ -1,5 +1,35 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { render, screen } from "@testing-library/react";
+import React from "react";
 import { createCustomer, updateCustomer } from "../../data/actions";
+import { ClientDetailRail } from "../components/client-detail-rail";
+import { ClientWorkspaceRowView } from "../components/client-workspace-row";
+import { ClientForm } from "../components/client-form";
+
+// Mock Next.js Link and navigation
+vi.mock("next/link", () => ({
+  default: ({ children, href }: { children: React.ReactNode; href: string }) => (
+    <a href={href}>{children}</a>
+  ),
+}));
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({
+    push: vi.fn(),
+    refresh: vi.fn(),
+  }),
+  notFound: () => {
+    throw new Error("NotFound");
+  },
+}));
+
+vi.mock("@/features/tags/components/tag-picker", () => ({
+  TagPicker: ({ selectedIds, onChange }: any) => (
+    <div data-testid="tag-picker" data-selected-ids={JSON.stringify(selectedIds)}>
+      <button onClick={() => onChange([...selectedIds, "new-tag-id"])}>Add Tag</button>
+    </div>
+  ),
+}));
 
 const mocks = vi.hoisted(() => ({
   requireOrgContext: vi.fn(),
@@ -171,6 +201,145 @@ describe("Sprint 2.3 — Server-Side Validation, Normalization and Security", ()
       });
 
       expect(mocks.setCustomerDefaultTags).toHaveBeenCalledWith("cust-789", ["tag-3"]);
+    });
+  });
+
+  describe("Sprint 2.3 — Component Routing and Tag Hydration", () => {
+    it("ClientDetailRail Edit button links directly to the canonical edit route", () => {
+      const client = {
+        id: "cust-abc",
+        name: "Acme Corp",
+        email: "billing@acme.com",
+        phone: "+91-9876543210",
+        city: "Bangalore",
+        state: "Karnataka",
+        address: "123 Street",
+        portalStatus: "disabled" as const,
+        lifecycleStage: "ACTIVE" as const,
+        outstandingBalance: 100,
+        invoiceCount: 2,
+        quoteCount: 1,
+        lastActivityAt: "2026-05-21T07:00:00Z",
+        gstin: "29ABCDE1234F1Z5",
+        panNumber: "ABCDE1234F",
+        postalCode: "560001",
+        country: "India",
+        billingAddress: "123 Street",
+        taxId: "ABCDE1234F",
+        preferredLanguage: "en",
+        tags: ["VIP"],
+        assignedTo: "John",
+        createdAt: "2026-05-21T00:00:00Z",
+        notes: "CRM notes",
+        contacts: [],
+        totalInvoiced: 200,
+        totalPaid: 100,
+        lifetimeValue: 200,
+        portalEnabled: false,
+        portalAccessCount: 0,
+        recentInvoices: [],
+        recentQuotes: [],
+        recentActivity: [],
+      };
+
+      render(<ClientDetailRail client={client} />);
+      const editLink = screen.getByRole("link", { name: /Edit Client/i });
+      expect(editLink.getAttribute("href")).toBe("/app/clients/cust-abc/edit");
+    });
+
+    it("ClientWorkspaceRowView Edit action links directly to the canonical edit route", () => {
+      const client = {
+        id: "cust-def",
+        name: "Beta Corp",
+        email: "beta@corp.com",
+        phone: null,
+        address: null,
+        taxId: null,
+        gstin: null,
+        portalStatus: "ineligible" as const,
+        lifecycleStage: "PROSPECT" as const,
+        outstandingBalance: 0,
+        invoiceCount: 0,
+        quoteCount: 0,
+        lastActivityAt: "2026-05-21T07:00:00Z",
+        createdAt: "2026-05-21T00:00:00Z",
+        tags: [],
+      };
+
+      render(
+        <table>
+          <tbody>
+            <ClientWorkspaceRowView client={client} />
+          </tbody>
+        </table>
+      );
+      const editLink = screen.getByRole("link", { name: /Edit/i });
+      expect(editLink.getAttribute("href")).toBe("/app/clients/cust-def/edit");
+    });
+
+    it("ClientForm hydrates existing default tags correctly", () => {
+      const client = {
+        id: "cust-tag-test",
+        name: "Taggy Corp",
+        email: "tag@test.com",
+        phone: null,
+        address: null,
+        taxId: null,
+        gstin: null,
+        defaultTagAssignments: [
+          {
+            tag: {
+              id: "tag-vip-id",
+              name: "VIP",
+              slug: "vip",
+              color: "red",
+            },
+          },
+        ],
+      };
+
+      render(<ClientForm client={client} />);
+      const tagPicker = screen.getByTestId("tag-picker");
+      expect(tagPicker.getAttribute("data-selected-ids")).toContain("tag-vip-id");
+    });
+
+    it("saving client form preserves existing tags", async () => {
+      mocks.customerFindFirst.mockResolvedValue({ id: "cust-tag-test", organizationId: "org-123" });
+      mocks.customerUpdate.mockResolvedValue({ id: "cust-tag-test" });
+
+      const client = {
+        id: "cust-tag-test",
+        name: "Taggy Corp",
+        email: "tag@test.com",
+        phone: null,
+        address: null,
+        taxId: null,
+        gstin: null,
+        defaultTagAssignments: [
+          {
+            tag: {
+              id: "tag-vip-id",
+              name: "VIP",
+              slug: "vip",
+              color: "red",
+            },
+          },
+        ],
+      };
+
+      const result = await updateCustomer(client.id, {
+        name: client.name,
+        tagIds: ["tag-vip-id"],
+      });
+
+      expect(result.success).toBe(true);
+      expect(mocks.customerUpdate).toHaveBeenCalledWith({
+        where: { id: "cust-tag-test" },
+        data: {
+          name: "Taggy Corp",
+        },
+      });
+      expect(mocks.setCustomerDefaultTags).toHaveBeenCalledWith("cust-tag-test", ["tag-vip-id"]);
     });
   });
 });
