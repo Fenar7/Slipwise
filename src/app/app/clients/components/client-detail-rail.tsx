@@ -15,7 +15,7 @@ import {
   CheckCircle2,
   Clock,
 } from "lucide-react";
-import type { ClientDetail } from "./client-detail-mock-data";
+import type { ClientDetail } from "@/app/app/data/actions";
 
 interface ClientDetailRailProps {
   client: ClientDetail;

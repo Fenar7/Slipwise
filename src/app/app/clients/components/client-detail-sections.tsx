@@ -13,7 +13,7 @@ import {
   CheckCircle2,
   XCircle,
 } from "lucide-react";
-import type { ClientDetail, ClientDocumentSummary, ClientActivity } from "./client-detail-mock-data";
+import type { ClientDetail, ClientDocumentSummary, ClientActivity } from "@/app/app/data/actions";
 
 type DetailTab = "overview" | "documents" | "contacts" | "billing" | "portal" | "activity";
 

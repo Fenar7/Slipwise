@@ -11,7 +11,7 @@ import {
   Globe,
   Pencil,
 } from "lucide-react";
-import type { ClientDetail } from "./client-detail-mock-data";
+import type { ClientDetail } from "@/app/app/data/actions";
 import {
   LIFECYCLE_VARIANTS,
   PORTAL_STATUS_VARIANTS,

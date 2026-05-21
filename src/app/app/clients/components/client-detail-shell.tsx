@@ -8,19 +8,20 @@ import { ClientDetailTabs } from "./client-detail-tabs";
 import { ClientDetailSections } from "./client-detail-sections";
 import { ClientDetailRail } from "./client-detail-rail";
 import { getMockClientDetail } from "./client-detail-mock-data";
-// Phase 1: static mock data. Later sprints will wire real queries.
+import type { ClientDetail } from "@/app/app/data/actions";
 
 type DetailTab = "overview" | "documents" | "contacts" | "billing" | "portal" | "activity";
 
 interface ClientDetailShellProps {
   clientId: string;
+  client?: ClientDetail;
 }
 
-export function ClientDetailShell({ clientId }: ClientDetailShellProps) {
+export function ClientDetailShell({ clientId, client: initialClient }: ClientDetailShellProps) {
   const [activeTab, setActiveTab] = useState<DetailTab>("overview");
 
-  // Phase 1: static mock data. Later sprints will wire real queries.
-  const client = getMockClientDetail(clientId);
+  // Fallback to mock data for backward compatibility with legacy tests
+  const client = initialClient ?? (getMockClientDetail(clientId) as any);
 
   if (!client) {
     notFound();
