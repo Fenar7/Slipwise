@@ -347,8 +347,6 @@ export interface UpdateTaskStatusInput {
   taskId: string;
   status: MessagingTaskStatus;
   actorId: string;
-  /** URL conversation id — validated against task.conversationId for route contract integrity */
-  conversationId: string;
 }
 
 export interface AssignTaskInput {
@@ -356,8 +354,6 @@ export interface AssignTaskInput {
   taskId: string;
   assigneeId: string | null;
   actorId: string;
-  /** URL conversation id — validated against task.conversationId for route contract integrity */
-  conversationId: string;
 }
 
 // ─── Meeting service contracts ───────────────────────────────────────────────
