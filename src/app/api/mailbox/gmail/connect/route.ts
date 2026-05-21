@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { requireIntegrationAdminRoute } from "@/app/api/integrations/_auth";
 import {
   createIntegrationOAuthState,
@@ -20,7 +20,7 @@ import { rateLimitByOrg, RATE_LIMITS } from "@/lib/rate-limit";
  *   3. Generate a CSRF-protected OAuth state token and set it as an httpOnly cookie.
  *   4. Redirect the admin to the Gmail OAuth consent screen.
  */
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const auth = await requireIntegrationAdminRoute();
     if (!auth.ok) return auth.response;
@@ -33,10 +33,14 @@ export async function GET() {
       );
     }
 
+    const connectionId = request.nextUrl.searchParams.get("connectionId") ?? undefined;
+
     const { state, cookieValue } = createIntegrationOAuthState(
       "gmail",
       auth.ctx.orgId,
       auth.ctx.userId,
+      Date.now(),
+      connectionId,
     );
 
     const authUrl = initiateGmailConnect(state);

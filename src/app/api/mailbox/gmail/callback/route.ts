@@ -104,6 +104,7 @@ export async function GET(request: NextRequest) {
       actorId: user.id,
       authorizationCode: code,
       redirectUri: process.env.GMAIL_REDIRECT_URI ?? "",
+      expectedConnectionId: stateResult.data.connectionId,
     });
 
     if (!result.ok) {

@@ -176,9 +176,14 @@ export function ConnectionDetailClient({ connectionId }: ConnectionDetailClientP
 
     async function doDisconnect() {
       try {
-        const res = await fetch(`/api/mailbox/connections/${connectionId}`, { method: "DELETE" });
+        const res = await fetch("/api/mailbox/gmail/disconnect", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ connectionId }),
+        });
         if (!res.ok) {
-          throw new Error(`Disconnect failed: ${res.status}`);
+          const body = await res.json().catch(() => ({ error: `Disconnect failed: ${res.status}` }));
+          throw new Error(body.error ?? `Disconnect failed: ${res.status}`);
         }
         setDisconnectState("disconnected");
         window.setTimeout(() => {
@@ -345,6 +350,7 @@ export function ConnectionDetailClient({ connectionId }: ConnectionDetailClientP
       {showReconnect && (
         <MailboxConnectFlow
           reconnectEmail={connection.emailAddress}
+          reconnectConnectionId={connection.id}
           onClose={() => setShowReconnect(false)}
         />
       )}

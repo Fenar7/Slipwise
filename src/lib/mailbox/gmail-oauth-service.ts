@@ -28,6 +28,7 @@ import { buildGmailAuthUrl, gmailProviderAdapter } from "./gmail-provider";
 import {
   createMailboxConnection,
   findMailboxConnectionByProviderAccount,
+  getMailboxConnection,
   updateMailboxConnectionStatus,
 } from "./connection-service";
 import { logMailboxAudit } from "./audit";
@@ -50,7 +51,7 @@ export function initiateGmailConnect(state: string): string {
 
 export type GmailCallbackResult =
   | { ok: true; connection: MailboxConnectionRecord; isReconnect: boolean }
-  | { ok: false; error: "auth_failed" | "duplicate_account" | "provider_error" | "internal_error"; safeMessage: string };
+  | { ok: false; error: "auth_failed" | "duplicate_account" | "provider_error" | "internal_error" | "wrong_account" | "connection_not_found"; safeMessage: string };
 
 /**
  * Handle the Gmail OAuth callback.
@@ -76,8 +77,9 @@ export async function handleGmailCallback(params: {
   actorId: string;
   authorizationCode: string;
   redirectUri: string;
+  expectedConnectionId?: string;
 }): Promise<GmailCallbackResult> {
-  const { orgId, actorId, authorizationCode, redirectUri } = params;
+  const { orgId, actorId, authorizationCode, redirectUri, expectedConnectionId } = params;
 
   // Step 1: Exchange code for identity + encrypted credential.
   const identity = await gmailProviderAdapter.connect({
@@ -94,7 +96,59 @@ export async function handleGmailCallback(params: {
     };
   }
 
-  // Step 2: Check for existing connection.
+  // Step 2: If reconnecting a specific connection, validate account match.
+  if (expectedConnectionId) {
+    const expected = await getMailboxConnection(orgId, expectedConnectionId);
+    if (!expected) {
+      return {
+        ok: false,
+        error: "connection_not_found",
+        safeMessage: "The mailbox connection you are trying to reconnect was not found. It may have been removed.",
+      };
+    }
+
+    if (expected.providerAccountId !== identity.providerAccountId) {
+      return {
+        ok: false,
+        error: "wrong_account",
+        safeMessage: "You authorized a different Google account than the one originally connected. Please sign in with the same account to reconnect this mailbox.",
+      };
+    }
+
+    // Step 3a: Re-authorize the specific connection.
+    const updated = await db.$transaction(async (tx) => {
+      const row = await tx.mailboxConnection.update({
+        where: { id: expected.id },
+        data: {
+          tokenRef: identity.tokenRef,
+          tokenExpiry: identity.tokenExpiry,
+          status: "ACTIVE",
+          lastSyncError: null,
+          displayName: identity.displayName,
+          emailAddress: identity.emailAddress,
+        },
+      });
+      await tx.mailboxAuditEvent.create({
+        data: {
+          orgId,
+          actorId,
+          action: "CONNECTION_RECONNECTED",
+          summary: `Re-authorized Gmail mailbox: ${identity.emailAddress}`,
+          mailboxConnectionId: expected.id,
+          metadata: { provider: "GMAIL", emailAddress: identity.emailAddress },
+        },
+      });
+      return row;
+    });
+
+    return {
+      ok: true,
+      connection: toConnectionRecord(updated),
+      isReconnect: true,
+    };
+  }
+
+  // Step 2b: Check for existing connection (generic connect path).
   const existing = await findMailboxConnectionByProviderAccount(
     orgId,
     "GMAIL",
@@ -102,8 +156,7 @@ export async function handleGmailCallback(params: {
   );
 
   if (existing) {
-    // Step 3: Re-authorize existing connection.
-    // Update tokenRef and tokenExpiry atomically, then set status=ACTIVE.
+    // Step 3b: Re-authorize existing connection.
     const updated = await db.$transaction(async (tx) => {
       const row = await tx.mailboxConnection.update({
         where: { id: existing.id },

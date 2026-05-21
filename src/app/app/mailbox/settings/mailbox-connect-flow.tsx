@@ -18,6 +18,8 @@ interface MailboxConnectFlowProps {
   onClose: () => void;
   /** Pre-set to reconnect mode for an existing connection */
   reconnectEmail?: string;
+  /** When reconnecting, the connection ID to bind the re-auth to */
+  reconnectConnectionId?: string;
 }
 
 const GMAIL_PERMISSIONS = [
@@ -27,7 +29,7 @@ const GMAIL_PERMISSIONS = [
   { label: "Access mailbox history and changes", scope: "gmail.history" },
 ];
 
-export function MailboxConnectFlow({ onClose, reconnectEmail }: MailboxConnectFlowProps) {
+export function MailboxConnectFlow({ onClose, reconnectEmail, reconnectConnectionId }: MailboxConnectFlowProps) {
   const [step, setStep] = useState<ConnectFlowStep>(
     reconnectEmail ? "reconnect_required" : "pre_connect"
   );
@@ -79,7 +81,7 @@ export function MailboxConnectFlow({ onClose, reconnectEmail }: MailboxConnectFl
             />
           )}
           {step === "authorizing" && (
-            <AuthorizingStep />
+            <AuthorizingStep connectionId={reconnectConnectionId} />
           )}
           {step === "success" && (
             <SuccessStep
@@ -212,14 +214,17 @@ function ReconnectStep({
 
 // ─── Step: Authorizing ────────────────────────────────────────────────────────
 
-function AuthorizingStep() {
+function AuthorizingStep({ connectionId }: { connectionId?: string }) {
   useEffect(() => {
     // Brief delay so the user sees the redirecting state before navigation
     const timer = window.setTimeout(() => {
-      window.location.href = "/api/mailbox/gmail/connect";
+      const url = connectionId
+        ? `/api/mailbox/gmail/connect?connectionId=${encodeURIComponent(connectionId)}`
+        : "/api/mailbox/gmail/connect";
+      window.location.href = url;
     }, 400);
     return () => window.clearTimeout(timer);
-  }, []);
+  }, [connectionId]);
 
   return (
     <div className="flex flex-col items-center gap-4 py-6 text-center" data-testid="connect-step-authorizing">
