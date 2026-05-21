@@ -551,6 +551,7 @@ function BillingSection({ client }: { client: ClientDetail }) {
 }
 
 function PortalSection({ client }: { client: ClientDetail }) {
+  const isChurned = client.lifecycleStage === "CHURNED";
   return (
     <div className="space-y-4">
       <SectionCard title="Client Hub Status">
@@ -564,6 +565,18 @@ function PortalSection({ client }: { client: ClientDetail }) {
                 <p className="text-sm font-medium text-[var(--text-primary)]">Client Hub Enabled</p>
                 <p className="text-xs text-[var(--text-muted)]">
                   Last accessed {client.portalLastAccessedAt ? formatDateTime(client.portalLastAccessedAt) : "—"}
+                </p>
+              </div>
+            </>
+          ) : isChurned ? (
+            <>
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-red-50 text-red-600 border border-red-100">
+                <XCircle className="h-5 w-5" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-red-950">Portal Access Prohibited</p>
+                <p className="text-xs text-red-600 font-medium">
+                  Client profile is in CHURNED status. Active portal access is prohibited.
                 </p>
               </div>
             </>
@@ -635,6 +648,8 @@ function PortalSection({ client }: { client: ClientDetail }) {
           <p>
             {client.portalEnabled
               ? "The Client Hub is fully enabled for this client. They can log in securely to view their financial documents, outstanding balances, and recent activities using their active portal credentials."
+              : isChurned
+              ? "This client profile is in CHURNED status. Active portal access is prohibited and credentials cannot be used."
               : client.portalStatus === "ineligible"
               ? "This client profile is ineligible for Client Hub access. To enable portal access, please ensure the client profile is updated with a valid email address."
               : "Client Hub access is currently inactive for this profile. Provisioning controls are managed through system administrator actions once portal setups are configured."}

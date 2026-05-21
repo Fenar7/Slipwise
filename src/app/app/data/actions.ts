@@ -35,6 +35,16 @@ export interface CustomerInput {
     | "CHURNED";
 }
 
+const ALLOWED_LIFECYCLE_STAGES = [
+  "PROSPECT",
+  "QUALIFIED",
+  "NEGOTIATION",
+  "WON",
+  "ACTIVE",
+  "AT_RISK",
+  "CHURNED",
+];
+
 export async function createCustomer(input: CustomerInput): Promise<ActionResult<{ id: string }>> {
   try {
     const { orgId } = await requireOrgContext();
@@ -43,6 +53,12 @@ export async function createCustomer(input: CustomerInput): Promise<ActionResult
     const name = input.name ? input.name.trim() : "";
     if (!name) {
       return { success: false, error: "Name is required" };
+    }
+
+    if (input.lifecycleStage !== undefined) {
+      if (!ALLOWED_LIFECYCLE_STAGES.includes(input.lifecycleStage)) {
+        return { success: false, error: "Invalid lifecycle stage" };
+      }
     }
 
     let email: string | null = null;
@@ -207,6 +223,12 @@ export async function updateCustomer(
           return { success: false, error: "GSTIN must be exactly 15 characters" };
         }
         gstin = trimmed.toUpperCase();
+      }
+    }
+
+    if (input.lifecycleStage !== undefined) {
+      if (!ALLOWED_LIFECYCLE_STAGES.includes(input.lifecycleStage)) {
+        return { success: false, error: "Invalid lifecycle stage" };
       }
     }
 
@@ -455,7 +477,7 @@ export async function listCustomers(params?: {
     const hasEmail = !!customer.email;
     const hasValidToken = customer.portalTokens.some(
       (t) => !t.isRevoked && t.expiresAt > new Date()
-    );
+    ) && customer.lifecycleStage !== "CHURNED";
     const portalStatus: "enabled" | "invited" | "disabled" | "ineligible" = hasValidToken
       ? "enabled"
       : hasEmail
@@ -1016,7 +1038,7 @@ export async function getClientDetail(id: string): Promise<ClientDetail | null> 
   const hasEmail = !!customer.email;
   const hasValidToken = customer.portalTokens.some(
     (t) => !t.isRevoked && t.expiresAt > new Date()
-  );
+  ) && customer.lifecycleStage !== "CHURNED";
   const portalStatus: "enabled" | "invited" | "disabled" | "ineligible" = hasValidToken
     ? "enabled"
     : hasEmail

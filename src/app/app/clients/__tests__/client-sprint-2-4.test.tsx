@@ -162,7 +162,7 @@ describe("Sprint 2.4 — Client Hub Readiness and Operational Panels", () => {
       expect(detail?.readiness.warnings).toContain("Tax ID / PAN / GSTIN is missing. Compliance requirements for B2B reporting are incomplete.");
     });
 
-    it("prohibits active portal access and adds churned blocker if lifecycle is CHURNED", async () => {
+    it("prohibits active portal access and adds churned blocker if lifecycle is CHURNED, even with active token", async () => {
       mocks.customerFindFirst.mockResolvedValue({
         id: "cust-churned",
         organizationId: "org-123",
@@ -176,13 +176,22 @@ describe("Sprint 2.4 — Client Hub Readiness and Operational Panels", () => {
         createdAt: new Date("2026-01-01T00:00:00Z"),
         totalInvoiced: 500,
         totalPaid: 500,
-        portalTokens: [],
+        portalTokens: [
+          {
+            id: "token-active",
+            isRevoked: false,
+            expiresAt: new Date(Date.now() + 86400000),
+            lastUsedAt: null,
+          },
+        ],
         defaultTagAssignments: [],
         _count: { invoices: 0, quotes: 0, portalAccessLogs: 0 },
       });
 
       const detail = await getClientDetail("cust-churned");
       expect(detail).not.toBeNull();
+      expect(detail?.portalStatus).not.toBe("enabled");
+      expect(detail?.portalEnabled).toBe(false);
       expect(detail?.readiness.isReady).toBe(false);
       // Deduction calculations:
       // 1 blocker (churned: -30) -> -30
@@ -343,6 +352,27 @@ describe("Sprint 2.4 — Client Hub Readiness and Operational Panels", () => {
         "tag-vip-id",
         "tag-enterprise-id",
       ]);
+    });
+
+    it("createCustomer returns validation failure on invalid lifecycleStage", async () => {
+      const result = await createCustomer({
+        name: "Test Customer",
+        lifecycleStage: "INVALID_STAGE" as any,
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe("Invalid lifecycle stage");
+      expect(mocks.customerCreate).not.toHaveBeenCalled();
+    });
+
+    it("updateCustomer returns validation failure on invalid lifecycleStage", async () => {
+      const result = await updateCustomer("cust-update-test", {
+        lifecycleStage: "INVALID_STAGE" as any,
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe("Invalid lifecycle stage");
+      expect(mocks.customerUpdate).not.toHaveBeenCalled();
     });
   });
 });
