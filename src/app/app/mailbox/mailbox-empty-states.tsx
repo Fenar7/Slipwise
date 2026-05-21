@@ -61,8 +61,19 @@ function EmptyStateShell({
 /**
  * Shown when the org has no connected mailboxes at all.
  * Admin path: connect a mailbox. Non-admin path: contact admin.
+ *
+ * When `onConnect` is provided (e.g. inside the settings page), the CTA
+ * renders as a button that opens the connect flow inline instead of
+ * navigating to the settings page — which would be a no-op when already
+ * on settings.
  */
-export function NoMailboxesEmpty({ isAdmin = false }: { isAdmin?: boolean }) {
+export function NoMailboxesEmpty({
+  isAdmin = false,
+  onConnect,
+}: {
+  isAdmin?: boolean;
+  onConnect?: () => void;
+}) {
   return (
     <div
       className="flex h-full flex-col items-center justify-center gap-4 px-8 py-12 text-center"
@@ -86,15 +97,28 @@ export function NoMailboxesEmpty({ isAdmin = false }: { isAdmin?: boolean }) {
         </p>
       </div>
       {isAdmin ? (
-        <Link
-          href="/app/mailbox/settings"
-          className="flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-semibold text-white transition-colors hover:opacity-90"
-          style={{ background: "#16294D" }}
-          data-testid="connect-mailbox-cta"
-        >
-          <Plus className="h-4 w-4" aria-hidden="true" />
-          Connect a mailbox
-        </Link>
+        onConnect ? (
+          <button
+            type="button"
+            onClick={onConnect}
+            className="flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-semibold text-white transition-colors hover:opacity-90"
+            style={{ background: "#16294D" }}
+            data-testid="connect-mailbox-cta"
+          >
+            <Plus className="h-4 w-4" aria-hidden="true" />
+            Connect a mailbox
+          </button>
+        ) : (
+          <Link
+            href="/app/mailbox/settings"
+            className="flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-semibold text-white transition-colors hover:opacity-90"
+            style={{ background: "#16294D" }}
+            data-testid="connect-mailbox-cta"
+          >
+            <Plus className="h-4 w-4" aria-hidden="true" />
+            Connect a mailbox
+          </Link>
+        )
       ) : (
         <p className="text-xs text-[#94A3B8]">
           Contact your organization admin to connect a mailbox.

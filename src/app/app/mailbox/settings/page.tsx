@@ -370,7 +370,7 @@ export function MailboxSettingsPageContent({
         </>
       ) : (
         <div className="overflow-hidden rounded-2xl border border-[#E2E5EA] bg-white" data-testid="settings-empty-state">
-          <NoMailboxesEmpty isAdmin={true} />
+          <NoMailboxesEmpty isAdmin={true} onConnect={() => setShowConnectFlow(true)} />
         </div>
       )}
 
