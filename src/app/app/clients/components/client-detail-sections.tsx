@@ -13,7 +13,7 @@ import {
   CheckCircle2,
   XCircle,
 } from "lucide-react";
-import type { ClientDetail, ClientDocumentSummary, ClientActivity } from "./client-detail-mock-data";
+import type { ClientDetail, ClientDocumentSummary, ClientActivity } from "@/app/app/data/actions";
 
 type DetailTab = "overview" | "documents" | "contacts" | "billing" | "portal" | "activity";
 
@@ -163,9 +163,17 @@ function OverviewSection({ client }: { client: ClientDetail }) {
         <div className="flex items-start gap-2 text-sm text-[var(--text-secondary)]">
           <MapPin className="h-4 w-4 shrink-0 text-[var(--text-muted)] mt-0.5" />
           <div>
-            <p>{client.address}</p>
-            <p>{client.city}, {client.state} {client.postalCode}</p>
-            <p>{client.country}</p>
+            {client.address && <p>{client.address}</p>}
+            {(client.city || client.state || client.postalCode) && (
+              <p>
+                {[client.city, client.state].filter(Boolean).join(", ")}
+                {client.postalCode ? ` ${client.postalCode}` : ""}
+              </p>
+            )}
+            {client.country && <p>{client.country}</p>}
+            {!client.address && !client.city && !client.state && !client.country && (
+              <p className="text-[var(--text-muted)]">No address configured.</p>
+            )}
           </div>
         </div>
       </SectionCard>
@@ -376,30 +384,29 @@ function PortalSection({ client }: { client: ClientDetail }) {
         </SectionCard>
       )}
 
-      <SectionCard title="Portal Actions">
-        <div className="flex flex-wrap gap-2">
-          <button
-            disabled
-            className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border-default)] bg-white px-3 py-2 text-xs font-medium text-[var(--text-secondary)] opacity-50 cursor-not-allowed"
-          >
-            {client.portalEnabled ? "Disable Hub" : "Enable Hub"}
-          </button>
-          <button
-            disabled
-            className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border-default)] bg-white px-3 py-2 text-xs font-medium text-[var(--text-secondary)] opacity-50 cursor-not-allowed"
-          >
-            Resend Invite
-          </button>
-          <button
-            disabled
-            className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border-default)] bg-white px-3 py-2 text-xs font-medium text-[var(--text-secondary)] opacity-50 cursor-not-allowed"
-          >
-            Copy Link
-          </button>
+      <SectionCard title="Client Hub Access Information">
+        <div className="text-sm text-[var(--text-secondary)] space-y-3 leading-relaxed">
+          <p>
+            {client.portalEnabled
+              ? "The Client Hub is fully enabled for this client. They can log in securely to view their financial documents, outstanding balances, and recent activities using their active portal credentials."
+              : client.portalStatus === "ineligible"
+              ? "This client profile is ineligible for Client Hub access. To enable portal access, please ensure the client profile is updated with a valid email address."
+              : "Client Hub access is currently inactive for this profile. Provisioning controls are managed through system administrator actions once portal setups are configured."}
+          </p>
+          <div className="rounded-lg bg-[var(--surface-subtle)] p-3 border border-[var(--border-soft)] text-xs space-y-1.5 text-[var(--text-secondary)]">
+            <p className="font-semibold uppercase tracking-wider text-[var(--text-muted)] text-[0.65rem] mb-1.5">
+              Portal Credentials
+            </p>
+            <p>
+              <span className="font-medium text-[var(--text-primary)]">Username / Email:</span>{" "}
+              {client.email || <span className="italic text-[var(--text-muted)]">None configured</span>}
+            </p>
+            <p>
+              <span className="font-medium text-[var(--text-primary)]">Access Type:</span>{" "}
+              {client.portalEnabled ? "Secure Token-based Link" : "None"}
+            </p>
+          </div>
         </div>
-        <p className="text-xs text-[var(--text-muted)]">
-          Portal actions will be wired in Sprint 1.3 / Phase 3.
-        </p>
       </SectionCard>
     </div>
   );

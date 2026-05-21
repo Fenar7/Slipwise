@@ -79,9 +79,9 @@ function buildClientDetail(row: ClientWorkspaceRow): ClientDetail {
       ? [
           {
             id: `${row.id}-c1`,
-            name: row.contactName,
+            name: row.contactName || row.name,
             email: row.email,
-            phone: row.phone,
+            phone: row.phone || "—",
             role: "Primary Contact",
             isPrimary: true,
           },

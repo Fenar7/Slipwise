@@ -94,12 +94,13 @@ export function ClientWorkspaceHeader({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Button size="sm" asChild>
-            <Link href="/app/data/customers/new" className="gap-1.5">
-              <Plus className="h-3.5 w-3.5" />
-              Add Client
-            </Link>
-          </Button>
+          <Link
+            href="/app/data/customers/new"
+            className="inline-flex items-center justify-center font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] focus-visible:ring-offset-2 bg-[var(--brand-cta)] text-white hover:bg-[#B91C1C] shadow-[0_1px_3px_rgba(220,38,38,0.25)] h-8 rounded-lg px-3 text-xs gap-1.5"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Add Client
+          </Link>
         </div>
       </div>
 
