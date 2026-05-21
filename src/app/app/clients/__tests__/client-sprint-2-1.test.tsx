@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { ClientWorkspaceShell } from "../components/client-workspace-shell";
 import { ClientWorkspaceRowView } from "../components/client-workspace-row";
+import { ClientWorkspaceTable } from "../components/client-workspace-table";
 import { MOCK_CLIENTS } from "../components/client-workspace-mock-data";
 
 vi.mock("next/link", () => ({
@@ -215,5 +216,54 @@ describe("Sprint 2.1 — Canonical client list workspace", () => {
       />
     );
     expect(screen.getByPlaceholderText(/Search clients by name, email, or phone/i)).toBeInTheDocument();
+  });
+
+  it("reflects enabled portal status when an older valid token exists despite a revoked newest token", () => {
+    const { unmount } = render(
+      <ClientWorkspaceRowView
+        client={{
+          ...MOCK_CLIENTS[0],
+          id: "cust_multi_token",
+          email: "test@example.com",
+          portalStatus: "enabled",
+        }}
+      />
+    );
+    expect(screen.getByText("Hub Active")).toBeInTheDocument();
+    expect(screen.queryByText("Invite Sent")).not.toBeInTheDocument();
+    unmount();
+  });
+
+  it("does not show an Import action in the workspace header", () => {
+    render(
+      <ClientWorkspaceShell
+        clients={MOCK_CLIENTS}
+        total={MOCK_CLIENTS.length}
+        page={1}
+        totalPages={1}
+        unfilteredTotal={MOCK_CLIENTS.length}
+        searchQuery=""
+        activeFilter="all"
+      />
+    );
+    expect(screen.queryByRole("link", { name: /Import/i })).not.toBeInTheDocument();
+    expect(screen.queryByText("Import")).not.toBeInTheDocument();
+  });
+
+  it("renders last activity column header with active sort state", () => {
+    const { container } = render(
+      <ClientWorkspaceTable
+        clients={MOCK_CLIENTS}
+        total={MOCK_CLIENTS.length}
+        page={1}
+        totalPages={1}
+        searchQuery=""
+        activeFilter="all"
+        sort={{ key: "lastActivityAt", dir: "desc" }}
+      />
+    );
+    const lastActivityHeader = screen.getByRole("link", { name: /Last Activity/i });
+    expect(lastActivityHeader).toBeInTheDocument();
+    expect(lastActivityHeader.getAttribute("href")).toContain("sort=lastActivityAt");
   });
 });

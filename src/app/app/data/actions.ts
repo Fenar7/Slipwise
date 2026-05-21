@@ -189,27 +189,28 @@ export async function listCustomers(params?: {
   let rawCustomers: Array<Awaited<ReturnType<typeof db.customer.findMany>>[number]>;
   let total: number;
 
+  const conditions = [`c."organizationId" = '${orgId}'`];
+  if (params?.search) {
+    const esc = escapeSqlLike(params.search);
+    conditions.push(`(c.name ILIKE '%${esc}%' OR c.email ILIKE '%${esc}%' OR c.phone ILIKE '%${esc}%')`);
+  }
+  if (filter === "active") {
+    conditions.push(`c."lifecycleStage" IN ('ACTIVE', 'WON')`);
+  } else if (filter === "prospect") {
+    conditions.push(`c."lifecycleStage" IN ('PROSPECT', 'QUALIFIED')`);
+  } else if (filter === "at-risk") {
+    conditions.push(`c."lifecycleStage" IN ('AT_RISK', 'NEGOTIATION')`);
+  } else if (filter === "churned") {
+    conditions.push(`c."lifecycleStage" = 'CHURNED'`);
+  } else if (filter === "portal-enabled") {
+    conditions.push(`EXISTS (SELECT 1 FROM "customer_portal_token" t WHERE t."customerId" = c.id AND t."isRevoked" = false AND t."expiresAt" > NOW())`);
+  } else if (filter === "portal-disabled") {
+    conditions.push(`NOT EXISTS (SELECT 1 FROM "customer_portal_token" t WHERE t."customerId" = c.id AND t."isRevoked" = false AND t."expiresAt" > NOW())`);
+  }
+  const whereSql = conditions.join(" AND ");
+
   if (sort?.key === "outstandingBalance") {
     const dir = sort.dir === "asc" ? "ASC" : "DESC";
-    const conditions = [`c."organizationId" = '${orgId}'`];
-    if (params?.search) {
-      const esc = escapeSqlLike(params.search);
-      conditions.push(`(c.name ILIKE '%${esc}%' OR c.email ILIKE '%${esc}%' OR c.phone ILIKE '%${esc}%')`);
-    }
-    if (filter === "active") {
-      conditions.push(`c."lifecycleStage" IN ('ACTIVE', 'WON')`);
-    } else if (filter === "prospect") {
-      conditions.push(`c."lifecycleStage" IN ('PROSPECT', 'QUALIFIED')`);
-    } else if (filter === "at-risk") {
-      conditions.push(`c."lifecycleStage" IN ('AT_RISK', 'NEGOTIATION')`);
-    } else if (filter === "churned") {
-      conditions.push(`c."lifecycleStage" = 'CHURNED'`);
-    } else if (filter === "portal-enabled") {
-      conditions.push(`EXISTS (SELECT 1 FROM "customer_portal_token" t WHERE t."customerId" = c.id AND t."isRevoked" = false AND t."expiresAt" > NOW())`);
-    } else if (filter === "portal-disabled") {
-      conditions.push(`NOT EXISTS (SELECT 1 FROM "customer_portal_token" t WHERE t."customerId" = c.id AND t."isRevoked" = false AND t."expiresAt" > NOW())`);
-    }
-    const whereSql = conditions.join(" AND ");
     const countResult = await db.$queryRawUnsafe<Array<{ count: bigint }>>(
       `SELECT COUNT(*)::bigint as count FROM "customer" c WHERE ${whereSql}`
     );
@@ -230,7 +231,35 @@ export async function listCustomers(params?: {
           _count: { select: { invoices: true, quotes: true } },
           portalTokens: {
             select: { id: true, isRevoked: true, expiresAt: true },
-            take: 1,
+            orderBy: { createdAt: "desc" },
+          },
+        },
+      });
+      const recordMap = new Map(records.map((r) => [r.id, r]));
+      rawCustomers = ids.map((id) => recordMap.get(id)!).filter(Boolean) as typeof records;
+    }
+  } else if (sort?.key === "lastActivityAt") {
+    const dir = sort.dir === "asc" ? "ASC" : "DESC";
+    const countResult = await db.$queryRawUnsafe<Array<{ count: bigint }>>(
+      `SELECT COUNT(*)::bigint as count FROM "customer" c WHERE ${whereSql}`
+    );
+    total = Number(countResult[0].count);
+    const idResult = await db.$queryRawUnsafe<Array<{ id: string }>>(
+      `SELECT c.id FROM "customer" c WHERE ${whereSql} ORDER BY COALESCE(c."lastInteractionAt", c."updatedAt") ${dir} LIMIT ${limit} OFFSET ${skip}`
+    );
+    const ids = idResult.map((r) => r.id);
+    if (ids.length === 0) {
+      rawCustomers = [];
+    } else {
+      const records = await db.customer.findMany({
+        where: {
+          id: { in: ids },
+          organizationId: orgId,
+        },
+        include: {
+          _count: { select: { invoices: true, quotes: true } },
+          portalTokens: {
+            select: { id: true, isRevoked: true, expiresAt: true },
             orderBy: { createdAt: "desc" },
           },
         },
@@ -242,11 +271,6 @@ export async function listCustomers(params?: {
     let orderBy: NonNullable<Parameters<typeof db.customer.findMany>[0]>["orderBy"];
     if (sort?.key === "name") {
       orderBy = { name: sort.dir };
-    } else if (sort?.key === "lastActivityAt") {
-      orderBy = [
-        { lastInteractionAt: sort.dir },
-        { updatedAt: sort.dir },
-      ];
     } else {
       orderBy = { name: "asc" };
     }
@@ -260,7 +284,6 @@ export async function listCustomers(params?: {
           _count: { select: { invoices: true, quotes: true } },
           portalTokens: {
             select: { id: true, isRevoked: true, expiresAt: true },
-            take: 1,
             orderBy: { createdAt: "desc" },
           },
         },

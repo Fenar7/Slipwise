@@ -8,7 +8,6 @@ import { Button } from "@/components/ui/button";
 import {
   Search,
   Plus,
-  Upload,
   X,
 } from "lucide-react";
 
@@ -99,12 +98,6 @@ export function ClientWorkspaceHeader({
             <Link href="/app/data/customers/new" className="gap-1.5">
               <Plus className="h-3.5 w-3.5" />
               Add Client
-            </Link>
-          </Button>
-          <Button variant="secondary" size="sm" className="gap-1.5" asChild>
-            <Link href="/app/data/customers/new">
-              <Upload className="h-3.5 w-3.5" />
-              Import
             </Link>
           </Button>
         </div>
