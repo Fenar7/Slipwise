@@ -295,6 +295,8 @@ export type {
   ThreadSummary,
   ReadStateSummary,
   MessageDetail,
+  TaskSummary,
+  TaskPriorityString,
 } from "./read-shapes";
 export {
   toConversationSummary,
@@ -302,6 +304,7 @@ export {
   toParticipantSummary,
   toConversationDetail,
   toMessageDetail,
+  toTaskSummary,
 } from "./read-shapes";
 
 // Read models (aggregated queries returning UI shapes)
@@ -309,6 +312,7 @@ export {
   listConversationSummariesForUser,
   getConversationDetail,
   getMessageDetail,
+  getConversationTaskSummaries,
   type ListConversationSummariesOptions,
   type GetConversationDetailOptions,
 } from "./read-models";
@@ -391,3 +395,7 @@ export type {
   MessagingRealtimeServerOptions,
   MessagingRealtimeServer,
 } from "./realtime/server";
+
+// Errors
+export { ConversationAccessError } from "./errors";
+

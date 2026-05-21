@@ -112,6 +112,25 @@ export interface ApiConversationDetail {
   currentUserId: string;
 }
 
+export interface ApiTaskSummary {
+  id: string;
+  orgId: string;
+  conversationId: string;
+  originatingMessageId: string | null;
+  title: string;
+  status: string;
+  priority: "low" | "medium" | "high" | "critical";
+  isOverdue: boolean;
+  assigneeId: string | null;
+  assigneeName: string | null;
+  assigneeAvatarInitials: string | null;
+  dueDate: string | null;
+  createdBy: string;
+  createdByName: string | null;
+  createdAt: string;
+}
+
+
 export function toFrontendChannel(summary: ApiConversationSummary): MessagingChannel {
   return {
     id: summary.id,

@@ -12,6 +12,7 @@ import {
 import { MessagingReadingWorkspace } from "./messaging-reading-workspace";
 import { MessagingSearchPanel } from "./messaging-search-panel";
 import { MessagingNotificationsPanel } from "./messaging-notifications-panel";
+import { MessagingTaskRail } from "./messaging-task-rail";
 import type {
   MessagingSection,
   MessagingWorkspaceState,
@@ -466,6 +467,11 @@ export function MessagingWorkspace() {
           />
         )}
       </div>
+
+      {/* Right task rail — conversation-scoped task list (Sprint 6.1) */}
+      {isConversationSection && (
+        <MessagingTaskRail conversationId={activeConvId} degraded={realtimeDegraded} />
+      )}
     </div>
   );
 }
