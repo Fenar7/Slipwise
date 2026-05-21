@@ -25,6 +25,14 @@ export interface CustomerInput {
   taxId?: string;
   gstin?: string;
   tagIds?: string[];
+  lifecycleStage?:
+    | "PROSPECT"
+    | "QUALIFIED"
+    | "NEGOTIATION"
+    | "WON"
+    | "ACTIVE"
+    | "AT_RISK"
+    | "CHURNED";
 }
 
 export async function createCustomer(input: CustomerInput): Promise<ActionResult<{ id: string }>> {
@@ -100,6 +108,7 @@ export async function createCustomer(input: CustomerInput): Promise<ActionResult
         taxId,
         gstin,
         organizationId: orgId,
+        lifecycleStage: input.lifecycleStage || "PROSPECT",
       },
     });
     
@@ -210,6 +219,7 @@ export async function updateCustomer(
     if (address !== undefined) updateData.address = address;
     if (taxId !== undefined) updateData.taxId = taxId;
     if (gstin !== undefined) updateData.gstin = gstin;
+    if (input.lifecycleStage !== undefined) updateData.lifecycleStage = input.lifecycleStage;
 
     if (Object.keys(updateData).length > 0) {
       await db.customer.update({
@@ -855,6 +865,13 @@ export interface ClientActivity {
   actor?: string;
 }
 
+export interface ClientReadiness {
+  isReady: boolean;
+  score: number;
+  blockers: string[];
+  warnings: string[];
+}
+
 export interface ClientDetail {
   id: string;
   name: string;
@@ -870,6 +887,7 @@ export interface ClientDetail {
     | "ACTIVE"
     | "AT_RISK"
     | "CHURNED";
+  readiness: ClientReadiness;
   outstandingBalance: number;
   invoiceCount: number;
   quoteCount: number;
@@ -1140,6 +1158,48 @@ export async function getClientDetail(id: string): Promise<ClientDetail | null> 
     ?.map((a) => a.tag?.name)
     .filter(Boolean) as string[];
 
+  // Compute Client Hub Readiness server-side
+  const blockers: string[] = [];
+  const warnings: string[] = [];
+
+  if (!customer.email) {
+    blockers.push("Primary email address is required for Client Hub token provisioning.");
+  }
+  if (!customer.address) {
+    blockers.push("Billing address is required to generate compliant invoices.");
+  }
+  if (customer.lifecycleStage === "CHURNED") {
+    blockers.push("Client profile is in CHURNED status. Active portal access is prohibited.");
+  }
+
+  if (!customer.phone) {
+    warnings.push("Primary phone number is not configured on the client profile.");
+  }
+  if (!customer.gstin && !customer.taxId) {
+    warnings.push("Tax ID / PAN / GSTIN is missing. Compliance requirements for B2B reporting are incomplete.");
+  }
+  if (!["ACTIVE", "WON"].includes(customer.lifecycleStage)) {
+    warnings.push(`Client relationship is in a preliminary stage (${customer.lifecycleStage}).`);
+  }
+
+  // Calculate score starting at 100
+  let readinessScore = 100;
+  blockers.forEach(() => {
+    readinessScore -= 30;
+  });
+  warnings.forEach(() => {
+    readinessScore -= 10;
+  });
+  const score = Math.max(0, Math.min(100, readinessScore));
+  const isReady = blockers.length === 0;
+
+  const readiness: ClientReadiness = {
+    isReady,
+    score,
+    blockers,
+    warnings,
+  };
+
   return {
     id: customer.id,
     name: customer.name,
@@ -1148,6 +1208,7 @@ export async function getClientDetail(id: string): Promise<ClientDetail | null> 
     phone: customer.phone,
     portalStatus,
     lifecycleStage: customer.lifecycleStage as ClientDetail["lifecycleStage"],
+    readiness,
     outstandingBalance,
     invoiceCount: customer._count.invoices,
     quoteCount: customer._count.quotes,

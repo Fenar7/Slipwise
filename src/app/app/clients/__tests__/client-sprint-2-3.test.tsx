@@ -139,6 +139,7 @@ describe("Sprint 2.3 — Server-Side Validation, Normalization and Security", ()
           taxId: "PAN1234567",
           gstin: "29ABCDE1234F1Z5", // converted to uppercase
           organizationId: "org-123",
+          lifecycleStage: "PROSPECT",
         },
       });
 
@@ -167,6 +168,7 @@ describe("Sprint 2.3 — Server-Side Validation, Normalization and Security", ()
           taxId: null,
           gstin: null,
           organizationId: "org-123",
+          lifecycleStage: "PROSPECT",
         },
       });
     });
@@ -252,6 +254,12 @@ describe("Sprint 2.3 — Server-Side Validation, Normalization and Security", ()
         recentInvoices: [],
         recentQuotes: [],
         recentActivity: [],
+        readiness: {
+          isReady: false,
+          score: 60,
+          blockers: ["Address missing"],
+          warnings: [],
+        },
       };
 
       render(<ClientDetailRail client={client} />);

@@ -1,5 +1,6 @@
 import { cn } from "@/lib/utils";
 import { StatusBadge } from "@/components/dashboard/status-badge";
+import Link from "next/link";
 import {
   Receipt,
   Quote,
@@ -12,6 +13,9 @@ import {
   Clock,
   CheckCircle2,
   XCircle,
+  AlertTriangle,
+  Info,
+  Pencil,
 } from "lucide-react";
 import type { ClientDetail, ClientDocumentSummary, ClientActivity } from "@/app/app/data/actions";
 
@@ -114,6 +118,106 @@ function SectionCard({ title, children, className }: { title?: string; children:
 function OverviewSection({ client }: { client: ClientDetail }) {
   return (
     <div className="space-y-4">
+      {/* Client Hub Readiness Card */}
+      <div className="slipwise-panel border border-[var(--border-default)] p-5 space-y-4">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="space-y-1">
+            <h3 className="text-xs font-semibold uppercase tracking-[0.15em] text-[var(--text-muted)]">
+              Client Hub Operational Readiness
+            </h3>
+            <div className="flex items-center gap-2">
+              <span className="text-lg font-semibold text-[var(--text-primary)]">
+                {client.readiness.isReady ? "Fully Provision Ready" : "Requires Attention / Action"}
+              </span>
+              <span className={cn(
+                "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold",
+                client.readiness.isReady 
+                  ? "bg-[var(--state-success-soft)] text-[var(--state-success)]" 
+                  : "bg-[var(--state-warning-soft)] text-[var(--state-warning)]"
+              )}>
+                {client.readiness.isReady ? "Eligible" : "Ineligible"}
+              </span>
+            </div>
+          </div>
+          
+          <div className="flex items-center gap-3 shrink-0">
+            <div className="text-right">
+              <span className="text-[10px] font-medium uppercase tracking-wider text-[var(--text-muted)] block">Readiness Score</span>
+              <span className="text-2xl font-bold tabular-nums text-[var(--text-primary)]">{client.readiness.score}%</span>
+            </div>
+            {/* Circular or linear progress */}
+            <div className="h-10 w-24 bg-[var(--surface-subtle)] rounded-full overflow-hidden relative border border-[var(--border-soft)]">
+              <div 
+                className={cn(
+                  "h-full transition-all duration-500",
+                  client.readiness.isReady ? "bg-[var(--state-success)]" : "bg-[var(--state-warning)]"
+                )}
+                style={{ width: `${client.readiness.score}%` }}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Blockers & Warnings Grid */}
+        {(client.readiness.blockers.length > 0 || client.readiness.warnings.length > 0) ? (
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 pt-3 border-t border-[var(--border-soft)]">
+            {client.readiness.blockers.length > 0 && (
+              <div className="space-y-2">
+                <h4 className="text-[10px] font-bold uppercase tracking-wider text-red-600 flex items-center gap-1">
+                  <AlertTriangle className="h-3.5 w-3.5 animate-pulse" />
+                  Critical Blockers ({client.readiness.blockers.length})
+                </h4>
+                <ul className="space-y-1.5">
+                  {client.readiness.blockers.map((blocker, i) => (
+                    <li key={i} className="text-xs text-[var(--text-secondary)] bg-red-50/50 border border-red-100 rounded-lg p-2 flex items-start gap-1.5">
+                      <span className="h-1.5 w-1.5 rounded-full bg-red-500 shrink-0 mt-1.5" />
+                      {blocker}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            
+            {client.readiness.warnings.length > 0 && (
+              <div className="space-y-2">
+                <h4 className="text-[10px] font-bold uppercase tracking-wider text-amber-600 flex items-center gap-1">
+                  <Info className="h-3.5 w-3.5" />
+                  Operational Warnings ({client.readiness.warnings.length})
+                </h4>
+                <ul className="space-y-1.5">
+                  {client.readiness.warnings.map((warning, i) => (
+                    <li key={i} className="text-xs text-[var(--text-secondary)] bg-amber-50/30 border border-amber-100 rounded-lg p-2 flex items-start gap-1.5">
+                      <span className="h-1.5 w-1.5 rounded-full bg-amber-500 shrink-0 mt-1.5" />
+                      {warning}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="bg-emerald-50/30 border border-emerald-100/50 rounded-xl p-3.5 flex items-center gap-3 text-xs text-[var(--text-secondary)]">
+            <CheckCircle2 className="h-5 w-5 text-[var(--state-success)] shrink-0" />
+            <div className="space-y-0.5">
+              <p className="font-semibold text-emerald-950">Perfect Health & Compatibility</p>
+              <p className="text-emerald-800">This profile is fully verified, tax-compliant, and eligible for seamless client portal operations.</p>
+            </div>
+          </div>
+        )}
+
+        {!client.readiness.isReady && (
+          <div className="flex justify-end pt-1">
+            <Link 
+              href={`/app/clients/${client.id}/edit`}
+              className="inline-flex items-center gap-1.5 text-xs font-semibold text-[var(--brand-primary)] hover:underline"
+            >
+              <Pencil className="h-3 w-3" />
+              Resolve Readiness Requirements
+            </Link>
+          </div>
+        )}
+      </div>
+
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <SectionCard title="Recent Invoices">
           {client.recentInvoices.length === 0 ? (
@@ -243,11 +347,50 @@ function DocumentRow({ doc, type }: { doc: ClientDocumentSummary; type: "invoice
 }
 
 function ContactsSection({ client }: { client: ClientDetail }) {
+  const hasEmail = !!client.email;
+  const hasPhone = !!client.phone;
+
   return (
     <div className="space-y-4">
+      {(!hasEmail || !hasPhone) && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50/40 p-4 text-xs text-[var(--text-secondary)] space-y-2">
+          <div className="flex items-center gap-2 font-semibold text-amber-950">
+            <AlertTriangle className="h-4 w-4 text-amber-600" />
+            Operational Profile Incomplete
+          </div>
+          <div className="space-y-1">
+            {!hasEmail && (
+              <p>• <span className="font-medium text-amber-900">Email Missing:</span> Client Hub access cannot be provisioned or activated without a valid primary contact email address.</p>
+            )}
+            {!hasPhone && (
+              <p>• <span className="font-medium text-amber-900">Phone Missing:</span> Direct phone communication pathway is missing on the client record.</p>
+            )}
+          </div>
+          <div className="pt-1">
+            <Link 
+              href={`/app/clients/${client.id}/edit`}
+              className="inline-flex items-center gap-1 text-[var(--brand-primary)] font-semibold hover:underline"
+            >
+              <Pencil className="h-3 w-3" />
+              Configure Contact Details
+            </Link>
+          </div>
+        </div>
+      )}
+
       <SectionCard title="All Contacts">
         {client.contacts.length === 0 ? (
-          <p className="text-sm text-[var(--text-muted)]">No contacts on file.</p>
+          <div className="py-6 text-center">
+            <p className="text-sm text-[var(--text-muted)]">No primary contact configured.</p>
+            <p className="text-xs text-[var(--text-muted)] mt-1">Configure an email address in client settings to assign a primary contact.</p>
+            <Link 
+              href={`/app/clients/${client.id}/edit`}
+              className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-[var(--border-default)] bg-white px-3 py-1.5 text-xs font-medium text-[var(--text-secondary)] hover:bg-[var(--surface-subtle)] transition-colors"
+            >
+              <Pencil className="h-3.5 w-3.5" />
+              Add Contact Info
+            </Link>
+          </div>
         ) : (
           <div className="divide-y divide-[var(--border-soft)]">
             {client.contacts.map((contact) => (
@@ -273,6 +416,14 @@ function ContactsSection({ client }: { client: ClientDetail }) {
                     </span>
                   </div>
                 </div>
+                
+                <Link 
+                  href={`/app/clients/${client.id}/edit`}
+                  className="rounded-lg p-1.5 text-[var(--text-muted)] hover:text-[var(--brand-primary)] hover:bg-[var(--surface-subtle)] transition-colors"
+                  title="Edit Contact"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                </Link>
               </div>
             ))}
           </div>
@@ -283,46 +434,117 @@ function ContactsSection({ client }: { client: ClientDetail }) {
 }
 
 function BillingSection({ client }: { client: ClientDetail }) {
+  const hasAddress = !!client.address;
+  const hasGstin = !!client.gstin;
+  const hasPan = !!client.panNumber;
+
   return (
     <div className="space-y-4">
-      <SectionCard title="Billing Address">
-        <div className="flex items-start gap-2 text-sm text-[var(--text-secondary)]">
-          <MapPin className="h-4 w-4 shrink-0 text-[var(--text-muted)] mt-0.5" />
-          <div>
-            <p>{client.billingAddress}</p>
+      {(!hasAddress || !hasGstin || !hasPan) && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50/40 p-4 text-xs text-[var(--text-secondary)] space-y-2">
+          <div className="flex items-center gap-2 font-semibold text-amber-950">
+            <AlertTriangle className="h-4 w-4 text-amber-600" />
+            Billing & Tax Information Incomplete
           </div>
+          <div className="space-y-1">
+            {!hasAddress && (
+              <p>• <span className="font-medium text-amber-900">Billing Address Missing:</span> A valid physical address is mandatory to generate legally compliant tax invoices.</p>
+            )}
+            {!hasGstin && (
+              <p>• <span className="font-medium text-amber-900">GSTIN Missing:</span> B2B compliance fields are absent. Standard B2C treatment will be applied to generated documents.</p>
+            )}
+            {!hasPan && (
+              <p>• <span className="font-medium text-amber-900">PAN / Tax ID Missing:</span> Essential legal tax registration details are missing. Higher withholding taxes (TDS) may be applicable.</p>
+            )}
+          </div>
+          <div className="pt-1">
+            <Link 
+              href={`/app/clients/${client.id}/edit`}
+              className="inline-flex items-center gap-1 text-[var(--brand-primary)] font-semibold hover:underline"
+            >
+              <Pencil className="h-3 w-3" />
+              Configure Billing & Tax Settings
+            </Link>
+          </div>
+        </div>
+      )}
+
+      <SectionCard title="Billing Address">
+        <div className="flex items-start justify-between">
+          <div className="flex items-start gap-2 text-sm text-[var(--text-secondary)]">
+            <MapPin className="h-4 w-4 shrink-0 text-[var(--text-muted)] mt-0.5" />
+            <div>
+              {client.billingAddress ? (
+                <p className="whitespace-pre-wrap">{client.billingAddress}</p>
+              ) : (
+                <p className="italic text-[var(--text-muted)]">No billing address configured on file.</p>
+              )}
+            </div>
+          </div>
+          <Link 
+            href={`/app/clients/${client.id}/edit`}
+            className="rounded-lg p-1.5 text-[var(--text-muted)] hover:text-[var(--brand-primary)] hover:bg-[var(--surface-subtle)] transition-colors"
+            title="Edit Address"
+          >
+            <Pencil className="h-3.5 w-3.5" />
+          </Link>
         </div>
       </SectionCard>
 
       <SectionCard title="Tax Information">
-        <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <div className="space-y-0.5">
-            <dt className="text-[0.7rem] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-              GSTIN
-            </dt>
-            <dd className="text-sm font-medium text-[var(--text-primary)]">{client.gstin || "—"}</dd>
-          </div>
-          <div className="space-y-0.5">
-            <dt className="text-[0.7rem] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-              PAN
-            </dt>
-            <dd className="text-sm font-medium text-[var(--text-primary)]">{client.panNumber || "—"}</dd>
-          </div>
-          <div className="space-y-0.5">
-            <dt className="text-[0.7rem] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-              Tax ID
-            </dt>
-            <dd className="text-sm font-medium text-[var(--text-primary)]">{client.taxId || "—"}</dd>
-          </div>
-          <div className="space-y-0.5">
-            <dt className="text-[0.7rem] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-              Preferred Language
-            </dt>
-            <dd className="text-sm font-medium text-[var(--text-primary)]">
-              {client.preferredLanguage || "—"}
-            </dd>
-          </div>
-        </dl>
+        <div className="flex justify-between items-start">
+          <dl className="grid grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-2 flex-1">
+            <div className="space-y-0.5">
+              <dt className="text-[0.7rem] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+                GSTIN
+              </dt>
+              <dd className={cn(
+                "text-sm font-medium",
+                client.gstin ? "text-[var(--text-primary)]" : "italic text-[var(--text-muted)]"
+              )}>
+                {client.gstin || "Not configured"}
+              </dd>
+            </div>
+            <div className="space-y-0.5">
+              <dt className="text-[0.7rem] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+                PAN / Permanent Account Number
+              </dt>
+              <dd className={cn(
+                "text-sm font-medium",
+                client.panNumber ? "text-[var(--text-primary)] animate-in fade-in" : "italic text-[var(--text-muted)]"
+              )}>
+                {client.panNumber || "Not configured (PAN derived from GSTIN)"}
+              </dd>
+            </div>
+            <div className="space-y-0.5">
+              <dt className="text-[0.7rem] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+                Alternative Tax ID
+              </dt>
+              <dd className={cn(
+                "text-sm font-medium",
+                client.taxId ? "text-[var(--text-primary)]" : "italic text-[var(--text-muted)]"
+              )}>
+                {client.taxId || "Not configured"}
+              </dd>
+            </div>
+            <div className="space-y-0.5">
+              <dt className="text-[0.7rem] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+                Preferred Language
+              </dt>
+              <dd className="text-sm font-medium text-[var(--text-primary)]">
+                {client.preferredLanguage === "en" ? "English (en)" : client.preferredLanguage || "en"}
+              </dd>
+            </div>
+          </dl>
+          
+          <Link 
+            href={`/app/clients/${client.id}/edit`}
+            className="rounded-lg p-1.5 text-[var(--text-muted)] hover:text-[var(--brand-primary)] hover:bg-[var(--surface-subtle)] transition-colors shrink-0"
+            title="Edit Tax Details"
+          >
+            <Pencil className="h-3.5 w-3.5" />
+          </Link>
+        </div>
       </SectionCard>
     </div>
   );
@@ -360,6 +582,30 @@ function PortalSection({ client }: { client: ClientDetail }) {
           )}
         </div>
       </SectionCard>
+
+      {!client.portalEnabled && client.readiness.blockers.length > 0 && (
+        <div className="rounded-xl border border-red-200 bg-red-50/30 p-4 text-xs text-[var(--text-secondary)] space-y-2 animate-in fade-in duration-300">
+          <p className="font-semibold text-red-950 flex items-center gap-1.5">
+            <AlertTriangle className="h-4 w-4 text-red-600 shrink-0" />
+            Client Hub Provisioning Blocked
+          </p>
+          <p>This client cannot be enabled or invited to the Client Hub because of the following profile compliance issues:</p>
+          <ul className="space-y-1 pl-1 list-disc list-inside">
+            {client.readiness.blockers.map((blocker, i) => (
+              <li key={i} className="text-red-900">{blocker}</li>
+            ))}
+          </ul>
+          <div className="pt-1">
+            <Link 
+              href={`/app/clients/${client.id}/edit`}
+              className="inline-flex items-center gap-1 text-[var(--brand-primary)] font-semibold hover:underline"
+            >
+              <Pencil className="h-3 w-3" />
+              Configure Client Profile to Resolve
+            </Link>
+          </div>
+        </div>
+      )}
 
       {client.portalEnabled && (
         <SectionCard title="Access Statistics">
