@@ -41,6 +41,10 @@ const CALLBACK_ERROR_MESSAGES: Record<string, string> = {
     "The authorization response from Google was incomplete. Please try again.",
   gmail_connection_not_found:
     "The mailbox you were trying to reconnect was not found. It may have been removed.",
+  gmail_not_configured:
+    "Gmail OAuth is not configured on this server. Add GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, and GMAIL_REDIRECT_URI to your environment variables, then restart the server.",
+  gmail_connect_failed:
+    "The Gmail connection could not be started. Please check server configuration and try again.",
 };
 
 function CallbackFeedbackBanner() {

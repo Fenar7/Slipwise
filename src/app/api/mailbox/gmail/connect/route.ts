@@ -19,6 +19,11 @@ import { rateLimitByOrg, RATE_LIMITS } from "@/lib/rate-limit";
  *   2. Apply org-scoped rate limit (5 attempts / 60 s).
  *   3. Generate a CSRF-protected OAuth state token and set it as an httpOnly cookie.
  *   4. Redirect the admin to the Gmail OAuth consent screen.
+ *
+ * Error handling:
+ *   On any server-side failure (including missing env vars), redirects back to
+ *   /app/mailbox/settings?error=<code> so the user sees the error banner rather
+ *   than a blank browser error page (which happens when a GET navigation returns 500).
  */
 export async function GET(request: NextRequest) {
   try {
@@ -52,10 +57,16 @@ export async function GET(request: NextRequest) {
     );
     return response;
   } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const isNotConfigured = message.includes("not configured") || message.includes("GMAIL_CLIENT_ID");
+    const errorCode = isNotConfigured ? "gmail_not_configured" : "gmail_connect_failed";
+
     console.error("[mailbox/gmail/connect] Failed to initiate Gmail connect:", error);
-    return NextResponse.json(
-      { error: "Failed to initiate Gmail connection" },
-      { status: 500 },
-    );
+
+    // Redirect back to settings with a safe error code rather than returning a raw
+    // 500 JSON response — the browser renders a blank error page for GET navigations.
+    const settingsUrl = new URL("/app/mailbox/settings", request.url);
+    settingsUrl.searchParams.set("error", errorCode);
+    return NextResponse.redirect(settingsUrl);
   }
 }

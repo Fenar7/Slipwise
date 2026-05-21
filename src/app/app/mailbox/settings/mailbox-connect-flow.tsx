@@ -39,7 +39,7 @@ export function MailboxConnectFlow({ onClose, reconnectEmail, reconnectConnectio
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/25 backdrop-blur-[2px]"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/30"
       role="dialog"
       aria-label={title}
       aria-modal="true"
@@ -81,7 +81,10 @@ export function MailboxConnectFlow({ onClose, reconnectEmail, reconnectConnectio
             />
           )}
           {step === "authorizing" && (
-            <AuthorizingStep connectionId={reconnectConnectionId} />
+            <AuthorizingStep
+              connectionId={reconnectConnectionId}
+              onFailed={() => setStep("failed")}
+            />
           )}
           {step === "success" && (
             <SuccessStep
@@ -213,18 +216,65 @@ function ReconnectStep({
 }
 
 // ─── Step: Authorizing ────────────────────────────────────────────────────────
+//
+// This step does a preflight fetch to /api/mailbox/gmail/connect before
+// triggering the full browser navigation. If the server returns an error or
+// redirects back to the settings page with ?error=…, we call onFailed() so
+// the modal shows the FailedStep instead of navigating to a blank error page.
+//
+// Why fetch, not rely on the redirect?
+//  - When the browser follows a GET navigation to a route that returns a
+//    JSON 500, the user sees a blank or error page. With fetch() we can
+//    detect this before the user ever leaves the page.
+//  - If the route returns a redirect to /app/mailbox/settings?error=…, the
+//    fetch follows it (same-origin, no-CORS issues) and we detect ?error in
+//    the final URL.
 
-function AuthorizingStep({ connectionId }: { connectionId?: string }) {
+function AuthorizingStep({ connectionId, onFailed }: { connectionId?: string; onFailed: () => void }) {
   useEffect(() => {
-    // Brief delay so the user sees the redirecting state before navigation
-    const timer = window.setTimeout(() => {
-      const url = connectionId
-        ? `/api/mailbox/gmail/connect?connectionId=${encodeURIComponent(connectionId)}`
-        : "/api/mailbox/gmail/connect";
-      window.location.href = url;
+    const url = connectionId
+      ? `/api/mailbox/gmail/connect?connectionId=${encodeURIComponent(connectionId)}`
+      : "/api/mailbox/gmail/connect";
+
+    // Preflight: fetch the connect endpoint to check if the server-side
+    // redirect will succeed. A 4xx/5xx response (or a redirect back to
+    // /settings with ?error) means we should show the FailedStep inside
+    // the modal rather than navigating the browser to a blank error page.
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      try {
+        const res = await fetch(url, {
+          method: "GET",
+          redirect: "follow",
+          credentials: "same-origin",
+        });
+
+        if (cancelled) return;
+
+        // If the server redirected to settings with ?error=… it means the
+        // connect attempt failed on the server side.
+        const finalUrl = res.url;
+        const hasError = finalUrl.includes("/app/mailbox/settings") && finalUrl.includes("error=");
+
+        if (!res.ok || hasError) {
+          onFailed();
+          return;
+        }
+
+        // Success — the response is the Google OAuth consent screen.
+        // Now trigger the real browser navigation.
+        window.location.href = url;
+      } catch {
+        // Network error / CORS block etc.
+        if (!cancelled) onFailed();
+      }
     }, 400);
-    return () => window.clearTimeout(timer);
-  }, [connectionId]);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [connectionId, onFailed]);
 
   return (
     <div className="flex flex-col items-center gap-4 py-6 text-center" data-testid="connect-step-authorizing">
