@@ -121,10 +121,11 @@ export function deriveMailboxHealth(
       };
     }
     case "ACTIVE": {
+      const tokenExpiryTime = connection.tokenExpiry?.getTime();
       const isExpiringSoon =
-        connection.tokenExpiry !== null &&
-        connection.tokenExpiry.getTime() - now < EXPIRING_SOON_THRESHOLD_MS &&
-        connection.tokenExpiry.getTime() > now;
+        tokenExpiryTime != null &&
+        tokenExpiryTime - now < EXPIRING_SOON_THRESHOLD_MS &&
+        tokenExpiryTime > now;
 
       if (isExpiringSoon) {
         return {

@@ -258,14 +258,18 @@ function ConnectionCard({ connection }: { connection: MailboxAdminConnection }) 
 
 // ─── Main settings page ───────────────────────────────────────────────────────
 
+import type { MailboxAdminConnectionsErrorType } from "../use-mailbox-admin-connections";
+
 export function MailboxSettingsPageContent({
   connections = [],
   isLoading = false,
   error = null,
+  errorType = null,
 }: {
   connections?: MailboxAdminConnection[];
   isLoading?: boolean;
   error?: string | null;
+  errorType?: MailboxAdminConnectionsErrorType;
 }) {
   const [showConnectFlow, setShowConnectFlow] = useState(false);
   const hasConnections = connections.length > 0;
@@ -274,6 +278,33 @@ export function MailboxSettingsPageContent({
     return (
       <div className="mx-auto max-w-3xl px-6 py-8" data-testid="mailbox-settings-page">
         <SettingsPageSkeleton />
+      </div>
+    );
+  }
+
+  // Auth/permission errors: show truthful message, not the red failure banner.
+  if (errorType === "forbidden") {
+    return (
+      <div className="mx-auto max-w-3xl px-6 py-8" data-testid="mailbox-settings-page">
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-5">
+          <p className="text-sm font-semibold text-amber-800">Admins only</p>
+          <p className="mt-1 text-xs text-amber-700">
+            You do not have permission to manage mailbox connections. Contact your organization admin.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (errorType === "unauthorized") {
+    return (
+      <div className="mx-auto max-w-3xl px-6 py-8" data-testid="mailbox-settings-page">
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-5">
+          <p className="text-sm font-semibold text-amber-800">Sign in required</p>
+          <p className="mt-1 text-xs text-amber-700">
+            Please sign in to view mailbox settings.
+          </p>
+        </div>
       </div>
     );
   }
@@ -352,6 +383,13 @@ export function MailboxSettingsPageContent({
 }
 
 export default function MailboxSettingsPage() {
-  const { connections, isLoading, error } = useMailboxAdminConnections();
-  return <MailboxSettingsPageContent connections={connections} isLoading={isLoading} error={error} />;
+  const { connections, isLoading, error, errorType } = useMailboxAdminConnections();
+  return (
+    <MailboxSettingsPageContent
+      connections={connections}
+      isLoading={isLoading}
+      error={error}
+      errorType={errorType}
+    />
+  );
 }

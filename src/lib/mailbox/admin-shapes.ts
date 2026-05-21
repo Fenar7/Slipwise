@@ -45,8 +45,11 @@ export function toMailboxConnectionListItem(
     id: record.id,
     orgId: record.orgId,
     provider: record.provider,
-    emailAddress: record.emailAddress,
-    displayName: record.displayName,
+    // Defensive: malformed DB rows or pre-migration records may have null
+    // emailAddress / displayName. Coerce to empty string to prevent
+    // "null" from surfacing in the UI and to survive unexpected shapes.
+    emailAddress: record.emailAddress ?? "",
+    displayName: record.displayName ?? "",
     status: record.status,
     // Null-guard: visibilityPolicy can be null for records pre-dating the
     // default migration. Fall back to "org_shared" as the schema default.
@@ -54,8 +57,16 @@ export function toMailboxConnectionListItem(
     health: deriveMailboxHealth(record, now),
     lastSyncAt: record.lastSyncAt?.toISOString() ?? null,
     lastSyncError: record.lastSyncError,
-    connectedBy: record.connectedBy,
-    createdAt: record.createdAt.toISOString(),
-    updatedAt: record.updatedAt.toISOString(),
+    connectedBy: record.connectedBy ?? "",
+    // Defensive: if createdAt/updatedAt are not Dates (e.g. test stubs or
+    // raw rows), avoid crashing the route with a TypeError.
+    createdAt:
+      record.createdAt instanceof Date
+        ? record.createdAt.toISOString()
+        : String(record.createdAt ?? ""),
+    updatedAt:
+      record.updatedAt instanceof Date
+        ? record.updatedAt.toISOString()
+        : String(record.updatedAt ?? ""),
   };
 }
