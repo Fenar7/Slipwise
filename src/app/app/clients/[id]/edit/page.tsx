@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { getClientDetail } from "@/app/app/data/actions";
+import { getCustomerDefaultTags } from "@/lib/tags/assignment-service";
 import { ClientForm } from "../../components/client-form";
 
 export const metadata = {
@@ -19,6 +20,24 @@ export default async function EditClientPage({ params }: EditClientPageProps) {
   if (!client) {
     notFound();
   }
+
+  // Fetch junction-table default tag assignments dynamically
+  const tagsResult = await getCustomerDefaultTags(id);
+  const defaultTagAssignments = tagsResult.success
+    ? tagsResult.data.map((tag) => ({
+        tag: {
+          id: tag.id,
+          name: tag.name,
+          slug: tag.slug,
+          color: tag.color,
+        },
+      }))
+    : [];
+
+  const clientWithTags = {
+    ...client,
+    defaultTagAssignments,
+  };
 
   return (
     <div className="space-y-6">
@@ -45,8 +64,9 @@ export default async function EditClientPage({ params }: EditClientPageProps) {
       </div>
 
       <div className="slipwise-panel max-w-4xl p-6">
-        <ClientForm client={client} />
+        <ClientForm client={clientWithTags} />
       </div>
     </div>
   );
 }
+

@@ -5,6 +5,7 @@ import { createCustomer, updateCustomer } from "../../data/actions";
 import { ClientDetailRail } from "../components/client-detail-rail";
 import { ClientWorkspaceRowView } from "../components/client-workspace-row";
 import { ClientForm } from "../components/client-form";
+import EditClientPage from "../[id]/edit/page";
 
 // Mock Next.js Link and navigation
 vi.mock("next/link", () => ({
@@ -38,6 +39,8 @@ const mocks = vi.hoisted(() => ({
   customerFindFirst: vi.fn(),
   setCustomerDefaultTags: vi.fn(),
   revalidatePath: vi.fn(),
+  getCustomerDefaultTags: vi.fn(),
+  getClientDetail: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({
@@ -57,7 +60,16 @@ vi.mock("@/lib/db", () => ({
 vi.mock("@/lib/tags/assignment-service", () => ({
   setCustomerDefaultTags: mocks.setCustomerDefaultTags,
   setVendorDefaultTags: vi.fn(),
+  getCustomerDefaultTags: mocks.getCustomerDefaultTags,
 }));
+
+vi.mock("../../data/actions", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../data/actions")>();
+  return {
+    ...actual,
+    getClientDetail: mocks.getClientDetail,
+  };
+});
 
 vi.mock("next/cache", () => ({
   revalidatePath: mocks.revalidatePath,
@@ -340,6 +352,39 @@ describe("Sprint 2.3 — Server-Side Validation, Normalization and Security", ()
         },
       });
       expect(mocks.setCustomerDefaultTags).toHaveBeenCalledWith("cust-tag-test", ["tag-vip-id"]);
+    });
+
+    it("canonical edit page receives existing tag assignments correctly and preloads them", async () => {
+      const mockClient = {
+        id: "cust-tag-test",
+        name: "Taggy Corp",
+        email: "tag@test.com",
+        phone: null,
+        address: null,
+        taxId: null,
+        gstin: null,
+      };
+
+      mocks.getClientDetail.mockResolvedValue(mockClient);
+      mocks.getCustomerDefaultTags.mockResolvedValue({
+        success: true,
+        data: [
+          {
+            id: "tag-vip-id",
+            name: "VIP",
+            slug: "vip",
+            color: "red",
+          },
+        ],
+      });
+
+      const pageElement = await EditClientPage({ params: Promise.resolve({ id: "cust-tag-test" }) });
+      render(pageElement);
+
+      const tagPicker = screen.getByTestId("tag-picker");
+      expect(tagPicker.getAttribute("data-selected-ids")).toContain("tag-vip-id");
+      expect(mocks.getClientDetail).toHaveBeenCalledWith("cust-tag-test");
+      expect(mocks.getCustomerDefaultTags).toHaveBeenCalledWith("cust-tag-test");
     });
   });
 });
