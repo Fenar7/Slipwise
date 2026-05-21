@@ -215,3 +215,39 @@ describe("Sprint 6.2 Frontend Integration — Tasks Work Coordination", () => {
     expect(patchBody.status).toBe("DONE");
   });
 });
+
+describe("Sprint 6.2 — Live tasks path without mock data", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it("shows a truthful no-conversation-selected state when conversationId is null", async () => {
+    vi.stubGlobal("fetch", mockFetch({ success: true, data: [] }));
+    render(<MessagingTaskPanel conversationId={null} />);
+
+    await waitFor(() => {
+      expect(screen.getByText("No Conversation Selected")).toBeInTheDocument();
+    });
+
+    expect(screen.getByTestId("messaging-pane-tasks")).toBeInTheDocument();
+    // Verify mock task data is NOT present
+    expect(screen.queryByText("Clean Code Task")).toBeNull();
+    expect(screen.queryByText("Arjun Mehta")).toBeNull();
+  });
+
+  it("does not render mock tasks when conversationId is null", async () => {
+    vi.stubGlobal("fetch", mockFetch({ success: true, data: [] }));
+    render(<MessagingTaskPanel conversationId={null} />);
+
+    await waitFor(() => {
+      expect(screen.getByText("No Conversation Selected")).toBeInTheDocument();
+    });
+
+    // The no-conversation state renders under messaging-pane-tasks testid
+    // No task rows or task panel should be present
+    const container = screen.getByTestId("messaging-pane-tasks");
+    expect(container.querySelector('[data-testid^="task-row-"]')).toBeNull();
+    expect(screen.queryByTestId("task-panel")).toBeNull();
+  });
+});

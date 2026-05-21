@@ -4,7 +4,9 @@ import { db } from "@/lib/db";
 import type { MessagingTaskRecord } from "./domain-types";
 import { participantOrgSafeWhere } from "./org-safe-helpers";
 import { toTaskRecord } from "./mappers";
-import { ConversationAccessError } from "./errors";
+import { ConversationAccessError, InvalidInputError, NotFoundError } from "./errors";
+import { requireConversationAccess } from "./authorization";
+import { toConversationRecord, toParticipantRecord } from "./mappers";
 import type { CreateTaskInput, UpdateTaskStatusInput, AssignTaskInput } from "./service-contracts";
 
 export async function listTasksForConversation(
@@ -45,6 +47,21 @@ export async function createTask(input: CreateTaskInput): Promise<MessagingTaskR
     throw new ConversationAccessError("createTask: active participant access required");
   }
 
+  // Enforce conversation action policy (archive/lock)
+  const conversation = await db.conversation.findUnique({
+    where: { id: conversationId },
+  });
+  if (!conversation) {
+    throw new NotFoundError("Conversation not found");
+  }
+
+  requireConversationAccess(
+    toConversationRecord(conversation),
+    toParticipantRecord(membership),
+    "SEND_MESSAGE",
+    "createTask",
+  );
+
   if (assigneeId) {
     const assigneeMembership = await db.conversationParticipant.findFirst({
       where: {
@@ -54,9 +71,7 @@ export async function createTask(input: CreateTaskInput): Promise<MessagingTaskR
     });
 
     if (!assigneeMembership) {
-      const err = new Error("Assignee must be an active participant in the conversation");
-      err.name = "InvalidInputError";
-      throw err;
+      throw new InvalidInputError("Assignee must be an active participant in the conversation");
     }
   }
 
@@ -85,9 +100,7 @@ export async function updateTaskStatus(input: UpdateTaskStatusInput): Promise<Me
   });
 
   if (!task) {
-    const err = new Error("Task not found");
-    err.name = "NotFoundError";
-    throw err;
+    throw new NotFoundError("Task not found");
   }
 
   const membership = await db.conversationParticipant.findFirst({
@@ -100,6 +113,21 @@ export async function updateTaskStatus(input: UpdateTaskStatusInput): Promise<Me
   if (!membership) {
     throw new ConversationAccessError("updateTaskStatus: active participant access required");
   }
+
+  // Enforce conversation action policy (archive/lock)
+  const conversation = await db.conversation.findUnique({
+    where: { id: task.conversationId },
+  });
+  if (!conversation) {
+    throw new NotFoundError("Conversation not found");
+  }
+
+  requireConversationAccess(
+    toConversationRecord(conversation),
+    toParticipantRecord(membership),
+    "SEND_MESSAGE",
+    "updateTaskStatus",
+  );
 
   const updateData: any = { status };
 
@@ -127,9 +155,7 @@ export async function assignTask(input: AssignTaskInput): Promise<MessagingTaskR
   });
 
   if (!task) {
-    const err = new Error("Task not found");
-    err.name = "NotFoundError";
-    throw err;
+    throw new NotFoundError("Task not found");
   }
 
   const membership = await db.conversationParticipant.findFirst({
@@ -143,6 +169,21 @@ export async function assignTask(input: AssignTaskInput): Promise<MessagingTaskR
     throw new ConversationAccessError("assignTask: active participant access required");
   }
 
+  // Enforce conversation action policy (archive/lock)
+  const conversation = await db.conversation.findUnique({
+    where: { id: task.conversationId },
+  });
+  if (!conversation) {
+    throw new NotFoundError("Conversation not found");
+  }
+
+  requireConversationAccess(
+    toConversationRecord(conversation),
+    toParticipantRecord(membership),
+    "SEND_MESSAGE",
+    "assignTask",
+  );
+
   if (assigneeId) {
     const assigneeMembership = await db.conversationParticipant.findFirst({
       where: {
@@ -152,9 +193,7 @@ export async function assignTask(input: AssignTaskInput): Promise<MessagingTaskR
     });
 
     if (!assigneeMembership) {
-      const err = new Error("Assignee must be an active participant in the conversation");
-      err.name = "InvalidInputError";
-      throw err;
+      throw new InvalidInputError("Assignee must be an active participant in the conversation");
     }
   }
 

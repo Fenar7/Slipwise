@@ -4,7 +4,6 @@ import React, { useEffect, useState } from "react";
 import { Link, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { RadioPill } from "./messaging-ui-primitives";
-import { MOCK_PARTICIPANTS } from "./mock-data";
 import type { TaskPriority, MessagingParticipant } from "./types";
 
 interface MessagingTaskCreateProps {
@@ -55,45 +54,44 @@ export function MessagingTaskCreate({
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  // Use passed participants or fallback to mock data (for backwards compatibility)
-  const allowedParticipants = participants ?? MOCK_PARTICIPANTS.slice(0, 4);
+  // Use passed participants — no mock fallback in live paths
+  const allowedParticipants = participants ?? [];
   const assignee = allowedParticipants.find((p) => p.id === assigneeId) ?? null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) return;
 
+    if (!conversationId) {
+      setError("A conversation must be selected to create a task.");
+      return;
+    }
+
     setSubmitting(true);
     setError(null);
 
     try {
-      if (conversationId) {
-        // Send real API request
-        const res = await fetch(`/api/messaging/conversations/${conversationId}/tasks`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            title: title.trim(),
-            description: description.trim() || null,
-            priority: priorityStringToNumber(priority),
-            assigneeId: assigneeId || null,
-            dueDate: dueDate || null,
-          }),
-        });
+      // Send real API request
+      const res = await fetch(`/api/messaging/conversations/${conversationId}/tasks`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          title: title.trim(),
+          description: description.trim() || null,
+          priority: priorityStringToNumber(priority),
+          assigneeId: assigneeId || null,
+          dueDate: dueDate || null,
+        }),
+      });
 
-        if (!res.ok) {
-          const payload = await res.json();
-          throw new Error(payload.error?.message ?? "Failed to create task");
-        }
-
-        onSuccess?.();
-      } else {
-        // Mock success (fallback)
-        onSuccess?.();
-        onClose();
+      if (!res.ok) {
+        const payload = await res.json();
+        throw new Error(payload.error?.message ?? "Failed to create task");
       }
+
+      onSuccess?.();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create task");
     } finally {

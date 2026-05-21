@@ -7,6 +7,8 @@ import {
   handleMessagingApiError,
   safeRead,
   requireStringField,
+  requireNumberRange,
+  requireValidDate,
 } from "../../../../_utils";
 
 export const runtime = "nodejs";
@@ -37,6 +39,8 @@ export async function POST(
     const body = await request.json();
 
     const title = requireStringField(body.title, "Task title");
+    const priority = requireNumberRange(body.priority ?? 0, "Priority", 0, 3) ?? 0;
+    const dueDate = requireValidDate(body.dueDate, "Due date");
 
     const task = await createTask({
       orgId,
@@ -44,9 +48,9 @@ export async function POST(
       createdBy: userId,
       title,
       description: body.description ?? null,
-      priority: typeof body.priority === "number" ? body.priority : 0,
+      priority,
       assigneeId: body.assigneeId ?? null,
-      dueDate: body.dueDate ? new Date(body.dueDate) : null,
+      dueDate: dueDate ?? null,
       originatingMessageId: body.originatingMessageId ?? null,
     });
 

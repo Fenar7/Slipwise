@@ -7,6 +7,9 @@ vi.mock("@/lib/db", () => {
     conversationParticipant: {
       findFirst: vi.fn(),
     },
+    conversation: {
+      findUnique: vi.fn(),
+    },
     messagingTask: {
       create: vi.fn(),
       findUnique: vi.fn(),
@@ -18,12 +21,50 @@ vi.mock("@/lib/db", () => {
 
 import { db } from "@/lib/db";
 import { createTask, updateTaskStatus, assignTask } from "../task-service";
-import { ConversationAccessError } from "../errors";
+import { ConversationAccessError, InvalidInputError, NotFoundError } from "../errors";
 
 describe("Sprint 6.2 Service layer — Tasks Work Coordination", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
+
+  function mockActiveConversation(overrides: Record<string, unknown> = {}) {
+    return {
+      id: "conv-1",
+      orgId: "org-1",
+      type: "CHANNEL",
+      name: "engineering",
+      description: null,
+      visibility: "PUBLIC",
+      dmPeerId: null,
+      archivedAt: null,
+      archivedBy: null,
+      lockedAt: null,
+      lockedBy: null,
+      lockReason: null,
+      createdBy: "user-owner",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      ...overrides,
+    };
+  }
+
+  function mockActiveParticipant(overrides: Record<string, unknown> = {}) {
+    return {
+      id: "membership-1",
+      orgId: "org-1",
+      conversationId: "conv-1",
+      userId: "user-1",
+      role: "MEMBER",
+      leftAt: null,
+      mutedUntil: null,
+      displayName: null,
+      isPinned: false,
+      joinedAt: new Date(),
+      updatedAt: new Date(),
+      ...overrides,
+    };
+  }
 
   describe("createTask", () => {
     it("throws ConversationAccessError if creator is not a participant", async () => {
@@ -42,8 +83,9 @@ describe("Sprint 6.2 Service layer — Tasks Work Coordination", () => {
     it("throws InvalidInputError if assignee is not a participant", async () => {
       // First call for creator succeeds, second call for assignee returns null
       (db.conversationParticipant.findFirst as any)
-        .mockResolvedValueOnce({ id: "membership-1" }) // Creator check
+        .mockResolvedValueOnce(mockActiveParticipant()) // Creator check
         .mockResolvedValueOnce(null); // Assignee check
+      (db.conversation.findUnique as any).mockResolvedValue(mockActiveConversation());
 
       const promise = createTask({
         orgId: "org-1",
@@ -54,13 +96,14 @@ describe("Sprint 6.2 Service layer — Tasks Work Coordination", () => {
       });
 
       await expect(promise).rejects.toThrow("Assignee must be an active participant");
-      await expect(promise).rejects.toThrow(expect.objectContaining({ name: "InvalidInputError" }));
+      await expect(promise).rejects.toThrow(InvalidInputError);
     });
 
     it("successfully creates task when creator and assignee are valid", async () => {
       (db.conversationParticipant.findFirst as any)
-        .mockResolvedValueOnce({ id: "membership-1" }) // Creator check
-        .mockResolvedValueOnce({ id: "membership-assignee" }); // Assignee check
+        .mockResolvedValueOnce(mockActiveParticipant()) // Creator check
+        .mockResolvedValueOnce(mockActiveParticipant({ userId: "user-assignee" })); // Assignee check
+      (db.conversation.findUnique as any).mockResolvedValue(mockActiveConversation());
 
       const mockDbRecord = {
         id: "task-1",
@@ -118,7 +161,7 @@ describe("Sprint 6.2 Service layer — Tasks Work Coordination", () => {
       });
 
       await expect(promise).rejects.toThrow("Task not found");
-      await expect(promise).rejects.toThrow(expect.objectContaining({ name: "NotFoundError" }));
+      await expect(promise).rejects.toThrow(NotFoundError);
     });
 
     it("throws ConversationAccessError if actor is not an active participant", async () => {
@@ -155,7 +198,8 @@ describe("Sprint 6.2 Service layer — Tasks Work Coordination", () => {
       };
 
       (db.messagingTask.findUnique as any).mockResolvedValue(mockTask);
-      (db.conversationParticipant.findFirst as any).mockResolvedValue({ id: "membership-1" });
+      (db.conversationParticipant.findFirst as any).mockResolvedValue(mockActiveParticipant());
+      (db.conversation.findUnique as any).mockResolvedValue(mockActiveConversation());
       (db.messagingTask.update as any).mockImplementation(({ data }: any) => {
         return Promise.resolve({
           ...mockTask,
@@ -206,7 +250,8 @@ describe("Sprint 6.2 Service layer — Tasks Work Coordination", () => {
       };
 
       (db.messagingTask.findUnique as any).mockResolvedValue(mockTask);
-      (db.conversationParticipant.findFirst as any).mockResolvedValue({ id: "membership-1" });
+      (db.conversationParticipant.findFirst as any).mockResolvedValue(mockActiveParticipant());
+      (db.conversation.findUnique as any).mockResolvedValue(mockActiveConversation());
       (db.messagingTask.update as any).mockImplementation(({ data }: any) => {
         return Promise.resolve({
           ...mockTask,
@@ -256,8 +301,9 @@ describe("Sprint 6.2 Service layer — Tasks Work Coordination", () => {
 
       (db.messagingTask.findUnique as any).mockResolvedValue(mockTask);
       (db.conversationParticipant.findFirst as any)
-        .mockResolvedValueOnce({ id: "membership-actor" }) // Actor check
-        .mockResolvedValueOnce({ id: "membership-assignee" }); // Assignee check
+        .mockResolvedValueOnce(mockActiveParticipant()) // Actor check
+        .mockResolvedValueOnce(mockActiveParticipant({ userId: "user-assignee" })); // Assignee check
+      (db.conversation.findUnique as any).mockResolvedValue(mockActiveConversation());
       (db.messagingTask.update as any).mockImplementation(({ data }: any) => {
         return Promise.resolve({
           ...mockTask,
@@ -277,6 +323,88 @@ describe("Sprint 6.2 Service layer — Tasks Work Coordination", () => {
         where: { id: "task-1" },
         data: { assigneeId: "user-assignee" },
       });
+    });
+  });
+
+  describe("conversation action policy enforcement", () => {
+    it("createTask rejects writes to archived conversations", async () => {
+      (db.conversationParticipant.findFirst as any).mockResolvedValue(mockActiveParticipant());
+      (db.conversation.findUnique as any).mockResolvedValue(
+        mockActiveConversation({ archivedAt: new Date(), archivedBy: "user-admin" })
+      );
+
+      await expect(
+        createTask({
+          orgId: "org-1",
+          conversationId: "conv-1",
+          createdBy: "user-1",
+          title: "Should fail",
+        })
+      ).rejects.toThrow("createTask: conversation is archived");
+    });
+
+    it("createTask rejects writes to locked conversations", async () => {
+      (db.conversationParticipant.findFirst as any).mockResolvedValue(mockActiveParticipant());
+      (db.conversation.findUnique as any).mockResolvedValue(
+        mockActiveConversation({ lockedAt: new Date(), lockedBy: "user-admin", lockReason: "audit" })
+      );
+
+      await expect(
+        createTask({
+          orgId: "org-1",
+          conversationId: "conv-1",
+          createdBy: "user-1",
+          title: "Should fail",
+        })
+      ).rejects.toThrow("createTask: conversation is locked");
+    });
+
+    it("updateTaskStatus rejects writes to archived conversations", async () => {
+      (db.messagingTask.findUnique as any).mockResolvedValue({
+        id: "task-1", conversationId: "conv-1", status: "OPEN",
+      });
+      (db.conversationParticipant.findFirst as any).mockResolvedValue(mockActiveParticipant());
+      (db.conversation.findUnique as any).mockResolvedValue(
+        mockActiveConversation({ archivedAt: new Date() })
+      );
+
+      await expect(
+        updateTaskStatus({
+          orgId: "org-1", taskId: "task-1", status: "DONE", actorId: "user-1",
+        })
+      ).rejects.toThrow("updateTaskStatus: conversation is archived");
+    });
+
+    it("updateTaskStatus rejects writes to locked conversations", async () => {
+      (db.messagingTask.findUnique as any).mockResolvedValue({
+        id: "task-1", conversationId: "conv-1", status: "OPEN",
+      });
+      (db.conversationParticipant.findFirst as any).mockResolvedValue(mockActiveParticipant());
+      (db.conversation.findUnique as any).mockResolvedValue(
+        mockActiveConversation({ lockedAt: new Date() })
+      );
+
+      await expect(
+        updateTaskStatus({
+          orgId: "org-1", taskId: "task-1", status: "DONE", actorId: "user-1",
+        })
+      ).rejects.toThrow("updateTaskStatus: conversation is locked");
+    });
+
+    it("assignTask rejects writes to archived conversations", async () => {
+      (db.messagingTask.findUnique as any).mockResolvedValue({
+        id: "task-1", conversationId: "conv-1", status: "OPEN",
+      });
+      (db.conversationParticipant.findFirst as any).mockResolvedValue(mockActiveParticipant());
+      (db.conversation.findUnique as any).mockResolvedValue(
+        mockActiveConversation({ archivedAt: new Date() })
+      );
+
+      await expect(
+        assignTask({
+          orgId: "org-1", taskId: "task-1", assigneeId: "user-2", actorId: "user-1",
+        })
+      ).rejects.toThrow("assignTask: conversation is archived");
     });
   });
 });

@@ -4,10 +4,21 @@ import {
   requireMessagingApiContext,
   messagingApiResponse,
   handleMessagingApiError,
+  requireEnumField,
+  MessagingApiError,
+  MessagingApiErrorCode,
 } from "../../../../../_utils";
 import type { MessagingTaskStatus } from "@/lib/messaging/domain-types";
 
 export const runtime = "nodejs";
+
+const VALID_TASK_STATUSES: readonly MessagingTaskStatus[] = [
+  "OPEN",
+  "IN_PROGRESS",
+  "DONE",
+  "OVERDUE",
+  "CANCELLED",
+];
 
 export async function PATCH(
   request: NextRequest,
@@ -18,13 +29,26 @@ export async function PATCH(
     const { taskId } = await params;
     const body = await request.json();
 
+    // Reject empty/no-op payloads cleanly
+    if (
+      body.status === undefined &&
+      body.assigneeId === undefined
+    ) {
+      throw new MessagingApiError(
+        MessagingApiErrorCode.VALIDATION_ERROR,
+        "At least one of status or assigneeId must be provided.",
+        422,
+      );
+    }
+
     let updatedTask = null;
 
-    if (body.status) {
+    if (body.status !== undefined) {
+      const status = requireEnumField(body.status, "status", VALID_TASK_STATUSES);
       updatedTask = await updateTaskStatus({
         orgId,
         taskId,
-        status: body.status as MessagingTaskStatus,
+        status,
         actorId: userId,
       });
     }
@@ -36,10 +60,6 @@ export async function PATCH(
         assigneeId: body.assigneeId,
         actorId: userId,
       });
-    }
-
-    if (!updatedTask) {
-      throw new Error("No update fields provided");
     }
 
     return messagingApiResponse(updatedTask);

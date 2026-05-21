@@ -1,11 +1,10 @@
 "use client";
 
 import React, { useState } from "react";
-import { AlertTriangle, Clock, Link, MoreHorizontal, ArrowLeft, Trash2, Pencil, Plus, CheckSquare } from "lucide-react";
+import { AlertTriangle, Clock, Link, MoreHorizontal, ArrowLeft, Trash2, Pencil, Plus, CheckSquare, MessageSquare } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { RadioPill } from "./messaging-ui-primitives";
 import { MessagingTaskCreate } from "./messaging-task-create";
-import { MOCK_TASK_DETAILS, MOCK_TASKS } from "./mock-data";
 import type { TaskFilterStatus, TaskPriority, MessagingTaskDetail, MessagingTask, MessagingParticipant, TaskStatus } from "./types";
 import { useConversationTasks } from "./lib/use-conversation-tasks";
 import { useConversationDetail } from "./lib/use-conversation-detail";
@@ -276,22 +275,10 @@ export function MessagingTaskPanel({ conversationId }: MessagingTaskPanelProps) 
     };
   }, []);
 
-  // Map API tasks to UI shape
+  // Map API tasks to UI shape — only when we have a real conversation context
   const listTasks: MessagingTaskDetail[] = React.useMemo(() => {
-    if (conversationId) {
-      return (apiTasks ?? []).map(mapApiTaskToFrontend);
-    }
-    // Fallback to MOCK_TASKS for backwards compatibility
-    return MOCK_TASKS.map((t) => {
-      const mockDetail = MOCK_TASK_DETAILS.find((td) => td.id === t.id);
-      return {
-        ...t,
-        priority: mockDetail?.priority ?? "medium",
-        description: mockDetail?.description ?? null,
-        createdAt: mockDetail?.createdAt ?? new Date().toISOString(),
-        createdBy: mockDetail?.createdBy ?? "System",
-      };
-    });
+    if (!conversationId) return [];
+    return (apiTasks ?? []).map(mapApiTaskToFrontend);
   }, [conversationId, apiTasks, mapApiTaskToFrontend]);
 
   const filtered = filter === "all"
@@ -337,6 +324,20 @@ export function MessagingTaskPanel({ conversationId }: MessagingTaskPanelProps) 
 
     refreshTasks();
   };
+
+  if (!conversationId) {
+    return (
+      <div data-testid="messaging-pane-tasks" className="flex flex-col h-full items-center justify-center py-12 text-center px-6">
+        <MessageSquare className="h-10 w-10 mb-3" style={{ color: "#E0E0E0" }} />
+        <h3 className="text-base font-bold mb-1" style={{ color: "#1C1B1F" }}>
+          No Conversation Selected
+        </h3>
+        <p className="text-sm max-w-xs" style={{ color: "#79747E" }}>
+          Select a conversation to view and manage its tasks.
+        </p>
+      </div>
+    );
+  }
 
   if (tasksLoading) {
     return (
