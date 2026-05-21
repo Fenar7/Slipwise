@@ -26,7 +26,7 @@ export async function PATCH(
 ) {
   try {
     const { orgId, userId } = await requireMessagingApiContext();
-    const { taskId } = await params;
+    const { id: conversationId, taskId } = await params;
     const body = await request.json();
 
     // Reject empty/no-op payloads cleanly
@@ -50,6 +50,7 @@ export async function PATCH(
         taskId,
         status,
         actorId: userId,
+        conversationId,
       });
     }
 
@@ -59,6 +60,7 @@ export async function PATCH(
         taskId,
         assigneeId: body.assigneeId,
         actorId: userId,
+        conversationId,
       });
     }
 
