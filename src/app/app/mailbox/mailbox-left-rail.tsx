@@ -26,7 +26,7 @@ import {
 } from "lucide-react";
 import type { MailboxConnection, MailboxGroup, MailboxTreeItem } from "./types";
 import type { SavedViewItem } from "./use-mailbox-saved-views";
-import { GLOBAL_SMART_VIEWS, MOCK_CONNECTIONS } from "./mock-data";
+import { GLOBAL_SMART_VIEWS } from "./mock-data";
 
 const ICON_MAP: Record<string, React.ElementType> = {
   Inbox,
@@ -261,7 +261,7 @@ interface MailboxLeftRailProps {
 }
 
 export function MailboxLeftRail({
-  connections = MOCK_CONNECTIONS,
+  connections = [],
   onCompose,
   savedViews = [],
   onDeleteSavedView,
