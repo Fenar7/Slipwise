@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { listThreadReplies, replyToThread } from "@/lib/messaging";
 import { db } from "@/lib/db";
+import { verifyUploadToken } from "@/lib/messaging/service-helpers";
 import {
   requireMessagingApiContext,
   messagingApiResponse,
@@ -12,15 +13,18 @@ import {
 
 export const runtime = "nodejs";
 
-function parseAttachments(raw: unknown): Array<{ storageRef: string; fileName: string; mimeType: string; sizeBytes: number; thumbnailRef?: string | null }> | undefined {
+function parseAttachments(raw: unknown, orgId: string, userId: string): Array<{ storageRef: string; fileName: string; mimeType: string; sizeBytes: number; uploadToken: string; thumbnailRef?: string | null }> | undefined {
   if (!Array.isArray(raw) || raw.length === 0) return undefined;
-  return raw.map((item) => {
+  return raw.map((item, index) => {
     if (typeof item !== "object" || item === null) {
       throw new Error("attachments: each item must be an object");
     }
     const att = item as Record<string, unknown>;
     if (typeof att.storageRef !== "string" || att.storageRef.trim().length === 0) {
       throw new Error("attachments: storageRef is required");
+    }
+    if (typeof att.uploadToken !== "string" || att.uploadToken.trim().length === 0) {
+      throw new Error("attachments: uploadToken is required");
     }
     if (typeof att.fileName !== "string" || att.fileName.trim().length === 0) {
       throw new Error("attachments: fileName is required");
@@ -31,8 +35,12 @@ function parseAttachments(raw: unknown): Array<{ storageRef: string; fileName: s
     if (typeof att.sizeBytes !== "number" || att.sizeBytes < 0 || !Number.isFinite(att.sizeBytes)) {
       throw new Error("attachments: sizeBytes must be a non-negative number");
     }
+    if (!verifyUploadToken(orgId, userId, att.storageRef.trim(), att.uploadToken.trim())) {
+      throw new Error(`attachments: uploadToken invalid or expired for item ${index}`);
+    }
     return {
       storageRef: att.storageRef.trim(),
+      uploadToken: att.uploadToken.trim(),
       fileName: att.fileName.trim(),
       mimeType: att.mimeType.trim(),
       sizeBytes: att.sizeBytes,
@@ -65,9 +73,6 @@ function parseMentions(raw: unknown): Array<{ userId: string; offsetStart: numbe
 /**
  * GET /api/messaging/conversations/:id/threads/:threadId/replies
  * List replies for a specific thread.
- *
- * Sprint 5.2: live thread reply hydration.
- * Returns replies ordered by createdAt ascending.
  */
 export async function GET(
   _request: NextRequest,
@@ -94,10 +99,25 @@ export async function GET(
       : [];
     const mentionedMessageIds = new Set(mentionRows.map((row: { messageId: string }) => row.messageId));
 
+    const replyIdsForAttachments = replies.map((r) => r.id);
+    const attachmentRows = replyIdsForAttachments.length
+      ? await db.conversationAttachment.findMany({
+          where: { orgId, messageId: { in: replyIdsForAttachments } },
+          select: { id: true, messageId: true, fileName: true, mimeType: true, sizeBytes: true, scanStatus: true },
+        })
+      : [];
+    const attachmentsByReplyId = new Map<string, Array<{ id: string; fileName: string; mimeType: string; sizeBytes: number; scanStatus: string }>>();
+    for (const row of attachmentRows) {
+      const list = attachmentsByReplyId.get(row.messageId) ?? [];
+      list.push({ id: row.id, fileName: row.fileName, mimeType: row.mimeType, sizeBytes: row.sizeBytes, scanStatus: row.scanStatus });
+      attachmentsByReplyId.set(row.messageId, list);
+    }
+
     return messagingApiResponse({
       replies: replies.map((reply) => ({
         ...reply,
         mentionsCurrentUser: mentionedMessageIds.has(reply.id),
+        attachments: attachmentsByReplyId.get(reply.id) ?? [],
       })),
     });
   } catch (error) {
@@ -109,8 +129,7 @@ export async function GET(
  * POST /api/messaging/conversations/:id/threads/:threadId/replies
  * Reply to a thread.
  *
- * Sprint 5.2: live thread reply creation via dedicated replyToThread service.
- * Increments thread.replyCount atomically.
+ * Sprint 5.5 hardening: attachment items must include a valid uploadToken.
  */
 export async function POST(
   request: NextRequest,
@@ -123,7 +142,7 @@ export async function POST(
     const body = (await request.json()) as Record<string, unknown>;
 
     const messageBody = requireStringField(body.body, "body", 10000);
-    const attachments = parseAttachments(body.attachments);
+    const attachments = parseAttachments(body.attachments, orgId, userId);
     const mentions = parseMentions(body.mentions);
 
     const message = await replyToThread({

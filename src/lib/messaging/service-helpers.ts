@@ -171,3 +171,59 @@ export async function assertGovernanceAction(
 
   return { conversation, participant };
 }
+// ─── Attachment upload token helpers (Sprint 5.5 hardening) ────────────────────
+
+import crypto from "node:crypto";
+
+const UPLOAD_TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour
+
+function getUploadTokenSecret(): string {
+  return process.env.UPLOAD_TOKEN_SECRET ?? process.env.MESSAGING_SIGNING_KEY ?? "upload-token-dev-secret";
+}
+
+export interface UploadTokenPayload {
+  orgId: string;
+  userId: string;
+  storageRef: string;
+  exp: number; // unix ms
+}
+
+export function mintUploadToken(orgId: string, userId: string, storageRef: string): string {
+  const payload: UploadTokenPayload = {
+    orgId,
+    userId,
+    storageRef,
+    exp: Date.now() + UPLOAD_TOKEN_TTL_MS,
+  };
+  const data = JSON.stringify(payload);
+  const hmac = crypto.createHmac("sha256", getUploadTokenSecret()).update(data).digest("hex");
+  const token = Buffer.from(JSON.stringify({ data, hmac })).toString("base64url");
+  return token;
+}
+
+export function verifyUploadToken(
+  orgId: string,
+  userId: string,
+  storageRef: string,
+  token: string,
+): boolean {
+  try {
+    const raw = Buffer.from(token, "base64url").toString("utf-8");
+    const { data, hmac } = JSON.parse(raw) as { data: string; hmac: string };
+
+    const expectedHmac = crypto.createHmac("sha256", getUploadTokenSecret()).update(data).digest("hex");
+    if (!crypto.timingSafeEqual(Buffer.from(hmac), Buffer.from(expectedHmac))) {
+      return false;
+    }
+
+    const payload = JSON.parse(data) as UploadTokenPayload;
+    if (payload.orgId !== orgId) return false;
+    if (payload.userId !== userId) return false;
+    if (payload.storageRef !== storageRef) return false;
+    if (payload.exp < Date.now()) return false;
+
+    return true;
+  } catch {
+    return false;
+  }
+}

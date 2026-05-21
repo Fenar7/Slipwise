@@ -416,7 +416,7 @@ export function MessagingWorkspace() {
                     options?: { mentions?: Array<{ userId: string; offsetStart: number; offsetEnd: number }> },
                   ) => {
                     clearSendError();
-                    const result = await sendMessage(activeConvId!, body, null, options?.mentions);
+                    const result = await sendMessage(activeConvId!, body, null, options?.mentions?.length ? { mentions: options.mentions } : undefined);
                     if (result && activeConvId) {
                       await refreshDetail();
                       await refreshList();
@@ -429,7 +429,7 @@ export function MessagingWorkspace() {
                     options?: { mentions?: Array<{ userId: string; offsetStart: number; offsetEnd: number }> },
                   ) => {
                     clearReplyError();
-                    const result = await sendReply(activeConvId!, threadId, body, options?.mentions);
+                    const result = await sendReply(activeConvId!, threadId, body, options?.mentions?.length ? { mentions: options.mentions } : undefined);
                     if (result && activeConvId) {
                       await refreshDetail();
                       await refreshList();
@@ -447,7 +447,7 @@ export function MessagingWorkspace() {
             </div>
           ) : (
             /* Sprint 1.1 pane for tasks / meetings / files / admin */
-            <MessagingWorkspacePane activeSection={state.activeSection} />
+            <MessagingWorkspacePane activeSection={state.activeSection} conversationId={activeConvId} />
           )}
         </div>
 

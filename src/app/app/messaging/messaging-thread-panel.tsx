@@ -10,7 +10,7 @@
  * - Inline hover action bar (React, Reply, Edit, More)
  * - Edit mode state (inline composer replacing message body)
  * - Reaction chips (hovered, unhovered, current-user-reacted states)
- * - Thread reply composer shell
+ * - Thread reply composer with real attachment staging/upload/removal (Sprint 5.5)
  */
 
 import React from "react";
@@ -26,8 +26,11 @@ import {
   FileText,
   FileSpreadsheet,
   Check,
+  AlertTriangle,
+  Loader2,
 } from "lucide-react";
 import type { ConversationMessage, MessageReaction, EditState } from "./types";
+import { useAttachmentUpload, type UploadedAttachment } from "./lib/use-attachment-upload";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -40,7 +43,51 @@ function formatTime(iso: string): string {
   });
 }
 
-// ─── Attachment chip ──────────────────────────────────────────────────────────
+// ─── Attachment chips for thread replies ──────────────────────────────────────
+
+function ThreadReplyAttachmentChip({ attachment, onRemove }: { attachment: UploadedAttachment; onRemove?: () => void }) {
+  const isSpreadsheet = attachment.mimeType?.includes("spreadsheet") || attachment.mimeType?.includes("excel") || attachment.mimeType === "text/csv";
+  const Icon = isSpreadsheet ? FileSpreadsheet : FileText;
+  return (
+    <div
+      className="mt-1.5 inline-flex items-center gap-2 rounded-lg border bg-gray-50 px-2.5 py-1.5 text-xs"
+      style={{ borderColor: "#E8E8E8" }}
+    >
+      <Icon className="h-3.5 w-3.5 shrink-0 text-[#79747E]" />
+      <span className="max-w-[140px] truncate font-medium" style={{ color: "#1C1B1F" }}>
+        {attachment.fileName}
+      </span>
+      {onRemove && (
+        <button
+          type="button"
+          onClick={onRemove}
+          className="ml-1 flex h-4 w-4 items-center justify-center rounded-full hover:bg-gray-200"
+          aria-label={`Remove ${attachment.fileName}`}
+        >
+          <X className="h-3 w-3 text-[#79747E]" />
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ─── Failure chip ─────────────────────────────────────────────────────────────
+
+function UploadFailureChip({ fileName, message, onDismiss }: { fileName: string; message: string; onDismiss?: () => void }) {
+  return (
+    <div className="mt-1.5 inline-flex items-center gap-2 rounded-lg border bg-red-50 px-2.5 py-1.5 text-xs" style={{ borderColor: "#FECACA" }}>
+      <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-red-600" />
+      <span className="text-red-700 truncate max-w-[160px]" title={message}>{fileName} – {message}</span>
+      {onDismiss && (
+        <button type="button" onClick={onDismiss} className="ml-1 flex h-4 w-4 items-center justify-center rounded-full hover:bg-red-100">
+          <X className="h-3 w-3 text-red-500" />
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ─── Attachment chip (legacy, for anchor message) ─────────────────────────────
 
 function AttachmentChip({ name }: { name: string }) {
   const isSpreadsheet = name.endsWith(".xlsx") || name.endsWith(".csv");
@@ -238,7 +285,6 @@ function ThreadReplyRow({
 }: ThreadReplyRowProps) {
   const isEditing = editState?.messageId === reply.id;
 
-  // reactions already include reactedByCurrentUser from the data
   const enrichedReactions: MessageReaction[] = reply.reactions.map((r) => ({ ...r }));
 
   return (
@@ -282,7 +328,13 @@ function ThreadReplyRow({
             <p className="mt-0.5 text-xs leading-relaxed" style={{ color: "#1C1B1F" }}>
               {reply.body}
             </p>
-            {reply.attachmentRef && <AttachmentChip name={reply.attachmentRef} />}
+            {reply.attachmentRecords && reply.attachmentRecords.length > 0 && (
+            <div className="mt-1.5 flex flex-wrap gap-1">
+              {reply.attachmentRecords.map((att) => (
+                <AttachmentChip key={att.id} name={att.name} />
+              ))}
+            </div>
+          )}
             <ReactionChips
               reactions={enrichedReactions}
               onToggle={(emoji) => onToggleReaction(reply.id, emoji)}
@@ -338,7 +390,13 @@ function ThreadAnchorMessage({ message }: { message: ConversationMessage }) {
           <p className="mt-0.5 text-sm leading-relaxed" style={{ color: "#1C1B1F" }}>
             {message.body}
           </p>
-          {message.attachmentRef && <AttachmentChip name={message.attachmentRef} />}
+          {message.attachmentRecords && message.attachmentRecords.length > 0 && (
+            <div className="mt-1.5 flex flex-wrap gap-1">
+              {message.attachmentRecords.map((att) => (
+                <AttachmentChip key={att.id} name={att.name} />
+              ))}
+            </div>
+          )}
           {message.reactions.length > 0 && (
             <ReactionChips
               reactions={message.reactions.map((r) => ({
@@ -355,23 +413,105 @@ function ThreadAnchorMessage({ message }: { message: ConversationMessage }) {
 
 // ─── Thread reply composer ────────────────────────────────────────────────────
 
+export interface ThreadReplyAttachmentPayload {
+  storageRef: string;
+  uploadToken: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+}
+
 interface ThreadReplyComposerProps {
-  onReply?: (body: string) => void;
+  onReply?: (body: string, attachments?: ThreadReplyAttachmentPayload[]) => void;
   sendingReply?: boolean;
 }
 
 function ThreadReplyComposer({ onReply, sendingReply = false }: ThreadReplyComposerProps) {
+  const {
+    stagedFiles,
+    uploading,
+    failures,
+    upload,
+    removeStaged,
+    clearFailures,
+    clearAll,
+    error: uploadError,
+  } = useAttachmentUpload();
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const editorRef = React.useRef<HTMLDivElement>(null);
+
+  const handleFileSelect = React.useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    for (let i = 0; i < files.length; i++) {
+      await upload(files[i]);
+    }
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  }, [upload]);
+
+  const handleSend = React.useCallback(() => {
+    const body = editorRef.current?.textContent?.trim() ?? "";
+    if (!body && stagedFiles.length === 0) return;
+    const attachments: ThreadReplyAttachmentPayload[] = stagedFiles.map((f) => ({
+      storageRef: f.storageRef,
+      uploadToken: f.uploadToken,
+      fileName: f.fileName,
+      mimeType: f.mimeType,
+      sizeBytes: f.sizeBytes,
+    }));
+    onReply?.(body || "", attachments.length > 0 ? attachments : undefined);
+    if (editorRef.current) editorRef.current.textContent = "";
+    clearAll();
+  }, [stagedFiles, onReply, clearAll]);
+
   return (
     <div
       className="shrink-0 border-t px-3 py-2.5"
       style={{ borderColor: "#E0E0E0" }}
       data-testid="thread-composer"
     >
+      {/* Staged attachments */}
+      {stagedFiles.length > 0 && (
+        <div className="mb-2 flex flex-wrap gap-1" data-testid="thread-composer-staged">
+          {stagedFiles.map((att) => (
+            <ThreadReplyAttachmentChip
+              key={att.storageRef}
+              attachment={att}
+              onRemove={() => removeStaged(att.storageRef)}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* Upload failures */}
+      {failures.length > 0 && (
+        <div className="mb-2 flex flex-wrap gap-1" data-testid="thread-composer-failures">
+          {failures.map((f, i) => (
+            <UploadFailureChip
+              key={i}
+              fileName={f.fileName}
+              message={f.message}
+              onDismiss={() => clearFailures()}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* Upload error banner */}
+      {uploadError && (
+        <div className="mb-2 text-[11px] text-red-600" data-testid="thread-composer-upload-error">
+          {uploadError}
+        </div>
+      )}
+
       <div
         className="flex items-center gap-2 rounded-xl border bg-[#f8f9fc] px-3 py-2 transition-shadow focus-within:shadow-sm focus-within:border-gray-300"
         style={{ borderColor: "#E0E0E0" }}
       >
         <div
+          ref={editorRef}
           role="textbox"
           aria-label="Reply in thread"
           aria-multiline="true"
@@ -382,14 +522,34 @@ function ThreadReplyComposer({ onReply, sendingReply = false }: ThreadReplyCompo
           data-placeholder={sendingReply ? "Sending…" : "Reply in thread…"}
           data-testid="thread-reply-input"
           onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey && onReply) {
+            if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
-              onReply(e.currentTarget.textContent ?? "");
-              e.currentTarget.textContent = "";
+              handleSend();
             }
           }}
         />
-        <Paperclip className="h-3.5 w-3.5 shrink-0" style={{ color: "#C4C4C4" }} />
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={sendingReply || uploading}
+          className="shrink-0 flex h-6 w-6 items-center justify-center rounded hover:bg-gray-200 transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#DC2626]"
+          aria-label="Attach file"
+          data-testid="thread-attach-button"
+        >
+          {uploading ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" style={{ color: "#C4C4C4" }} />
+          ) : (
+            <Paperclip className="h-3.5 w-3.5" style={{ color: "#79747E" }} />
+          )}
+        </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          className="sr-only"
+          multiple
+          data-testid="thread-file-input"
+          onChange={handleFileSelect}
+        />
       </div>
     </div>
   );
@@ -401,8 +561,8 @@ export interface MessagingThreadPanelProps {
   anchorMessage: ConversationMessage;
   replies: ConversationMessage[];
   onClose: () => void;
-  /** Live reply handler — Sprint 5.2 */
-  onReply?: (body: string) => void;
+  /** Live reply handler — accepts body + attachments payload (Sprint 5.5) */
+  onReply?: (body: string, attachments?: ThreadReplyAttachmentPayload[]) => void;
   /** Whether a reply is currently being sent */
   sendingReply?: boolean;
   /** Error from last reply attempt */
@@ -430,7 +590,6 @@ export function MessagingThreadPanel({
   }
 
   function handleSaveEdit(_messageId: string, _newBody: string) {
-    // Phase 1: static — no persistence
     setEditState(null);
   }
 

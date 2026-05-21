@@ -16,6 +16,19 @@ export interface ThreadMentionPayload {
   offsetEnd: number;
 }
 
+export interface ThreadAttachmentPayload {
+  storageRef: string;
+  uploadToken: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+}
+
+export interface SendThreadReplyOptions {
+  mentions?: ThreadMentionPayload[];
+  attachments?: ThreadAttachmentPayload[];
+}
+
 export function useSendThreadReply() {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -25,7 +38,7 @@ export function useSendThreadReply() {
     conversationId: string,
     threadId: string,
     body: string,
-    mentions?: ThreadMentionPayload[],
+    options?: SendThreadReplyOptions,
   ): Promise<SendThreadReplyResult | null> => {
     const guardKey = `${conversationId}:${threadId}::${Date.now()}`;
     guardRef.current = guardKey;
@@ -36,7 +49,11 @@ export function useSendThreadReply() {
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ body, mentions: mentions ?? [] }),
+        body: JSON.stringify({
+          body,
+          mentions: options?.mentions ?? [],
+          attachments: options?.attachments ?? [],
+        }),
       });
       const payload = await res.json();
       if (guardRef.current !== guardKey) return null;

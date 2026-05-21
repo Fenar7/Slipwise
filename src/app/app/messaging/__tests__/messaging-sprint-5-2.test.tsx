@@ -335,7 +335,8 @@ describe("MessagingThreadPanel Sprint 5.2 live reply", () => {
       authorName: "Alice", authorInitials: "AL", authorRole: "member" as const,
       body: "Anchor", sentAt: "2026-05-18T10:00:00Z",
       hasThread: true, threadReplyCount: 1,
-      reactions: [], attachmentRef: null, mentionsCurrentUser: false,
+      reactions: [], attachmentRef: null,
+      attachmentRecords: [], mentionsCurrentUser: false,
     };
 
     render(
@@ -364,7 +365,8 @@ describe("MessagingThreadPanel Sprint 5.2 live reply", () => {
       authorName: "Alice", authorInitials: "AL", authorRole: "member" as const,
       body: "Anchor", sentAt: "2026-05-18T10:00:00Z",
       hasThread: true, threadReplyCount: 1,
-      reactions: [], attachmentRef: null, mentionsCurrentUser: false,
+      reactions: [], attachmentRef: null,
+      attachmentRecords: [], mentionsCurrentUser: false,
     };
     render(
       <MessagingThreadPanel
