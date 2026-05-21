@@ -303,10 +303,10 @@ export async function listCustomers(params?: {
     const hasValidToken = customer.portalTokens.some(
       (t) => !t.isRevoked && t.expiresAt > new Date()
     );
-    const portalStatus: "enabled" | "invited" | "ineligible" = hasValidToken
+    const portalStatus: "enabled" | "invited" | "disabled" | "ineligible" = hasValidToken
       ? "enabled"
       : hasEmail
-        ? "invited"
+        ? "disabled"
         : "ineligible";
     return {
       ...customer,
@@ -856,7 +856,7 @@ export async function getClientDetail(id: string): Promise<ClientDetail | null> 
   const portalStatus: "enabled" | "invited" | "disabled" | "ineligible" = hasValidToken
     ? "enabled"
     : hasEmail
-      ? "invited"
+      ? "disabled"
       : "ineligible";
 
   const portalEnabled = portalStatus === "enabled";

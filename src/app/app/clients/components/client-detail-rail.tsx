@@ -92,22 +92,13 @@ export function ClientDetailRail({ client }: ClientDetailRailProps) {
         </div>
 
         <div className="flex flex-col gap-2 pt-2 border-t border-[var(--border-soft)]">
-          <button
-            disabled
-            className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-[var(--border-default)] bg-white px-3 py-2 text-xs font-medium text-[var(--text-secondary)] opacity-50 cursor-not-allowed w-full"
-          >
-            <Globe className="h-3.5 w-3.5" />
-            {client.portalEnabled ? "Manage Hub" : "Enable Hub"}
-          </button>
-          {client.portalEnabled && (
-            <button
-              disabled
-              className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-[var(--border-default)] bg-white px-3 py-2 text-xs font-medium text-[var(--text-secondary)] opacity-50 cursor-not-allowed w-full"
-            >
-              <Link2 className="h-3.5 w-3.5" />
-              Copy Hub Link
-            </button>
-          )}
+          <p className="text-[0.725rem] text-[var(--text-secondary)] leading-relaxed bg-[var(--surface-subtle)] p-2.5 rounded-lg border border-[var(--border-soft)]">
+            {client.portalEnabled
+              ? "Secure hub access is active. The client can view and download their invoices and quotes via their unique portal link."
+              : client.portalStatus === "ineligible"
+              ? "An email address must be configured on the client's profile before provisioning hub access."
+              : "Portal access is currently inactive. Client hub provisioning is offline."}
+          </p>
         </div>
       </RailCard>
 
@@ -143,7 +134,17 @@ export function ClientDetailRail({ client }: ClientDetailRailProps) {
         <dl className="space-y-3">
           <MetadataItem label="Email" value={client.email} icon={Mail} />
           <MetadataItem label="Phone" value={client.phone} icon={Phone} />
-          <MetadataItem label="Address" value={`${client.city}, ${client.state}`} icon={MapPin} />
+          <MetadataItem
+            label="Address"
+            value={
+              client.city || client.state
+                ? [client.city, client.state].filter(Boolean).join(", ")
+                : client.address
+                ? client.address.split("\n")[0]
+                : "—"
+            }
+            icon={MapPin}
+          />
         </dl>
       </RailCard>
 

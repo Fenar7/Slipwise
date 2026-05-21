@@ -108,7 +108,7 @@ describe("Sprint 2.2 — Canonical client detail server-side query", () => {
     expect(result!.recentActivity).toEqual([]);
   });
 
-  it("derives portal status to invited if email is present but no active token", async () => {
+  it("derives portal status to disabled if email is present but no active token", async () => {
     mocks.customerFindFirst.mockResolvedValue({
       id: "cust-2",
       organizationId: "org-123",
@@ -141,7 +141,7 @@ describe("Sprint 2.2 — Canonical client detail server-side query", () => {
     mocks.customerPortalAccessLogFindMany.mockResolvedValue([]);
 
     const result = await getClientDetail("cust-2");
-    expect(result!.portalStatus).toBe("invited");
+    expect(result!.portalStatus).toBe("disabled");
     expect(result!.outstandingBalance).toBe(600);
   });
 

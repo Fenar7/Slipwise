@@ -18,5 +18,5 @@ export default async function ClientDetailPage({ params }: ClientDetailPageProps
     notFound();
   }
 
-  return <ClientDetailShell clientId={id} client={client} />;
+  return <ClientDetailShell client={client} />;
 }
