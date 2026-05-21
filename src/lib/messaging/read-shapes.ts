@@ -428,6 +428,7 @@ export interface TaskSummary {
   conversationId: string;
   originatingMessageId: string | null;
   title: string;
+  description: string | null;
   status: MessagingTaskStatus;
   priority: TaskPriorityString;
   isOverdue: boolean;
@@ -455,6 +456,7 @@ export function toTaskSummary(input: TaskSummaryInput): TaskSummary {
     conversationId: record.conversationId,
     originatingMessageId: record.originatingMessageId,
     title: record.title,
+    description: record.description,
     status: record.status,
     priority: priorityNumberToString(record.priority),
     isOverdue: taskIsOverdue(record),

@@ -118,6 +118,7 @@ export interface ApiTaskSummary {
   conversationId: string;
   originatingMessageId: string | null;
   title: string;
+  description: string | null;
   status: string;
   priority: "low" | "medium" | "high" | "critical";
   isOverdue: boolean;
