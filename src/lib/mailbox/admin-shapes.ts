@@ -48,7 +48,9 @@ export function toMailboxConnectionListItem(
     emailAddress: record.emailAddress,
     displayName: record.displayName,
     status: record.status,
-    visibilityPolicy: record.visibilityPolicy,
+    // Null-guard: visibilityPolicy can be null for records pre-dating the
+    // default migration. Fall back to "org_shared" as the schema default.
+    visibilityPolicy: record.visibilityPolicy ?? "org_shared",
     health: deriveMailboxHealth(record, now),
     lastSyncAt: record.lastSyncAt?.toISOString() ?? null,
     lastSyncError: record.lastSyncError,

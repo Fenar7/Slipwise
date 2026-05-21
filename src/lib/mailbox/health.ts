@@ -66,9 +66,12 @@ export function deriveMailboxHealth(
     (lastErrorCategory ? isReconnectRequired(lastErrorCategory) : false);
 
   // A sync lease that has not expired implies an active sync.
+  // Guard against undefined defensively — syncLeaseExpiresAt may be absent
+  // on records constructed without the field (e.g. test stubs).
+  const leaseExpiry = connection.syncLeaseExpiresAt ?? null;
   const isSyncing =
-    connection.syncLeaseExpiresAt !== null &&
-    connection.syncLeaseExpiresAt.getTime() > now;
+    leaseExpiry !== null &&
+    leaseExpiry.getTime() > now;
 
   switch (connection.status) {
     case "RECONNECT_REQUIRED": {
