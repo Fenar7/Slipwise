@@ -34,6 +34,7 @@ describe("Sprint 6.2 Frontend Integration — Tasks Work Coordination", () => {
       createdByName: "Priya Sharma",
       createdAt: "2026-05-20T10:00:00Z",
       description: "Perform clean contiguous edits only.",
+      originatingMessageId: "msg-origin-123",
     },
   ];
 
@@ -249,5 +250,184 @@ describe("Sprint 6.2 — Live tasks path without mock data", () => {
     const container = screen.getByTestId("messaging-pane-tasks");
     expect(container.querySelector('[data-testid^="task-row-"]')).toBeNull();
     expect(screen.queryByTestId("task-panel")).toBeNull();
+  });
+});
+
+describe("Sprint 6.2 — Originating message link and decorative controls removal", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  const mockTasksWithOrigin = [
+    {
+      id: "task-1",
+      orgId: "org-1",
+      conversationId: "conv-1",
+      title: "Clean Code Task",
+      status: "OPEN",
+      priority: "high",
+      dueDate: "2026-06-15T00:00:00Z",
+      assigneeId: "user-1",
+      assigneeName: "Arjun Mehta",
+      assigneeAvatarInitials: "AM",
+      createdBy: "user-2",
+      createdByName: "Priya Sharma",
+      createdAt: "2026-05-20T10:00:00Z",
+      description: "Perform clean contiguous edits only.",
+      originatingMessageId: "msg-origin-123",
+    },
+  ];
+
+  const mockTasksWithoutOrigin = [
+    {
+      id: "task-2",
+      orgId: "org-1",
+      conversationId: "conv-1",
+      title: "Task Without Origin",
+      status: "OPEN",
+      priority: "medium",
+      dueDate: null,
+      assigneeId: null,
+      assigneeName: null,
+      assigneeAvatarInitials: null,
+      createdBy: "user-1",
+      createdByName: "Arjun Mehta",
+      createdAt: "2026-05-21T10:00:00Z",
+      description: null,
+      originatingMessageId: null,
+    },
+  ];
+
+  const mockDetail = {
+    id: "conv-1",
+    orgId: "org-1",
+    type: "CHANNEL",
+    name: "engineering",
+    description: "Engineering coordination",
+    participants: [
+      { id: "p-1", userId: "user-1", role: "admin", isActive: true },
+      { id: "p-2", userId: "user-2", role: "owner", isActive: true },
+    ],
+    participantProfiles: [
+      { userId: "user-1", name: "Arjun Mehta", avatarInitials: "AM" },
+      { userId: "user-2", name: "Priya Sharma", avatarInitials: "PS" },
+    ],
+    messages: [],
+    threads: [],
+    readState: null,
+    currentUserId: "user-2",
+  };
+
+  it("renders originating-message link when originatingMessageId exists", async () => {
+    const fetchSpy = vi.fn().mockImplementation((url: string) => {
+      if (url.includes("/tasks")) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ success: true, data: mockTasksWithOrigin }),
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ success: true, data: mockDetail }),
+      });
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    render(<MessagingTaskPanel conversationId="conv-1" />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Clean Code Task")).toBeInTheDocument();
+    });
+
+    const taskBtn = screen.getByTestId("task-row-task-1");
+    fireEvent.click(taskBtn);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("task-detail-panel")).toBeInTheDocument();
+    });
+
+    // Should show the originating-message link chip
+    expect(screen.getByTestId("task-origin-link")).toBeInTheDocument();
+    expect(screen.getByText("Originating from a message in this conversation")).toBeInTheDocument();
+
+    // Should NOT show the old conversationRef-based fake link
+    expect(screen.queryByText("Linked to:")).toBeNull();
+  });
+
+  it("does not render originating-message link when originatingMessageId is null", async () => {
+    const fetchSpy = vi.fn().mockImplementation((url: string) => {
+      if (url.includes("/tasks")) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ success: true, data: mockTasksWithoutOrigin }),
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ success: true, data: mockDetail }),
+      });
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    render(<MessagingTaskPanel conversationId="conv-1" />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Task Without Origin")).toBeInTheDocument();
+    });
+
+    const taskBtn = screen.getByTestId("task-row-task-2");
+    fireEvent.click(taskBtn);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("task-detail-panel")).toBeInTheDocument();
+    });
+
+    // Should NOT render the origin link chip
+    expect(screen.queryByTestId("task-origin-link")).toBeNull();
+  });
+
+  it("detail panel does not render decorative Edit or Delete buttons", async () => {
+    const fetchSpy = vi.fn().mockImplementation((url: string) => {
+      if (url.includes("/tasks")) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ success: true, data: mockTasksWithOrigin }),
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ success: true, data: mockDetail }),
+      });
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    render(<MessagingTaskPanel conversationId="conv-1" />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Clean Code Task")).toBeInTheDocument();
+    });
+
+    const taskBtn = screen.getByTestId("task-row-task-1");
+    fireEvent.click(taskBtn);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("task-detail-panel")).toBeInTheDocument();
+    });
+
+    // No Edit button
+    expect(screen.queryByLabelText("Edit task")).toBeNull();
+
+    // No Delete task button
+    expect(screen.queryByText("Delete task")).toBeNull();
+
+    // Mark as done must still exist
+    expect(screen.getByTestId("task-mark-done")).toBeInTheDocument();
   });
 });
