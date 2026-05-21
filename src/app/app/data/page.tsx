@@ -32,7 +32,7 @@ export default async function DataPage() {
     {
       label: "Customers",
       count: customerCount,
-      href: "/app/data/customers",
+      href: "/app/clients",
       icon: Users,
       description: "Manage clients and billing relationships",
     },

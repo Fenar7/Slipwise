@@ -135,7 +135,7 @@ export function CustomerPicker({ customers, onTagPrefill, onCustomerSelect }: Cu
           </div>
           <div className="border-t border-slate-100 p-2">
             <a
-              href="/app/data/customers/new"
+              href="/app/clients/new"
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center gap-1 px-3 py-2 text-sm text-[var(--accent)] hover:bg-slate-50 rounded-lg"
