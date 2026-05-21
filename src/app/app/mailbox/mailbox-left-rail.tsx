@@ -21,8 +21,11 @@ import {
   AlertTriangle,
   RefreshCw,
   Plus,
+  Bookmark,
+  X,
 } from "lucide-react";
 import type { MailboxConnection, MailboxGroup, MailboxTreeItem } from "./types";
+import type { SavedViewItem } from "./use-mailbox-saved-views";
 import { GLOBAL_SMART_VIEWS, MOCK_CONNECTIONS } from "./mock-data";
 
 const ICON_MAP: Record<string, React.ElementType> = {
@@ -274,6 +277,43 @@ export function MailboxLeftRail({
             ))}
           </ul>
         </div>
+
+        {/* Saved views */}
+        {savedViews.length > 0 && (
+          <div className="mb-3">
+            <p className="mb-1 px-2.5 text-[10px] font-semibold uppercase tracking-widest text-[#94A3B8]">
+              Saved Views
+            </p>
+            <ul className="space-y-0.5">
+              {savedViews.map((view) => (
+                <li key={view.id}>
+                  <Link
+                    href={`/app/mailbox?${new URLSearchParams({ q: view.searchQuery, ...Object.fromEntries(view.filters.map((f) => [`f_${f.field}`, f.value])) }).toString()}`}
+                    className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs font-medium text-[#64748B] transition-colors hover:bg-[#F1F3F7] hover:text-[#0F172A]"
+                    title={view.label}
+                  >
+                    <Bookmark className="h-3.5 w-3.5 shrink-0" />
+                    <span className="truncate">{view.label}</span>
+                    {onDeleteSavedView && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          onDeleteSavedView(view.id);
+                        }}
+                        className="ml-auto hidden h-4 w-4 items-center justify-center rounded hover:bg-[#E2E5EA] group-hover:flex"
+                        aria-label={`Delete ${view.label}`}
+                      >
+                        <X className="h-3 w-3 text-[#94A3B8]" />
+                      </button>
+                    )}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {/* Divider */}
         <div className="my-2 border-t" style={{ borderColor: "#E2E5EA" }} />

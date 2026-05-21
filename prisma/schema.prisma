@@ -251,6 +251,7 @@ model Organization {
   customRoles                  CustomRole[]
   dataResidencyConfig          DataResidencyConfig?
   webhookDeadLetters           WebhookDeadLetter[]
+  mailboxSavedViews            MailboxSavedView[]
   // Mailbox Platform — Phase 2
   mailboxConnections           MailboxConnection[]
   mailboxThreadLinks           MailboxThreadLink[]
@@ -6335,4 +6336,25 @@ model MailboxCredential {
   @@index([orgId])
   @@index([connectionId])
   @@map("mailbox_credential")
+}
+
+/// Persisted operational saved view for mailbox triage.
+/// Sprint 6.3: minimal production-safe model. Org-scoped, per-user.
+model MailboxSavedView {
+  id           String   @id @default(cuid())
+  orgId        String
+  createdBy    String   @db.Uuid
+  label        String
+  /// JSON array of ActiveFilter shapes: [{ field, value, label }]
+  filters      Json     @default("[]")
+  searchQuery  String   @default("")
+  /// Optional smartViewId to pair with (e.g. "unread", "assigned-to-me")
+  smartViewId  String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, createdBy])
+  @@map("mailbox_saved_view")
 }

@@ -2,6 +2,8 @@
 
 import { useState, useCallback, useEffect, useMemo } from "react";
 import { usePathname } from "next/navigation";
+import { useMailboxQuerySync } from "./use-mailbox-query-sync";
+import { useMailboxSavedViews } from "./use-mailbox-saved-views";
 import { useSupabaseSession } from "@/hooks/use-supabase-session";
 import { MailboxLeftRail } from "./mailbox-left-rail";
 import { MailboxCommandBar } from "./mailbox-command-bar";
@@ -266,14 +268,24 @@ function resolveSmartViewDescription(pathname: string): { label: string; descrip
   };
 }
 
+function resolveSmartViewId(pathname: string): string | undefined {
+  const smartView = GLOBAL_SMART_VIEWS.find(
+    (view) =>
+      view.href !== "/app/mailbox" &&
+      (pathname === view.href || pathname.startsWith(`${view.href}/`)),
+  );
+  return smartView?.id;
+}
+
 export function MailboxWorkspace() {
   const pathname = usePathname();
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
   const [composer, setComposer] = useState<MailboxComposerState | null>(null);
-  const [filterState, setFilterState] = useState<ActiveFilterState>({ filters: [], searchQuery: "" });
+  const { filterState, setFilterState } = useMailboxQuerySync();
   const [contextOverrides, setContextOverrides] = useState<Record<string, Partial<LinkedContextState>>>({});
   const [isFilterPanelOpen, setIsFilterPanelOpen] = useState(false);
   const [filterDraftState, setFilterDraftState] = useState<ActiveFilterState>({ filters: [], searchQuery: "" });
+  const { views: savedViews, createView, deleteView } = useMailboxSavedViews();
 
   // Responsive state
   const [isRailOpen, setIsRailOpen] = useState(false);
@@ -653,13 +665,13 @@ export function MailboxWorkspace() {
         {/* ── Desktop left rail (xl+) — single instance, always in DOM ── */}
         {/* On xl+: shown inline. On <xl: hidden (drawer has its own copy via portal). */}
         <div className="hidden xl:flex xl:shrink-0" aria-hidden="false">
-          <MailboxLeftRail connections={connections} onCompose={openNewCompose} />
+          <MailboxLeftRail connections={connections} onCompose={openNewCompose} savedViews={savedViews} onDeleteSavedView={deleteView} />
         </div>
 
         {/* ── Rail drawer for tablet + mobile — separate instance, aria-hidden when closed ── */}
         <div className="xl:hidden" aria-hidden={!isRailOpen}>
           <MailboxRailDrawer isOpen={isRailOpen} onClose={() => setIsRailOpen(false)}>
-            <MailboxLeftRail connections={connections} onCompose={openNewCompose} />
+            <MailboxLeftRail connections={connections} onCompose={openNewCompose} savedViews={savedViews} onDeleteSavedView={deleteView} />
           </MailboxRailDrawer>
         </div>
 
@@ -701,6 +713,8 @@ export function MailboxWorkspace() {
             filterState={filterState}
             isFilterPanelOpen={isFilterPanelOpen}
             onToggleFilterPanel={() => setIsFilterPanelOpen((open) => !open)}
+            onSaveView={createView}
+            smartViewId={resolveSmartViewId(pathname)}
           />
 
           <MailboxFilterPanel
