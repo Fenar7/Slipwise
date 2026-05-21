@@ -52,39 +52,29 @@ export function ClientDetailRail({ client }: ClientDetailRailProps) {
   return (
     <div className="space-y-4">
       {/* Portal readiness card */}
-      <RailCard title="Portal Readiness">
+      <RailCard title="Hub Readiness">
         <div className="flex items-center gap-3">
-          {client.portalEnabled ? (
+          {client.readiness.isReady ? (
             <>
               <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--state-success-soft)] text-[var(--state-success)]">
                 <CheckCircle2 className="h-4 w-4" />
               </div>
               <div>
-                <p className="text-sm font-medium text-[var(--text-primary)]">Hub Active</p>
+                <p className="text-sm font-semibold text-[var(--text-primary)]">Hub Ready</p>
                 <p className="text-xs text-[var(--text-muted)]">
-                  {client.portalAccessCount} accesses
+                  {client.readiness.score}% score • No blockers
                 </p>
-              </div>
-            </>
-          ) : client.portalStatus === "invited" ? (
-            <>
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--state-info-soft)] text-[var(--state-info)]">
-                <Clock className="h-4 w-4" />
-              </div>
-              <div>
-                <p className="text-sm font-medium text-[var(--text-primary)]">Invite Sent</p>
-                <p className="text-xs text-[var(--text-muted)]">Pending acceptance</p>
               </div>
             </>
           ) : (
             <>
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--surface-subtle)] text-[var(--text-muted)]">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-red-50 text-red-600 border border-red-100">
                 <AlertTriangle className="h-4 w-4" />
               </div>
               <div>
-                <p className="text-sm font-medium text-[var(--text-primary)]">Not Enabled</p>
-                <p className="text-xs text-[var(--text-muted)]">
-                  {client.portalStatus === "ineligible" ? "No email on file" : "Hub disabled"}
+                <p className="text-sm font-semibold text-[var(--text-primary)]">Incomplete Profile</p>
+                <p className="text-xs text-red-600 font-medium animate-pulse">
+                  {client.readiness.blockers.length} critical blocker{client.readiness.blockers.length > 1 ? "s" : ""}
                 </p>
               </div>
             </>
@@ -93,12 +83,18 @@ export function ClientDetailRail({ client }: ClientDetailRailProps) {
 
         <div className="flex flex-col gap-2 pt-2 border-t border-[var(--border-soft)]">
           <p className="text-[0.725rem] text-[var(--text-secondary)] leading-relaxed bg-[var(--surface-subtle)] p-2.5 rounded-lg border border-[var(--border-soft)]">
-            {client.portalEnabled
-              ? "Secure hub access is active. The client can view and download their invoices and quotes via their unique portal link."
-              : client.portalStatus === "ineligible"
-              ? "An email address must be configured on the client's profile before provisioning hub access."
-              : "Portal access is currently inactive. Client hub provisioning is offline."}
+            {client.readiness.isReady
+              ? "All critical contact, billing, and compliance fields are successfully verified. Profile is fully eligible for portal provisioning."
+              : `This client profile cannot be provisioned due to profile incomplete state. Please click below to resolve all active blockers.`}
           </p>
+          {!client.readiness.isReady && (
+            <Link 
+              href={`/app/clients/${client.id}/edit`}
+              className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-[var(--border-default)] bg-white px-3 py-1.5 text-xs font-semibold text-[var(--text-secondary)] transition-colors hover:bg-[var(--surface-subtle)]"
+            >
+              Configure Details
+            </Link>
+          )}
         </div>
       </RailCard>
 

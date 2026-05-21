@@ -17,6 +17,15 @@ interface ClientFormProps {
     address: string | null;
     taxId: string | null;
     gstin: string | null;
+    lifecycleStage?:
+      | "PROSPECT"
+      | "QUALIFIED"
+      | "NEGOTIATION"
+      | "WON"
+      | "ACTIVE"
+      | "AT_RISK"
+      | "CHURNED"
+      | null;
     defaultTagAssignments?: Array<{
       tag: { id: string; name: string; slug: string; color: string | null };
     }>;
@@ -44,6 +53,7 @@ export function ClientForm({ client }: ClientFormProps) {
           address: client.address || "",
           taxId: client.taxId || "",
           gstin: client.gstin || "",
+          lifecycleStage: client.lifecycleStage || "PROSPECT",
         }
       : {
           name: "",
@@ -52,6 +62,7 @@ export function ClientForm({ client }: ClientFormProps) {
           address: "",
           taxId: "",
           gstin: "",
+          lifecycleStage: "PROSPECT",
         },
   });
 
@@ -241,6 +252,28 @@ export function ClientForm({ client }: ClientFormProps) {
                 onChange={setTagIds}
                 placeholder="Assign default tags..."
               />
+            </div>
+            
+            <div className="mt-4">
+              <label htmlFor="lifecycle-input" className="mb-1.5 block text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wider">
+                Relationship Lifecycle Stage
+              </label>
+              <p className="mb-3 text-xs text-[var(--text-muted)]">
+                Classify where this client resides in the operations pipeline to assess Client Hub readiness.
+              </p>
+              <select
+                id="lifecycle-input"
+                {...register("lifecycleStage")}
+                className="w-full rounded-lg border border-[var(--border-default)] bg-white px-3 py-2 text-sm text-[var(--text-primary)] transition-colors focus:border-[var(--brand-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--focus-ring)]"
+              >
+                <option value="PROSPECT">Prospect</option>
+                <option value="QUALIFIED">Qualified</option>
+                <option value="NEGOTIATION">Negotiation</option>
+                <option value="WON">Won (Deal Closed)</option>
+                <option value="ACTIVE">Active (Invoicing Enabled)</option>
+                <option value="AT_RISK">At Risk</option>
+                <option value="CHURNED">Churned (Inactive)</option>
+              </select>
             </div>
           </div>
         </div>
