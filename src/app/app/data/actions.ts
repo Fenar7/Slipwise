@@ -31,11 +31,74 @@ export async function createCustomer(input: CustomerInput): Promise<ActionResult
   try {
     const { orgId } = await requireOrgContext();
     
-    const { tagIds, ...customerData } = input;
+    // Server-side validation and normalization
+    const name = input.name ? input.name.trim() : "";
+    if (!name) {
+      return { success: false, error: "Name is required" };
+    }
+
+    let email: string | null = null;
+    if (input.email !== undefined) {
+      const trimmed = input.email.trim();
+      if (trimmed !== "") {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(trimmed)) {
+          return { success: false, error: "Invalid email format" };
+        }
+        email = trimmed;
+      }
+    }
+
+    let phone: string | null = null;
+    if (input.phone !== undefined) {
+      const trimmed = input.phone.trim();
+      if (trimmed !== "") {
+        const phoneRegex = /^[+\d\s-]{7,15}$/;
+        if (!phoneRegex.test(trimmed)) {
+          return { success: false, error: "Phone number must be between 7 and 15 digits" };
+        }
+        phone = trimmed;
+      }
+    }
+
+    let address: string | null = null;
+    if (input.address !== undefined) {
+      const trimmed = input.address.trim();
+      if (trimmed !== "") {
+        address = trimmed;
+      }
+    }
+
+    let taxId: string | null = null;
+    if (input.taxId !== undefined) {
+      const trimmed = input.taxId.trim();
+      if (trimmed !== "") {
+        taxId = trimmed;
+      }
+    }
+
+    let gstin: string | null = null;
+    if (input.gstin !== undefined) {
+      const trimmed = input.gstin.trim();
+      if (trimmed !== "") {
+        const gstinRegex = /^[a-zA-Z0-9]{15}$/;
+        if (!gstinRegex.test(trimmed)) {
+          return { success: false, error: "GSTIN must be exactly 15 characters" };
+        }
+        gstin = trimmed.toUpperCase();
+      }
+    }
+
+    const { tagIds } = input;
 
     const customer = await db.customer.create({
       data: {
-        ...customerData,
+        name,
+        email,
+        phone,
+        address,
+        taxId,
+        gstin,
         organizationId: orgId,
       },
     });
@@ -44,6 +107,7 @@ export async function createCustomer(input: CustomerInput): Promise<ActionResult
       await setCustomerDefaultTags(customer.id, tagIds);
     }
     
+    revalidatePath("/app/clients");
     revalidatePath("/app/data/customers");
     return { success: true, data: { id: customer.id } };
   } catch (error) {
@@ -59,7 +123,7 @@ export async function updateCustomer(
   try {
     const { orgId } = await requireOrgContext();
     
-    // Verify ownership
+    // Verify ownership first (org safety)
     const existing = await db.customer.findFirst({
       where: { id, organizationId: orgId },
     });
@@ -68,12 +132,89 @@ export async function updateCustomer(
       return { success: false, error: "Customer not found" };
     }
     
-    const { tagIds, ...customerData } = input;
+    // Validate name if provided
+    let name: string | undefined = undefined;
+    if (input.name !== undefined) {
+      const trimmed = input.name.trim();
+      if (!trimmed) {
+        return { success: false, error: "Name is required" };
+      }
+      name = trimmed;
+    }
 
-    if (Object.keys(customerData).length > 0) {
+    // Validate email if provided
+    let email: string | null | undefined = undefined;
+    if (input.email !== undefined) {
+      const trimmed = input.email.trim();
+      if (trimmed === "") {
+        email = null;
+      } else {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(trimmed)) {
+          return { success: false, error: "Invalid email format" };
+        }
+        email = trimmed;
+      }
+    }
+
+    // Validate phone if provided
+    let phone: string | null | undefined = undefined;
+    if (input.phone !== undefined) {
+      const trimmed = input.phone.trim();
+      if (trimmed === "") {
+        phone = null;
+      } else {
+        const phoneRegex = /^[+\d\s-]{7,15}$/;
+        if (!phoneRegex.test(trimmed)) {
+          return { success: false, error: "Phone number must be between 7 and 15 digits" };
+        }
+        phone = trimmed;
+      }
+    }
+
+    // Address normalization
+    let address: string | null | undefined = undefined;
+    if (input.address !== undefined) {
+      const trimmed = input.address.trim();
+      address = trimmed === "" ? null : trimmed;
+    }
+
+    // Tax ID normalization
+    let taxId: string | null | undefined = undefined;
+    if (input.taxId !== undefined) {
+      const trimmed = input.taxId.trim();
+      taxId = trimmed === "" ? null : trimmed;
+    }
+
+    // GSTIN normalization
+    let gstin: string | null | undefined = undefined;
+    if (input.gstin !== undefined) {
+      const trimmed = input.gstin.trim();
+      if (trimmed === "") {
+        gstin = null;
+      } else {
+        const gstinRegex = /^[a-zA-Z0-9]{15}$/;
+        if (!gstinRegex.test(trimmed)) {
+          return { success: false, error: "GSTIN must be exactly 15 characters" };
+        }
+        gstin = trimmed.toUpperCase();
+      }
+    }
+
+    const { tagIds } = input;
+
+    const updateData: any = {};
+    if (name !== undefined) updateData.name = name;
+    if (email !== undefined) updateData.email = email;
+    if (phone !== undefined) updateData.phone = phone;
+    if (address !== undefined) updateData.address = address;
+    if (taxId !== undefined) updateData.taxId = taxId;
+    if (gstin !== undefined) updateData.gstin = gstin;
+
+    if (Object.keys(updateData).length > 0) {
       await db.customer.update({
         where: { id },
-        data: customerData,
+        data: updateData,
       });
     }
 
@@ -81,6 +222,8 @@ export async function updateCustomer(
       await setCustomerDefaultTags(id, tagIds);
     }
     
+    revalidatePath("/app/clients");
+    revalidatePath(`/app/clients/${id}`);
     revalidatePath("/app/data/customers");
     revalidatePath(`/app/data/customers/${id}`);
     return { success: true, data: { id } };

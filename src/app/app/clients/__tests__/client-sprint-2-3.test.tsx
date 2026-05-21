@@ -1,0 +1,176 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { createCustomer, updateCustomer } from "../../data/actions";
+
+const mocks = vi.hoisted(() => ({
+  requireOrgContext: vi.fn(),
+  customerCreate: vi.fn(),
+  customerUpdate: vi.fn(),
+  customerFindFirst: vi.fn(),
+  setCustomerDefaultTags: vi.fn(),
+  revalidatePath: vi.fn(),
+}));
+
+vi.mock("@/lib/auth", () => ({
+  requireOrgContext: mocks.requireOrgContext,
+}));
+
+vi.mock("@/lib/db", () => ({
+  db: {
+    customer: {
+      create: mocks.customerCreate,
+      update: mocks.customerUpdate,
+      findFirst: mocks.customerFindFirst,
+    },
+  },
+}));
+
+vi.mock("@/lib/tags/assignment-service", () => ({
+  setCustomerDefaultTags: mocks.setCustomerDefaultTags,
+  setVendorDefaultTags: vi.fn(),
+}));
+
+vi.mock("next/cache", () => ({
+  revalidatePath: mocks.revalidatePath,
+}));
+
+describe("Sprint 2.3 — Server-Side Validation, Normalization and Security", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.requireOrgContext.mockResolvedValue({ orgId: "org-123" });
+  });
+
+  describe("createCustomer validations", () => {
+    it("fails when name is missing or only whitespace", async () => {
+      const result1 = await createCustomer({ name: "" });
+      expect(result1.success).toBe(false);
+      expect((result1 as any).error).toBe("Name is required");
+
+      const result2 = await createCustomer({ name: "   " });
+      expect(result2.success).toBe(false);
+      expect((result2 as any).error).toBe("Name is required");
+      expect(mocks.customerCreate).not.toHaveBeenCalled();
+    });
+
+    it("fails when email format is invalid", async () => {
+      const result = await createCustomer({ name: "Acme", email: "invalid-email" });
+      expect(result.success).toBe(false);
+      expect((result as any).error).toBe("Invalid email format");
+      expect(mocks.customerCreate).not.toHaveBeenCalled();
+    });
+
+    it("fails when phone is invalid", async () => {
+      const result = await createCustomer({ name: "Acme", phone: "123" }); // too short
+      expect(result.success).toBe(false);
+      expect((result as any).error).toBe("Phone number must be between 7 and 15 digits");
+      expect(mocks.customerCreate).not.toHaveBeenCalled();
+    });
+
+    it("fails when GSTIN format is invalid", async () => {
+      const result = await createCustomer({ name: "Acme", gstin: "12345" }); // too short
+      expect(result.success).toBe(false);
+      expect((result as any).error).toBe("GSTIN must be exactly 15 characters");
+      expect(mocks.customerCreate).not.toHaveBeenCalled();
+    });
+
+    it("normalizes and successfully creates customer", async () => {
+      mocks.customerCreate.mockResolvedValue({ id: "cust-created-123" });
+
+      const result = await createCustomer({
+        name: "  Acme Corp  ",
+        email: "  billing@acme.com  ",
+        phone: "  +91-9876543210  ",
+        address: "  123 Acme St  ",
+        taxId: "  PAN1234567  ",
+        gstin: "  29abcde1234f1z5  ",
+        tagIds: ["tag-1", "tag-2"],
+      });
+
+      expect(result.success).toBe(true);
+      expect((result as any).data.id).toBe("cust-created-123");
+
+      expect(mocks.customerCreate).toHaveBeenCalledWith({
+        data: {
+          name: "Acme Corp",
+          email: "billing@acme.com",
+          phone: "+91-9876543210",
+          address: "123 Acme St",
+          taxId: "PAN1234567",
+          gstin: "29ABCDE1234F1Z5", // converted to uppercase
+          organizationId: "org-123",
+        },
+      });
+
+      expect(mocks.setCustomerDefaultTags).toHaveBeenCalledWith("cust-created-123", ["tag-1", "tag-2"]);
+    });
+
+    it("normalizes empty optional strings to null", async () => {
+      mocks.customerCreate.mockResolvedValue({ id: "cust-created-456" });
+
+      const result = await createCustomer({
+        name: "Only Name",
+        email: "   ",
+        phone: "   ",
+        address: "   ",
+        taxId: "   ",
+        gstin: "   ",
+      });
+
+      expect(result.success).toBe(true);
+      expect(mocks.customerCreate).toHaveBeenCalledWith({
+        data: {
+          name: "Only Name",
+          email: null,
+          phone: null,
+          address: null,
+          taxId: null,
+          gstin: null,
+          organizationId: "org-123",
+        },
+      });
+    });
+  });
+
+  describe("updateCustomer validations and security", () => {
+    it("fails if client does not belong to the user's organization", async () => {
+      mocks.customerFindFirst.mockResolvedValue(null); // not found in org-123
+
+      const result = await updateCustomer("cust-999", { name: "New Name" });
+      expect(result.success).toBe(false);
+      expect((result as any).error).toBe("Customer not found");
+      expect(mocks.customerUpdate).not.toHaveBeenCalled();
+    });
+
+    it("fails when name is updated to empty string", async () => {
+      mocks.customerFindFirst.mockResolvedValue({ id: "cust-789", organizationId: "org-123" });
+
+      const result = await updateCustomer("cust-789", { name: "   " });
+      expect(result.success).toBe(false);
+      expect((result as any).error).toBe("Name is required");
+      expect(mocks.customerUpdate).not.toHaveBeenCalled();
+    });
+
+    it("normalizes and updates successfully", async () => {
+      mocks.customerFindFirst.mockResolvedValue({ id: "cust-789", organizationId: "org-123" });
+      mocks.customerUpdate.mockResolvedValue({ id: "cust-789" });
+
+      const result = await updateCustomer("cust-789", {
+        name: "  Acme Updated  ",
+        email: "  ", // normalizes to null
+        gstin: "  29abcde1234f1z6  ", // uppercase normalization
+        tagIds: ["tag-3"],
+      });
+
+      expect(result.success).toBe(true);
+      expect(mocks.customerUpdate).toHaveBeenCalledWith({
+        where: { id: "cust-789" },
+        data: {
+          name: "Acme Updated",
+          email: null,
+          gstin: "29ABCDE1234F1Z6",
+        },
+      });
+
+      expect(mocks.setCustomerDefaultTags).toHaveBeenCalledWith("cust-789", ["tag-3"]);
+    });
+  });
+});
