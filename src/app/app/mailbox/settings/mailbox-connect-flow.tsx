@@ -216,19 +216,6 @@ function ReconnectStep({
 }
 
 // ─── Step: Authorizing ────────────────────────────────────────────────────────
-//
-// This step does a preflight fetch to /api/mailbox/gmail/connect before
-// triggering the full browser navigation. If the server returns an error or
-// redirects back to the settings page with ?error=…, we call onFailed() so
-// the modal shows the FailedStep instead of navigating to a blank error page.
-//
-// Why fetch, not rely on the redirect?
-//  - When the browser follows a GET navigation to a route that returns a
-//    JSON 500, the user sees a blank or error page. With fetch() we can
-//    detect this before the user ever leaves the page.
-//  - If the route returns a redirect to /app/mailbox/settings?error=…, the
-//    fetch follows it (same-origin, no-CORS issues) and we detect ?error in
-//    the final URL.
 
 function AuthorizingStep({ connectionId, onFailed }: { connectionId?: string; onFailed: () => void }) {
   useEffect(() => {
@@ -236,44 +223,20 @@ function AuthorizingStep({ connectionId, onFailed }: { connectionId?: string; on
       ? `/api/mailbox/gmail/connect?connectionId=${encodeURIComponent(connectionId)}`
       : "/api/mailbox/gmail/connect";
 
-    // Preflight: fetch the connect endpoint to check if the server-side
-    // redirect will succeed. A 4xx/5xx response (or a redirect back to
-    // /settings with ?error) means we should show the FailedStep inside
-    // the modal rather than navigating the browser to a blank error page.
-    let cancelled = false;
-    const timer = window.setTimeout(async () => {
+    // Brief delay so the user sees the "Redirecting…" state before navigation.
+    // The connect route handles server-side errors by redirecting back to
+    // /app/mailbox/settings?error=... rather than returning a 500, so the user
+    // will always land somewhere useful. onFailed is kept as a safety valve for
+    // environments where window.location.href cannot navigate (e.g., blocked).
+    const timer = window.setTimeout(() => {
       try {
-        const res = await fetch(url, {
-          method: "GET",
-          redirect: "follow",
-          credentials: "same-origin",
-        });
-
-        if (cancelled) return;
-
-        // If the server redirected to settings with ?error=… it means the
-        // connect attempt failed on the server side.
-        const finalUrl = res.url;
-        const hasError = finalUrl.includes("/app/mailbox/settings") && finalUrl.includes("error=");
-
-        if (!res.ok || hasError) {
-          onFailed();
-          return;
-        }
-
-        // Success — the response is the Google OAuth consent screen.
-        // Now trigger the real browser navigation.
         window.location.href = url;
       } catch {
-        // Network error / CORS block etc.
-        if (!cancelled) onFailed();
+        onFailed();
       }
     }, 400);
 
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
+    return () => window.clearTimeout(timer);
   }, [connectionId, onFailed]);
 
   return (
