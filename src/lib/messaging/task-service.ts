@@ -93,13 +93,17 @@ export async function createTask(input: CreateTaskInput): Promise<MessagingTaskR
 }
 
 export async function updateTaskStatus(input: UpdateTaskStatusInput): Promise<MessagingTaskRecord> {
-  const { orgId, taskId, status, actorId } = input;
+  const { orgId, taskId, status, actorId, conversationId } = input;
 
   const task = await db.messagingTask.findUnique({
     where: { id: taskId, orgId },
   });
 
   if (!task) {
+    throw new NotFoundError("Task not found");
+  }
+
+  if (task.conversationId !== conversationId) {
     throw new NotFoundError("Task not found");
   }
 
@@ -148,13 +152,17 @@ export async function updateTaskStatus(input: UpdateTaskStatusInput): Promise<Me
 }
 
 export async function assignTask(input: AssignTaskInput): Promise<MessagingTaskRecord> {
-  const { orgId, taskId, assigneeId, actorId } = input;
+  const { orgId, taskId, assigneeId, actorId, conversationId } = input;
 
   const task = await db.messagingTask.findUnique({
     where: { id: taskId, orgId },
   });
 
   if (!task) {
+    throw new NotFoundError("Task not found");
+  }
+
+  if (task.conversationId !== conversationId) {
     throw new NotFoundError("Task not found");
   }
 
