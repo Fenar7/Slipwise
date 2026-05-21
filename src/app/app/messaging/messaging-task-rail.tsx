@@ -106,14 +106,14 @@ function TaskSummaryCard({ task }: { task: ApiTaskSummary }) {
 }
 
 export function MessagingTaskRail({ conversationId, degraded }: MessagingTaskRailProps) {
-  const { tasks, loading, errorType } = useConversationTasks(conversationId);
+  const { tasks, loading, errorType, errorMessage, refresh } = useConversationTasks(conversationId);
   const isRestricted = errorType === "restricted";
-  const isEmpty = !loading && tasks !== null && tasks.length === 0 && !isRestricted;
-  const hasTasks = !loading && tasks !== null && tasks.length > 0 && !isRestricted;
+  const isEmpty = !loading && tasks !== null && tasks.length === 0 && errorType === "none";
+  const hasTasks = !loading && tasks !== null && tasks.length > 0 && errorType === "none";
 
   return (
     <aside
-      className="hidden xl:flex flex-col w-72 shrink-0 border-l bg-gray-50/50 h-full overflow-hidden"
+      className="hidden lg:flex flex-col w-72 shrink-0 border-l bg-gray-50/50 h-full overflow-hidden"
       style={{ borderColor: "#E0E0E0" }}
       data-testid="messaging-task-rail"
     >
@@ -162,6 +162,36 @@ export function MessagingTaskRail({ conversationId, degraded }: MessagingTaskRai
             <Lock className="h-8 w-8" style={{ color: "#E0E0E0" }} />
             <p className="text-xs font-semibold" style={{ color: "#49454F" }}>Access restricted</p>
             <p className="text-[10px]" style={{ color: "#79747E" }}>You don&apos;t have access to tasks in this conversation.</p>
+          </div>
+        )}
+
+        {conversationId && errorType === "network" && (
+          <div className="flex flex-col items-center justify-center gap-3 px-4 py-10 text-center" data-testid="task-rail-network-error">
+            <AlertTriangle className="h-8 w-8 text-amber-500" />
+            <p className="text-xs font-semibold" style={{ color: "#49454F" }}>Network error</p>
+            <p className="text-[10px]" style={{ color: "#79747E" }}>{errorMessage ?? "Could not connect to the server."}</p>
+            <button
+              onClick={refresh}
+              className="mt-2 rounded bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700 hover:bg-amber-100 transition-colors"
+              data-testid="task-rail-retry-button"
+            >
+              Retry
+            </button>
+          </div>
+        )}
+
+        {conversationId && errorType === "unknown" && (
+          <div className="flex flex-col items-center justify-center gap-3 px-4 py-10 text-center" data-testid="task-rail-unknown-error">
+            <AlertTriangle className="h-8 w-8 text-red-500" />
+            <p className="text-xs font-semibold" style={{ color: "#49454F" }}>Something went wrong</p>
+            <p className="text-[10px]" style={{ color: "#79747E" }}>{errorMessage ?? "An unexpected error occurred."}</p>
+            <button
+              onClick={refresh}
+              className="mt-2 rounded bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100 transition-colors"
+              data-testid="task-rail-retry-button"
+            >
+              Retry
+            </button>
           </div>
         )}
 

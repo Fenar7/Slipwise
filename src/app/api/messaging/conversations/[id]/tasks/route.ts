@@ -4,6 +4,7 @@ import {
   requireMessagingApiContext,
   messagingApiResponse,
   handleMessagingApiError,
+  safeRead,
 } from "../../../../_utils";
 
 export const runtime = "nodejs";
@@ -15,7 +16,9 @@ export async function GET(
   try {
     const { orgId, userId } = await requireMessagingApiContext();
     const { id } = await params;
-    const tasks = await getConversationTaskSummaries(orgId, id, userId);
+    const tasks = await safeRead(
+      getConversationTaskSummaries(orgId, id, userId)
+    );
     return messagingApiResponse(tasks);
   } catch (error) {
     return handleMessagingApiError(error);
