@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useCallback } from "react";
 import type { MailboxConnection } from "./types";
+import type { MailboxSyncPresentation } from "@/lib/mailbox/sync-presentation-shape";
+import { buildFallbackSyncPresentation } from "./mailbox-sync-ui";
 
 interface ApiConnectionItem {
   id: string;
@@ -15,6 +17,7 @@ interface ApiConnectionItem {
   connectedBy: string;
   createdAt: string;
   updatedAt: string;
+  sync?: MailboxSyncPresentation;
 }
 
 interface UseMailboxConnectionsResult {
@@ -25,6 +28,12 @@ interface UseMailboxConnectionsResult {
 }
 
 function mapApiToConnection(item: ApiConnectionItem): MailboxConnection {
+  const status = item.status
+    .toLowerCase()
+    .replace("active", "connected")
+    .replace("reconnect_required", "reconnect_required")
+    .replace("degraded", "degraded")
+    .replace("disconnected", "disconnected") as MailboxConnection["status"];
   return {
     id: item.id,
     orgId: item.orgId,
@@ -33,14 +42,23 @@ function mapApiToConnection(item: ApiConnectionItem): MailboxConnection {
     slug: item.id,
     emailAddress: item.emailAddress,
     displayName: item.displayName,
-    status: item.status.toLowerCase().replace("active", "connected").replace("reconnect_required", "reconnect_required").replace("degraded", "degraded").replace("disconnected", "disconnected") as MailboxConnection["status"],
+    status,
     lastSyncAt: item.lastSyncAt,
     lastSyncError: item.lastSyncError,
     lastSyncErrorCategory: null,
+    sync:
+      item.sync ??
+      buildFallbackSyncPresentation({
+        status,
+        lastSyncAt: item.lastSyncAt,
+        lastSyncError: item.lastSyncError,
+      }),
     unreadCount: 0,
     inboxCount: 0,
   };
 }
+
+const SYNC_POLL_INTERVAL_MS = 5000;
 
 export function useMailboxConnections(): UseMailboxConnectionsResult {
   const [connections, setConnections] = useState<MailboxConnection[]>([]);
@@ -69,6 +87,24 @@ export function useMailboxConnections(): UseMailboxConnectionsResult {
   useEffect(() => {
     fetchConnections();
   }, [fetchConnections]);
+
+  const hasActiveSync = connections.some((connection) => connection.sync?.isSyncing);
+  // Also poll when waiting for first sync — ensures we pick up sync completion
+  // within the poll window rather than waiting for a user-triggered refetch.
+  const hasNeverImported = connections.some(
+    (connection) => connection.sync?.state === "completed_never_imported",
+  );
+  const shouldPoll = hasActiveSync || hasNeverImported;
+
+  useEffect(() => {
+    if (!shouldPoll) return;
+
+    const timer = window.setInterval(() => {
+      void fetchConnections();
+    }, SYNC_POLL_INTERVAL_MS);
+
+    return () => window.clearInterval(timer);
+  }, [fetchConnections, shouldPoll]);
 
   return {
     connections,

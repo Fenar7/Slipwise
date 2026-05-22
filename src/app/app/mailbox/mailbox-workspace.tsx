@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect, useMemo } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { usePathname } from "next/navigation";
 import { useMailboxQuerySync } from "./use-mailbox-query-sync";
 import { useMailboxSavedViews } from "./use-mailbox-saved-views";
@@ -31,6 +31,12 @@ import type { ThreadAction } from "./use-thread-action";
 import { useMailboxDraft } from "./use-mailbox-draft";
 import { useAssignableMembers } from "./use-assignable-members";
 import { ThreadNotFoundEmpty } from "./mailbox-empty-states";
+import { useMailboxSyncAction } from "./use-mailbox-sync-action";
+import {
+  canManuallySyncMailbox,
+  resolveMailboxSyncPresentation,
+  withPendingSyncPresentation,
+} from "./mailbox-sync-ui";
 import type { ThreadRowData } from "./mailbox-thread-list";
 import type {
   MailboxComposerState,
@@ -293,7 +299,11 @@ export function MailboxWorkspace() {
   const [mobilePanel, setMobilePanel] = useState<MailboxResponsivePanel>("thread-list");
 
   // Real data hooks
-  const { connections, isLoading: connectionsLoading } = useMailboxConnections();
+  const {
+    connections,
+    isLoading: connectionsLoading,
+    refetch: refetchConnections,
+  } = useMailboxConnections();
 
   const threadQueryParams = useMemo(
     () => resolveThreadQueryParams(pathname, connections),
@@ -333,6 +343,9 @@ export function MailboxWorkspace() {
 
   const viewLabel = resolveViewLabel(pathname, connections);
   const activeConnection = resolveActiveConnection(pathname, connections);
+  const activeSync = activeConnection
+    ? resolveMailboxSyncPresentation(activeConnection)
+    : null;
   const totalCount = apiTotalCount;
   const unreadCount = mappedThreads.filter((t) => t.isUnread).length;
 
@@ -355,6 +368,43 @@ export function MailboxWorkspace() {
   );
 
   const { isLoading: isActionLoading, performAction } = useThreadAction(handleActionSuccess);
+  const {
+    triggerSync,
+    isPending: isSyncPending,
+    getError: getSyncError,
+  } = useMailboxSyncAction({
+    onSuccess: async () => {
+      refetchConnections();
+      refetchThreads();
+    },
+  });
+
+  /**
+   * Auto-trigger initial sync for the active mailbox when it's in
+   * `completed_never_imported` state. Fires once per connection per mount,
+   * protected by a per-connection ref guard and the server-side rate limit.
+   *
+   * This backs up the settings-page trigger: if the user navigates directly
+   * to the workspace (bypassing settings after OAuth redirect), the first sync
+   * still kicks off automatically.
+   */
+  const autoSyncTriggeredRef = useRef<Record<string, boolean>>({});
+  useEffect(() => {
+    if (connectionsLoading || !activeConnection) return;
+    if (activeConnection.status !== "connected") return;
+    const sync = resolveMailboxSyncPresentation(activeConnection);
+    if (sync.state !== "completed_never_imported") return;
+    if (autoSyncTriggeredRef.current[activeConnection.id]) return;
+    if (isSyncPending(activeConnection.id)) return;
+
+    autoSyncTriggeredRef.current[activeConnection.id] = true;
+    void triggerSync(activeConnection.id);
+  }, [
+    connectionsLoading,
+    activeConnection,
+    triggerSync,
+    isSyncPending,
+  ]);
 
   // Sprint 5.1: Draft persistence hook
   const {
@@ -395,6 +445,13 @@ export function MailboxWorkspace() {
   const reconnectConnection = resolveReconnectConnection(pathname, connections);
   const smartViewEmpty = resolveSmartViewDescription(pathname);
   const connectedMailboxCount = connections.filter((conn) => conn.status !== "disconnected").length;
+  const effectiveActiveSync =
+    activeConnection && activeSync
+      ? withPendingSyncPresentation(activeSync, isSyncPending(activeConnection.id))
+      : null;
+  const activeSyncError = activeConnection ? getSyncError(activeConnection.id) : null;
+  const canSyncActiveMailbox =
+    activeConnection ? canManuallySyncMailbox(activeConnection.status) : false;
 
   const selectedContext: LinkedContextState | null = selectedThreadId
     ? {
@@ -632,6 +689,23 @@ export function MailboxWorkspace() {
       return (
         <EmptyInboxState
           mailboxLabel={resolveEmptyMailboxLabel(pathname, activeConnection, viewLabel)}
+          syncStatus={
+            effectiveActiveSync &&
+            (effectiveActiveSync.state === "running" ||
+              effectiveActiveSync.state === "completed_never_imported" ||
+              effectiveActiveSync.state === "failed")
+              ? effectiveActiveSync
+              : undefined
+          }
+          onSyncNow={
+            activeConnection && canSyncActiveMailbox
+              ? () => {
+                  void triggerSync(activeConnection.id);
+                }
+              : undefined
+          }
+          isSyncPending={activeConnection ? isSyncPending(activeConnection.id) : false}
+          syncError={activeSyncError}
         />
       );
     }
@@ -716,6 +790,15 @@ export function MailboxWorkspace() {
             onToggleFilterPanel={() => setIsFilterPanelOpen((open) => !open)}
             onSaveView={createView}
             smartViewId={resolveSmartViewId(pathname)}
+            syncStatus={effectiveActiveSync}
+            onSyncNow={
+              activeConnection && canSyncActiveMailbox
+                ? () => {
+                    void triggerSync(activeConnection.id);
+                  }
+                : undefined
+            }
+            isSyncPending={activeConnection ? isSyncPending(activeConnection.id) : false}
           />
 
           <MailboxFilterPanel

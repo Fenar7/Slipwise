@@ -21,6 +21,7 @@ let mockPathname = "/app/mailbox";
 vi.mock("next/navigation", () => ({
   usePathname: () => mockPathname,
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 // Mock mailbox data hooks for workspace tests
@@ -34,6 +35,15 @@ vi.mock("../use-mailbox-connections", () => ({
     isLoading: false,
     error: null,
     refetch: vi.fn(),
+  }),
+}));
+
+vi.mock("../use-mailbox-sync-action", () => ({
+  useMailboxSyncAction: () => ({
+    triggerSync: vi.fn(async () => true),
+    isPending: vi.fn(() => false),
+    getError: vi.fn(() => null),
+    clearError: vi.fn(),
   }),
 }));
 
@@ -81,6 +91,10 @@ vi.mock("../use-mailbox-threads", () => ({
       loadMore: vi.fn(),
     };
   }),
+}));
+
+vi.mock("@/hooks/use-supabase-session", () => ({
+  useSupabaseSession: () => ({ user: { id: "user_self" }, loading: false }),
 }));
 
 function buildThreadDetail(threadId: string) {
@@ -248,14 +262,199 @@ describe("NoMailboxesEmpty", () => {
 });
 
 describe("EmptyInboxState", () => {
-  it("renders with mailbox label", () => {
+  it("renders with mailbox label when no sync status", () => {
     render(<EmptyInboxState mailboxLabel="Billing" />);
     expect(screen.getByText(/billing is empty/i)).toBeInTheDocument();
   });
 
-  it("mentions syncing context", () => {
+  it("mentions syncing context when no sync status", () => {
     render(<EmptyInboxState mailboxLabel="Support" />);
     expect(screen.getByText(/still be syncing/i)).toBeInTheDocument();
+  });
+
+  it("renders sync-aware empty state when initial import is running", () => {
+    render(
+      <EmptyInboxState
+        mailboxLabel="Support"
+        syncStatus={{
+          state: "running",
+          isSyncing: true,
+          syncMode: "INITIAL",
+          triggerSource: "MANUAL",
+          currentRunId: "run_1",
+          currentRunStartedAt: "2026-05-22T10:00:00Z",
+          lastCompletedAt: null,
+          lastRunStatus: "RUNNING",
+          lastErrorCategory: null,
+          lastErrorSummary: null,
+          lastRunThreadCount: null,
+          lastRunMessageCount: null,
+          stageLabel: "Initial import in progress",
+          detailLabel: "Importing recent threads. Messages will appear automatically.",
+        }}
+      />
+    );
+
+    // New design: heading is "Importing messages…"
+    expect(screen.getByText(/importing messages/i)).toBeInTheDocument();
+    // Body explains threads will appear automatically
+    expect(screen.getByText(/threads will appear here automatically/i)).toBeInTheDocument();
+    // Uses the correct testId
+    expect(screen.getByTestId("empty-inbox-syncing")).toBeInTheDocument();
+  });
+
+  it("does NOT render the mailbox label as a duplicate heading below the sync card when running", () => {
+    render(
+      <EmptyInboxState
+        mailboxLabel="Support"
+        syncStatus={{
+          state: "running",
+          isSyncing: true,
+          syncMode: "INITIAL",
+          triggerSource: "MANUAL",
+          currentRunId: "run_1",
+          currentRunStartedAt: null,
+          lastCompletedAt: null,
+          lastRunStatus: "RUNNING",
+          lastErrorCategory: null,
+          lastErrorSummary: null,
+          lastRunThreadCount: null,
+          lastRunMessageCount: null,
+          stageLabel: "Initial import in progress",
+          detailLabel: "Importing recent threads.",
+        }}
+      />
+    );
+
+    // "Support" must NOT appear as a standalone heading duplicate
+    // (it previously appeared as a separate <p> below the sync card)
+    const supportTexts = screen.queryAllByText("Support");
+    expect(supportTexts).toHaveLength(0);
+  });
+
+  it("renders waiting-for-first-sync state with Sync now CTA", () => {
+    const onSyncNow = vi.fn();
+    render(
+      <EmptyInboxState
+        mailboxLabel="Support"
+        onSyncNow={onSyncNow}
+        syncStatus={{
+          state: "completed_never_imported",
+          isSyncing: false,
+          syncMode: null,
+          triggerSource: null,
+          currentRunId: null,
+          currentRunStartedAt: null,
+          lastCompletedAt: null,
+          lastRunStatus: null,
+          lastErrorCategory: null,
+          lastErrorSummary: null,
+          lastRunThreadCount: null,
+          lastRunMessageCount: null,
+          stageLabel: "Connected, waiting for first sync",
+          detailLabel: "This mailbox is connected. The first sync has not completed yet.",
+        }}
+      />
+    );
+
+    // New design: heading is "[mailboxLabel] is ready"
+    expect(screen.getByText(/support is ready/i)).toBeInTheDocument();
+    // Correct testId
+    expect(screen.getByTestId("empty-inbox-waiting")).toBeInTheDocument();
+    // CTA is present and wired
+    const button = screen.getByTestId("sync-now-cta");
+    expect(button).toBeInTheDocument();
+    fireEvent.click(button);
+    expect(onSyncNow).toHaveBeenCalledOnce();
+  });
+
+  it("does NOT render a duplicate mailbox heading below the waiting state chip", () => {
+    render(
+      <EmptyInboxState
+        mailboxLabel="Billing"
+        syncStatus={{
+          state: "completed_never_imported",
+          isSyncing: false,
+          syncMode: null,
+          triggerSource: null,
+          currentRunId: null,
+          currentRunStartedAt: null,
+          lastCompletedAt: null,
+          lastRunStatus: null,
+          lastErrorCategory: null,
+          lastErrorSummary: null,
+          lastRunThreadCount: null,
+          lastRunMessageCount: null,
+          stageLabel: "Connected, waiting for first sync",
+          detailLabel: "This mailbox is connected.",
+        }}
+      />
+    );
+
+    // "Billing" should appear exactly once (as part of "Billing is ready"),
+    // NOT as a standalone repeated heading underneath the chip.
+    const billingTexts = screen.getAllByText(/billing/i);
+    // All occurrences must be inside the heading, not a separate element
+    expect(billingTexts.length).toBe(1);
+  });
+
+  it("does NOT show Sync now CTA when sync is actively running", () => {
+    render(
+      <EmptyInboxState
+        mailboxLabel="Support"
+        onSyncNow={vi.fn()}
+        isSyncPending={true}
+        syncStatus={{
+          state: "completed_never_imported",
+          isSyncing: false,
+          syncMode: null,
+          triggerSource: null,
+          currentRunId: null,
+          currentRunStartedAt: null,
+          lastCompletedAt: null,
+          lastRunStatus: null,
+          lastErrorCategory: null,
+          lastErrorSummary: null,
+          lastRunThreadCount: null,
+          lastRunMessageCount: null,
+          stageLabel: "Connected, waiting for first sync",
+          detailLabel: "This mailbox is connected.",
+        }}
+      />
+    );
+
+    // When isSyncPending is true, the CTA must be hidden (no dead button)
+    expect(screen.queryByTestId("sync-now-cta")).not.toBeInTheDocument();
+  });
+
+  it("renders failed sync state with actionable body copy", () => {
+    render(
+      <EmptyInboxState
+        mailboxLabel="Billing"
+        syncStatus={{
+          state: "failed",
+          isSyncing: false,
+          syncMode: null,
+          triggerSource: null,
+          currentRunId: null,
+          currentRunStartedAt: null,
+          lastCompletedAt: null,
+          lastRunStatus: "FAILED",
+          lastErrorCategory: "rate_limited",
+          lastErrorSummary: "Gmail rate limit exceeded",
+          lastRunThreadCount: null,
+          lastRunMessageCount: null,
+          stageLabel: "Sync needs attention",
+          detailLabel: "Gmail rate limit exceeded",
+        }}
+        onSyncNow={vi.fn()}
+      />
+    );
+
+    expect(screen.getByTestId("empty-inbox-failed")).toBeInTheDocument();
+    expect(screen.getByText(/sync needs attention/i)).toBeInTheDocument();
+    // Shows the safe error summary
+    expect(screen.getByText(/gmail rate limit exceeded/i)).toBeInTheDocument();
   });
 });
 
