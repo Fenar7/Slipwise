@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useCallback } from "react";
 import type { MailboxAdminConnection, MailboxConnectionStatus, MailboxProvider } from "./types";
+import type { MailboxSyncPresentation } from "@/lib/mailbox/sync-presentation-shape";
+import { buildFallbackSyncPresentation } from "./mailbox-sync-ui";
 
 export type MailboxAdminConnectionsErrorType =
   | "unauthorized"
@@ -17,6 +19,8 @@ interface UseMailboxAdminConnectionsResult {
   refetch: () => void;
 }
 
+interface ApiMailboxSyncPresentation extends MailboxSyncPresentation {}
+
 function mapStatus(status: string): MailboxConnectionStatus {
   const s = status.toLowerCase();
   if (s === "active") return "connected";
@@ -27,6 +31,9 @@ function mapStatus(status: string): MailboxConnectionStatus {
 
 function mapApiToAdminConnection(item: unknown): MailboxAdminConnection {
   const i = item as Record<string, unknown>;
+  const status = mapStatus(String(i.status));
+  const lastSyncAt = i.lastSyncAt ? String(i.lastSyncAt) : null;
+  const lastSyncError = i.lastSyncError ? String(i.lastSyncError) : null;
   return {
     id: String(i.id),
     orgId: String(i.orgId),
@@ -34,13 +41,23 @@ function mapApiToAdminConnection(item: unknown): MailboxAdminConnection {
     slug: String(i.id),
     emailAddress: String(i.emailAddress),
     displayName: String(i.displayName),
-    status: mapStatus(String(i.status)),
-    lastSyncAt: i.lastSyncAt ? String(i.lastSyncAt) : null,
-    lastSyncError: i.lastSyncError ? String(i.lastSyncError) : null,
+    status,
+    lastSyncAt,
+    lastSyncError,
+    sync:
+      (i.sync as ApiMailboxSyncPresentation | undefined) ??
+      buildFallbackSyncPresentation({
+        status,
+        lastSyncAt,
+        lastSyncError,
+      }),
     connectedBy: String(i.connectedBy),
     visibilityPolicy: String(i.visibilityPolicy ?? "org_shared"),
+    updatedAt: i.updatedAt ? String(i.updatedAt) : undefined,
   };
 }
+
+const SYNC_POLL_INTERVAL_MS = 5000;
 
 export function useMailboxAdminConnections(): UseMailboxAdminConnectionsResult {
   const [connections, setConnections] = useState<MailboxAdminConnection[]>([]);
@@ -81,6 +98,18 @@ export function useMailboxAdminConnections(): UseMailboxAdminConnectionsResult {
   useEffect(() => {
     fetchConnections();
   }, [fetchConnections]);
+
+  const hasActiveSync = connections.some((connection) => connection.sync?.isSyncing);
+
+  useEffect(() => {
+    if (!hasActiveSync) return;
+
+    const timer = window.setInterval(() => {
+      void fetchConnections();
+    }, SYNC_POLL_INTERVAL_MS);
+
+    return () => window.clearInterval(timer);
+  }, [fetchConnections, hasActiveSync]);
 
   return {
     connections,

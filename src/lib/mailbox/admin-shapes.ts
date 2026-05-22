@@ -3,6 +3,9 @@ import "server-only";
 import type { MailboxConnectionRecord, MailboxConnectionStatus } from "./domain-types";
 import type { MailboxConnectionHealth } from "./health";
 import { deriveMailboxHealth } from "./health";
+import { buildMailboxSyncPresentation } from "./sync-presentation";
+import type { MailboxSyncRunLookup } from "./sync-presentation";
+import type { MailboxSyncPresentation } from "./sync-presentation-shape";
 
 /**
  * The full admin list item for a mailbox connection.
@@ -26,6 +29,7 @@ export interface MailboxConnectionListItem {
    */
   visibilityPolicy: string;
   health: MailboxConnectionHealth;
+  sync: MailboxSyncPresentation;
   lastSyncAt: string | null;
   lastSyncError: string | null;
   connectedBy: string;
@@ -40,6 +44,7 @@ export interface MailboxConnectionListItem {
 export function toMailboxConnectionListItem(
   record: MailboxConnectionRecord,
   now = Date.now(),
+  syncRuns: Partial<MailboxSyncRunLookup> = {},
 ): MailboxConnectionListItem {
   return {
     id: record.id,
@@ -55,6 +60,7 @@ export function toMailboxConnectionListItem(
     // default migration. Fall back to "org_shared" as the schema default.
     visibilityPolicy: record.visibilityPolicy ?? "org_shared",
     health: deriveMailboxHealth(record, now),
+    sync: buildMailboxSyncPresentation(record, syncRuns, now),
     lastSyncAt: record.lastSyncAt?.toISOString() ?? null,
     lastSyncError: record.lastSyncError,
     connectedBy: record.connectedBy ?? "",

@@ -10,6 +10,14 @@ let mockPathname = "/app/mailbox";
 vi.mock("next/navigation", () => ({
   usePathname: () => mockPathname,
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(),
+}));
+
+vi.mock("../use-mailbox-query-sync", () => ({
+  useMailboxQuerySync: () => {
+    const [filterState, setFilterState] = require("react").useState({ filters: [], searchQuery: "" });
+    return { filterState, setFilterState };
+  },
 }));
 
 // Mock mailbox data hooks for workspace tests

@@ -3,6 +3,8 @@
  * Designed to be stable for later backend integration (Phase 2+).
  */
 
+import type { MailboxSyncPresentation } from "@/lib/mailbox/sync-presentation-shape";
+
 export type MailboxConnectionStatus =
   | "connected"
   | "reconnect_required"
@@ -22,6 +24,7 @@ export interface MailboxConnection {
   lastSyncAt: string | null;
   lastSyncError: string | null;
   lastSyncErrorCategory: string | null;
+  sync?: MailboxSyncPresentation;
   unreadCount: number;
   inboxCount: number;
 }
@@ -210,8 +213,10 @@ export interface MailboxAdminConnection {
   status: MailboxConnectionStatus;
   lastSyncAt: string | null;
   lastSyncError: string | null;
+  sync?: MailboxSyncPresentation;
   connectedBy: string;
   visibilityPolicy: string;
+  updatedAt?: string;
 }
 
 export type DisconnectConfirmState = "idle" | "confirming" | "disconnecting" | "disconnected";

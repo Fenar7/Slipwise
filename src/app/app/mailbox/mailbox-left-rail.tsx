@@ -23,10 +23,12 @@ import {
   Plus,
   Bookmark,
   X,
+  Loader2,
 } from "lucide-react";
 import type { MailboxConnection, MailboxGroup, MailboxTreeItem } from "./types";
 import type { SavedViewItem } from "./use-mailbox-saved-views";
 import { GLOBAL_SMART_VIEWS } from "./mock-data";
+import { resolveMailboxSyncPresentation } from "./mailbox-sync-ui";
 
 const ICON_MAP: Record<string, React.ElementType> = {
   Inbox,
@@ -188,6 +190,7 @@ function MailboxAccountGroup({ group }: { group: MailboxGroup }) {
   const { connection, items } = group;
   const [expanded, setExpanded] = useState(connection.status === "connected");
   const pathname = usePathname();
+  const sync = resolveMailboxSyncPresentation(connection);
   const isAnyChildActive = items.some(
     (item) => pathname === item.href || pathname.startsWith(`${item.href}/`)
   );
@@ -215,6 +218,12 @@ function MailboxAccountGroup({ group }: { group: MailboxGroup }) {
 
         <HealthBadge status={connection.status} />
 
+        {sync.isSyncing && (
+          <span title={sync.stageLabel} className="ml-1 shrink-0">
+            <Loader2 className="h-3 w-3 animate-spin text-blue-500" />
+          </span>
+        )}
+
         {connection.status === "connected" && connection.unreadCount > 0 && (
           <UnreadBadge count={connection.unreadCount} />
         )}
@@ -233,7 +242,7 @@ function MailboxAccountGroup({ group }: { group: MailboxGroup }) {
           <p className="mt-0.5 text-amber-600">
             Token expired.{" "}
             <Link
-              href="/app/settings/integrations"
+              href={`/app/mailbox/settings/connections/${connection.id}?action=reconnect`}
               className="underline underline-offset-2 hover:text-amber-800"
             >
               Reconnect

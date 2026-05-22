@@ -8,6 +8,7 @@ import {
   disableMailboxConnection,
 } from "@/lib/mailbox/connection-service";
 import { toMailboxConnectionListItem } from "@/lib/mailbox/admin-shapes";
+import { getMailboxSyncRunsByConnectionIds } from "@/lib/mailbox/sync-run-read-service";
 import type { MailboxConnectionRecord } from "@/lib/mailbox/domain-types";
 
 export async function GET(
@@ -29,7 +30,15 @@ export async function GET(
       return NextResponse.json({ error: "Connection not found" }, { status: 404 });
     }
 
-    return NextResponse.json({ connection: toMailboxConnectionListItem(record) });
+    const syncRuns = await getMailboxSyncRunsByConnectionIds(auth.ctx.orgId, [record.id]);
+
+    return NextResponse.json({
+      connection: toMailboxConnectionListItem(record, Date.now(), {
+        latestRun: syncRuns.latestRunByConnectionId.get(record.id) ?? null,
+        latestCompletedRun:
+          syncRuns.latestCompletedRunByConnectionId.get(record.id) ?? null,
+      }),
+    });
   } catch (error) {
     console.error("[mailbox/connections/:id] GET failed:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

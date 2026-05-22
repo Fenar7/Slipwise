@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
@@ -21,6 +21,16 @@ import { NoMailboxesEmpty } from "../mailbox-empty-states";
 import { MailboxConnectFlow } from "./mailbox-connect-flow";
 import { useMailboxAdminConnections } from "../use-mailbox-admin-connections";
 import { SettingsPageSkeleton } from "../mailbox-skeleton-states";
+import {
+  MailboxSyncStateChip,
+  MailboxSyncSummary,
+} from "../mailbox-sync-status";
+import {
+  canManuallySyncMailbox,
+  resolveMailboxSyncPresentation,
+  withPendingSyncPresentation,
+} from "../mailbox-sync-ui";
+import { useMailboxSyncAction } from "../use-mailbox-sync-action";
 
 // ─── Callback feedback banner ─────────────────────────────────────────────────
 
@@ -35,6 +45,14 @@ const CALLBACK_ERROR_MESSAGES: Record<string, string> = {
     "You must be signed in to connect a mailbox.",
   gmail_rate_limited:
     "Too many connection attempts. Please wait a moment and try again.",
+  gmail_auth_failed:
+    "Google rejected the authorization or token exchange. Please try connecting again.",
+  gmail_internal_error:
+    "Slipwise could not save the Gmail mailbox connection. Please try again.",
+  gmail_provider_error:
+    "Gmail returned an unexpected provider error. Please try again.",
+  gmail_duplicate_account:
+    "This Gmail account is already connected. Reconnect the existing mailbox instead of creating a duplicate.",
   gmail_failed:
     "Gmail authorization failed. Please try again.",
   gmail_missing_params:
@@ -156,9 +174,23 @@ function formatVisibilityPolicy(policy: string): string {
   }
 }
 
-function ConnectionCard({ connection }: { connection: MailboxAdminConnection }) {
-  const isHealthy = connection.status === "connected";
+function ConnectionCard({
+  connection,
+  onSyncNow,
+  isSyncPending = false,
+  syncError = null,
+}: {
+  connection: MailboxAdminConnection;
+  onSyncNow?: (connectionId: string) => void;
+  isSyncPending?: boolean;
+  syncError?: string | null;
+}) {
   const needsReconnect = connection.status === "reconnect_required";
+  const sync = withPendingSyncPresentation(
+    resolveMailboxSyncPresentation(connection),
+    isSyncPending,
+  );
+  const canSync = canManuallySyncMailbox(connection.status);
 
   return (
     <div
@@ -228,6 +260,34 @@ function ConnectionCard({ connection }: { connection: MailboxAdminConnection }) 
         </div>
       )}
 
+      {/* Sync status */}
+      {!needsReconnect && (
+        <div className="mt-4">
+          <MailboxSyncSummary
+            sync={sync}
+            error={syncError}
+            action={
+              canSync ? (
+                <button
+                  type="button"
+                  onClick={() => onSyncNow?.(connection.id)}
+                  disabled={sync.isSyncing || isSyncPending}
+                  className={cn(
+                    "rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors",
+                    sync.isSyncing || isSyncPending
+                      ? "cursor-not-allowed bg-[#E2E8F0] text-[#64748B]"
+                      : "bg-[#16294D] text-white hover:opacity-90",
+                  )}
+                  data-testid={`sync-now-${connection.id}`}
+                >
+                  {sync.isSyncing || isSyncPending ? "Syncing…" : "Sync now"}
+                </button>
+              ) : undefined
+            }
+          />
+        </div>
+      )}
+
       {/* Meta grid */}
       <div className="mt-4 grid grid-cols-2 gap-3 border-t pt-3" style={{ borderColor: "#F1F3F7" }}>
         <div>
@@ -265,14 +325,23 @@ export function MailboxSettingsPageContent({
   isLoading = false,
   error = null,
   errorType = null,
+  onSyncNow,
+  isSyncPending,
+  getSyncError,
 }: {
   connections?: MailboxAdminConnection[];
   isLoading?: boolean;
   error?: string | null;
   errorType?: MailboxAdminConnectionsErrorType;
+  onSyncNow?: (connectionId: string) => void;
+  isSyncPending?: (connectionId: string) => boolean;
+  getSyncError?: (connectionId: string) => string | null;
 }) {
   const [showConnectFlow, setShowConnectFlow] = useState(false);
   const hasConnections = connections.length > 0;
+  const syncingConnections = connections.filter(
+    (connection) => resolveMailboxSyncPresentation(connection).isSyncing,
+  );
 
   if (isLoading) {
     return (
@@ -352,6 +421,20 @@ export function MailboxSettingsPageContent({
 
       {hasConnections ? (
         <>
+          {syncingConnections.length > 0 && (
+            <div className="mb-4 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3">
+              <div className="flex items-start gap-3">
+                <RefreshCw className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-blue-600" aria-hidden="true" />
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-blue-900">Mailbox sync in progress</p>
+                  <p className="mt-1 text-xs leading-relaxed text-blue-800">
+                    Slipwise is importing messages from {syncingConnections.length} connected mailbox{syncingConnections.length !== 1 ? "es" : ""}. New threads will appear automatically.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Admin notice */}
           <div className="mb-6 flex items-center gap-2 rounded-lg border border-[#E2E5EA] bg-white px-4 py-3">
             <ShieldCheck className="h-4 w-4 shrink-0 text-[#16294D]" aria-hidden="true" />
@@ -364,7 +447,13 @@ export function MailboxSettingsPageContent({
           {/* Connection cards */}
           <div className="space-y-4" data-testid="connection-list">
             {connections.map((connection) => (
-              <ConnectionCard key={connection.id} connection={connection} />
+              <ConnectionCard
+                key={connection.id}
+                connection={connection}
+                onSyncNow={onSyncNow}
+                isSyncPending={isSyncPending?.(connection.id) ?? false}
+                syncError={getSyncError?.(connection.id) ?? null}
+              />
             ))}
           </div>
         </>
@@ -383,13 +472,45 @@ export function MailboxSettingsPageContent({
 }
 
 export default function MailboxSettingsPage() {
-  const { connections, isLoading, error, errorType } = useMailboxAdminConnections();
+  const searchParams = useSearchParams();
+  const { connections, isLoading, error, errorType, refetch } = useMailboxAdminConnections();
+  const { triggerSync, isPending, getError } = useMailboxSyncAction({
+    onSuccess: async () => {
+      refetch();
+    },
+  });
+  const autoSyncTriggeredRef = useRef(false);
+
+  useEffect(() => {
+    if (autoSyncTriggeredRef.current) return;
+    if (searchParams.get("connected") !== "gmail") return;
+    if (isLoading || connections.length === 0) return;
+
+    const initialImportCandidate = [...connections]
+      .filter((connection) => resolveMailboxSyncPresentation(connection).state === "completed_never_imported")
+      .sort((a, b) => {
+        const aUpdatedAt = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+        const bUpdatedAt = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+        return bUpdatedAt - aUpdatedAt;
+      })[0];
+
+    if (!initialImportCandidate) return;
+
+    autoSyncTriggeredRef.current = true;
+    void triggerSync(initialImportCandidate.id);
+  }, [connections, isLoading, searchParams, triggerSync]);
+
   return (
     <MailboxSettingsPageContent
       connections={connections}
       isLoading={isLoading}
       error={error}
       errorType={errorType}
+      onSyncNow={(connectionId) => {
+        void triggerSync(connectionId);
+      }}
+      isSyncPending={isPending}
+      getSyncError={getError}
     />
   );
 }

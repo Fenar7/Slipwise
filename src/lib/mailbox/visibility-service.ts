@@ -16,6 +16,7 @@ import { toMailboxRestrictedSummary } from "./read-shapes";
 import { logMailboxAuditTx } from "./audit";
 import type { MailboxConnectionListItem } from "./admin-shapes";
 import type { MailboxRestrictedSummary } from "./read-shapes";
+import { getMailboxSyncRunsByConnectionIds } from "./sync-run-read-service";
 
 /**
  * Compute the effective access resolution for a user on a specific connection.
@@ -67,6 +68,10 @@ export async function listMailboxConnectionsForMember(
   restricted: MailboxRestrictedSummary[];
 }> {
   const records = await listMailboxConnections(orgId);
+  const syncRuns = await getMailboxSyncRunsByConnectionIds(
+    orgId,
+    records.map((record) => record.id),
+  );
 
   const accessible: MailboxConnectionListItem[] = [];
   const restricted: MailboxRestrictedSummary[] = [];
@@ -85,7 +90,13 @@ export async function listMailboxConnectionsForMember(
     });
 
     if (canAccessMailbox(resolution)) {
-      accessible.push(toMailboxConnectionListItem(record));
+      accessible.push(
+        toMailboxConnectionListItem(record, Date.now(), {
+          latestRun: syncRuns.latestRunByConnectionId.get(record.id) ?? null,
+          latestCompletedRun:
+            syncRuns.latestCompletedRunByConnectionId.get(record.id) ?? null,
+        }),
+      );
     } else {
       const reason: MailboxRestrictedSummary["restrictionReason"] =
         record.status === "DISCONNECTED" ? "mailbox_disabled" : "no_permission";

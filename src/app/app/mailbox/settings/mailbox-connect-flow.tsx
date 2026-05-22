@@ -24,9 +24,8 @@ interface MailboxConnectFlowProps {
 
 const GMAIL_PERMISSIONS = [
   { label: "Read email messages and metadata", scope: "gmail.readonly" },
-  { label: "Send email on your behalf", scope: "gmail.send" },
-  { label: "Manage labels and mailbox settings", scope: "gmail.labels" },
-  { label: "Access mailbox history and changes", scope: "gmail.history" },
+  { label: "View the Google account email address", scope: "userinfo.email" },
+  { label: "View the Google account profile name", scope: "userinfo.profile" },
 ];
 
 export function MailboxConnectFlow({ onClose, reconnectEmail, reconnectConnectionId }: MailboxConnectFlowProps) {
@@ -116,7 +115,7 @@ function PreConnectStep({
   return (
     <div data-testid="connect-step-pre-connect">
       <p className="text-sm text-[#334155]">
-        Connect a Gmail mailbox to Slipwise so your team can read, reply, and manage customer email from one place.
+        Connect a Gmail mailbox to Slipwise so your team can read and manage customer email from one place.
       </p>
 
       {/* Permissions disclosure */}
@@ -183,7 +182,7 @@ function ReconnectStep({
         <div>
           <p className="text-sm font-semibold text-amber-900">Authorization expired</p>
           <p className="mt-1 text-sm text-amber-800">
-            The Gmail authorization for <strong>{email}</strong> has expired. Reconnect to resume syncing and sending.
+            The Gmail authorization for <strong>{email}</strong> has expired. Reconnect to resume syncing.
           </p>
         </div>
       </div>
@@ -288,7 +287,7 @@ function SuccessStep({
           </li>
           <li className="flex items-start gap-2">
             <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-green-600" aria-hidden="true" />
-            Team members with access can start reading and replying
+            Team members with access can start reading and managing mailbox threads
           </li>
           <li className="flex items-start gap-2">
             <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-green-600" aria-hidden="true" />

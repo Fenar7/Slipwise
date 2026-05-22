@@ -51,12 +51,11 @@ const GMAIL_WATCH_URL = "https://gmail.googleapis.com/gmail/v1/users/me/watch";
 const GMAIL_SEND_URL = "https://www.googleapis.com/gmail/v1/users/me/messages/send";
 
 /**
- * Least-privilege scopes for Gmail integration.
- * Sprint 5.2 adds gmail.send for outbound send/reply/forward.
+ * Least-privilege scopes for the Phase 6 connect/reconnect flow.
+ * Outbound send scopes are intentionally deferred until that capability ships.
  */
 export const GMAIL_OAUTH_SCOPES = [
   "https://www.googleapis.com/auth/gmail.readonly",
-  "https://www.googleapis.com/auth/gmail.send",
   "https://www.googleapis.com/auth/userinfo.email",
   "https://www.googleapis.com/auth/userinfo.profile",
 ].join(" ");
@@ -142,6 +141,22 @@ interface GoogleTokenResponse {
   scope: string;
 }
 
+async function readResponseBodyForLog(res: Response): Promise<string> {
+  try {
+    return await res.text();
+  } catch {
+    try {
+      const clone = res.clone() as Response & { text?: () => Promise<string> };
+      if (typeof clone.text === "function") {
+        return await clone.text();
+      }
+    } catch {
+      // ignore clone failures
+    }
+  }
+  return "[unavailable]";
+}
+
 async function exchangeCodeForTokens(
   code: string,
   redirectUri: string,
@@ -161,6 +176,14 @@ async function exchangeCodeForTokens(
   });
 
   if (!res.ok) {
+    const errorBody = await readResponseBodyForLog(res);
+    console.error("[gmail-provider] exchangeCodeForTokens failed:", {
+      status: res.status,
+      statusText: res.statusText,
+      redirectUri,
+      clientId: clientId.substring(0, 10) + "...",
+      errorBody,
+    });
     const errorCode = await parseGoogleErrorCode(res);
     return mapGoogleError(res.status, errorCode);
   }

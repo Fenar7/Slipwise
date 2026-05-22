@@ -15,6 +15,13 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => mockUseSearchParams(),
 }));
 
+vi.mock("../use-mailbox-query-sync", () => ({
+  useMailboxQuerySync: () => {
+    const [filterState, setFilterState] = require("react").useState({ filters: [], searchQuery: "" });
+    return { filterState, setFilterState };
+  },
+}));
+
 // Mock mailbox data hooks for workspace tests
 vi.mock("../use-mailbox-connections", () => ({
   useMailboxConnections: () => ({
@@ -92,6 +99,15 @@ vi.mock("../use-mailbox-admin-connections", () => ({
   })),
 }));
 
+vi.mock("../use-mailbox-sync-action", () => ({
+  useMailboxSyncAction: () => ({
+    triggerSync: vi.fn(async () => true),
+    isPending: vi.fn(() => false),
+    getError: vi.fn(() => null),
+    clearError: vi.fn(),
+  }),
+}));
+
 // Settings page
 import MailboxSettingsPage from "../settings/page";
 import { MailboxSettingsPageContent } from "../settings/page";
@@ -99,6 +115,7 @@ import { MailboxSettingsPageContent } from "../settings/page";
 import { MailboxConnectFlow } from "../settings/mailbox-connect-flow";
 // Connection detail
 import { ConnectionDetailClient } from "../settings/connections/[id]/connection-detail-client";
+import { MailboxLeftRail } from "../mailbox-left-rail";
 // Mock data
 import { MOCK_ADMIN_SUMMARIES, MOCK_CONNECTIONS } from "../mock-data";
 // Workspace regression
@@ -240,6 +257,70 @@ describe("MailboxSettingsPage", () => {
     expect(screen.queryByText("support@acmecorp.com")).not.toBeInTheDocument();
     expect(screen.queryByText("accounts@acmecorp.com")).not.toBeInTheDocument();
   });
+
+  it("shows a sync activity banner when any connection is syncing", () => {
+    render(
+      <MailboxSettingsPageContent
+        connections={[
+          {
+            ...mockAdminConnections[0],
+            sync: {
+              state: "running",
+              isSyncing: true,
+              syncMode: "INITIAL",
+              triggerSource: "MANUAL",
+              currentRunId: "run_1",
+              currentRunStartedAt: "2026-05-22T10:00:00Z",
+              lastCompletedAt: null,
+              lastRunStatus: "RUNNING",
+              lastErrorCategory: null,
+              lastErrorSummary: null,
+              lastRunThreadCount: null,
+              lastRunMessageCount: null,
+              stageLabel: "Initial import in progress",
+              detailLabel: "Importing recent threads. Messages will appear automatically.",
+            },
+          },
+        ]}
+      />
+    );
+
+    expect(screen.getByText(/mailbox sync in progress/i)).toBeInTheDocument();
+    expect(screen.getByText(/importing messages from 1 connected mailbox/i)).toBeInTheDocument();
+  });
+
+  it("renders a disabled syncing action for a running mailbox", () => {
+    render(
+      <MailboxSettingsPageContent
+        connections={[
+          {
+            ...mockAdminConnections[0],
+            sync: {
+              state: "running",
+              isSyncing: true,
+              syncMode: "INITIAL",
+              triggerSource: "MANUAL",
+              currentRunId: "run_1",
+              currentRunStartedAt: "2026-05-22T10:00:00Z",
+              lastCompletedAt: null,
+              lastRunStatus: "RUNNING",
+              lastErrorCategory: null,
+              lastErrorSummary: null,
+              lastRunThreadCount: null,
+              lastRunMessageCount: null,
+              stageLabel: "Initial import in progress",
+              detailLabel: "Importing recent threads. Messages will appear automatically.",
+            },
+          },
+        ]}
+        onSyncNow={vi.fn()}
+        isSyncPending={() => false}
+        getSyncError={() => null}
+      />
+    );
+
+    expect(screen.getByRole("button", { name: /syncing…/i })).toBeDisabled();
+  });
 });
 
 // ─── MailboxConnectFlow ───────────────────────────────────────────────────────
@@ -268,6 +349,17 @@ describe("MailboxConnectFlow — pre_connect step", () => {
   it("renders Gmail permissions disclosure", () => {
     render(<MailboxConnectFlow onClose={vi.fn()} />);
     expect(screen.getByLabelText(/gmail permissions requested/i)).toBeInTheDocument();
+  });
+
+  it("lists only the currently requested Gmail permissions", () => {
+    render(<MailboxConnectFlow onClose={vi.fn()} />);
+    const permissions = screen.getByLabelText(/gmail permissions requested/i);
+    expect(permissions).toHaveTextContent(/read email messages and metadata/i);
+    expect(permissions).toHaveTextContent(/view the google account email address/i);
+    expect(permissions).toHaveTextContent(/view the google account profile name/i);
+    expect(permissions).not.toHaveTextContent(/send email on your behalf/i);
+    expect(permissions).not.toHaveTextContent(/manage labels and mailbox settings/i);
+    expect(permissions).not.toHaveTextContent(/mailbox history and changes/i);
   });
 
   it("renders Authorize with Google button", () => {
@@ -513,6 +605,17 @@ describe("ConnectionDetailClient", () => {
     expect(screen.getByTestId("connect-flow-modal")).toBeInTheDocument();
   });
 
+  it("action=reconnect query opens reconnect flow modal on load", async () => {
+    mockUseSearchParams.mockReturnValue(new URLSearchParams("action=reconnect"));
+    mockFetchConnection(mockAdminConnections[2]);
+
+    render(<ConnectionDetailClient connectionId="conn_accounts" />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("connect-flow-modal")).toBeInTheDocument();
+    });
+  });
+
   it("reconnect flow passes connectionId to OAuth endpoint", async () => {
     mockFetchConnection(mockAdminConnections[2]);
     render(<ConnectionDetailClient connectionId="conn_accounts" />);
@@ -542,6 +645,36 @@ describe("MailboxLeftRail — settings link updated", () => {
     render(<MailboxWorkspace />);
     const link = screen.getByRole("link", { name: /manage mailboxes/i });
     expect(link).toHaveAttribute("href", "/app/mailbox/settings");
+  });
+
+  it("reconnect-required left rail link points to mailbox connection reconnect flow", () => {
+    render(
+      <MailboxLeftRail
+        connections={[
+          {
+            id: "conn_accounts",
+            orgId: "org_1",
+            provider: "gmail",
+            slug: "accounts",
+            displayName: "Accounts",
+            emailAddress: "accounts@acmecorp.com",
+            status: "reconnect_required",
+            lastSyncAt: null,
+            lastSyncError: "OAuth token expired. Reconnect required.",
+            lastSyncErrorCategory: "auth_expired",
+            unreadCount: 0,
+            inboxCount: 0,
+          },
+        ]}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /accounts/i }));
+    const reconnectLink = screen.getByRole("link", { name: /reconnect/i });
+    expect(reconnectLink).toHaveAttribute(
+      "href",
+      "/app/mailbox/settings/connections/conn_accounts?action=reconnect",
+    );
   });
 });
 
@@ -695,6 +828,26 @@ describe("Reconnect — mailbox-specific OAuth URL", () => {
     const banner = screen.getByTestId("callback-success-banner");
     expect(banner).toBeInTheDocument();
     expect(banner).toHaveTextContent(/reconnected successfully/i);
+  });
+
+  it("callback auth_failed shows the specific token-exchange message", () => {
+    mockUseSearchParams.mockReturnValue(new URLSearchParams("error=gmail_auth_failed"));
+
+    render(<MailboxSettingsPageContent connections={mockAdminConnections} />);
+
+    expect(screen.getByTestId("callback-error-banner")).toHaveTextContent(
+      /google rejected the authorization or token exchange/i,
+    );
+  });
+
+  it("callback internal_error shows the specific persistence message", () => {
+    mockUseSearchParams.mockReturnValue(new URLSearchParams("error=gmail_internal_error"));
+
+    render(<MailboxSettingsPageContent connections={mockAdminConnections} />);
+
+    expect(screen.getByTestId("callback-error-banner")).toHaveTextContent(
+      /could not save the gmail mailbox connection/i,
+    );
   });
 
   it("no banner shown when no ?connected or ?error param", () => {

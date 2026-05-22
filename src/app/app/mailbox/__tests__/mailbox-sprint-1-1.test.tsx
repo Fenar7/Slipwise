@@ -8,6 +8,13 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(),
 }));
 
+vi.mock("../use-mailbox-query-sync", () => ({
+  useMailboxQuerySync: () => {
+    const [filterState, setFilterState] = require("react").useState({ filters: [], searchQuery: "" });
+    return { filterState, setFilterState };
+  },
+}));
+
 // Mock mailbox data hooks for workspace tests
 vi.mock("../use-mailbox-connections", () => ({
   useMailboxConnections: () => ({
@@ -76,6 +83,15 @@ vi.mock("../use-assignable-members", () => ({
   useAssignableMembers: () => ({
     members: [],
     isLoading: false,
+  }),
+}));
+
+vi.mock("../use-mailbox-sync-action", () => ({
+  useMailboxSyncAction: () => ({
+    triggerSync: vi.fn(),
+    isPending: vi.fn(() => false),
+    getError: vi.fn(() => null),
+    clearError: vi.fn(),
   }),
 }));
 
@@ -279,6 +295,34 @@ describe("MailboxCommandBar", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: /clear search/i }));
     expect(onClearSearch).toHaveBeenCalledOnce();
+  });
+
+  it("shows sync state and sync action when provided", () => {
+    render(
+      <MailboxCommandBar
+        activeViewLabel="Billing"
+        syncStatus={{
+          state: "running",
+          isSyncing: true,
+          syncMode: "INITIAL",
+          triggerSource: "MANUAL",
+          currentRunId: "run_1",
+          currentRunStartedAt: new Date().toISOString(),
+          lastCompletedAt: null,
+          lastRunStatus: "RUNNING",
+          lastErrorCategory: null,
+          lastErrorSummary: null,
+          lastRunThreadCount: null,
+          lastRunMessageCount: null,
+          stageLabel: "Initial import in progress",
+          detailLabel: "Importing recent threads. Messages will appear automatically.",
+        }}
+        onSyncNow={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText("Syncing")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /sync mailbox now/i })).toBeDisabled();
   });
 });
 

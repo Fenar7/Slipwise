@@ -24,6 +24,13 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(),
 }));
 
+vi.mock("../use-mailbox-query-sync", () => ({
+  useMailboxQuerySync: () => {
+    const [filterState, setFilterState] = require("react").useState({ filters: [], searchQuery: "" });
+    return { filterState, setFilterState };
+  },
+}));
+
 // Mock mailbox data hooks for workspace tests
 vi.mock("../use-mailbox-connections", () => ({
   useMailboxConnections: () => ({

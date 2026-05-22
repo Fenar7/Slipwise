@@ -10,6 +10,14 @@ let mockPathname = "/app/mailbox";
 vi.mock("next/navigation", () => ({
   usePathname: () => mockPathname,
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(),
+}));
+
+vi.mock("../use-mailbox-query-sync", () => ({
+  useMailboxQuerySync: () => {
+    const [filterState, setFilterState] = require("react").useState({ filters: [], searchQuery: "" });
+    return { filterState, setFilterState };
+  },
 }));
 
 // Mock mailbox data hooks for workspace tests
@@ -236,7 +244,8 @@ describe("MailboxContextPanel — assignment block", () => {
     const onPatch = vi.fn();
     render(<MailboxContextPanel context={unassignedCtx} onPatch={onPatch} />);
     fireEvent.click(screen.getByTestId("assign-btn"));
-    expect(onPatch).toHaveBeenCalledWith({ assignee: "You" });
+    fireEvent.click(screen.getByTestId("assign-self-option"));
+    expect(onPatch).toHaveBeenCalledWith({ assignee: "You", assigneeId: "" });
   });
 
   it("renders status buttons for all statuses", () => {

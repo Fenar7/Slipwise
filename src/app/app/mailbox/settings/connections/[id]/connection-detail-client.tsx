@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
   ArrowLeft,
@@ -131,6 +132,7 @@ function formatVisibilityPolicy(policy: string): string {
 }
 
 export function ConnectionDetailClient({ connectionId }: ConnectionDetailClientProps) {
+  const searchParams = useSearchParams();
   const [connection, setConnection] = useState<FetchedConnection | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -138,6 +140,7 @@ export function ConnectionDetailClient({ connectionId }: ConnectionDetailClientP
   const [disconnectState, setDisconnectState] = useState<DisconnectConfirmState>("idle");
   const [showReconnect, setShowReconnect] = useState(false);
   const [disconnectError, setDisconnectError] = useState<string | null>(null);
+  const shouldOpenReconnect = searchParams.get("action") === "reconnect";
 
   useEffect(() => {
     let cancelled = false;
@@ -196,6 +199,11 @@ export function ConnectionDetailClient({ connectionId }: ConnectionDetailClientP
     }
     doDisconnect();
   }, [disconnectState, connectionId]);
+
+  useEffect(() => {
+    if (!connection || !shouldOpenReconnect) return;
+    setShowReconnect(true);
+  }, [connection, shouldOpenReconnect]);
 
   if (isLoading) {
     return (

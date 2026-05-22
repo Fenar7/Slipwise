@@ -8,6 +8,14 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("next/navigation", () => ({
   usePathname: () => "/app/mailbox",
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(),
+}));
+
+vi.mock("../use-mailbox-query-sync", () => ({
+  useMailboxQuerySync: () => {
+    const [filterState, setFilterState] = require("react").useState({ filters: [], searchQuery: "" });
+    return { filterState, setFilterState };
+  },
 }));
 
 // Mock mailbox data hooks for workspace tests
@@ -43,11 +51,40 @@ vi.mock("../use-mailbox-threads", () => ({
   }),
 }));
 
+vi.mock("../use-mailbox-thread-detail", () => ({
+  useMailboxThreadDetail: (threadId: string | null) => {
+    const details = (globalThis as any).__mockThreadDetails;
+    const rawDetail = threadId ? details?.[threadId] : null;
+    const participantsMap: Record<string, any[]> = {
+      t1: [{ displayName: "Priya Sharma", email: "priya@clientco.in" }],
+      t2: [{ displayName: "Arjun Mehta", email: "arjun@techventures.io" }],
+      t3: [{ displayName: "Neha Kapoor", email: "neha@vendor.com" }],
+      t4: [{ displayName: "Ravi Nair", email: "ravi@globalretail.com" }],
+      t5: [{ displayName: "Sunita Rao", email: "sunita@customer.com" }],
+      t6: [{ displayName: "Vikram Joshi", email: "vikram@enterprise.com" }],
+    };
+    return {
+      detail: rawDetail
+        ? {
+            participants: participantsMap[threadId!] ?? [],
+            ...rawDetail,
+          }
+        : null,
+      isLoading: false,
+      error: null,
+      isNotFound: false,
+      refetch: vi.fn(),
+    };
+  },
+}));
+
 import { MailboxThreadList, MOCK_THREADS } from "../mailbox-thread-list";
 import { MailboxReadingPane } from "../mailbox-reading-pane";
 import { MailboxReadingPaneEmpty } from "../mailbox-reading-pane-empty";
 import { MailboxWorkspace } from "../mailbox-workspace";
 import { MOCK_THREAD_DETAILS } from "../mock-data";
+
+(globalThis as any).__mockThreadDetails = MOCK_THREAD_DETAILS;
 
 // ─── Sprint 1.1 regression: workspace still renders ─────────────────────────
 
@@ -130,15 +167,17 @@ describe("MailboxThreadList — Sprint 1.2", () => {
     expect(toolbars.length).toBe(MOCK_THREADS.length);
   });
 
-  it("quick-action toolbar contains Reply, Archive, Mark as read, Delete, More actions", () => {
+  it("quick-action toolbar contains Archive, Mark as read/unread, Delete, Flag, More actions", () => {
     render(<MailboxThreadList selectedThreadId={null} onSelectThread={vi.fn()} />);
     // Each toolbar has these buttons — check first thread's toolbar
-    const replyBtns = screen.getAllByRole("button", { name: /^reply$/i });
-    expect(replyBtns.length).toBeGreaterThan(0);
-    const archiveBtns = screen.getAllByRole("button", { name: /^archive$/i });
+    const readBtns = screen.getAllByRole("button", { name: /mark as (read|unread)/i });
+    expect(readBtns.length).toBeGreaterThan(0);
+    const archiveBtns = screen.getAllByRole("button", { name: /^(archive|unarchive)$/i });
     expect(archiveBtns.length).toBeGreaterThan(0);
     const deleteBtns = screen.getAllByRole("button", { name: /^delete$/i });
     expect(deleteBtns.length).toBeGreaterThan(0);
+    const flagBtns = screen.getAllByRole("button", { name: /^(flag|unflag)$/i });
+    expect(flagBtns.length).toBeGreaterThan(0);
   });
 
   it("quick-action click does not propagate to row selection", () => {
