@@ -507,6 +507,59 @@ export function ThreadNotFoundEmpty({ onDismiss }: { onDismiss?: () => void }) {
   );
 }
 
+export function ThreadLoadErrorEmpty({
+  message,
+  onRetry,
+  onDismiss,
+}: {
+  message?: string | null;
+  onRetry?: () => void;
+  onDismiss?: () => void;
+}) {
+  return (
+    <div
+      className="flex h-full flex-col items-center justify-center gap-4 px-8 text-center"
+      style={{ background: "#F7F8FB" }}
+      aria-label="Thread could not be loaded"
+      data-testid="empty-thread-load-error"
+    >
+      <div
+        className="flex h-12 w-12 items-center justify-center rounded-xl"
+        style={{ background: "rgba(245,158,11,0.12)" }}
+        aria-hidden="true"
+      >
+        <AlertTriangle className="h-6 w-6 text-amber-600" />
+      </div>
+      <div className="max-w-sm">
+        <p className="text-sm font-semibold text-[#0F172A]">This thread couldn&apos;t be loaded</p>
+        <p className="mt-1 text-xs leading-relaxed text-[#64748B]">
+          {message?.trim() || "Try again. If the problem continues, refresh the mailbox and retry."}
+        </p>
+      </div>
+      <div className="flex items-center gap-2">
+        {onRetry ? (
+          <button
+            type="button"
+            onClick={onRetry}
+            className="rounded-lg bg-[#16294D] px-4 py-2 text-xs font-semibold text-white transition-opacity hover:opacity-90"
+          >
+            Retry
+          </button>
+        ) : null}
+        {onDismiss ? (
+          <button
+            type="button"
+            onClick={onDismiss}
+            className="rounded-lg border border-[#D7DDE6] bg-white px-4 py-2 text-xs font-semibold text-[#334155] transition-colors hover:bg-[#F8FAFC]"
+          >
+            Back to list
+          </button>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 // ─── Smart view empty (no threads in view) ────────────────────────────────────
 
 /**

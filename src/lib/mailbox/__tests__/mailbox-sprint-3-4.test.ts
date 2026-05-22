@@ -25,6 +25,7 @@ vi.mock("@/lib/db", () => ({
     },
     mailboxMessage: {
       upsert: vi.fn(),
+      findUnique: vi.fn(),
       findFirst: vi.fn(),
       count: vi.fn(),
     },
@@ -36,6 +37,7 @@ vi.mock("@/lib/db", () => ({
     mailboxSyncRun: {
       create: vi.fn(),
       update: vi.fn(),
+      updateMany: vi.fn(),
       findFirst: vi.fn(),
       findUnique: vi.fn(),
     },
@@ -134,6 +136,7 @@ const mockDb = db as unknown as {
   mailboxSyncRun: {
     create: ReturnType<typeof vi.fn>;
     update: ReturnType<typeof vi.fn>;
+    updateMany: ReturnType<typeof vi.fn>;
     findFirst: ReturnType<typeof vi.fn>;
   };
   mailboxConnection: {
@@ -148,6 +151,7 @@ const mockDb = db as unknown as {
   };
   mailboxMessage: {
     upsert: ReturnType<typeof vi.fn>;
+    findUnique: ReturnType<typeof vi.fn>;
     findFirst: ReturnType<typeof vi.fn>;
   };
   mailboxProviderCursor: {

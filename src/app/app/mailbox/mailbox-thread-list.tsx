@@ -156,7 +156,7 @@ function QuickActions({ threadId, status, isUnread, isFlagged, isLoading, onActi
   const isArchived = status === "archived";
   return (
     <div
-      className="absolute right-3 top-1/2 hidden -translate-y-1/2 items-center gap-0.5 rounded-lg border border-[#E2E5EA] bg-white p-0.5 shadow-sm group-hover:flex group-focus-within:flex"
+      className="absolute right-3 top-1/2 hidden -translate-y-1/2 items-center gap-0.5 rounded-lg border border-[#E2E5EA] bg-white p-0.5 shadow-sm group-hover:flex"
       role="toolbar"
       aria-label={`Quick actions for thread ${threadId}`}
       // Stop click from propagating to the row button

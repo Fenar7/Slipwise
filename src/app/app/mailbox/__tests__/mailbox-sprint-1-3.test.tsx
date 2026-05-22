@@ -1066,7 +1066,25 @@ describe("MailboxWorkspace — Sprint 1.3 compose integration", () => {
     expect(screen.getByTestId("inline-reply")).toBeInTheDocument();
   });
 
-  it("focused thread rows expose quick actions without selecting the row", () => {
+  it("shows a thread load error state instead of pretending no thread is selected", async () => {
+    const { useMailboxThreadDetail } = await import("../use-mailbox-thread-detail");
+    vi.mocked(useMailboxThreadDetail).mockImplementation((threadId: string | null) => ({
+      detail: null,
+      isLoading: false,
+      error: threadId ? "Internal server error" : null,
+      isNotFound: false,
+      refetch: vi.fn(),
+    }));
+
+    renderWorkspaceAtPath();
+    fireEvent.click(screen.getAllByRole("option")[0]);
+
+    expect(await screen.findByLabelText(/thread could not be loaded/i)).toBeInTheDocument();
+    expect(screen.getByText(/internal server error/i)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/no thread selected/i)).not.toBeInTheDocument();
+  });
+
+  it("thread row quick actions stay hover-only instead of sticking on focus", () => {
     const onSelect = vi.fn();
     const { container } = render(
       <MailboxThreadList selectedThreadId={null} onSelectThread={onSelect} />
@@ -1074,7 +1092,8 @@ describe("MailboxWorkspace — Sprint 1.3 compose integration", () => {
     const firstRow = screen.getAllByRole("option")[0];
     firstRow.focus();
     const toolbar = container.querySelector('[aria-label="Quick actions for thread t1"]');
-    expect(toolbar?.className).toContain("group-focus-within:flex");
+    expect(toolbar?.className).toContain("group-hover:flex");
+    expect(toolbar?.className).not.toContain("group-focus-within:flex");
 
     fireEvent.keyDown(screen.getAllByRole("button", { name: /^archive$/i })[0], {
       key: "Enter",

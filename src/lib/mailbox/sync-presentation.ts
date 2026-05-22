@@ -10,6 +10,9 @@ function isActiveLease(record: MailboxConnectionRecord, now = Date.now()): boole
   return record.syncLeaseExpiresAt != null && record.syncLeaseExpiresAt.getTime() > now;
 }
 
+/** Runs older than this are considered stale and must not be treated as active. */
+const STALE_RUN_THRESHOLD_MS = 30 * 60 * 1000;
+
 function parseSyncStats(stats: Record<string, unknown> | null): {
   threadCount: number | null;
   messageCount: number | null;
@@ -34,7 +37,13 @@ export function buildMailboxSyncPresentation(
   const latestRun = syncRuns.latestRun ?? null;
   const latestCompletedRun = syncRuns.latestCompletedRun ?? null;
   const activeLease = isActiveLease(record, now);
-  const isSyncing = activeLease || latestRun?.status === "RUNNING";
+
+  // A run is only "actually running" if it is RUNNING and not stale.
+  // This prevents crashed/timed-out syncs from showing "Syncing" forever.
+  const isLatestRunActive =
+    latestRun?.status === "RUNNING" &&
+    latestRun.startedAt.getTime() > now - STALE_RUN_THRESHOLD_MS;
+  const isSyncing = activeLease || isLatestRunActive;
 
   const latestCompletedAt =
     latestCompletedRun?.completedAt?.toISOString() ??
@@ -42,9 +51,12 @@ export function buildMailboxSyncPresentation(
     null;
 
   const latestRunStats = parseSyncStats(latestCompletedRun?.stats ?? null);
+  const isStaleRunningRun = latestRun?.status === "RUNNING" && !isLatestRunActive;
   const failedSummary =
     latestRun?.status === "FAILED"
       ? latestRun.errorSummary
+      : isStaleRunningRun
+        ? "A previous sync did not finish. Try syncing again."
       : record.lastSyncError;
 
   if (record.status === "RECONNECT_REQUIRED" || record.status === "DISCONNECTED") {
@@ -92,6 +104,9 @@ export function buildMailboxSyncPresentation(
 
   const hasFailedRun =
     latestRun?.status === "FAILED" ||
+    // A stale RUNNING run (crashed / timed-out) is presented as failed so the
+    // UI does not show "Syncing" forever and the user can retry.
+    isStaleRunningRun ||
     (!!record.lastSyncError &&
       record.status !== "RECONNECT_REQUIRED" &&
       record.status !== "DISCONNECTED");

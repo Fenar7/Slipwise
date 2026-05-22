@@ -93,6 +93,7 @@ export interface MailboxMessageItem {
   cc?: string[];
   subject: string;
   bodyHtml: string;
+  bodyText?: string | null;
   sentAt: string;
   /** Collapsed by default for older messages in a thread */
   isCollapsed: boolean;

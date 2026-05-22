@@ -186,4 +186,80 @@ describe("buildMailboxSyncPresentation", () => {
     expect(sync.state).toBe("running");
     expect(sync.stageLabel).toBe("Checking for new mail");
   });
+
+  it("does not show running forever when the latest RUNNING run is stale (>30 min)", () => {
+    const sync = buildMailboxSyncPresentation(
+      makeConnection({ lastSyncAt: null }),
+      {
+        latestRun: {
+          id: "run_stale",
+          status: "RUNNING",
+          syncMode: "INITIAL",
+          triggerSource: "MANUAL",
+          startedAt: new Date(NOW - 35 * 60 * 1000),
+          completedAt: null,
+          stats: null,
+          errorCategory: null,
+          errorMessage: null,
+        },
+      },
+      NOW,
+    );
+
+    expect(sync.isSyncing).toBe(false);
+    expect(sync.state).toBe("failed");
+    expect(sync.stageLabel).toBe("Sync needs attention");
+    expect(sync.detailLabel).toContain("did not finish");
+  });
+
+  it("stale RUNNING run with lastSyncAt is treated as failed, not completed", () => {
+    const sync = buildMailboxSyncPresentation(
+      makeConnection(),
+      {
+        latestRun: {
+          id: "run_stale",
+          status: "RUNNING",
+          syncMode: "DELTA",
+          triggerSource: "SCHEDULED",
+          startedAt: new Date(NOW - 40 * 60 * 1000),
+          completedAt: null,
+          stats: null,
+          errorCategory: null,
+          errorMessage: null,
+        },
+      },
+      NOW,
+    );
+
+    expect(sync.isSyncing).toBe(false);
+    expect(sync.state).toBe("failed");
+  });
+
+  it("fresh RUNNING run without an active lease is still treated as running", () => {
+    const sync = buildMailboxSyncPresentation(
+      makeConnection({
+        lastSyncAt: null,
+        syncLeaseToken: null,
+        syncLeaseExpiresAt: null,
+      }),
+      {
+        latestRun: {
+          id: "run_fresh",
+          status: "RUNNING",
+          syncMode: "INITIAL",
+          triggerSource: "MANUAL",
+          startedAt: new Date(NOW - 2 * 60 * 1000),
+          completedAt: null,
+          stats: null,
+          errorCategory: null,
+          errorMessage: null,
+        },
+      },
+      NOW,
+    );
+
+    expect(sync.isSyncing).toBe(true);
+    expect(sync.state).toBe("running");
+    expect(sync.stageLabel).toBe("Initial import in progress");
+  });
 });

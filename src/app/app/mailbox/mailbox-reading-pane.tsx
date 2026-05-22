@@ -64,9 +64,22 @@ function formatSentAt(iso: string): string {
   });
 }
 
+function normalizeRenderableHtmlText(html: string): string {
+  return html
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(p|div|li|blockquote|h[1-6])>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function MessageItem({ message, onReply }: { message: MailboxMessageItem; onReply?: (mode: "reply" | "reply-all" | "forward") => void }) {
   const [collapsed, setCollapsed] = useState(message.isCollapsed);
   const isOutbound = message.direction === "outbound";
+  const safeHtml = sanitizeMessageHtml(message.bodyHtml);
+  const hasRenderableHtml = normalizeRenderableHtmlText(safeHtml).length > 0;
+  const hasTextFallback = !!message.bodyText?.trim();
 
   return (
     <article
@@ -137,11 +150,27 @@ function MessageItem({ message, onReply }: { message: MailboxMessageItem; onRepl
       {/* Message body — only when expanded */}
       {!collapsed && (
         <>
-          <div
-            className="mailbox-message-body border-t px-4 py-4 text-sm leading-relaxed text-[#334155]"
-            style={{ borderColor: "#F1F3F7" }}
-            dangerouslySetInnerHTML={{ __html: sanitizeMessageHtml(message.bodyHtml) }}
-          />
+          {hasRenderableHtml ? (
+            <div
+              className="mailbox-message-body border-t px-4 py-4 text-sm leading-relaxed text-[#334155]"
+              style={{ borderColor: "#F1F3F7" }}
+              dangerouslySetInnerHTML={{ __html: safeHtml }}
+            />
+          ) : hasTextFallback ? (
+            <div
+              className="mailbox-message-body whitespace-pre-wrap break-words border-t px-4 py-4 text-sm leading-relaxed text-[#334155]"
+              style={{ borderColor: "#F1F3F7" }}
+            >
+              {message.bodyText}
+            </div>
+          ) : (
+            <div
+              className="mailbox-message-body border-t px-4 py-4 text-sm leading-relaxed text-[#94A3B8]"
+              style={{ borderColor: "#F1F3F7" }}
+            >
+              Message body unavailable.
+            </div>
+          )}
 
           {/* Attachments */}
           {message.attachments.length > 0 && (

@@ -30,7 +30,7 @@ import { useThreadAction } from "./use-thread-action";
 import type { ThreadAction } from "./use-thread-action";
 import { useMailboxDraft } from "./use-mailbox-draft";
 import { useAssignableMembers } from "./use-assignable-members";
-import { ThreadNotFoundEmpty } from "./mailbox-empty-states";
+import { ThreadLoadErrorEmpty, ThreadNotFoundEmpty } from "./mailbox-empty-states";
 import { useMailboxSyncAction } from "./use-mailbox-sync-action";
 import {
   canManuallySyncMailbox,
@@ -352,6 +352,7 @@ export function MailboxWorkspace() {
   const {
     detail: rawDetail,
     isLoading: detailLoading,
+    error: detailError,
     isNotFound: detailNotFound,
     refetch: refetchDetail,
   } = useMailboxThreadDetail(selectedThreadId);
@@ -860,6 +861,12 @@ export function MailboxWorkspace() {
               <div className="flex h-full items-center justify-center bg-[#F7F8FB]" data-testid="mailbox-reading-pane-loading">
                 <div className="h-8 w-8 animate-spin rounded-full border-2 border-[#E2E8F0] border-t-[#16294D]" />
               </div>
+            ) : detailError ? (
+              <ThreadLoadErrorEmpty
+                message={detailError}
+                onRetry={selectedThreadId ? refetchDetail : undefined}
+                onDismiss={() => setSelectedThreadId(null)}
+              />
             ) : detailNotFound ? (
               <ThreadNotFoundEmpty onDismiss={() => setSelectedThreadId(null)} />
             ) : selectedDetail ? (

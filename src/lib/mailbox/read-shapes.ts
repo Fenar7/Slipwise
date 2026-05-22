@@ -323,6 +323,8 @@ export interface MailboxMessageReadShape {
   bcc: MailboxParticipantReadShape[];
   subject: string;
   snippet: string;
+  htmlBody: string;
+  textBody: string | null;
   sentAt: string;
   receivedAt: string | null;
   attachmentCount: number;
@@ -402,6 +404,8 @@ export function toMailboxMessageReadShape(
       .filter(Boolean) as MailboxParticipantReadShape[],
     subject: record.subject,
     snippet: record.snippet,
+    htmlBody: record.htmlBody,
+    textBody: record.textBody,
     sentAt: record.sentAt.toISOString(),
     receivedAt: record.receivedAt?.toISOString() ?? null,
     attachmentCount: record.attachmentCount,

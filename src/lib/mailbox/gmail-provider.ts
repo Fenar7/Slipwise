@@ -241,7 +241,7 @@ async function fetchGoogleUserInfo(
 
 async function fetchGmailProfile(
   accessToken: string,
-): Promise<{ emailAddress: string; messagesTotal: number } | MailboxProviderError> {
+): Promise<{ emailAddress: string; messagesTotal: number; historyId: string | null } | MailboxProviderError> {
   const res = await fetch(GMAIL_PROFILE_URL, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
@@ -251,7 +251,7 @@ async function fetchGmailProfile(
     return mapGoogleError(res.status, errorCode);
   }
 
-  return res.json() as Promise<{ emailAddress: string; messagesTotal: number }>;
+  return res.json() as Promise<{ emailAddress: string; messagesTotal: number; historyId: string | null }>;
 }
 
 function isProviderError(v: unknown): v is MailboxProviderError {
@@ -460,14 +460,26 @@ export const gmailProviderAdapter: IMailboxProviderAdapter = {
     }
 
     // ─── Initial path: use threads.list ─────────────────────────────────────
+    // Bounded initial import: bootstrap only a small slice of recent inbox
+    // threads, then seed the delta cursor from the live Gmail profile historyId.
+    // This keeps first-connect fast and avoids request-timeout risk on large
+    // mailboxes while still making future delta syncs correct from "now".
+    const GMAIL_INITIAL_SYNC_MAX_PAGES = 1;
+    const GMAIL_INITIAL_SYNC_MAX_RESULTS = 25;
     const threads: MailboxThreadEnvelope[] = [];
     let nextPageToken: string | undefined;
     let highestHistoryId = "0";
+    let pagesFetched = 0;
+
+    const profile = await fetchGmailProfile(accessToken);
+    if (isProviderError(profile)) return profile;
 
     do {
+      pagesFetched += 1;
       const params = new URLSearchParams({
-        maxResults: "50",
+        maxResults: String(GMAIL_INITIAL_SYNC_MAX_RESULTS),
         includeSpamTrash: "false",
+        q: "in:inbox",
       });
       if (nextPageToken) {
         params.set("pageToken", nextPageToken);
@@ -497,9 +509,12 @@ export const gmailProviderAdapter: IMailboxProviderAdapter = {
         if (envelope) threads.push(envelope);
       }
       nextPageToken = data.nextPageToken;
-    } while (nextPageToken);
+    } while (nextPageToken && pagesFetched < GMAIL_INITIAL_SYNC_MAX_PAGES);
 
-    const nextCursor: MailboxSyncCursor = { value: highestHistoryId, expiresAt: null };
+    const nextCursor: MailboxSyncCursor = {
+      value: profile.historyId ?? highestHistoryId,
+      expiresAt: null,
+    };
 
     return { threads, nextCursor };
   },
@@ -949,11 +964,23 @@ function extractBodies(part: GmailMessagePart | null): { htmlBody: string; textB
 
   function walk(p: GmailMessagePart) {
     const mimeType = p.mimeType ?? "";
-    if (mimeType === "text/html" && p.body?.data) {
-      htmlParts.push(decodeBase64(p.body.data));
-    } else if (mimeType === "text/plain" && p.body?.data) {
-      textParts.push(decodeBase64(p.body.data));
+
+    // Skip forwarded-message subtrees so we don't concatenate
+    // the bodies of attached/embedded emails.
+    if (mimeType === "message/rfc822") {
+      return;
     }
+
+    // Leaf part with inline body data.
+    if (p.body?.data) {
+      if (mimeType === "text/html") {
+        htmlParts.push(decodeBase64(p.body.data));
+      } else if (mimeType === "text/plain") {
+        textParts.push(decodeBase64(p.body.data));
+      }
+    }
+
+    // Recurse into child parts for multipart containers.
     if (p.parts) {
       for (const child of p.parts) walk(child);
     }
@@ -961,9 +988,12 @@ function extractBodies(part: GmailMessagePart | null): { htmlBody: string; textB
 
   walk(part);
 
+  const htmlBody = htmlParts.join("\n").trim();
+  const textBody = textParts.join("\n").trim() || null;
+
   return {
-    htmlBody: htmlParts.join("\n") || "",
-    textBody: textParts.join("\n") || null,
+    htmlBody,
+    textBody,
   };
 }
 

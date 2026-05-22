@@ -102,24 +102,10 @@ export function withPendingSyncPresentation(
   sync: MailboxSyncPresentation,
   isPending: boolean,
 ): MailboxSyncPresentation {
-  if (!isPending || sync.isSyncing) {
-    return sync;
-  }
-
-  return {
-    ...sync,
-    state: "running",
-    isSyncing: true,
-    currentRunStartedAt: new Date().toISOString(),
-    stageLabel:
-      sync.state === "completed_never_imported"
-        ? "Initial import in progress"
-        : "Checking for new mail",
-    detailLabel:
-      sync.state === "completed_never_imported"
-        ? "Importing recent threads. Messages will appear automatically."
-        : "Checking Gmail for new messages and updates.",
-  };
+  // Client-side pending state is not authoritative enough to claim a real
+  // running sync. Wait for the server-backed sync presentation to flip into
+  // `running` so the UI does not show fake elapsed time or endless spinners.
+  return sync;
 }
 
 export function formatSyncElapsed(startedAt: string | null): string | null {

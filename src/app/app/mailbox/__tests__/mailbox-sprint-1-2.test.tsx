@@ -313,6 +313,49 @@ describe("MailboxReadingPane", () => {
     // Should not throw; assignee section simply absent
     expect(screen.getByRole("heading", { name: detailNoAssignee.subject })).toBeInTheDocument();
   });
+
+  it("falls back to plain text when html body is empty", () => {
+    const detail = {
+      ...MOCK_THREAD_DETAILS["t1"],
+      messages: MOCK_THREAD_DETAILS["t1"].messages.map((message, index, all) => ({
+        ...message,
+        bodyHtml: index === all.length - 1 ? "" : message.bodyHtml,
+        bodyText: index === all.length - 1 ? "Plain text body line 1\nPlain text body line 2" : null,
+      })),
+    };
+    render(<MailboxReadingPane detail={detail} />);
+
+    expect(screen.getByText(/plain text body line 1/i)).toBeInTheDocument();
+    expect(screen.getByText(/plain text body line 2/i)).toBeInTheDocument();
+  });
+
+  it("falls back to plain text when sanitized html has no visible content", () => {
+    const detail = {
+      ...MOCK_THREAD_DETAILS["t1"],
+      messages: MOCK_THREAD_DETAILS["t1"].messages.map((message, index, all) => ({
+        ...message,
+        bodyHtml: index === all.length - 1 ? "<div><script>alert('x')</script></div>" : message.bodyHtml,
+        bodyText: index === all.length - 1 ? "Visible fallback text" : null,
+      })),
+    };
+    render(<MailboxReadingPane detail={detail} />);
+
+    expect(screen.getByText(/visible fallback text/i)).toBeInTheDocument();
+  });
+
+  it("shows a compact fallback when both html and text bodies are unavailable", () => {
+    const detail = {
+      ...MOCK_THREAD_DETAILS["t1"],
+      messages: MOCK_THREAD_DETAILS["t1"].messages.map((message, index, all) => ({
+        ...message,
+        bodyHtml: index === all.length - 1 ? "" : message.bodyHtml,
+        bodyText: null,
+      })),
+    };
+    render(<MailboxReadingPane detail={detail} />);
+
+    expect(screen.getByText(/message body unavailable/i)).toBeInTheDocument();
+  });
 });
 
 // ─── Workspace integration: selection drives reading pane ────────────────────

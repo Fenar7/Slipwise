@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { Loader2, RefreshCw, CheckCircle2, AlertTriangle, Clock3 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { MailboxSyncPresentation } from "@/lib/mailbox/sync-presentation-shape";
@@ -92,6 +93,20 @@ export function MailboxSyncSummary({
   action?: React.ReactNode;
   error?: string | null;
 }) {
+  const [, setNowTick] = useState(0);
+
+  useEffect(() => {
+    if (sync.state !== "running" || !sync.currentRunStartedAt) {
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      setNowTick((value) => value + 1);
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [sync.currentRunStartedAt, sync.state]);
+
   const elapsedLabel = formatSyncElapsed(sync.currentRunStartedAt);
   const showStats =
     sync.state === "completed" &&

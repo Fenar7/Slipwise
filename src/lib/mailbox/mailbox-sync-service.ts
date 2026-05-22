@@ -66,10 +66,32 @@ const MAILBOX_SYNC_LEASE_DURATION_MS = MAILBOX_SYNC_MAX_RUNNING_AGE_MINUTES * 60
  * Uses the database as the source of truth so the guard is mailbox-scoped
  * and works across server instances.
  */
+async function cleanStaleSyncRuns(mailboxConnectionId: string): Promise<void> {
+  const cutoff = new Date(Date.now() - MAILBOX_SYNC_MAX_RUNNING_AGE_MINUTES * 60 * 1000);
+  await db.mailboxSyncRun.updateMany({
+    where: {
+      mailboxConnectionId,
+      status: "RUNNING",
+      startedAt: { lt: cutoff },
+    },
+    data: {
+      status: "FAILED",
+      completedAt: new Date(),
+      errorCategory: "unknown",
+      errorSummary: "Sync run abandoned — did not complete within expected time",
+    },
+  });
+}
+
 async function findRunningSyncForMailbox(
   mailboxConnectionId: string,
 ): Promise<{ running: false } | { running: true; runId: string }> {
   const cutoff = new Date(Date.now() - MAILBOX_SYNC_MAX_RUNNING_AGE_MINUTES * 60 * 1000);
+
+  // Mark any stale RUNNING runs as FAILED so they do not pollute the
+  // presentation layer or block future syncs indefinitely.
+  await cleanStaleSyncRuns(mailboxConnectionId);
+
   const existing = await db.mailboxSyncRun.findFirst({
     where: {
       mailboxConnectionId,
@@ -145,6 +167,10 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
   if (!mailboxCanSync(connection.status) || !connection.tokenRef) {
     throw new Error("Mailbox connection is not available for sync");
   }
+
+  // Always clean up stale RUNNING runs before attempting a new sync so the
+  // database and presentation layer stay truthful even if prior requests crashed.
+  await cleanStaleSyncRuns(connection.id);
 
   const leaseToken = await acquireSyncLease(params.orgId, connection.id);
   if (!leaseToken) {

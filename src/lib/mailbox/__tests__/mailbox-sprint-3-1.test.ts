@@ -16,6 +16,7 @@ vi.mock("@/lib/db", () => ({
     },
     mailboxMessage: {
       upsert: vi.fn(),
+      findUnique: vi.fn(),
       findFirst: vi.fn(),
       count: vi.fn(),
     },
@@ -27,6 +28,7 @@ vi.mock("@/lib/db", () => ({
     mailboxSyncRun: {
       create: vi.fn(),
       update: vi.fn(),
+      updateMany: vi.fn(),
       findFirst: vi.fn(),
       findUnique: vi.fn(),
     },

@@ -22,6 +22,7 @@ global.fetch = fetchMock;
 describe("gmailProviderAdapter Sprint 3.2", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    fetchMock.mockReset();
     process.env.GMAIL_CLIENT_ID = "client-id";
     process.env.GMAIL_CLIENT_SECRET = "client-secret";
     process.env.GMAIL_REDIRECT_URI = "http://localhost/callback";
@@ -84,8 +85,26 @@ describe("gmailProviderAdapter Sprint 3.2", () => {
     expect("nextCursor" in result && result.nextCursor?.value).toBe("3000");
   });
 
-  it("does not store threads.list page tokens as the persisted history cursor", async () => {
+  it("seeds the initial sync cursor from the live Gmail profile historyId", async () => {
+    vi.mocked(readMailboxCredential).mockResolvedValue({
+      accessToken: "token-123",
+      refreshToken: "refresh-123",
+      expiresAtMs: Date.now() + 3_600_000,
+      tokenType: "Bearer",
+      scope: "gmail.readonly",
+    });
+
     fetchMock
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            emailAddress: "ops@example.com",
+            messagesTotal: 120,
+            historyId: "9000",
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      )
       .mockResolvedValueOnce(
         new Response(
           JSON.stringify({
@@ -112,9 +131,63 @@ describe("gmailProviderAdapter Sprint 3.2", () => {
       cursor: null,
     });
 
-    expect("threads" in result && result.threads).toHaveLength(2);
-    expect("nextCursor" in result && result.nextCursor?.value).toBe("1700");
+    expect("nextCursor" in result && result.nextCursor?.value).toBe("9000");
     expect("nextCursor" in result && result.nextCursor?.value).not.toBe("page-2");
+    const threadsListCalls = fetchMock.mock.calls.filter(
+      (call) => typeof call[0] === "string" && (call[0] as string).includes("/threads?"),
+    );
+    expect(threadsListCalls).toHaveLength(1);
+  });
+
+  it("bounds initial sync to a single recent inbox page to avoid request timeouts", async () => {
+    // Use a far-future expiry so ensureValidAccessToken does not trigger
+    // a refresh and consume our carefully-ordered mocks.
+    vi.mocked(readMailboxCredential).mockResolvedValue({
+      accessToken: "token-123",
+      refreshToken: "refresh-123",
+      expiresAtMs: Date.now() + 3_600_000,
+      tokenType: "Bearer",
+      scope: "gmail.readonly",
+    });
+
+    fetchMock
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            emailAddress: "ops@example.com",
+            messagesTotal: 120,
+            historyId: "9100",
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            threads: [{ id: "thread-1", historyId: "1500" }],
+            nextPageToken: "page-2",
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      )
+      .mockResolvedValueOnce(makeThreadResponse("thread-1", "1500", "Subject A"));
+
+    const result = await gmailProviderAdapter.syncDelta({
+      orgId: "org-1",
+      tokenRef: "token-ref-1",
+      cursor: null,
+    });
+
+    expect("nextCursor" in result && result.nextCursor?.value).toBe("9100");
+    const threadsListCalls = fetchMock.mock.calls.filter(
+      (call) => typeof call[0] === "string" && (call[0] as string).includes("/threads?"),
+    );
+    expect(threadsListCalls).toHaveLength(1);
+    expect(threadsListCalls[0]?.[0]).toContain("q=in%3Ainbox");
+    const threadDetailCalls = fetchMock.mock.calls.filter(
+      (call) => typeof call[0] === "string" && (call[0] as string).includes("/threads/thread-1"),
+    );
+    expect(threadDetailCalls).toHaveLength(1);
   });
 });
 
@@ -145,3 +218,306 @@ function makeThreadResponse(id: string, historyId: string, subject: string): Res
     { status: 200, headers: { "Content-Type": "application/json" } },
   );
 }
+
+function b64(data: string): string {
+  return Buffer.from(data).toString("base64url");
+}
+
+function makeThreadDetailResponse(messages: Array<{
+  id: string;
+  payload: Record<string, unknown>;
+  labelIds?: string[];
+  internalDate?: string;
+}>): Response {
+  return new Response(
+    JSON.stringify({
+      id: "thread-detail",
+      historyId: "1000",
+      messages,
+    }),
+    { status: 200, headers: { "Content-Type": "application/json" } },
+  );
+}
+
+// ─── fetchThreadDetail body extraction tests ──────────────────────────────────
+
+describe("gmailProviderAdapter.fetchThreadDetail — body extraction", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    fetchMock.mockReset();
+    vi.mocked(readMailboxCredential).mockResolvedValue({
+      accessToken: "token-123",
+      refreshToken: "refresh-123",
+      expiresAtMs: Date.now() + 3_600_000,
+      tokenType: "Bearer",
+      scope: "gmail.readonly",
+    });
+  });
+
+  it("extracts root-level text/plain body", async () => {
+    fetchMock.mockResolvedValueOnce(
+      makeThreadDetailResponse([
+        {
+          id: "msg-1",
+          internalDate: String(Date.now()),
+          payload: {
+            mimeType: "text/plain",
+            headers: [
+              { name: "Subject", value: "Hello" },
+              { name: "From", value: "a@example.com" },
+            ],
+            body: { data: b64("Plain text body") },
+          },
+        },
+      ]),
+    );
+
+    const result = await gmailProviderAdapter.fetchThreadDetail({
+      orgId: "org-1",
+      tokenRef: "token-ref-1",
+      providerThreadId: "thread-1",
+    });
+
+    expect("messages" in result).toBe(true);
+    const messages = (result as { messages: Array<{ htmlBody: string; textBody: string | null }> }).messages;
+    expect(messages[0].htmlBody).toBe("");
+    expect(messages[0].textBody).toBe("Plain text body");
+  });
+
+  it("extracts root-level text/html body", async () => {
+    fetchMock.mockResolvedValueOnce(
+      makeThreadDetailResponse([
+        {
+          id: "msg-1",
+          internalDate: String(Date.now()),
+          payload: {
+            mimeType: "text/html",
+            headers: [
+              { name: "Subject", value: "Hello" },
+              { name: "From", value: "a@example.com" },
+            ],
+            body: { data: b64("<p>HTML body</p>") },
+          },
+        },
+      ]),
+    );
+
+    const result = await gmailProviderAdapter.fetchThreadDetail({
+      orgId: "org-1",
+      tokenRef: "token-ref-1",
+      providerThreadId: "thread-1",
+    });
+
+    expect("messages" in result).toBe(true);
+    const messages = (result as { messages: Array<{ htmlBody: string; textBody: string | null }> }).messages;
+    expect(messages[0].htmlBody).toBe("<p>HTML body</p>");
+    expect(messages[0].textBody).toBeNull();
+  });
+
+  it("extracts bodies from multipart/alternative", async () => {
+    fetchMock.mockResolvedValueOnce(
+      makeThreadDetailResponse([
+        {
+          id: "msg-1",
+          internalDate: String(Date.now()),
+          payload: {
+            mimeType: "multipart/alternative",
+            headers: [
+              { name: "Subject", value: "Hello" },
+              { name: "From", value: "a@example.com" },
+            ],
+            parts: [
+              {
+                mimeType: "text/plain",
+                body: { data: b64("Plain fallback") },
+              },
+              {
+                mimeType: "text/html",
+                body: { data: b64("<p>HTML content</p>") },
+              },
+            ],
+          },
+        },
+      ]),
+    );
+
+    const result = await gmailProviderAdapter.fetchThreadDetail({
+      orgId: "org-1",
+      tokenRef: "token-ref-1",
+      providerThreadId: "thread-1",
+    });
+
+    expect("messages" in result).toBe(true);
+    const messages = (result as { messages: Array<{ htmlBody: string; textBody: string | null }> }).messages;
+    expect(messages[0].htmlBody).toBe("<p>HTML content</p>");
+    expect(messages[0].textBody).toBe("Plain fallback");
+  });
+
+  it("extracts bodies from nested multipart/mixed → multipart/alternative", async () => {
+    fetchMock.mockResolvedValueOnce(
+      makeThreadDetailResponse([
+        {
+          id: "msg-1",
+          internalDate: String(Date.now()),
+          payload: {
+            mimeType: "multipart/mixed",
+            headers: [
+              { name: "Subject", value: "Hello" },
+              { name: "From", value: "a@example.com" },
+            ],
+            parts: [
+              {
+                mimeType: "multipart/alternative",
+                parts: [
+                  {
+                    mimeType: "text/plain",
+                    body: { data: b64("Nested plain") },
+                  },
+                  {
+                    mimeType: "text/html",
+                    body: { data: b64("<p>Nested html</p>") },
+                  },
+                ],
+              },
+              {
+                mimeType: "application/pdf",
+                filename: "doc.pdf",
+                body: { attachmentId: "att-1" },
+              },
+            ],
+          },
+        },
+      ]),
+    );
+
+    const result = await gmailProviderAdapter.fetchThreadDetail({
+      orgId: "org-1",
+      tokenRef: "token-ref-1",
+      providerThreadId: "thread-1",
+    });
+
+    expect("messages" in result).toBe(true);
+    const messages = (result as { messages: Array<{ htmlBody: string; textBody: string | null }> }).messages;
+    expect(messages[0].htmlBody).toBe("<p>Nested html</p>");
+    expect(messages[0].textBody).toBe("Nested plain");
+  });
+
+  it("extracts html from multipart/related with inline assets", async () => {
+    fetchMock.mockResolvedValueOnce(
+      makeThreadDetailResponse([
+        {
+          id: "msg-1",
+          internalDate: String(Date.now()),
+          payload: {
+            mimeType: "multipart/related",
+            headers: [
+              { name: "Subject", value: "Hello" },
+              { name: "From", value: "a@example.com" },
+            ],
+            parts: [
+              {
+                mimeType: "text/html",
+                body: { data: b64("<p>HTML with inline</p>") },
+              },
+              {
+                mimeType: "image/png",
+                body: { attachmentId: "inline-1" },
+              },
+            ],
+          },
+        },
+      ]),
+    );
+
+    const result = await gmailProviderAdapter.fetchThreadDetail({
+      orgId: "org-1",
+      tokenRef: "token-ref-1",
+      providerThreadId: "thread-1",
+    });
+
+    expect("messages" in result).toBe(true);
+    const messages = (result as { messages: Array<{ htmlBody: string; textBody: string | null }> }).messages;
+    expect(messages[0].htmlBody).toBe("<p>HTML with inline</p>");
+    expect(messages[0].textBody).toBeNull();
+  });
+
+  it("skips message/rfc822 subtrees (forwarded emails)", async () => {
+    fetchMock.mockResolvedValueOnce(
+      makeThreadDetailResponse([
+        {
+          id: "msg-1",
+          internalDate: String(Date.now()),
+          payload: {
+            mimeType: "multipart/mixed",
+            headers: [
+              { name: "Subject", value: "Fwd: Hello" },
+              { name: "From", value: "a@example.com" },
+            ],
+            parts: [
+              {
+                mimeType: "text/plain",
+                body: { data: b64("See attached") },
+              },
+              {
+                mimeType: "message/rfc822",
+                parts: [
+                  {
+                    mimeType: "text/plain",
+                    body: { data: b64("Forwarded body should be ignored") },
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      ]),
+    );
+
+    const result = await gmailProviderAdapter.fetchThreadDetail({
+      orgId: "org-1",
+      tokenRef: "token-ref-1",
+      providerThreadId: "thread-1",
+    });
+
+    expect("messages" in result).toBe(true);
+    const messages = (result as { messages: Array<{ htmlBody: string; textBody: string | null }> }).messages;
+    expect(messages[0].textBody).toBe("See attached");
+    expect(messages[0].htmlBody).toBe("");
+  });
+
+  it("returns empty bodies when no text/html or text/plain parts exist", async () => {
+    fetchMock.mockResolvedValueOnce(
+      makeThreadDetailResponse([
+        {
+          id: "msg-1",
+          internalDate: String(Date.now()),
+          payload: {
+            mimeType: "multipart/mixed",
+            headers: [
+              { name: "Subject", value: "Hello" },
+              { name: "From", value: "a@example.com" },
+            ],
+            parts: [
+              {
+                mimeType: "application/pdf",
+                filename: "doc.pdf",
+                body: { attachmentId: "att-1" },
+              },
+            ],
+          },
+        },
+      ]),
+    );
+
+    const result = await gmailProviderAdapter.fetchThreadDetail({
+      orgId: "org-1",
+      tokenRef: "token-ref-1",
+      providerThreadId: "thread-1",
+    });
+
+    expect("messages" in result).toBe(true);
+    const messages = (result as { messages: Array<{ htmlBody: string; textBody: string | null }> }).messages;
+    expect(messages[0].htmlBody).toBe("");
+    expect(messages[0].textBody).toBeNull();
+  });
+});
