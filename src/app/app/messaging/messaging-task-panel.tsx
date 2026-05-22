@@ -52,9 +52,10 @@ interface TaskDetailPanelProps {
   participants?: MessagingParticipant[];
   onUpdateStatus?: (status: TaskStatus) => Promise<void>;
   onAssign?: (assigneeId: string) => Promise<void>;
+  onNavigateToOrigin?: (conversationId: string, messageId: string) => void;
 }
 
-function TaskDetailPanel({ task, onBack, participants, onUpdateStatus, onAssign }: TaskDetailPanelProps) {
+function TaskDetailPanel({ task, onBack, participants, onUpdateStatus, onAssign, onNavigateToOrigin }: TaskDetailPanelProps) {
   const { label, cls } = statusBadge(task.status);
   const [updating, setUpdating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -163,17 +164,19 @@ function TaskDetailPanel({ task, onBack, participants, onUpdateStatus, onAssign 
         )}
 
         {/* Originating message link */}
-        {task.originatingMessageId && (
-          <div className="flex items-center gap-1.5 rounded-lg bg-gray-50 border px-3 py-2" style={{ borderColor: "#E0E0E0" }}>
+        {task.originatingMessageId && task.conversationRef && onNavigateToOrigin && (
+          <button
+            type="button"
+            data-testid="task-origin-link"
+            onClick={() => onNavigateToOrigin(task.conversationRef!, task.originatingMessageId!)}
+            className="flex items-center gap-1.5 rounded-lg bg-gray-50 border px-3 py-2 text-left hover:bg-blue-50 hover:border-blue-300 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]"
+            style={{ borderColor: "#E0E0E0" }}
+          >
             <Link className="h-3.5 w-3.5 shrink-0" style={{ color: "#79747E" }} />
-            <span
-              className="text-xs"
-              data-testid="task-origin-link"
-              style={{ color: "#79747E" }}
-            >
-              Originating from a message in this conversation
+            <span className="text-xs font-medium" style={{ color: "#2563EB" }}>
+              View originating message
             </span>
-          </div>
+          </button>
         )}
 
         {/* Metadata */}
@@ -204,9 +207,10 @@ function TaskDetailPanel({ task, onBack, participants, onUpdateStatus, onAssign 
 
 interface MessagingTaskPanelProps {
   conversationId?: string | null;
+  onNavigateToOrigin?: (conversationId: string, messageId: string) => void;
 }
 
-export function MessagingTaskPanel({ conversationId }: MessagingTaskPanelProps) {
+export function MessagingTaskPanel({ conversationId, onNavigateToOrigin }: MessagingTaskPanelProps) {
   const [filter, setFilter] = useState<TaskFilterStatus>("all");
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
@@ -373,6 +377,7 @@ export function MessagingTaskPanel({ conversationId }: MessagingTaskPanelProps) 
             participants={conversationId ? participantsList : undefined}
             onUpdateStatus={conversationId ? handleUpdateStatus : undefined}
             onAssign={conversationId ? handleAssign : undefined}
+            onNavigateToOrigin={onNavigateToOrigin}
           />
         </div>
       </div>

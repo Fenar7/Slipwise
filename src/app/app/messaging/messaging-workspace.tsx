@@ -85,6 +85,9 @@ export function MessagingWorkspace() {
   const [notifications, setNotifications] = useState<MessagingNotification[]>(MOCK_NOTIFICATIONS);
   const [pendingCreateId, setPendingCreateId] = useState<string | null>(null);
 
+  // Sprint 6.2: jump-to-message from task detail
+  const [jumpToMessageId, setJumpToMessageId] = useState<string | null>(null);
+
   const unreadCount = notifications.filter((n) => !n.read).length;
 
   // Register contextual tabs and action buttons in the global top bar
@@ -148,6 +151,31 @@ export function MessagingWorkspace() {
   } = useConversationList();
 
   const activeConvId = activeConversation?.id ?? null;
+
+  // Sprint 6.2: navigate from task detail to originating message/thread
+  const handleNavigateToOrigin = React.useCallback((conversationId: string, messageId: string) => {
+    setJumpToMessageId(messageId);
+    const all = [...liveChannels, ...liveDms, ...liveGroups];
+    const found = all.find((c) => c.id === conversationId);
+    if (found) {
+      const kind = found.type === "CHANNEL" ? "channel" : found.type === "DM" ? "dm" : "group";
+      const section: MessagingSection = kind === "channel" ? "channels" : kind === "dm" ? "dms" : "groups";
+      setActiveSection(section);
+      setActiveConversations((prev) => ({
+        ...prev,
+        [section]: toActiveConversation(found, kind),
+      }));
+    }
+  }, [liveChannels, liveDms, liveGroups, setActiveSection]);
+
+  // Clear jumpToMessageId after the reading workspace has consumed it
+  React.useEffect(() => {
+    if (jumpToMessageId) {
+      setJumpToMessageId(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeConvId]);
+
   const { detail: activeDetail, refresh: refreshDetail, errorType: detailErrorType } = useConversationDetail(activeConvId);
 
   const { send: sendMessage, sending: sendingMessage, error: sendError, clearError: clearSendError } = useSendMessage();
@@ -399,6 +427,7 @@ export function MessagingWorkspace() {
               <div className="flex min-h-0 flex-1 overflow-hidden">
                 <MessagingReadingWorkspace
                   conversation={displayConversation}
+                  initialThreadAnchorMessageId={jumpToMessageId}
                   sectionKind={
                     state.activeSection === "channels"
                       ? "channel"
@@ -448,7 +477,7 @@ export function MessagingWorkspace() {
             </div>
           ) : (
             /* Sprint 1.1 pane for tasks / meetings / files / admin */
-            <MessagingWorkspacePane activeSection={state.activeSection} conversationId={activeConvId} />
+            <MessagingWorkspacePane activeSection={state.activeSection} conversationId={activeConvId} onNavigateToOrigin={handleNavigateToOrigin} />
           )}
         </div>
 

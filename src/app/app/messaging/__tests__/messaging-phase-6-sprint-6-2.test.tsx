@@ -336,7 +336,9 @@ describe("Sprint 6.2 — Originating message link and decorative controls remova
     });
     vi.stubGlobal("fetch", fetchSpy);
 
-    render(<MessagingTaskPanel conversationId="conv-1" />);
+    const navigateSpy = vi.fn();
+
+    render(<MessagingTaskPanel conversationId="conv-1" onNavigateToOrigin={navigateSpy} />);
 
     await waitFor(() => {
       expect(screen.getByText("Clean Code Task")).toBeInTheDocument();
@@ -350,8 +352,13 @@ describe("Sprint 6.2 — Originating message link and decorative controls remova
     });
 
     // Should show the originating-message link chip
-    expect(screen.getByTestId("task-origin-link")).toBeInTheDocument();
-    expect(screen.getByText("Originating from a message in this conversation")).toBeInTheDocument();
+    const originLink = screen.getByTestId("task-origin-link");
+    expect(originLink).toBeInTheDocument();
+    expect(originLink).toHaveTextContent("View originating message");
+
+    // Clicking it should fire the navigation callback
+    fireEvent.click(originLink);
+    expect(navigateSpy).toHaveBeenCalledWith("conv-1", "msg-origin-123");
 
     // Should NOT show the old conversationRef-based fake link
     expect(screen.queryByText("Linked to:")).toBeNull();

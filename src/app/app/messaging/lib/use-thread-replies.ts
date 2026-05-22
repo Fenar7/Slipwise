@@ -58,7 +58,7 @@ export function useThreadReplies(
         return;
       }
       const rawReplies = (payload.data?.replies ?? payload.data ?? []) as unknown[];
-      setReplies(toFrontendThreadReplies(rawReplies as Parameters<typeof toFrontendThreadReplies>[0], detail ?? { id: "", orgId: "", type: "CHANNEL", name: null, description: null, visibility: null, archivedAt: null, lockedAt: null, createdBy: "", createdAt: "", updatedAt: "", participantCount: 0, canSend: false, participants: [], messages: [], threads: [], readState: null }));
+      setReplies(toFrontendThreadReplies(rawReplies as Parameters<typeof toFrontendThreadReplies>[0], detail ?? ({ id: "", orgId: "", type: "CHANNEL", name: null, description: null, visibility: null, archivedAt: null, lockedAt: null, createdBy: "", createdAt: "", updatedAt: "", participantCount: 0, canSend: false, participants: [], messages: [], threads: [], readState: null } as unknown as ApiConversationDetail)));
     } catch (err) {
       if (controller.signal.aborted) return;
       if (staleGuardRef.current !== guardKey) return;
