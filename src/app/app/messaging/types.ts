@@ -301,7 +301,7 @@ export interface MessagingTaskDetail extends MessagingTask {
   description: string | null;
   createdAt: string; // ISO
   createdBy: string; // participant name
-  originatingMessageId: string | null;
+  originatingMessageId?: string | null;
 }
 
 export type CalendarConnectionStatus =

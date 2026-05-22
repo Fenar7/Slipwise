@@ -998,6 +998,7 @@ interface WorkspaceBodyProps {
 interface MessagingReadingWorkspaceProps {
   conversation: ActiveConversation | null;
   sectionKind?: "channel" | "dm" | "group";
+  initialThreadAnchorMessageId?: string | null;
   degraded?: boolean;
   messages?: ConversationMessage[];
   canSend?: boolean;
@@ -1023,6 +1024,7 @@ interface MessagingReadingWorkspaceProps {
 export function MessagingReadingWorkspace({
   conversation,
   sectionKind,
+  initialThreadAnchorMessageId,
   degraded,
   messages: externalMessages,
   canSend = true,
@@ -1058,6 +1060,15 @@ export function MessagingReadingWorkspace({
     setThreadAnchorMessageId(null);
     setDetailOpen(false);
   }, [conversation?.id]);
+
+  // Sprint 6.2: open thread from task detail navigation
+  React.useEffect(() => {
+    if (initialThreadAnchorMessageId) {
+      setThreadAnchorMessageId(initialThreadAnchorMessageId);
+      setThreadOpen(true);
+      setDetailOpen(false);
+    }
+  }, [initialThreadAnchorMessageId]);
 
   function handleOpenThread(msgId: string) {
     setThreadAnchorMessageId(msgId);
