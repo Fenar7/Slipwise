@@ -9,7 +9,7 @@ import {
 import { handleGmailCallback } from "@/lib/mailbox/gmail-oauth-service";
 import { rateLimitByOrg, RATE_LIMITS } from "@/lib/rate-limit";
 
-const REDIRECT_BASE = "/app/settings/mailbox";
+const REDIRECT_BASE = "/app/mailbox/settings";
 
 function redirectWithError(request: NextRequest, error: string): NextResponse {
   const response = NextResponse.redirect(
@@ -104,6 +104,7 @@ export async function GET(request: NextRequest) {
       actorId: user.id,
       authorizationCode: code,
       redirectUri: process.env.GMAIL_REDIRECT_URI ?? "",
+      expectedConnectionId: stateResult.data.connectionId,
     });
 
     if (!result.ok) {

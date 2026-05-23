@@ -18,6 +18,15 @@ import type { MailboxConnection } from "../types";
 
 vi.mock("next/navigation", () => ({
   usePathname: () => "/app/mailbox",
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(),
+}));
+
+vi.mock("../use-mailbox-query-sync", () => ({
+  useMailboxQuerySync: () => {
+    const [filterState, setFilterState] = require("react").useState({ filters: [], searchQuery: "" });
+    return { filterState, setFilterState };
+  },
 }));
 
 vi.mock("@/hooks/use-supabase-session", () => ({

@@ -5,6 +5,9 @@
  *
  * Each state is distinct: no-mailboxes, no-threads, no-results, no-selection,
  * and no-linked-records all have different causes and different next actions.
+ *
+ * Phase 6 update: EmptyInboxState is redesigned as a single cohesive
+ * thread-list-native component — no duplicated copy, no admin-widget chrome.
  */
 
 import Link from "next/link";
@@ -16,7 +19,12 @@ import {
   Plus,
   Filter,
   ArrowLeft,
+  Loader2,
+  AlertTriangle,
 } from "lucide-react";
+import type { MailboxSyncPresentation } from "@/lib/mailbox/sync-presentation-shape";
+import { MailboxSyncStateChip } from "./mailbox-sync-status";
+import { formatSyncElapsed } from "./mailbox-sync-ui";
 
 // ─── Shared primitive ─────────────────────────────────────────────────────────
 
@@ -61,8 +69,19 @@ function EmptyStateShell({
 /**
  * Shown when the org has no connected mailboxes at all.
  * Admin path: connect a mailbox. Non-admin path: contact admin.
+ *
+ * When `onConnect` is provided (e.g. inside the settings page), the CTA
+ * renders as a button that opens the connect flow inline instead of
+ * navigating to the settings page — which would be a no-op when already
+ * on settings.
  */
-export function NoMailboxesEmpty({ isAdmin = false }: { isAdmin?: boolean }) {
+export function NoMailboxesEmpty({
+  isAdmin = false,
+  onConnect,
+}: {
+  isAdmin?: boolean;
+  onConnect?: () => void;
+}) {
   return (
     <div
       className="flex h-full flex-col items-center justify-center gap-4 px-8 py-12 text-center"
@@ -86,15 +105,28 @@ export function NoMailboxesEmpty({ isAdmin = false }: { isAdmin?: boolean }) {
         </p>
       </div>
       {isAdmin ? (
-        <Link
-          href="/app/mailbox/settings"
-          className="flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-semibold text-white transition-colors hover:opacity-90"
-          style={{ background: "#16294D" }}
-          data-testid="connect-mailbox-cta"
-        >
-          <Plus className="h-4 w-4" aria-hidden="true" />
-          Connect a mailbox
-        </Link>
+        onConnect ? (
+          <button
+            type="button"
+            onClick={onConnect}
+            className="flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-semibold text-white transition-colors hover:opacity-90"
+            style={{ background: "#16294D" }}
+            data-testid="connect-mailbox-cta"
+          >
+            <Plus className="h-4 w-4" aria-hidden="true" />
+            Connect a mailbox
+          </button>
+        ) : (
+          <Link
+            href="/app/mailbox/settings"
+            className="flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-semibold text-white transition-colors hover:opacity-90"
+            style={{ background: "#16294D" }}
+            data-testid="connect-mailbox-cta"
+          >
+            <Plus className="h-4 w-4" aria-hidden="true" />
+            Connect a mailbox
+          </Link>
+        )
       ) : (
         <p className="text-xs text-[#94A3B8]">
           Contact your organization admin to connect a mailbox.
@@ -109,8 +141,73 @@ export function NoMailboxesEmpty({ isAdmin = false }: { isAdmin?: boolean }) {
 /**
  * Shown when a mailbox is connected and healthy but has no threads yet.
  * Distinct from "no results" — this is a genuinely empty inbox.
+ *
+ * When syncStatus is provided, the entire state is one cohesive component:
+ * - A compact status pill
+ * - A contextual icon
+ * - A strong heading
+ * - One concise support paragraph
+ * - A single optional CTA (Sync now) only when relevant and not running
+ *
+ * No duplicated copy. No "admin settings card dropped into the workspace" feel.
+ * This component is designed for the narrow thread-list column.
  */
-export function EmptyInboxState({ mailboxLabel }: { mailboxLabel: string }) {
+export function EmptyInboxState({
+  mailboxLabel,
+  syncStatus,
+  onSyncNow,
+  isSyncPending = false,
+  syncError = null,
+}: {
+  mailboxLabel: string;
+  syncStatus?: MailboxSyncPresentation;
+  onSyncNow?: () => void;
+  isSyncPending?: boolean;
+  syncError?: string | null;
+}) {
+  // ── Sync-aware variants ────────────────────────────────────────────────────
+
+  if (syncStatus?.state === "running") {
+    return (
+      <SyncAwareInboxEmpty
+        mailboxLabel={mailboxLabel}
+        syncStatus={syncStatus}
+        onSyncNow={onSyncNow}
+        isSyncPending={isSyncPending}
+        syncError={syncError}
+        testId="empty-inbox-syncing"
+      />
+    );
+  }
+
+  if (syncStatus?.state === "completed_never_imported") {
+    return (
+      <SyncAwareInboxEmpty
+        mailboxLabel={mailboxLabel}
+        syncStatus={syncStatus}
+        onSyncNow={onSyncNow}
+        isSyncPending={isSyncPending}
+        syncError={syncError}
+        testId="empty-inbox-waiting"
+      />
+    );
+  }
+
+  if (syncStatus?.state === "failed") {
+    return (
+      <SyncAwareInboxEmpty
+        mailboxLabel={mailboxLabel}
+        syncStatus={syncStatus}
+        onSyncNow={onSyncNow}
+        isSyncPending={isSyncPending}
+        syncError={syncError}
+        testId="empty-inbox-failed"
+      />
+    );
+  }
+
+  // ── Standard empty inbox (synced, genuinely empty) ─────────────────────────
+
   return (
     <EmptyStateShell
       icon={MailOpen}
@@ -119,6 +216,126 @@ export function EmptyInboxState({ mailboxLabel }: { mailboxLabel: string }) {
       heading={`${mailboxLabel} is empty`}
       body="No threads here yet. New messages will appear as they arrive. If you expect messages, the mailbox may still be syncing."
     />
+  );
+}
+
+/**
+ * Internal: compact, thread-list-native sync state component.
+ *
+ * Renders a single visual unit:
+ *   [status pill]
+ *   [icon]
+ *   heading
+ *   body
+ *   [elapsed time — running only]
+ *   [Sync now CTA — only when not running and handler is provided]
+ *
+ * No MailboxSyncSummary card — that is for the settings admin surface.
+ */
+function SyncAwareInboxEmpty({
+  mailboxLabel,
+  syncStatus,
+  onSyncNow,
+  isSyncPending,
+  syncError,
+  testId,
+}: {
+  mailboxLabel: string;
+  syncStatus: MailboxSyncPresentation;
+  onSyncNow?: () => void;
+  isSyncPending: boolean;
+  syncError?: string | null;
+  testId: string;
+}) {
+  const isActivelyRunning = syncStatus.isSyncing || isSyncPending;
+
+  const heading = (() => {
+    if (syncStatus.state === "running") return "Importing messages…";
+    if (syncStatus.state === "failed") return "Sync needs attention";
+    // completed_never_imported
+    return `${mailboxLabel} is ready`;
+  })();
+
+  const body = (() => {
+    if (syncStatus.state === "running") {
+      return "We're importing recent messages. Threads will appear here automatically.";
+    }
+    if (syncStatus.state === "failed") {
+      return (
+        syncError ??
+        syncStatus.lastErrorSummary ??
+        "Sync encountered a problem. Try syncing again or check mailbox settings."
+      );
+    }
+    // completed_never_imported
+    return "Your mailbox is connected. The first sync hasn't completed yet — click Sync now to start importing.";
+  })();
+
+  const iconBg = (() => {
+    if (syncStatus.state === "failed") return "rgba(245,158,11,0.08)";
+    if (syncStatus.state === "running") return "rgba(59,130,246,0.08)";
+    return "rgba(22,41,77,0.07)";
+  })();
+
+  const elapsed = syncStatus.state === "running"
+    ? formatSyncElapsed(syncStatus.currentRunStartedAt)
+    : null;
+
+  const showSyncCta =
+    !!onSyncNow &&
+    !isActivelyRunning &&
+    syncStatus.state !== "running";
+
+  return (
+    <div
+      className="flex h-full flex-col items-center justify-center gap-5 px-6 py-12 text-center"
+      style={{ background: "#F7F8FB" }}
+      data-testid={testId}
+    >
+      {/* Status pill — truth-anchored, not decorative */}
+      <MailboxSyncStateChip sync={syncStatus} />
+
+      {/* Contextual icon */}
+      <div
+        className="flex h-14 w-14 items-center justify-center rounded-2xl"
+        style={{ background: iconBg }}
+        aria-hidden="true"
+      >
+        {syncStatus.state === "running" ? (
+          <Loader2
+            className="h-7 w-7 animate-spin"
+            style={{ color: "#3B82F6" }}
+          />
+        ) : syncStatus.state === "failed" ? (
+          <AlertTriangle className="h-7 w-7" style={{ color: "#F59E0B" }} />
+        ) : (
+          <Inbox className="h-7 w-7" style={{ color: "#16294D" }} />
+        )}
+      </div>
+
+      {/* Copy block — single source of truth, no duplicates */}
+      <div className="max-w-[260px]">
+        <p className="text-sm font-semibold text-[#0F172A]">{heading}</p>
+        <p className="mt-1.5 text-xs leading-relaxed text-[#64748B]">{body}</p>
+        {elapsed && (
+          <p className="mt-2 text-[11px] font-medium text-[#94A3B8]">{elapsed}</p>
+        )}
+      </div>
+
+      {/* Single CTA — only when not running and a handler is wired */}
+      {showSyncCta && (
+        <button
+          type="button"
+          onClick={onSyncNow}
+          className="flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-semibold text-white transition-colors hover:opacity-90"
+          style={{ background: "#16294D" }}
+          data-testid="sync-now-cta"
+          aria-label="Sync now"
+        >
+          Sync now
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -286,6 +503,59 @@ export function ThreadNotFoundEmpty({ onDismiss }: { onDismiss?: () => void }) {
           Back to thread list
         </button>
       )}
+    </div>
+  );
+}
+
+export function ThreadLoadErrorEmpty({
+  message,
+  onRetry,
+  onDismiss,
+}: {
+  message?: string | null;
+  onRetry?: () => void;
+  onDismiss?: () => void;
+}) {
+  return (
+    <div
+      className="flex h-full flex-col items-center justify-center gap-4 px-8 text-center"
+      style={{ background: "#F7F8FB" }}
+      aria-label="Thread could not be loaded"
+      data-testid="empty-thread-load-error"
+    >
+      <div
+        className="flex h-12 w-12 items-center justify-center rounded-xl"
+        style={{ background: "rgba(245,158,11,0.12)" }}
+        aria-hidden="true"
+      >
+        <AlertTriangle className="h-6 w-6 text-amber-600" />
+      </div>
+      <div className="max-w-sm">
+        <p className="text-sm font-semibold text-[#0F172A]">This thread couldn&apos;t be loaded</p>
+        <p className="mt-1 text-xs leading-relaxed text-[#64748B]">
+          {message?.trim() || "Try again. If the problem continues, refresh the mailbox and retry."}
+        </p>
+      </div>
+      <div className="flex items-center gap-2">
+        {onRetry ? (
+          <button
+            type="button"
+            onClick={onRetry}
+            className="rounded-lg bg-[#16294D] px-4 py-2 text-xs font-semibold text-white transition-opacity hover:opacity-90"
+          >
+            Retry
+          </button>
+        ) : null}
+        {onDismiss ? (
+          <button
+            type="button"
+            onClick={onDismiss}
+            className="rounded-lg border border-[#D7DDE6] bg-white px-4 py-2 text-xs font-semibold text-[#334155] transition-colors hover:bg-[#F8FAFC]"
+          >
+            Back to list
+          </button>
+        ) : null}
+      </div>
     </div>
   );
 }

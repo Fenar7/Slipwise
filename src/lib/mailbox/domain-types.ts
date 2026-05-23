@@ -65,6 +65,10 @@ export interface MailboxConnectionRecord {
   watchMetadata: Record<string, unknown> | null;
   watchExpiresAt: Date | null;
   watchRenewedAt: Date | null;
+  /** Sync concurrency lease. Matches Prisma MailboxConnection.syncLeaseToken. */
+  syncLeaseToken: string | null;
+  /** Sync concurrency lease expiry. Matches Prisma MailboxConnection.syncLeaseExpiresAt. */
+  syncLeaseExpiresAt: Date | null;
   lastSyncAt: Date | null;
   lastSyncError: string | null;
   lastSyncErrorCategory: string | null;

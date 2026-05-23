@@ -5,6 +5,7 @@ import { requireIntegrationAdminRoute } from "@/app/api/integrations/_auth";
 import { rateLimitByOrg, RATE_LIMITS } from "@/lib/rate-limit";
 import { listMailboxConnections } from "@/lib/mailbox/connection-service";
 import { toMailboxConnectionListItem } from "@/lib/mailbox/admin-shapes";
+import { getMailboxSyncRunsByConnectionIds } from "@/lib/mailbox/sync-run-read-service";
 
 export async function GET(): Promise<NextResponse> {
   try {
@@ -17,7 +18,17 @@ export async function GET(): Promise<NextResponse> {
     }
 
     const records = await listMailboxConnections(auth.ctx.orgId);
-    const connections = records.map((r) => toMailboxConnectionListItem(r));
+    const syncRuns = await getMailboxSyncRunsByConnectionIds(
+      auth.ctx.orgId,
+      records.map((record) => record.id),
+    );
+    const connections = records.map((record) =>
+      toMailboxConnectionListItem(record, Date.now(), {
+        latestRun: syncRuns.latestRunByConnectionId.get(record.id) ?? null,
+        latestCompletedRun:
+          syncRuns.latestCompletedRunByConnectionId.get(record.id) ?? null,
+      }),
+    );
     return NextResponse.json({ connections });
   } catch (error) {
     console.error("[mailbox/connections] GET failed:", error);

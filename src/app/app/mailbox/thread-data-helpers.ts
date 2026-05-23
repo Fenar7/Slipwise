@@ -162,6 +162,7 @@ function mapMessageToItem(
     cc: ccList.length > 0 ? ccList : undefined,
     subject: msg.subject,
     bodyHtml: msg.htmlBody,
+    bodyText: msg.textBody,
     sentAt: msg.sentAt,
     isCollapsed,
     attachments,

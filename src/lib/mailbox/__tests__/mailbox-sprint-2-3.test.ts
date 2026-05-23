@@ -40,6 +40,13 @@ vi.mock("@/lib/rate-limit", () => ({
   RATE_LIMITS: { api: { maxRequests: 60, window: "60 s" } },
 }));
 
+vi.mock("@/lib/mailbox/sync-run-read-service", () => ({
+  getMailboxSyncRunsByConnectionIds: vi.fn(async () => ({
+    latestRunByConnectionId: new Map(),
+    latestCompletedRunByConnectionId: new Map(),
+  })),
+}));
+
 import { db } from "@/lib/db";
 import { getOrgContext, hasRole } from "@/lib/auth";
 

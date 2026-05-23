@@ -3,6 +3,8 @@
  * Designed to be stable for later backend integration (Phase 2+).
  */
 
+import type { MailboxSyncPresentation } from "@/lib/mailbox/sync-presentation-shape";
+
 export type MailboxConnectionStatus =
   | "connected"
   | "reconnect_required"
@@ -22,6 +24,7 @@ export interface MailboxConnection {
   lastSyncAt: string | null;
   lastSyncError: string | null;
   lastSyncErrorCategory: string | null;
+  sync?: MailboxSyncPresentation;
   unreadCount: number;
   inboxCount: number;
 }
@@ -90,6 +93,7 @@ export interface MailboxMessageItem {
   cc?: string[];
   subject: string;
   bodyHtml: string;
+  bodyText?: string | null;
   sentAt: string;
   /** Collapsed by default for older messages in a thread */
   isCollapsed: boolean;
@@ -196,6 +200,24 @@ export interface MailboxAdminSummary {
   lastAdminActionAt: string | null;
   /** Display name of admin who connected this mailbox */
   connectedBy: string;
+}
+
+/** Real admin connection shape returned by /api/mailbox/connections */
+export interface MailboxAdminConnection {
+  id: string;
+  orgId: string;
+  provider: MailboxProvider;
+  /** URL slug derived from connection id */
+  slug: string;
+  emailAddress: string;
+  displayName: string;
+  status: MailboxConnectionStatus;
+  lastSyncAt: string | null;
+  lastSyncError: string | null;
+  sync?: MailboxSyncPresentation;
+  connectedBy: string;
+  visibilityPolicy: string;
+  updatedAt?: string;
 }
 
 export type DisconnectConfirmState = "idle" | "confirming" | "disconnecting" | "disconnected";

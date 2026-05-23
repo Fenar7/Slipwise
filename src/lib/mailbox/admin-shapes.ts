@@ -3,6 +3,9 @@ import "server-only";
 import type { MailboxConnectionRecord, MailboxConnectionStatus } from "./domain-types";
 import type { MailboxConnectionHealth } from "./health";
 import { deriveMailboxHealth } from "./health";
+import { buildMailboxSyncPresentation } from "./sync-presentation";
+import type { MailboxSyncRunLookup } from "./sync-presentation";
+import type { MailboxSyncPresentation } from "./sync-presentation-shape";
 
 /**
  * The full admin list item for a mailbox connection.
@@ -26,6 +29,7 @@ export interface MailboxConnectionListItem {
    */
   visibilityPolicy: string;
   health: MailboxConnectionHealth;
+  sync: MailboxSyncPresentation;
   lastSyncAt: string | null;
   lastSyncError: string | null;
   connectedBy: string;
@@ -40,20 +44,35 @@ export interface MailboxConnectionListItem {
 export function toMailboxConnectionListItem(
   record: MailboxConnectionRecord,
   now = Date.now(),
+  syncRuns: Partial<MailboxSyncRunLookup> = {},
 ): MailboxConnectionListItem {
   return {
     id: record.id,
     orgId: record.orgId,
     provider: record.provider,
-    emailAddress: record.emailAddress,
-    displayName: record.displayName,
+    // Defensive: malformed DB rows or pre-migration records may have null
+    // emailAddress / displayName. Coerce to empty string to prevent
+    // "null" from surfacing in the UI and to survive unexpected shapes.
+    emailAddress: record.emailAddress ?? "",
+    displayName: record.displayName ?? "",
     status: record.status,
-    visibilityPolicy: record.visibilityPolicy,
+    // Null-guard: visibilityPolicy can be null for records pre-dating the
+    // default migration. Fall back to "org_shared" as the schema default.
+    visibilityPolicy: record.visibilityPolicy ?? "org_shared",
     health: deriveMailboxHealth(record, now),
+    sync: buildMailboxSyncPresentation(record, syncRuns, now),
     lastSyncAt: record.lastSyncAt?.toISOString() ?? null,
     lastSyncError: record.lastSyncError,
-    connectedBy: record.connectedBy,
-    createdAt: record.createdAt.toISOString(),
-    updatedAt: record.updatedAt.toISOString(),
+    connectedBy: record.connectedBy ?? "",
+    // Defensive: if createdAt/updatedAt are not Dates (e.g. test stubs or
+    // raw rows), avoid crashing the route with a TypeError.
+    createdAt:
+      record.createdAt instanceof Date
+        ? record.createdAt.toISOString()
+        : String(record.createdAt ?? ""),
+    updatedAt:
+      record.updatedAt instanceof Date
+        ? record.updatedAt.toISOString()
+        : String(record.updatedAt ?? ""),
   };
 }

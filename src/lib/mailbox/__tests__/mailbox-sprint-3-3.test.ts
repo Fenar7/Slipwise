@@ -17,6 +17,7 @@ vi.mock("@/lib/db", () => ({
     },
     mailboxMessage: {
       upsert: vi.fn(),
+      findUnique: vi.fn(),
       findFirst: vi.fn(),
       count: vi.fn(),
     },
@@ -69,6 +70,7 @@ const mockDb = db as unknown as {
   };
   mailboxMessage: {
     upsert: ReturnType<typeof vi.fn>;
+    findUnique: ReturnType<typeof vi.fn>;
   };
   mailboxAttachment: {
     upsert: ReturnType<typeof vi.fn>;

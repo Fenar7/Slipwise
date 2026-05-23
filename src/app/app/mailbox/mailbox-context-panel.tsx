@@ -295,11 +295,16 @@ function AssignmentBlock({
 interface MailboxContextPanelProps {
   context: LinkedContextState;
   onPatch: (patch: Partial<LinkedContextState>) => void;
-  members: AssignableMember[];
-  currentUserId: string;
+  members?: AssignableMember[];
+  currentUserId?: string;
 }
 
-export function MailboxContextPanel({ context, onPatch, members, currentUserId }: MailboxContextPanelProps) {
+export function MailboxContextPanel({
+  context,
+  onPatch,
+  members = [],
+  currentUserId = "",
+}: MailboxContextPanelProps) {
   const [linksExpanded, setLinksExpanded] = useState(true);
   const [noteExpanded, setNoteExpanded] = useState(false);
 

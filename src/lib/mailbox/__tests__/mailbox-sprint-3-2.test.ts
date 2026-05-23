@@ -18,6 +18,7 @@ vi.mock("@/lib/db", () => ({
     },
     mailboxMessage: {
       upsert: vi.fn(),
+      findUnique: vi.fn(),
       findFirst: vi.fn(),
       count: vi.fn(),
     },
@@ -29,6 +30,7 @@ vi.mock("@/lib/db", () => ({
     mailboxSyncRun: {
       create: vi.fn(),
       update: vi.fn(),
+      updateMany: vi.fn(),
       findFirst: vi.fn(),
       findUnique: vi.fn(),
     },
@@ -115,6 +117,7 @@ const mockDb = db as unknown as {
   mailboxSyncRun: {
     create: ReturnType<typeof vi.fn>;
     update: ReturnType<typeof vi.fn>;
+    updateMany: ReturnType<typeof vi.fn>;
     findFirst: ReturnType<typeof vi.fn>;
   };
   mailboxConnection: {
@@ -129,6 +132,7 @@ const mockDb = db as unknown as {
   };
   mailboxMessage: {
     upsert: ReturnType<typeof vi.fn>;
+    findUnique: ReturnType<typeof vi.fn>;
     findFirst: ReturnType<typeof vi.fn>;
   };
   mailboxProviderCursor: {
@@ -251,6 +255,68 @@ describe("Sprint 3.2 — Incremental sync and provider cursors", () => {
 
       expect(result.success).toBe(true);
       expect(mockDb.mailboxConnection.updateMany).toHaveBeenCalledTimes(2);
+    });
+
+    it("cleans up stale RUNNING runs before starting a new sync", async () => {
+      const { getMailboxConnection } = await import("@/lib/mailbox/connection-service");
+      const { getMailboxProviderAdapter } = await import("@/lib/mailbox/provider-registry");
+      const { getMailboxCursor } = await import("@/lib/mailbox/cursor-service");
+
+      vi.mocked(getMailboxConnection).mockResolvedValue(makeConnectionRecord());
+      vi.mocked(getMailboxCursor).mockResolvedValue(null);
+      vi.mocked(getMailboxProviderAdapter).mockReturnValue(makeMockAdapter() as never);
+
+      mockDb.mailboxConnection.updateMany.mockResolvedValue({ count: 1 });
+      mockDb.mailboxSyncRun.create.mockResolvedValue(makeSyncRunRow());
+      mockDb.mailboxSyncRun.update.mockResolvedValue({});
+      mockDb.mailboxSyncRun.updateMany.mockResolvedValue({ count: 1 });
+      mockDb.mailboxConnection.update.mockResolvedValue({});
+      mockDb.mailboxThread.upsert.mockResolvedValue(makeThreadRow());
+      mockDb.mailboxMessage.upsert.mockResolvedValue(makeMessageRow());
+
+      const result = await runMailboxSync({
+        orgId: "org-1",
+        connectionId: "conn-1",
+        actorId: "user-1",
+        triggerSource: "MANUAL",
+      });
+
+      expect(result.success).toBe(true);
+      expect(mockDb.mailboxSyncRun.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            status: "RUNNING",
+            startedAt: expect.objectContaining({ lt: expect.any(Date) }),
+          }),
+          data: expect.objectContaining({ status: "FAILED" }),
+        }),
+      );
+    });
+
+    it("still blocks when a genuinely fresh RUNNING sync exists", async () => {
+      const { getMailboxConnection } = await import("@/lib/mailbox/connection-service");
+      const { getMailboxProviderAdapter } = await import("@/lib/mailbox/provider-registry");
+      const { getMailboxCursor } = await import("@/lib/mailbox/cursor-service");
+
+      vi.mocked(getMailboxConnection).mockResolvedValue(makeConnectionRecord());
+      vi.mocked(getMailboxCursor).mockResolvedValue(null);
+      vi.mocked(getMailboxProviderAdapter).mockReturnValue(makeMockAdapter() as never);
+
+      // Lease acquisition fails.
+      mockDb.mailboxConnection.updateMany.mockResolvedValue({ count: 0 });
+      // A fresh RUNNING run exists (started just now).
+      mockDb.mailboxSyncRun.findFirst.mockResolvedValue({ id: "run-fresh" });
+      mockDb.mailboxSyncRun.updateMany.mockResolvedValue({ count: 0 });
+
+      const result = await runMailboxSync({
+        orgId: "org-1",
+        connectionId: "conn-1",
+        actorId: "user-1",
+        triggerSource: "MANUAL",
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error?.category).toBe("concurrent_sync_running");
     });
   });
 

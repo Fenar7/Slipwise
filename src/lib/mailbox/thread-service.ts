@@ -67,6 +67,9 @@ async function enrichThreadsWithAssigneeNames(
 ): Promise<import("./read-shapes").MailboxThreadReadShape[]> {
   const ids = threads.map((t) => t.assigneeId).filter(Boolean) as string[];
   if (ids.length === 0) return threads;
+  if (!db.profile) {
+    return threads.map((t) => ({ ...t, assigneeName: null }));
+  }
   const profiles = await db.profile.findMany({
     where: { id: { in: ids } },
     select: { id: true, name: true },
@@ -82,6 +85,9 @@ async function enrichDetailWithAssigneeName(
   detail: import("./read-shapes").MailboxThreadDetailReadShape,
 ): Promise<import("./read-shapes").MailboxThreadDetailReadShape> {
   if (!detail.assigneeId) return detail;
+  if (!db.profile) {
+    return { ...detail, assigneeName: null };
+  }
   const profile = await db.profile.findFirst({
     where: { id: detail.assigneeId },
     select: { name: true },

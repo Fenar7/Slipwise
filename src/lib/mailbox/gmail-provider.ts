@@ -51,12 +51,11 @@ const GMAIL_WATCH_URL = "https://gmail.googleapis.com/gmail/v1/users/me/watch";
 const GMAIL_SEND_URL = "https://www.googleapis.com/gmail/v1/users/me/messages/send";
 
 /**
- * Least-privilege scopes for Gmail integration.
- * Sprint 5.2 adds gmail.send for outbound send/reply/forward.
+ * Least-privilege scopes for the Phase 6 connect/reconnect flow.
+ * Outbound send scopes are intentionally deferred until that capability ships.
  */
 export const GMAIL_OAUTH_SCOPES = [
   "https://www.googleapis.com/auth/gmail.readonly",
-  "https://www.googleapis.com/auth/gmail.send",
   "https://www.googleapis.com/auth/userinfo.email",
   "https://www.googleapis.com/auth/userinfo.profile",
 ].join(" ");
@@ -142,6 +141,22 @@ interface GoogleTokenResponse {
   scope: string;
 }
 
+async function readResponseBodyForLog(res: Response): Promise<string> {
+  try {
+    return await res.text();
+  } catch {
+    try {
+      const clone = res.clone() as Response & { text?: () => Promise<string> };
+      if (typeof clone.text === "function") {
+        return await clone.text();
+      }
+    } catch {
+      // ignore clone failures
+    }
+  }
+  return "[unavailable]";
+}
+
 async function exchangeCodeForTokens(
   code: string,
   redirectUri: string,
@@ -161,6 +176,14 @@ async function exchangeCodeForTokens(
   });
 
   if (!res.ok) {
+    const errorBody = await readResponseBodyForLog(res);
+    console.error("[gmail-provider] exchangeCodeForTokens failed:", {
+      status: res.status,
+      statusText: res.statusText,
+      redirectUri,
+      clientId: clientId.substring(0, 10) + "...",
+      errorBody,
+    });
     const errorCode = await parseGoogleErrorCode(res);
     return mapGoogleError(res.status, errorCode);
   }
@@ -218,7 +241,7 @@ async function fetchGoogleUserInfo(
 
 async function fetchGmailProfile(
   accessToken: string,
-): Promise<{ emailAddress: string; messagesTotal: number } | MailboxProviderError> {
+): Promise<{ emailAddress: string; messagesTotal: number; historyId: string | null } | MailboxProviderError> {
   const res = await fetch(GMAIL_PROFILE_URL, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
@@ -228,7 +251,7 @@ async function fetchGmailProfile(
     return mapGoogleError(res.status, errorCode);
   }
 
-  return res.json() as Promise<{ emailAddress: string; messagesTotal: number }>;
+  return res.json() as Promise<{ emailAddress: string; messagesTotal: number; historyId: string | null }>;
 }
 
 function isProviderError(v: unknown): v is MailboxProviderError {
@@ -437,14 +460,26 @@ export const gmailProviderAdapter: IMailboxProviderAdapter = {
     }
 
     // ─── Initial path: use threads.list ─────────────────────────────────────
+    // Bounded initial import: bootstrap only a small slice of recent inbox
+    // threads, then seed the delta cursor from the live Gmail profile historyId.
+    // This keeps first-connect fast and avoids request-timeout risk on large
+    // mailboxes while still making future delta syncs correct from "now".
+    const GMAIL_INITIAL_SYNC_MAX_PAGES = 1;
+    const GMAIL_INITIAL_SYNC_MAX_RESULTS = 25;
     const threads: MailboxThreadEnvelope[] = [];
     let nextPageToken: string | undefined;
     let highestHistoryId = "0";
+    let pagesFetched = 0;
+
+    const profile = await fetchGmailProfile(accessToken);
+    if (isProviderError(profile)) return profile;
 
     do {
+      pagesFetched += 1;
       const params = new URLSearchParams({
-        maxResults: "50",
+        maxResults: String(GMAIL_INITIAL_SYNC_MAX_RESULTS),
         includeSpamTrash: "false",
+        q: "in:inbox",
       });
       if (nextPageToken) {
         params.set("pageToken", nextPageToken);
@@ -474,9 +509,12 @@ export const gmailProviderAdapter: IMailboxProviderAdapter = {
         if (envelope) threads.push(envelope);
       }
       nextPageToken = data.nextPageToken;
-    } while (nextPageToken);
+    } while (nextPageToken && pagesFetched < GMAIL_INITIAL_SYNC_MAX_PAGES);
 
-    const nextCursor: MailboxSyncCursor = { value: highestHistoryId, expiresAt: null };
+    const nextCursor: MailboxSyncCursor = {
+      value: profile.historyId ?? highestHistoryId,
+      expiresAt: null,
+    };
 
     return { threads, nextCursor };
   },
@@ -926,11 +964,23 @@ function extractBodies(part: GmailMessagePart | null): { htmlBody: string; textB
 
   function walk(p: GmailMessagePart) {
     const mimeType = p.mimeType ?? "";
-    if (mimeType === "text/html" && p.body?.data) {
-      htmlParts.push(decodeBase64(p.body.data));
-    } else if (mimeType === "text/plain" && p.body?.data) {
-      textParts.push(decodeBase64(p.body.data));
+
+    // Skip forwarded-message subtrees so we don't concatenate
+    // the bodies of attached/embedded emails.
+    if (mimeType === "message/rfc822") {
+      return;
     }
+
+    // Leaf part with inline body data.
+    if (p.body?.data) {
+      if (mimeType === "text/html") {
+        htmlParts.push(decodeBase64(p.body.data));
+      } else if (mimeType === "text/plain") {
+        textParts.push(decodeBase64(p.body.data));
+      }
+    }
+
+    // Recurse into child parts for multipart containers.
     if (p.parts) {
       for (const child of p.parts) walk(child);
     }
@@ -938,15 +988,26 @@ function extractBodies(part: GmailMessagePart | null): { htmlBody: string; textB
 
   walk(part);
 
+  const htmlBody = htmlParts.join("\n").trim();
+  const textBody = textParts.join("\n").trim() || null;
+
   return {
-    htmlBody: htmlParts.join("\n") || "",
-    textBody: textParts.join("\n") || null,
+    htmlBody,
+    textBody,
   };
 }
 
-function extractAttachments(part: GmailMessagePart | null): Array<{ providerAttachmentId: string; filename: string; mimeType: string; size: number; isInline: boolean }> {
+type GmailAttachment = {
+  providerAttachmentId: string;
+  filename: string;
+  mimeType: string;
+  size: number;
+  isInline: boolean;
+};
+
+function extractAttachments(part: GmailMessagePart | null): GmailAttachment[] {
   if (!part) return [];
-  const attachments: Array<{ providerAttachmentId: string; filename: string; mimeType: string; size: number; isInline: boolean }> = [];
+  const attachments: GmailAttachment[] = [];
 
   function walk(p: GmailMessagePart) {
     const mimeType = p.mimeType ?? "";
@@ -1103,7 +1164,7 @@ function buildMimeMessage(params: {
     return parts;
   }
 
-  function buildInlineAttachmentPart(att: typeof attachments![number], index: number): string[] {
+  function buildInlineAttachmentPart(att: GmailAttachment, index: number): string[] {
     const cid = makeContentId(att.filename, index);
     const parts: string[] = [];
     parts.push(`Content-Type: ${att.mimeType}; name="${att.filename}"`);
@@ -1115,7 +1176,7 @@ function buildMimeMessage(params: {
     return parts;
   }
 
-  function buildFileAttachmentPart(att: typeof attachments![number]): string[] {
+  function buildFileAttachmentPart(att: GmailAttachment): string[] {
     const parts: string[] = [];
     parts.push(`Content-Type: ${att.mimeType}; name="${att.filename}"`);
     parts.push("Content-Transfer-Encoding: base64");

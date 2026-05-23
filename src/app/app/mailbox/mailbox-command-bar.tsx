@@ -4,6 +4,8 @@ import { useState, useRef } from "react";
 import { Search, X, SlidersHorizontal, PenSquare, Bookmark } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ActiveFilter, ActiveFilterState, SupportedSavedViewSmartViewId } from "./types";
+import type { MailboxSyncPresentation } from "@/lib/mailbox/sync-presentation-shape";
+import { MailboxSyncStateChip } from "./mailbox-sync-status";
 
 interface MailboxCommandBarProps {
   activeViewLabel: string;
@@ -18,6 +20,9 @@ interface MailboxCommandBarProps {
   onToggleFilterPanel?: () => void;
   onSaveView?: (params: { label: ActiveFilter["label"]; filters: ActiveFilter[]; searchQuery?: string; smartViewId?: SupportedSavedViewSmartViewId | null }) => Promise<unknown>;
   smartViewId?: SupportedSavedViewSmartViewId;
+  syncStatus?: MailboxSyncPresentation | null;
+  onSyncNow?: () => void;
+  isSyncPending?: boolean;
 }
 
 export function MailboxCommandBar({
@@ -33,6 +38,9 @@ export function MailboxCommandBar({
   onToggleFilterPanel,
   onSaveView,
   smartViewId,
+  syncStatus,
+  onSyncNow,
+  isSyncPending = false,
 }: MailboxCommandBarProps) {
   const [focused, setFocused] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -58,6 +66,7 @@ export function MailboxCommandBar({
               ) : null}
             </span>
           )}
+          {syncStatus ? <MailboxSyncStateChip sync={syncStatus} /> : null}
         </div>
       )}
 
@@ -152,6 +161,22 @@ export function MailboxCommandBar({
         </button>
       )}
 
+      {onSyncNow && syncStatus && (
+        <button
+          type="button"
+          onClick={onSyncNow}
+          disabled={syncStatus.isSyncing || isSyncPending}
+          className={cn(
+            "hidden h-7 shrink-0 items-center rounded-lg border px-2.5 text-xs font-semibold transition-colors md:flex",
+            syncStatus.isSyncing || isSyncPending
+              ? "cursor-not-allowed border-[#E2E8F0] bg-[#F8FAFC] text-[#94A3B8]"
+              : "border-[#CBD5E1] bg-white text-[#334155] hover:bg-[#F8FAFC]",
+          )}
+          aria-label="Sync mailbox now"
+        >
+          {syncStatus.isSyncing || isSyncPending ? "Syncing…" : "Sync now"}
+        </button>
+      )}
       {/* Compose button */}
       <button
         onClick={onCompose}

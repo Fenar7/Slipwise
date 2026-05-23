@@ -9,7 +9,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 vi.mock("server-only", () => ({}));
 
@@ -352,8 +352,7 @@ describe("Sprint 4.2 — GET /api/mailbox/threads/[id]", () => {
     const { requireIntegrationMemberRoute } = await import("@/app/api/integrations/_auth");
     vi.mocked(requireIntegrationMemberRoute).mockResolvedValue({
       ok: false,
-      error: "Unauthorized",
-      status: 401,
+      response: new NextResponse(JSON.stringify({ error: "Unauthorized" }), { status: 401 }),
     } as never);
 
     const { GET } = await import("@/app/api/mailbox/threads/[id]/route");
@@ -369,9 +368,7 @@ describe("Sprint 4.2 — GET /api/mailbox/threads/[id]", () => {
     const { requireIntegrationMemberRoute } = await import("@/app/api/integrations/_auth");
     vi.mocked(requireIntegrationMemberRoute).mockResolvedValue({
       ok: true,
-      org: { id: ORG_A },
-      user: { id: USER_A },
-      role: "member",
+      ctx: { orgId: ORG_A, userId: USER_A, role: "member" },
     } as never);
 
     mockDb.mailboxConnection.findMany.mockResolvedValue([makeConnectionRecord()]);
@@ -390,9 +387,7 @@ describe("Sprint 4.2 — GET /api/mailbox/threads/[id]", () => {
     const { requireIntegrationMemberRoute } = await import("@/app/api/integrations/_auth");
     vi.mocked(requireIntegrationMemberRoute).mockResolvedValue({
       ok: true,
-      org: { id: ORG_A },
-      user: { id: USER_A },
-      role: "member",
+      ctx: { orgId: ORG_A, userId: USER_A, role: "member" },
     } as never);
 
     const { GET } = await import("@/app/api/mailbox/threads/[id]/route");
@@ -408,9 +403,7 @@ describe("Sprint 4.2 — GET /api/mailbox/threads/[id]", () => {
     const { requireIntegrationMemberRoute } = await import("@/app/api/integrations/_auth");
     vi.mocked(requireIntegrationMemberRoute).mockResolvedValue({
       ok: true,
-      org: { id: ORG_A },
-      user: { id: USER_A },
-      role: "member",
+      ctx: { orgId: ORG_A, userId: USER_A, role: "member" },
     } as never);
 
     mockDb.mailboxConnection.findMany.mockResolvedValue([makeConnectionRecord()]);

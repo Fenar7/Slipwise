@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import {
   X,
@@ -18,27 +18,27 @@ interface MailboxConnectFlowProps {
   onClose: () => void;
   /** Pre-set to reconnect mode for an existing connection */
   reconnectEmail?: string;
+  /** When reconnecting, the connection ID to bind the re-auth to */
+  reconnectConnectionId?: string;
 }
 
 const GMAIL_PERMISSIONS = [
   { label: "Read email messages and metadata", scope: "gmail.readonly" },
-  { label: "Send email on your behalf", scope: "gmail.send" },
-  { label: "Manage labels and mailbox settings", scope: "gmail.labels" },
-  { label: "Access mailbox history and changes", scope: "gmail.history" },
+  { label: "View the Google account email address", scope: "userinfo.email" },
+  { label: "View the Google account profile name", scope: "userinfo.profile" },
 ];
 
-export function MailboxConnectFlow({ onClose, reconnectEmail }: MailboxConnectFlowProps) {
+export function MailboxConnectFlow({ onClose, reconnectEmail, reconnectConnectionId }: MailboxConnectFlowProps) {
   const [step, setStep] = useState<ConnectFlowStep>(
     reconnectEmail ? "reconnect_required" : "pre_connect"
   );
-  const [labelInput, setLabelInput] = useState("");
 
   const isReconnect = !!reconnectEmail;
   const title = isReconnect ? "Reconnect Gmail mailbox" : "Connect a Gmail mailbox";
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/25 backdrop-blur-[2px]"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/30"
       role="dialog"
       aria-label={title}
       aria-modal="true"
@@ -68,8 +68,6 @@ export function MailboxConnectFlow({ onClose, reconnectEmail }: MailboxConnectFl
         <div className="px-6 py-6">
           {step === "pre_connect" && (
             <PreConnectStep
-              labelInput={labelInput}
-              onLabelChange={setLabelInput}
               onAuthorize={() => setStep("authorizing")}
               onCancel={onClose}
             />
@@ -82,11 +80,13 @@ export function MailboxConnectFlow({ onClose, reconnectEmail }: MailboxConnectFl
             />
           )}
           {step === "authorizing" && (
-            <AuthorizingStep onSuccess={() => setStep("success")} onFail={() => setStep("failed")} />
+            <AuthorizingStep
+              connectionId={reconnectConnectionId}
+              onFailed={() => setStep("failed")}
+            />
           )}
           {step === "success" && (
             <SuccessStep
-              displayName={labelInput || null}
               email={reconnectEmail ?? null}
               onDone={onClose}
             />
@@ -106,40 +106,17 @@ export function MailboxConnectFlow({ onClose, reconnectEmail }: MailboxConnectFl
 // ─── Step: Pre-connect ────────────────────────────────────────────────────────
 
 function PreConnectStep({
-  labelInput,
-  onLabelChange,
   onAuthorize,
   onCancel,
 }: {
-  labelInput: string;
-  onLabelChange: (v: string) => void;
   onAuthorize: () => void;
   onCancel: () => void;
 }) {
   return (
     <div data-testid="connect-step-pre-connect">
       <p className="text-sm text-[#334155]">
-        Connect a Gmail mailbox to Slipwise so your team can read, reply, and manage customer email from one place.
+        Connect a Gmail mailbox to Slipwise so your team can read and manage customer email from one place.
       </p>
-
-      {/* Label input */}
-      <div className="mt-5 space-y-1.5">
-        <label htmlFor="mailbox-label" className="block text-sm font-medium text-[#0F172A]">
-          Mailbox display name
-        </label>
-        <input
-          id="mailbox-label"
-          type="text"
-          value={labelInput}
-          onChange={(e) => onLabelChange(e.target.value)}
-          placeholder="e.g. Billing, Support, Accounts"
-          className="w-full rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm text-[#0F172A] placeholder-[#94A3B8] outline-none focus:border-[#16294D] focus:ring-2 focus:ring-[rgba(22,41,77,0.12)]"
-          aria-label="Mailbox display name"
-        />
-        <p className="text-xs text-[#64748B]">
-          This name appears in the mailbox left rail and thread views.
-        </p>
-      </div>
 
       {/* Permissions disclosure */}
       <div className="mt-5 rounded-xl border border-[#E2E5EA] bg-[#F7F8FB] p-4">
@@ -205,7 +182,7 @@ function ReconnectStep({
         <div>
           <p className="text-sm font-semibold text-amber-900">Authorization expired</p>
           <p className="mt-1 text-sm text-amber-800">
-            The Gmail authorization for <strong>{email}</strong> has expired. Reconnect to resume syncing and sending.
+            The Gmail authorization for <strong>{email}</strong> has expired. Reconnect to resume syncing.
           </p>
         </div>
       </div>
@@ -239,40 +216,36 @@ function ReconnectStep({
 
 // ─── Step: Authorizing ────────────────────────────────────────────────────────
 
-function AuthorizingStep({
-  onSuccess,
-  onFail,
-}: {
-  onSuccess: () => void;
-  onFail: () => void;
-}) {
+function AuthorizingStep({ connectionId, onFailed }: { connectionId?: string; onFailed: () => void }) {
+  useEffect(() => {
+    const url = connectionId
+      ? `/api/mailbox/gmail/connect?connectionId=${encodeURIComponent(connectionId)}`
+      : "/api/mailbox/gmail/connect";
+
+    // Brief delay so the user sees the "Redirecting…" state before navigation.
+    // The connect route handles server-side errors by redirecting back to
+    // /app/mailbox/settings?error=... rather than returning a 500, so the user
+    // will always land somewhere useful. onFailed is kept as a safety valve for
+    // environments where window.location.href cannot navigate (e.g., blocked).
+    const timer = window.setTimeout(() => {
+      try {
+        window.location.href = url;
+      } catch {
+        onFailed();
+      }
+    }, 400);
+
+    return () => window.clearTimeout(timer);
+  }, [connectionId, onFailed]);
+
   return (
     <div className="flex flex-col items-center gap-4 py-6 text-center" data-testid="connect-step-authorizing">
       <Loader2 className="h-10 w-10 animate-spin text-[#16294D]" aria-hidden="true" />
       <div>
-        <p className="text-sm font-semibold text-[#0F172A]">Waiting for Google authorization…</p>
+        <p className="text-sm font-semibold text-[#0F172A]">Redirecting to Google…</p>
         <p className="mt-1 text-xs text-[#64748B]">
-          Complete the authorization in the Google window. This page will update automatically.
+          Complete the authorization in the Google window. You will return to Slipwise when finished.
         </p>
-      </div>
-      {/* Static demo controls — not shown in production */}
-      <div className="flex gap-2 border-t pt-4" style={{ borderColor: "#F1F3F7" }}>
-        <button
-          onClick={onSuccess}
-          className="rounded-lg bg-green-600 px-3 py-1.5 text-xs font-semibold text-white"
-          aria-label="Simulate success"
-          data-testid="simulate-success-btn"
-        >
-          Simulate success
-        </button>
-        <button
-          onClick={onFail}
-          className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white"
-          aria-label="Simulate failure"
-          data-testid="simulate-failure-btn"
-        >
-          Simulate failure
-        </button>
       </div>
     </div>
   );
@@ -281,11 +254,9 @@ function AuthorizingStep({
 // ─── Step: Success ────────────────────────────────────────────────────────────
 
 function SuccessStep({
-  displayName,
   email,
   onDone,
 }: {
-  displayName: string | null;
   email: string | null;
   onDone: () => void;
 }) {
@@ -300,10 +271,6 @@ function SuccessStep({
           {email ? (
             <>
               <strong>{email}</strong> is now connected to Slipwise.
-            </>
-          ) : displayName ? (
-            <>
-              The <strong>{displayName}</strong> mailbox is now connected to Slipwise.
             </>
           ) : (
             <>Your Gmail mailbox is now connected to Slipwise.</>
@@ -320,7 +287,7 @@ function SuccessStep({
           </li>
           <li className="flex items-start gap-2">
             <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-green-600" aria-hidden="true" />
-            Team members with access can start reading and replying
+            Team members with access can start reading and managing mailbox threads
           </li>
           <li className="flex items-start gap-2">
             <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-green-600" aria-hidden="true" />
