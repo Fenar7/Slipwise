@@ -253,11 +253,14 @@ model Organization {
   webhookDeadLetters           WebhookDeadLetter[]
   // Mailbox Platform — Phase 2
   mailboxConnections           MailboxConnection[]
+  mailboxThreads               MailboxThread[]
+  mailboxMessages              MailboxMessage[]
   mailboxThreadLinks           MailboxThreadLink[]
   mailboxDrafts                MailboxDraft[]
   mailboxAssignments           MailboxAssignment[]
   mailboxAuditEvents           MailboxAuditEvent[]
   mailboxProviderCursors       MailboxProviderCursor[]
+  mailboxSendAttempts          MailboxSendAttempt[]
   // Internal Messaging Platform — Phase 2
   conversations                Conversation[]
   conversationParticipants     ConversationParticipant[]
@@ -5966,6 +5969,17 @@ enum MailboxThreadLinkEntityType {
   @@map("mailbox_thread_link_entity_type")
 }
 
+enum MailboxSendAttemptStatus {
+  PENDING
+  SENT
+  FAILED
+  PENDING_RECONCILIATION
+  RECONCILED_SENT
+  RECONCILED_FAILED
+
+  @@map("mailbox_send_attempt_status")
+}
+
 /// A connected mailbox account for an organization.
 /// tokenRef is an opaque reference to an encrypted credential store (Sprint 2.2).
 /// Never store raw tokens here.
@@ -5996,6 +6010,8 @@ model MailboxConnection {
   drafts            MailboxDraft[]
   auditEvents       MailboxAuditEvent[]
   providerCursors   MailboxProviderCursor[]
+  threads           MailboxThread[]
+  sendAttempts      MailboxSendAttempt[]
 
   /// One active connection per org per provider account.
   @@unique([orgId, provider, providerAccountId])
@@ -6005,6 +6021,88 @@ model MailboxConnection {
   @@index([orgId, status])
   @@index([orgId, provider])
   @@map("mailbox_connection")
+}
+
+/// A synced mailbox thread.
+model MailboxThread {
+  id                  String              @id @default(cuid())
+  orgId               String
+  mailboxConnectionId String
+  providerThreadId    String
+  subject             String
+  participantsSummary Json
+  lastMessageAt       DateTime
+  unreadCount         Int                 @default(0)
+  status              MailboxThreadStatus @default(OPEN)
+  assigneeId          String?             @db.Uuid
+  isFlagged           Boolean             @default(false)
+  primaryLinkSummary  Json?
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+
+  organization      Organization      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  mailboxConnection MailboxConnection @relation(fields: [mailboxConnectionId, orgId], references: [id, orgId], onDelete: Cascade)
+  messages          MailboxMessage[]
+
+  @@unique([orgId, mailboxConnectionId, providerThreadId])
+  @@index([orgId, mailboxConnectionId, status])
+  @@index([orgId, lastMessageAt])
+  @@map("mailbox_thread")
+}
+
+/// A synced message inside a mailbox thread.
+model MailboxMessage {
+  id                String   @id @default(cuid())
+  orgId             String
+  threadId          String
+  providerMessageId String
+  rfcMessageId      String?
+  direction         String // "inbound" | "outbound"
+  from              Json
+  to                Json
+  cc                Json     @default("[]")
+  bcc               Json     @default("[]")
+  subject           String
+  htmlBody          String   @db.Text
+  textBody          String?  @db.Text
+  snippet           String
+  sentAt            DateTime
+  receivedAt        DateTime?
+  attachmentCount   Int      @default(0)
+  providerMetadata  Json     @default("{}")
+  spamLabelDetected Boolean  @default(false)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  organization  Organization       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  thread        MailboxThread      @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  attachments   MailboxAttachment[]
+
+  @@unique([orgId, threadId, providerMessageId])
+  @@index([orgId, threadId])
+  @@index([orgId, direction])
+  @@index([orgId, spamLabelDetected])
+  @@map("mailbox_message")
+}
+
+/// An attachment belonging to a mailbox message.
+model MailboxAttachment {
+  id                 String   @id @default(cuid())
+  messageId          String
+  providerAttachmentId String
+  filename           String
+  mimeType           String
+  size               Int
+  isInline           Boolean  @default(false)
+  storageRef         String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  message MailboxMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, providerAttachmentId])
+  @@index([messageId])
+  @@map("mailbox_attachment")
 }
 
 /// Thread-to-business-record link. Supports multiple links per thread;
@@ -6135,6 +6233,34 @@ model MailboxProviderCursor {
   @@unique([orgId, mailboxConnectionId, cursorType])
   @@index([orgId, mailboxConnectionId])
   @@map("mailbox_provider_cursor")
+}
+
+/// Durable outbound send-attempt modeling.
+model MailboxSendAttempt {
+  id                  String                  @id @default(cuid())
+  orgId               String
+  draftId             String
+  mailboxConnectionId String
+  actorId             String                  @db.Uuid
+  status              MailboxSendAttemptStatus
+  mode                String
+  fingerprint         String
+  correlationKey      String                  @unique
+  rfcMessageId        String?
+  providerMessageId   String?
+  providerThreadId    String?
+  failureCategory     String?
+  failureSummary      String?
+  createdAt           DateTime                @default(now())
+  updatedAt           DateTime                @updatedAt
+
+  organization      Organization      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  mailboxConnection MailboxConnection @relation(fields: [mailboxConnectionId, orgId], references: [id, orgId], onDelete: Cascade)
+
+  @@index([orgId, draftId, fingerprint])
+  @@index([orgId, correlationKey])
+  @@index([orgId, status])
+  @@map("mailbox_send_attempt")
 }
 
 // ─── Internal Messaging Platform — Phase 2 Domain Models ────────────────────

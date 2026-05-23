@@ -240,6 +240,46 @@ export interface IMailboxProviderAdapter {
     orgId: string;
     tokenRef: string;
   }): Promise<void>;
+
+  /**
+   * Send a message draft via the provider.
+   */
+  sendMessage(params: {
+    orgId: string;
+    tokenRef: string;
+    draft: {
+      fromIdentity: string;
+      toRecipients: string[];
+      ccRecipients: string[];
+      bccRecipients: string[];
+      subject: string;
+      htmlBody: string;
+      textBody: string | null;
+      attachmentRefs: string[];
+      mode: string;
+      threadId: string | null;
+      replyToMessageId: string | null;
+    };
+    correlationKey: string;
+    rfcMessageId: string;
+  }): Promise<
+    | { providerMessageId: string; providerThreadId: string; rfcMessageId: string | null }
+    | MailboxProviderError
+  >;
+
+  /**
+   * Reconcile a send attempt by checking whether the provider has the message.
+   */
+  reconcileSend(params: {
+    orgId: string;
+    tokenRef: string;
+    correlationKey: string;
+    rfcMessageId: string | null;
+  }): Promise<
+    | { found: true; providerMessageId: string; providerThreadId: string; rfcMessageId: string | null }
+    | { found: false; providerMessageId: null; providerThreadId: null; rfcMessageId: null }
+    | MailboxProviderError
+  >;
 }
 
 // ─── Provider registry ────────────────────────────────────────────────────────

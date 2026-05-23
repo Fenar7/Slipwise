@@ -93,6 +93,8 @@ export interface MailboxMessageItem {
   /** Collapsed by default for older messages in a thread */
   isCollapsed: boolean;
   attachments: MailboxAttachmentSummary[];
+  /** Provider-specific metadata (e.g. Gmail labels) */
+  providerMetadata?: Record<string, unknown>;
 }
 
 export interface MailboxThreadDetail {
@@ -148,6 +150,8 @@ export interface MailboxComposerState {
   threadId: string | null;
   /** messageId being replied to, null for new/forward */
   replyToMessageId: string | null;
+  /** draftId when editing an existing draft, null for new composition */
+  draftId: string | null;
 }
 
 // ─── Sprint 1.4 additions ────────────────────────────────────────────────────
@@ -325,4 +329,17 @@ export interface MailboxResponsiveState {
   activePanel: MailboxResponsivePanel;
   /** Whether the left rail drawer is open on tablet/mobile */
   isRailOpen: boolean;
+}
+
+// ─── Sprint 6.3 additions — Draft list row ────────────────────────────────────
+
+export interface DraftRowData {
+  id: string;
+  mailboxConnectionId: string;
+  subject: string;
+  to: string[];
+  snippet: string;
+  lastUpdatedAt: string;
+  mailboxLabel: string;
+  mailboxColor: string;
 }

@@ -29,6 +29,7 @@ export interface ThreadRowData {
   mailboxColor: string;
   assignee?: string;
   status: "open" | "pending" | "closed";
+  isSpam?: boolean;
 }
 
 export const MOCK_THREADS: ThreadRowData[] = [
@@ -97,6 +98,7 @@ export const MOCK_THREADS: ThreadRowData[] = [
     mailboxColor: "#16294D",
     assignee: "Meera",
     status: "open",
+    isSpam: true,
   },
   {
     id: "t5",

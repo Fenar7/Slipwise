@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { MailboxLeftRail } from "./mailbox-left-rail";
 import { MailboxCommandBar } from "./mailbox-command-bar";
 import { MailboxThreadList, MOCK_THREADS } from "./mailbox-thread-list";
+import { MailboxDraftList } from "./mailbox-draft-list";
 import { MailboxReadingPaneEmpty } from "./mailbox-reading-pane-empty";
 import { MailboxReadingPane } from "./mailbox-reading-pane";
 import { FloatingComposer } from "./mailbox-floating-composer";
@@ -12,7 +13,7 @@ import { ExpandedComposer } from "./mailbox-expanded-composer";
 import { MailboxContextPanel, MailboxContextPanelEmpty } from "./mailbox-context-panel";
 import { FilterChipsBar } from "./mailbox-filter-chips";
 import { MailboxFilterPanel } from "./mailbox-filter-panel";
-import { EmptyInboxState, NoMailboxesEmpty, NoSearchResultsEmpty, SmartViewEmpty } from "./mailbox-empty-states";
+import { EmptyInboxState, EmptySentState, EmptyDraftsState, EmptySpamState, NoMailboxesEmpty, NoSearchResultsEmpty, SmartViewEmpty } from "./mailbox-empty-states";
 import { ReconnectBanner } from "./mailbox-restricted-states";
 import { MailboxRailDrawer, MobileTopBar, TabletTopBar, MobileTabBar } from "./mailbox-mobile-nav";
 import {
@@ -20,6 +21,7 @@ import {
   MOCK_CONNECTIONS,
   MOCK_THREAD_DETAILS,
   MOCK_LINKED_CONTEXT,
+  MOCK_DRAFTS,
 } from "./mock-data";
 import type {
   MailboxComposerState,
@@ -29,6 +31,7 @@ import type {
   ActiveFilter,
   LinkedContextState,
   MailboxResponsivePanel,
+  DraftRowData,
 } from "./types";
 
 export function resolveViewLabel(pathname: string): string {
@@ -57,7 +60,9 @@ function makeComposerState(
   subject: string,
   to: string[],
   fromConnection: MailboxConnection,
-  layout: MailboxComposerState["layout"] = "floating"
+  layout: MailboxComposerState["layout"] = "floating",
+  draftId: string | null = null,
+  bodyHtml: string = ""
 ): MailboxComposerState {
   return {
     isOpen: true,
@@ -72,7 +77,7 @@ function makeComposerState(
     showCc: false,
     showBcc: false,
     subject,
-    bodyHtml: "",
+    bodyHtml,
     attachments: [],
     sendState: "idle",
     deliveryMode: "send_now",
@@ -81,6 +86,7 @@ function makeComposerState(
     schedulePanelOpen: false,
     threadId,
     replyToMessageId,
+    draftId,
   };
 }
 
@@ -92,6 +98,16 @@ function resolveActiveConnection(pathname: string): MailboxConnection | null {
         pathname.startsWith(`/app/mailbox/${conn.slug}/`)
     ) ?? null
   );
+}
+
+function resolveFolderFromPathname(pathname: string): string {
+  const parts = pathname.split("/").filter(Boolean);
+  const last = parts[parts.length - 1] ?? "inbox";
+  return ["inbox", "sent", "drafts", "archive", "spam"].includes(last) ? last : "inbox";
+}
+
+function isDraftsFolder(pathname: string): boolean {
+  return resolveFolderFromPathname(pathname) === "drafts";
 }
 
 function resolveVisibleThreads(pathname: string, filterState: ActiveFilterState) {
@@ -117,19 +133,22 @@ function resolveVisibleThreads(pathname: string, filterState: ActiveFilterState)
         (MOCK_LINKED_CONTEXT[t.id]?.suggestions.length ?? 0) === 0
     );
   } else if (activeConnection) {
-    const folder = pathname.split("/").pop() ?? "inbox";
+    const folder = resolveFolderFromPathname(pathname);
     const connectionThreads = threads.filter((t) => t.mailboxConnectionId === activeConnection.id);
     if (folder === "sent") {
       threads = connectionThreads.filter((t) => {
         const detail = MOCK_THREAD_DETAILS[t.id];
-        return detail?.messages[detail.messages.length - 1]?.direction === "outbound";
+        return detail?.messages.some((m) => m.direction === "outbound") ?? false;
       });
-    } else if (folder === "drafts" || folder === "spam") {
-      threads = [];
+    } else if (folder === "spam") {
+      threads = connectionThreads.filter((t) => t.isSpam === true);
     } else if (folder === "archive") {
       threads = connectionThreads.filter((t) => t.status === "closed");
+    } else if (folder === "drafts") {
+      threads = [];
     } else {
-      threads = connectionThreads.filter((t) => t.status !== "closed");
+      // inbox: exclude spam and archived
+      threads = connectionThreads.filter((t) => t.status !== "closed" && t.isSpam !== true);
     }
   }
 
@@ -172,9 +191,15 @@ function resolveVisibleThreads(pathname: string, filterState: ActiveFilterState)
   return threads;
 }
 
+function resolveVisibleDrafts(pathname: string, _filterState: ActiveFilterState): DraftRowData[] {
+  const activeConnection = resolveActiveConnection(pathname);
+  if (!activeConnection) return MOCK_DRAFTS;
+  return MOCK_DRAFTS.filter((d) => d.mailboxConnectionId === activeConnection.id);
+}
+
 function resolveEmptyMailboxLabel(pathname: string, activeConnection: MailboxConnection | null, viewLabel: string) {
   if (!activeConnection) return viewLabel;
-  const folder = pathname.split("/").pop() ?? "inbox";
+  const folder = resolveFolderFromPathname(pathname);
   if (folder === "inbox") return activeConnection.displayName;
   return `${activeConnection.displayName} · ${folder.charAt(0).toUpperCase()}${folder.slice(1)}`;
 }
@@ -210,6 +235,7 @@ function resolveSmartViewDescription(pathname: string): { label: string; descrip
 export function MailboxWorkspace() {
   const pathname = usePathname();
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
+  const [selectedDraftId, setSelectedDraftId] = useState<string | null>(null);
   const [composer, setComposer] = useState<MailboxComposerState | null>(null);
   const [filterState, setFilterState] = useState<ActiveFilterState>({ filters: [], searchQuery: "" });
   const [contextOverrides, setContextOverrides] = useState<Record<string, Partial<LinkedContextState>>>({});
@@ -222,8 +248,11 @@ export function MailboxWorkspace() {
 
   const viewLabel = resolveViewLabel(pathname);
   const activeConnection = resolveActiveConnection(pathname);
+  const folder = resolveFolderFromPathname(pathname);
+  const inDraftsMode = isDraftsFolder(pathname);
   const visibleThreads = resolveVisibleThreads(pathname, filterState);
-  const totalCount = visibleThreads.length;
+  const visibleDrafts = resolveVisibleDrafts(pathname, filterState);
+  const totalCount = inDraftsMode ? visibleDrafts.length : visibleThreads.length;
   const unreadCount = visibleThreads.filter((t) => t.isUnread).length;
   const selectedDetail = selectedThreadId ? MOCK_THREAD_DETAILS[selectedThreadId] ?? null : null;
   const reconnectConnection = resolveReconnectConnection(pathname);
@@ -246,16 +275,54 @@ export function MailboxWorkspace() {
   }, [selectedThreadId, visibleThreads]);
 
   useEffect(() => {
+    if (selectedDraftId && !visibleDrafts.some((d) => d.id === selectedDraftId)) {
+      setSelectedDraftId(null);
+    }
+  }, [selectedDraftId, visibleDrafts]);
+
+  useEffect(() => {
     if (isFilterPanelOpen) {
       setFilterDraftState({ filters: [...filterState.filters], searchQuery: filterState.searchQuery });
     }
   }, [isFilterPanelOpen, filterState]);
 
+  // Close draft composer when leaving drafts folder
+  useEffect(() => {
+    if (!inDraftsMode && composer?.draftId) {
+      setComposer(null);
+      setSelectedDraftId(null);
+    }
+  }, [inDraftsMode, composer]);
+
   // On mobile, selecting a thread navigates to reading pane
   const handleSelectThread = useCallback((id: string) => {
     setSelectedThreadId(id);
+    setSelectedDraftId(null);
+    setComposer(null);
     setMobilePanel("reading-pane");
   }, []);
+
+  const handleSelectDraft = useCallback((id: string) => {
+    setSelectedDraftId(id);
+    setSelectedThreadId(null);
+    const draft = MOCK_DRAFTS.find((d) => d.id === id);
+    if (draft && activeConnection) {
+      setComposer(
+        makeComposerState(
+          "new",
+          null,
+          null,
+          draft.subject,
+          draft.to,
+          activeConnection,
+          "expanded",
+          draft.id,
+          draft.snippet
+        )
+      );
+    }
+    setMobilePanel("reading-pane");
+  }, [activeConnection]);
 
   const handleMobileBack = useCallback(() => {
     if (mobilePanel === "context") {
@@ -265,6 +332,8 @@ export function MailboxWorkspace() {
 
     setMobilePanel("thread-list");
     setSelectedThreadId(null);
+    setSelectedDraftId(null);
+    setComposer(null);
   }, [mobilePanel]);
 
   const openNewCompose = useCallback(() => {
@@ -351,8 +420,8 @@ export function MailboxWorkspace() {
 
   const hasActiveFilters = filterState.filters.length > 0 || !!filterState.searchQuery;
 
-  // Resolve thread list empty state
-  const threadListEmptyState = (() => {
+  // Resolve list empty state
+  const listEmptyState = (() => {
     if (connectedMailboxCount === 0) {
       return <NoMailboxesEmpty isAdmin={true} />;
     }
@@ -373,12 +442,21 @@ export function MailboxWorkspace() {
         />
       );
     }
+    if (inDraftsMode) {
+      if (visibleDrafts.length === 0) {
+        return (
+          <EmptyDraftsState
+            mailboxLabel={resolveEmptyMailboxLabel(pathname, activeConnection, viewLabel)}
+          />
+        );
+      }
+      return null;
+    }
     if (visibleThreads.length === 0) {
-      return (
-        <EmptyInboxState
-          mailboxLabel={resolveEmptyMailboxLabel(pathname, activeConnection, viewLabel)}
-        />
-      );
+      const emptyLabel = resolveEmptyMailboxLabel(pathname, activeConnection, viewLabel);
+      if (folder === "sent") return <EmptySentState mailboxLabel={emptyLabel} />;
+      if (folder === "spam") return <EmptySpamState mailboxLabel={emptyLabel} />;
+      return <EmptyInboxState mailboxLabel={emptyLabel} />;
     }
     return null;
   })();
@@ -393,6 +471,7 @@ export function MailboxWorkspace() {
   ) : undefined;
 
   // Mobile label
+  const selectedDraft = selectedDraftId ? MOCK_DRAFTS.find((d) => d.id === selectedDraftId) ?? null : null;
   const mobileLabel =
     mobilePanel === "context"
       ? selectedDetail
@@ -400,6 +479,8 @@ export function MailboxWorkspace() {
         : "Thread context"
       : mobilePanel === "reading-pane" && selectedDetail
       ? selectedDetail.subject
+      : mobilePanel === "reading-pane" && selectedDraft
+      ? selectedDraft.subject
       : viewLabel;
 
   return (
@@ -487,7 +568,7 @@ export function MailboxWorkspace() {
         {/* ── Main content area ── */}
         <div className="flex min-h-0 flex-1 overflow-hidden">
 
-          {/* Thread list — full width on mobile, fixed width on md+ */}
+          {/* Thread / Draft list — full width on mobile, fixed width on md+ */}
           <div
             className={[
               "shrink-0 overflow-hidden border-r",
@@ -496,13 +577,22 @@ export function MailboxWorkspace() {
             ].join(" ")}
             data-testid="mailbox-thread-list-pane"
           >
-            <MailboxThreadList
-              threads={visibleThreads}
-              selectedThreadId={selectedThreadId}
-              onSelectThread={handleSelectThread}
-              reconnectBanner={reconnectBanner}
-              emptyState={threadListEmptyState ?? undefined}
-            />
+            {inDraftsMode ? (
+              <MailboxDraftList
+                drafts={visibleDrafts}
+                selectedDraftId={selectedDraftId}
+                onSelectDraft={handleSelectDraft}
+                emptyState={listEmptyState ?? undefined}
+              />
+            ) : (
+              <MailboxThreadList
+                threads={visibleThreads}
+                selectedThreadId={selectedThreadId}
+                onSelectThread={handleSelectThread}
+                reconnectBanner={reconnectBanner}
+                emptyState={listEmptyState ?? undefined}
+              />
+            )}
           </div>
 
           {/* Reading pane — hidden on mobile when thread-list is active */}

@@ -248,6 +248,44 @@ export function NoLinkedRecordsEmpty({ onLinkRecord }: { onLinkRecord?: () => vo
   );
 }
 
+// ─── Folder-specific empty states ─────────────────────────────────────────────
+
+export function EmptySentState({ mailboxLabel }: { mailboxLabel: string }) {
+  return (
+    <EmptyStateShell
+      icon={MailOpen}
+      iconBg="rgba(22,41,77,0.07)"
+      iconColor="#16294D"
+      heading={`${mailboxLabel} is empty`}
+      body="No sent conversations yet. Messages you send will appear here."
+    />
+  );
+}
+
+export function EmptyDraftsState({ mailboxLabel }: { mailboxLabel: string }) {
+  return (
+    <EmptyStateShell
+      icon={MailOpen}
+      iconBg="rgba(22,41,77,0.07)"
+      iconColor="#16294D"
+      heading={`${mailboxLabel} is empty`}
+      body="No active drafts. Start composing a new message to create a draft."
+    />
+  );
+}
+
+export function EmptySpamState({ mailboxLabel }: { mailboxLabel: string }) {
+  return (
+    <EmptyStateShell
+      icon={MailOpen}
+      iconBg="rgba(22,41,77,0.07)"
+      iconColor="#16294D"
+      heading={`${mailboxLabel} is empty`}
+      body="No spam conversations. Messages marked as spam by your provider will appear here."
+    />
+  );
+}
+
 // ─── Smart view empty (no threads in view) ────────────────────────────────────
 
 /**

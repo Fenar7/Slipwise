@@ -126,6 +126,31 @@ export async function upsertMailboxAttachment(params: {
   return row;
 }
 
+export async function updateMailboxThreadSummary(
+  tx: Prisma.TransactionClient,
+  threadId: string,
+  orgId: string,
+): Promise<void> {
+  const latestMessage = await tx.mailboxMessage.findFirst({
+    where: { threadId, orgId },
+    orderBy: { sentAt: "desc" },
+  });
+
+  if (!latestMessage) return;
+
+  const messageCount = await tx.mailboxMessage.count({
+    where: { threadId, orgId },
+  });
+
+  await tx.mailboxThread.update({
+    where: { id: threadId, orgId },
+    data: {
+      lastMessageAt: latestMessage.sentAt,
+      unreadCount: 0,
+    },
+  });
+}
+
 function asRecord(value: Prisma.JsonValue | null): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
 }

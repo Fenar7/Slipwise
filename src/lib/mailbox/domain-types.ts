@@ -21,6 +21,7 @@ import type {
   MailboxAuditAction,
   MailboxCursorType,
   MailboxThreadLinkEntityType,
+  MailboxSendAttemptStatus,
 } from "@/generated/prisma/client";
 
 // Re-export enums for use in service layer without importing from generated client directly.
@@ -34,6 +35,7 @@ export type {
   MailboxAuditAction,
   MailboxCursorType,
   MailboxThreadLinkEntityType,
+  MailboxSendAttemptStatus,
 };
 
 // ─── Connection ───────────────────────────────────────────────────────────────
@@ -138,6 +140,86 @@ export interface MailboxProviderCursorRecord {
   cursorValue: string;
   expiresAt: Date | null;
   lastAdvancedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// ─── Thread ───────────────────────────────────────────────────────────────────
+
+export interface MailboxThreadRecord {
+  id: string;
+  orgId: string;
+  mailboxConnectionId: string;
+  providerThreadId: string;
+  subject: string;
+  participantsSummary: Record<string, unknown> | unknown[];
+  lastMessageAt: Date;
+  unreadCount: number;
+  status: MailboxThreadStatus;
+  assigneeId: string | null;
+  isFlagged: boolean;
+  primaryLinkSummary: Record<string, unknown> | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// ─── Message ──────────────────────────────────────────────────────────────────
+
+export interface MailboxMessageRecord {
+  id: string;
+  orgId: string;
+  threadId: string;
+  providerMessageId: string;
+  rfcMessageId: string | null;
+  direction: "inbound" | "outbound";
+  from: Record<string, unknown>;
+  to: unknown[];
+  cc: unknown[];
+  bcc: unknown[];
+  subject: string;
+  htmlBody: string;
+  textBody: string | null;
+  snippet: string;
+  sentAt: Date;
+  receivedAt: Date | null;
+  attachmentCount: number;
+  providerMetadata: Record<string, unknown> | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// ─── Attachment ───────────────────────────────────────────────────────────────
+
+export interface MailboxAttachmentRecord {
+  id: string;
+  messageId: string;
+  providerAttachmentId: string;
+  filename: string;
+  mimeType: string;
+  size: number;
+  isInline: boolean;
+  storageRef: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// ─── Send attempt ─────────────────────────────────────────────────────────────
+
+export interface MailboxSendAttemptRecord {
+  id: string;
+  orgId: string;
+  draftId: string;
+  mailboxConnectionId: string;
+  actorId: string;
+  status: MailboxSendAttemptStatus;
+  mode: string;
+  fingerprint: string;
+  correlationKey: string;
+  rfcMessageId: string | null;
+  providerMessageId: string | null;
+  providerThreadId: string | null;
+  failureCategory: string | null;
+  failureSummary: string | null;
   createdAt: Date;
   updatedAt: Date;
 }

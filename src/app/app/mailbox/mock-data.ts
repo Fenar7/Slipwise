@@ -1,4 +1,5 @@
-import type { MailboxConnection, MailboxGroup, MailboxTreeItem, MailboxThreadDetail, MailboxAdminSummary, MailboxPermissionPolicy } from "./types";
+import type { MailboxConnection, MailboxGroup, MailboxTreeItem, MailboxThreadDetail, MailboxAdminSummary, MailboxPermissionPolicy, DraftRowData } from "./types";
+import { Send } from "lucide-react";
 
 export const MOCK_CONNECTIONS: MailboxConnection[] = [
   {
@@ -299,6 +300,7 @@ export const MOCK_THREAD_DETAILS: Record<string, MailboxThreadDetail> = {
         bodyHtml: `<p>Hi,</p><p>Please find the attached statement of account for April 2026. The closing balance is ₹1,24,500.</p><p>Let us know if you have any queries or discrepancies to report.</p><p>Thanks,<br/>Ravi Nair<br/>Global Retail Ltd</p>`,
         sentAt: "2026-05-07T16:45:00Z",
         isCollapsed: false,
+        providerMetadata: { labels: ["SPAM"] },
         attachments: [
           { id: "att4", filename: "statement-april-2026.pdf", mimeType: "application/pdf", sizeLabel: "210 KB" },
         ],
@@ -379,6 +381,31 @@ export const MOCK_THREAD_DETAILS: Record<string, MailboxThreadDetail> = {
     ],
   },
 };
+
+// ─── Sprint 6.3: Mock drafts ─────────────────────────────────────────────────
+
+export const MOCK_DRAFTS: DraftRowData[] = [
+  {
+    id: "draft_001",
+    mailboxConnectionId: "conn_billing",
+    subject: "Re: Invoice #INV-2026-0412 — Follow-up",
+    to: ["priya.sharma@clientco.in"],
+    snippet: "Dear Priya, Following up on the invoice payment...",
+    lastUpdatedAt: "2026-05-08T11:00:00Z",
+    mailboxLabel: "Billing",
+    mailboxColor: "#16294D",
+  },
+  {
+    id: "draft_002",
+    mailboxConnectionId: "conn_billing",
+    subject: "Quote QT-2026-0090 — New inquiry",
+    to: ["arjun.mehta@techventures.io"],
+    snippet: "Dear Arjun, Thank you for your interest in our services...",
+    lastUpdatedAt: "2026-05-07T16:00:00Z",
+    mailboxLabel: "Billing",
+    mailboxColor: "#16294D",
+  },
+];
 
 // ─── Sprint 1.4: Admin / permission mock data ────────────────────────────────
 

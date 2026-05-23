@@ -770,14 +770,21 @@ describe("MailboxWorkspace Sprint 1.6 integration", () => {
     expect(screen.getByText(/refine linked without leaving the current mailbox view/i)).toBeInTheDocument();
   });
 
-  it("shows a mailbox empty state for drafts routes instead of a blank list", () => {
+  it("shows drafts list for billing drafts route instead of empty", () => {
     renderWorkspaceAtPath("/app/mailbox/billing/drafts");
-    expect(screen.getByText(/billing · drafts is empty/i)).toBeInTheDocument();
+    expect(screen.getAllByRole("option").length).toBeGreaterThan(0);
+    expect(screen.getByText(/Re: Invoice #INV-2026-0412/i)).toBeInTheDocument();
   });
 
-  it("shows a mailbox empty state for spam routes instead of a blank list", () => {
+  it("shows a mailbox empty state for spam routes when no spam exists", () => {
     renderWorkspaceAtPath("/app/mailbox/support/spam");
     expect(screen.getByText(/support · spam is empty/i)).toBeInTheDocument();
+  });
+
+  it("shows spam threads for billing spam route", () => {
+    renderWorkspaceAtPath("/app/mailbox/billing/spam");
+    expect(screen.getByText(/Ravi Nair/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Priya Sharma/i)).not.toBeInTheDocument();
   });
 
   it("opens a narrow-viewport context panel from the reading pane", () => {
