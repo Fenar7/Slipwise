@@ -60,6 +60,123 @@ export interface RunMailboxSyncResult {
 
 const MAILBOX_SYNC_MAX_RUNNING_AGE_MINUTES = 30;
 const MAILBOX_SYNC_LEASE_DURATION_MS = MAILBOX_SYNC_MAX_RUNNING_AGE_MINUTES * 60 * 1000;
+const GMAIL_REQUIRED_FOLDER_COVERAGE = ["INBOX", "SENT", "SPAM"] as const;
+const GMAIL_FOLDER_COVERAGE_VERSION = 1;
+
+function toMetadataRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  return { ...(value as Record<string, unknown>) };
+}
+
+function mergeWatchMetadata(
+  current: unknown,
+  patch: Record<string, unknown>,
+): Record<string, unknown> {
+  return {
+    ...(toMetadataRecord(current) ?? {}),
+    ...patch,
+  };
+}
+
+function hasRequiredGmailCoverage(metadata: unknown): boolean {
+  const record = toMetadataRecord(metadata);
+  if (!record) return false;
+
+  const version = record.gmailCoverageVersion;
+  if (typeof version !== "number" || version < GMAIL_FOLDER_COVERAGE_VERSION) {
+    return false;
+  }
+
+  const coveredLabels = record.gmailCoveredSystemLabels;
+  if (!Array.isArray(coveredLabels)) {
+    return false;
+  }
+
+  const coveredSet = new Set(
+    coveredLabels.filter((value): value is string => typeof value === "string"),
+  );
+  return GMAIL_REQUIRED_FOLDER_COVERAGE.every((label) => coveredSet.has(label));
+}
+
+function withRequiredGmailCoverage(metadata: unknown): Record<string, unknown> {
+  return mergeWatchMetadata(metadata, {
+    gmailCoverageVersion: GMAIL_FOLDER_COVERAGE_VERSION,
+    gmailCoveredSystemLabels: [...GMAIL_REQUIRED_FOLDER_COVERAGE],
+    gmailCoverageRecoveredAt: new Date().toISOString(),
+  });
+}
+
+async function ingestSyncedThreads(params: {
+  orgId: string;
+  connectionId: string;
+  mailboxEmail: string;
+  tokenRef: string;
+  adapter: ReturnType<typeof getMailboxProviderAdapter>;
+  threads: Awaited<ReturnType<ReturnType<typeof getMailboxProviderAdapter>["syncDelta"]>> extends {
+    threads: infer T;
+  }
+    ? T
+    : never;
+}): Promise<{ threadCount: number; messageCount: number }> {
+  let messageCount = 0;
+
+  for (const threadEnvelope of params.threads) {
+    const thread = await upsertMailboxThread({
+      orgId: params.orgId,
+      mailboxConnectionId: params.connectionId,
+      envelope: threadEnvelope,
+    });
+    const detail = await params.adapter.fetchThreadDetail({
+      orgId: params.orgId,
+      tokenRef: params.tokenRef,
+      providerThreadId: threadEnvelope.providerThreadId,
+    });
+    if (isMailboxProviderError(detail)) {
+      throw toProviderErrorException(detail);
+    }
+
+    const threadMessages: MailboxMessageRecord[] = [];
+    for (const messageEnvelope of detail.messages) {
+      const message = await upsertMailboxMessage({
+        orgId: params.orgId,
+        threadId: thread.id,
+        envelope: messageEnvelope,
+        mailboxEmail: params.mailboxEmail,
+      });
+      messageCount += 1;
+      threadMessages.push(message);
+      for (const attachment of messageEnvelope.attachments ?? []) {
+        await upsertMailboxAttachment({
+          messageId: message.id,
+          envelope: attachment,
+        });
+      }
+    }
+
+    const participantsSummary = deriveThreadParticipants(threadMessages);
+    const lastMessageAt = deriveThreadLastMessageAt(
+      threadMessages,
+      thread.lastMessageAt,
+    );
+    const previewSnippet = deriveThreadPreviewSnippet(threadMessages);
+    const attachmentCount = computeThreadAttachmentCount(threadMessages);
+    await updateMailboxThreadSummary({
+      orgId: params.orgId,
+      threadId: thread.id,
+      participantsSummary: participantsSummary as unknown as Prisma.InputJsonValue,
+      lastMessageAt,
+      previewSnippet,
+      attachmentCount,
+    });
+  }
+
+  return {
+    threadCount: params.threads.length,
+    messageCount,
+  };
+}
 
 /**
  * Check whether a sync is already running for this mailbox.
@@ -194,6 +311,7 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
   const startedAt = new Date();
   let effectiveMode: MailboxSyncMode = requestedMode;
   let effectiveCursor = cursor;
+  let effectiveWatchMetadata = toMetadataRecord(connection.watchMetadata);
   let run:
     | {
         id: string;
@@ -263,10 +381,11 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
           data: {
             watchExpiresAt: renewal.expiresAt,
             watchRenewedAt: new Date(),
-            watchMetadata: renewal.metadata as Prisma.InputJsonValue,
+            watchMetadata: mergeWatchMetadata(effectiveWatchMetadata, renewal.metadata) as Prisma.InputJsonValue,
             lastSyncError: null,
           },
         });
+        effectiveWatchMetadata = mergeWatchMetadata(effectiveWatchMetadata, renewal.metadata);
         await logMailboxAudit({
           orgId: params.orgId,
           actorId: params.actorId,
@@ -278,6 +397,39 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
       }
     }
 
+    const needsGmailCoverageRecovery =
+      connection.provider === "GMAIL" &&
+      effectiveMode === "DELTA" &&
+      !!effectiveCursor &&
+      !hasRequiredGmailCoverage(effectiveWatchMetadata);
+
+    let threadCount = 0;
+    let messageCount = 0;
+    let recoveredGmailCoverage = false;
+
+    if (needsGmailCoverageRecovery) {
+      const recovery = await adapter.syncDelta({
+        orgId: params.orgId,
+        tokenRef: connection.tokenRef,
+        cursor: null,
+      });
+      if (isMailboxProviderError(recovery)) {
+        throw toProviderErrorException(recovery);
+      }
+
+      const recoveryStats = await ingestSyncedThreads({
+        orgId: params.orgId,
+        connectionId: connection.id,
+        mailboxEmail: connection.emailAddress,
+        tokenRef: connection.tokenRef,
+        adapter,
+        threads: recovery.threads,
+      });
+      threadCount += recoveryStats.threadCount;
+      messageCount += recoveryStats.messageCount;
+      recoveredGmailCoverage = true;
+    }
+
     const delta = await adapter.syncDelta({
       orgId: params.orgId,
       tokenRef: connection.tokenRef,
@@ -287,54 +439,16 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
       throw toProviderErrorException(delta);
     }
 
-    let messageCount = 0;
-    for (const threadEnvelope of delta.threads) {
-      const thread = await upsertMailboxThread({
-        orgId: params.orgId,
-        mailboxConnectionId: connection.id,
-        envelope: threadEnvelope,
-      });
-      const detail = await adapter.fetchThreadDetail({
-        orgId: params.orgId,
-        tokenRef: connection.tokenRef,
-        providerThreadId: threadEnvelope.providerThreadId,
-      });
-      if (isMailboxProviderError(detail)) {
-        throw toProviderErrorException(detail);
-      }
-      const threadMessages: MailboxMessageRecord[] = [];
-      for (const messageEnvelope of detail.messages) {
-        const message = await upsertMailboxMessage({
-          orgId: params.orgId,
-          threadId: thread.id,
-          envelope: messageEnvelope,
-          mailboxEmail: connection.emailAddress,
-        });
-        messageCount += 1;
-        threadMessages.push(message);
-        for (const attachment of messageEnvelope.attachments ?? []) {
-          await upsertMailboxAttachment({
-            messageId: message.id,
-            envelope: attachment,
-          });
-        }
-      }
-      const participantsSummary = deriveThreadParticipants(threadMessages);
-      const lastMessageAt = deriveThreadLastMessageAt(
-        threadMessages,
-        thread.lastMessageAt,
-      );
-      const previewSnippet = deriveThreadPreviewSnippet(threadMessages);
-      const attachmentCount = computeThreadAttachmentCount(threadMessages);
-      await updateMailboxThreadSummary({
-        orgId: params.orgId,
-        threadId: thread.id,
-        participantsSummary: participantsSummary as unknown as Prisma.InputJsonValue,
-        lastMessageAt,
-        previewSnippet,
-        attachmentCount,
-      });
-    }
+    const deltaStats = await ingestSyncedThreads({
+      orgId: params.orgId,
+      connectionId: connection.id,
+      mailboxEmail: connection.emailAddress,
+      tokenRef: connection.tokenRef,
+      adapter,
+      threads: delta.threads,
+    });
+    threadCount += deltaStats.threadCount;
+    messageCount += deltaStats.messageCount;
 
     // ─── Cursor advancement only after successful ingestion ─────────────────
     if (delta.nextCursor) {
@@ -348,7 +462,13 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
       });
     }
 
-    const stats = { threadCount: delta.threads.length, messageCount };
+    const shouldPersistGmailCoverage =
+      connection.provider === "GMAIL" && (effectiveMode === "INITIAL" || recoveredGmailCoverage);
+    if (shouldPersistGmailCoverage) {
+      effectiveWatchMetadata = withRequiredGmailCoverage(effectiveWatchMetadata);
+    }
+
+    const stats = { threadCount, messageCount };
     const nextStatus = resolveStatusAfterSuccess(connection.status);
     await db.mailboxConnection.update({
       where: { id: connection.id },
@@ -357,6 +477,9 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
         lastSyncAt: new Date(),
         lastSyncError: null,
         lastSyncErrorCategory: null,
+        ...(shouldPersistGmailCoverage
+          ? { watchMetadata: effectiveWatchMetadata as Prisma.InputJsonValue }
+          : {}),
       },
     });
     await db.mailboxSyncRun.update({
@@ -379,7 +502,7 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
     return {
       success: true,
       runId: run.id,
-      threadCount: delta.threads.length,
+      threadCount,
       messageCount,
       syncMode: effectiveMode,
       triggerSource,

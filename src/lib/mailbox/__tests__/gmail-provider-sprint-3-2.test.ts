@@ -98,23 +98,12 @@ describe("gmailProviderAdapter Sprint 3.2", () => {
       .mockResolvedValueOnce(
         new Response(
           JSON.stringify({
-            emailAddress: "ops@example.com",
-            messagesTotal: 120,
-            historyId: "9000",
-          }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        ),
-      )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
             threads: [{ id: "thread-1", historyId: "1500" }],
             nextPageToken: "page-2",
           }),
           { status: 200, headers: { "Content-Type": "application/json" } },
         ),
       )
-      .mockResolvedValueOnce(makeThreadResponse("thread-1", "1500", "Subject A"))
       .mockResolvedValueOnce(
         new Response(
           JSON.stringify({
@@ -123,7 +112,27 @@ describe("gmailProviderAdapter Sprint 3.2", () => {
           { status: 200, headers: { "Content-Type": "application/json" } },
         ),
       )
-      .mockResolvedValueOnce(makeThreadResponse("thread-2", "1700", "Subject B"));
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            threads: [{ id: "thread-3", historyId: "1900" }],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      )
+      .mockResolvedValueOnce(makeThreadResponse("thread-1", "1500", "Subject A"))
+      .mockResolvedValueOnce(makeThreadResponse("thread-2", "1700", "Subject B"))
+      .mockResolvedValueOnce(makeThreadResponse("thread-3", "1900", "Subject C"))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            emailAddress: "ops@example.com",
+            messagesTotal: 120,
+            historyId: "9000",
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      );
 
     const result = await gmailProviderAdapter.syncDelta({
       orgId: "org-1",
@@ -136,10 +145,13 @@ describe("gmailProviderAdapter Sprint 3.2", () => {
     const threadsListCalls = fetchMock.mock.calls.filter(
       (call) => typeof call[0] === "string" && (call[0] as string).includes("/threads?"),
     );
-    expect(threadsListCalls).toHaveLength(1);
+    expect(threadsListCalls).toHaveLength(3);
+    expect(threadsListCalls[0]?.[0]).toContain("q=in%3Ainbox");
+    expect(threadsListCalls[1]?.[0]).toContain("q=in%3Asent");
+    expect(threadsListCalls[2]?.[0]).toContain("q=in%3Aspam");
   });
 
-  it("bounds initial sync to a single recent inbox page to avoid request timeouts", async () => {
+  it("bounds initial sync to a single recent page per required folder slice to avoid request timeouts", async () => {
     // Use a far-future expiry so ensureValidAccessToken does not trigger
     // a refresh and consume our carefully-ordered mocks.
     vi.mocked(readMailboxCredential).mockResolvedValue({
@@ -154,23 +166,35 @@ describe("gmailProviderAdapter Sprint 3.2", () => {
       .mockResolvedValueOnce(
         new Response(
           JSON.stringify({
-            emailAddress: "ops@example.com",
-            messagesTotal: 120,
-            historyId: "9100",
-          }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        ),
-      )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
             threads: [{ id: "thread-1", historyId: "1500" }],
             nextPageToken: "page-2",
           }),
           { status: 200, headers: { "Content-Type": "application/json" } },
         ),
       )
-      .mockResolvedValueOnce(makeThreadResponse("thread-1", "1500", "Subject A"));
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ threads: [{ id: "thread-1", historyId: "1500" }] }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ threads: [{ id: "thread-1", historyId: "1500" }] }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      )
+      .mockResolvedValueOnce(makeThreadResponse("thread-1", "1500", "Subject A"))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            emailAddress: "ops@example.com",
+            messagesTotal: 120,
+            historyId: "9100",
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      );
 
     const result = await gmailProviderAdapter.syncDelta({
       orgId: "org-1",
@@ -182,12 +206,95 @@ describe("gmailProviderAdapter Sprint 3.2", () => {
     const threadsListCalls = fetchMock.mock.calls.filter(
       (call) => typeof call[0] === "string" && (call[0] as string).includes("/threads?"),
     );
-    expect(threadsListCalls).toHaveLength(1);
+    expect(threadsListCalls).toHaveLength(3);
     expect(threadsListCalls[0]?.[0]).toContain("q=in%3Ainbox");
+    expect(threadsListCalls[1]?.[0]).toContain("q=in%3Asent");
+    expect(threadsListCalls[2]?.[0]).toContain("q=in%3Aspam");
     const threadDetailCalls = fetchMock.mock.calls.filter(
       (call) => typeof call[0] === "string" && (call[0] as string).includes("/threads/thread-1"),
     );
     expect(threadDetailCalls).toHaveLength(1);
+  });
+
+  it("deduplicates overlapping bootstrap thread ids across inbox, sent, and spam slices", async () => {
+    vi.mocked(readMailboxCredential).mockResolvedValue({
+      accessToken: "token-123",
+      refreshToken: "refresh-123",
+      expiresAtMs: Date.now() + 3_600_000,
+      tokenType: "Bearer",
+      scope: "gmail.readonly",
+    });
+
+    fetchMock
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ threads: [{ id: "thread-1", historyId: "1500" }] }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ threads: [{ id: "thread-1", historyId: "1600" }] }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ threads: [{ id: "thread-1", historyId: "1700" }] }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      )
+      .mockResolvedValueOnce(makeThreadResponse("thread-1", "1700", "Subject A"))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            emailAddress: "ops@example.com",
+            messagesTotal: 120,
+            historyId: "9200",
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      );
+
+    const result = await gmailProviderAdapter.syncDelta({
+      orgId: "org-1",
+      tokenRef: "token-ref-1",
+      cursor: null,
+    });
+
+    expect("threads" in result && result.threads).toHaveLength(1);
+    const threadDetailCalls = fetchMock.mock.calls.filter(
+      (call) => typeof call[0] === "string" && (call[0] as string).includes("/threads/thread-1"),
+    );
+    expect(threadDetailCalls).toHaveLength(1);
+  });
+
+  it("renews Gmail watch across inbox, sent, and spam labels", async () => {
+    process.env.GMAIL_PUBSUB_TOPIC = "projects/example/topics/gmail";
+    vi.mocked(readMailboxCredential).mockResolvedValue({
+      accessToken: "token-123",
+      refreshToken: "refresh-123",
+      expiresAtMs: Date.now() + 3_600_000,
+      tokenType: "Bearer",
+      scope: "gmail.readonly",
+    });
+
+    fetchMock.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({ historyId: "9800", expiration: String(Date.now() + 60_000) }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+
+    const result = await gmailProviderAdapter.renewWatch({
+      orgId: "org-1",
+      tokenRef: "token-ref-1",
+    });
+
+    expect("metadata" in result).toBe(true);
+    const [, options] = fetchMock.mock.calls[0] ?? [];
+    const body = JSON.parse(String(options?.body ?? "{}"));
+    expect(body.labelIds).toEqual(["INBOX", "SENT", "SPAM"]);
   });
 });
 
