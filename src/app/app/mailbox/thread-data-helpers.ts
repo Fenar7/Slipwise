@@ -2,9 +2,15 @@ import type {
   MailboxThreadReadShape,
   MailboxThreadDetailReadShape,
   MailboxThreadDetailMessageReadShape,
+  MailboxDraftReadShape,
 } from "@/lib/mailbox/read-shapes";
 import type { ThreadRowData } from "./mailbox-thread-list";
-import type { MailboxThreadDetail, MailboxMessageItem, MailboxAttachmentSummary } from "./types";
+import type {
+  DraftRowData,
+  MailboxThreadDetail,
+  MailboxMessageItem,
+  MailboxAttachmentSummary,
+} from "./types";
 
 const MAILBOX_COLORS = [
   "#16294D",
@@ -112,6 +118,15 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function htmlToText(html: string): string {
+  return html
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function buildParticipantsSummary(
   participants: { displayName?: string; email: string }[],
 ): string {
@@ -172,6 +187,28 @@ function mapMessageToItem(
 export interface DetailMappingContext {
   connectionMap: Map<string, { displayName: string; color: string }>;
   currentUserId: string;
+}
+
+export function mapDraftToRowData(
+  draft: MailboxDraftReadShape,
+  ctx: ThreadMappingContext,
+): DraftRowData {
+  const connectionInfo = ctx.connectionMap.get(draft.mailboxConnectionId);
+  const mailboxLabel = connectionInfo?.displayName ?? "Mailbox";
+  const mailboxColor = connectionInfo?.color ?? "#16294D";
+  const fallbackRecipient = draft.to[0] ?? draft.cc[0] ?? draft.bcc[0] ?? "No recipients";
+  const snippetSource = draft.textBody?.trim() || htmlToText(draft.htmlBody) || "Draft not started yet";
+
+  return {
+    id: draft.id,
+    mailboxConnectionId: draft.mailboxConnectionId,
+    subject: draft.subject.trim() || "(No subject)",
+    snippet: snippetSource,
+    to: draft.to.length > 0 ? draft.to : [fallbackRecipient],
+    mailboxLabel,
+    mailboxColor,
+    updatedAt: draft.updatedAt,
+  };
 }
 
 export function mapThreadDetailToUI(

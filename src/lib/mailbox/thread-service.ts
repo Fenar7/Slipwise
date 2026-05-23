@@ -6,6 +6,7 @@ import { listMailboxConnectionsForMember } from "./visibility-service";
 import { toMailboxThreadReadShape, toMailboxThreadDetailReadShape } from "./read-shapes";
 import type { MailboxThreadReadShape, MailboxThreadDetailReadShape } from "./read-shapes";
 import type { MailboxThreadStatus } from "./domain-types";
+import type { MailboxFolder } from "@/app/app/mailbox/types";
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
@@ -16,6 +17,8 @@ export interface ListMailboxThreadsParams {
   role: "owner" | "admin" | "member";
   /** Filter to a specific mailbox connection. Omit for all-inboxes view. */
   connectionId?: string;
+  /** Folder-scoped mailbox view. Used for connection routes such as sent/spam/archive. */
+  folder?: MailboxFolder;
   /** Filter by thread status. Single status or array of statuses. */
   status?: MailboxThreadStatus | MailboxThreadStatus[];
   /** Only return threads with unreadCount > 0. */
@@ -36,6 +39,34 @@ export interface ListMailboxThreadsResult {
   threads: MailboxThreadReadShape[];
   nextCursor: string | null;
   totalCount: number;
+}
+
+function hasSpamLabel(metadata: unknown): boolean {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return false;
+  const labelIds = (metadata as Record<string, unknown>).labelIds;
+  return Array.isArray(labelIds) && labelIds.includes("SPAM");
+}
+
+async function resolveSpamThreadIds(
+  orgId: string,
+  connectionIds: string[],
+): Promise<string[]> {
+  if (connectionIds.length === 0) return [];
+
+  const rows = await db.mailboxMessage.findMany({
+    where: {
+      orgId,
+      thread: {
+        mailboxConnectionId: { in: connectionIds },
+      },
+    },
+    select: {
+      threadId: true,
+      providerMetadata: true,
+    },
+  });
+
+  return [...new Set(rows.filter((row) => hasSpamLabel(row.providerMetadata)).map((row) => row.threadId))];
 }
 
 function decodeCursor(cursor: string): { lastMessageAt: string; id: string } | null {
@@ -112,6 +143,7 @@ export async function listMailboxThreads(
     userId,
     role,
     connectionId,
+    folder,
     status,
     unreadOnly,
     isFlagged,
@@ -157,6 +189,24 @@ export async function listMailboxThreads(
     orgId,
     mailboxConnectionId: { in: connectionIdsToQuery },
   };
+
+  if (folder === "INBOX" && !status) {
+    baseWhere.status = { in: ["OPEN", "PENDING"] };
+  } else if (folder === "ARCHIVE") {
+    baseWhere.status = "ARCHIVED";
+  } else if (folder === "SENT") {
+    baseWhere.messages = {
+      some: {
+        direction: "outbound",
+      },
+    };
+  } else if (folder === "SPAM") {
+    const spamThreadIds = await resolveSpamThreadIds(orgId, connectionIdsToQuery);
+    if (spamThreadIds.length === 0) {
+      return { threads: [], nextCursor: null, totalCount: 0 };
+    }
+    baseWhere.id = { in: spamThreadIds };
+  }
 
   if (status) {
     if (Array.isArray(status)) {

@@ -219,6 +219,42 @@ export function EmptyInboxState({
   );
 }
 
+export function EmptySentState({ mailboxLabel }: { mailboxLabel: string }) {
+  return (
+    <EmptyStateShell
+      icon={MailOpen}
+      iconBg="rgba(22,41,77,0.07)"
+      iconColor="#16294D"
+      heading={`${mailboxLabel} has no sent mail`}
+      body="Messages you send from this mailbox will appear here."
+    />
+  );
+}
+
+export function EmptyDraftsState({ mailboxLabel }: { mailboxLabel: string }) {
+  return (
+    <EmptyStateShell
+      icon={Inbox}
+      iconBg="rgba(22,41,77,0.07)"
+      iconColor="#16294D"
+      heading={`${mailboxLabel} has no active drafts`}
+      body="Saved drafts for this mailbox will appear here while you are still editing them."
+    />
+  );
+}
+
+export function EmptySpamState({ mailboxLabel }: { mailboxLabel: string }) {
+  return (
+    <EmptyStateShell
+      icon={AlertTriangle}
+      iconBg="rgba(245,158,11,0.08)"
+      iconColor="#F59E0B"
+      heading={`${mailboxLabel} has no spam conversations`}
+      body="Messages marked as spam will appear here when they are available from the mailbox sync."
+    />
+  );
+}
+
 /**
  * Internal: compact, thread-list-native sync state component.
  *
@@ -367,6 +403,33 @@ export function NoThreadSelectedEmpty({ viewLabel }: { viewLabel?: string }) {
           {viewLabel
             ? `Choose a conversation from ${viewLabel} to view its messages here.`
             : "Choose a conversation from the list to view its messages here."}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+export function NoDraftSelectedEmpty({ mailboxLabel }: { mailboxLabel?: string }) {
+  return (
+    <div
+      className="flex h-full flex-col items-center justify-center gap-3 px-8 text-center"
+      style={{ background: "#F7F8FB" }}
+      aria-label="No draft selected"
+      data-testid="empty-no-draft-selected"
+    >
+      <div
+        className="flex h-12 w-12 items-center justify-center rounded-xl"
+        style={{ background: "rgba(22,41,77,0.06)" }}
+        aria-hidden="true"
+      >
+        <Inbox className="h-6 w-6" style={{ color: "#16294D" }} />
+      </div>
+      <div>
+        <p className="text-sm font-semibold text-[#0F172A]">Select a draft to edit</p>
+        <p className="mt-1 text-xs text-[#64748B]">
+          {mailboxLabel
+            ? `Choose a saved draft from ${mailboxLabel} to continue editing it here.`
+            : "Choose a saved draft from the list to continue editing it here."}
         </p>
       </div>
     </div>

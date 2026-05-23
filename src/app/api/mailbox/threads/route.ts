@@ -5,12 +5,11 @@ import { requireIntegrationMemberRoute } from "@/app/api/integrations/_auth";
 import { rateLimitByOrg, RATE_LIMITS } from "@/lib/rate-limit";
 import { listMailboxThreads } from "@/lib/mailbox/thread-service";
 import type { MailboxThreadStatus } from "@/lib/mailbox/domain-types";
+import type { MailboxFolder } from "@/app/app/mailbox/types";
 
 const VALID_STATUSES: MailboxThreadStatus[] = ["OPEN", "PENDING", "CLOSED", "ARCHIVED"];
+const VALID_FOLDERS: MailboxFolder[] = ["INBOX", "SENT", "SPAM", "ARCHIVE"];
 const MAX_LIMIT = 100;
-
-/** Unsupported folder statuses that should yield empty results. */
-const UNSUPPORTED_STATUSES = new Set(["DRAFT", "SPAM"]);
 
 function parseStatusParam(
   searchParams: URLSearchParams,
@@ -24,6 +23,14 @@ function parseStatusParam(
   if (validParts.length === 0) return undefined;
   if (validParts.length === 1) return validParts[0];
   return validParts;
+}
+
+function parseFolderParam(searchParams: URLSearchParams): MailboxFolder | undefined {
+  const value = searchParams.get("folder");
+  if (!value) return undefined;
+  return VALID_FOLDERS.includes(value as MailboxFolder)
+    ? (value as MailboxFolder)
+    : undefined;
 }
 
 function parseQueryParam(
@@ -88,6 +95,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     const { searchParams } = new URL(request.url);
 
     const connectionId = parseQueryParam(searchParams, "connectionId");
+    const folder = parseFolderParam(searchParams);
     const status = parseStatusParam(searchParams);
     const unreadOnly = parseBooleanParam(searchParams, "unreadOnly");
     const isFlagged = parseBooleanParam(searchParams, "isFlagged");
@@ -106,10 +114,12 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       );
     }
 
-    // Short-circuit for unsupported folder types (drafts, spam) — yield empty
-    const rawStatus = searchParams.get("status");
-    if (rawStatus && UNSUPPORTED_STATUSES.has(rawStatus)) {
-      return NextResponse.json({ threads: [], totalCount: 0, nextCursor: null });
+    const rawFolder = searchParams.get("folder");
+    if (rawFolder && !folder) {
+      return NextResponse.json(
+        { error: "Invalid folder. Use INBOX, SENT, SPAM, or ARCHIVE." },
+        { status: 400 },
+      );
     }
 
     const result = await listMailboxThreads({
@@ -117,6 +127,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       userId: auth.ctx.userId,
       role: auth.ctx.role,
       connectionId,
+      folder,
       status,
       unreadOnly,
       isFlagged,

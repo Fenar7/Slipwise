@@ -69,6 +69,15 @@ vi.mock("../use-mailbox-threads", () => ({
     if (params?.connectionId) {
       threads = threads.filter((t) => t.mailboxConnectionId === params.connectionId);
     }
+    if (params?.folder === "SENT") {
+      threads = [];
+    }
+    if (params?.folder === "SPAM") {
+      threads = [];
+    }
+    if (params?.folder === "ARCHIVE") {
+      threads = threads.filter((t) => t.status === "ARCHIVED");
+    }
     if (params?.status) {
       const rawStatuses = Array.isArray(params.status)
         ? params.status
@@ -97,6 +106,15 @@ vi.mock("../use-mailbox-threads", () => ({
       refetch: vi.fn(),
       loadMore: vi.fn(),
     };
+  }),
+}));
+
+vi.mock("../use-mailbox-drafts", () => ({
+  useMailboxDrafts: () => ({
+    drafts: [],
+    isLoading: false,
+    error: null,
+    refetch: vi.fn(),
   }),
 }));
 
@@ -1105,12 +1123,12 @@ describe("MailboxWorkspace Sprint 1.6 integration", () => {
 
   it("shows a mailbox empty state for drafts routes instead of a blank list", () => {
     renderWorkspaceAtPath("/app/mailbox/billing/drafts");
-    expect(screen.getByText(/billing · drafts is empty/i)).toBeInTheDocument();
+    expect(screen.getByText(/billing · drafts has no active drafts/i)).toBeInTheDocument();
   });
 
   it("shows a mailbox empty state for spam routes instead of a blank list", () => {
     renderWorkspaceAtPath("/app/mailbox/support/spam");
-    expect(screen.getByText(/support · spam is empty/i)).toBeInTheDocument();
+    expect(screen.getByText(/support · spam has no spam conversations/i)).toBeInTheDocument();
   });
 
   it("opens a narrow-viewport context panel from the reading pane", async () => {
