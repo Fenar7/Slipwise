@@ -20,7 +20,7 @@ import {
 } from "./ingestion-service";
 import { getMailboxProviderAdapter } from "./provider-registry";
 import { isMailboxProviderError } from "./provider-contracts";
-import type { MailboxProviderError } from "./provider-contracts";
+import type { MailboxProviderError, MailboxThreadEnvelope } from "./provider-contracts";
 import {
   classifyProviderError,
   resolveStatusAfterFailure,
@@ -114,11 +114,7 @@ async function ingestSyncedThreads(params: {
   mailboxEmail: string;
   tokenRef: string;
   adapter: ReturnType<typeof getMailboxProviderAdapter>;
-  threads: Awaited<ReturnType<ReturnType<typeof getMailboxProviderAdapter>["syncDelta"]>> extends {
-    threads: infer T;
-  }
-    ? T
-    : never;
+  threads: MailboxThreadEnvelope[];
 }): Promise<{ threadCount: number; messageCount: number }> {
   let messageCount = 0;
 
@@ -174,6 +170,54 @@ async function ingestSyncedThreads(params: {
 
   return {
     threadCount: params.threads.length,
+    messageCount,
+  };
+}
+
+async function ingestSyncedDrafts(params: {
+  orgId: string;
+  connectionId: string;
+  mailboxEmail: string;
+  drafts: import("./provider-contracts").MailboxDraftEnvelope[];
+}): Promise<{ threadCount: number; messageCount: number }> {
+  let messageCount = 0;
+  const syncedThreadIds = new Set<string>();
+
+  for (const draftEnvelope of params.drafts) {
+    const thread = await upsertMailboxThread({
+      orgId: params.orgId,
+      mailboxConnectionId: params.connectionId,
+      envelope: draftEnvelope.thread,
+    });
+    syncedThreadIds.add(thread.id);
+
+    const message = await upsertMailboxMessage({
+      orgId: params.orgId,
+      threadId: thread.id,
+      envelope: draftEnvelope.message,
+      mailboxEmail: params.mailboxEmail,
+    });
+    messageCount += 1;
+
+    for (const attachment of draftEnvelope.message.attachments ?? []) {
+      await upsertMailboxAttachment({
+        messageId: message.id,
+        envelope: attachment,
+      });
+    }
+
+    await updateMailboxThreadSummary({
+      orgId: params.orgId,
+      threadId: thread.id,
+      participantsSummary: deriveThreadParticipants([message]) as unknown as Prisma.InputJsonValue,
+      lastMessageAt: deriveThreadLastMessageAt([message], thread.lastMessageAt),
+      previewSnippet: deriveThreadPreviewSnippet([message]),
+      attachmentCount: computeThreadAttachmentCount([message]),
+    });
+  }
+
+  return {
+    threadCount: syncedThreadIds.size,
     messageCount,
   };
 }
@@ -457,8 +501,6 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
     let threadCount = 0;
     let messageCount = 0;
     let recoveredGmailCoverage = false;
-    const syncedProviderThreadIds = new Set<string>();
-
     if (needsGmailCoverageRecovery) {
       const recovery = await adapter.syncDelta({
         orgId: params.orgId,
@@ -479,9 +521,6 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
       });
       threadCount += recoveryStats.threadCount;
       messageCount += recoveryStats.messageCount;
-      for (const thread of recovery.threads) {
-        syncedProviderThreadIds.add(thread.providerThreadId);
-      }
       recoveredGmailCoverage = true;
     }
 
@@ -504,10 +543,6 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
     });
     threadCount += deltaStats.threadCount;
     messageCount += deltaStats.messageCount;
-    for (const thread of delta.threads) {
-      syncedProviderThreadIds.add(thread.providerThreadId);
-    }
-
     let syncedDrafts = false;
     if (connection.provider === "GMAIL") {
       const draftSync = await adapter.syncDrafts({
@@ -518,17 +553,12 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
         throw toProviderErrorException(draftSync);
       }
 
-      const draftThreadsToIngest = draftSync.threads.filter(
-        (thread) => !syncedProviderThreadIds.has(thread.providerThreadId),
-      );
-      if (draftThreadsToIngest.length > 0) {
-        const draftStats = await ingestSyncedThreads({
+      if (draftSync.drafts.length > 0) {
+        const draftStats = await ingestSyncedDrafts({
           orgId: params.orgId,
           connectionId: connection.id,
           mailboxEmail: connection.emailAddress,
-          tokenRef: connection.tokenRef,
-          adapter,
-          threads: draftThreadsToIngest,
+          drafts: draftSync.drafts,
         });
         threadCount += draftStats.threadCount;
         messageCount += draftStats.messageCount;

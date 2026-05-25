@@ -1039,7 +1039,7 @@ function makeMockAdapter(overrides: { snippet?: string; attachmentCount?: number
       nextCursor: { value: "cursor-next", expiresAt: null },
     }),
     syncDrafts: vi.fn().mockResolvedValue({
-      threads: [],
+      drafts: [],
       activeDraftMessageIds: [],
     }),
     fetchThreadDetail: vi.fn().mockResolvedValue({

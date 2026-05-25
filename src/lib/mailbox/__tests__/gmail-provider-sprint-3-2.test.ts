@@ -361,11 +361,12 @@ describe("gmailProviderAdapter Sprint 3.2", () => {
       tokenRef: "token-ref-1",
     });
 
-    expect("threads" in result && result.threads).toHaveLength(2);
+    expect("drafts" in result && result.drafts).toHaveLength(2);
     expect("activeDraftMessageIds" in result && result.activeDraftMessageIds).toEqual([
       "msg-draft-1",
       "msg-draft-2",
     ]);
+    expect("drafts" in result && result.drafts[0]?.draftId).toBe("draft-1");
   });
 
   it("skips disappearing drafts during syncDrafts instead of failing the whole import", async () => {
@@ -418,7 +419,7 @@ describe("gmailProviderAdapter Sprint 3.2", () => {
       tokenRef: "token-ref-1",
     });
 
-    expect("threads" in result && result.threads).toHaveLength(1);
+    expect("drafts" in result && result.drafts).toHaveLength(1);
     expect("activeDraftMessageIds" in result && result.activeDraftMessageIds).toEqual([
       "msg-draft-1",
     ]);

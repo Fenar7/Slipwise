@@ -8,6 +8,7 @@ import { toMailboxDraftReadShape } from "./read-shapes";
 import type {
   MailboxDraftListEntryReadShape,
   MailboxDraftReadShape,
+  MailboxProviderDraftDetailReadShape,
   MailboxProviderDraftReadShape,
 } from "./read-shapes";
 import { logMailboxAuditTx } from "./audit";
@@ -640,6 +641,12 @@ function hasDraftLabel(metadata: unknown): boolean {
   return Array.isArray(labelIds) && labelIds.includes("DRAFT");
 }
 
+function getGmailDraftId(metadata: unknown): string | null {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return null;
+  const draftId = (metadata as Record<string, unknown>).gmailDraftId;
+  return typeof draftId === "string" && draftId.length > 0 ? draftId : null;
+}
+
 function toParticipantEmails(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value
@@ -679,6 +686,7 @@ async function listProviderDrafts(input: ListActiveDraftsInput): Promise<Mailbox
       providerMessageId: true,
       subject: true,
       snippet: true,
+      from: true,
       to: true,
       cc: true,
       bcc: true,
@@ -694,19 +702,21 @@ async function listProviderDrafts(input: ListActiveDraftsInput): Promise<Mailbox
     orderBy: [{ sentAt: "desc" }, { id: "desc" }],
   });
 
-  const latestByThread = new Map<string, MailboxProviderDraftReadShape>();
+  const providerDrafts: MailboxProviderDraftReadShape[] = [];
   for (const row of rows) {
     if (!hasDraftLabel(row.providerMetadata)) continue;
-    if (latestByThread.has(row.threadId)) continue;
+    const providerDraftId = getGmailDraftId(row.providerMetadata);
+    const fromAddress = toParticipantEmails(row.from)[0];
 
-    latestByThread.set(row.threadId, {
-      id: `provider:${row.providerMessageId}`,
+    providerDrafts.push({
+      id: `provider:${providerDraftId ?? row.providerMessageId}`,
       orgId,
       mailboxConnectionId: row.thread.mailboxConnectionId,
       threadId: row.threadId,
+      providerDraftId,
       providerMessageId: row.providerMessageId,
       subject: row.subject.trim() || "(No subject)",
-      snippet: row.snippet.trim() || "Draft not started yet",
+      snippet: row.snippet.trim() || fromAddress || "Draft not started yet",
       to: toParticipantEmails(row.to),
       cc: toParticipantEmails(row.cc),
       bcc: toParticipantEmails(row.bcc),
@@ -715,7 +725,126 @@ async function listProviderDrafts(input: ListActiveDraftsInput): Promise<Mailbox
     });
   }
 
-  return [...latestByThread.values()];
+  return providerDrafts;
+}
+
+export async function getProviderDraftDetail(input: {
+  orgId: string;
+  userId: string;
+  role: "owner" | "admin" | "member";
+  draftId: string;
+}): Promise<MailboxProviderDraftDetailReadShape | null> {
+  const { orgId, userId, role, draftId } = input;
+  const providerKey = draftId.startsWith("provider:") ? draftId.slice("provider:".length) : draftId;
+  if (!providerKey) {
+    throw new DraftServiceError("Invalid provider draft ID", 400);
+  }
+
+  const { accessible } = await listMailboxConnectionsForMember(orgId, userId, role);
+  const accessibleIds = accessible.map((connection) => connection.id);
+  if (accessibleIds.length === 0) return null;
+
+  const row = await db.mailboxMessage.findFirst({
+    where: {
+      orgId,
+      thread: {
+        mailboxConnectionId: { in: accessibleIds },
+      },
+      OR: [
+        { providerMessageId: providerKey },
+        { providerMetadata: { path: ["gmailDraftId"], equals: providerKey } },
+      ],
+    },
+    select: {
+      id: true,
+      threadId: true,
+      providerMessageId: true,
+      subject: true,
+      snippet: true,
+      htmlBody: true,
+      textBody: true,
+      from: true,
+      to: true,
+      cc: true,
+      bcc: true,
+      sentAt: true,
+      updatedAt: true,
+      providerMetadata: true,
+      attachments: {
+        select: {
+          id: true,
+          filename: true,
+          mimeType: true,
+          size: true,
+          isInline: true,
+          createdAt: true,
+        },
+      },
+      thread: {
+        select: {
+          mailboxConnectionId: true,
+        },
+      },
+    },
+  });
+
+  if (!row || !hasDraftLabel(row.providerMetadata)) return null;
+
+  return {
+    id: draftId.startsWith("provider:") ? draftId : `provider:${providerKey}`,
+    orgId,
+    mailboxConnectionId: row.thread.mailboxConnectionId,
+    threadId: row.threadId,
+    providerDraftId: getGmailDraftId(row.providerMetadata),
+    providerMessageId: row.providerMessageId,
+    from: toParticipant(row.from),
+    to: toParticipants(row.to),
+    cc: toParticipants(row.cc),
+    bcc: toParticipants(row.bcc),
+    subject: row.subject.trim() || "(No subject)",
+    snippet: row.snippet.trim() || "Draft not started yet",
+    htmlBody: row.htmlBody?.trim() || "",
+    textBody: row.textBody?.trim() || null,
+    sentAt: row.sentAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+    attachments: row.attachments.map((attachment) => ({
+      id: attachment.id,
+      filename: attachment.filename,
+      mimeType: attachment.mimeType,
+      size: attachment.size,
+      isInline: attachment.isInline,
+      createdAt: attachment.createdAt.toISOString(),
+    })),
+    source: "provider",
+  };
+}
+
+function toParticipant(
+  value: Prisma.JsonValue | null,
+): MailboxProviderDraftDetailReadShape["from"] {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const email = typeof value.email === "string" ? value.email : null;
+  if (!email) return null;
+  return {
+    email,
+    displayName: typeof value.displayName === "string" ? value.displayName : null,
+  };
+}
+
+function toParticipants(value: Prisma.JsonValue | null): MailboxProviderDraftDetailReadShape["to"] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((participant) => {
+      if (!participant || typeof participant !== "object" || Array.isArray(participant)) return null;
+      const email = typeof participant.email === "string" ? participant.email : null;
+      if (!email) return null;
+      return {
+        email,
+        displayName:
+          typeof participant.displayName === "string" ? participant.displayName : null,
+      };
+    })
+    .filter((participant): participant is NonNullable<typeof participant> => participant !== null);
 }
 
 export async function listActiveDrafts(

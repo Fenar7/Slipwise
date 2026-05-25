@@ -3,6 +3,7 @@ import type {
   MailboxThreadDetailReadShape,
   MailboxThreadDetailMessageReadShape,
   MailboxDraftListEntryReadShape,
+  MailboxProviderDraftDetailReadShape,
 } from "@/lib/mailbox/read-shapes";
 import type { ThreadRowData } from "./mailbox-thread-list";
 import type {
@@ -128,7 +129,7 @@ function htmlToText(html: string): string {
 }
 
 function buildParticipantsSummary(
-  participants: { displayName?: string; email: string }[],
+  participants: ReadonlyArray<{ displayName?: string | null; email: string }>,
 ): string {
   if (participants.length === 0) return "No participants";
   if (participants.length === 1) {
@@ -255,5 +256,58 @@ export function mapThreadDetailToUI(
     participantsSummary: buildParticipantsSummary(detail.participants),
     messages,
     totalAttachments,
+  };
+}
+
+export function mapProviderDraftDetailToUI(
+  detail: MailboxProviderDraftDetailReadShape,
+  ctx: DetailMappingContext,
+): MailboxThreadDetail {
+  const connectionInfo = ctx.connectionMap.get(detail.mailboxConnectionId);
+  const mailboxLabel = connectionInfo?.displayName ?? "Mailbox";
+  const mailboxColor = connectionInfo?.color ?? "#16294D";
+
+  const fromName = detail.from?.displayName ?? detail.from?.email ?? "Unknown";
+  const fromEmail = detail.from?.email ?? "";
+  const attachments: MailboxAttachmentSummary[] = detail.attachments.map((att) => ({
+    id: att.id,
+    filename: att.filename,
+    mimeType: att.mimeType,
+    sizeLabel: formatFileSize(att.size),
+  }));
+  const message: MailboxMessageItem = {
+    id: detail.providerMessageId,
+    threadId: detail.threadId,
+    direction: "inbound",
+    from: fromName,
+    fromInitial: getInitial(fromName),
+    fromColor: deriveFromColor(fromEmail || detail.providerMessageId),
+    fromEmail,
+    to: detail.to.map((participant) => participant.displayName ?? participant.email),
+    cc:
+      detail.cc.length > 0
+        ? detail.cc.map((participant) => participant.displayName ?? participant.email)
+        : undefined,
+    subject: detail.subject,
+    bodyHtml: detail.htmlBody,
+    bodyText: detail.textBody,
+    sentAt: detail.sentAt,
+    isCollapsed: false,
+    attachments,
+  };
+
+  return {
+    threadId: detail.threadId,
+    mailboxConnectionId: detail.mailboxConnectionId,
+    subject: detail.subject,
+    status: "open",
+    assignee: null,
+    assigneeId: null,
+    isFlagged: false,
+    mailboxLabel,
+    mailboxColor,
+    participantsSummary: buildParticipantsSummary(detail.to),
+    messages: [message],
+    totalAttachments: detail.attachments.length,
   };
 }

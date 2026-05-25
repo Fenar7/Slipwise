@@ -34,8 +34,15 @@ import {
 } from "./mock-data";
 import { useMailboxConnections } from "./use-mailbox-connections";
 import { useMailboxThreads, type UseMailboxThreadsParams } from "./use-mailbox-threads";
-import { mapDraftToRowData, mapThreadToRowData, deriveMailboxColor, mapThreadDetailToUI } from "./thread-data-helpers";
+import {
+  mapDraftToRowData,
+  mapProviderDraftDetailToUI,
+  mapThreadToRowData,
+  deriveMailboxColor,
+  mapThreadDetailToUI,
+} from "./thread-data-helpers";
 import { useMailboxThreadDetail } from "./use-mailbox-thread-detail";
+import { useMailboxProviderDraftDetail } from "./use-mailbox-provider-draft-detail";
 import { useThreadAction } from "./use-thread-action";
 import type { ThreadAction } from "./use-thread-action";
 import { useMailboxDraft } from "./use-mailbox-draft";
@@ -403,7 +410,7 @@ export function MailboxWorkspace() {
     [rawDrafts, selectedDraftId],
   );
   const selectedProviderDraftActive =
-    inDraftsMode && selectedDraftEntry?.source === "provider" && !!selectedThreadId;
+    inDraftsMode && selectedDraftEntry?.source === "provider" && !!selectedDraftId;
 
   const totalCount = inDraftsMode ? mappedDrafts.length : apiTotalCount;
   const unreadCount = inDraftsMode ? 0 : mappedThreads.filter((t) => t.isUnread).length;
@@ -415,6 +422,16 @@ export function MailboxWorkspace() {
     isNotFound: detailNotFound,
     refetch: refetchDetail,
   } = useMailboxThreadDetail(selectedThreadId);
+  const {
+    detail: rawProviderDraftDetail,
+    isLoading: providerDraftDetailLoading,
+    error: providerDraftDetailError,
+    isNotFound: providerDraftDetailNotFound,
+    refetch: refetchProviderDraftDetail,
+  } = useMailboxProviderDraftDetail(
+    selectedProviderDraftActive ? selectedDraftId : null,
+    selectedProviderDraftActive,
+  );
 
   const handleActionSuccess = useCallback(
     (_threadId: string, _action: ThreadAction) => {
@@ -499,9 +516,22 @@ export function MailboxWorkspace() {
   );
 
   const selectedDetail = useMemo(() => {
+    if (selectedProviderDraftActive) {
+      if (!rawProviderDraftDetail) return null;
+      return mapProviderDraftDetailToUI(rawProviderDraftDetail, {
+        connectionMap,
+        currentUserId,
+      });
+    }
     if (!rawDetail) return null;
     return mapThreadDetailToUI(rawDetail, { connectionMap, currentUserId });
-  }, [rawDetail, connectionMap, currentUserId]);
+  }, [
+    rawDetail,
+    rawProviderDraftDetail,
+    selectedProviderDraftActive,
+    connectionMap,
+    currentUserId,
+  ]);
 
   const reconnectConnection = resolveReconnectConnection(pathname, connections);
   const smartViewEmpty = resolveSmartViewDescription(pathname);
@@ -514,7 +544,9 @@ export function MailboxWorkspace() {
   const canSyncActiveMailbox =
     activeConnection ? canManuallySyncMailbox(activeConnection.status) : false;
 
-  const selectedContext: LinkedContextState | null = selectedThreadId
+  const selectedContext: LinkedContextState | null = selectedProviderDraftActive
+    ? null
+    : selectedThreadId
     ? {
         ...(MOCK_LINKED_CONTEXT[selectedThreadId] ?? {
           threadId: selectedThreadId,
@@ -585,7 +617,7 @@ export function MailboxWorkspace() {
 
     if (draft.source === "provider") {
       setSelectedDraftId(draftId);
-      setSelectedThreadId(draft.threadId);
+      setSelectedThreadId(null);
       clearCurrentDraft();
       setComposer(null);
       setMobilePanel("reading-pane");
@@ -1050,18 +1082,32 @@ export function MailboxWorkspace() {
             ].join(" ")}
             data-testid="mailbox-reading-pane"
           >
-            {detailLoading ? (
+            {detailLoading || providerDraftDetailLoading ? (
               <div className="flex h-full items-center justify-center bg-[#F7F8FB]" data-testid="mailbox-reading-pane-loading">
                 <div className="h-8 w-8 animate-spin rounded-full border-2 border-[#E2E8F0] border-t-[#16294D]" />
               </div>
-            ) : detailError ? (
+            ) : detailError || providerDraftDetailError ? (
               <ThreadLoadErrorEmpty
-                message={detailError}
-                onRetry={selectedThreadId ? refetchDetail : undefined}
-                onDismiss={() => setSelectedThreadId(null)}
+                message={providerDraftDetailError ?? detailError}
+                onRetry={
+                  selectedProviderDraftActive
+                    ? refetchProviderDraftDetail
+                    : selectedThreadId
+                    ? refetchDetail
+                    : undefined
+                }
+                onDismiss={() => {
+                  setSelectedThreadId(null);
+                  setSelectedDraftId(null);
+                }}
               />
-            ) : detailNotFound ? (
-              <ThreadNotFoundEmpty onDismiss={() => setSelectedThreadId(null)} />
+            ) : detailNotFound || providerDraftDetailNotFound ? (
+              <ThreadNotFoundEmpty
+                onDismiss={() => {
+                  setSelectedThreadId(null);
+                  setSelectedDraftId(null);
+                }}
+              />
             ) : inDraftsMode && selectedProviderDraftActive && selectedDetail ? (
               <MailboxReadingPane
                 detail={selectedDetail}
@@ -1073,8 +1119,10 @@ export function MailboxWorkspace() {
                 onSendReply={() => {}}
                 onPatchComposer={() => {}}
                 onOpenContext={() => setMobilePanel("context")}
-                isActionLoading={true}
+                isActionLoading={false}
                 onThreadAction={() => {}}
+                allowReplies={false}
+                allowThreadActions={false}
               />
             ) : inDraftsMode ? (
               <NoDraftSelectedEmpty

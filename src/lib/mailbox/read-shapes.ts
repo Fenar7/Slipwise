@@ -547,6 +547,7 @@ export interface MailboxProviderDraftReadShape {
   orgId: string;
   mailboxConnectionId: string;
   threadId: string;
+  providerDraftId: string | null;
   providerMessageId: string;
   subject: string;
   snippet: string;
@@ -554,6 +555,27 @@ export interface MailboxProviderDraftReadShape {
   cc: string[];
   bcc: string[];
   updatedAt: string;
+  source: "provider";
+}
+
+export interface MailboxProviderDraftDetailReadShape {
+  id: string;
+  orgId: string;
+  mailboxConnectionId: string;
+  threadId: string;
+  providerDraftId: string | null;
+  providerMessageId: string;
+  from: MailboxParticipantReadShape | null;
+  to: MailboxParticipantReadShape[];
+  cc: MailboxParticipantReadShape[];
+  bcc: MailboxParticipantReadShape[];
+  subject: string;
+  snippet: string;
+  htmlBody: string;
+  textBody: string | null;
+  sentAt: string;
+  updatedAt: string;
+  attachments: MailboxAttachmentReadShape[];
   source: "provider";
 }
 

@@ -35,6 +35,7 @@ import type {
   MailboxWatchRenewalResult,
   MailboxParticipantRef,
   MailboxDraftSyncResult,
+  MailboxDraftEnvelope,
 } from "./provider-contracts";
 import { storeMailboxCredential, readMailboxCredential, rotateMailboxCredential, revokeMailboxCredential } from "./credential-store";
 import type { MailboxCredentialPayload } from "./credential-store";
@@ -503,10 +504,10 @@ export const gmailProviderAdapter: IMailboxProviderAdapter = {
     const draftIds = await fetchAllDraftIds(accessToken);
     if (isProviderError(draftIds)) return draftIds;
     if (draftIds.length === 0) {
-      return { threads: [], activeDraftMessageIds: [] };
+      return { drafts: [], activeDraftMessageIds: [] };
     }
 
-    const threadsById = new Map<string, MailboxThreadEnvelope>();
+    const drafts: MailboxDraftEnvelope[] = [];
     const activeDraftMessageIds: string[] = [];
 
     for (const draftId of draftIds) {
@@ -524,18 +525,15 @@ export const gmailProviderAdapter: IMailboxProviderAdapter = {
       }
 
       activeDraftMessageIds.push(message.id);
-      const envelope = toDraftThreadEnvelope(message);
+      const envelope = toDraftEnvelope(draftId, message);
       if (!envelope) {
         continue;
       }
-      const existing = threadsById.get(envelope.providerThreadId);
-      if (!existing || new Date(envelope.lastMessageAt) > new Date(existing.lastMessageAt)) {
-        threadsById.set(envelope.providerThreadId, envelope);
-      }
+      drafts.push(envelope);
     }
 
     return {
-      threads: [...threadsById.values()],
+      drafts,
       activeDraftMessageIds,
     } satisfies MailboxDraftSyncResult;
   },
@@ -1026,6 +1024,39 @@ function toDraftThreadEnvelope(message: GmailMessage): MailboxThreadEnvelope | n
       gmailHistoryId: message.historyId ?? null,
       messageCount: 1,
       source: "draft",
+    },
+  };
+}
+
+function toDraftEnvelope(
+  draftId: string,
+  message: GmailMessage,
+): MailboxDraftEnvelope | null {
+  const thread = toDraftThreadEnvelope(message);
+  const draftMessage = toMessageEnvelope({
+    ...message,
+    labelIds: [...new Set([...(message.labelIds ?? []), "DRAFT"])],
+  });
+  if (!thread || !draftMessage) return null;
+
+  return {
+    draftId,
+    thread,
+    message: {
+      ...draftMessage,
+      // Drafts should not appear in Sent just because they originated from the sender.
+      direction: "inbound",
+      providerMetadata: {
+        ...draftMessage.providerMetadata,
+        labelIds: [
+          ...new Set([
+            ...(((draftMessage.providerMetadata as { labelIds?: string[] }).labelIds) ?? []),
+            "DRAFT",
+          ]),
+        ],
+        gmailDraftId: draftId,
+        source: "draft",
+      },
     },
   };
 }

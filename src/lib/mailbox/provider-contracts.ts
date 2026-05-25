@@ -139,8 +139,14 @@ export interface MailboxMessageEnvelope {
   attachments?: MailboxAttachmentEnvelope[];
 }
 
+export interface MailboxDraftEnvelope {
+  draftId: string;
+  thread: MailboxThreadEnvelope;
+  message: MailboxMessageEnvelope & { htmlBody: string; textBody: string | null };
+}
+
 export interface MailboxDraftSyncResult {
-  threads: MailboxThreadEnvelope[];
+  drafts: MailboxDraftEnvelope[];
   activeDraftMessageIds: string[];
 }
 
