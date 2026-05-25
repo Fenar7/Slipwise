@@ -147,7 +147,7 @@ export interface MailboxDraftEnvelope {
 
 export interface MailboxDraftSyncResult {
   drafts: MailboxDraftEnvelope[];
-  activeDraftMessageIds: string[];
+  activeDraftIds: string[];
 }
 
 export interface MailboxParticipantRef {

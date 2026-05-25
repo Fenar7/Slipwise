@@ -504,11 +504,11 @@ export const gmailProviderAdapter: IMailboxProviderAdapter = {
     const draftIds = await fetchAllDraftIds(accessToken);
     if (isProviderError(draftIds)) return draftIds;
     if (draftIds.length === 0) {
-      return { drafts: [], activeDraftMessageIds: [] };
+      return { drafts: [], activeDraftIds: [] };
     }
 
     const drafts: MailboxDraftEnvelope[] = [];
-    const activeDraftMessageIds: string[] = [];
+    const activeDraftIds: string[] = [];
 
     for (const draftId of draftIds) {
       const draft = await fetchDraft(accessToken, draftId);
@@ -520,11 +520,11 @@ export const gmailProviderAdapter: IMailboxProviderAdapter = {
       }
 
       const message = draft.message;
-      if (!message?.id || !message.threadId) {
+      if (!message) {
         continue;
       }
 
-      activeDraftMessageIds.push(message.id);
+      activeDraftIds.push(draftId);
       const envelope = toDraftEnvelope(draftId, message);
       if (!envelope) {
         continue;
@@ -534,7 +534,7 @@ export const gmailProviderAdapter: IMailboxProviderAdapter = {
 
     return {
       drafts,
-      activeDraftMessageIds,
+      activeDraftIds,
     } satisfies MailboxDraftSyncResult;
   },
 
@@ -1005,8 +1005,7 @@ function toThreadEnvelope(thread: GmailThreadResponse): MailboxThreadEnvelope | 
   };
 }
 
-function toDraftThreadEnvelope(message: GmailMessage): MailboxThreadEnvelope | null {
-  if (!message.threadId) return null;
+function toDraftThreadEnvelope(draftId: string, message: GmailMessage): MailboxThreadEnvelope {
   const headers = message.payload?.headers ?? [];
   const subject = headers.find((h) => h.name === "Subject")?.value ?? "(no subject)";
   const participants = extractParticipants(headers);
@@ -1015,7 +1014,7 @@ function toDraftThreadEnvelope(message: GmailMessage): MailboxThreadEnvelope | n
     : new Date().toISOString();
 
   return {
-    providerThreadId: message.threadId,
+    providerThreadId: message.threadId ?? `gmail-draft-thread:${draftId}`,
     subject,
     lastMessageAt,
     unreadCount: 0,
@@ -1032,12 +1031,13 @@ function toDraftEnvelope(
   draftId: string,
   message: GmailMessage,
 ): MailboxDraftEnvelope | null {
-  const thread = toDraftThreadEnvelope(message);
+  const thread = toDraftThreadEnvelope(draftId, message);
   const draftMessage = toMessageEnvelope({
     ...message,
+    id: message.id ?? `gmail-draft-message:${draftId}`,
     labelIds: [...new Set([...(message.labelIds ?? []), "DRAFT"])],
   });
-  if (!thread || !draftMessage) return null;
+  if (!draftMessage) return null;
 
   return {
     draftId,

@@ -362,9 +362,9 @@ describe("gmailProviderAdapter Sprint 3.2", () => {
     });
 
     expect("drafts" in result && result.drafts).toHaveLength(2);
-    expect("activeDraftMessageIds" in result && result.activeDraftMessageIds).toEqual([
-      "msg-draft-1",
-      "msg-draft-2",
+    expect("activeDraftIds" in result && result.activeDraftIds).toEqual([
+      "draft-1",
+      "draft-2",
     ]);
     expect("drafts" in result && result.drafts[0]?.draftId).toBe("draft-1");
   });
@@ -420,9 +420,74 @@ describe("gmailProviderAdapter Sprint 3.2", () => {
     });
 
     expect("drafts" in result && result.drafts).toHaveLength(1);
-    expect("activeDraftMessageIds" in result && result.activeDraftMessageIds).toEqual([
-      "msg-draft-1",
+    expect("activeDraftIds" in result && result.activeDraftIds).toEqual([
+      "draft-1",
     ]);
+  });
+
+  it("keeps sparse Gmail drafts that are missing message.id or threadId by synthesizing stable draft-backed ids", async () => {
+    vi.mocked(readMailboxCredential).mockResolvedValue({
+      accessToken: "token-123",
+      refreshToken: "refresh-123",
+      expiresAtMs: Date.now() + 3_600_000,
+      tokenType: "Bearer",
+      scope: "gmail.readonly",
+    });
+
+    fetchMock
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            drafts: [{ id: "draft-sparse-1" }, { id: "draft-sparse-2" }],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            id: "draft-sparse-1",
+            message: {
+              threadId: "thread-sparse-1",
+              internalDate: String(Date.now()),
+              payload: {
+                headers: [{ name: "From", value: "A <a@example.com>" }],
+              },
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            id: "draft-sparse-2",
+            message: {
+              id: "msg-sparse-2",
+              internalDate: String(Date.now()),
+              payload: {
+                headers: [{ name: "From", value: "A <a@example.com>" }],
+              },
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      );
+
+    const result = await gmailProviderAdapter.syncDrafts({
+      orgId: "org-1",
+      tokenRef: "token-ref-1",
+    });
+
+    expect("drafts" in result && result.drafts).toHaveLength(2);
+    expect("activeDraftIds" in result && result.activeDraftIds).toEqual([
+      "draft-sparse-1",
+      "draft-sparse-2",
+    ]);
+    if ("drafts" in result) {
+      expect(result.drafts[0]?.message.providerMessageId).toBe("gmail-draft-message:draft-sparse-1");
+      expect(result.drafts[1]?.thread.providerThreadId).toBe("gmail-draft-thread:draft-sparse-2");
+    }
   });
 });
 

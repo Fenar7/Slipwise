@@ -242,7 +242,7 @@ function removeDraftLabel(metadata: unknown): Record<string, unknown> | null {
 async function reconcileProviderDraftMarkers(params: {
   orgId: string;
   connectionId: string;
-  activeDraftMessageIds: string[];
+  activeDraftIds: string[];
 }): Promise<void> {
   const rows = await db.mailboxMessage.findMany({
     where: {
@@ -258,9 +258,17 @@ async function reconcileProviderDraftMarkers(params: {
     },
   });
 
-  const activeSet = new Set(params.activeDraftMessageIds);
+  const activeSet = new Set(params.activeDraftIds);
   const staleRows = rows.filter(
-    (row) => hasDraftLabel(row.providerMetadata) && !activeSet.has(row.providerMessageId),
+    (row) => {
+      if (!hasDraftLabel(row.providerMetadata)) return false;
+      const metadata = row.providerMetadata as Record<string, unknown> | null;
+      const gmailDraftId =
+        metadata && typeof metadata.gmailDraftId === "string"
+          ? metadata.gmailDraftId
+          : null;
+      return gmailDraftId ? !activeSet.has(gmailDraftId) : !activeSet.has(row.providerMessageId);
+    },
   );
 
   for (const row of staleRows) {
@@ -567,7 +575,7 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
       await reconcileProviderDraftMarkers({
         orgId: params.orgId,
         connectionId: connection.id,
-        activeDraftMessageIds: draftSync.activeDraftMessageIds,
+        activeDraftIds: draftSync.activeDraftIds,
       });
       syncedDrafts = true;
     }
