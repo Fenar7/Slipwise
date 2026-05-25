@@ -516,6 +516,7 @@ function MessageRow({ message, isThreadAnchor, onOpenThread, onDownloadAttachmen
         isThreadAnchor ? "bg-red-50/60" : "hover:bg-gray-50/70"
       )}
       data-testid={`message-row-${message.id}`}
+      data-message-id={message.id}
     >
       {/* Avatar */}
       <div className="shrink-0 mt-0.5">
@@ -632,10 +633,12 @@ interface MessageFeedProps {
   threadAnchorMessageId: string | null;
   onOpenThread: (msgId: string) => void;
   onDownloadAttachment?: (attachmentId: string) => Promise<{ signedUrl: string } | null>;
+  targetMessageId?: string | null;
 }
 
-function MessageFeed({ messages, threadAnchorMessageId, onOpenThread, onDownloadAttachment }: MessageFeedProps) {
+function MessageFeed({ messages, threadAnchorMessageId, onOpenThread, onDownloadAttachment, targetMessageId }: MessageFeedProps) {
   const feedRef = React.useRef<HTMLDivElement>(null);
+  const hasScrolledToTarget = React.useRef(false);
 
   // Scroll to bottom on mount (simulates arriving at latest messages)
   React.useEffect(() => {
@@ -643,6 +646,16 @@ function MessageFeed({ messages, threadAnchorMessageId, onOpenThread, onDownload
       feedRef.current.scrollTop = feedRef.current.scrollHeight;
     }
   }, [messages]);
+
+  // Sprint 6.2: scroll to target message when navigating from task origin-link
+  React.useEffect(() => {
+    if (!targetMessageId || !feedRef.current || hasScrolledToTarget.current) return;
+    const targetEl = feedRef.current.querySelector(`[data-message-id="${targetMessageId}"]`);
+    if (targetEl) {
+      targetEl.scrollIntoView({ behavior: "smooth", block: "center" });
+      hasScrolledToTarget.current = true;
+    }
+  }, [targetMessageId, messages]);
 
   return (
     <div
@@ -691,6 +704,7 @@ function ChannelWorkspace({
   onRefreshDetail,
   participants,
   onDownloadAttachment,
+  targetMessageId,
 }: WorkspaceBodyProps) {
   const channelMessages = externalMessages ?? [];
   const anchorMsg = threadAnchorMessageId
@@ -725,6 +739,7 @@ function ChannelWorkspace({
           threadAnchorMessageId={threadAnchorMessageId}
           onOpenThread={onOpenThread}
           onDownloadAttachment={onDownloadAttachment}
+          targetMessageId={targetMessageId}
         />
         <MessagingComposer placeholder={`Message #${conversation.name}`} isAccessible={canSend} onSend={onSend} sending={sending} sendError={sendError} conversationId={conversation.id} participants={participants} />
       </div>
@@ -800,6 +815,7 @@ function DMWorkspace({
   replyError,
   participants,
   onDownloadAttachment,
+  targetMessageId,
 }: WorkspaceBodyProps) {
   const dmMessages = externalMessages ?? [];
   return (
@@ -843,6 +859,7 @@ function DMWorkspace({
           threadAnchorMessageId={threadAnchorMessageId}
           onOpenThread={onOpenThread}
           onDownloadAttachment={onDownloadAttachment}
+          targetMessageId={targetMessageId}
         />
         <MessagingComposer placeholder={`Message ${conversation.name}`} isAccessible={canSend} onSend={onSend} sending={sending} sendError={sendError} conversationId={conversation.id} participants={participants} />
       </div>
@@ -898,6 +915,7 @@ function GroupWorkspace({
   onRefreshDetail,
   participants,
   onDownloadAttachment,
+  targetMessageId,
 }: WorkspaceBodyProps) {
   const groupMessages = externalMessages ?? [];
   const anchorMsg = threadAnchorMessageId
@@ -931,6 +949,7 @@ function GroupWorkspace({
           threadAnchorMessageId={threadAnchorMessageId}
           onOpenThread={onOpenThread}
           onDownloadAttachment={onDownloadAttachment}
+          targetMessageId={targetMessageId}
         />
         <MessagingComposer placeholder={`Message ${conversation.name}`} isAccessible={canSend} onSend={onSend} sending={sending} sendError={sendError} conversationId={conversation.id} participants={participants} />
       </div>
@@ -991,6 +1010,7 @@ interface WorkspaceBodyProps {
   onEdit?: (messageId: string, body: string) => void;
   onDelete?: (messageId: string) => void;
   onDownloadAttachment?: (attachmentId: string) => Promise<{ signedUrl: string } | null>;
+  targetMessageId?: string | null;
 }
 
 // ─── Main export ──────────────────────────────────────────────────────────────
@@ -1018,6 +1038,7 @@ interface MessagingReadingWorkspaceProps {
   onRefreshDetail?: () => void;
   participants?: MentionSuggestion[];
   onDownloadAttachment?: (attachmentId: string) => Promise<{ signedUrl: string } | null>;
+  targetMessageId?: string | null;
 }
 
 export function MessagingReadingWorkspace({
@@ -1036,6 +1057,7 @@ export function MessagingReadingWorkspace({
   onRefreshDetail,
   participants,
   onDownloadAttachment,
+  targetMessageId,
 }: MessagingReadingWorkspaceProps) {
   const [threadAnchorMessageId, setThreadAnchorMessageId] = React.useState<string | null>(null);
   const [threadOpen, setThreadOpen] = React.useState(false);
@@ -1158,6 +1180,7 @@ export function MessagingReadingWorkspace({
     onRefreshDetail,
     participants,
     onDownloadAttachment,
+    targetMessageId,
   };
 
   return (

@@ -85,6 +85,12 @@ export function MessagingWorkspace() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [notifications, setNotifications] = useState<MessagingNotification[]>(MOCK_NOTIFICATIONS);
   const [pendingCreateId, setPendingCreateId] = useState<string | null>(null);
+  const [targetMessageId, setTargetMessageId] = useState<string | null>(null);
+
+  // Sprint 6.2: clear target message scroll when conversation changes
+  useEffect(() => {
+    setTargetMessageId(null);
+  }, [activeConvId]);
 
   const unreadCount = notifications.filter((n) => !n.read).length;
 
@@ -444,6 +450,7 @@ export function MessagingWorkspace() {
                     await refreshDetail();
                     await refreshList();
                   }}
+                  targetMessageId={targetMessageId}
                 />
               </div>
             </div>
@@ -463,17 +470,30 @@ export function MessagingWorkspace() {
               }
               onNavigateToOrigin={(convId, messageId) => {
                 // Sprint 6.2: truthful origin-link navigation
-                // Switch to the conversation and trigger message scroll
-                const section: MessagingSection =
-                  state.activeSection === "channels" || state.activeSection === "dms" || state.activeSection === "groups"
-                    ? state.activeSection
-                    : "channels";
-                setActiveSection(section);
-                if (activeConvId !== convId) {
-                  // If the conversation is not currently active, select it
-                  // The actual scroll-to-message behavior is handled by the reading workspace
-                  // when it receives the messageId through URL state or similar mechanism
+                // Find the conversation across all lists to determine its section
+                const channelSummary = liveChannels.find((c) => c.id === convId);
+                const dmSummary = liveDms.find((c) => c.id === convId);
+                const groupSummary = liveGroups.find((c) => c.id === convId);
+
+                let section: MessagingSection = "channels";
+                let kind: "channel" | "dm" | "group" = "channel";
+                let summary: ApiConversationSummary | undefined = channelSummary;
+
+                if (dmSummary) {
+                  section = "dms";
+                  kind = "dm";
+                  summary = dmSummary;
+                } else if (groupSummary) {
+                  section = "groups";
+                  kind = "group";
+                  summary = groupSummary;
                 }
+
+                setActiveSection(section);
+                if (summary) {
+                  handleConversationSelect(enrichSelected(summary, kind));
+                }
+                setTargetMessageId(messageId);
               }}
             />
           )}

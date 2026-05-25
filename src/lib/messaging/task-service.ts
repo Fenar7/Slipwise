@@ -74,6 +74,21 @@ export async function createTask(input: CreateTaskInput): Promise<MessagingTaskR
     }
   }
 
+  // Validate originating message exists in the same org and conversation
+  if (input.originatingMessageId) {
+    const message = await db.conversationMessage.findUnique({
+      where: { id: input.originatingMessageId },
+    });
+
+    if (!message) {
+      throw new NotFoundError("Originating message not found");
+    }
+
+    if (message.orgId !== orgId || message.conversationId !== conversationId) {
+      throw new InvalidInputError("Originating message does not belong to this conversation");
+    }
+  }
+
   const task = await db.messagingTask.create({
     data: {
       orgId,
@@ -118,6 +133,21 @@ export async function updateTaskStatus(input: UpdateTaskStatusInput): Promise<Me
     throw new ConversationAccessError("updateTaskStatus: active participant access required");
   }
 
+  // Enforce conversation action policy (archive/lock)
+  const conversation = await db.conversation.findUnique({
+    where: { id: conversationId },
+  });
+  if (!conversation) {
+    throw new NotFoundError("Conversation not found");
+  }
+
+  requireConversationAccess(
+    toConversationRecord(conversation),
+    toParticipantRecord(membership),
+    "SEND_MESSAGE",
+    "updateTaskStatus",
+  );
+
   const completedAt = status === "DONE" ? new Date() : task.completedAt;
   const completedBy = status === "DONE" ? actorId : task.completedBy;
 
@@ -159,6 +189,21 @@ export async function assignTask(input: AssignTaskInput): Promise<MessagingTaskR
   if (!membership) {
     throw new ConversationAccessError("assignTask: active participant access required");
   }
+
+  // Enforce conversation action policy (archive/lock)
+  const conversation = await db.conversation.findUnique({
+    where: { id: conversationId },
+  });
+  if (!conversation) {
+    throw new NotFoundError("Conversation not found");
+  }
+
+  requireConversationAccess(
+    toConversationRecord(conversation),
+    toParticipantRecord(membership),
+    "SEND_MESSAGE",
+    "assignTask",
+  );
 
   if (assigneeId) {
     const assigneeMembership = await db.conversationParticipant.findFirst({

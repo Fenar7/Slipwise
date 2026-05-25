@@ -22,13 +22,101 @@ import { MessagingTaskCreate } from "../messaging-task-create";
 import { MessagingMeetingSchedule } from "../messaging-meeting-schedule";
 import { MessagingTaskPanel } from "../messaging-task-panel";
 import { MessagingMeetingPanel } from "../messaging-meeting-panel";
-import { MOCK_CALENDAR_CONNECTION, MOCK_CALENDAR_CONNECTION_ACTIVE, MOCK_TASK_DETAILS, MOCK_TASKS } from "../mock-data";
+import { MOCK_CALENDAR_CONNECTION, MOCK_CALENDAR_CONNECTION_ACTIVE } from "../mock-data";
+import type { ApiTaskSummary } from "../lib/mappers";
+
+const MOCK_API_TASKS: ApiTaskSummary[] = [
+  {
+    id: "task-1",
+    orgId: "org-1",
+    conversationId: "conv-1",
+    originatingMessageId: null,
+    title: "Review Q2 invoice reconciliation report",
+    description: null,
+    status: "open",
+    priority: "low",
+    isOverdue: false,
+    assigneeId: "u1",
+    assigneeName: "Priya Sharma",
+    assigneeAvatarInitials: "PS",
+    dueDate: "2026-05-12",
+    createdBy: "u2",
+    createdByName: "Arjun Mehta",
+    createdAt: "2026-05-01T09:00:00Z",
+  },
+  {
+    id: "task-2",
+    orgId: "org-1",
+    conversationId: "conv-1",
+    originatingMessageId: null,
+    title: "Approve payroll run for May",
+    description: null,
+    status: "in-progress",
+    priority: "medium",
+    isOverdue: false,
+    assigneeId: "u2",
+    assigneeName: "Arjun Mehta",
+    assigneeAvatarInitials: "AM",
+    dueDate: "2026-05-10",
+    createdBy: "u1",
+    createdByName: "Priya Sharma",
+    createdAt: "2026-05-02T10:00:00Z",
+  },
+  {
+    id: "task-3",
+    orgId: "org-1",
+    conversationId: "conv-1",
+    originatingMessageId: null,
+    title: "Send GST filing confirmation",
+    description: null,
+    status: "overdue",
+    priority: "high",
+    isOverdue: true,
+    assigneeId: "u3",
+    assigneeName: "Kavya Nair",
+    assigneeAvatarInitials: "KN",
+    dueDate: "2026-05-08",
+    createdBy: "u1",
+    createdByName: "Priya Sharma",
+    createdAt: "2026-05-03T11:00:00Z",
+  },
+  {
+    id: "task-4",
+    orgId: "org-1",
+    conversationId: "conv-1",
+    originatingMessageId: "msg-1",
+    title: "Onboard new vendor — Apex Supplies",
+    description: "Cover all required docs",
+    status: "open",
+    priority: "critical",
+    isOverdue: false,
+    assigneeId: "u5",
+    assigneeName: "Sneha Iyer",
+    assigneeAvatarInitials: "SI",
+    dueDate: "2026-05-15",
+    createdBy: "u2",
+    createdByName: "Arjun Mehta",
+    createdAt: "2026-05-04T12:00:00Z",
+  },
+];
+
+function mockTasksFetch(tasks: ApiTaskSummary[] = MOCK_API_TASKS) {
+  global.fetch = vi.fn().mockImplementation((url: string) => {
+    if (url.includes("/api/messaging/conversations/conv-1/tasks")) {
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ success: true, data: tasks }),
+      } as Response);
+    }
+    return Promise.resolve({ ok: false, status: 404 } as Response);
+  });
+}
 
 // ─── MessagingTaskCreate ──────────────────────────────────────────────────────
 
 describe("MessagingTaskCreate", () => {
-  function render_tc(onClose = vi.fn(), conversationRef?: string | null) {
-    return render(<MessagingTaskCreate onClose={onClose} conversationRef={conversationRef} />);
+  function render_tc(onClose = vi.fn(), conversationId?: string | null) {
+    return render(<MessagingTaskCreate onClose={onClose} conversationId={conversationId} />);
   }
 
   it("renders modal wrapper", () => {
@@ -74,12 +162,6 @@ describe("MessagingTaskCreate", () => {
     expect(screen.getByTestId("task-priority-medium")).toBeInTheDocument();
     expect(screen.getByTestId("task-priority-high")).toBeInTheDocument();
     expect(screen.getByTestId("task-priority-critical")).toBeInTheDocument();
-  });
-
-  it("shows conversation link chip when conversationRef is provided", () => {
-    render_tc(vi.fn(), "conv-payroll");
-    expect(screen.getByText(/Linked to:/)).toBeInTheDocument();
-    expect(screen.getByText("conv-payroll")).toBeInTheDocument();
   });
 });
 
@@ -141,36 +223,47 @@ describe("MessagingMeetingSchedule", () => {
 // ─── MessagingTaskPanel ───────────────────────────────────────────────────────
 
 describe("MessagingTaskPanel", () => {
-  it("renders task-panel root", () => {
-    render(<MessagingTaskPanel />);
-    expect(screen.getByTestId("task-panel")).toBeInTheDocument();
+  function renderPanel(tasks: ApiTaskSummary[] = MOCK_API_TASKS) {
+    mockTasksFetch(tasks);
+    return render(<MessagingTaskPanel conversationId="conv-1" />);
+  }
+
+  it("renders task-panel root when conversation is provided", async () => {
+    renderPanel();
+    expect(await screen.findByTestId("task-panel")).toBeInTheDocument();
   });
 
-  it("New Task button is present", () => {
+  it("shows no-conversation state when conversationId is missing", () => {
     render(<MessagingTaskPanel />);
-    expect(screen.getByTestId("task-panel-new-btn")).toBeInTheDocument();
+    expect(screen.getByText(/No Conversation Selected/)).toBeInTheDocument();
   });
 
-  it("clicking New Task button shows the create modal", () => {
-    render(<MessagingTaskPanel />);
-    fireEvent.click(screen.getByTestId("task-panel-new-btn"));
+  it("New Task button is present", async () => {
+    renderPanel();
+    expect(await screen.findByTestId("task-panel-new-btn")).toBeInTheDocument();
+  });
+
+  it("clicking New Task button shows the create modal", async () => {
+    renderPanel();
+    fireEvent.click(await screen.findByTestId("task-panel-new-btn"));
     expect(screen.getByTestId("task-create-modal")).toBeInTheDocument();
   });
 
-  it("filter bar renders all 5 filter options", () => {
-    render(<MessagingTaskPanel />);
-    expect(screen.getByTestId("task-filter-all")).toBeInTheDocument();
+  it("filter bar renders all 5 filter options", async () => {
+    renderPanel();
+    expect(await screen.findByTestId("task-filter-all")).toBeInTheDocument();
     expect(screen.getByTestId("task-filter-open")).toBeInTheDocument();
     expect(screen.getByTestId("task-filter-in-progress")).toBeInTheDocument();
     expect(screen.getByTestId("task-filter-done")).toBeInTheDocument();
     expect(screen.getByTestId("task-filter-overdue")).toBeInTheDocument();
   });
 
-  it("clicking Overdue filter shows only overdue tasks", () => {
-    render(<MessagingTaskPanel />);
+  it("clicking Overdue filter shows only overdue tasks", async () => {
+    renderPanel();
+    await screen.findByTestId("task-row-task-1");
     fireEvent.click(screen.getByTestId("task-filter-overdue"));
-    const overdueTasks = MOCK_TASKS.filter((t) => t.status === "overdue");
-    const nonOverdueTasks = MOCK_TASKS.filter((t) => t.status !== "overdue");
+    const overdueTasks = MOCK_API_TASKS.filter((t) => t.status === "overdue");
+    const nonOverdueTasks = MOCK_API_TASKS.filter((t) => t.status !== "overdue");
     overdueTasks.forEach((t) => {
       expect(screen.getByTestId(`task-row-${t.id}`)).toBeInTheDocument();
     });
@@ -179,65 +272,54 @@ describe("MessagingTaskPanel", () => {
     });
   });
 
-  it("clicking a task row shows the detail panel", () => {
-    render(<MessagingTaskPanel />);
-    const firstTask = MOCK_TASKS[0];
-    fireEvent.click(screen.getByTestId(`task-row-${firstTask.id}`));
+  it("clicking a task row shows the detail panel", async () => {
+    renderPanel();
+    const firstTask = MOCK_API_TASKS[0];
+    fireEvent.click(await screen.findByTestId(`task-row-${firstTask.id}`));
     expect(screen.getByTestId("task-detail-panel")).toBeInTheDocument();
   });
 
-  it("detail panel shows task title", () => {
-    render(<MessagingTaskPanel />);
-    // Detail panel shows MOCK_TASK_DETAILS title for the same task ID
-    const firstTask = MOCK_TASK_DETAILS[0];
-    fireEvent.click(screen.getByTestId(`task-row-${firstTask.id}`));
+  it("detail panel shows task title", async () => {
+    renderPanel();
+    const firstTask = MOCK_API_TASKS[0];
+    fireEvent.click(await screen.findByTestId(`task-row-${firstTask.id}`));
     expect(screen.getByText(firstTask.title)).toBeInTheDocument();
   });
 
-  it("back button in detail panel returns to list", () => {
-    render(<MessagingTaskPanel />);
-    const firstTask = MOCK_TASKS[0];
-    fireEvent.click(screen.getByTestId(`task-row-${firstTask.id}`));
+  it("back button in detail panel returns to list", async () => {
+    renderPanel();
+    const firstTask = MOCK_API_TASKS[0];
+    fireEvent.click(await screen.findByTestId(`task-row-${firstTask.id}`));
     expect(screen.getByTestId("task-detail-panel")).toBeInTheDocument();
     fireEvent.click(screen.getByTestId("task-detail-back"));
     expect(screen.queryByTestId("task-detail-panel")).not.toBeInTheDocument();
     expect(screen.getByTestId("task-panel-new-btn")).toBeInTheDocument();
   });
 
-  it("Done filter shows done tasks", () => {
-    render(<MessagingTaskPanel />);
+  it("Done filter shows empty state when no done tasks", async () => {
+    renderPanel();
+    await screen.findByTestId("task-row-task-1");
     fireEvent.click(screen.getByTestId("task-filter-done"));
-    const doneTasks = MOCK_TASKS.filter((t) => t.status === "done");
-    if (doneTasks.length > 0) {
-      doneTasks.forEach((t) => {
-        expect(screen.getByTestId(`task-row-${t.id}`)).toBeInTheDocument();
-      });
-    } else {
-      expect(screen.getByTestId("task-list-empty")).toBeInTheDocument();
-    }
+    expect(screen.getByTestId("task-list-empty")).toBeInTheDocument();
   });
 
-  it("empty state shown when filter matches zero tasks", () => {
-    // MOCK_TASKS has no 'done' tasks — done filter yields empty state
-    render(<MessagingTaskPanel />);
+  it("empty state shown when filter matches zero tasks", async () => {
+    renderPanel();
+    await screen.findByTestId("task-row-task-1");
     fireEvent.click(screen.getByTestId("task-filter-done"));
-    const doneTasks = MOCK_TASKS.filter((t) => t.status === "done");
-    if (doneTasks.length === 0) {
-      expect(screen.getByTestId("task-list-empty")).toBeInTheDocument();
-    } else {
-      // Verify in-progress filter works (has at least one task)
-      fireEvent.click(screen.getByTestId("task-filter-in-progress"));
-      expect(screen.queryByTestId("task-list-empty")).not.toBeInTheDocument();
-    }
+    expect(screen.getByTestId("task-list-empty")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("task-filter-in-progress"));
+    expect(screen.queryByTestId("task-list-empty")).not.toBeInTheDocument();
   });
 
-  it("clicking any task row shows the detail panel (no silent failure)", () => {
-    render(<MessagingTaskPanel />);
-    const rows = screen.getAllByRole("button").filter(
+  it("clicking any task row shows the detail panel (no silent failure)", async () => {
+    renderPanel();
+    await screen.findByTestId("task-row-task-1");
+    const taskRows = screen.getAllByRole("button").filter(
       (b) => b.getAttribute("data-testid")?.startsWith("task-row-")
     );
-    if (rows.length > 0) {
-      fireEvent.click(rows[rows.length - 1]);
+    if (taskRows.length > 0) {
+      fireEvent.click(taskRows[taskRows.length - 1]);
       expect(screen.getByTestId("task-detail-panel")).toBeInTheDocument();
     }
   });

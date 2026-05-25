@@ -11,6 +11,7 @@ interface MessagingTaskCreateProps {
   conversationId?: string | null;
   participants?: MessagingParticipant[];
   onSuccess?: () => void;
+  originatingMessageId?: string | null;
 }
 
 const PRIORITY_OPTIONS = [
@@ -35,6 +36,7 @@ export function MessagingTaskCreate({
   conversationId,
   participants,
   onSuccess,
+  originatingMessageId,
 }: MessagingTaskCreateProps) {
   const [title, setTitle] = useState("");
   const [priority, setPriority] = useState<TaskPriority>("medium");
@@ -80,6 +82,7 @@ export function MessagingTaskCreate({
           priority: priorityStringToNumber(priority),
           assigneeId: assigneeId || null,
           dueDate: dueDate || null,
+          originatingMessageId: originatingMessageId ?? null,
         }),
       });
 

@@ -3,7 +3,7 @@ import "server-only";
 import { NextResponse } from "next/server";
 import { getOrgContext, type OrgContext } from "@/lib/auth";
 import { rateLimitByOrg, rateLimitByIp, RATE_LIMITS } from "@/lib/rate-limit";
-import { ConversationAccessError } from "@/lib/messaging";
+import { ConversationAccessError, InvalidInputError, NotFoundError } from "@/lib/messaging";
 
 export const MessagingApiErrorCode = {
   UNAUTHORIZED: "UNAUTHORIZED",
@@ -147,6 +147,22 @@ export function handleMessagingApiError(error: unknown): NextResponse {
       MessagingApiErrorCode.NOT_FOUND,
       error.message,
       STATUS_MAP[MessagingApiErrorCode.NOT_FOUND],
+    );
+  }
+
+  if (error instanceof NotFoundError) {
+    return messagingApiError(
+      MessagingApiErrorCode.NOT_FOUND,
+      error.message,
+      STATUS_MAP[MessagingApiErrorCode.NOT_FOUND],
+    );
+  }
+
+  if (error instanceof InvalidInputError) {
+    return messagingApiError(
+      MessagingApiErrorCode.VALIDATION_ERROR,
+      error.message,
+      STATUS_MAP[MessagingApiErrorCode.VALIDATION_ERROR],
     );
   }
 

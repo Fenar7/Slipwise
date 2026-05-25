@@ -344,6 +344,7 @@ export interface CreateTaskInput {
 
 export interface UpdateTaskStatusInput {
   orgId: string;
+  conversationId: string;
   taskId: string;
   status: MessagingTaskStatus;
   actorId: string;
@@ -351,6 +352,7 @@ export interface UpdateTaskStatusInput {
 
 export interface AssignTaskInput {
   orgId: string;
+  conversationId: string;
   taskId: string;
   assigneeId: string | null;
   actorId: string;
