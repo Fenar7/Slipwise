@@ -92,6 +92,7 @@ export function buildFallbackSyncPresentation(
     lastRunMessageCount: null,
     stageLabel: "Mailbox up to date",
     detailLabel: "Recent messages are available in this mailbox.",
+    staleGmailCoverage: false,
   };
 }
 
@@ -99,6 +100,10 @@ export function resolveMailboxSyncPresentation(
   connection: SyncCapableConnection,
 ): MailboxSyncPresentation {
   return connection.sync ?? buildFallbackSyncPresentation(connection);
+}
+
+export function shouldAutoTriggerMailboxSync(sync: MailboxSyncPresentation): boolean {
+  return sync.state === "completed_never_imported";
 }
 
 export function withPendingSyncPresentation(

@@ -13,6 +13,7 @@ export function MailboxSyncStateChip({
   sync: MailboxSyncPresentation;
   className?: string;
 }) {
+  const isRecoveryRecommended = sync.state === "completed" && sync.staleGmailCoverage;
   const config =
     sync.state === "running"
       ? {
@@ -35,7 +36,14 @@ export function MailboxSyncStateChip({
               className: "border-slate-200 bg-slate-50 text-slate-700",
               iconClassName: "",
             }
-          : sync.state === "completed"
+          : isRecoveryRecommended
+            ? {
+                icon: RefreshCw,
+                label: "Sync recommended",
+                className: "border-amber-100 bg-amber-50 text-amber-700",
+                iconClassName: "",
+              }
+            : sync.state === "completed"
             ? {
                 icon: CheckCircle2,
                 label: "Up to date",
@@ -69,9 +77,11 @@ export function MailboxSyncProgressBar({ sync }: { sync: MailboxSyncPresentation
   const toneClassName =
     sync.state === "failed"
       ? "bg-amber-500"
-      : sync.state === "completed"
+      : sync.state === "completed" && !sync.staleGmailCoverage
         ? "bg-emerald-500"
-        : "bg-blue-500";
+        : sync.state === "completed" && sync.staleGmailCoverage
+          ? "bg-amber-500"
+          : "bg-blue-500";
 
   return (
     <div className="h-1.5 overflow-hidden rounded-full bg-[#E2E8F0]" aria-hidden="true">
@@ -121,6 +131,8 @@ export function MailboxSyncSummary({
           ? "border-amber-200 bg-amber-50/70"
           : sync.state === "running"
             ? "border-blue-100 bg-blue-50/70"
+            : sync.state === "completed" && sync.staleGmailCoverage
+              ? "border-amber-200 bg-amber-50/70"
             : "border-[#E2E8F0] bg-[#F8FAFC]",
       )}
     >

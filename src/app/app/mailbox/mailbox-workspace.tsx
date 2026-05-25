@@ -46,6 +46,7 @@ import { useMailboxSyncAction } from "./use-mailbox-sync-action";
 import {
   canManuallySyncMailbox,
   resolveMailboxSyncPresentation,
+  shouldAutoTriggerMailboxSync,
   withPendingSyncPresentation,
 } from "./mailbox-sync-ui";
 import type { ThreadRowData } from "./mailbox-thread-list";
@@ -433,20 +434,18 @@ export function MailboxWorkspace() {
   });
 
   /**
-   * Auto-trigger initial sync for the active mailbox when it's in
-   * `completed_never_imported` state or has stale Gmail coverage. Fires once per connection per mount,
-   * protected by a per-connection ref guard and the server-side rate limit.
+   * Auto-trigger only the first import for a never-synced mailbox.
    *
-   * This backs up the settings-page trigger: if the user navigates directly
-   * to the workspace (bypassing settings after OAuth redirect), the first sync
-   * still kicks off automatically.
+   * Stale Gmail folder coverage is surfaced as an explicit recovery-needed
+   * state instead of being auto-triggered on every workspace mount. That
+   * keeps the Sent experience truthful and avoids refresh-triggered sync loops.
    */
   const autoSyncTriggeredRef = useRef<Record<string, boolean>>({});
   useEffect(() => {
     if (connectionsLoading || !activeConnection) return;
     if (activeConnection.status !== "connected") return;
     const sync = resolveMailboxSyncPresentation(activeConnection);
-    const needsAutoSync = sync.state === "completed_never_imported" || sync.staleGmailCoverage;
+    const needsAutoSync = shouldAutoTriggerMailboxSync(sync);
     if (!needsAutoSync) return;
     if (autoSyncTriggeredRef.current[activeConnection.id]) return;
     if (isSyncPending(activeConnection.id)) return;
