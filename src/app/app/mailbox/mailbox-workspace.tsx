@@ -69,6 +69,8 @@ import type {
   MailboxFolder,
 } from "./types";
 
+const LIVE_REFRESH_INTERVAL_MS = 5000;
+
 // Minimal connection shape for composer and filters
 interface ConnectionLike {
   id: string;
@@ -452,7 +454,17 @@ export function MailboxWorkspace() {
   } = useMailboxSyncAction({
     onSuccess: async () => {
       refetchConnections();
-      refetchThreads();
+      if (inDraftsMode) {
+        refetchDrafts();
+        if (selectedProviderDraftActive) {
+          refetchProviderDraftDetail();
+        }
+      } else {
+        refetchThreads();
+        if (selectedThreadId) {
+          refetchDetail();
+        }
+      }
     },
   });
 
@@ -480,6 +492,39 @@ export function MailboxWorkspace() {
     activeConnection,
     triggerSync,
     isSyncPending,
+  ]);
+
+  useEffect(() => {
+    if (!activeConnection || activeConnection.status !== "connected") return;
+
+    const timer = window.setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+
+      void refetchConnections();
+      if (inDraftsMode) {
+        refetchDrafts();
+        if (selectedProviderDraftActive) {
+          refetchProviderDraftDetail();
+        }
+      } else {
+        refetchThreads();
+        if (selectedThreadId) {
+          refetchDetail();
+        }
+      }
+    }, LIVE_REFRESH_INTERVAL_MS);
+
+    return () => window.clearInterval(timer);
+  }, [
+    activeConnection,
+    inDraftsMode,
+    selectedProviderDraftActive,
+    selectedThreadId,
+    refetchConnections,
+    refetchDrafts,
+    refetchProviderDraftDetail,
+    refetchThreads,
+    refetchDetail,
   ]);
 
   // Sprint 5.1: Draft persistence hook

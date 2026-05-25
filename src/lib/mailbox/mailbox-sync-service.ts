@@ -594,6 +594,46 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
       effectiveWatchMetadata = withRequiredGmailCoverage(effectiveWatchMetadata);
     }
 
+    let watchUpdateData:
+      | {
+          watchExpiresAt: Date | null;
+          watchRenewedAt: Date;
+        }
+      | undefined;
+    const shouldBootstrapWatch =
+      connection.provider === "GMAIL" &&
+      (!connection.watchExpiresAt || effectiveMode === "INITIAL");
+    if (shouldBootstrapWatch) {
+      const renewal = await adapter.renewWatch({
+        orgId: params.orgId,
+        tokenRef: connection.tokenRef,
+      });
+      if (isMailboxProviderError(renewal)) {
+        await logMailboxAudit({
+          orgId: params.orgId,
+          actorId: params.actorId,
+          action: "WATCH_EXPIRED_DETECTED",
+          summary: `Watch bootstrap failed after sync: ${renewal.safeMessage}`,
+          mailboxConnectionId: connection.id,
+          metadata: { errorCategory: renewal.category, runId: run.id },
+        });
+      } else {
+        effectiveWatchMetadata = mergeWatchMetadata(effectiveWatchMetadata, renewal.metadata);
+        watchUpdateData = {
+          watchExpiresAt: renewal.expiresAt,
+          watchRenewedAt: new Date(),
+        };
+        await logMailboxAudit({
+          orgId: params.orgId,
+          actorId: params.actorId,
+          action: "WATCH_RENEWED",
+          summary: "Mailbox watch established successfully",
+          mailboxConnectionId: connection.id,
+          metadata: { expiresAt: renewal.expiresAt?.toISOString(), runId: run.id },
+        });
+      }
+    }
+
     const stats = { threadCount, messageCount };
     const nextStatus = resolveStatusAfterSuccess(connection.status);
     await db.mailboxConnection.update({
@@ -603,9 +643,12 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
         lastSyncAt: new Date(),
         lastSyncError: null,
         lastSyncErrorCategory: null,
+        ...(watchUpdateData ?? {}),
         ...(shouldPersistGmailCoverage
           ? { watchMetadata: effectiveWatchMetadata as Prisma.InputJsonValue }
-          : {}),
+          : watchUpdateData
+            ? { watchMetadata: effectiveWatchMetadata as Prisma.InputJsonValue }
+            : {}),
       },
     });
     await db.mailboxSyncRun.update({

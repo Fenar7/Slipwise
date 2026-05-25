@@ -1063,7 +1063,10 @@ function makeMockAdapter(overrides: { snippet?: string; attachmentCount?: number
       }],
     }),
     disconnect: vi.fn(),
-    renewWatch: vi.fn(),
+    renewWatch: vi.fn().mockResolvedValue({
+      expiresAt: new Date("2099-01-01T00:00:00Z"),
+      metadata: { gmailHistoryId: "hist-bootstrap", gmailWatchExpiration: "4102444800000" },
+    }),
   };
 }
 
