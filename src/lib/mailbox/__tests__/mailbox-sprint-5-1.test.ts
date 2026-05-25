@@ -95,16 +95,30 @@ vi.mock("@/lib/mailbox/visibility-service", () => ({
   listMailboxConnectionsForMember: vi.fn(),
 }));
 
+vi.mock("@/lib/mailbox/connection-service", () => ({
+  getMailboxConnection: vi.fn(),
+}));
+
+vi.mock("@/lib/mailbox/provider-registry", () => ({
+  getMailboxProviderAdapter: vi.fn(),
+}));
+
 import { listMailboxConnectionsForMember } from "@/lib/mailbox/visibility-service";
 const mockListConnections = listMailboxConnectionsForMember as unknown as ReturnType<typeof vi.fn>;
+import { getMailboxConnection } from "@/lib/mailbox/connection-service";
+import { getMailboxProviderAdapter } from "@/lib/mailbox/provider-registry";
+const mockGetMailboxConnection = getMailboxConnection as unknown as ReturnType<typeof vi.fn>;
+const mockGetMailboxProviderAdapter = getMailboxProviderAdapter as unknown as ReturnType<typeof vi.fn>;
 
 import {
   createOrRestoreDraft,
   autosaveDraft,
   discardDraft,
   getDraft,
+  getProviderDraftDetail,
   restoreDraft,
   listActiveDrafts,
+  listDraftEntries,
   DraftServiceError,
 } from "@/lib/mailbox/draft-service";
 
@@ -126,6 +140,13 @@ const DRAFT_1 = "draft-001";
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockGetMailboxConnection.mockResolvedValue(makeConnectionRecord());
+  mockGetMailboxProviderAdapter.mockReturnValue({
+    syncDrafts: vi.fn().mockResolvedValue({
+      drafts: [],
+      activeDraftMessageIds: [],
+    }),
+  });
 });
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
@@ -808,6 +829,134 @@ describe("listActiveDrafts", () => {
   });
 });
 
+describe("live Gmail provider drafts", () => {
+  it("lists provider Gmail drafts from the live provider adapter instead of cached mailbox messages", async () => {
+    mockListConnections.mockResolvedValue({
+      accessible: [makeConnectionListItem()],
+      restricted: [],
+    });
+
+    const syncDrafts = vi.fn().mockResolvedValue({
+      drafts: [
+        {
+          draftId: "draft-live-1",
+          thread: {
+            providerThreadId: "gmail-thread-live-1",
+            subject: "Live Draft",
+            lastMessageAt: "2026-05-25T11:00:00Z",
+            unreadCount: 0,
+            participants: [{ email: "client@example.com", displayName: "Client" }],
+            providerMetadata: { source: "draft" },
+          },
+          message: {
+            providerMessageId: "gmail-msg-live-1",
+            rfcMessageId: null,
+            direction: "inbound" as const,
+            from: { email: "billing@example.com", displayName: "Billing" },
+            to: [{ email: "client@example.com", displayName: "Client" }],
+            cc: [],
+            bcc: [],
+            subject: "Live Draft",
+            snippet: "Live provider draft snippet",
+            sentAt: "2026-05-25T11:00:00Z",
+            receivedAt: "2026-05-25T11:00:00Z",
+            attachmentCount: 0,
+            providerMetadata: { labelIds: ["DRAFT"], gmailDraftId: "draft-live-1" },
+            htmlBody: "<p>Live provider body</p>",
+            textBody: "Live provider body",
+            attachments: [],
+          },
+        },
+      ],
+      activeDraftMessageIds: ["gmail-msg-live-1"],
+    });
+    mockGetMailboxProviderAdapter.mockReturnValue({ syncDrafts });
+    mockDb.mailboxDraft.findMany.mockResolvedValue([]);
+    mockDb.mailboxMessage.findMany.mockResolvedValue([
+      makeMessageRecord({
+        providerMessageId: "cached-only",
+        providerMetadata: { labelIds: ["DRAFT"], gmailDraftId: "cached-only" },
+      }),
+    ]);
+
+    const result = await listDraftEntries({
+      orgId: ORG_A,
+      userId: USER_A,
+      role: "owner",
+      mailboxConnectionId: CONN_1,
+    });
+
+    expect(syncDrafts).toHaveBeenCalledTimes(1);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      id: "provider:draft-live-1",
+      source: "provider",
+      providerDraftId: "draft-live-1",
+      providerMessageId: "gmail-msg-live-1",
+      subject: "Live Draft",
+    });
+  });
+
+  it("returns live provider draft detail by gmailDraftId", async () => {
+    mockListConnections.mockResolvedValue({
+      accessible: [makeConnectionListItem()],
+      restricted: [],
+    });
+
+    const syncDrafts = vi.fn().mockResolvedValue({
+      drafts: [
+        {
+          draftId: "draft-live-1",
+          thread: {
+            providerThreadId: "gmail-thread-live-1",
+            subject: "Live Draft",
+            lastMessageAt: "2026-05-25T11:00:00Z",
+            unreadCount: 0,
+            participants: [{ email: "client@example.com", displayName: "Client" }],
+            providerMetadata: { source: "draft" },
+          },
+          message: {
+            providerMessageId: "gmail-msg-live-1",
+            rfcMessageId: null,
+            direction: "inbound" as const,
+            from: { email: "billing@example.com", displayName: "Billing" },
+            to: [{ email: "client@example.com", displayName: "Client" }],
+            cc: [],
+            bcc: [],
+            subject: "Live Draft",
+            snippet: "Live provider draft snippet",
+            sentAt: "2026-05-25T11:00:00Z",
+            receivedAt: "2026-05-25T11:00:00Z",
+            attachmentCount: 0,
+            providerMetadata: { labelIds: ["DRAFT"], gmailDraftId: "draft-live-1" },
+            htmlBody: "<p>Live provider body</p>",
+            textBody: "Live provider body",
+            attachments: [],
+          },
+        },
+      ],
+      activeDraftMessageIds: ["gmail-msg-live-1"],
+    });
+    mockGetMailboxProviderAdapter.mockReturnValue({ syncDrafts });
+
+    const detail = await getProviderDraftDetail({
+      orgId: ORG_A,
+      userId: USER_A,
+      role: "owner",
+      draftId: "provider:draft-live-1",
+    });
+
+    expect(syncDrafts).toHaveBeenCalledTimes(1);
+    expect(detail).toMatchObject({
+      id: "provider:draft-live-1",
+      providerDraftId: "draft-live-1",
+      providerMessageId: "gmail-msg-live-1",
+      htmlBody: "<p>Live provider body</p>",
+      textBody: "Live provider body",
+    });
+  });
+});
+
 // ─── Read shape mapper ────────────────────────────────────────────────────────
 
 describe("toMailboxDraftReadShape", () => {
@@ -977,22 +1126,41 @@ describe("GET /api/mailbox/drafts", () => {
       restricted: [],
     });
     mockDb.mailboxDraft.findMany.mockResolvedValue([makeDraftRecord({ id: "draft-local" })]);
-    mockDb.mailboxMessage.findMany.mockResolvedValue([
-      {
-        id: "msg-1",
-        threadId: THREAD_1,
-        providerMessageId: "gmail-draft-1",
-        subject: "Provider draft subject",
-        snippet: "Provider draft snippet",
-        to: [{ email: "client@example.com" }],
-        cc: [],
-        bcc: [],
-        sentAt: new Date("2026-05-10T10:00:00Z"),
-        updatedAt: new Date("2026-05-10T11:00:00Z"),
-        providerMetadata: { labelIds: ["DRAFT"] },
-        thread: { mailboxConnectionId: CONN_1 },
-      },
-    ]);
+    const syncDrafts = vi.fn().mockResolvedValue({
+      drafts: [
+        {
+          draftId: "gmail-draft-1",
+          thread: {
+            providerThreadId: "gmail-thread-1",
+            subject: "Provider draft subject",
+            lastMessageAt: "2026-05-10T11:00:00Z",
+            unreadCount: 0,
+            participants: [{ email: "client@example.com", displayName: "Client" }],
+            providerMetadata: { source: "draft" },
+          },
+          message: {
+            providerMessageId: "gmail-msg-1",
+            rfcMessageId: null,
+            direction: "inbound" as const,
+            from: { email: "billing@example.com", displayName: "Billing" },
+            to: [{ email: "client@example.com", displayName: "Client" }],
+            cc: [],
+            bcc: [],
+            subject: "Provider draft subject",
+            snippet: "Provider draft snippet",
+            sentAt: "2026-05-10T11:00:00Z",
+            receivedAt: "2026-05-10T11:00:00Z",
+            attachmentCount: 0,
+            providerMetadata: { labelIds: ["DRAFT"], gmailDraftId: "gmail-draft-1" },
+            htmlBody: "<p>Provider body</p>",
+            textBody: "Provider body",
+            attachments: [],
+          },
+        },
+      ],
+      activeDraftMessageIds: ["gmail-msg-1"],
+    });
+    mockGetMailboxProviderAdapter.mockReturnValue({ syncDrafts });
 
     const req = new NextRequest("http://localhost/api/mailbox/drafts", { method: "GET" });
     const res = await getDraftsRoute(req);
@@ -1005,7 +1173,7 @@ describe("GET /api/mailbox/drafts", () => {
     expect(body.drafts[0]).toMatchObject({
       id: "provider:gmail-draft-1",
       source: "provider",
-      threadId: THREAD_1,
+      threadId: "gmail-thread-1",
     });
     expect(body.drafts[1]).toMatchObject({
       id: "draft-local",
