@@ -15,25 +15,3 @@ export class ConversationAccessError extends Error {
     Object.setPrototypeOf(this, ConversationAccessError.prototype);
   }
 }
-
-export class InvalidInputError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "InvalidInputError";
-    if (Error.captureStackTrace) {
-      Error.captureStackTrace(this, InvalidInputError);
-    }
-    Object.setPrototypeOf(this, InvalidInputError.prototype);
-  }
-}
-
-export class NotFoundError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "NotFoundError";
-    if (Error.captureStackTrace) {
-      Error.captureStackTrace(this, NotFoundError);
-    }
-    Object.setPrototypeOf(this, NotFoundError.prototype);
-  }
-}
