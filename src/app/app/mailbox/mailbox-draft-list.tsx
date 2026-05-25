@@ -79,6 +79,9 @@ export function MailboxDraftList({
                   >
                     {draft.mailboxLabel}
                   </span>
+                  <span className="shrink-0 rounded bg-[#F1F5F9] px-1.5 py-0.5 text-[10px] font-semibold leading-none text-[#475569]">
+                    {draft.source === "provider" ? "Gmail draft" : "Slipwise draft"}
+                  </span>
                 </div>
                 <p className="mt-1 truncate text-xs font-medium text-[#334155]">
                   To: {draft.to.join(", ")}

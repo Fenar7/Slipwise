@@ -1,14 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import type { MailboxDraftReadShape } from "@/lib/mailbox/read-shapes";
+import type { MailboxDraftListEntryReadShape } from "@/lib/mailbox/read-shapes";
 
 interface DraftListResponse {
-  drafts: MailboxDraftReadShape[];
+  drafts: MailboxDraftListEntryReadShape[];
 }
 
 export interface UseMailboxDraftsResult {
-  drafts: MailboxDraftReadShape[];
+  drafts: MailboxDraftListEntryReadShape[];
   isLoading: boolean;
   error: string | null;
   refetch: () => void;
@@ -18,7 +18,7 @@ export function useMailboxDrafts(
   connectionId?: string,
   enabled = true,
 ): UseMailboxDraftsResult {
-  const [drafts, setDrafts] = useState<MailboxDraftReadShape[]>([]);
+  const [drafts, setDrafts] = useState<MailboxDraftListEntryReadShape[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [nonce, setNonce] = useState(0);

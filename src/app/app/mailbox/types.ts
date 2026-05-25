@@ -104,6 +104,7 @@ export interface MailboxMessageItem {
 export interface DraftRowData {
   id: string;
   mailboxConnectionId: string;
+  source: "local" | "provider";
   subject: string;
   snippet: string;
   to: string[];

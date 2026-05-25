@@ -1123,7 +1123,7 @@ describe("MailboxWorkspace Sprint 1.6 integration", () => {
 
   it("shows a mailbox empty state for drafts routes instead of a blank list", () => {
     renderWorkspaceAtPath("/app/mailbox/billing/drafts");
-    expect(screen.getByText(/billing · drafts has no active drafts/i)).toBeInTheDocument();
+    expect(screen.getByText(/billing · drafts has no drafts/i)).toBeInTheDocument();
   });
 
   it("shows a mailbox empty state for spam routes instead of a blank list", () => {

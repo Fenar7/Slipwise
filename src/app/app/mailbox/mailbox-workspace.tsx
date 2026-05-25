@@ -398,6 +398,12 @@ export function MailboxWorkspace() {
     const ctx = { connectionMap, currentUserId };
     return rawDrafts.map((draft) => mapDraftToRowData(draft, ctx));
   }, [rawDrafts, connectionMap, currentUserId]);
+  const selectedDraftEntry = useMemo(
+    () => rawDrafts.find((draft) => draft.id === selectedDraftId) ?? null,
+    [rawDrafts, selectedDraftId],
+  );
+  const selectedProviderDraftActive =
+    inDraftsMode && selectedDraftEntry?.source === "provider" && !!selectedThreadId;
 
   const totalCount = inDraftsMode ? mappedDrafts.length : apiTotalCount;
   const unreadCount = inDraftsMode ? 0 : mappedThreads.filter((t) => t.isUnread).length;
@@ -534,10 +540,11 @@ export function MailboxWorkspace() {
     connections[0];
 
   useEffect(() => {
+    if (inDraftsMode) return;
     if (selectedThreadId && !visibleThreads.some((t) => t.id === selectedThreadId)) {
       setSelectedThreadId(null);
     }
-  }, [selectedThreadId, visibleThreads]);
+  }, [inDraftsMode, selectedThreadId, visibleThreads]);
 
   useEffect(() => {
     if (selectedDraftId && !mappedDrafts.some((draft) => draft.id === selectedDraftId)) {
@@ -575,6 +582,15 @@ export function MailboxWorkspace() {
   const handleSelectDraft = useCallback((draftId: string) => {
     const draft = rawDrafts.find((candidate) => candidate.id === draftId);
     if (!draft) return;
+
+    if (draft.source === "provider") {
+      setSelectedDraftId(draftId);
+      setSelectedThreadId(draft.threadId);
+      clearCurrentDraft();
+      setComposer(null);
+      setMobilePanel("reading-pane");
+      return;
+    }
 
     const connection =
       connections.find((candidate) => candidate.id === draft.mailboxConnectionId) ??
@@ -634,7 +650,7 @@ export function MailboxWorkspace() {
       draftId: draft.id,
     });
     setMobilePanel("reading-pane");
-  }, [adoptDraft, connections, defaultComposeConnection, rawDrafts]);
+  }, [adoptDraft, clearCurrentDraft, connections, defaultComposeConnection, rawDrafts]);
 
   const openNewCompose = useCallback(async () => {
     if (!defaultComposeConnection) return;
@@ -1046,6 +1062,20 @@ export function MailboxWorkspace() {
               />
             ) : detailNotFound ? (
               <ThreadNotFoundEmpty onDismiss={() => setSelectedThreadId(null)} />
+            ) : inDraftsMode && selectedProviderDraftActive && selectedDetail ? (
+              <MailboxReadingPane
+                detail={selectedDetail}
+                composerState={null}
+                onOpenReply={() => {}}
+                onCloseReply={() => {}}
+                onDiscardReply={() => {}}
+                onExpandReply={() => {}}
+                onSendReply={() => {}}
+                onPatchComposer={() => {}}
+                onOpenContext={() => setMobilePanel("context")}
+                isActionLoading={true}
+                onThreadAction={() => {}}
+              />
             ) : inDraftsMode ? (
               <NoDraftSelectedEmpty
                 mailboxLabel={resolveEmptyMailboxLabel(pathname, activeConnection, viewLabel)}

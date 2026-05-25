@@ -30,7 +30,7 @@ function parseSyncStats(stats: Record<string, unknown> | null): {
 }
 
 
-const GMAIL_PRESENTATION_COVERAGE_VERSION = 2;
+const GMAIL_PRESENTATION_COVERAGE_VERSION = 3;
 
 function hasStaleGmailCoverage(record: MailboxConnectionRecord): boolean {
   if (record.provider !== "GMAIL") return false;
@@ -50,7 +50,8 @@ function hasStaleGmailCoverage(record: MailboxConnectionRecord): boolean {
   return !(
     coveredSet.has("INBOX") &&
     coveredSet.has("SENT") &&
-    coveredSet.has("SPAM")
+    coveredSet.has("SPAM") &&
+    coveredSet.has("DRAFT")
   );
 }
 export function buildMailboxSyncPresentation(
@@ -198,7 +199,7 @@ export function buildMailboxSyncPresentation(
     lastRunMessageCount: latestRunStats.messageCount,
     stageLabel: staleCoverage ? "Sync recommended" : "Mailbox up to date",
     detailLabel: staleCoverage
-      ? "Sent and spam folder coverage needs to be refreshed. Start a sync to import all folders."
+      ? "Sent, spam, and drafts coverage needs to be refreshed. Start a sync to import all folders."
       : hasStats
         ? `Last sync imported ${latestRunStats.threadCount} threads and ${latestRunStats.messageCount} messages.`
         : "Recent messages are available in this mailbox.",

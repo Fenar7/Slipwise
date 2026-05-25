@@ -2,7 +2,7 @@ import type {
   MailboxThreadReadShape,
   MailboxThreadDetailReadShape,
   MailboxThreadDetailMessageReadShape,
-  MailboxDraftReadShape,
+  MailboxDraftListEntryReadShape,
 } from "@/lib/mailbox/read-shapes";
 import type { ThreadRowData } from "./mailbox-thread-list";
 import type {
@@ -190,18 +190,26 @@ export interface DetailMappingContext {
 }
 
 export function mapDraftToRowData(
-  draft: MailboxDraftReadShape,
+  draft: MailboxDraftListEntryReadShape,
   ctx: ThreadMappingContext,
 ): DraftRowData {
   const connectionInfo = ctx.connectionMap.get(draft.mailboxConnectionId);
   const mailboxLabel = connectionInfo?.displayName ?? "Mailbox";
   const mailboxColor = connectionInfo?.color ?? "#16294D";
-  const fallbackRecipient = draft.to[0] ?? draft.cc[0] ?? draft.bcc[0] ?? "No recipients";
-  const snippetSource = draft.textBody?.trim() || htmlToText(draft.htmlBody) || "Draft not started yet";
+  const fallbackRecipient =
+    draft.to[0] ??
+    ("cc" in draft ? draft.cc[0] : undefined) ??
+    ("bcc" in draft ? draft.bcc[0] : undefined) ??
+    "No recipients";
+  const snippetSource =
+    draft.source === "local"
+      ? draft.textBody?.trim() || htmlToText(draft.htmlBody) || "Draft not started yet"
+      : draft.snippet.trim() || "Draft not started yet";
 
   return {
     id: draft.id,
     mailboxConnectionId: draft.mailboxConnectionId,
+    source: draft.source,
     subject: draft.subject.trim() || "(No subject)",
     snippet: snippetSource,
     to: draft.to.length > 0 ? draft.to : [fallbackRecipient],

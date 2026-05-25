@@ -65,10 +65,10 @@ describe("buildMailboxSyncPresentation", () => {
   it("returns completed with latest completed run stats", () => {
     const sync = buildMailboxSyncPresentation(
       makeConnection({
-        watchMetadata: {
-          gmailCoverageVersion: 2,
-          gmailCoveredSystemLabels: ["INBOX", "SENT", "SPAM"],
-        },
+          watchMetadata: {
+          gmailCoverageVersion: 3,
+          gmailCoveredSystemLabels: ["INBOX", "SENT", "SPAM", "DRAFT"],
+          },
       }),
       {
         latestRun: {
@@ -313,7 +313,7 @@ describe("buildMailboxSyncPresentation", () => {
       const sync = buildMailboxSyncPresentation(
         makeConnection({
           watchMetadata: {
-            gmailCoverageVersion: 2,
+            gmailCoverageVersion: 3,
             gmailCoveredSystemLabels: ["INBOX"],
           },
         }),
@@ -328,8 +328,8 @@ describe("buildMailboxSyncPresentation", () => {
       const sync = buildMailboxSyncPresentation(
         makeConnection({
           watchMetadata: {
-            gmailCoverageVersion: 2,
-            gmailCoveredSystemLabels: ["INBOX", "SENT", "SPAM"],
+            gmailCoverageVersion: 3,
+            gmailCoveredSystemLabels: ["INBOX", "SENT", "SPAM", "DRAFT"],
           },
         }),
         {

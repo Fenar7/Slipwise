@@ -15,6 +15,11 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
 
 vi.mock("server-only", () => ({}));
+vi.mock("@/generated/prisma/client", () => ({
+  Prisma: {
+    JsonNull: null,
+  },
+}));
 
 vi.mock("@/lib/db", () => ({
   db: {
@@ -23,6 +28,9 @@ vi.mock("@/lib/db", () => ({
       findMany: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
+    },
+    mailboxMessage: {
+      findMany: vi.fn(),
     },
     mailboxThread: {
       findFirst: vi.fn(),
@@ -57,6 +65,9 @@ const mockDb = db as unknown as {
     findMany: ReturnType<typeof vi.fn>;
     create: ReturnType<typeof vi.fn>;
     update: ReturnType<typeof vi.fn>;
+  };
+  mailboxMessage: {
+    findMany: ReturnType<typeof vi.fn>;
   };
   mailboxThread: {
     findFirst: ReturnType<typeof vi.fn>;
@@ -947,6 +958,7 @@ describe("GET /api/mailbox/drafts", () => {
       restricted: [],
     });
     mockDb.mailboxDraft.findMany.mockResolvedValue([makeDraftRecord({ id: "draft-a" }), makeDraftRecord({ id: "draft-b" })]);
+    mockDb.mailboxMessage.findMany.mockResolvedValue([]);
 
     const req = new NextRequest("http://localhost/api/mailbox/drafts", { method: "GET" });
     const res = await getDraftsRoute(req);
@@ -954,5 +966,50 @@ describe("GET /api/mailbox/drafts", () => {
 
     expect(res.status).toBe(200);
     expect(body.drafts).toHaveLength(2);
+  });
+
+  it("merges provider-backed Gmail drafts into the mailbox drafts list", async () => {
+    const { requireIntegrationMemberRoute } = await import("@/app/api/integrations/_auth");
+    (requireIntegrationMemberRoute as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(makeAuthContext());
+
+    mockListConnections.mockResolvedValue({
+      accessible: [makeConnectionListItem()],
+      restricted: [],
+    });
+    mockDb.mailboxDraft.findMany.mockResolvedValue([makeDraftRecord({ id: "draft-local" })]);
+    mockDb.mailboxMessage.findMany.mockResolvedValue([
+      {
+        id: "msg-1",
+        threadId: THREAD_1,
+        providerMessageId: "gmail-draft-1",
+        subject: "Provider draft subject",
+        snippet: "Provider draft snippet",
+        to: [{ email: "client@example.com" }],
+        cc: [],
+        bcc: [],
+        sentAt: new Date("2026-05-10T10:00:00Z"),
+        updatedAt: new Date("2026-05-10T11:00:00Z"),
+        providerMetadata: { labelIds: ["DRAFT"] },
+        thread: { mailboxConnectionId: CONN_1 },
+      },
+    ]);
+
+    const req = new NextRequest("http://localhost/api/mailbox/drafts", { method: "GET" });
+    const res = await getDraftsRoute(req);
+    const body = (await res.json()) as {
+      drafts: Array<{ id: string; source: string; threadId?: string }>;
+    };
+
+    expect(res.status).toBe(200);
+    expect(body.drafts).toHaveLength(2);
+    expect(body.drafts[0]).toMatchObject({
+      id: "provider:gmail-draft-1",
+      source: "provider",
+      threadId: THREAD_1,
+    });
+    expect(body.drafts[1]).toMatchObject({
+      id: "draft-local",
+      source: "local",
+    });
   });
 });

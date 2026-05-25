@@ -5,7 +5,11 @@ import { Prisma } from "@/generated/prisma/client";
 import { listMailboxConnectionsForMember } from "./visibility-service";
 import { getMailboxThreadDetail } from "./thread-service";
 import { toMailboxDraftReadShape } from "./read-shapes";
-import type { MailboxDraftReadShape } from "./read-shapes";
+import type {
+  MailboxDraftListEntryReadShape,
+  MailboxDraftReadShape,
+  MailboxProviderDraftReadShape,
+} from "./read-shapes";
 import { logMailboxAuditTx } from "./audit";
 import type { MailboxDraftMode, MailboxDraftStatus } from "./domain-types";
 import { cleanupDraftAttachments } from "./attachment-service";
@@ -630,6 +634,90 @@ export interface ListActiveDraftsInput {
   mailboxConnectionId?: string;
 }
 
+function hasDraftLabel(metadata: unknown): boolean {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return false;
+  const labelIds = (metadata as Record<string, unknown>).labelIds;
+  return Array.isArray(labelIds) && labelIds.includes("DRAFT");
+}
+
+function toParticipantEmails(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((participant) => {
+      if (!participant || typeof participant !== "object" || Array.isArray(participant)) return null;
+      const email = (participant as Record<string, unknown>).email;
+      return typeof email === "string" ? email : null;
+    })
+    .filter((email): email is string => !!email);
+}
+
+async function listProviderDrafts(input: ListActiveDraftsInput): Promise<MailboxProviderDraftReadShape[]> {
+  const { orgId, userId, role, mailboxConnectionId } = input;
+  const { accessible } = await listMailboxConnectionsForMember(orgId, userId, role);
+  const accessibleIds = accessible.map((connection) => connection.id);
+
+  if (accessibleIds.length === 0) return [];
+
+  const connectionIds = mailboxConnectionId
+    ? accessibleIds.includes(mailboxConnectionId)
+      ? [mailboxConnectionId]
+      : []
+    : accessibleIds;
+
+  if (connectionIds.length === 0) return [];
+
+  const rows = await db.mailboxMessage.findMany({
+    where: {
+      orgId,
+      thread: {
+        mailboxConnectionId: { in: connectionIds },
+      },
+    },
+    select: {
+      id: true,
+      threadId: true,
+      providerMessageId: true,
+      subject: true,
+      snippet: true,
+      to: true,
+      cc: true,
+      bcc: true,
+      sentAt: true,
+      updatedAt: true,
+      providerMetadata: true,
+      thread: {
+        select: {
+          mailboxConnectionId: true,
+        },
+      },
+    },
+    orderBy: [{ sentAt: "desc" }, { id: "desc" }],
+  });
+
+  const latestByThread = new Map<string, MailboxProviderDraftReadShape>();
+  for (const row of rows) {
+    if (!hasDraftLabel(row.providerMetadata)) continue;
+    if (latestByThread.has(row.threadId)) continue;
+
+    latestByThread.set(row.threadId, {
+      id: `provider:${row.providerMessageId}`,
+      orgId,
+      mailboxConnectionId: row.thread.mailboxConnectionId,
+      threadId: row.threadId,
+      providerMessageId: row.providerMessageId,
+      subject: row.subject.trim() || "(No subject)",
+      snippet: row.snippet.trim() || "Draft not started yet",
+      to: toParticipantEmails(row.to),
+      cc: toParticipantEmails(row.cc),
+      bcc: toParticipantEmails(row.bcc),
+      updatedAt: row.updatedAt.toISOString(),
+      source: "provider",
+    });
+  }
+
+  return [...latestByThread.values()];
+}
+
 export async function listActiveDrafts(
   input: ListActiveDraftsInput,
 ): Promise<MailboxDraftReadShape[]> {
@@ -660,4 +748,25 @@ export async function listActiveDrafts(
   });
 
   return rows.map((r) => toMailboxDraftReadShape(r as unknown as import("./domain-types").MailboxDraftRecord));
+}
+
+export async function listDraftEntries(
+  input: ListActiveDraftsInput,
+): Promise<MailboxDraftListEntryReadShape[]> {
+  const [localDrafts, providerDrafts] = await Promise.all([
+    listActiveDrafts(input),
+    listProviderDrafts(input),
+  ]);
+
+  return [
+    ...localDrafts.map((draft) => ({
+      ...draft,
+      source: "local" as const,
+    })),
+    ...providerDrafts,
+  ].sort((left, right) => {
+    const leftTime = new Date(left.updatedAt).getTime();
+    const rightTime = new Date(right.updatedAt).getTime();
+    return rightTime - leftTime;
+  });
 }

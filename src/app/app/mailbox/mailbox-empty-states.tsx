@@ -237,8 +237,8 @@ export function EmptyDraftsState({ mailboxLabel }: { mailboxLabel: string }) {
       icon={Inbox}
       iconBg="rgba(22,41,77,0.07)"
       iconColor="#16294D"
-      heading={`${mailboxLabel} has no active drafts`}
-      body="Saved drafts for this mailbox will appear here while you are still editing them."
+      heading={`${mailboxLabel} has no drafts`}
+      body="Gmail drafts and active Slipwise drafts for this mailbox will appear here when available."
     />
   );
 }

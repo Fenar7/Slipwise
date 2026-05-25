@@ -60,8 +60,8 @@ export interface RunMailboxSyncResult {
 
 const MAILBOX_SYNC_MAX_RUNNING_AGE_MINUTES = 30;
 const MAILBOX_SYNC_LEASE_DURATION_MS = MAILBOX_SYNC_MAX_RUNNING_AGE_MINUTES * 60 * 1000;
-const GMAIL_REQUIRED_FOLDER_COVERAGE = ["INBOX", "SENT", "SPAM"] as const;
-const GMAIL_FOLDER_COVERAGE_VERSION = 2;
+const GMAIL_REQUIRED_FOLDER_COVERAGE = ["INBOX", "SENT", "SPAM", "DRAFT"] as const;
+const GMAIL_FOLDER_COVERAGE_VERSION = 3;
 
 function toMetadataRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) {

@@ -55,8 +55,9 @@ const GMAIL_BOOTSTRAP_SLICES = [
   { query: "in:inbox", includeSpamTrash: false },
   { query: "in:sent", includeSpamTrash: false },
   { query: "in:spam", includeSpamTrash: true },
+  { query: "in:draft", includeSpamTrash: false },
 ] as const;
-const GMAIL_WATCH_LABEL_IDS = ["INBOX", "SENT", "SPAM"] as const;
+const GMAIL_WATCH_LABEL_IDS = ["INBOX", "SENT", "SPAM", "DRAFT"] as const;
 
 /**
  * Least-privilege scopes for the Phase 6 connect/reconnect flow.
