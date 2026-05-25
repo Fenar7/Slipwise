@@ -139,6 +139,11 @@ export interface MailboxMessageEnvelope {
   attachments?: MailboxAttachmentEnvelope[];
 }
 
+export interface MailboxDraftSyncResult {
+  threads: MailboxThreadEnvelope[];
+  activeDraftMessageIds: string[];
+}
+
 export interface MailboxParticipantRef {
   email: string;
   displayName: string | null;
@@ -245,6 +250,16 @@ export interface IMailboxProviderAdapter {
     | { threads: MailboxThreadEnvelope[]; nextCursor: MailboxSyncCursor | null }
     | MailboxProviderError
   >;
+
+  /**
+   * Fetch the provider's current draft set as provider-backed thread envelopes.
+   * This is distinct from mailbox delta sync because some providers expose
+   * drafts via dedicated APIs rather than normal mailbox thread history.
+   */
+  syncDrafts(params: {
+    orgId: string;
+    tokenRef: string;
+  }): Promise<MailboxDraftSyncResult | MailboxProviderError>;
 
   /**
    * Fetch full thread detail including message bodies.

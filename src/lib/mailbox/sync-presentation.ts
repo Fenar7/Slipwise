@@ -30,7 +30,7 @@ function parseSyncStats(stats: Record<string, unknown> | null): {
 }
 
 
-const GMAIL_PRESENTATION_COVERAGE_VERSION = 3;
+const GMAIL_PRESENTATION_COVERAGE_VERSION = 4;
 
 function hasStaleGmailCoverage(record: MailboxConnectionRecord): boolean {
   if (record.provider !== "GMAIL") return false;

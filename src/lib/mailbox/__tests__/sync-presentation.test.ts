@@ -66,7 +66,7 @@ describe("buildMailboxSyncPresentation", () => {
     const sync = buildMailboxSyncPresentation(
       makeConnection({
           watchMetadata: {
-          gmailCoverageVersion: 3,
+          gmailCoverageVersion: 4,
           gmailCoveredSystemLabels: ["INBOX", "SENT", "SPAM", "DRAFT"],
           },
       }),
@@ -313,7 +313,7 @@ describe("buildMailboxSyncPresentation", () => {
       const sync = buildMailboxSyncPresentation(
         makeConnection({
           watchMetadata: {
-            gmailCoverageVersion: 3,
+            gmailCoverageVersion: 4,
             gmailCoveredSystemLabels: ["INBOX"],
           },
         }),
@@ -328,7 +328,7 @@ describe("buildMailboxSyncPresentation", () => {
       const sync = buildMailboxSyncPresentation(
         makeConnection({
           watchMetadata: {
-            gmailCoverageVersion: 3,
+            gmailCoverageVersion: 4,
             gmailCoveredSystemLabels: ["INBOX", "SENT", "SPAM", "DRAFT"],
           },
         }),

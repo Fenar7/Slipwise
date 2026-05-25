@@ -61,7 +61,7 @@ export interface RunMailboxSyncResult {
 const MAILBOX_SYNC_MAX_RUNNING_AGE_MINUTES = 30;
 const MAILBOX_SYNC_LEASE_DURATION_MS = MAILBOX_SYNC_MAX_RUNNING_AGE_MINUTES * 60 * 1000;
 const GMAIL_REQUIRED_FOLDER_COVERAGE = ["INBOX", "SENT", "SPAM", "DRAFT"] as const;
-const GMAIL_FOLDER_COVERAGE_VERSION = 3;
+const GMAIL_FOLDER_COVERAGE_VERSION = 4;
 
 function toMetadataRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -176,6 +176,57 @@ async function ingestSyncedThreads(params: {
     threadCount: params.threads.length,
     messageCount,
   };
+}
+
+function hasDraftLabel(metadata: unknown): boolean {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return false;
+  const labelIds = (metadata as Record<string, unknown>).labelIds;
+  return Array.isArray(labelIds) && labelIds.includes("DRAFT");
+}
+
+function removeDraftLabel(metadata: unknown): Record<string, unknown> | null {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return null;
+  const next = { ...(metadata as Record<string, unknown>) };
+  const labelIds = Array.isArray(next.labelIds)
+    ? next.labelIds.filter((value): value is string => typeof value === "string" && value !== "DRAFT")
+    : [];
+  next.labelIds = labelIds;
+  delete next.gmailDraftId;
+  return next;
+}
+
+async function reconcileProviderDraftMarkers(params: {
+  orgId: string;
+  connectionId: string;
+  activeDraftMessageIds: string[];
+}): Promise<void> {
+  const rows = await db.mailboxMessage.findMany({
+    where: {
+      orgId: params.orgId,
+      thread: {
+        mailboxConnectionId: params.connectionId,
+      },
+    },
+    select: {
+      id: true,
+      providerMessageId: true,
+      providerMetadata: true,
+    },
+  });
+
+  const activeSet = new Set(params.activeDraftMessageIds);
+  const staleRows = rows.filter(
+    (row) => hasDraftLabel(row.providerMetadata) && !activeSet.has(row.providerMessageId),
+  );
+
+  for (const row of staleRows) {
+    await db.mailboxMessage.update({
+      where: { id: row.id },
+      data: {
+        providerMetadata: removeDraftLabel(row.providerMetadata) as Prisma.InputJsonValue,
+      },
+    });
+  }
 }
 
 /**
@@ -406,6 +457,7 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
     let threadCount = 0;
     let messageCount = 0;
     let recoveredGmailCoverage = false;
+    const syncedProviderThreadIds = new Set<string>();
 
     if (needsGmailCoverageRecovery) {
       const recovery = await adapter.syncDelta({
@@ -427,6 +479,9 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
       });
       threadCount += recoveryStats.threadCount;
       messageCount += recoveryStats.messageCount;
+      for (const thread of recovery.threads) {
+        syncedProviderThreadIds.add(thread.providerThreadId);
+      }
       recoveredGmailCoverage = true;
     }
 
@@ -449,6 +504,43 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
     });
     threadCount += deltaStats.threadCount;
     messageCount += deltaStats.messageCount;
+    for (const thread of delta.threads) {
+      syncedProviderThreadIds.add(thread.providerThreadId);
+    }
+
+    let syncedDrafts = false;
+    if (connection.provider === "GMAIL") {
+      const draftSync = await adapter.syncDrafts({
+        orgId: params.orgId,
+        tokenRef: connection.tokenRef,
+      });
+      if (isMailboxProviderError(draftSync)) {
+        throw toProviderErrorException(draftSync);
+      }
+
+      const draftThreadsToIngest = draftSync.threads.filter(
+        (thread) => !syncedProviderThreadIds.has(thread.providerThreadId),
+      );
+      if (draftThreadsToIngest.length > 0) {
+        const draftStats = await ingestSyncedThreads({
+          orgId: params.orgId,
+          connectionId: connection.id,
+          mailboxEmail: connection.emailAddress,
+          tokenRef: connection.tokenRef,
+          adapter,
+          threads: draftThreadsToIngest,
+        });
+        threadCount += draftStats.threadCount;
+        messageCount += draftStats.messageCount;
+      }
+
+      await reconcileProviderDraftMarkers({
+        orgId: params.orgId,
+        connectionId: connection.id,
+        activeDraftMessageIds: draftSync.activeDraftMessageIds,
+      });
+      syncedDrafts = true;
+    }
 
     // ─── Cursor advancement only after successful ingestion ─────────────────
     if (delta.nextCursor) {
@@ -463,7 +555,11 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
     }
 
     const shouldPersistGmailCoverage =
-      connection.provider === "GMAIL" && (effectiveMode === "INITIAL" || recoveredGmailCoverage);
+      connection.provider === "GMAIL" &&
+      syncedDrafts &&
+      (effectiveMode === "INITIAL" ||
+        recoveredGmailCoverage ||
+        !hasRequiredGmailCoverage(effectiveWatchMetadata));
     if (shouldPersistGmailCoverage) {
       effectiveWatchMetadata = withRequiredGmailCoverage(effectiveWatchMetadata);
     }

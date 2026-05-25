@@ -34,6 +34,7 @@ import type {
   MailboxProviderError,
   MailboxWatchRenewalResult,
   MailboxParticipantRef,
+  MailboxDraftSyncResult,
 } from "./provider-contracts";
 import { storeMailboxCredential, readMailboxCredential, rotateMailboxCredential, revokeMailboxCredential } from "./credential-store";
 import type { MailboxCredentialPayload } from "./credential-store";
@@ -48,6 +49,7 @@ const GMAIL_THREADS_URL = "https://gmail.googleapis.com/gmail/v1/users/me/thread
 const GMAIL_THREAD_URL = "https://gmail.googleapis.com/gmail/v1/users/me/threads";
 const GMAIL_HISTORY_URL = "https://gmail.googleapis.com/gmail/v1/users/me/history";
 const GMAIL_WATCH_URL = "https://gmail.googleapis.com/gmail/v1/users/me/watch";
+const GMAIL_DRAFTS_URL = "https://gmail.googleapis.com/gmail/v1/users/me/drafts";
 const GMAIL_SEND_URL = "https://www.googleapis.com/gmail/v1/users/me/messages/send";
 const GMAIL_INITIAL_SYNC_MAX_PAGES = 1;
 const GMAIL_INITIAL_SYNC_MAX_RESULTS = 25;
@@ -55,7 +57,6 @@ const GMAIL_BOOTSTRAP_SLICES = [
   { query: "in:inbox", includeSpamTrash: false },
   { query: "in:sent", includeSpamTrash: false },
   { query: "in:spam", includeSpamTrash: true },
-  { query: "in:draft", includeSpamTrash: false },
 ] as const;
 const GMAIL_WATCH_LABEL_IDS = ["INBOX", "SENT", "SPAM", "DRAFT"] as const;
 
@@ -109,7 +110,7 @@ function mapGoogleError(
     return { category: "quota_exceeded", safeMessage: "Gmail API quota exceeded", retryable: false };
   }
   // History invalid / expired → force full re-sync by treating as watch expired
-  if (status === 404 && (errorCode === "historyNotFound" || errorCode === "notFound")) {
+  if (status === 404 && errorCode === "historyNotFound") {
     return { category: "watch_expired", safeMessage: "Gmail history expired; full re-sync required", retryable: false };
   }
   // Not found
@@ -490,6 +491,55 @@ export const gmailProviderAdapter: IMailboxProviderAdapter = {
     return { threads: threadFetch.threads, nextCursor };
   },
 
+  async syncDrafts({ orgId, tokenRef }) {
+    const credential = await readMailboxCredential(orgId, tokenRef);
+    if (!credential) {
+      return { category: "auth_expired", safeMessage: "Credential not found for tokenRef", retryable: false };
+    }
+
+    const accessToken = await ensureValidAccessToken(orgId, tokenRef, credential);
+    if (isProviderError(accessToken)) return accessToken;
+
+    const draftIds = await fetchAllDraftIds(accessToken);
+    if (isProviderError(draftIds)) return draftIds;
+    if (draftIds.length === 0) {
+      return { threads: [], activeDraftMessageIds: [] };
+    }
+
+    const threadsById = new Map<string, MailboxThreadEnvelope>();
+    const activeDraftMessageIds: string[] = [];
+
+    for (const draftId of draftIds) {
+      const draft = await fetchDraft(accessToken, draftId);
+      if (isProviderError(draft)) {
+        if (draft.category === "not_found") {
+          continue;
+        }
+        return draft;
+      }
+
+      const message = draft.message;
+      if (!message?.id || !message.threadId) {
+        continue;
+      }
+
+      activeDraftMessageIds.push(message.id);
+      const envelope = toDraftThreadEnvelope(message);
+      if (!envelope) {
+        continue;
+      }
+      const existing = threadsById.get(envelope.providerThreadId);
+      if (!existing || new Date(envelope.lastMessageAt) > new Date(existing.lastMessageAt)) {
+        threadsById.set(envelope.providerThreadId, envelope);
+      }
+    }
+
+    return {
+      threads: [...threadsById.values()],
+      activeDraftMessageIds,
+    } satisfies MailboxDraftSyncResult;
+  },
+
   /**
    * Renew the Gmail push watch subscription.
    * Calls the Gmail watch endpoint and returns expiration + metadata.
@@ -754,6 +804,16 @@ interface GmailThreadsListResponse {
   nextPageToken?: string;
 }
 
+interface GmailDraftsListResponse {
+  drafts?: Array<{ id: string }>;
+  nextPageToken?: string;
+}
+
+interface GmailDraftResponse {
+  id: string;
+  message?: GmailMessage;
+}
+
 type GmailBootstrapSlice = (typeof GMAIL_BOOTSTRAP_SLICES)[number];
 
 interface GmailThreadRef {
@@ -848,6 +908,55 @@ async function fetchBoundedThreadRefsForQuery(
   return { threadRefs };
 }
 
+async function fetchAllDraftIds(
+  accessToken: string,
+): Promise<string[] | MailboxProviderError> {
+  const draftIds: string[] = [];
+  let nextPageToken: string | undefined;
+
+  do {
+    const params = new URLSearchParams({
+      maxResults: "100",
+    });
+    if (nextPageToken) {
+      params.set("pageToken", nextPageToken);
+    }
+
+    const res = await fetch(`${GMAIL_DRAFTS_URL}?${params.toString()}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!res.ok) {
+      const errorCode = await parseGoogleErrorCode(res);
+      return mapGoogleError(res.status, errorCode);
+    }
+
+    const data = await res.json() as GmailDraftsListResponse;
+    for (const draft of data.drafts ?? []) {
+      if (draft?.id) {
+        draftIds.push(draft.id);
+      }
+    }
+    nextPageToken = data.nextPageToken;
+  } while (nextPageToken);
+
+  return draftIds;
+}
+
+async function fetchDraft(
+  accessToken: string,
+  draftId: string,
+): Promise<GmailDraftResponse | MailboxProviderError> {
+  const res = await fetch(`${GMAIL_DRAFTS_URL}/${draftId}?format=full`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) {
+    const errorCode = await parseGoogleErrorCode(res);
+    return mapGoogleError(res.status, errorCode);
+  }
+
+  return res.json() as Promise<GmailDraftResponse>;
+}
+
 async function fetchThreadEnvelopes(
   accessToken: string,
   threadIds: string[],
@@ -895,6 +1004,29 @@ function toThreadEnvelope(thread: GmailThreadResponse): MailboxThreadEnvelope | 
     unreadCount,
     participants,
     providerMetadata: { gmailHistoryId: thread.historyId, messageCount: thread.messages?.length ?? 0 },
+  };
+}
+
+function toDraftThreadEnvelope(message: GmailMessage): MailboxThreadEnvelope | null {
+  if (!message.threadId) return null;
+  const headers = message.payload?.headers ?? [];
+  const subject = headers.find((h) => h.name === "Subject")?.value ?? "(no subject)";
+  const participants = extractParticipants(headers);
+  const lastMessageAt = message.internalDate
+    ? new Date(parseInt(message.internalDate, 10)).toISOString()
+    : new Date().toISOString();
+
+  return {
+    providerThreadId: message.threadId,
+    subject,
+    lastMessageAt,
+    unreadCount: 0,
+    participants,
+    providerMetadata: {
+      gmailHistoryId: message.historyId ?? null,
+      messageCount: 1,
+      source: "draft",
+    },
   };
 }
 

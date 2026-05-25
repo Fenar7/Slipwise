@@ -269,7 +269,7 @@ describe("gmailProviderAdapter Sprint 3.2", () => {
     expect(threadDetailCalls).toHaveLength(1);
   });
 
-  it("renews Gmail watch across inbox, sent, and spam labels", async () => {
+  it("renews Gmail watch across inbox, sent, spam, and draft labels", async () => {
     process.env.GMAIL_PUBSUB_TOPIC = "projects/example/topics/gmail";
     vi.mocked(readMailboxCredential).mockResolvedValue({
       accessToken: "token-123",
@@ -294,7 +294,134 @@ describe("gmailProviderAdapter Sprint 3.2", () => {
     expect("metadata" in result).toBe(true);
     const [, options] = fetchMock.mock.calls[0] ?? [];
     const body = JSON.parse(String(options?.body ?? "{}"));
-    expect(body.labelIds).toEqual(["INBOX", "SENT", "SPAM"]);
+    expect(body.labelIds).toEqual(["INBOX", "SENT", "SPAM", "DRAFT"]);
+  });
+
+  it("syncs provider drafts through drafts.list and drafts.get, then resolves thread envelopes", async () => {
+    vi.mocked(readMailboxCredential).mockResolvedValue({
+      accessToken: "token-123",
+      refreshToken: "refresh-123",
+      expiresAtMs: Date.now() + 3_600_000,
+      tokenType: "Bearer",
+      scope: "gmail.readonly",
+    });
+
+    fetchMock
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            drafts: [{ id: "draft-1" }, { id: "draft-2" }],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            id: "draft-1",
+            message: {
+              id: "msg-draft-1",
+              threadId: "thread-draft-1",
+              internalDate: String(Date.now()),
+              payload: {
+                headers: [
+                  { name: "Subject", value: "Draft Subject A" },
+                  { name: "From", value: "A <a@example.com>" },
+                  { name: "To", value: "B <b@example.com>" },
+                ],
+              },
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            id: "draft-2",
+            message: {
+              id: "msg-draft-2",
+              threadId: "thread-draft-2",
+              internalDate: String(Date.now()),
+              payload: {
+                headers: [
+                  { name: "Subject", value: "Draft Subject B" },
+                  { name: "From", value: "A <a@example.com>" },
+                  { name: "To", value: "B <b@example.com>" },
+                ],
+              },
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      );
+
+    const result = await gmailProviderAdapter.syncDrafts({
+      orgId: "org-1",
+      tokenRef: "token-ref-1",
+    });
+
+    expect("threads" in result && result.threads).toHaveLength(2);
+    expect("activeDraftMessageIds" in result && result.activeDraftMessageIds).toEqual([
+      "msg-draft-1",
+      "msg-draft-2",
+    ]);
+  });
+
+  it("skips disappearing drafts during syncDrafts instead of failing the whole import", async () => {
+    vi.mocked(readMailboxCredential).mockResolvedValue({
+      accessToken: "token-123",
+      refreshToken: "refresh-123",
+      expiresAtMs: Date.now() + 3_600_000,
+      tokenType: "Bearer",
+      scope: "gmail.readonly",
+    });
+
+    fetchMock
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            drafts: [{ id: "draft-1" }, { id: "draft-missing" }],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            id: "draft-1",
+            message: {
+              id: "msg-draft-1",
+              threadId: "thread-draft-1",
+              internalDate: String(Date.now()),
+              payload: {
+                headers: [
+                  { name: "Subject", value: "Draft Subject A" },
+                  { name: "From", value: "A <a@example.com>" },
+                  { name: "To", value: "B <b@example.com>" },
+                ],
+              },
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ error: { errors: [{ reason: "notFound" }] } }),
+          { status: 404, headers: { "Content-Type": "application/json" } },
+        ),
+      );
+
+    const result = await gmailProviderAdapter.syncDrafts({
+      orgId: "org-1",
+      tokenRef: "token-ref-1",
+    });
+
+    expect("threads" in result && result.threads).toHaveLength(1);
+    expect("activeDraftMessageIds" in result && result.activeDraftMessageIds).toEqual([
+      "msg-draft-1",
+    ]);
   });
 });
 

@@ -20,6 +20,8 @@ vi.mock("@/lib/db", () => ({
       upsert: vi.fn(),
       findUnique: vi.fn(),
       findFirst: vi.fn(),
+      findMany: vi.fn(),
+      update: vi.fn(),
       count: vi.fn(),
     },
     mailboxAttachment: {
@@ -80,6 +82,7 @@ vi.mock("@/lib/mailbox/gmail-provider", async () => {
       refreshAuthorization: vi.fn(),
       verifyConnection: vi.fn(),
       syncDelta: vi.fn(),
+      syncDrafts: vi.fn(),
       fetchThreadDetail: vi.fn(),
       disconnect: vi.fn(),
       renewWatch: vi.fn(),
@@ -134,6 +137,8 @@ const mockDb = db as unknown as {
     upsert: ReturnType<typeof vi.fn>;
     findUnique: ReturnType<typeof vi.fn>;
     findFirst: ReturnType<typeof vi.fn>;
+    findMany: ReturnType<typeof vi.fn>;
+    update: ReturnType<typeof vi.fn>;
   };
   mailboxProviderCursor: {
     upsert: ReturnType<typeof vi.fn>;
@@ -148,6 +153,7 @@ describe("Sprint 3.2 — Incremental sync and provider cursors", () => {
     mockDb.mailboxSyncRun.findFirst.mockResolvedValue(null);
     mockDb.mailboxConnection.updateMany.mockResolvedValue({ count: 1 });
     mockDb.mailboxThread.updateMany.mockResolvedValue({ count: 1 });
+    mockDb.mailboxMessage.findMany.mockResolvedValue([]);
   });
 
   // ─── Domain helpers ──────────────────────────────────────────────────────
@@ -461,8 +467,8 @@ describe("Sprint 3.2 — Incremental sync and provider cursors", () => {
         expect.objectContaining({
           data: expect.objectContaining({
             watchMetadata: expect.objectContaining({
-              gmailCoverageVersion: 2,
-              gmailCoveredSystemLabels: ["INBOX", "SENT", "SPAM"],
+              gmailCoverageVersion: 4,
+              gmailCoveredSystemLabels: ["INBOX", "SENT", "SPAM", "DRAFT"],
             }),
           }),
         }),
@@ -478,8 +484,8 @@ describe("Sprint 3.2 — Incremental sync and provider cursors", () => {
         makeConnectionRecord({
           watchExpiresAt: new Date("2099-01-01"),
           watchMetadata: {
-            gmailCoverageVersion: 2,
-            gmailCoveredSystemLabels: ["INBOX", "SENT", "SPAM"],
+            gmailCoverageVersion: 4,
+            gmailCoveredSystemLabels: ["INBOX", "SENT", "SPAM", "DRAFT"],
           },
         }),
       );
@@ -800,8 +806,8 @@ describe("Sprint 3.2 — Incremental sync and provider cursors", () => {
 
       vi.mocked(getMailboxConnection).mockResolvedValue(makeConnectionRecord({
         watchMetadata: {
-          gmailCoverageVersion: 2,
-          gmailCoveredSystemLabels: ["INBOX", "SENT", "SPAM"],
+          gmailCoverageVersion: 4,
+          gmailCoveredSystemLabels: ["INBOX", "SENT", "SPAM", "DRAFT"],
         },
       }));
       vi.mocked(getMailboxCursor).mockResolvedValue(makeCursorRecord());
@@ -825,6 +831,7 @@ describe("Sprint 3.2 — Incremental sync and provider cursors", () => {
       expect(r2.success).toBe(true);
       // Upsert semantics in ingestion-service guarantee idempotency.
       expect(mockDb.mailboxThread.upsert).toHaveBeenCalledTimes(2);
+      expect(mockAdapter.syncDrafts).toHaveBeenCalledTimes(2);
     });
   });
 
@@ -857,8 +864,8 @@ describe("Sprint 3.2 — Incremental sync and provider cursors", () => {
         expect.objectContaining({
           data: expect.objectContaining({
             watchMetadata: expect.objectContaining({
-              gmailCoverageVersion: 2,
-              gmailCoveredSystemLabels: ["INBOX", "SENT", "SPAM"],
+              gmailCoverageVersion: 4,
+              gmailCoveredSystemLabels: ["INBOX", "SENT", "SPAM", "DRAFT"],
             }),
           }),
         }),
@@ -1030,6 +1037,10 @@ function makeMockAdapter(overrides: { snippet?: string; attachmentCount?: number
         providerMetadata: {},
       }],
       nextCursor: { value: "cursor-next", expiresAt: null },
+    }),
+    syncDrafts: vi.fn().mockResolvedValue({
+      threads: [],
+      activeDraftMessageIds: [],
     }),
     fetchThreadDetail: vi.fn().mockResolvedValue({
       messages: [{
