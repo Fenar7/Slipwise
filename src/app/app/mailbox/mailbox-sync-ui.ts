@@ -32,6 +32,7 @@ export function buildFallbackSyncPresentation(
       detailLabel:
         connection.lastSyncError ??
         "Reconnect this mailbox to resume syncing and importing new messages.",
+      staleGmailCoverage: false,
     };
   }
 
@@ -51,6 +52,7 @@ export function buildFallbackSyncPresentation(
       lastRunMessageCount: null,
       stageLabel: "Sync needs attention",
       detailLabel: connection.lastSyncError,
+      staleGmailCoverage: false,
     };
   }
 
@@ -71,6 +73,7 @@ export function buildFallbackSyncPresentation(
       stageLabel: "Connected, waiting for first sync",
       detailLabel:
         "This mailbox is connected. The first sync has not completed yet.",
+      staleGmailCoverage: false,
     };
   }
 

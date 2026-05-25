@@ -13,4 +13,6 @@ export interface MailboxSyncPresentation {
   lastRunMessageCount: number | null;
   stageLabel: string;
   detailLabel: string;
+  /** True when Gmail Sent/Spam coverage recovery is still required. */
+  staleGmailCoverage: boolean;
 }

@@ -434,7 +434,7 @@ export function MailboxWorkspace() {
 
   /**
    * Auto-trigger initial sync for the active mailbox when it's in
-   * `completed_never_imported` state. Fires once per connection per mount,
+   * `completed_never_imported` state or has stale Gmail coverage. Fires once per connection per mount,
    * protected by a per-connection ref guard and the server-side rate limit.
    *
    * This backs up the settings-page trigger: if the user navigates directly
@@ -446,7 +446,8 @@ export function MailboxWorkspace() {
     if (connectionsLoading || !activeConnection) return;
     if (activeConnection.status !== "connected") return;
     const sync = resolveMailboxSyncPresentation(activeConnection);
-    if (sync.state !== "completed_never_imported") return;
+    const needsAutoSync = sync.state === "completed_never_imported" || sync.staleGmailCoverage;
+    if (!needsAutoSync) return;
     if (autoSyncTriggeredRef.current[activeConnection.id]) return;
     if (isSyncPending(activeConnection.id)) return;
 
