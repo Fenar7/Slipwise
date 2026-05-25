@@ -16,6 +16,7 @@ const FILTER_OPTIONS = [
   { value: "in-progress", label: "In Progress" },
   { value: "done", label: "Done" },
   { value: "overdue", label: "Overdue" },
+  { value: "cancelled", label: "Cancelled" },
 ];
 
 function priorityStrip(p: TaskPriority) {
@@ -84,7 +85,7 @@ function TaskDetailPanel({
   const [editPriority, setEditPriority] = useState<TaskPriority>(task.priority);
   const [editDueDate, setEditDueDate] = useState(task.dueDate ?? "");
   const [editAssigneeId, setEditAssigneeId] = useState(task.assignee?.id ?? "");
-  const [editStatus, setEditStatus] = useState<TaskStatus>(task.status);
+  const [editStatus, setEditStatus] = useState<TaskStatus>(task.dbStatus ?? task.status);
 
   // Sync edit details when task changes (no stale selection bugs)
   React.useEffect(() => {
@@ -93,7 +94,7 @@ function TaskDetailPanel({
     setEditPriority(task.priority);
     setEditDueDate(task.dueDate ?? "");
     setEditAssigneeId(task.assignee?.id ?? "");
-    setEditStatus(task.status);
+    setEditStatus(task.dbStatus ?? task.status);
     setIsEditing(false);
     setError(null);
   }, [task]);
@@ -210,7 +211,6 @@ function TaskDetailPanel({
               <option value="open">Open</option>
               <option value="in-progress">In Progress</option>
               <option value="done">Done</option>
-              <option value="overdue">Overdue</option>
               <option value="cancelled">Cancelled</option>
             </select>
           </div>
@@ -467,6 +467,9 @@ export function MessagingTaskPanel({ conversationId, onNavigateToOrigin }: Messa
   }, [conversationDetail]);
 
   const mapApiTaskToFrontend = React.useCallback((t: ApiTaskSummary): MessagingTaskDetail => {
+    const isOverdue = t.isOverdue || t.status === "OVERDUE";
+    const dbStatus = t.status.toLowerCase().replace("_", "-") as TaskStatus;
+    const status = isOverdue ? "overdue" : dbStatus;
     return {
       id: t.id,
       title: t.title,
@@ -480,13 +483,14 @@ export function MessagingTaskPanel({ conversationId, onNavigateToOrigin }: Messa
           }
         : null,
       dueDate: t.dueDate ? new Date(t.dueDate).toISOString().split("T")[0] : null,
-      status: t.status.toLowerCase().replace("_", "-") as TaskStatus,
+      status,
       conversationRef: t.conversationId,
       priority: t.priority,
       description: t.description,
       createdAt: t.createdAt,
       createdBy: t.createdByName ?? t.createdBy,
       originatingMessageId: t.originatingMessageId,
+      dbStatus,
     };
   }, []);
 
