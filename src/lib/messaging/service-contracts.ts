@@ -360,6 +360,19 @@ export interface AssignTaskInput {
   conversationId: string;
 }
 
+export interface UpdateTaskInput {
+  orgId: string;
+  taskId: string;
+  actorId: string;
+  conversationId: string;
+  title?: string;
+  description?: string | null;
+  priority?: number;
+  dueDate?: Date | null;
+  assigneeId?: string | null;
+  status?: MessagingTaskStatus;
+}
+
 // ─── Meeting service contracts ───────────────────────────────────────────────
 
 export interface ScheduleMeetingInput {
