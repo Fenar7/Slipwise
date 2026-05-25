@@ -19,7 +19,6 @@ const VALID_TASK_STATUSES: readonly MessagingTaskStatus[] = [
   "OPEN",
   "IN_PROGRESS",
   "DONE",
-  "OVERDUE",
   "CANCELLED",
 ];
 

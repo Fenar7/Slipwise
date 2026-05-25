@@ -10,16 +10,20 @@ vi.mock("@/lib/db", () => {
     conversation: {
       findUnique: vi.fn(),
     },
+    conversationMessage: {
+      findUnique: vi.fn(),
+    },
     messagingTask: {
       findUnique: vi.fn(),
       update: vi.fn(),
+      create: vi.fn(),
     },
   };
   return { db };
 });
 
 import { db } from "@/lib/db";
-import { updateTask } from "../task-service";
+import { updateTask, createTask } from "../task-service";
 import { ConversationAccessError, InvalidInputError, NotFoundError } from "../errors";
 
 describe("Sprint 6.3 Service layer — Unified updateTask Details", () => {
@@ -324,5 +328,94 @@ describe("Sprint 6.3 Service layer — Unified updateTask Details", () => {
         title: "Try to edit title",
       })
     ).rejects.toThrow("updateTask: conversation is locked");
+  });
+
+  describe("createTask originatingMessageId validation", () => {
+    it("throws InvalidInputError if originating message does not exist", async () => {
+      (db.conversationParticipant.findFirst as any).mockResolvedValue(mockActiveParticipant());
+      (db.conversation.findUnique as any).mockResolvedValue(mockActiveConversation());
+      (db.conversationMessage.findUnique as any).mockResolvedValue(null);
+
+      await expect(
+        createTask({
+          orgId: "org-1",
+          conversationId: "conv-1",
+          createdBy: "user-1",
+          title: "Task with bad message id",
+          originatingMessageId: "msg-bad",
+        })
+      ).rejects.toThrow("Originating message not found");
+    });
+
+    it("throws InvalidInputError if originating message belongs to a different conversation", async () => {
+      (db.conversationParticipant.findFirst as any).mockResolvedValue(mockActiveParticipant());
+      (db.conversation.findUnique as any).mockResolvedValue(mockActiveConversation());
+      (db.conversationMessage.findUnique as any).mockResolvedValue({
+        id: "msg-123",
+        orgId: "org-1",
+        conversationId: "conv-2",
+      });
+
+      await expect(
+        createTask({
+          orgId: "org-1",
+          conversationId: "conv-1",
+          createdBy: "user-1",
+          title: "Task with cross-conversation message",
+          originatingMessageId: "msg-123",
+        })
+      ).rejects.toThrow("Originating message must belong to the same conversation and organization");
+    });
+
+    it("throws InvalidInputError if originating message belongs to a different organization", async () => {
+      (db.conversationParticipant.findFirst as any).mockResolvedValue(mockActiveParticipant());
+      (db.conversation.findUnique as any).mockResolvedValue(mockActiveConversation());
+      (db.conversationMessage.findUnique as any).mockResolvedValue({
+        id: "msg-123",
+        orgId: "org-2",
+        conversationId: "conv-1",
+      });
+
+      await expect(
+        createTask({
+          orgId: "org-1",
+          conversationId: "conv-1",
+          createdBy: "user-1",
+          title: "Task with cross-org message",
+          originatingMessageId: "msg-123",
+        })
+      ).rejects.toThrow("Originating message must belong to the same conversation and organization");
+    });
+
+    it("successfully creates task with valid originatingMessageId", async () => {
+      (db.conversationParticipant.findFirst as any).mockResolvedValue(mockActiveParticipant());
+      (db.conversation.findUnique as any).mockResolvedValue(mockActiveConversation());
+      (db.conversationMessage.findUnique as any).mockResolvedValue({
+        id: "msg-123",
+        orgId: "org-1",
+        conversationId: "conv-1",
+      });
+      (db.messagingTask.create as any).mockResolvedValue({
+        id: "task-1",
+        orgId: "org-1",
+        conversationId: "conv-1",
+        title: "Task with valid message",
+        status: "OPEN",
+        priority: 0,
+        createdBy: "user-1",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      const result = await createTask({
+        orgId: "org-1",
+        conversationId: "conv-1",
+        createdBy: "user-1",
+        title: "Task with valid message",
+        originatingMessageId: "msg-123",
+      });
+
+      expect(result.title).toBe("Task with valid message");
+    });
   });
 });

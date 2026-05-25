@@ -75,6 +75,20 @@ export async function createTask(input: CreateTaskInput): Promise<MessagingTaskR
     }
   }
 
+  if (input.originatingMessageId) {
+    const msg = await db.conversationMessage.findUnique({
+      where: { id: input.originatingMessageId },
+    });
+
+    if (!msg) {
+      throw new InvalidInputError("Originating message not found");
+    }
+
+    if (msg.orgId !== orgId || msg.conversationId !== conversationId) {
+      throw new InvalidInputError("Originating message must belong to the same conversation and organization");
+    }
+  }
+
   const task = await db.messagingTask.create({
     data: {
       orgId,

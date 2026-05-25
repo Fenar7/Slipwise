@@ -54,7 +54,7 @@ export async function POST(
       originatingMessageId: body.originatingMessageId ?? null,
     });
 
-    return messagingApiResponse(task);
+    return messagingApiResponse(task, 201);
   } catch (error) {
     return handleMessagingApiError(error);
   }
