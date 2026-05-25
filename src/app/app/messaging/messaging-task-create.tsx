@@ -5,6 +5,8 @@ import { Link, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { RadioPill } from "./messaging-ui-primitives";
 import type { TaskPriority, MessagingParticipant } from "./types";
+import { useConversationList } from "./lib/use-conversation-list";
+import type { ApiConversationDetail } from "./lib/mappers";
 
 interface MessagingTaskCreateProps {
   onClose: () => void;
@@ -46,6 +48,17 @@ export function MessagingTaskCreate({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const [selectedConvId, setSelectedConvId] = useState(conversationId ?? "");
+  const [dynamicParticipants, setDynamicParticipants] = useState<MessagingParticipant[] | null>(null);
+  const [loadingParticipants, setLoadingParticipants] = useState(false);
+
+  // Call hook for global conversation list
+  const { channels, dms, groups } = useConversationList();
+
+  const allConversations = React.useMemo(() => {
+    return [...channels, ...dms, ...groups];
+  }, [channels, dms, groups]);
+
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") onClose();
@@ -54,15 +67,50 @@ export function MessagingTaskCreate({
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  // Use passed participants — no mock fallback in live paths
-  const allowedParticipants = participants ?? [];
+  // Fetch participants when conversation selection changes in global mode
+  useEffect(() => {
+    if (conversationId || !selectedConvId) {
+      setDynamicParticipants(null);
+      return;
+    }
+
+    setLoadingParticipants(true);
+    setDynamicParticipants([]);
+    fetch(`/api/messaging/conversations/${selectedConvId}`, { credentials: "same-origin" })
+      .then((res) => res.json())
+      .then((payload) => {
+        if (payload.success && payload.data) {
+          const detail: ApiConversationDetail = payload.data;
+          const profilesMap = new Map(
+            detail.participantProfiles?.map((p: any) => [p.userId, p]) ?? []
+          );
+          const list = detail.participants.map((p: any) => {
+            const prof = profilesMap.get(p.userId);
+            const name = prof?.name ?? p.displayName ?? `User ${p.userId.slice(0, 4)}`;
+            return {
+              id: p.userId,
+              name,
+              avatarInitials: prof?.avatarInitials ?? name.slice(0, 2).toUpperCase(),
+              role: (p.role === "owner" || p.role === "admin" ? p.role : "member") as "owner" | "admin" | "member",
+              presence: "online" as const,
+            };
+          });
+          setDynamicParticipants(list);
+        }
+      })
+      .catch((err) => console.error("Failed to load conversation participants", err))
+      .finally(() => setLoadingParticipants(false));
+  }, [selectedConvId, conversationId]);
+
+  // Use passed participants or dynamically fetched participants in global mode
+  const allowedParticipants = participants ?? dynamicParticipants ?? [];
   const assignee = allowedParticipants.find((p) => p.id === assigneeId) ?? null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) return;
 
-    if (!conversationId) {
+    if (!selectedConvId) {
       setError("A conversation must be selected to create a task.");
       return;
     }
@@ -72,7 +120,7 @@ export function MessagingTaskCreate({
 
     try {
       // Send real API request
-      const res = await fetch(`/api/messaging/conversations/${conversationId}/tasks`, {
+      const res = await fetch(`/api/messaging/conversations/${selectedConvId}/tasks`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -132,6 +180,40 @@ export function MessagingTaskCreate({
         )}
 
         <div className="space-y-4">
+          {/* Conversation Selector (only in global creation mode) */}
+          {!conversationId && (
+            <div>
+              <label className="block text-xs font-semibold mb-1" style={{ color: "#1C1B1F" }}>
+                Select Conversation <span className="text-[#DC2626]">*</span>
+              </label>
+              <select
+                data-testid="task-create-conversation-select"
+                value={selectedConvId}
+                disabled={submitting}
+                onChange={(e) => {
+                  setSelectedConvId(e.target.value);
+                  setAssigneeId(""); // Reset assignee when conversation changes
+                }}
+                className="w-full rounded-lg border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]"
+                style={{ borderColor: "#E0E0E0", color: selectedConvId ? "#1C1B1F" : "#79747E" }}
+              >
+                <option value="">Choose a channel, DM or group...</option>
+                {allConversations.map((c) => {
+                  const displayLabel = c.type === "CHANNEL"
+                    ? `#${c.name}`
+                    : c.type === "DM"
+                    ? `DM: ${c.dmPeerName ?? c.name ?? "Unknown"}`
+                    : `Group: ${c.name}`;
+                  return (
+                    <option key={c.id} value={c.id}>
+                      {displayLabel}
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+          )}
+
           {/* Title */}
           <div>
             <label className="block text-xs font-semibold mb-1" style={{ color: "#1C1B1F" }}>

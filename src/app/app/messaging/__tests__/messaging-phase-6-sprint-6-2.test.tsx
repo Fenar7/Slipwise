@@ -223,33 +223,31 @@ describe("Sprint 6.2 — Live tasks path without mock data", () => {
     vi.restoreAllMocks();
   });
 
-  it("shows a truthful no-conversation-selected state when conversationId is null", async () => {
+  it("shows global tasks state when conversationId is null", async () => {
     vi.stubGlobal("fetch", mockFetch({ success: true, data: [] }));
     render(<MessagingTaskPanel conversationId={null} />);
 
     await waitFor(() => {
-      expect(screen.getByText("No Conversation Selected")).toBeInTheDocument();
+      expect(screen.getByTestId("messaging-pane-tasks")).toBeInTheDocument();
     });
 
-    expect(screen.getByTestId("messaging-pane-tasks")).toBeInTheDocument();
     // Verify mock task data is NOT present
     expect(screen.queryByText("Clean Code Task")).toBeNull();
     expect(screen.queryByText("Arjun Mehta")).toBeNull();
   });
 
-  it("does not render mock tasks when conversationId is null", async () => {
+  it("does not render tasks when empty list is returned", async () => {
     vi.stubGlobal("fetch", mockFetch({ success: true, data: [] }));
     render(<MessagingTaskPanel conversationId={null} />);
 
     await waitFor(() => {
-      expect(screen.getByText("No Conversation Selected")).toBeInTheDocument();
+      expect(screen.getByTestId("messaging-pane-tasks")).toBeInTheDocument();
     });
 
-    // The no-conversation state renders under messaging-pane-tasks testid
-    // No task rows or task panel should be present
+    // The task panel structure renders when loading completes, but no individual task rows are present
     const container = screen.getByTestId("messaging-pane-tasks");
     expect(container.querySelector('[data-testid^="task-row-"]')).toBeNull();
-    expect(screen.queryByTestId("task-panel")).toBeNull();
+    expect(screen.getByTestId("task-panel")).toBeInTheDocument();
   });
 });
 
