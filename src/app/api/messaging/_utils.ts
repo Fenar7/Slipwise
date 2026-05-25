@@ -258,6 +258,57 @@ export function requireStringField(
 }
 
 /**
+ * Require a number within an inclusive integer range.
+ */
+export function requireNumberRange(
+  value: unknown,
+  fieldName: string,
+  min: number,
+  max: number,
+): number | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  const num = Number(value);
+  if (!Number.isFinite(num) || !Number.isInteger(num) || num < min || num > max) {
+    throw new MessagingApiError(
+      MessagingApiErrorCode.VALIDATION_ERROR,
+      `${fieldName} must be an integer between ${min} and ${max}.`,
+      STATUS_MAP[MessagingApiErrorCode.VALIDATION_ERROR],
+    );
+  }
+  return num;
+}
+
+/**
+ * Require a valid ISO-8601 date string.
+ */
+export function requireValidDate(
+  value: unknown,
+  fieldName: string,
+): Date | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  if (typeof value !== "string") {
+    throw new MessagingApiError(
+      MessagingApiErrorCode.VALIDATION_ERROR,
+      `${fieldName} must be a valid ISO-8601 date string.`,
+      STATUS_MAP[MessagingApiErrorCode.VALIDATION_ERROR],
+    );
+  }
+  const date = new Date(value);
+  if (isNaN(date.getTime())) {
+    throw new MessagingApiError(
+      MessagingApiErrorCode.VALIDATION_ERROR,
+      `${fieldName} must be a valid date.`,
+      STATUS_MAP[MessagingApiErrorCode.VALIDATION_ERROR],
+    );
+  }
+  return date;
+}
+
+/**
  * Require a valid enum value.
  */
 export function requireEnumField<T extends string>(

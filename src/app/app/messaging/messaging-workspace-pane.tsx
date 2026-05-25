@@ -8,7 +8,7 @@ import {
   ShieldAlert,
   Lock,
 } from "lucide-react";
-import type { MessagingSection, PresenceStatus } from "./types";
+import type { MessagingSection, PresenceStatus, MessagingParticipant } from "./types";
 import {
   MOCK_CHANNELS,
   MOCK_DMS,
@@ -24,6 +24,8 @@ import { MessagingFilesPanel } from "./messaging-files-panel";
 interface MessagingWorkspacePaneProps {
   activeSection: MessagingSection;
   conversationId?: string | null;
+  participants?: MessagingParticipant[];
+  onNavigateToOrigin?: (conversationId: string, messageId: string) => void;
 }
 
 const CARD_BUTTON_CLASS =
@@ -304,13 +306,24 @@ function DefaultPane() {
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export function MessagingWorkspacePane({ activeSection, conversationId }: MessagingWorkspacePaneProps) {
+export function MessagingWorkspacePane({
+  activeSection,
+  conversationId,
+  participants,
+  onNavigateToOrigin,
+}: MessagingWorkspacePaneProps) {
   return (
     <div className="flex flex-col flex-1 min-w-0 h-full overflow-hidden" data-testid="messaging-workspace-pane">
       {activeSection === "channels" && <ChannelsPane />}
       {activeSection === "dms" && <DirectMessagesPane />}
       {activeSection === "groups" && <GroupsPane />}
-      {activeSection === "tasks" && <MessagingTaskPanel />}
+      {activeSection === "tasks" && (
+        <MessagingTaskPanel
+          conversationId={conversationId}
+          participants={participants}
+          onNavigateToOrigin={onNavigateToOrigin}
+        />
+      )}
       {activeSection === "meetings" && (
         <MessagingMeetingPanel calendarConnection={MOCK_CALENDAR_CONNECTION} />
       )}

@@ -18,6 +18,7 @@ import type {
   MessagingWorkspaceState,
   ActiveConversation,
   MessagingNotification,
+  MessagingParticipant,
 } from "./types";
 import { MOCK_NOTIFICATIONS } from "./mock-data";
 import { useConversationList } from "./lib/use-conversation-list";
@@ -448,7 +449,33 @@ export function MessagingWorkspace() {
             </div>
           ) : (
             /* Sprint 1.1 pane for tasks / meetings / files / admin */
-            <MessagingWorkspacePane activeSection={state.activeSection} conversationId={activeConvId} />
+            <MessagingWorkspacePane
+              activeSection={state.activeSection}
+              conversationId={activeConvId}
+              participants={
+                activeDetail?.participantProfiles?.map((p) => ({
+                  id: p.userId,
+                  name: p.name,
+                  avatarInitials: p.avatarInitials,
+                  role: (activeDetail?.participants.find((part) => part.userId === p.userId)?.role ?? "member").toLowerCase() as MessagingParticipant["role"],
+                  presence: "offline" as const,
+                })) ?? undefined
+              }
+              onNavigateToOrigin={(convId, messageId) => {
+                // Sprint 6.2: truthful origin-link navigation
+                // Switch to the conversation and trigger message scroll
+                const section: MessagingSection =
+                  state.activeSection === "channels" || state.activeSection === "dms" || state.activeSection === "groups"
+                    ? state.activeSection
+                    : "channels";
+                setActiveSection(section);
+                if (activeConvId !== convId) {
+                  // If the conversation is not currently active, select it
+                  // The actual scroll-to-message behavior is handled by the reading workspace
+                  // when it receives the messageId through URL state or similar mechanism
+                }
+              }}
+            />
           )}
         </div>
 

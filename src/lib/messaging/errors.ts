@@ -15,3 +15,31 @@ export class ConversationAccessError extends Error {
     Object.setPrototypeOf(this, ConversationAccessError.prototype);
   }
 }
+
+/**
+ * Structured error indicating invalid input parameters.
+ */
+export class InvalidInputError extends Error {
+  constructor(message = "Invalid input") {
+    super(message);
+    this.name = "InvalidInputError";
+    if (Error.captureStackTrace) {
+      Error.captureStackTrace(this, InvalidInputError);
+    }
+    Object.setPrototypeOf(this, InvalidInputError.prototype);
+  }
+}
+
+/**
+ * Structured error indicating a requested resource was not found.
+ */
+export class NotFoundError extends Error {
+  constructor(message = "Not found") {
+    super(message);
+    this.name = "NotFoundError";
+    if (Error.captureStackTrace) {
+      Error.captureStackTrace(this, NotFoundError);
+    }
+    Object.setPrototypeOf(this, NotFoundError.prototype);
+  }
+}
