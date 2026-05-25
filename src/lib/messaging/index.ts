@@ -397,7 +397,7 @@ export type {
 } from "./realtime/server";
 
 // Errors
-export { ConversationAccessError, InvalidInputError, NotFoundError } from "./errors";
+export { ConversationAccessError } from "./errors";
 
 // Task service (Sprint 6.2)
 export {
