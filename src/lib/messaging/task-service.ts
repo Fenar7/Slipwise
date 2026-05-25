@@ -7,7 +7,7 @@ import { toTaskRecord } from "./mappers";
 import { ConversationAccessError, InvalidInputError, NotFoundError } from "./errors";
 import { requireConversationAccess } from "./authorization";
 import { toConversationRecord, toParticipantRecord } from "./mappers";
-import type { CreateTaskInput, UpdateTaskStatusInput, AssignTaskInput } from "./service-contracts";
+import type { CreateTaskInput, UpdateTaskStatusInput, AssignTaskInput, UpdateTaskInput } from "./service-contracts";
 
 export async function listTasksForConversation(
   orgId: string,
@@ -208,6 +208,91 @@ export async function assignTask(input: AssignTaskInput): Promise<MessagingTaskR
   const updatedTask = await db.messagingTask.update({
     where: { id: taskId },
     data: { assigneeId },
+  });
+
+  return toTaskRecord(updatedTask);
+}
+
+export async function updateTask(input: UpdateTaskInput): Promise<MessagingTaskRecord> {
+  const { orgId, taskId, actorId, conversationId } = input;
+
+  const task = await db.messagingTask.findUnique({
+    where: { id: taskId, orgId },
+  });
+
+  if (!task) {
+    throw new NotFoundError("Task not found");
+  }
+
+  if (task.conversationId !== conversationId) {
+    throw new NotFoundError("Task not found");
+  }
+
+  const membership = await db.conversationParticipant.findFirst({
+    where: {
+      ...participantOrgSafeWhere(orgId, task.conversationId, actorId),
+      leftAt: null,
+    },
+  });
+
+  if (!membership) {
+    throw new ConversationAccessError("updateTask: active participant access required");
+  }
+
+  // Enforce conversation action policy (archive/lock)
+  const conversation = await db.conversation.findUnique({
+    where: { id: task.conversationId },
+  });
+  if (!conversation) {
+    throw new NotFoundError("Conversation not found");
+  }
+
+  requireConversationAccess(
+    toConversationRecord(conversation),
+    toParticipantRecord(membership),
+    "SEND_MESSAGE",
+    "updateTask",
+  );
+
+  // Validate assignee if it's being updated to a non-null value
+  if (input.assigneeId) {
+    const assigneeMembership = await db.conversationParticipant.findFirst({
+      where: {
+        ...participantOrgSafeWhere(orgId, task.conversationId, input.assigneeId),
+        leftAt: null,
+      },
+    });
+
+    if (!assigneeMembership) {
+      throw new InvalidInputError("Assignee must be an active participant in the conversation");
+    }
+  }
+
+  // Build the update data
+  const updateData: any = {};
+  if (input.title !== undefined) updateData.title = input.title;
+  if (input.description !== undefined) updateData.description = input.description;
+  if (input.priority !== undefined) updateData.priority = input.priority;
+  if (input.dueDate !== undefined) updateData.dueDate = input.dueDate;
+  if (input.assigneeId !== undefined) updateData.assigneeId = input.assigneeId;
+
+  if (input.status !== undefined) {
+    updateData.status = input.status;
+    const oldStatus = task.status;
+    const newStatus = input.status;
+
+    if (newStatus === "DONE" && oldStatus !== "DONE") {
+      updateData.completedAt = new Date();
+      updateData.completedBy = actorId;
+    } else if (newStatus !== "DONE" && oldStatus === "DONE") {
+      updateData.completedAt = null;
+      updateData.completedBy = null;
+    }
+  }
+
+  const updatedTask = await db.messagingTask.update({
+    where: { id: taskId },
+    data: updateData,
   });
 
   return toTaskRecord(updatedTask);

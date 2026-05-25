@@ -1,10 +1,13 @@
 import { NextRequest } from "next/server";
-import { updateTaskStatus, assignTask } from "@/lib/messaging/task-service";
+import { updateTask } from "@/lib/messaging/task-service";
 import {
   requireMessagingApiContext,
   messagingApiResponse,
   handleMessagingApiError,
   requireEnumField,
+  requireStringField,
+  requireNumberRange,
+  requireValidDate,
   MessagingApiError,
   MessagingApiErrorCode,
 } from "../../../../../_utils";
@@ -31,38 +34,74 @@ export async function PATCH(
 
     // Reject empty/no-op payloads cleanly
     if (
-      body.status === undefined &&
-      body.assigneeId === undefined
+      body.title === undefined &&
+      body.description === undefined &&
+      body.priority === undefined &&
+      body.dueDate === undefined &&
+      body.assigneeId === undefined &&
+      body.status === undefined
     ) {
       throw new MessagingApiError(
         MessagingApiErrorCode.VALIDATION_ERROR,
-        "At least one of status or assigneeId must be provided.",
+        "At least one editable field must be provided.",
         422,
       );
     }
 
-    let updatedTask = null;
-
-    if (body.status !== undefined) {
-      const status = requireEnumField(body.status, "status", VALID_TASK_STATUSES);
-      updatedTask = await updateTaskStatus({
-        orgId,
-        taskId,
-        status,
-        actorId: userId,
-        conversationId,
-      });
+    let title: string | undefined = undefined;
+    if (body.title !== undefined) {
+      title = requireStringField(body.title, "Task title", 256);
     }
 
+    let description: string | null | undefined = undefined;
+    if (body.description !== undefined) {
+      if (body.description === null || body.description === "") {
+        description = null;
+      } else {
+        description = requireStringField(body.description, "Description", 1000);
+      }
+    }
+
+    let priority: number | undefined = undefined;
+    if (body.priority !== undefined) {
+      priority = requireNumberRange(body.priority, "Priority", 0, 3);
+    }
+
+    let dueDate: Date | null | undefined = undefined;
+    if (body.dueDate !== undefined) {
+      if (body.dueDate === null || body.dueDate === "") {
+        dueDate = null;
+      } else {
+        dueDate = requireValidDate(body.dueDate, "Due date");
+      }
+    }
+
+    let assigneeId: string | null | undefined = undefined;
     if (body.assigneeId !== undefined) {
-      updatedTask = await assignTask({
-        orgId,
-        taskId,
-        assigneeId: body.assigneeId,
-        actorId: userId,
-        conversationId,
-      });
+      if (body.assigneeId === null || body.assigneeId === "") {
+        assigneeId = null;
+      } else {
+        assigneeId = requireStringField(body.assigneeId, "Assignee ID");
+      }
     }
+
+    let status: MessagingTaskStatus | undefined = undefined;
+    if (body.status !== undefined) {
+      status = requireEnumField(body.status, "status", VALID_TASK_STATUSES);
+    }
+
+    const updatedTask = await updateTask({
+      orgId,
+      taskId,
+      actorId: userId,
+      conversationId,
+      title,
+      description,
+      priority,
+      dueDate,
+      assigneeId,
+      status,
+    });
 
     return messagingApiResponse(updatedTask);
   } catch (error) {

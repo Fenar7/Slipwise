@@ -42,6 +42,7 @@ function statusBadge(status: string) {
     case "in-progress": return { label: "In Progress", cls: "bg-blue-50 text-blue-700" };
     case "done": return { label: "Done", cls: "bg-emerald-50 text-emerald-700" };
     case "overdue": return { label: "Overdue", cls: "bg-red-50 text-[#DC2626]" };
+    case "cancelled": return { label: "Cancelled", cls: "bg-gray-100 text-gray-400 line-through" };
     default: return { label: status, cls: "bg-gray-100 text-gray-600" };
   }
 }
@@ -53,12 +54,49 @@ interface TaskDetailPanelProps {
   onUpdateStatus?: (status: TaskStatus) => Promise<void>;
   onAssign?: (assigneeId: string) => Promise<void>;
   onNavigateToOrigin?: (conversationId: string, messageId: string) => void;
+  onEditTask?: (updates: {
+    title: string;
+    description: string | null;
+    priority: TaskPriority;
+    dueDate: string | null;
+    assigneeId: string | null;
+    status: TaskStatus;
+  }) => Promise<void>;
 }
 
-function TaskDetailPanel({ task, onBack, participants, onUpdateStatus, onAssign, onNavigateToOrigin }: TaskDetailPanelProps) {
+function TaskDetailPanel({
+  task,
+  onBack,
+  participants,
+  onUpdateStatus,
+  onAssign,
+  onNavigateToOrigin,
+  onEditTask,
+}: TaskDetailPanelProps) {
   const { label, cls } = statusBadge(task.status);
   const [updating, setUpdating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Edit details form states
+  const [isEditing, setIsEditing] = useState(false);
+  const [editTitle, setEditTitle] = useState(task.title);
+  const [editDescription, setEditDescription] = useState(task.description ?? "");
+  const [editPriority, setEditPriority] = useState<TaskPriority>(task.priority);
+  const [editDueDate, setEditDueDate] = useState(task.dueDate ?? "");
+  const [editAssigneeId, setEditAssigneeId] = useState(task.assignee?.id ?? "");
+  const [editStatus, setEditStatus] = useState<TaskStatus>(task.status);
+
+  // Sync edit details when task changes (no stale selection bugs)
+  React.useEffect(() => {
+    setEditTitle(task.title);
+    setEditDescription(task.description ?? "");
+    setEditPriority(task.priority);
+    setEditDueDate(task.dueDate ?? "");
+    setEditAssigneeId(task.assignee?.id ?? "");
+    setEditStatus(task.status);
+    setIsEditing(false);
+    setError(null);
+  }, [task]);
 
   const handleUpdateStatus = async (newStatus: TaskStatus) => {
     if (!onUpdateStatus) return;
@@ -85,6 +123,178 @@ function TaskDetailPanel({ task, onBack, participants, onUpdateStatus, onAssign,
       setUpdating(false);
     }
   };
+
+  if (isEditing) {
+    return (
+      <div className="flex flex-col h-full" data-testid="task-edit-panel">
+        <div className="flex items-center gap-2 border-b px-6 py-4" style={{ borderColor: "#E0E0E0" }}>
+          <button
+            type="button"
+            data-testid="task-edit-back"
+            onClick={() => setIsEditing(false)}
+            disabled={updating}
+            className="rounded-lg p-1.5 hover:bg-gray-100 focus-visible:outline-none"
+          >
+            <ArrowLeft className="h-4 w-4" style={{ color: "#49454F" }} />
+          </button>
+          <h2 className="text-base font-bold truncate flex-1" style={{ color: "#1C1B1F" }}>Edit Task</h2>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+          {error && (
+            <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-xs text-[#DC2626]" data-testid="task-edit-error">
+              {error}
+            </div>
+          )}
+
+          {/* Title */}
+          <div>
+            <label className="block text-xs font-semibold mb-1" style={{ color: "#1C1B1F" }}>
+              Task title <span className="text-[#DC2626]">*</span>
+            </label>
+            <input
+              type="text"
+              data-testid="task-edit-title"
+              value={editTitle}
+              disabled={updating}
+              onChange={(e) => setEditTitle(e.target.value)}
+              className="w-full rounded-lg border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]"
+              style={{ borderColor: "#E0E0E0", color: "#1C1B1F" }}
+            />
+          </div>
+
+          {/* Description */}
+          <div>
+            <label className="block text-xs font-semibold mb-1" style={{ color: "#1C1B1F" }}>Description</label>
+            <textarea
+              data-testid="task-edit-description"
+              rows={3}
+              value={editDescription}
+              disabled={updating}
+              onChange={(e) => setEditDescription(e.target.value)}
+              placeholder="Add more context…"
+              className="w-full rounded-lg border px-3 py-2 text-sm resize-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]"
+              style={{ borderColor: "#E0E0E0", color: "#1C1B1F" }}
+            />
+          </div>
+
+          {/* Priority */}
+          <div>
+            <label className="block text-xs font-semibold mb-1.5" style={{ color: "#1C1B1F" }}>Priority</label>
+            <select
+              data-testid="task-edit-priority"
+              value={editPriority}
+              disabled={updating}
+              onChange={(e) => setEditPriority(e.target.value as TaskPriority)}
+              className="w-full rounded-lg border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]"
+              style={{ borderColor: "#E0E0E0", color: "#1C1B1F" }}
+            >
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+              <option value="critical">Critical</option>
+            </select>
+          </div>
+
+          {/* Status */}
+          <div>
+            <label className="block text-xs font-semibold mb-1" style={{ color: "#1C1B1F" }}>Status</label>
+            <select
+              data-testid="task-edit-status"
+              value={editStatus}
+              disabled={updating}
+              onChange={(e) => setEditStatus(e.target.value as TaskStatus)}
+              className="w-full rounded-lg border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]"
+              style={{ borderColor: "#E0E0E0", color: "#1C1B1F" }}
+            >
+              <option value="open">Open</option>
+              <option value="in-progress">In Progress</option>
+              <option value="done">Done</option>
+              <option value="overdue">Overdue</option>
+              <option value="cancelled">Cancelled</option>
+            </select>
+          </div>
+
+          {/* Assignee */}
+          <div>
+            <label className="block text-xs font-semibold mb-1" style={{ color: "#1C1B1F" }}>Assignee</label>
+            <select
+              data-testid="task-edit-assignee"
+              value={editAssigneeId}
+              disabled={updating}
+              onChange={(e) => setEditAssigneeId(e.target.value)}
+              className="w-full rounded-lg border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]"
+              style={{ borderColor: "#E0E0E0", color: "#1C1B1F" }}
+            >
+              <option value="">Unassigned</option>
+              {participants?.map((p) => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Due date */}
+          <div>
+            <label className="block text-xs font-semibold mb-1" style={{ color: "#1C1B1F" }}>Due date</label>
+            <input
+              type="date"
+              data-testid="task-edit-due-date"
+              value={editDueDate}
+              disabled={updating}
+              onChange={(e) => setEditDueDate(e.target.value)}
+              className="w-full rounded-lg border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]"
+              style={{ borderColor: "#E0E0E0", color: "#1C1B1F" }}
+            />
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 border-t px-6 py-4 justify-end" style={{ borderColor: "#E0E0E0" }}>
+          <button
+            type="button"
+            data-testid="task-edit-cancel"
+            disabled={updating}
+            onClick={() => setIsEditing(false)}
+            className="rounded-lg border px-4 py-2 text-sm font-semibold hover:bg-gray-50 focus-visible:outline-none"
+            style={{ borderColor: "#E0E0E0", color: "#49454F" }}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            data-testid="task-edit-save"
+            disabled={updating || !editTitle.trim()}
+            onClick={async () => {
+              setUpdating(true);
+              setError(null);
+              try {
+                if (onEditTask) {
+                  await onEditTask({
+                    title: editTitle.trim(),
+                    description: editDescription.trim() || null,
+                    priority: editPriority,
+                    dueDate: editDueDate || null,
+                    assigneeId: editAssigneeId || null,
+                    status: editStatus,
+                  });
+                  setIsEditing(false);
+                }
+              } catch (err) {
+                setError(err instanceof Error ? err.message : "Failed to save changes");
+              } finally {
+                setUpdating(false);
+              }
+            }}
+            className={cn(
+              "rounded-lg px-4 py-2 text-sm font-semibold text-white",
+              editTitle.trim() && !updating ? "bg-[#DC2626] hover:bg-red-700" : "bg-gray-100 text-gray-400 cursor-not-allowed"
+            )}
+          >
+            {updating ? "Saving..." : "Save"}
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-full" data-testid="task-detail-panel">
@@ -200,6 +410,16 @@ function TaskDetailPanel({ task, onBack, participants, onUpdateStatus, onAssign,
             Mark as done
           </button>
         )}
+        <button
+          type="button"
+          data-testid="task-detail-edit"
+          disabled={updating}
+          onClick={() => setIsEditing(true)}
+          className="rounded-lg border px-3 py-1.5 text-xs font-semibold hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]"
+          style={{ borderColor: "#E0E0E0", color: "#49454F" }}
+        >
+          Edit details
+        </button>
       </div>
     </div>
   );
@@ -283,41 +503,68 @@ export function MessagingTaskPanel({ conversationId, onNavigateToOrigin }: Messa
   const overdue = listTasks.filter((t) => t.status === "overdue").length;
   const selectedTask = listTasks.find((t) => t.id === selectedTaskId) ?? null;
 
-  // PATCH status handler
-  const handleUpdateStatus = async (status: TaskStatus) => {
+  // Unified PATCH handler
+  const handleUpdateTask = async (updates: {
+    title?: string;
+    description?: string | null;
+    priority?: TaskPriority;
+    dueDate?: string | null;
+    assigneeId?: string | null;
+    status?: TaskStatus;
+  }) => {
     if (!conversationId || !selectedTaskId) return;
-    const patchStatus = status === "done" ? "DONE" : status.toUpperCase().replace("-", "_");
+
+    // Map frontend values to backend payload format
+    const payload: any = {};
+    if (updates.title !== undefined) payload.title = updates.title;
+    if (updates.description !== undefined) payload.description = updates.description;
+    
+    if (updates.priority !== undefined) {
+      const priorityMap: Record<TaskPriority, number> = {
+        low: 0,
+        medium: 1,
+        high: 2,
+        critical: 3
+      };
+      payload.priority = priorityMap[updates.priority];
+    }
+    
+    if (updates.dueDate !== undefined) {
+      payload.dueDate = updates.dueDate || null;
+    }
+    
+    if (updates.assigneeId !== undefined) {
+      payload.assigneeId = updates.assigneeId || null;
+    }
+    
+    if (updates.status !== undefined) {
+      payload.status = updates.status === "done" ? "DONE" : updates.status.toUpperCase().replace("-", "_");
+    }
+
+    if (Object.keys(payload).length === 0) return;
 
     const res = await fetch(`/api/messaging/conversations/${conversationId}/tasks/${selectedTaskId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: patchStatus }),
+      body: JSON.stringify(payload),
     });
 
     if (!res.ok) {
-      const payload = await res.json();
-      throw new Error(payload.error?.message ?? "Failed to update status");
+      const data = await res.json();
+      throw new Error(data.error?.message ?? "Failed to update task");
     }
 
     refreshTasks();
   };
 
+  // PATCH status handler
+  const handleUpdateStatus = async (status: TaskStatus) => {
+    await handleUpdateTask({ status });
+  };
+
   // PATCH assignee handler
   const handleAssign = async (assigneeId: string) => {
-    if (!conversationId || !selectedTaskId) return;
-
-    const res = await fetch(`/api/messaging/conversations/${conversationId}/tasks/${selectedTaskId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ assigneeId: assigneeId || null }),
-    });
-
-    if (!res.ok) {
-      const payload = await res.json();
-      throw new Error(payload.error?.message ?? "Failed to assign task");
-    }
-
-    refreshTasks();
+    await handleUpdateTask({ assigneeId });
   };
 
   if (!conversationId) {
@@ -378,6 +625,7 @@ export function MessagingTaskPanel({ conversationId, onNavigateToOrigin }: Messa
             onUpdateStatus={conversationId ? handleUpdateStatus : undefined}
             onAssign={conversationId ? handleAssign : undefined}
             onNavigateToOrigin={onNavigateToOrigin}
+            onEditTask={conversationId ? handleUpdateTask : undefined}
           />
         </div>
       </div>
