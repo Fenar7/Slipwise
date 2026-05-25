@@ -361,3 +361,105 @@ export async function getConversationTaskSummaries(
     });
   });
 }
+
+export async function getOrgTaskSummaries(
+  orgId: string,
+  userId: string,
+): Promise<TaskSummary[]> {
+  const participantConversations = await db.conversationParticipant.findMany({
+    where: {
+      orgId,
+      userId,
+      leftAt: null,
+    },
+    select: {
+      conversationId: true,
+    },
+  });
+
+  const conversationIds = participantConversations.map((pc) => pc.conversationId);
+
+  if (conversationIds.length === 0) {
+    return [];
+  }
+
+  const records = await db.messagingTask.findMany({
+    where: {
+      orgId,
+      conversationId: { in: conversationIds },
+    },
+    orderBy: [{ dueDate: "asc" }, { createdAt: "desc" }],
+  });
+
+  if (records.length === 0) {
+    return [];
+  }
+
+  const assigneeIds = Array.from(
+    new Set(records.map((r) => r.assigneeId).filter((id): id is string => id !== null)),
+  );
+  const creatorIds = Array.from(
+    new Set(records.map((r) => r.createdBy)),
+  );
+  const allUserIds = Array.from(new Set([...assigneeIds, ...creatorIds]));
+
+  const [profiles, conversations] = await Promise.all([
+    allUserIds.length > 0
+      ? db.profile.findMany({
+          where: { id: { in: allUserIds } },
+          select: { id: true, name: true },
+        })
+      : Promise.resolve([]),
+    db.conversation.findMany({
+      where: {
+        id: { in: conversationIds },
+        orgId,
+      },
+      select: {
+        id: true,
+        type: true,
+        name: true,
+      },
+    }),
+  ]);
+
+  const profileById = new Map<string, { name: string }>();
+  for (const p of profiles) {
+    profileById.set(p.id, p);
+  }
+
+  const conversationById = new Map<string, { type: "CHANNEL" | "DM" | "GROUP"; name: string | null }>();
+  for (const c of conversations) {
+    conversationById.set(c.id, {
+      type: c.type,
+      name: c.name,
+    });
+  }
+
+  function getInitials(name: string | null): string | null {
+    if (!name) return null;
+    const parts = name.trim().split(/\s+/);
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  }
+
+  return records.map((record) => {
+    const assignee = record.assigneeId ? profileById.get(record.assigneeId) ?? null : null;
+    const creator = profileById.get(record.createdBy) ?? null;
+    const conv = conversationById.get(record.conversationId) ?? null;
+    
+    const baseSummary = toTaskSummary({
+      record,
+      assigneeName: assignee?.name ?? null,
+      assigneeAvatarInitials: getInitials(assignee?.name ?? null),
+      createdByName: creator?.name ?? null,
+    });
+
+    return {
+      ...baseSummary,
+      conversationName: conv?.name ?? null,
+      conversationType: conv?.type ?? undefined,
+    };
+  });
+}
+

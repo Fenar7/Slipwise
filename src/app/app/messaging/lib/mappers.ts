@@ -129,6 +129,8 @@ export interface ApiTaskSummary {
   createdBy: string;
   createdByName: string | null;
   createdAt: string;
+  conversationName?: string | null;
+  conversationType?: "CHANNEL" | "DM" | "GROUP";
 }
 
 

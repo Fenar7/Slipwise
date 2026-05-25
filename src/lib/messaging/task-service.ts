@@ -311,3 +311,36 @@ export async function updateTask(input: UpdateTaskInput): Promise<MessagingTaskR
 
   return toTaskRecord(updatedTask);
 }
+
+export async function listAllTasksForUser(
+  orgId: string,
+  userId: string,
+): Promise<MessagingTaskRecord[]> {
+  const participantConversations = await db.conversationParticipant.findMany({
+    where: {
+      orgId,
+      userId,
+      leftAt: null,
+    },
+    select: {
+      conversationId: true,
+    },
+  });
+
+  const conversationIds = participantConversations.map((pc) => pc.conversationId);
+
+  if (conversationIds.length === 0) {
+    return [];
+  }
+
+  const rows = await db.messagingTask.findMany({
+    where: {
+      orgId,
+      conversationId: { in: conversationIds },
+    },
+    orderBy: [{ dueDate: "asc" }, { createdAt: "desc" }],
+  });
+
+  return rows.map(toTaskRecord);
+}
+

@@ -439,7 +439,10 @@ export interface TaskSummary {
   createdBy: string;
   createdByName: string | null;
   createdAt: string;
+  conversationName?: string | null;
+  conversationType?: ConversationType;
 }
+
 
 export interface TaskSummaryInput {
   record: MessagingTaskRecord;

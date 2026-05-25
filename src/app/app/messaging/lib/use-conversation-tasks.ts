@@ -21,7 +21,8 @@ export function useConversationTasks(conversationId: string | null) {
     setErrorMessage(null);
 
     try {
-      const res = await fetch(`/api/messaging/conversations/${id}/tasks`, {
+      const url = id === "global" ? "/api/messaging/tasks" : `/api/messaging/conversations/${id}/tasks`;
+      const res = await fetch(url, {
         credentials: "same-origin",
         signal: ctrl.signal,
       });
