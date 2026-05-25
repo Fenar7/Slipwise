@@ -820,4 +820,199 @@ describe("gmailProviderAdapter.fetchThreadDetail — body extraction", () => {
     expect(messages[0].htmlBody).toBe("");
     expect(messages[0].textBody).toBeNull();
   });
+
+  describe("Gmail drafts survival and fallback regression tests", () => {
+    it("handles drafts with missing threadId, message.id, To, Subject, and bodies", async () => {
+      fetchMock
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({ drafts: [{ id: "draft-sparse" }] }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        )
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              id: "draft-sparse",
+              message: {
+                payload: {
+                  headers: [],
+                  body: {}
+                }
+              }
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        );
+
+      const result = await gmailProviderAdapter.syncDrafts({
+        orgId: "org-1",
+        tokenRef: "token-ref-1",
+      });
+
+      expect("drafts" in result).toBe(true);
+      const draftsResult = result as { drafts: import("../provider-contracts").MailboxDraftEnvelope[] };
+      expect(draftsResult.drafts).toHaveLength(1);
+      
+      const envelope = draftsResult.drafts[0];
+      expect(envelope.draftId).toBe("draft-sparse");
+      expect(envelope.thread.providerThreadId).toBe("gmail-draft-thread:draft-sparse");
+      expect(envelope.thread.subject).toBe("(No subject)");
+      expect(envelope.message.providerMessageId).toBe("gmail-draft-message:draft-sparse");
+      expect(envelope.message.subject).toBe("(No subject)");
+      expect(envelope.message.to).toEqual([]);
+    });
+
+    it("survives completely missing message payload (truthful fallback, isUnavailable flag)", async () => {
+      fetchMock
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({ drafts: [{ id: "draft-no-msg" }] }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        )
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              id: "draft-no-msg"
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        );
+
+      const result = await gmailProviderAdapter.syncDrafts({
+        orgId: "org-1",
+        tokenRef: "token-ref-1",
+      });
+
+      expect("drafts" in result).toBe(true);
+      const draftsResult = result as { drafts: import("../provider-contracts").MailboxDraftEnvelope[] };
+      expect(draftsResult.drafts).toHaveLength(1);
+
+      const envelope = draftsResult.drafts[0];
+      expect(envelope.draftId).toBe("draft-no-msg");
+      expect(envelope.thread.providerThreadId).toBe("gmail-draft-thread:draft-no-msg");
+      expect(envelope.thread.subject).toBe("(No subject)");
+      expect(envelope.message.providerMetadata.isUnavailable).toBe(true);
+    });
+
+    it("handles text-only bodies correctly (renders text in pre-wrap div)", async () => {
+      fetchMock
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({ drafts: [{ id: "draft-text" }] }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        )
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              id: "draft-text",
+              message: {
+                id: "msg-text",
+                threadId: "thread-text",
+                payload: {
+                  mimeType: "text/plain",
+                  headers: [
+                    { name: "Subject", value: "Text Draft" },
+                    { name: "From", value: "sender@example.com" }
+                  ],
+                  body: { data: b64("This is plain text draft content.") }
+                }
+              }
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        );
+
+      const result = await gmailProviderAdapter.syncDrafts({
+        orgId: "org-1",
+        tokenRef: "token-ref-1",
+      });
+
+      expect("drafts" in result).toBe(true);
+      const draftsResult = result as { drafts: import("../provider-contracts").MailboxDraftEnvelope[] };
+      expect(draftsResult.drafts).toHaveLength(1);
+
+      const envelope = draftsResult.drafts[0];
+      expect(envelope.message.textBody).toBe("This is plain text draft content.");
+      expect(envelope.message.htmlBody).toBe('<div style="white-space: pre-wrap;">This is plain text draft content.</div>');
+    });
+
+    it("handles multiple pages of users.drafts.list correctly", async () => {
+      fetchMock
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              drafts: [{ id: "draft-page1-1" }, { id: "draft-page1-2" }],
+              nextPageToken: "token-page2"
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        )
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              drafts: [{ id: "draft-page2-1" }]
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        )
+        .mockResolvedValueOnce(new Response(JSON.stringify({ id: "draft-page1-1", message: { id: "m1", payload: { headers: [] } } }), { status: 200 }))
+        .mockResolvedValueOnce(new Response(JSON.stringify({ id: "draft-page1-2", message: { id: "m2", payload: { headers: [] } } }), { status: 200 }))
+        .mockResolvedValueOnce(new Response(JSON.stringify({ id: "draft-page2-1", message: { id: "m3", payload: { headers: [] } } }), { status: 200 }));
+
+      const result = await gmailProviderAdapter.syncDrafts({
+        orgId: "org-1",
+        tokenRef: "token-ref-1",
+      });
+
+      expect("drafts" in result).toBe(true);
+      const draftsResult = result as { drafts: import("../provider-contracts").MailboxDraftEnvelope[] };
+      expect(draftsResult.drafts).toHaveLength(3);
+      expect(draftsResult.drafts.map((d) => d.draftId)).toEqual([
+        "draft-page1-1",
+        "draft-page1-2",
+        "draft-page2-1"
+      ]);
+    });
+
+    it("handles malformed/invalid internalDate without crashing (RangeError prevention)", async () => {
+      fetchMock
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({ drafts: [{ id: "draft-bad-date" }] }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        )
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              id: "draft-bad-date",
+              message: {
+                id: "msg-bad-date",
+                threadId: "thread-bad-date",
+                internalDate: "NaN",
+                payload: {
+                  headers: []
+                }
+              }
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        );
+
+      const result = await gmailProviderAdapter.syncDrafts({
+        orgId: "org-1",
+        tokenRef: "token-ref-1",
+      });
+
+      expect("drafts" in result).toBe(true);
+      const draftsResult = result as { drafts: import("../provider-contracts").MailboxDraftEnvelope[] };
+      expect(draftsResult.drafts).toHaveLength(1);
+      
+      const envelope = draftsResult.drafts[0];
+      expect(new Date(envelope.thread.lastMessageAt).getTime()).not.toBeNaN();
+    });
+  });
 });

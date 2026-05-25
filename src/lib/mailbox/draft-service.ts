@@ -679,9 +679,9 @@ function mapLiveProviderDraft(
     providerMessageId: envelope.message.providerMessageId,
     subject: envelope.message.subject.trim() || "(No subject)",
     snippet: envelope.message.snippet.trim() || fromAddress || "Draft not started yet",
-    to: envelope.message.to.map((participant) => participant.email),
-    cc: envelope.message.cc.map((participant) => participant.email),
-    bcc: envelope.message.bcc.map((participant) => participant.email),
+    to: envelope.message.to.map((participant) => participant.email).filter(Boolean),
+    cc: envelope.message.cc.map((participant) => participant.email).filter(Boolean),
+    bcc: envelope.message.bcc.map((participant) => participant.email).filter(Boolean),
     updatedAt,
     source: "provider",
   };
@@ -692,6 +692,21 @@ function mapLiveProviderDraftDetail(
   mailboxConnectionId: string,
   envelope: MailboxDraftEnvelope,
 ): MailboxProviderDraftDetailReadShape {
+  const isUnavailable = !!(envelope.message.providerMetadata?.isUnavailable);
+  const finalHtmlBody = isUnavailable
+    ? `<div style="padding: 24px; text-align: center; color: #64748b;"><p style="font-weight: 500; margin-bottom: 8px;">Draft detail unavailable</p><p style="font-size: 14px;">This draft has no message content in the connected Gmail account.</p></div>`
+    : (envelope.message.htmlBody?.trim() || "");
+
+  const finalTextBody = isUnavailable
+    ? "Draft detail unavailable"
+    : (envelope.message.textBody?.trim() || null);
+
+  const finalTo = (envelope.message.to.length > 0)
+    ? envelope.message.to
+    : (envelope.message.cc.length > 0 || envelope.message.bcc.length > 0)
+      ? []
+      : [{ email: "", displayName: "(No recipients)" }];
+
   return {
     id: `provider:${envelope.draftId}`,
     orgId,
@@ -700,13 +715,13 @@ function mapLiveProviderDraftDetail(
     providerDraftId: envelope.draftId,
     providerMessageId: envelope.message.providerMessageId,
     from: envelope.message.from,
-    to: envelope.message.to,
+    to: finalTo,
     cc: envelope.message.cc,
     bcc: envelope.message.bcc,
     subject: envelope.message.subject.trim() || "(No subject)",
     snippet: envelope.message.snippet.trim() || "Draft not started yet",
-    htmlBody: envelope.message.htmlBody?.trim() || "",
-    textBody: envelope.message.textBody?.trim() || null,
+    htmlBody: finalHtmlBody,
+    textBody: finalTextBody,
     sentAt: envelope.message.sentAt,
     updatedAt: envelope.message.sentAt ?? new Date().toISOString(),
     attachments: (envelope.message.attachments ?? []).map((attachment) => ({
@@ -923,6 +938,24 @@ export async function getProviderDraftDetail(input: {
 
   if (!row || !hasDraftLabel(row.providerMetadata)) return null;
 
+  const isUnavailable = !!(row.providerMetadata && typeof row.providerMetadata === "object" && !Array.isArray(row.providerMetadata) && (row.providerMetadata as Record<string, unknown>).isUnavailable);
+  const finalHtmlBody = isUnavailable
+    ? `<div style="padding: 24px; text-align: center; color: #64748b;"><p style="font-weight: 500; margin-bottom: 8px;">Draft detail unavailable</p><p style="font-size: 14px;">This draft has no message content in the connected Gmail account.</p></div>`
+    : (row.htmlBody?.trim() || "");
+
+  const finalTextBody = isUnavailable
+    ? "Draft detail unavailable"
+    : (row.textBody?.trim() || null);
+
+  const mappedTo = toParticipants(row.to);
+  const mappedCc = toParticipants(row.cc);
+  const mappedBcc = toParticipants(row.bcc);
+  const finalTo = (mappedTo.length > 0)
+    ? mappedTo
+    : (mappedCc.length > 0 || mappedBcc.length > 0)
+      ? []
+      : [{ email: "", displayName: "(No recipients)" }];
+
   return {
     id: draftId.startsWith("provider:") ? draftId : `provider:${providerKey}`,
     orgId,
@@ -931,13 +964,13 @@ export async function getProviderDraftDetail(input: {
     providerDraftId: getGmailDraftId(row.providerMetadata),
     providerMessageId: row.providerMessageId,
     from: toParticipant(row.from),
-    to: toParticipants(row.to),
-    cc: toParticipants(row.cc),
-    bcc: toParticipants(row.bcc),
+    to: finalTo,
+    cc: mappedCc,
+    bcc: mappedBcc,
     subject: row.subject.trim() || "(No subject)",
     snippet: row.snippet.trim() || "Draft not started yet",
-    htmlBody: row.htmlBody?.trim() || "",
-    textBody: row.textBody?.trim() || null,
+    htmlBody: finalHtmlBody,
+    textBody: finalTextBody,
     sentAt: row.sentAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     attachments: row.attachments.map((attachment) => ({

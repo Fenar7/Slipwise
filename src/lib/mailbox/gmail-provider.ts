@@ -519,10 +519,11 @@ export const gmailProviderAdapter: IMailboxProviderAdapter = {
         return draft;
       }
 
-      const message = draft.message;
-      if (!message) {
-        continue;
-      }
+      const message = draft.message ?? {
+        id: `gmail-draft-message:${draftId}`,
+        threadId: `gmail-draft-thread:${draftId}`,
+        labelIds: ["DRAFT"],
+      };
 
       activeDraftIds.push(draftId);
       const envelope = toDraftEnvelope(draftId, message);
@@ -871,6 +872,15 @@ function maxHistoryId(current: string, candidate?: string | null): string {
   }
 }
 
+function parseGmailDate(internalDate: string | null | undefined): Date {
+  if (!internalDate) return new Date();
+  const ms = parseInt(internalDate, 10);
+  if (isNaN(ms)) return new Date();
+  const d = new Date(ms);
+  if (isNaN(d.getTime())) return new Date();
+  return d;
+}
+
 async function fetchBoundedThreadRefsForQuery(
   accessToken: string,
   slice: GmailBootstrapSlice,
@@ -996,9 +1006,7 @@ function toThreadEnvelope(thread: GmailThreadResponse): MailboxThreadEnvelope | 
   return {
     providerThreadId: thread.id,
     subject,
-    lastMessageAt: lastMessage?.internalDate
-      ? new Date(parseInt(lastMessage.internalDate, 10)).toISOString()
-      : new Date().toISOString(),
+    lastMessageAt: parseGmailDate(lastMessage?.internalDate).toISOString(),
     unreadCount,
     participants,
     providerMetadata: { gmailHistoryId: thread.historyId, messageCount: thread.messages?.length ?? 0 },
@@ -1007,11 +1015,9 @@ function toThreadEnvelope(thread: GmailThreadResponse): MailboxThreadEnvelope | 
 
 function toDraftThreadEnvelope(draftId: string, message: GmailMessage): MailboxThreadEnvelope {
   const headers = message.payload?.headers ?? [];
-  const subject = headers.find((h) => h.name === "Subject")?.value ?? "(no subject)";
+  const subject = headers.find((h) => h.name === "Subject")?.value ?? "(No subject)";
   const participants = extractParticipants(headers);
-  const lastMessageAt = message.internalDate
-    ? new Date(parseInt(message.internalDate, 10)).toISOString()
-    : new Date().toISOString();
+  const lastMessageAt = parseGmailDate(message.internalDate).toISOString();
 
   return {
     providerThreadId: message.threadId ?? `gmail-draft-thread:${draftId}`,
@@ -1031,6 +1037,7 @@ function toDraftEnvelope(
   draftId: string,
   message: GmailMessage,
 ): MailboxDraftEnvelope | null {
+  const isUnavailable = !message.payload;
   const thread = toDraftThreadEnvelope(draftId, message);
   const draftMessage = toMessageEnvelope({
     ...message,
@@ -1039,11 +1046,23 @@ function toDraftEnvelope(
   });
   if (!draftMessage) return null;
 
+  const finalSubject = draftMessage.subject.trim() || "(No subject)";
+
+  let finalHtmlBody = draftMessage.htmlBody;
+  if (!finalHtmlBody && draftMessage.textBody) {
+    finalHtmlBody = `<div style="white-space: pre-wrap;">${draftMessage.textBody}</div>`;
+  }
+
   return {
     draftId,
-    thread,
+    thread: {
+      ...thread,
+      subject: finalSubject,
+    },
     message: {
       ...draftMessage,
+      subject: finalSubject,
+      htmlBody: finalHtmlBody,
       // Drafts should not appear in Sent just because they originated from the sender.
       direction: "inbound",
       providerMetadata: {
@@ -1056,6 +1075,7 @@ function toDraftEnvelope(
         ],
         gmailDraftId: draftId,
         source: "draft",
+        isUnavailable,
       },
     },
   };
@@ -1063,17 +1083,22 @@ function toDraftEnvelope(
 
 function toMessageEnvelope(msg: GmailMessage): (MailboxMessageEnvelope & { htmlBody: string; textBody: string | null }) | null {
   const headers = msg.payload?.headers ?? [];
-  const from = parseAddressHeader(headers.find((h) => h.name === "From")?.value ?? "") ?? { email: "unknown@unknown.com", displayName: null };
+  const from = parseAddressHeader(headers.find((h) => h.name === "From")?.value ?? "") ?? { email: "", displayName: "(No sender)" };
   const to = parseAddressListHeader(headers.find((h) => h.name === "To")?.value ?? "");
   const cc = parseAddressListHeader(headers.find((h) => h.name === "Cc")?.value ?? "");
   const bcc = parseAddressListHeader(headers.find((h) => h.name === "Bcc")?.value ?? "");
   const subject = headers.find((h) => h.name === "Subject")?.value ?? "";
   const messageId = headers.find((h) => h.name === "Message-ID")?.value ?? null;
-  const date = msg.internalDate ? new Date(parseInt(msg.internalDate, 10)) : new Date();
+  const date = parseGmailDate(msg.internalDate);
   const direction = isOutbound(msg.labelIds ?? []) ? "outbound" : "inbound";
 
   const { htmlBody, textBody } = extractBodies(msg.payload ?? null);
   const attachments = extractAttachments(msg.payload ?? null);
+
+  let snippet = msg.snippet ?? "";
+  if (!snippet.trim()) {
+    snippet = (textBody || htmlBody.replace(/<[^>]+>/g, "")).slice(0, 150).trim();
+  }
 
   return {
     providerMessageId: msg.id,
@@ -1083,8 +1108,8 @@ function toMessageEnvelope(msg: GmailMessage): (MailboxMessageEnvelope & { htmlB
     to,
     cc,
     bcc,
-    subject,
-    snippet: msg.snippet ?? "",
+    subject: subject.trim() || "(No subject)",
+    snippet,
     sentAt: date.toISOString(),
     receivedAt: date.toISOString(),
     attachmentCount: attachments.length,
