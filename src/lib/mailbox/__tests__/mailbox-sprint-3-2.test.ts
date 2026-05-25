@@ -461,7 +461,7 @@ describe("Sprint 3.2 — Incremental sync and provider cursors", () => {
         expect.objectContaining({
           data: expect.objectContaining({
             watchMetadata: expect.objectContaining({
-              gmailCoverageVersion: 1,
+              gmailCoverageVersion: 2,
               gmailCoveredSystemLabels: ["INBOX", "SENT", "SPAM"],
             }),
           }),
@@ -478,7 +478,7 @@ describe("Sprint 3.2 — Incremental sync and provider cursors", () => {
         makeConnectionRecord({
           watchExpiresAt: new Date("2099-01-01"),
           watchMetadata: {
-            gmailCoverageVersion: 1,
+            gmailCoverageVersion: 2,
             gmailCoveredSystemLabels: ["INBOX", "SENT", "SPAM"],
           },
         }),
@@ -800,7 +800,7 @@ describe("Sprint 3.2 — Incremental sync and provider cursors", () => {
 
       vi.mocked(getMailboxConnection).mockResolvedValue(makeConnectionRecord({
         watchMetadata: {
-          gmailCoverageVersion: 1,
+          gmailCoverageVersion: 2,
           gmailCoveredSystemLabels: ["INBOX", "SENT", "SPAM"],
         },
       }));
@@ -857,7 +857,7 @@ describe("Sprint 3.2 — Incremental sync and provider cursors", () => {
         expect.objectContaining({
           data: expect.objectContaining({
             watchMetadata: expect.objectContaining({
-              gmailCoverageVersion: 1,
+              gmailCoverageVersion: 2,
               gmailCoveredSystemLabels: ["INBOX", "SENT", "SPAM"],
             }),
           }),
