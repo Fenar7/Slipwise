@@ -44,7 +44,7 @@ describe("mailbox sync UI truthfulness", () => {
     expect(screen.queryByText("Up to date")).not.toBeInTheDocument();
   });
 
-  it("auto-triggers only for a never-imported mailbox, not stale Gmail coverage", () => {
+  it("auto-triggers for a never-imported mailbox and stale Gmail coverage", () => {
     expect(
       shouldAutoTriggerMailboxSync(
         buildSyncPresentation({
@@ -65,10 +65,10 @@ describe("mailbox sync UI truthfulness", () => {
       shouldAutoTriggerMailboxSync(
         buildSyncPresentation({
           stageLabel: "Sync recommended",
-          detailLabel: "Sent and spam folder coverage needs to be refreshed.",
+          detailLabel: "Sent, spam, and drafts coverage needs to be refreshed.",
           staleGmailCoverage: true,
         }),
       ),
-    ).toBe(false);
+    ).toBe(true);
   });
 });

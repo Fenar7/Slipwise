@@ -1225,50 +1225,34 @@ describe("MailboxWorkspace Sprint 1.6 integration", () => {
     expect(screen.queryByTestId("reply-prompt")).not.toBeInTheDocument();
   });
 
-  it("polls the active mailbox workspace so webhook-driven changes become visible", async () => {
-    vi.useFakeTimers();
-    const connectionsRefetch = vi.fn();
-    const threadsRefetch = vi.fn();
+  it("refreshes the active drafts view when the mailbox sync timestamp changes", async () => {
     const draftsRefetch = vi.fn();
-    Object.defineProperty(document, "visibilityState", {
-      configurable: true,
-      value: "visible",
-    });
+    let currentConnections = [
+      {
+        id: "conn_billing",
+        orgId: "org_1",
+        provider: "gmail",
+        slug: "billing",
+        emailAddress: "billing@acmecorp.com",
+        displayName: "Billing",
+        status: "connected" as const,
+        lastSyncAt: "2026-05-08T14:30:00Z",
+        lastSyncError: null,
+        lastSyncErrorCategory: null,
+        unreadCount: 14,
+        inboxCount: 47,
+      },
+    ];
 
     const { useMailboxConnections } = await import("../use-mailbox-connections");
-    const { useMailboxThreads } = await import("../use-mailbox-threads");
     const { useMailboxDrafts } = await import("../use-mailbox-drafts");
 
-    vi.mocked(useMailboxConnections).mockReturnValue({
-      connections: [
-        {
-          id: "conn_billing",
-          orgId: "org_1",
-          provider: "gmail",
-          slug: "billing",
-          emailAddress: "billing@acmecorp.com",
-          displayName: "Billing",
-          status: "connected",
-          lastSyncAt: "2026-05-08T14:30:00Z",
-          lastSyncError: null,
-          lastSyncErrorCategory: null,
-          unreadCount: 14,
-          inboxCount: 47,
-        },
-      ],
+    vi.mocked(useMailboxConnections).mockImplementation(() => ({
+      connections: currentConnections,
       isLoading: false,
       error: null,
-      refetch: connectionsRefetch,
-    });
-    vi.mocked(useMailboxThreads).mockReturnValue({
-      threads: [],
-      totalCount: 0,
-      nextCursor: null,
-      isLoading: false,
-      error: null,
-      refetch: threadsRefetch,
-      loadMore: vi.fn(),
-    });
+      refetch: vi.fn(),
+    }));
     vi.mocked(useMailboxDrafts).mockReturnValue({
       drafts: [],
       isLoading: false,
@@ -1276,16 +1260,20 @@ describe("MailboxWorkspace Sprint 1.6 integration", () => {
       refetch: draftsRefetch,
     });
 
-    renderWorkspaceAtPath("/app/mailbox/billing/drafts");
+    const view = renderWorkspaceAtPath("/app/mailbox/billing/drafts");
+    expect(draftsRefetch).not.toHaveBeenCalled();
 
-    act(() => {
-      vi.advanceTimersByTime(5000);
+    currentConnections = [
+      {
+        ...currentConnections[0],
+        lastSyncAt: "2026-05-08T14:35:00Z",
+      },
+    ];
+    view.rerender(<MailboxWorkspace />);
+
+    await waitFor(() => {
+      expect(draftsRefetch).toHaveBeenCalledTimes(1);
     });
-
-    expect(connectionsRefetch).toHaveBeenCalled();
-    expect(draftsRefetch).toHaveBeenCalled();
-
-    vi.useRealTimers();
   });
 });
 

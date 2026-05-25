@@ -103,7 +103,10 @@ export function resolveMailboxSyncPresentation(
 }
 
 export function shouldAutoTriggerMailboxSync(sync: MailboxSyncPresentation): boolean {
-  return sync.state === "completed_never_imported";
+  return (
+    sync.state === "completed_never_imported" ||
+    (sync.state === "completed" && sync.staleGmailCoverage)
+  );
 }
 
 export function withPendingSyncPresentation(

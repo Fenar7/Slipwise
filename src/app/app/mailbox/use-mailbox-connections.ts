@@ -65,9 +65,12 @@ export function useMailboxConnections(): UseMailboxConnectionsResult {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchConnections = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
+  const fetchConnections = useCallback(async (options?: { silent?: boolean }) => {
+    const silent = options?.silent ?? false;
+    if (!silent) {
+      setIsLoading(true);
+      setError(null);
+    }
     try {
       const res = await fetch("/api/mailbox/connections/visible");
       if (!res.ok) {
@@ -78,9 +81,13 @@ export function useMailboxConnections(): UseMailboxConnectionsResult {
       const accessible: ApiConnectionItem[] = data.accessible ?? [];
       setConnections(accessible.map(mapApiToConnection));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unknown error");
+      if (!silent) {
+        setError(err instanceof Error ? err.message : "Unknown error");
+      }
     } finally {
-      setIsLoading(false);
+      if (!silent) {
+        setIsLoading(false);
+      }
     }
   }, []);
 
@@ -88,19 +95,15 @@ export function useMailboxConnections(): UseMailboxConnectionsResult {
     fetchConnections();
   }, [fetchConnections]);
 
-  const hasActiveSync = connections.some((connection) => connection.sync?.isSyncing);
-  // Also poll when waiting for first sync — ensures we pick up sync completion
-  // within the poll window rather than waiting for a user-triggered refetch.
-  const hasNeverImported = connections.some(
-    (connection) => connection.sync?.state === "completed_never_imported",
-  );
-  const shouldPoll = hasActiveSync || hasNeverImported;
+  const hasConnectedMailbox = connections.some((connection) => connection.status === "connected");
+  const shouldPoll = hasConnectedMailbox;
 
   useEffect(() => {
     if (!shouldPoll) return;
 
     const timer = window.setInterval(() => {
-      void fetchConnections();
+      if (document.visibilityState !== "visible") return;
+      void fetchConnections({ silent: true });
     }, SYNC_POLL_INTERVAL_MS);
 
     return () => window.clearInterval(timer);

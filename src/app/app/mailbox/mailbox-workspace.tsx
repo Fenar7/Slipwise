@@ -69,8 +69,6 @@ import type {
   MailboxFolder,
 } from "./types";
 
-const LIVE_REFRESH_INTERVAL_MS = 5000;
-
 // Minimal connection shape for composer and filters
 interface ConnectionLike {
   id: string;
@@ -469,11 +467,10 @@ export function MailboxWorkspace() {
   });
 
   /**
-   * Auto-trigger only the first import for a never-synced mailbox.
+   * Auto-trigger one guarded recovery sync per mailbox connection.
    *
-   * Stale Gmail folder coverage is surfaced as an explicit recovery-needed
-   * state instead of being auto-triggered on every workspace mount. That
-   * keeps the Sent experience truthful and avoids refresh-triggered sync loops.
+   * This covers both first import and stale Gmail historical coverage without
+   * allowing repeated mount-triggered sync loops.
    */
   const autoSyncTriggeredRef = useRef<Record<string, boolean>>({});
   useEffect(() => {
@@ -494,33 +491,36 @@ export function MailboxWorkspace() {
     isSyncPending,
   ]);
 
+  const lastSeenSyncStampRef = useRef<Record<string, string | null>>({});
   useEffect(() => {
     if (!activeConnection || activeConnection.status !== "connected") return;
+    const syncStamp = activeConnection.lastSyncAt;
+    const previousSyncStamp = lastSeenSyncStampRef.current[activeConnection.id];
 
-    const timer = window.setInterval(() => {
-      if (document.visibilityState !== "visible") return;
+    if (previousSyncStamp === undefined) {
+      lastSeenSyncStampRef.current[activeConnection.id] = syncStamp;
+      return;
+    }
+    if (previousSyncStamp === syncStamp) return;
 
-      void refetchConnections();
-      if (inDraftsMode) {
-        refetchDrafts();
-        if (selectedProviderDraftActive) {
-          refetchProviderDraftDetail();
-        }
-      } else {
-        refetchThreads();
-        if (selectedThreadId) {
-          refetchDetail();
-        }
+    lastSeenSyncStampRef.current[activeConnection.id] = syncStamp;
+    if (inDraftsMode) {
+      refetchDrafts();
+      if (selectedProviderDraftActive) {
+        refetchProviderDraftDetail();
       }
-    }, LIVE_REFRESH_INTERVAL_MS);
+      return;
+    }
 
-    return () => window.clearInterval(timer);
+    refetchThreads();
+    if (selectedThreadId) {
+      refetchDetail();
+    }
   }, [
     activeConnection,
     inDraftsMode,
     selectedProviderDraftActive,
     selectedThreadId,
-    refetchConnections,
     refetchDrafts,
     refetchProviderDraftDetail,
     refetchThreads,
