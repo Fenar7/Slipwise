@@ -503,6 +503,8 @@ export const gmailProviderAdapter: IMailboxProviderAdapter = {
 
     const draftIds = await fetchAllDraftIds(accessToken);
     if (isProviderError(draftIds)) return draftIds;
+    console.log(`[mailbox/gmail] syncDrafts start: ${draftIds.length} draft IDs to fetch`);
+
     if (draftIds.length === 0) {
       return { drafts: [], activeDraftIds: [], failedDraftIds: [] };
     }
@@ -540,6 +542,13 @@ export const gmailProviderAdapter: IMailboxProviderAdapter = {
       }
       drafts.push(envelope);
     }
+
+    const successCount = activeDraftIds.length;
+    const failCount = failedDraftIds.length;
+    const notFoundCount = draftIds.length - successCount - failCount;
+    console.log(
+      `[mailbox/gmail] syncDrafts summary: total=${draftIds.length}, success=${successCount}, failed=${failCount}, not_found_skipped=${notFoundCount}`,
+    );
 
     if (failedDraftIds.length > 0) {
       console.warn(
@@ -821,6 +830,7 @@ interface GmailThreadsListResponse {
 interface GmailDraftsListResponse {
   drafts?: Array<{ id: string }>;
   nextPageToken?: string;
+  resultSizeEstimate?: number;
 }
 
 interface GmailDraftResponse {
@@ -954,13 +964,23 @@ async function fetchAllDraftIds(
     }
 
     const data = await res.json() as GmailDraftsListResponse;
+    const pageDraftIds: string[] = [];
     for (const draft of data.drafts ?? []) {
       if (draft?.id) {
-        draftIds.push(draft.id);
+        pageDraftIds.push(draft.id);
       }
     }
+    draftIds.push(...pageDraftIds);
     nextPageToken = data.nextPageToken;
+
+    console.log(
+      `[mailbox/gmail] fetchAllDraftIds page: resultSizeEstimate=${data.resultSizeEstimate ?? "?"}, extracted=${pageDraftIds.length}, pageToken=${nextPageToken ? "present" : "none"}`,
+    );
   } while (nextPageToken);
+
+  console.log(
+    `[mailbox/gmail] fetchAllDraftIds total: ${draftIds.length} IDs, sample=[${draftIds.slice(0, 5).join(", ")}]`,
+  );
 
   return draftIds;
 }
