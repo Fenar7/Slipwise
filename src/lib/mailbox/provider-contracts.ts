@@ -148,6 +148,10 @@ export interface MailboxDraftEnvelope {
 export interface MailboxDraftSyncResult {
   drafts: MailboxDraftEnvelope[];
   activeDraftIds: string[];
+  /** Draft IDs that could not be fetched (transient or malformed). Kept separate
+   * so reconciliation does not remove DRAFT labels from drafts that still exist
+   * on the provider but failed to download. */
+  failedDraftIds: string[];
 }
 
 export interface MailboxParticipantRef {

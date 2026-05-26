@@ -1014,5 +1014,134 @@ describe("gmailProviderAdapter.fetchThreadDetail — body extraction", () => {
       const envelope = draftsResult.drafts[0];
       expect(new Date(envelope.thread.lastMessageAt).getTime()).not.toBeNaN();
     });
+
+    it("continues the batch when a single draft fetch hits a non-not_found error", async () => {
+      vi.mocked(readMailboxCredential).mockResolvedValue({
+        accessToken: "token-123",
+        refreshToken: "refresh-123",
+        expiresAtMs: Date.now() + 3_600_000,
+        tokenType: "Bearer",
+        scope: "gmail.readonly",
+      });
+
+      fetchMock
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({ drafts: [{ id: "draft-ok" }, { id: "draft-bad" }] }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+        )
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              id: "draft-ok",
+              message: {
+                id: "msg-ok",
+                threadId: "thread-ok",
+                internalDate: String(Date.now()),
+                payload: {
+                  headers: [
+                    { name: "Subject", value: "OK Draft" },
+                    { name: "From", value: "A <a@example.com>" },
+                    { name: "To", value: "B <b@example.com>" },
+                  ],
+                },
+              },
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+        )
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({ error: { errors: [{ reason: "backendError" }] } }),
+            { status: 503, headers: { "Content-Type": "application/json" } },
+          ),
+        )
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({ error: { errors: [{ reason: "backendError" }] } }),
+            { status: 503, headers: { "Content-Type": "application/json" } },
+          ),
+        )
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({ error: { errors: [{ reason: "backendError" }] } }),
+            { status: 503, headers: { "Content-Type": "application/json" } },
+          ),
+        )
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({ error: { errors: [{ reason: "backendError" }] } }),
+            { status: 503, headers: { "Content-Type": "application/json" } },
+          ),
+        );
+
+      const result = await gmailProviderAdapter.syncDrafts({
+        orgId: "org-1",
+        tokenRef: "token-ref-1",
+      });
+
+      expect("drafts" in result && result.drafts).toHaveLength(1);
+      expect("activeDraftIds" in result && result.activeDraftIds).toEqual(["draft-ok"]);
+      expect("failedDraftIds" in result && result.failedDraftIds).toEqual(["draft-bad"]);
+    });
+
+    it("retries transient draft fetch errors with exponential backoff", async () => {
+      vi.mocked(readMailboxCredential).mockResolvedValue({
+        accessToken: "token-123",
+        refreshToken: "refresh-123",
+        expiresAtMs: Date.now() + 3_600_000,
+        tokenType: "Bearer",
+        scope: "gmail.readonly",
+      });
+
+      fetchMock
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({ drafts: [{ id: "draft-retry" }] }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+        )
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({ error: { errors: [{ reason: "rateLimitExceeded" }] } }),
+            { status: 429, headers: { "Content-Type": "application/json" } },
+          ),
+        )
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({ error: { errors: [{ reason: "rateLimitExceeded" }] } }),
+            { status: 429, headers: { "Content-Type": "application/json" } },
+          ),
+        )
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              id: "draft-retry",
+              message: {
+                id: "msg-retry",
+                threadId: "thread-retry",
+                internalDate: String(Date.now()),
+                payload: {
+                  headers: [
+                    { name: "Subject", value: "Retry Draft" },
+                    { name: "From", value: "A <a@example.com>" },
+                  ],
+                },
+              },
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+        );
+
+      const result = await gmailProviderAdapter.syncDrafts({
+        orgId: "org-1",
+        tokenRef: "token-ref-1",
+      });
+
+      expect("drafts" in result && result.drafts).toHaveLength(1);
+      expect("activeDraftIds" in result && result.activeDraftIds).toEqual(["draft-retry"]);
+      expect("failedDraftIds" in result && result.failedDraftIds).toEqual([]);
+    });
   });
 });

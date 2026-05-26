@@ -504,19 +504,27 @@ export const gmailProviderAdapter: IMailboxProviderAdapter = {
     const draftIds = await fetchAllDraftIds(accessToken);
     if (isProviderError(draftIds)) return draftIds;
     if (draftIds.length === 0) {
-      return { drafts: [], activeDraftIds: [] };
+      return { drafts: [], activeDraftIds: [], failedDraftIds: [] };
     }
 
     const drafts: MailboxDraftEnvelope[] = [];
     const activeDraftIds: string[] = [];
+    const failedDraftIds: string[] = [];
 
     for (const draftId of draftIds) {
-      const draft = await fetchDraft(accessToken, draftId);
+      const draft = await fetchDraftWithRetry(accessToken, draftId);
       if (isProviderError(draft)) {
         if (draft.category === "not_found") {
           continue;
         }
-        return draft;
+        // Log and continue — do not abort the entire batch for one bad draft.
+        // A single malformed or transiently-failing draft should not hide
+        // the other N drafts from the user.
+        failedDraftIds.push(draftId);
+        console.warn(
+          `[mailbox/gmail] Draft fetch failed (id=${draftId}, category=${draft.category}): ${draft.safeMessage}`,
+        );
+        continue;
       }
 
       const message = draft.message ?? {
@@ -533,9 +541,16 @@ export const gmailProviderAdapter: IMailboxProviderAdapter = {
       drafts.push(envelope);
     }
 
+    if (failedDraftIds.length > 0) {
+      console.warn(
+        `[mailbox/gmail] Draft sync completed with ${failedDraftIds.length}/${draftIds.length} fetch failures: [${failedDraftIds.join(", ")}]`,
+      );
+    }
+
     return {
       drafts,
       activeDraftIds,
+      failedDraftIds,
     } satisfies MailboxDraftSyncResult;
   },
 
@@ -963,6 +978,25 @@ async function fetchDraft(
   }
 
   return res.json() as Promise<GmailDraftResponse>;
+}
+
+async function fetchDraftWithRetry(
+  accessToken: string,
+  draftId: string,
+  maxRetries = 3,
+): Promise<GmailDraftResponse | MailboxProviderError> {
+  let lastError: MailboxProviderError | null = null;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    if (attempt > 0) {
+      const delayMs = 1000 * Math.pow(2, attempt - 1);
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+    const result = await fetchDraft(accessToken, draftId);
+    if (!isProviderError(result)) return result;
+    lastError = result;
+    if (!result.retryable) return result;
+  }
+  return lastError!;
 }
 
 async function fetchThreadEnvelopes(

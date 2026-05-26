@@ -243,6 +243,9 @@ async function reconcileProviderDraftMarkers(params: {
   orgId: string;
   connectionId: string;
   activeDraftIds: string[];
+  /** Draft IDs that failed to fetch in this sync run. Their DRAFT labels
+   * must NOT be removed — they likely still exist on the provider. */
+  failedDraftIds?: string[];
 }): Promise<void> {
   const rows = await db.mailboxMessage.findMany({
     where: {
@@ -259,6 +262,7 @@ async function reconcileProviderDraftMarkers(params: {
   });
 
   const activeSet = new Set(params.activeDraftIds);
+  const failedSet = new Set(params.failedDraftIds ?? []);
   const staleRows = rows.filter(
     (row) => {
       if (!hasDraftLabel(row.providerMetadata)) return false;
@@ -267,7 +271,13 @@ async function reconcileProviderDraftMarkers(params: {
         metadata && typeof metadata.gmailDraftId === "string"
           ? metadata.gmailDraftId
           : null;
-      return gmailDraftId ? !activeSet.has(gmailDraftId) : !activeSet.has(row.providerMessageId);
+      const candidateId = gmailDraftId ?? row.providerMessageId;
+      // Do NOT remove DRAFT label if the draft failed to fetch this run
+      // (it likely still exists on the provider).
+      if (failedSet.has(candidateId) || (gmailDraftId && failedSet.has(gmailDraftId))) {
+        return false;
+      }
+      return !activeSet.has(candidateId);
     },
   );
 
@@ -576,6 +586,7 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
         orgId: params.orgId,
         connectionId: connection.id,
         activeDraftIds: draftSync.activeDraftIds,
+        failedDraftIds: draftSync.failedDraftIds,
       });
       syncedDrafts = true;
     }
