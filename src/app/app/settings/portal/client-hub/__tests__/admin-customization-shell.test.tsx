@@ -242,4 +242,31 @@ describe("ClientHubCustomizationPage", () => {
     expect(screen.queryByText("Failed to Load Settings")).not.toBeInTheDocument();
     expect(screen.getByText("Client Hub Customization")).toBeInTheDocument();
   });
+
+  it("renders customization shell successfully when validated fallback config is resolved", async () => {
+    const partialConfig = {
+      ...mockDefaultConfig,
+      branding: {
+        ...mockDefaultConfig.branding,
+        accentColor: "#aabbcc",
+      },
+      homeDashboard: {
+        ...mockDefaultConfig.homeDashboard,
+        heroTitle: "Partial Shell Title",
+      },
+    };
+
+    vi.mocked(getClientHubOrgConfig).mockResolvedValueOnce({
+      success: true,
+      config: partialConfig,
+      isNew: false,
+    });
+
+    render(<ClientHubCustomizationPage />);
+
+    // Renders the page normally with the partial/fallback values loaded
+    await screen.findByRole("tab", { name: /branding/i });
+    expect(screen.queryByText("Failed to Load Settings")).not.toBeInTheDocument();
+    expect(screen.getByText("Client Hub Customization")).toBeInTheDocument();
+  });
 });

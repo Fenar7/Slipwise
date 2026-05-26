@@ -98,6 +98,51 @@ describe("Client Hub Org Default persistence & actions", () => {
         error: "Failed to retrieve Client Hub configuration due to an internal server or database error.",
       });
     });
+
+    it("safely deep merges and returns a usable config when stored config is partial", async () => {
+      setupAuth();
+      const partialConfig = {
+        branding: {
+          accentColor: "#aabbcc",
+        },
+        homeDashboard: {
+          heroTitle: "Partial Action Title",
+        },
+      };
+
+      mockDb.clientHubOrgConfig.findUnique.mockResolvedValue({
+        organizationId: ORG_ID,
+        config: partialConfig,
+      });
+
+      const result = await getClientHubOrgConfig();
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.config.branding.accentColor).toBe("#aabbcc");
+        expect(result.config.homeDashboard.heroTitle).toBe("Partial Action Title");
+        expect(result.config.branding.removePoweredBy).toBe(DEFAULT_CLIENT_HUB_CONFIG.branding.removePoweredBy);
+        expect(result.isNew).toBe(false);
+      }
+    });
+
+    it("safely falls back to DEFAULT_CLIENT_HUB_CONFIG when stored config is malformed or violates Zod schema", async () => {
+      setupAuth();
+      const invalidConfig = {
+        ...DEFAULT_CLIENT_HUB_CONFIG,
+        branding: {
+          ...DEFAULT_CLIENT_HUB_CONFIG.branding,
+          accentColor: "invalid-color-not-hex",
+        },
+      };
+
+      mockDb.clientHubOrgConfig.findUnique.mockResolvedValue({
+        organizationId: ORG_ID,
+        config: invalidConfig,
+      });
+
+      const result = await getClientHubOrgConfig();
+      expect(result).toEqual({ success: true, config: DEFAULT_CLIENT_HUB_CONFIG, isNew: false });
+    });
   });
 
   describe("updateClientHubOrgConfig (save defaults)", () => {

@@ -8,6 +8,7 @@ import {
   ClientHubConfigSchema,
 } from "@/app/portal/[orgSlug]/client-hub/components/customization-contract";
 import { DEFAULT_CLIENT_HUB_CONFIG } from "@/app/app/settings/portal/client-hub/components/mock-config";
+import { safeValidateHubConfig } from "@/app/portal/[orgSlug]/client-hub/components/config-resolver";
 
 export type GetClientHubOrgConfigResult =
   | { success: true; config: ClientHubConfig; isNew: boolean }
@@ -31,8 +32,9 @@ export async function getClientHubOrgConfig(): Promise<GetClientHubOrgConfigResu
       return { success: true, config: DEFAULT_CLIENT_HUB_CONFIG, isNew: true };
     }
 
-    // Config is stored as Json. Cast to ClientHubConfig.
-    return { success: true, config: record.config as unknown as ClientHubConfig, isNew: false };
+    // Securely validate persisted config with resilient schema merging and fallbacks
+    const validated = safeValidateHubConfig(record.config);
+    return { success: true, config: validated, isNew: false };
   } catch (error) {
     console.error("getClientHubOrgConfig error:", error);
     return {
