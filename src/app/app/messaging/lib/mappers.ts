@@ -126,6 +126,8 @@ export interface ApiTaskSummary {
   assigneeName: string | null;
   assigneeAvatarInitials: string | null;
   dueDate: string | null;
+  reminderAt: string | null;
+  reminderSentAt: string | null;
   createdBy: string;
   createdByName: string | null;
   createdAt: string;

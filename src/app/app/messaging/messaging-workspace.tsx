@@ -13,6 +13,7 @@ import { MessagingReadingWorkspace } from "./messaging-reading-workspace";
 import { MessagingSearchPanel } from "./messaging-search-panel";
 import { MessagingNotificationsPanel } from "./messaging-notifications-panel";
 import { MessagingTaskRail } from "./messaging-task-rail";
+import { MessagingTaskCreate } from "./messaging-task-create";
 import type {
   MessagingSection,
   MessagingWorkspaceState,
@@ -88,6 +89,13 @@ export function MessagingWorkspace() {
   // Sprint 6.2: jump-to-message from task detail
   const [jumpToMessageId, setJumpToMessageId] = useState<string | null>(null);
 
+  // Sprint 6.6: create task from message modal
+  const [taskCreateModal, setTaskCreateModal] = useState<{
+    open: boolean;
+    originatingMessageId: string | null;
+    originatingMessagePreview: string | null;
+  }>({ open: false, originatingMessageId: null, originatingMessagePreview: null });
+
   const unreadCount = notifications.filter((n) => !n.read).length;
 
   // Register contextual tabs and action buttons in the global top bar
@@ -151,6 +159,15 @@ export function MessagingWorkspace() {
   } = useConversationList();
 
   const activeConvId = activeConversation?.id ?? null;
+
+  // Sprint 6.6: open task create modal anchored to a message
+  const handleCreateTaskFromMessage = React.useCallback((messageId: string, messageBody: string) => {
+    setTaskCreateModal({
+      open: true,
+      originatingMessageId: messageId,
+      originatingMessagePreview: messageBody.length > 60 ? messageBody.slice(0, 60) + "…" : messageBody,
+    });
+  }, []);
 
   // Sprint 6.2: navigate from task detail to originating message/thread
   const handleNavigateToOrigin = React.useCallback((conversationId: string, messageId: string | null) => {
@@ -472,6 +489,7 @@ export function MessagingWorkspace() {
                     await refreshDetail();
                     await refreshList();
                   }}
+                  onCreateTaskFromMessage={handleCreateTaskFromMessage}
                 />
               </div>
             </div>
@@ -480,6 +498,31 @@ export function MessagingWorkspace() {
             <MessagingWorkspacePane activeSection={state.activeSection} conversationId={activeConvId} onNavigateToOrigin={handleNavigateToOrigin} />
           )}
         </div>
+
+        {taskCreateModal.open && activeConvId && (
+          <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/40">
+            <MessagingTaskCreate
+              conversationId={activeConvId}
+              participants={activeDetail?.participantProfiles?.map((p) => ({
+                id: p.userId,
+                name: p.name,
+                avatarInitials: p.avatarInitials,
+                role: "member",
+                presence: "offline",
+              })) ?? []}
+              originatingMessageId={taskCreateModal.originatingMessageId}
+              originatingMessagePreview={taskCreateModal.originatingMessagePreview}
+              onClose={() =>
+                setTaskCreateModal({ open: false, originatingMessageId: null, originatingMessagePreview: null })
+              }
+              onSuccess={() => {
+                setTaskCreateModal({ open: false, originatingMessageId: null, originatingMessagePreview: null });
+                refreshDetail();
+                refreshList();
+              }}
+            />
+          </div>
+        )}
 
         {notifOpen && (
           <MessagingNotificationsPanel

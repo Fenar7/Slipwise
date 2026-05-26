@@ -15,6 +15,8 @@ interface MessagingTaskCreateProps {
   onSuccess?: () => void;
   conversationRef?: string | null;
   readOnly?: boolean;
+  originatingMessageId?: string | null;
+  originatingMessagePreview?: string | null;
 }
 
 const PRIORITY_OPTIONS = [
@@ -41,11 +43,14 @@ export function MessagingTaskCreate({
   onSuccess,
   conversationRef,
   readOnly: readOnlyProp,
+  originatingMessageId,
+  originatingMessagePreview,
 }: MessagingTaskCreateProps) {
   const [title, setTitle] = useState("");
   const [priority, setPriority] = useState<TaskPriority>("medium");
   const [assigneeId, setAssigneeId] = useState<string>("");
   const [dueDate, setDueDate] = useState("");
+  const [reminderAt, setReminderAt] = useState("");
   const [description, setDescription] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -176,6 +181,16 @@ export function MessagingTaskCreate({
       return;
     }
 
+    // Client-side reminder validation
+    if (reminderAt && dueDate) {
+      const reminderDate = new Date(reminderAt);
+      const due = new Date(dueDate);
+      if (reminderDate > due) {
+        setError("Reminder must not be after the due date.");
+        return;
+      }
+    }
+
     setSubmitting(true);
     setError(null);
 
@@ -192,6 +207,8 @@ export function MessagingTaskCreate({
           priority: priorityStringToNumber(priority),
           assigneeId: assigneeId || null,
           dueDate: dueDate || null,
+          reminderAt: reminderAt || null,
+          originatingMessageId: originatingMessageId ?? null,
         }),
       });
 
@@ -353,6 +370,20 @@ export function MessagingTaskCreate({
             />
           </div>
 
+          {/* Reminder */}
+          <div>
+            <label className="block text-xs font-semibold mb-1" style={{ color: "#1C1B1F" }}>Reminder (optional)</label>
+            <input
+              type="datetime-local"
+              data-testid="task-reminder-at"
+              value={reminderAt}
+              disabled={submitting}
+              onChange={(e) => setReminderAt(e.target.value)}
+              className="w-full rounded-lg border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]"
+              style={{ borderColor: "#E0E0E0", color: "#1C1B1F" }}
+            />
+          </div>
+
           {/* Description */}
           <div>
             <label className="block text-xs font-semibold mb-1" style={{ color: "#1C1B1F" }}>Description (optional)</label>
@@ -367,6 +398,14 @@ export function MessagingTaskCreate({
               style={{ borderColor: "#E0E0E0", color: "#1C1B1F" }}
             />
           </div>
+
+          {/* Originating message context */}
+          {originatingMessagePreview && (
+            <div className="flex items-start gap-1.5 rounded-lg bg-amber-50 border px-3 py-2" style={{ borderColor: "#FCD34D" }} data-testid="task-create-origin-preview">
+              <span className="text-xs font-semibold text-amber-700 shrink-0">From message:</span>
+              <span className="text-xs text-amber-800 truncate">{originatingMessagePreview}</span>
+            </div>
+          )}
 
           {/* Conversation link hint */}
           {conversationRef && (

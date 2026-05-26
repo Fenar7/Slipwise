@@ -9,6 +9,19 @@ import { requireConversationAccess } from "./authorization";
 import { toConversationRecord, toParticipantRecord } from "./mappers";
 import type { CreateTaskInput, UpdateTaskStatusInput, AssignTaskInput, UpdateTaskInput } from "./service-contracts";
 
+function validateReminderAt(reminderAt: Date | null | undefined, dueDate: Date | null | undefined, now = new Date()): void {
+  if (reminderAt === undefined || reminderAt === null) return;
+  if (isNaN(reminderAt.getTime())) {
+    throw new InvalidInputError("Reminder must be a valid date");
+  }
+  if (reminderAt <= now) {
+    throw new InvalidInputError("Reminder must be in the future");
+  }
+  if (dueDate && reminderAt > dueDate) {
+    throw new InvalidInputError("Reminder must not be after the due date");
+  }
+}
+
 export async function listTasksForConversation(
   orgId: string,
   conversationId: string,
@@ -89,6 +102,8 @@ export async function createTask(input: CreateTaskInput): Promise<MessagingTaskR
     }
   }
 
+  validateReminderAt(input.reminderAt, input.dueDate);
+
   const task = await db.messagingTask.create({
     data: {
       orgId,
@@ -98,6 +113,7 @@ export async function createTask(input: CreateTaskInput): Promise<MessagingTaskR
       priority: input.priority ?? 0,
       assigneeId: input.assigneeId ?? null,
       dueDate: input.dueDate ?? null,
+      reminderAt: input.reminderAt ?? null,
       originatingMessageId: input.originatingMessageId ?? null,
       createdBy,
     },
@@ -152,6 +168,7 @@ export async function updateTaskStatus(input: UpdateTaskStatusInput): Promise<Me
   if (status === "DONE" && task.status !== "DONE") {
     updateData.completedAt = new Date();
     updateData.completedBy = actorId;
+    updateData.reminderAt = null;
   } else if (status !== "DONE" && task.status === "DONE") {
     updateData.completedAt = null;
     updateData.completedBy = null;
@@ -290,6 +307,14 @@ export async function updateTask(input: UpdateTaskInput): Promise<MessagingTaskR
   if (input.dueDate !== undefined) updateData.dueDate = input.dueDate;
   if (input.assigneeId !== undefined) updateData.assigneeId = input.assigneeId;
 
+  // Validate reminder against effective dueDate (input takes precedence, else existing)
+  const effectiveDueDate = input.dueDate !== undefined ? input.dueDate : task.dueDate;
+  validateReminderAt(input.reminderAt, effectiveDueDate);
+
+  if (input.reminderAt !== undefined) {
+    updateData.reminderAt = input.reminderAt;
+  }
+
   if (input.status !== undefined) {
     updateData.status = input.status;
     const oldStatus = task.status;
@@ -298,6 +323,7 @@ export async function updateTask(input: UpdateTaskInput): Promise<MessagingTaskR
     if (newStatus === "DONE" && oldStatus !== "DONE") {
       updateData.completedAt = new Date();
       updateData.completedBy = actorId;
+      updateData.reminderAt = null;
     } else if (newStatus !== "DONE" && oldStatus === "DONE") {
       updateData.completedAt = null;
       updateData.completedBy = null;

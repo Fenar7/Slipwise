@@ -252,6 +252,8 @@ export function toTaskRecord(row: MessagingTask): MessagingTaskRecord {
     priority: row.priority,
     assigneeId: row.assigneeId ?? null,
     dueDate: row.dueDate ?? null,
+    reminderAt: row.reminderAt ?? null,
+    reminderSentAt: row.reminderSentAt ?? null,
     completedAt: row.completedAt ?? null,
     completedBy: row.completedBy ?? null,
     createdBy: row.createdBy,

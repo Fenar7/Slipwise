@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { AlertTriangle, Clock, Link, MoreHorizontal, ArrowLeft, Plus, CheckSquare, MessageSquare, Archive, Lock } from "lucide-react";
+import { AlertTriangle, Clock, Link, MoreHorizontal, ArrowLeft, Plus, CheckSquare, MessageSquare, Archive, Lock, Bell } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { RadioPill } from "./messaging-ui-primitives";
 import { MessagingTaskCreate } from "./messaging-task-create";
@@ -60,6 +60,7 @@ interface TaskDetailPanelProps {
     description: string | null;
     priority: TaskPriority;
     dueDate: string | null;
+    reminderAt: string | null;
     assigneeId: string | null;
     status: TaskStatus;
   }) => Promise<void>;
@@ -90,6 +91,7 @@ function TaskDetailPanel({
   const [editDescription, setEditDescription] = useState(task.description ?? "");
   const [editPriority, setEditPriority] = useState<TaskPriority>(task.priority);
   const [editDueDate, setEditDueDate] = useState(task.dueDate ?? "");
+  const [editReminderAt, setEditReminderAt] = useState(task.reminderAt ?? "");
   const [editAssigneeId, setEditAssigneeId] = useState(task.assignee?.id ?? "");
   const [editStatus, setEditStatus] = useState<TaskStatus>(task.dbStatus ?? task.status);
 
@@ -99,6 +101,7 @@ function TaskDetailPanel({
     setEditDescription(task.description ?? "");
     setEditPriority(task.priority);
     setEditDueDate(task.dueDate ?? "");
+    setEditReminderAt(task.reminderAt ?? "");
     setEditAssigneeId(task.assignee?.id ?? "");
     setEditStatus(task.dbStatus ?? task.status);
     setIsEditing(false);
@@ -252,6 +255,20 @@ function TaskDetailPanel({
               style={{ borderColor: "#E0E0E0", color: "#1C1B1F" }}
             />
           </div>
+
+          {/* Reminder */}
+          <div>
+            <label className="block text-xs font-semibold mb-1" style={{ color: "#1C1B1F" }}>Reminder</label>
+            <input
+              type="datetime-local"
+              data-testid="task-edit-reminder-at"
+              value={editReminderAt}
+              disabled={updating}
+              onChange={(e) => setEditReminderAt(e.target.value)}
+              className="w-full rounded-lg border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]"
+              style={{ borderColor: "#E0E0E0", color: "#1C1B1F" }}
+            />
+          </div>
         </div>
 
         <div className="flex items-center gap-2 border-t px-6 py-4 justify-end" style={{ borderColor: "#E0E0E0" }}>
@@ -279,6 +296,7 @@ function TaskDetailPanel({
                     description: editDescription.trim() || null,
                     priority: editPriority,
                     dueDate: editDueDate || null,
+                    reminderAt: editReminderAt || null,
                     assigneeId: editAssigneeId || null,
                     status: editStatus,
                   });
@@ -382,6 +400,17 @@ function TaskDetailPanel({
             <div className="flex items-center gap-1.5">
               <Clock className="h-3.5 w-3.5" style={{ color: "#79747E" }} />
               <span className="text-sm" style={{ color: "#1C1B1F" }}>{task.dueDate}</span>
+            </div>
+          </div>
+        )}
+
+        {/* Reminder */}
+        {task.reminderAt && (
+          <div data-testid="task-detail-reminder">
+            <p className="text-[10px] font-semibold uppercase tracking-wide mb-1" style={{ color: "#79747E" }}>Reminder</p>
+            <div className="flex items-center gap-1.5">
+              <Bell className="h-3.5 w-3.5" style={{ color: "#79747E" }} />
+              <span className="text-sm" style={{ color: "#1C1B1F" }}>{new Date(task.reminderAt).toLocaleString()}</span>
             </div>
           </div>
         )}
@@ -556,6 +585,8 @@ export function MessagingTaskPanel({ conversationId, onNavigateToOrigin }: Messa
           }
         : null,
       dueDate: t.dueDate ? new Date(t.dueDate).toISOString().split("T")[0] : null,
+      reminderAt: t.reminderAt ?? null,
+      reminderSentAt: t.reminderSentAt ?? undefined,
       status,
       conversationRef: t.conversationId,
       priority: t.priority,
@@ -650,6 +681,7 @@ export function MessagingTaskPanel({ conversationId, onNavigateToOrigin }: Messa
     description?: string | null;
     priority?: TaskPriority;
     dueDate?: string | null;
+    reminderAt?: string | null;
     assigneeId?: string | null;
     status?: TaskStatus;
   }) => {
@@ -677,7 +709,11 @@ export function MessagingTaskPanel({ conversationId, onNavigateToOrigin }: Messa
     if (updates.dueDate !== undefined) {
       payload.dueDate = updates.dueDate || null;
     }
-    
+
+    if (updates.reminderAt !== undefined) {
+      payload.reminderAt = updates.reminderAt || null;
+    }
+
     if (updates.assigneeId !== undefined) {
       payload.assigneeId = updates.assigneeId || null;
     }

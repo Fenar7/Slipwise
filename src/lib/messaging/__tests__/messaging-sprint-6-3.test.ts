@@ -225,6 +225,7 @@ describe("Sprint 6.3 Service layer — Unified updateTask Details", () => {
         status: "DONE",
         completedAt: expect.any(Date),
         completedBy: "user-1",
+        reminderAt: null,
       },
     });
   });

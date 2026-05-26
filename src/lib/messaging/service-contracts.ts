@@ -339,6 +339,7 @@ export interface CreateTaskInput {
   priority?: number;
   assigneeId?: string | null;
   dueDate?: Date | null;
+  reminderAt?: Date | null;
   createdBy: string;
 }
 
@@ -369,6 +370,7 @@ export interface UpdateTaskInput {
   description?: string | null;
   priority?: number;
   dueDate?: Date | null;
+  reminderAt?: Date | null;
   assigneeId?: string | null;
   status?: MessagingTaskStatus;
 }

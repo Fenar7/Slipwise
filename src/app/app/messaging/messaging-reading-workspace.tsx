@@ -503,9 +503,11 @@ interface MessageRowProps {
   isThreadAnchor: boolean;
   onOpenThread: (msgId: string) => void;
   onDownloadAttachment?: (attachmentId: string) => Promise<{ signedUrl: string } | null>;
+  onCreateTaskFromMessage?: (messageId: string, messageBody: string) => void;
+  canSend?: boolean;
 }
 
-function MessageRow({ message, isThreadAnchor, onOpenThread, onDownloadAttachment }: MessageRowProps) {
+function MessageRow({ message, isThreadAnchor, onOpenThread, onDownloadAttachment, onCreateTaskFromMessage, canSend }: MessageRowProps) {
   const [emojiOpen, setEmojiOpen] = React.useState(false);
   const [actionsOpen, setActionsOpen] = React.useState(false);
 
@@ -616,7 +618,14 @@ function MessageRow({ message, isThreadAnchor, onOpenThread, onDownloadAttachmen
           </button>
           {actionsOpen && (
             <div className="absolute right-0 top-7">
-              <MessagingMessageActions onClose={() => setActionsOpen(false)} />
+              <MessagingMessageActions
+                onClose={() => setActionsOpen(false)}
+                onCreateTask={
+                  canSend !== false && onCreateTaskFromMessage
+                    ? () => onCreateTaskFromMessage(message.id, message.body)
+                    : undefined
+                }
+              />
             </div>
           )}
         </div>
@@ -632,9 +641,11 @@ interface MessageFeedProps {
   threadAnchorMessageId: string | null;
   onOpenThread: (msgId: string) => void;
   onDownloadAttachment?: (attachmentId: string) => Promise<{ signedUrl: string } | null>;
+  onCreateTaskFromMessage?: (messageId: string, messageBody: string) => void;
+  canSend?: boolean;
 }
 
-function MessageFeed({ messages, threadAnchorMessageId, onOpenThread, onDownloadAttachment }: MessageFeedProps) {
+function MessageFeed({ messages, threadAnchorMessageId, onOpenThread, onDownloadAttachment, onCreateTaskFromMessage, canSend }: MessageFeedProps) {
   const feedRef = React.useRef<HTMLDivElement>(null);
 
   // Scroll to bottom on mount (simulates arriving at latest messages)
@@ -658,6 +669,8 @@ function MessageFeed({ messages, threadAnchorMessageId, onOpenThread, onDownload
           isThreadAnchor={threadAnchorMessageId === msg.id}
           onOpenThread={onOpenThread}
           onDownloadAttachment={onDownloadAttachment}
+          onCreateTaskFromMessage={onCreateTaskFromMessage}
+          canSend={canSend}
         />
       ))}
       {/* Bottom padding so last message isn't flush against composer */}
@@ -691,6 +704,7 @@ function ChannelWorkspace({
   onRefreshDetail,
   participants,
   onDownloadAttachment,
+  onCreateTaskFromMessage,
 }: WorkspaceBodyProps) {
   const channelMessages = externalMessages ?? [];
   const anchorMsg = threadAnchorMessageId
@@ -725,6 +739,8 @@ function ChannelWorkspace({
           threadAnchorMessageId={threadAnchorMessageId}
           onOpenThread={onOpenThread}
           onDownloadAttachment={onDownloadAttachment}
+          onCreateTaskFromMessage={onCreateTaskFromMessage}
+          canSend={canSend}
         />
         <MessagingComposer placeholder={`Message #${conversation.name}`} isAccessible={canSend} onSend={onSend} sending={sending} sendError={sendError} conversationId={conversation.id} participants={participants} />
       </div>
@@ -800,6 +816,7 @@ function DMWorkspace({
   replyError,
   participants,
   onDownloadAttachment,
+  onCreateTaskFromMessage,
 }: WorkspaceBodyProps) {
   const dmMessages = externalMessages ?? [];
   return (
@@ -843,6 +860,8 @@ function DMWorkspace({
           threadAnchorMessageId={threadAnchorMessageId}
           onOpenThread={onOpenThread}
           onDownloadAttachment={onDownloadAttachment}
+          onCreateTaskFromMessage={onCreateTaskFromMessage}
+          canSend={canSend}
         />
         <MessagingComposer placeholder={`Message ${conversation.name}`} isAccessible={canSend} onSend={onSend} sending={sending} sendError={sendError} conversationId={conversation.id} participants={participants} />
       </div>
@@ -898,6 +917,7 @@ function GroupWorkspace({
   onRefreshDetail,
   participants,
   onDownloadAttachment,
+  onCreateTaskFromMessage,
 }: WorkspaceBodyProps) {
   const groupMessages = externalMessages ?? [];
   const anchorMsg = threadAnchorMessageId
@@ -931,6 +951,8 @@ function GroupWorkspace({
           threadAnchorMessageId={threadAnchorMessageId}
           onOpenThread={onOpenThread}
           onDownloadAttachment={onDownloadAttachment}
+          onCreateTaskFromMessage={onCreateTaskFromMessage}
+          canSend={canSend}
         />
         <MessagingComposer placeholder={`Message ${conversation.name}`} isAccessible={canSend} onSend={onSend} sending={sending} sendError={sendError} conversationId={conversation.id} participants={participants} />
       </div>
@@ -991,6 +1013,7 @@ interface WorkspaceBodyProps {
   onEdit?: (messageId: string, body: string) => void;
   onDelete?: (messageId: string) => void;
   onDownloadAttachment?: (attachmentId: string) => Promise<{ signedUrl: string } | null>;
+  onCreateTaskFromMessage?: (messageId: string, messageBody: string) => void;
 }
 
 // ─── Main export ──────────────────────────────────────────────────────────────
@@ -1019,6 +1042,7 @@ interface MessagingReadingWorkspaceProps {
   onRefreshDetail?: () => void;
   participants?: MentionSuggestion[];
   onDownloadAttachment?: (attachmentId: string) => Promise<{ signedUrl: string } | null>;
+  onCreateTaskFromMessage?: (messageId: string, messageBody: string) => void;
 }
 
 export function MessagingReadingWorkspace({
@@ -1038,6 +1062,7 @@ export function MessagingReadingWorkspace({
   onRefreshDetail,
   participants,
   onDownloadAttachment,
+  onCreateTaskFromMessage,
 }: MessagingReadingWorkspaceProps) {
   const [threadAnchorMessageId, setThreadAnchorMessageId] = React.useState<string | null>(null);
   const [threadOpen, setThreadOpen] = React.useState(false);
@@ -1169,6 +1194,7 @@ export function MessagingReadingWorkspace({
     onRefreshDetail,
     participants,
     onDownloadAttachment,
+    onCreateTaskFromMessage,
   };
 
   return (

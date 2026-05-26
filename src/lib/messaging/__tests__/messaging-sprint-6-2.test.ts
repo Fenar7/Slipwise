@@ -216,6 +216,7 @@ describe("Sprint 6.2 Service layer — Tasks Work Coordination", () => {
         updatedAt: new Date(),
         dueDate: null,
         assigneeId: null,
+        reminderAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
       };
 
       (db.messagingTask.findUnique as any).mockResolvedValue(mockTask);
@@ -249,6 +250,7 @@ describe("Sprint 6.2 Service layer — Tasks Work Coordination", () => {
             status: "DONE",
             completedAt: expect.any(Date),
             completedBy: "user-actor",
+            reminderAt: null,
           }),
         })
       );

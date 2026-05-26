@@ -314,6 +314,8 @@ export interface MessagingTaskRecord {
   priority: number;
   assigneeId: string | null;
   dueDate: Date | null;
+  reminderAt: Date | null;
+  reminderSentAt: Date | null;
   completedAt: Date | null;
   completedBy: string | null;
   createdBy: string;

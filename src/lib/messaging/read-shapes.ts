@@ -436,6 +436,8 @@ export interface TaskSummary {
   assigneeName: string | null;
   assigneeAvatarInitials: string | null;
   dueDate: string | null;
+  reminderAt: string | null;
+  reminderSentAt: string | null;
   createdBy: string;
   createdByName: string | null;
   createdAt: string;
@@ -467,6 +469,8 @@ export function toTaskSummary(input: TaskSummaryInput): TaskSummary {
     assigneeName,
     assigneeAvatarInitials,
     dueDate: record.dueDate?.toISOString() ?? null,
+    reminderAt: record.reminderAt?.toISOString() ?? null,
+    reminderSentAt: record.reminderSentAt?.toISOString() ?? null,
     createdBy: record.createdBy,
     createdByName,
     createdAt: record.createdAt.toISOString(),

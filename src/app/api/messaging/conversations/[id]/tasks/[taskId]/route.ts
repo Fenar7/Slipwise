@@ -37,6 +37,7 @@ export async function PATCH(
       body.description === undefined &&
       body.priority === undefined &&
       body.dueDate === undefined &&
+      body.reminderAt === undefined &&
       body.assigneeId === undefined &&
       body.status === undefined
     ) {
@@ -75,6 +76,15 @@ export async function PATCH(
       }
     }
 
+    let reminderAt: Date | null | undefined = undefined;
+    if (body.reminderAt !== undefined) {
+      if (body.reminderAt === null || body.reminderAt === "") {
+        reminderAt = null;
+      } else {
+        reminderAt = requireValidDate(body.reminderAt, "Reminder");
+      }
+    }
+
     let assigneeId: string | null | undefined = undefined;
     if (body.assigneeId !== undefined) {
       if (body.assigneeId === null || body.assigneeId === "") {
@@ -98,6 +108,7 @@ export async function PATCH(
       description,
       priority,
       dueDate,
+      reminderAt,
       assigneeId,
       status,
     });

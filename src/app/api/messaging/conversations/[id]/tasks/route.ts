@@ -41,6 +41,7 @@ export async function POST(
     const title = requireStringField(body.title, "Task title");
     const priority = requireNumberRange(body.priority ?? 0, "Priority", 0, 3) ?? 0;
     const dueDate = requireValidDate(body.dueDate, "Due date");
+    const reminderAt = requireValidDate(body.reminderAt, "Reminder");
 
     const task = await createTask({
       orgId,
@@ -51,6 +52,7 @@ export async function POST(
       priority,
       assigneeId: body.assigneeId ?? null,
       dueDate: dueDate ?? null,
+      reminderAt: reminderAt ?? null,
       originatingMessageId: body.originatingMessageId ?? null,
     });
 
