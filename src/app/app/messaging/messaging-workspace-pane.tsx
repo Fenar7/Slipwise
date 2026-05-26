@@ -24,7 +24,7 @@ import { MessagingFilesPanel } from "./messaging-files-panel";
 interface MessagingWorkspacePaneProps {
   activeSection: MessagingSection;
   conversationId?: string | null;
-  onNavigateToOrigin?: (conversationId: string, messageId: string) => void;
+  onNavigateToOrigin?: (conversationId: string, messageId: string | null) => void;
 }
 
 const CARD_BUTTON_CLASS =

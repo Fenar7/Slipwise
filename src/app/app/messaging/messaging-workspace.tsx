@@ -153,7 +153,7 @@ export function MessagingWorkspace() {
   const activeConvId = activeConversation?.id ?? null;
 
   // Sprint 6.2: navigate from task detail to originating message/thread
-  const handleNavigateToOrigin = React.useCallback((conversationId: string, messageId: string) => {
+  const handleNavigateToOrigin = React.useCallback((conversationId: string, messageId: string | null) => {
     setJumpToMessageId(messageId);
     const all = [...liveChannels, ...liveDms, ...liveGroups];
     const found = all.find((c) => c.id === conversationId);

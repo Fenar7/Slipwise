@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { AlertTriangle, Clock, Link, MoreHorizontal, ArrowLeft, Plus, CheckSquare, MessageSquare } from "lucide-react";
+import { AlertTriangle, Clock, Link, MoreHorizontal, ArrowLeft, Plus, CheckSquare, MessageSquare, Archive, Lock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { RadioPill } from "./messaging-ui-primitives";
 import { MessagingTaskCreate } from "./messaging-task-create";
@@ -54,7 +54,7 @@ interface TaskDetailPanelProps {
   participants?: MessagingParticipant[];
   onUpdateStatus?: (status: TaskStatus) => Promise<void>;
   onAssign?: (assigneeId: string) => Promise<void>;
-  onNavigateToOrigin?: (conversationId: string, messageId: string) => void;
+  onNavigateToOrigin?: (conversationId: string, messageId: string | null) => void;
   onEditTask?: (updates: {
     title: string;
     description: string | null;
@@ -63,6 +63,9 @@ interface TaskDetailPanelProps {
     assigneeId: string | null;
     status: TaskStatus;
   }) => Promise<void>;
+  readOnly?: boolean;
+  archived?: boolean;
+  locked?: boolean;
 }
 
 function TaskDetailPanel({
@@ -73,6 +76,9 @@ function TaskDetailPanel({
   onAssign,
   onNavigateToOrigin,
   onEditTask,
+  readOnly = false,
+  archived = false,
+  locked = false,
 }: TaskDetailPanelProps) {
   const { label, cls } = statusBadge(task.status);
   const [updating, setUpdating] = useState(false);
@@ -318,6 +324,21 @@ function TaskDetailPanel({
           </div>
         )}
 
+        {/* Archived / Locked banner */}
+        {(archived || locked) && (
+          <div
+            className="flex items-center gap-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800"
+            data-testid="task-detail-readonly-banner"
+          >
+            {archived && <Archive className="h-3.5 w-3.5 shrink-0" />}
+            {locked && <Lock className="h-3.5 w-3.5 shrink-0" />}
+            <span className="font-semibold">
+              {archived && locked ? "This conversation is archived and locked." : archived ? "This conversation is archived." : "This conversation is locked."}
+              {" Task details are read-only."}
+            </span>
+          </div>
+        )}
+
         {/* Badges */}
         <div className="flex flex-wrap gap-2">
           <span className={cn("rounded-full px-2 py-0.5 text-xs font-semibold capitalize", priorityBadge(task.priority))}>
@@ -332,7 +353,7 @@ function TaskDetailPanel({
           {participants && participants.length > 0 ? (
             <select
               value={task.assignee?.id ?? ""}
-              disabled={updating}
+              disabled={updating || readOnly}
               onChange={(e) => handleAssign(e.target.value)}
               className="text-sm rounded-lg border px-3 py-1.5 bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626] disabled:opacity-50"
               style={{ borderColor: "#E0E0E0", color: "#1C1B1F" }}
@@ -396,7 +417,7 @@ function TaskDetailPanel({
             <button
               type="button"
               data-testid="task-detail-conv-link"
-              onClick={() => onNavigateToOrigin(task.conversationRef!, task.originatingMessageId ?? "")}
+              onClick={() => onNavigateToOrigin(task.conversationRef!, task.originatingMessageId ?? null)}
               className="flex items-center gap-1.5 rounded-lg bg-red-50 border border-red-100 px-3 py-2 text-left hover:bg-red-100/50 hover:border-red-200 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]"
             >
               <MessageSquare className="h-3.5 w-3.5 text-[#DC2626]" />
@@ -416,7 +437,7 @@ function TaskDetailPanel({
 
       {/* Actions */}
       <div className="flex items-center gap-2 border-t px-6 py-4" style={{ borderColor: "#E0E0E0" }}>
-        {task.status !== "done" && (
+        {task.status !== "done" && !readOnly && (
           <button
             type="button"
             data-testid="task-mark-done"
@@ -428,16 +449,18 @@ function TaskDetailPanel({
             Mark as done
           </button>
         )}
-        <button
-          type="button"
-          data-testid="task-detail-edit"
-          disabled={updating}
-          onClick={() => setIsEditing(true)}
-          className="rounded-lg border px-3 py-1.5 text-xs font-semibold hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]"
-          style={{ borderColor: "#E0E0E0", color: "#49454F" }}
-        >
-          Edit details
-        </button>
+        {!readOnly && (
+          <button
+            type="button"
+            data-testid="task-detail-edit"
+            disabled={updating}
+            onClick={() => setIsEditing(true)}
+            className="rounded-lg border px-3 py-1.5 text-xs font-semibold hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]"
+            style={{ borderColor: "#E0E0E0", color: "#49454F" }}
+          >
+            Edit details
+          </button>
+        )}
       </div>
     </div>
   );
@@ -445,19 +468,19 @@ function TaskDetailPanel({
 
 interface MessagingTaskPanelProps {
   conversationId?: string | null;
-  onNavigateToOrigin?: (conversationId: string, messageId: string) => void;
+  onNavigateToOrigin?: (conversationId: string, messageId: string | null) => void;
 }
 
 export function MessagingTaskPanel({ conversationId, onNavigateToOrigin }: MessagingTaskPanelProps) {
   const [filter, setFilter] = useState<TaskFilterStatus>("all");
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
-
-  // Dynamic participants for global tasks editing
   const [dynamicParticipants, setDynamicParticipants] = useState<MessagingParticipant[] | null>(null);
   const [loadingParticipants, setLoadingParticipants] = useState(false);
+  const [selectedTaskConvDetail, setSelectedTaskConvDetail] = useState<ApiConversationDetail | null>(null);
+  const [selectedTaskConvError, setSelectedTaskConvError] = useState<"none" | "restricted" | "network" | "unknown">("none");
 
-  // Hook up hooks
+  // Hook up data hooks first
   const targetId = conversationId || "global";
   const {
     tasks: apiTasks,
@@ -468,7 +491,33 @@ export function MessagingTaskPanel({ conversationId, onNavigateToOrigin }: Messa
 
   const {
     detail: conversationDetail,
+    errorType: detailErrorType,
   } = useConversationDetail(conversationId ?? null);
+
+  const conversationReadOnly = Boolean(
+    conversationDetail && (conversationDetail.archivedAt != null || conversationDetail.lockedAt != null)
+  );
+  const conversationArchived = conversationDetail?.archivedAt != null;
+  const conversationLocked = conversationDetail?.lockedAt != null;
+
+  // Effects after all hook declarations
+  React.useEffect(() => {
+    setSelectedTaskId(null);
+    setDynamicParticipants(null);
+    setSelectedTaskConvDetail(null);
+    setSelectedTaskConvError("none");
+    setShowCreate(false);
+  }, [conversationId]);
+
+  React.useEffect(() => {
+    if (detailErrorType === "restricted") {
+      setSelectedTaskId(null);
+      setDynamicParticipants(null);
+      setSelectedTaskConvDetail(null);
+      setSelectedTaskConvError("none");
+      setShowCreate(false);
+    }
+  }, [detailErrorType]);
 
   // Extract participants list
   const participantsList: MessagingParticipant[] = React.useMemo(() => {
@@ -515,7 +564,7 @@ export function MessagingTaskPanel({ conversationId, onNavigateToOrigin }: Messa
       originatingMessageId: t.originatingMessageId,
       dbStatus,
       conversationName: t.conversationName,
-      conversationType: t.conversationType as any,
+      conversationType: t.conversationType,
     };
   }, []);
 
@@ -524,41 +573,68 @@ export function MessagingTaskPanel({ conversationId, onNavigateToOrigin }: Messa
     return (apiTasks ?? []).map(mapApiTaskToFrontend);
   }, [apiTasks, mapApiTaskToFrontend]);
 
-  // Load participants dynamically when a task is selected in global mode
+  // Load selected-task conversation detail (and participants) dynamically in global mode
   React.useEffect(() => {
     if (!selectedTaskId || conversationId) {
       setDynamicParticipants(null);
+      setSelectedTaskConvDetail(null);
+      setSelectedTaskConvError("none");
       return;
     }
     const task = listTasks.find((t) => t.id === selectedTaskId);
     if (!task || !task.conversationRef) return;
 
     setLoadingParticipants(true);
+    setSelectedTaskConvError("none");
     fetch(`/api/messaging/conversations/${task.conversationRef}`, { credentials: "same-origin" })
       .then((res) => res.json())
       .then((payload) => {
-        if (payload.success && payload.data) {
-          const detail: ApiConversationDetail = payload.data;
-          const profilesMap = new Map(
-            detail.participantProfiles?.map((p) => [p.userId, p]) ?? []
-          );
-          const list = detail.participants.map((p) => {
-            const prof = profilesMap.get(p.userId);
-            const name = prof?.name ?? p.displayName ?? `User ${p.userId.slice(0, 4)}`;
-            return {
-              id: p.userId,
-              name,
-              avatarInitials: prof?.avatarInitials ?? name.slice(0, 2).toUpperCase(),
-              role: (p.role === "owner" || p.role === "admin" ? p.role : "member") as "owner" | "admin" | "member",
-              presence: "online" as const,
-            };
-          });
-          setDynamicParticipants(list);
+        if (!payload.success) {
+          const code = payload.error?.code ?? "";
+          const status = payload.error?.status ?? 0;
+          if (status === 404 || code === "NOT_FOUND" || status === 403 || code === "FORBIDDEN") {
+            setSelectedTaskConvError("restricted");
+          } else {
+            setSelectedTaskConvError("unknown");
+          }
+          setSelectedTaskConvDetail(null);
+          setDynamicParticipants(null);
+          return;
         }
+        const detail: ApiConversationDetail = payload.data;
+        setSelectedTaskConvDetail(detail);
+        const profilesMap = new Map(
+          detail.participantProfiles?.map((p) => [p.userId, p]) ?? []
+        );
+        const list = detail.participants.map((p) => {
+          const prof = profilesMap.get(p.userId);
+          const name = prof?.name ?? p.displayName ?? `User ${p.userId.slice(0, 4)}`;
+          return {
+            id: p.userId,
+            name,
+            avatarInitials: prof?.avatarInitials ?? name.slice(0, 2).toUpperCase(),
+            role: (p.role === "owner" || p.role === "admin" ? p.role : "member") as "owner" | "admin" | "member",
+            presence: "online" as const,
+          };
+        });
+        setDynamicParticipants(list);
       })
-      .catch((err) => console.error("Failed to load participants dynamically", err))
+      .catch(() => {
+        setSelectedTaskConvError("network");
+        setSelectedTaskConvDetail(null);
+        setDynamicParticipants(null);
+      })
       .finally(() => setLoadingParticipants(false));
   }, [selectedTaskId, conversationId, listTasks]);
+
+  // Effective conversation state (scoped vs global selected task)
+  const effectiveDetail = conversationId ? conversationDetail : selectedTaskConvDetail;
+  const effectiveErrorType = conversationId ? detailErrorType : selectedTaskConvError;
+  const effectiveReadOnly = Boolean(
+    effectiveDetail && (effectiveDetail.archivedAt != null || effectiveDetail.lockedAt != null)
+  );
+  const effectiveArchived = effectiveDetail?.archivedAt != null;
+  const effectiveLocked = effectiveDetail?.lockedAt != null;
 
   const filtered = filter === "all"
     ? listTasks
@@ -668,6 +744,27 @@ export function MessagingTaskPanel({ conversationId, onNavigateToOrigin }: Messa
     );
   }
 
+  // Restricted / member-removed: truthful unavailable state
+  if (effectiveErrorType === "restricted") {
+    return (
+      <div data-testid="messaging-pane-tasks" className="flex flex-col h-full items-center justify-center py-12 text-center px-6">
+        <AlertTriangle className="h-10 w-10 text-[#DC2626] mb-3" />
+        <h3 className="text-base font-bold mb-1" style={{ color: "#1C1B1F" }}>Access Restricted</h3>
+        <p className="text-sm mb-4 max-w-xs" style={{ color: "#79747E" }}>
+          You no longer have access to this conversation. Task information is unavailable.
+        </p>
+        <button
+          type="button"
+          onClick={refreshTasks}
+          className="rounded-lg border px-4 py-2 text-xs font-semibold hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]"
+          style={{ borderColor: "#E0E0E0", color: "#49454F" }}
+        >
+          Try Again
+        </button>
+      </div>
+    );
+  }
+
   if (selectedTask) {
     return (
       <div data-testid="messaging-pane-tasks" className="flex flex-col h-full">
@@ -680,6 +777,9 @@ export function MessagingTaskPanel({ conversationId, onNavigateToOrigin }: Messa
             onAssign={handleAssign}
             onNavigateToOrigin={onNavigateToOrigin}
             onEditTask={handleUpdateTask}
+            readOnly={effectiveReadOnly}
+            archived={effectiveArchived}
+            locked={effectiveLocked}
           />
         </div>
       </div>
@@ -707,15 +807,17 @@ export function MessagingTaskPanel({ conversationId, onNavigateToOrigin }: Messa
               <p className="text-lg font-bold" style={{ color: "#1C1B1F" }}>{listTasks.filter((t) => t.status === "open").length}</p>
             </div>
           </div>
-          <button
-            type="button"
-            data-testid="task-panel-new-btn"
-            onClick={() => setShowCreate(true)}
-            className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]"
-            style={{ borderColor: "#E0E0E0", color: "#49454F" }}
-          >
-            <Plus className="h-3.5 w-3.5" /> New
-          </button>
+          {!conversationReadOnly && (
+            <button
+              type="button"
+              data-testid="task-panel-new-btn"
+              onClick={() => setShowCreate(true)}
+              className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]"
+              style={{ borderColor: "#E0E0E0", color: "#49454F" }}
+            >
+              <Plus className="h-3.5 w-3.5" /> New
+            </button>
+          )}
         </div>
 
         {/* Filter bar */}
@@ -791,7 +893,7 @@ export function MessagingTaskPanel({ conversationId, onNavigateToOrigin }: Messa
                           onClick={(e) => {
                             if (onNavigateToOrigin && task.conversationRef) {
                               e.stopPropagation();
-                              onNavigateToOrigin(task.conversationRef, task.originatingMessageId ?? "");
+                              onNavigateToOrigin(task.conversationRef, task.originatingMessageId ?? null);
                             }
                           }}
                           className="flex items-center gap-1 rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-semibold text-[#DC2626] hover:bg-red-100 transition-colors cursor-pointer"
@@ -822,6 +924,7 @@ export function MessagingTaskPanel({ conversationId, onNavigateToOrigin }: Messa
             onClose={() => setShowCreate(false)}
             conversationId={conversationId}
             participants={conversationId ? participantsList : undefined}
+            readOnly={conversationReadOnly}
             onSuccess={() => {
               refreshTasks();
               setShowCreate(false);

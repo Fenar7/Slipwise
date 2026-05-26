@@ -303,6 +303,8 @@ export interface MessagingTaskDetail extends MessagingTask {
   createdBy: string; // participant name
   originatingMessageId?: string | null;
   dbStatus?: TaskStatus | null;
+  conversationName?: string | null;
+  conversationType?: "CHANNEL" | "DM" | "GROUP";
 }
 
 export type CalendarConnectionStatus =

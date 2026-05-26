@@ -14,6 +14,7 @@ interface MessagingTaskCreateProps {
   participants?: MessagingParticipant[];
   onSuccess?: () => void;
   conversationRef?: string | null;
+  readOnly?: boolean;
 }
 
 const PRIORITY_OPTIONS = [
@@ -39,6 +40,7 @@ export function MessagingTaskCreate({
   participants,
   onSuccess,
   conversationRef,
+  readOnly: readOnlyProp,
 }: MessagingTaskCreateProps) {
   const [title, setTitle] = useState("");
   const [priority, setPriority] = useState<TaskPriority>("medium");
@@ -51,12 +53,49 @@ export function MessagingTaskCreate({
   const [selectedConvId, setSelectedConvId] = useState(conversationId ?? "");
   const [dynamicParticipants, setDynamicParticipants] = useState<MessagingParticipant[] | null>(null);
   const [loadingParticipants, setLoadingParticipants] = useState(false);
+  const [scopedConvBlocked, setScopedConvBlocked] = useState<string | null>(null);
+
+  // Validate scoped conversation target (archived/locked/non-sendable) when conversationId is provided directly
+  useEffect(() => {
+    if (!conversationId) {
+      setScopedConvBlocked(null);
+      return;
+    }
+    let cancelled = false;
+    fetch(`/api/messaging/conversations/${conversationId}`, { credentials: "same-origin" })
+      .then((res) => res.json())
+      .then((payload) => {
+        if (cancelled) return;
+        if (!payload.success || !payload.data) {
+          setScopedConvBlocked("This conversation is not available for task creation.");
+          return;
+        }
+        const detail: ApiConversationDetail = payload.data;
+        if (detail.archivedAt != null) {
+          setScopedConvBlocked("This conversation is archived. Tasks cannot be created.");
+        } else if (detail.lockedAt != null) {
+          setScopedConvBlocked("This conversation is locked. Tasks cannot be created.");
+        } else if (detail.canSend === false) {
+          setScopedConvBlocked("You cannot send messages in this conversation. Tasks cannot be created.");
+        } else {
+          setScopedConvBlocked(null);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setScopedConvBlocked("Unable to verify conversation. Task creation is blocked.");
+      });
+    return () => { cancelled = true; };
+  }, [conversationId]);
+
+  const readOnly = readOnlyProp || scopedConvBlocked != null;
 
   // Call hook for global conversation list
   const { channels, dms, groups } = useConversationList();
 
-  const allConversations = React.useMemo(() => {
-    return [...channels, ...dms, ...groups];
+  const validConversations = React.useMemo(() => {
+    return [...channels, ...dms, ...groups].filter(
+      (c) => c.archivedAt == null && c.lockedAt == null && c.canSend !== false
+    );
   }, [channels, dms, groups]);
 
   useEffect(() => {
@@ -112,6 +151,11 @@ export function MessagingTaskCreate({
 
     if (!selectedConvId) {
       setError("A conversation must be selected to create a task.");
+      return;
+    }
+
+    if (readOnly) {
+      setError(scopedConvBlocked ?? "Task creation is not allowed in this conversation.");
       return;
     }
 
@@ -173,9 +217,9 @@ export function MessagingTaskCreate({
           </button>
         </div>
 
-        {error && (
+        {(error || scopedConvBlocked) && (
           <div className="mb-4 rounded-lg bg-red-50 border border-red-200 p-3 text-xs text-[#DC2626]">
-            {error}
+            {scopedConvBlocked ?? error}
           </div>
         )}
 
@@ -198,7 +242,7 @@ export function MessagingTaskCreate({
                 style={{ borderColor: "#E0E0E0", color: selectedConvId ? "#1C1B1F" : "#79747E" }}
               >
                 <option value="">Choose a channel, DM or group...</option>
-                {allConversations.map((c) => {
+                {validConversations.map((c) => {
                   const displayLabel = c.type === "CHANNEL"
                     ? `#${c.name}`
                     : c.type === "DM"
@@ -333,10 +377,10 @@ export function MessagingTaskCreate({
           <button
             type="submit"
             data-testid="task-create-submit"
-            disabled={!title.trim() || submitting}
+            disabled={!title.trim() || submitting || readOnly}
             className={cn(
               "rounded-lg px-4 py-2 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]",
-              title.trim() && !submitting
+              title.trim() && !submitting && !readOnly
                 ? "bg-[#DC2626] text-white hover:bg-red-700"
                 : "bg-gray-100 text-gray-400 cursor-not-allowed"
             )}
