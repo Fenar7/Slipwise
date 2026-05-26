@@ -1,4 +1,6 @@
-import { ClientDetailShell } from "./components/client-detail-shell";
+import { notFound } from "next/navigation";
+import { getClientDetail } from "@/app/app/data/actions";
+import { ClientDetailShell } from "../components/client-detail-shell";
 
 export const metadata = {
   title: "Client Detail | Slipwise",
@@ -10,5 +12,11 @@ interface ClientDetailPageProps {
 
 export default async function ClientDetailPage({ params }: ClientDetailPageProps) {
   const { id } = await params;
-  return <ClientDetailShell clientId={id} />;
+  const client = await getClientDetail(id);
+
+  if (!client) {
+    notFound();
+  }
+
+  return <ClientDetailShell client={client} />;
 }

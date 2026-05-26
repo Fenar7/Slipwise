@@ -5,7 +5,7 @@ import {
   Wallet,
   Globe,
 } from "lucide-react";
-import type { ClientDetail } from "./client-detail-mock-data";
+import type { ClientDetail } from "@/app/app/data/actions";
 
 function formatCurrency(amount: number) {
   if (amount === 0) return "₹0";

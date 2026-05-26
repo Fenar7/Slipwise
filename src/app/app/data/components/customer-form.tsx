@@ -25,6 +25,7 @@ export function CustomerForm({ customer }: CustomerFormProps) {
   const [tagIds, setTagIds] = useState<string[]>(
     customer?.defaultTagAssignments?.map((a) => a.tag.id) ?? []
   );
+  const [error, setError] = useState<string | null>(null);
   
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<CustomerInput>({
     defaultValues: customer ? {
@@ -38,19 +39,25 @@ export function CustomerForm({ customer }: CustomerFormProps) {
   });
   
   const onSubmit = async (data: CustomerInput) => {
+    setError(null);
     const result = isEdit
       ? await updateCustomer(customer.id, { ...data, tagIds })
       : await createCustomer({ ...data, tagIds });
     
     if (result.success) {
-      router.push("/app/data/customers");
+      router.push("/app/clients");
     } else {
-      alert(result.error);
+      setError((result as any).error || "An unexpected error occurred");
     }
   };
   
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="max-w-lg space-y-4">
+      {error && (
+        <div className="rounded-lg bg-red-50 p-3 text-sm text-red-600 border border-red-200">
+          {error}
+        </div>
+      )}
       <div>
         <label className="mb-1 block text-sm font-medium text-slate-700">
           Name *

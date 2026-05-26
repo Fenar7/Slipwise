@@ -25,18 +25,106 @@ export interface CustomerInput {
   taxId?: string;
   gstin?: string;
   tagIds?: string[];
+  lifecycleStage?:
+    | "PROSPECT"
+    | "QUALIFIED"
+    | "NEGOTIATION"
+    | "WON"
+    | "ACTIVE"
+    | "AT_RISK"
+    | "CHURNED";
 }
+
+const ALLOWED_LIFECYCLE_STAGES = [
+  "PROSPECT",
+  "QUALIFIED",
+  "NEGOTIATION",
+  "WON",
+  "ACTIVE",
+  "AT_RISK",
+  "CHURNED",
+];
 
 export async function createCustomer(input: CustomerInput): Promise<ActionResult<{ id: string }>> {
   try {
     const { orgId } = await requireOrgContext();
     
-    const { tagIds, ...customerData } = input;
+    // Server-side validation and normalization
+    const name = input.name ? input.name.trim() : "";
+    if (!name) {
+      return { success: false, error: "Name is required" };
+    }
+
+    if (input.lifecycleStage !== undefined) {
+      if (!ALLOWED_LIFECYCLE_STAGES.includes(input.lifecycleStage)) {
+        return { success: false, error: "Invalid lifecycle stage" };
+      }
+    }
+
+    let email: string | null = null;
+    if (input.email !== undefined) {
+      const trimmed = input.email.trim();
+      if (trimmed !== "") {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(trimmed)) {
+          return { success: false, error: "Invalid email format" };
+        }
+        email = trimmed;
+      }
+    }
+
+    let phone: string | null = null;
+    if (input.phone !== undefined) {
+      const trimmed = input.phone.trim();
+      if (trimmed !== "") {
+        const phoneRegex = /^[+\d\s-]{7,15}$/;
+        if (!phoneRegex.test(trimmed)) {
+          return { success: false, error: "Phone number must be between 7 and 15 digits" };
+        }
+        phone = trimmed;
+      }
+    }
+
+    let address: string | null = null;
+    if (input.address !== undefined) {
+      const trimmed = input.address.trim();
+      if (trimmed !== "") {
+        address = trimmed;
+      }
+    }
+
+    let taxId: string | null = null;
+    if (input.taxId !== undefined) {
+      const trimmed = input.taxId.trim();
+      if (trimmed !== "") {
+        taxId = trimmed;
+      }
+    }
+
+    let gstin: string | null = null;
+    if (input.gstin !== undefined) {
+      const trimmed = input.gstin.trim();
+      if (trimmed !== "") {
+        const gstinRegex = /^[a-zA-Z0-9]{15}$/;
+        if (!gstinRegex.test(trimmed)) {
+          return { success: false, error: "GSTIN must be exactly 15 characters" };
+        }
+        gstin = trimmed.toUpperCase();
+      }
+    }
+
+    const { tagIds } = input;
 
     const customer = await db.customer.create({
       data: {
-        ...customerData,
+        name,
+        email,
+        phone,
+        address,
+        taxId,
+        gstin,
         organizationId: orgId,
+        lifecycleStage: input.lifecycleStage || "PROSPECT",
       },
     });
     
@@ -44,6 +132,7 @@ export async function createCustomer(input: CustomerInput): Promise<ActionResult
       await setCustomerDefaultTags(customer.id, tagIds);
     }
     
+    revalidatePath("/app/clients");
     revalidatePath("/app/data/customers");
     return { success: true, data: { id: customer.id } };
   } catch (error) {
@@ -59,7 +148,7 @@ export async function updateCustomer(
   try {
     const { orgId } = await requireOrgContext();
     
-    // Verify ownership
+    // Verify ownership first (org safety)
     const existing = await db.customer.findFirst({
       where: { id, organizationId: orgId },
     });
@@ -68,12 +157,96 @@ export async function updateCustomer(
       return { success: false, error: "Customer not found" };
     }
     
-    const { tagIds, ...customerData } = input;
+    // Validate name if provided
+    let name: string | undefined = undefined;
+    if (input.name !== undefined) {
+      const trimmed = input.name.trim();
+      if (!trimmed) {
+        return { success: false, error: "Name is required" };
+      }
+      name = trimmed;
+    }
 
-    if (Object.keys(customerData).length > 0) {
+    // Validate email if provided
+    let email: string | null | undefined = undefined;
+    if (input.email !== undefined) {
+      const trimmed = input.email.trim();
+      if (trimmed === "") {
+        email = null;
+      } else {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(trimmed)) {
+          return { success: false, error: "Invalid email format" };
+        }
+        email = trimmed;
+      }
+    }
+
+    // Validate phone if provided
+    let phone: string | null | undefined = undefined;
+    if (input.phone !== undefined) {
+      const trimmed = input.phone.trim();
+      if (trimmed === "") {
+        phone = null;
+      } else {
+        const phoneRegex = /^[+\d\s-]{7,15}$/;
+        if (!phoneRegex.test(trimmed)) {
+          return { success: false, error: "Phone number must be between 7 and 15 digits" };
+        }
+        phone = trimmed;
+      }
+    }
+
+    // Address normalization
+    let address: string | null | undefined = undefined;
+    if (input.address !== undefined) {
+      const trimmed = input.address.trim();
+      address = trimmed === "" ? null : trimmed;
+    }
+
+    // Tax ID normalization
+    let taxId: string | null | undefined = undefined;
+    if (input.taxId !== undefined) {
+      const trimmed = input.taxId.trim();
+      taxId = trimmed === "" ? null : trimmed;
+    }
+
+    // GSTIN normalization
+    let gstin: string | null | undefined = undefined;
+    if (input.gstin !== undefined) {
+      const trimmed = input.gstin.trim();
+      if (trimmed === "") {
+        gstin = null;
+      } else {
+        const gstinRegex = /^[a-zA-Z0-9]{15}$/;
+        if (!gstinRegex.test(trimmed)) {
+          return { success: false, error: "GSTIN must be exactly 15 characters" };
+        }
+        gstin = trimmed.toUpperCase();
+      }
+    }
+
+    if (input.lifecycleStage !== undefined) {
+      if (!ALLOWED_LIFECYCLE_STAGES.includes(input.lifecycleStage)) {
+        return { success: false, error: "Invalid lifecycle stage" };
+      }
+    }
+
+    const { tagIds } = input;
+
+    const updateData: any = {};
+    if (name !== undefined) updateData.name = name;
+    if (email !== undefined) updateData.email = email;
+    if (phone !== undefined) updateData.phone = phone;
+    if (address !== undefined) updateData.address = address;
+    if (taxId !== undefined) updateData.taxId = taxId;
+    if (gstin !== undefined) updateData.gstin = gstin;
+    if (input.lifecycleStage !== undefined) updateData.lifecycleStage = input.lifecycleStage;
+
+    if (Object.keys(updateData).length > 0) {
       await db.customer.update({
         where: { id },
-        data: customerData,
+        data: updateData,
       });
     }
 
@@ -81,6 +254,8 @@ export async function updateCustomer(
       await setCustomerDefaultTags(id, tagIds);
     }
     
+    revalidatePath("/app/clients");
+    revalidatePath(`/app/clients/${id}`);
     revalidatePath("/app/data/customers");
     revalidatePath(`/app/data/customers/${id}`);
     return { success: true, data: { id } };
@@ -302,11 +477,11 @@ export async function listCustomers(params?: {
     const hasEmail = !!customer.email;
     const hasValidToken = customer.portalTokens.some(
       (t) => !t.isRevoked && t.expiresAt > new Date()
-    );
-    const portalStatus: "enabled" | "invited" | "ineligible" = hasValidToken
+    ) && customer.lifecycleStage !== "CHURNED";
+    const portalStatus: "enabled" | "invited" | "disabled" | "ineligible" = hasValidToken
       ? "enabled"
       : hasEmail
-        ? "invited"
+        ? "disabled"
         : "ineligible";
     return {
       ...customer,
@@ -683,4 +858,414 @@ export async function getEmployeeWithRelations(id: string) {
   });
 
   return { employee, recentSalarySlips };
+}
+
+// ─── Client Detail (Sprint 2.2) ───────────────────────────────────────────────
+
+export interface ClientContact {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  role: string;
+  isPrimary: boolean;
+}
+
+export interface ClientDocumentSummary {
+  id: string;
+  number: string;
+  status: string;
+  amount: number;
+  date: string;
+}
+
+export interface ClientActivity {
+  id: string;
+  type: "invoice" | "quote" | "payment" | "note" | "portal" | "lifecycle";
+  description: string;
+  date: string;
+  actor?: string;
+}
+
+export interface ClientReadiness {
+  isReady: boolean;
+  score: number;
+  blockers: string[];
+  warnings: string[];
+}
+
+export interface ClientDetail {
+  id: string;
+  name: string;
+  contactName?: string;
+  email: string | null;
+  phone: string | null;
+  portalStatus: "enabled" | "invited" | "disabled" | "ineligible";
+  lifecycleStage:
+    | "PROSPECT"
+    | "QUALIFIED"
+    | "NEGOTIATION"
+    | "WON"
+    | "ACTIVE"
+    | "AT_RISK"
+    | "CHURNED";
+  readiness: ClientReadiness;
+  outstandingBalance: number;
+  invoiceCount: number;
+  quoteCount: number;
+  lastActivityAt: Date | string;
+  gstin: string;
+  panNumber: string;
+  address: string;
+  city: string;
+  state: string;
+  postalCode: string;
+  country: string;
+  billingAddress: string;
+  taxId: string;
+  preferredLanguage: string;
+  tags: string[];
+  assignedTo: string;
+  createdAt: string;
+  notes: string;
+  contacts: ClientContact[];
+  totalInvoiced: number;
+  totalPaid: number;
+  lifetimeValue: number;
+  portalEnabled: boolean;
+  portalLastAccessedAt?: string;
+  portalAccessCount: number;
+  recentInvoices: ClientDocumentSummary[];
+  recentQuotes: ClientDocumentSummary[];
+  recentActivity: ClientActivity[];
+  defaultTagAssignments?: Array<{
+    tag: { id: string; name: string; slug: string; color: string | null };
+  }>;
+}
+
+export async function getClientDetail(id: string): Promise<ClientDetail | null> {
+  const { orgId } = await requireOrgContext();
+
+  const customer = await db.customer.findFirst({
+    where: { id, organizationId: orgId },
+    include: {
+      portalTokens: {
+        select: { id: true, isRevoked: true, expiresAt: true, lastUsedAt: true },
+        orderBy: { createdAt: "desc" },
+      },
+      defaultTagAssignments: {
+        include: {
+          tag: {
+            select: { id: true, name: true, slug: true, color: true, isArchived: true },
+          },
+        },
+      },
+      _count: {
+        select: {
+          invoices: true,
+          quotes: true,
+          portalAccessLogs: true,
+        },
+      },
+    },
+  });
+
+  if (!customer) return null;
+
+  // Parallel fetch: invoices, quotes, CRM notes, portal access logs, and assigned profile
+  const [invoices, quotes, notes, accessLogs, profile] = await Promise.all([
+    db.invoice.findMany({
+      where: { customerId: id, organizationId: orgId },
+      orderBy: { invoiceDate: "desc" },
+      take: 5,
+      select: {
+        id: true,
+        invoiceNumber: true,
+        status: true,
+        totalAmount: true,
+        invoiceDate: true,
+        createdAt: true,
+        issuedAt: true,
+        paidAt: true,
+      },
+    }),
+    db.quote.findMany({
+      where: { customerId: id, orgId: orgId },
+      orderBy: { issueDate: "desc" },
+      take: 5,
+      select: {
+        id: true,
+        quoteNumber: true,
+        status: true,
+        totalAmount: true,
+        issueDate: true,
+        createdAt: true,
+        acceptedAt: true,
+        declinedAt: true,
+      },
+    }),
+    db.crmNote.findMany({
+      where: { entityId: id, orgId: orgId, entityType: "customer" },
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        content: true,
+        createdAt: true,
+      },
+    }),
+    db.customerPortalAccessLog.findMany({
+      where: { customerId: id, orgId: orgId },
+      orderBy: { accessedAt: "desc" },
+      take: 10,
+      select: {
+        id: true,
+        accessedAt: true,
+        ip: true,
+      },
+    }),
+    customer.assignedToUserId
+      ? db.profile.findUnique({
+          where: { id: customer.assignedToUserId },
+          select: { name: true },
+        })
+      : null,
+  ]);
+
+  // Derived financials
+  const outstandingBalance = Number(customer.totalInvoiced) - Number(customer.totalPaid);
+
+  // Portal status computation
+  const hasEmail = !!customer.email;
+  const hasValidToken = customer.portalTokens.some(
+    (t) => !t.isRevoked && t.expiresAt > new Date()
+  ) && customer.lifecycleStage !== "CHURNED";
+  const portalStatus: "enabled" | "invited" | "disabled" | "ineligible" = hasValidToken
+    ? "enabled"
+    : hasEmail
+      ? "disabled"
+      : "ineligible";
+
+  const portalEnabled = portalStatus === "enabled";
+
+  // Last access log accessedAt
+  const lastAccessLog = accessLogs[0];
+  const portalLastAccessedAt = lastAccessLog
+    ? lastAccessLog.accessedAt.toISOString()
+    : undefined;
+
+  // PAN number: derived from GSTIN if GSTIN has 15 chars, PAN is chars 3 to 12.
+  const panNumber =
+    customer.gstin && customer.gstin.length >= 12
+      ? customer.gstin.substring(2, 12)
+      : customer.taxId || "";
+
+  // CRM notes text
+  const aggregatedNotes = notes.map((n) => n.content).join("\n\n");
+
+  // Contacts
+  const contacts: ClientContact[] = hasEmail
+    ? [
+        {
+          id: `${customer.id}-primary`,
+          name: customer.name,
+          email: customer.email!,
+          phone: customer.phone || "—",
+          role: "Primary Contact",
+          isPrimary: true,
+        },
+      ]
+    : [];
+
+  // Recent Invoices for display
+  const recentInvoices: ClientDocumentSummary[] = invoices.map((inv) => ({
+    id: inv.id,
+    number: inv.invoiceNumber || "Draft",
+    status: inv.status,
+    amount: Number(inv.totalAmount),
+    date: inv.invoiceDate.toISOString(),
+  }));
+
+  // Recent Quotes for display
+  const recentQuotes: ClientDocumentSummary[] = quotes.map((q) => ({
+    id: q.id,
+    number: q.quoteNumber,
+    status: q.status,
+    amount: q.totalAmount,
+    date: q.issueDate.toISOString(),
+  }));
+
+  // Compile recent activity
+  const activities: ClientActivity[] = [];
+
+  invoices.forEach((inv) => {
+    const num = inv.invoiceNumber || "Draft";
+    activities.push({
+      id: `inv-create-${inv.id}`,
+      type: "invoice",
+      description: `Invoice ${num} created`,
+      date: inv.createdAt.toISOString(),
+    });
+    if (inv.issuedAt) {
+      activities.push({
+        id: `inv-issue-${inv.id}`,
+        type: "invoice",
+        description: `Invoice ${num} issued`,
+        date: inv.issuedAt.toISOString(),
+      });
+    }
+    if (inv.paidAt) {
+      activities.push({
+        id: `inv-pay-${inv.id}`,
+        type: "payment",
+        description: `Payment received for ${num}`,
+        date: inv.paidAt.toISOString(),
+      });
+    }
+  });
+
+  quotes.forEach((q) => {
+    activities.push({
+      id: `q-create-${q.id}`,
+      type: "quote",
+      description: `Quote ${q.quoteNumber} created`,
+      date: q.createdAt.toISOString(),
+    });
+    if (q.acceptedAt) {
+      activities.push({
+        id: `q-accept-${q.id}`,
+        type: "quote",
+        description: `Quote ${q.quoteNumber} accepted`,
+        date: q.acceptedAt.toISOString(),
+      });
+    }
+    if (q.declinedAt) {
+      activities.push({
+        id: `q-decline-${q.id}`,
+        type: "quote",
+        description: `Quote ${q.quoteNumber} declined`,
+        date: q.declinedAt.toISOString(),
+      });
+    }
+  });
+
+  notes.forEach((note) => {
+    activities.push({
+      id: `note-${note.id}`,
+      type: "note",
+      description: `Note added: ${note.content.substring(0, 60)}${note.content.length > 60 ? "..." : ""}`,
+      date: note.createdAt.toISOString(),
+    });
+  });
+
+  accessLogs.forEach((log) => {
+    activities.push({
+      id: `portal-${log.id}`,
+      type: "portal",
+      description: `Client portal accessed${log.ip ? ` from IP ${log.ip}` : ""}`,
+      date: log.accessedAt.toISOString(),
+    });
+  });
+
+  activities.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  const recentActivity = activities.slice(0, 10);
+
+  // Address subfields
+  const address = customer.address || "";
+
+  // Assigned name
+  const assignedTo = profile ? profile.name : "";
+
+  // Tags list
+  const tags = customer.defaultTagAssignments
+    ?.map((a) => a.tag?.name)
+    .filter(Boolean) as string[];
+
+  // Compute Client Hub Readiness server-side
+  const blockers: string[] = [];
+  const warnings: string[] = [];
+
+  if (!customer.email) {
+    blockers.push("Primary email address is required for Client Hub token provisioning.");
+  }
+  if (!customer.address) {
+    blockers.push("Billing address is required to generate compliant invoices.");
+  }
+  if (customer.lifecycleStage === "CHURNED") {
+    blockers.push("Client profile is in CHURNED status. Active portal access is prohibited.");
+  }
+
+  if (!customer.phone) {
+    warnings.push("Primary phone number is not configured on the client profile.");
+  }
+  if (!customer.gstin && !customer.taxId) {
+    warnings.push("Tax ID / PAN / GSTIN is missing. Compliance requirements for B2B reporting are incomplete.");
+  }
+  if (!["ACTIVE", "WON"].includes(customer.lifecycleStage)) {
+    warnings.push(`Client relationship is in a preliminary stage (${customer.lifecycleStage}).`);
+  }
+
+  // Calculate score starting at 100
+  let readinessScore = 100;
+  blockers.forEach(() => {
+    readinessScore -= 30;
+  });
+  warnings.forEach(() => {
+    readinessScore -= 10;
+  });
+  const score = Math.max(0, Math.min(100, readinessScore));
+  const isReady = blockers.length === 0;
+
+  const readiness: ClientReadiness = {
+    isReady,
+    score,
+    blockers,
+    warnings,
+  };
+
+  return {
+    id: customer.id,
+    name: customer.name,
+    contactName: hasEmail ? customer.name : undefined,
+    email: customer.email,
+    phone: customer.phone,
+    portalStatus,
+    lifecycleStage: customer.lifecycleStage as ClientDetail["lifecycleStage"],
+    readiness,
+    outstandingBalance,
+    invoiceCount: customer._count.invoices,
+    quoteCount: customer._count.quotes,
+    lastActivityAt: customer.lastInteractionAt || customer.updatedAt,
+    gstin: customer.gstin || "",
+    panNumber,
+    address,
+    city: "",
+    state: "",
+    postalCode: "",
+    country: address ? "India" : "",
+    billingAddress: address,
+    taxId: customer.taxId || "",
+    preferredLanguage: customer.preferredLanguage || "en",
+    tags: tags || [],
+    assignedTo,
+    createdAt: customer.createdAt.toISOString(),
+    notes: aggregatedNotes,
+    contacts,
+    totalInvoiced: Number(customer.totalInvoiced),
+    totalPaid: Number(customer.totalPaid),
+    lifetimeValue: Number(customer.lifetimeValue),
+    portalEnabled,
+    portalLastAccessedAt,
+    portalAccessCount: customer._count.portalAccessLogs,
+    recentInvoices,
+    recentQuotes,
+    recentActivity,
+    defaultTagAssignments: customer.defaultTagAssignments?.map(a => ({
+      tag: {
+        id: a.tag.id,
+        name: a.tag.name,
+        slug: a.tag.slug,
+        color: a.tag.color,
+      }
+    })) || [],
+  };
 }

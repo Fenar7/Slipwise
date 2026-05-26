@@ -11,7 +11,7 @@ import {
   Globe,
   Pencil,
 } from "lucide-react";
-import type { ClientDetail } from "./client-detail-mock-data";
+import type { ClientDetail } from "@/app/app/data/actions";
 import {
   LIFECYCLE_VARIANTS,
   PORTAL_STATUS_VARIANTS,
@@ -64,10 +64,17 @@ export function ClientDetailHeader({ client }: ClientDetailHeaderProps) {
               <Mail className="h-3.5 w-3.5" />
               {client.email}
             </span>
-            <span className="inline-flex items-center gap-1.5">
-              <Globe className="h-3.5 w-3.5" />
-              {client.city}, {client.state}
-            </span>
+            {client.city || client.state ? (
+              <span className="inline-flex items-center gap-1.5">
+                <Globe className="h-3.5 w-3.5" />
+                {[client.city, client.state].filter(Boolean).join(", ")}
+              </span>
+            ) : client.address ? (
+              <span className="inline-flex items-center gap-1.5" title={client.address}>
+                <Globe className="h-3.5 w-3.5" />
+                {client.address.split("\n")[0]}
+              </span>
+            ) : null}
             {client.assignedTo && (
               <span>Assigned to {client.assignedTo}</span>
             )}
@@ -91,20 +98,12 @@ export function ClientDetailHeader({ client }: ClientDetailHeaderProps) {
             Quote
           </Link>
           <Link
-            href={`/app/data/customers/${client.id}`}
+            href={`/app/clients/${client.id}/edit`}
             className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border-default)] bg-white px-3 py-2 text-xs font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--surface-subtle)]"
           >
             <Pencil className="h-3.5 w-3.5" />
             Edit
           </Link>
-          <button
-            disabled
-            className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border-default)] bg-white px-3 py-2 text-xs font-medium text-[var(--text-secondary)] transition-colors opacity-50 cursor-not-allowed"
-            title="Copy hub link — coming in later sprint"
-          >
-            <Link2 className="h-3.5 w-3.5" />
-            Copy Link
-          </button>
         </div>
       </div>
     </div>

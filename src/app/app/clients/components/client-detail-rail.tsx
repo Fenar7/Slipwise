@@ -15,7 +15,7 @@ import {
   CheckCircle2,
   Clock,
 } from "lucide-react";
-import type { ClientDetail } from "./client-detail-mock-data";
+import type { ClientDetail } from "@/app/app/data/actions";
 
 interface ClientDetailRailProps {
   client: ClientDetail;
@@ -52,39 +52,29 @@ export function ClientDetailRail({ client }: ClientDetailRailProps) {
   return (
     <div className="space-y-4">
       {/* Portal readiness card */}
-      <RailCard title="Portal Readiness">
+      <RailCard title="Hub Readiness">
         <div className="flex items-center gap-3">
-          {client.portalEnabled ? (
+          {client.readiness.isReady ? (
             <>
               <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--state-success-soft)] text-[var(--state-success)]">
                 <CheckCircle2 className="h-4 w-4" />
               </div>
               <div>
-                <p className="text-sm font-medium text-[var(--text-primary)]">Hub Active</p>
+                <p className="text-sm font-semibold text-[var(--text-primary)]">Hub Ready</p>
                 <p className="text-xs text-[var(--text-muted)]">
-                  {client.portalAccessCount} accesses
+                  {client.readiness.score}% score • No blockers
                 </p>
-              </div>
-            </>
-          ) : client.portalStatus === "invited" ? (
-            <>
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--state-info-soft)] text-[var(--state-info)]">
-                <Clock className="h-4 w-4" />
-              </div>
-              <div>
-                <p className="text-sm font-medium text-[var(--text-primary)]">Invite Sent</p>
-                <p className="text-xs text-[var(--text-muted)]">Pending acceptance</p>
               </div>
             </>
           ) : (
             <>
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--surface-subtle)] text-[var(--text-muted)]">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-red-50 text-red-600 border border-red-100">
                 <AlertTriangle className="h-4 w-4" />
               </div>
               <div>
-                <p className="text-sm font-medium text-[var(--text-primary)]">Not Enabled</p>
-                <p className="text-xs text-[var(--text-muted)]">
-                  {client.portalStatus === "ineligible" ? "No email on file" : "Hub disabled"}
+                <p className="text-sm font-semibold text-[var(--text-primary)]">Incomplete Profile</p>
+                <p className="text-xs text-red-600 font-medium animate-pulse">
+                  {client.readiness.blockers.length} critical blocker{client.readiness.blockers.length > 1 ? "s" : ""}
                 </p>
               </div>
             </>
@@ -92,21 +82,18 @@ export function ClientDetailRail({ client }: ClientDetailRailProps) {
         </div>
 
         <div className="flex flex-col gap-2 pt-2 border-t border-[var(--border-soft)]">
-          <button
-            disabled
-            className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-[var(--border-default)] bg-white px-3 py-2 text-xs font-medium text-[var(--text-secondary)] opacity-50 cursor-not-allowed w-full"
-          >
-            <Globe className="h-3.5 w-3.5" />
-            {client.portalEnabled ? "Manage Hub" : "Enable Hub"}
-          </button>
-          {client.portalEnabled && (
-            <button
-              disabled
-              className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-[var(--border-default)] bg-white px-3 py-2 text-xs font-medium text-[var(--text-secondary)] opacity-50 cursor-not-allowed w-full"
+          <p className="text-[0.725rem] text-[var(--text-secondary)] leading-relaxed bg-[var(--surface-subtle)] p-2.5 rounded-lg border border-[var(--border-soft)]">
+            {client.readiness.isReady
+              ? "All critical contact, billing, and compliance fields are successfully verified. Profile is fully eligible for portal provisioning."
+              : `This client profile cannot be provisioned due to profile incomplete state. Please click below to resolve all active blockers.`}
+          </p>
+          {!client.readiness.isReady && (
+            <Link 
+              href={`/app/clients/${client.id}/edit`}
+              className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-[var(--border-default)] bg-white px-3 py-1.5 text-xs font-semibold text-[var(--text-secondary)] transition-colors hover:bg-[var(--surface-subtle)]"
             >
-              <Link2 className="h-3.5 w-3.5" />
-              Copy Hub Link
-            </button>
+              Configure Details
+            </Link>
           )}
         </div>
       </RailCard>
@@ -129,7 +116,7 @@ export function ClientDetailRail({ client }: ClientDetailRailProps) {
             New Quote
           </Link>
           <Link
-            href={`/app/data/customers/${client.id}`}
+            href={`/app/clients/${client.id}/edit`}
             className="inline-flex items-center gap-2 rounded-lg border border-[var(--border-default)] bg-white px-3 py-2 text-xs font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--surface-subtle)]"
           >
             <FileText className="h-3.5 w-3.5" />
@@ -143,7 +130,17 @@ export function ClientDetailRail({ client }: ClientDetailRailProps) {
         <dl className="space-y-3">
           <MetadataItem label="Email" value={client.email} icon={Mail} />
           <MetadataItem label="Phone" value={client.phone} icon={Phone} />
-          <MetadataItem label="Address" value={`${client.city}, ${client.state}`} icon={MapPin} />
+          <MetadataItem
+            label="Address"
+            value={
+              client.city || client.state
+                ? [client.city, client.state].filter(Boolean).join(", ")
+                : client.address
+                ? client.address.split("\n")[0]
+                : "—"
+            }
+            icon={MapPin}
+          />
         </dl>
       </RailCard>
 

@@ -166,7 +166,7 @@ export function ClientWorkspaceRowView({
             Quote
           </Link>
           <Link
-            href={`/app/data/customers/${client.id}`}
+            href={`/app/clients/${client.id}/edit`}
             className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-[var(--brand-primary)] transition-colors hover:bg-[var(--surface-selected)]"
             title="Edit client"
           >
