@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -18,8 +18,10 @@ import {
   Send,
   Save,
 } from "lucide-react";
-import type { ClientHubConfig } from "./mock-config";
+import type { ClientHubConfig } from "@/app/portal/[orgSlug]/client-hub/components/customization-contract";
 import { DEFAULT_CLIENT_HUB_CONFIG } from "./mock-config";
+import { getClientHubOrgConfig, updateClientHubOrgConfig } from "@/app/app/actions/client-hub-actions";
+import { toast } from "sonner";
 import { PreviewPane } from "./preview-pane";
 import {
   BrandingSection,
@@ -76,6 +78,25 @@ export function CustomizationShell() {
   const [activePreviewPage, setActivePreviewPage] = useState("dashboard");
   const [config, setConfig] = useState<ClientHubConfig>(DEFAULT_CLIENT_HUB_CONFIG);
   const [hasChanges, setHasChanges] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    async function loadConfig() {
+      try {
+        const saved = await getClientHubOrgConfig();
+        if (saved) {
+          setConfig(saved);
+        }
+      } catch (error) {
+        console.error("Failed to load stored client hub config:", error);
+        toast.error("Failed to load your stored customization defaults.");
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    loadConfig();
+  }, []);
 
   const handleConfigChange = useCallback((next: ClientHubConfig) => {
     setConfig(next);
@@ -85,9 +106,28 @@ export function CustomizationShell() {
   const handleReset = useCallback(() => {
     if (confirm("Reset all customization values to their defaults?")) {
       setConfig(DEFAULT_CLIENT_HUB_CONFIG);
-      setHasChanges(false);
+      setHasChanges(true);
     }
   }, []);
+
+  const handleSave = useCallback(async () => {
+    setIsSaving(true);
+    try {
+      const result = await updateClientHubOrgConfig(config);
+      if (result.success) {
+        toast.success("Client Hub default configuration saved and published");
+        setHasChanges(false);
+      } else {
+        toast.error(result.error || "Failed to save configuration");
+      }
+    } catch (error) {
+      console.error("handleSave error:", error);
+      toast.error("An unexpected error occurred while saving configuration");
+    } finally {
+      setIsSaving(false);
+    }
+  }, [config]);
+
   const isPreviewTab = activeTab === "preview";
 
   const handleTabChange = useCallback((nextTab: TabId) => {
@@ -98,6 +138,17 @@ export function CustomizationShell() {
     }
   }, []);
 
+  if (isLoading) {
+    return (
+      <div className="flex h-[300px] items-center justify-center rounded-xl border border-[var(--border-soft)] bg-white p-10 shadow-[var(--shadow-card)]">
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-8 w-8 animate-spin rounded-full border-4 border-[var(--brand-cta)] border-t-transparent" />
+          <p className="text-sm font-medium text-[var(--text-muted)]">Loading customization settings...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-[calc(100vh-var(--topbar-height)-120px)] min-h-[600px] flex-col gap-6 lg:flex-row">
       {/* Left: Tab navigation + editor */}
@@ -105,30 +156,26 @@ export function CustomizationShell() {
         {/* Top bar */}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <StatusBadge tone="amber">Draft shell</StatusBadge>
-            {hasChanges && <StatusBadge tone="neutral">Unsaved changes</StatusBadge>}
+            <StatusBadge tone="success">Active defaults</StatusBadge>
+            {hasChanges && <StatusBadge tone="amber">Unsaved changes</StatusBadge>}
           </div>
           <div className="flex items-center gap-2">
-            <Button type="button" variant="secondary" size="sm" onClick={handleReset}>
+            <Button type="button" variant="secondary" size="sm" onClick={handleReset} disabled={isSaving}>
               <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
               Reset
             </Button>
-            <Button type="button" variant="secondary" size="sm" disabled>
-              <Save className="mr-1.5 h-3.5 w-3.5" />
-              Save draft
-            </Button>
-            <Button type="button" variant="primary" size="sm" disabled>
+            <Button type="button" variant="primary" size="sm" onClick={handleSave} disabled={isSaving || !hasChanges}>
               <Send className="mr-1.5 h-3.5 w-3.5" />
-              Publish
+              {isSaving ? "Saving..." : "Save & Publish"}
             </Button>
           </div>
         </div>
 
-        {/* Static-only notice */}
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          <p className="font-medium">Phase 1 — Preview Only</p>
-          <p className="mt-0.5 text-xs text-amber-700">
-            Customizations are local to this session. Real persistence, publishing, and per-client overrides will be enabled in Phase 3.
+        {/* Persistent settings notice */}
+        <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+          <p className="font-medium">Organization Default Settings</p>
+          <p className="mt-0.5 text-xs text-blue-700">
+            These customizations define the default branding, visible sections, and content for all clients unless overridden at the individual client level.
           </p>
         </div>
 

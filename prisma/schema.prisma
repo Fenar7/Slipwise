@@ -98,6 +98,7 @@ model Organization {
   invitations                  Invitation[]
   branding                     BrandingProfile?
   defaults                     OrgDefaults?
+  clientHubOrgConfig           ClientHubOrgConfig?
   customers                    Customer[]
   vendors                      Vendor[]
   employees                    Employee[]
@@ -399,6 +400,18 @@ model OrgDefaults {
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@map("org_defaults")
+}
+
+model ClientHubOrgConfig {
+  id             String       @id @default(cuid())
+  organizationId String       @unique
+  config         Json         // Stores the structured ClientHubConfig object validated by Zod
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("client_hub_org_config")
 }
 
 // ─── Phase 1: Document Sequencing Platform ────────────────────────────────────
