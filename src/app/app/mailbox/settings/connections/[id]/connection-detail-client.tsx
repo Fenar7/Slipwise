@@ -239,6 +239,27 @@ export function ConnectionDetailClient({ connectionId }: ConnectionDetailClientP
   }
 
   const needsReconnect = connection.status === "reconnect_required" || connection.status === "RECONNECT_REQUIRED";
+  const isDisconnected = connection.status === "disconnected" || connection.status === "DISCONNECTED";
+
+  if (isDisconnected) {
+    return (
+      <div className="mx-auto max-w-2xl px-6 py-8" data-testid="connection-disconnected-state">
+        <Link
+          href="/app/mailbox/settings"
+          className="mb-6 flex items-center gap-1.5 text-xs font-medium text-[#64748B] transition-colors hover:text-[#0F172A]"
+        >
+          <ArrowLeft className="h-3.5 w-3.5" />
+          Mailbox connections
+        </Link>
+        <div className="rounded-xl border border-gray-200 bg-gray-50 p-5">
+          <p className="text-sm font-semibold text-gray-700">This mailbox is no longer connected</p>
+          <p className="mt-1 text-xs text-gray-500">
+            This connection has been disconnected and is no longer active on Slipwise. If you want to use this mailbox again, connect a new mailbox.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto max-w-2xl px-6 py-8" data-testid="connection-detail-page">
