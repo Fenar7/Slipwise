@@ -9,6 +9,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import ClientHubCustomizationPage from "../page";
+import { getClientHubOrgConfig } from "@/app/app/actions/client-hub-actions";
 
 const mockUseActiveOrg = vi.hoisted(() => vi.fn(() => ({ activeOrg: { id: "org_001", name: "Acme", slug: "acme" } })));
 const mockUsePermissions = vi.hoisted(() => vi.fn(() => ({ role: "admin" })));
@@ -81,7 +82,11 @@ vi.mock("@/hooks/use-permissions", () => ({ usePermissions: mockUsePermissions }
 vi.mock("next/navigation", () => ({ usePathname: () => "/app/settings/portal/client-hub" }));
 
 vi.mock("@/app/app/actions/client-hub-actions", () => ({
-  getClientHubOrgConfig: vi.fn().mockResolvedValue(mockDefaultConfig),
+  getClientHubOrgConfig: vi.fn().mockResolvedValue({
+    success: true,
+    config: mockDefaultConfig,
+    isNew: false,
+  }),
   updateClientHubOrgConfig: vi.fn().mockResolvedValue({ success: true }),
 }));
 
@@ -192,5 +197,49 @@ describe("ClientHubCustomizationPage", () => {
     mockUsePermissions.mockReturnValueOnce({ role: "member" });
     render(<ClientHubCustomizationPage />);
     expect(screen.getByText(/you need admin or owner access/i)).toBeInTheDocument();
+  });
+
+  it("renders a professional load-error state with a retry option if getClientHubOrgConfig fails", async () => {
+    vi.mocked(getClientHubOrgConfig).mockResolvedValueOnce({
+      success: false,
+      error: "Failed to retrieve Client Hub configuration due to an internal server or database error.",
+    });
+
+    render(<ClientHubCustomizationPage />);
+
+    // Wait for the load failure state to render
+    const errorHeading = await screen.findByText("Failed to Load Settings");
+    expect(errorHeading).toBeInTheDocument();
+    expect(screen.getByText("Failed to retrieve Client Hub configuration due to an internal server or database error.")).toBeInTheDocument();
+    
+    // A retry button is rendered
+    const retryBtn = screen.getByRole("button", { name: /retry loading/i });
+    expect(retryBtn).toBeInTheDocument();
+  });
+
+  it("successfully retries loading configuration when user clicks the retry button", async () => {
+    // 1. First load fails
+    vi.mocked(getClientHubOrgConfig).mockResolvedValueOnce({
+      success: false,
+      error: "Failed to retrieve Client Hub configuration due to an internal server or database error.",
+    });
+
+    render(<ClientHubCustomizationPage />);
+
+    const retryBtn = await screen.findByRole("button", { name: /retry loading/i });
+
+    // 2. Mock a successful subsequent load when retry is pressed
+    vi.mocked(getClientHubOrgConfig).mockResolvedValueOnce({
+      success: true,
+      config: mockDefaultConfig,
+      isNew: false,
+    });
+
+    fireEvent.click(retryBtn);
+
+    // 3. The page renders normally now
+    await screen.findByRole("tab", { name: /branding/i });
+    expect(screen.queryByText("Failed to Load Settings")).not.toBeInTheDocument();
+    expect(screen.getByText("Client Hub Customization")).toBeInTheDocument();
   });
 });

@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { buildHubThemeStyle, ClientHubFooter, ClientHubHeader, DEFAULT_HUB_ACCENT, getHubNavItems } from "./components/views";
 import { DEFAULT_CLIENT_HUB_CONFIG } from "@/app/app/settings/portal/client-hub/components/mock-config";
 import type { ClientHubConfig } from "./components/customization-contract";
+import { safeValidateHubConfig } from "./components/config-resolver";
 
 type OrgLayoutData = {
   id: string;
@@ -99,10 +100,8 @@ export default async function ClientHubLayout({
     );
   }
 
-  // Load client hub organization configuration from database or fallback to static seeds
-  const config: ClientHubConfig = org.clientHubOrgConfig?.config
-    ? (org.clientHubOrgConfig.config as unknown as ClientHubConfig)
-    : DEFAULT_CLIENT_HUB_CONFIG;
+  // Load client hub organization configuration securely with validation
+  const config = safeValidateHubConfig(org.clientHubOrgConfig?.config);
 
   const accentColor = config.branding?.accentColor ?? org.branding?.accentColor ?? DEFAULT_HUB_ACCENT;
   const logoUrl = config.branding?.logoUrl ?? org.branding?.logoUrl ?? org.logo;

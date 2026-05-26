@@ -9,12 +9,17 @@ import {
 } from "@/app/portal/[orgSlug]/client-hub/components/customization-contract";
 import { DEFAULT_CLIENT_HUB_CONFIG } from "@/app/app/settings/portal/client-hub/components/mock-config";
 
+export type GetClientHubOrgConfigResult =
+  | { success: true; config: ClientHubConfig; isNew: boolean }
+  | { success: false; error: string };
+
 /**
  * Fetch the organization's Client Hub configuration.
  * Resolves securely from authenticated org session context.
- * Safely falls back to DEFAULT_CLIENT_HUB_CONFIG if no configuration has been stored yet.
+ * Returns seeded DEFAULT_CLIENT_HUB_CONFIG if no configuration has been stored yet (isNew: true).
+ * Surfaces authentication or database failures truthfully instead of masking them.
  */
-export async function getClientHubOrgConfig(): Promise<ClientHubConfig> {
+export async function getClientHubOrgConfig(): Promise<GetClientHubOrgConfigResult> {
   try {
     const { orgId } = await requireOrgContext();
 
@@ -23,14 +28,17 @@ export async function getClientHubOrgConfig(): Promise<ClientHubConfig> {
     });
 
     if (!record || !record.config) {
-      return DEFAULT_CLIENT_HUB_CONFIG;
+      return { success: true, config: DEFAULT_CLIENT_HUB_CONFIG, isNew: true };
     }
 
     // Config is stored as Json. Cast to ClientHubConfig.
-    return record.config as unknown as ClientHubConfig;
+    return { success: true, config: record.config as unknown as ClientHubConfig, isNew: false };
   } catch (error) {
     console.error("getClientHubOrgConfig error:", error);
-    return DEFAULT_CLIENT_HUB_CONFIG;
+    return {
+      success: false,
+      error: "Failed to retrieve Client Hub configuration due to an internal server or database error.",
+    };
   }
 }
 

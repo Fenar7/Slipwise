@@ -28,7 +28,7 @@ vi.mock("next/navigation", () => ({
 }));
 
 import { getClientHubOrgConfig, updateClientHubOrgConfig } from "@/app/app/actions/client-hub-actions";
-import { getPersistedHubConfig } from "@/app/portal/[orgSlug]/client-hub/components/config-resolver";
+import { getPersistedHubConfig, safeValidateHubConfig } from "@/app/portal/[orgSlug]/client-hub/components/config-resolver";
 import { DEFAULT_CLIENT_HUB_CONFIG } from "@/app/app/settings/portal/client-hub/components/mock-config";
 
 // ─── Constants ──────────────────────────────────────────────────────────────
@@ -52,8 +52,8 @@ describe("Client Hub Org Default persistence & actions", () => {
       setupAuth();
       mockDb.clientHubOrgConfig.findUnique.mockResolvedValue(null);
 
-      const config = await getClientHubOrgConfig();
-      expect(config).toEqual(DEFAULT_CLIENT_HUB_CONFIG);
+      const result = await getClientHubOrgConfig();
+      expect(result).toEqual({ success: true, config: DEFAULT_CLIENT_HUB_CONFIG, isNew: true });
       expect(mockDb.clientHubOrgConfig.findUnique).toHaveBeenCalledWith({
         where: { organizationId: ORG_ID },
       });
@@ -74,9 +74,29 @@ describe("Client Hub Org Default persistence & actions", () => {
         config: mockSavedConfig,
       });
 
-      const config = await getClientHubOrgConfig();
-      expect(config.homeDashboard.heroTitle).toBe("Customized Business Hub Title");
-      expect(config).toEqual(mockSavedConfig);
+      const result = await getClientHubOrgConfig();
+      expect(result).toEqual({ success: true, config: mockSavedConfig, isNew: false });
+    });
+
+    it("truthfully surfaces authentication failures when loading fails", async () => {
+      mockRequireOrgContext.mockRejectedValueOnce(new Error("Unauthorized context"));
+
+      const result = await getClientHubOrgConfig();
+      expect(result).toEqual({
+        success: false,
+        error: "Failed to retrieve Client Hub configuration due to an internal server or database error.",
+      });
+    });
+
+    it("truthfully surfaces database failure when db query throws an error", async () => {
+      setupAuth();
+      mockDb.clientHubOrgConfig.findUnique.mockRejectedValueOnce(new Error("Database connection timeout"));
+
+      const result = await getClientHubOrgConfig();
+      expect(result).toEqual({
+        success: false,
+        error: "Failed to retrieve Client Hub configuration due to an internal server or database error.",
+      });
     });
   });
 
@@ -174,6 +194,73 @@ describe("Client Hub Org Default persistence & actions", () => {
       mockDb.organization.findUnique.mockResolvedValue(null);
 
       await expect(getPersistedHubConfig("missing-slug")).rejects.toThrow("404");
+    });
+
+    it("safely resolves partial persisted config by deep merging defaults rather than failing", async () => {
+      const partialConfig = {
+        branding: {
+          accentColor: "#aabbcc",
+        },
+        homeDashboard: {
+          heroTitle: "Partial Title",
+        },
+      };
+
+      mockDb.organization.findUnique.mockResolvedValue({
+        id: "org_987",
+        clientHubOrgConfig: { config: partialConfig },
+      });
+
+      const config = await getPersistedHubConfig("valid-slug");
+      // The overridden parts are present
+      expect(config.branding.accentColor).toBe("#aabbcc");
+      expect(config.homeDashboard.heroTitle).toBe("Partial Title");
+      // The missing parts fall back to defaults
+      expect(config.branding.removePoweredBy).toBe(DEFAULT_CLIENT_HUB_CONFIG.branding.removePoweredBy);
+      expect(config.contact.supportEmail).toBe(DEFAULT_CLIENT_HUB_CONFIG.contact.supportEmail);
+    });
+
+    it("safely falls back to DEFAULT_CLIENT_HUB_CONFIG when persisted config fails validation", async () => {
+      const invalidConfig = {
+        ...DEFAULT_CLIENT_HUB_CONFIG,
+        branding: {
+          ...DEFAULT_CLIENT_HUB_CONFIG.branding,
+          accentColor: "invalid-color-not-hex",
+        },
+      };
+
+      mockDb.organization.findUnique.mockResolvedValue({
+        id: "org_987",
+        clientHubOrgConfig: { config: invalidConfig },
+      });
+
+      const config = await getPersistedHubConfig("valid-slug");
+      expect(config).toEqual(DEFAULT_CLIENT_HUB_CONFIG);
+    });
+  });
+
+  describe("safeValidateHubConfig (validation utility)", () => {
+    it("returns DEFAULT_CLIENT_HUB_CONFIG when raw input is null or undefined", () => {
+      expect(safeValidateHubConfig(null)).toEqual(DEFAULT_CLIENT_HUB_CONFIG);
+      expect(safeValidateHubConfig(undefined)).toEqual(DEFAULT_CLIENT_HUB_CONFIG);
+    });
+
+    it("deep merges partial config and passes validation", () => {
+      const partial = {
+        branding: { accentColor: "#112233" },
+      };
+      const result = safeValidateHubConfig(partial);
+      expect(result.branding.accentColor).toBe("#112233");
+      expect(result.branding.removePoweredBy).toBe(DEFAULT_CLIENT_HUB_CONFIG.branding.removePoweredBy);
+      expect(result.homeDashboard.heroTitle).toBe(DEFAULT_CLIENT_HUB_CONFIG.homeDashboard.heroTitle);
+    });
+
+    it("falls back to default settings when config validation fails", () => {
+      const invalid = {
+        branding: { accentColor: "not-a-color" },
+      };
+      const result = safeValidateHubConfig(invalid);
+      expect(result).toEqual(DEFAULT_CLIENT_HUB_CONFIG);
     });
   });
 });

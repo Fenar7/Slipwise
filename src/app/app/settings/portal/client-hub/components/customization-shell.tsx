@@ -80,16 +80,22 @@ export function CustomizationShell() {
   const [hasChanges, setHasChanges] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadConfig() {
       try {
-        const saved = await getClientHubOrgConfig();
-        if (saved) {
-          setConfig(saved);
+        const result = await getClientHubOrgConfig();
+        if (result.success) {
+          setConfig(result.config);
+          setLoadError(null);
+        } else {
+          setLoadError(result.error);
+          toast.error(result.error);
         }
       } catch (error) {
         console.error("Failed to load stored client hub config:", error);
+        setLoadError("An unexpected error occurred while loading settings.");
         toast.error("Failed to load your stored customization defaults.");
       } finally {
         setIsLoading(false);
@@ -144,6 +150,39 @@ export function CustomizationShell() {
         <div className="flex flex-col items-center gap-3">
           <div className="h-8 w-8 animate-spin rounded-full border-4 border-[var(--brand-cta)] border-t-transparent" />
           <p className="text-sm font-medium text-[var(--text-muted)]">Loading customization settings...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="rounded-xl border border-[var(--border-soft)] bg-white p-10 text-center shadow-[var(--shadow-card)] max-w-lg mx-auto">
+        <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-red-50 text-red-500">
+          <Info className="h-6 w-6" />
+        </div>
+        <h3 className="text-sm font-semibold text-[var(--text-primary)]">Failed to Load Settings</h3>
+        <p className="mt-2 text-xs text-[var(--text-muted)] max-w-sm mx-auto">{loadError}</p>
+        <div className="mt-6">
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={() => {
+              setIsLoading(true);
+              setLoadError(null);
+              getClientHubOrgConfig().then((result) => {
+                if (result.success) {
+                  setConfig(result.config);
+                } else {
+                  setLoadError(result.error);
+                }
+                setIsLoading(false);
+              });
+            }}
+          >
+            Retry Loading
+          </Button>
         </div>
       </div>
     );
