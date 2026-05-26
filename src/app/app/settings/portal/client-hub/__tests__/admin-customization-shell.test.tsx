@@ -88,6 +88,21 @@ vi.mock("@/app/app/actions/client-hub-actions", () => ({
     isNew: false,
   }),
   updateClientHubOrgConfig: vi.fn().mockResolvedValue({ success: true }),
+  getClientHubCustomers: vi.fn().mockResolvedValue({
+    success: true,
+    customers: [
+      { id: "cust_123", name: "Acme Client", email: "client@acme.com" },
+    ],
+  }),
+  getClientOverrideEditorState: vi.fn().mockResolvedValue({
+    success: true,
+    customer: { id: "cust_123", name: "Acme Client", email: "client@acme.com" },
+    orgDefault: mockDefaultConfig,
+    overrideConfig: {},
+    effectiveConfig: mockDefaultConfig,
+  }),
+  updateClientHubCustomerOverride: vi.fn().mockResolvedValue({ success: true, isCleared: false }),
+  clearClientHubCustomerOverride: vi.fn().mockResolvedValue({ success: true }),
 }));
 
 describe("ClientHubCustomizationPage", () => {

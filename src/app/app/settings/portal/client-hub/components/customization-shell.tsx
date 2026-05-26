@@ -20,7 +20,14 @@ import {
 } from "lucide-react";
 import type { ClientHubConfig } from "@/app/portal/[orgSlug]/client-hub/components/customization-contract";
 import { DEFAULT_CLIENT_HUB_CONFIG } from "./mock-config";
-import { getClientHubOrgConfig, updateClientHubOrgConfig } from "@/app/app/actions/client-hub-actions";
+import {
+  getClientHubOrgConfig,
+  updateClientHubOrgConfig,
+  getClientHubCustomers,
+  getClientOverrideEditorState,
+  updateClientHubCustomerOverride,
+  clearClientHubCustomerOverride,
+} from "@/app/app/actions/client-hub-actions";
 import { toast } from "sonner";
 import { PreviewPane } from "./preview-pane";
 import {
@@ -82,16 +89,32 @@ export function CustomizationShell() {
   const [isSaving, setIsSaving] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
 
+  // New Per-Client Override State
+  const [customers, setCustomers] = useState<{ id: string; name: string; email: string | null }[]>([]);
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string>("");
+  const [orgDefaultConfig, setOrgDefaultConfig] = useState<ClientHubConfig>(DEFAULT_CLIENT_HUB_CONFIG);
+  const [overrideConfig, setOverrideConfig] = useState<any>({});
+
   useEffect(() => {
     async function loadConfig() {
       try {
-        const result = await getClientHubOrgConfig();
-        if (result.success) {
-          setConfig(result.config);
+        setIsLoading(true);
+        // Load org default config
+        const orgRes = await getClientHubOrgConfig();
+        if (orgRes.success) {
+          setConfig(orgRes.config);
+          setOrgDefaultConfig(orgRes.config);
           setLoadError(null);
         } else {
-          setLoadError(result.error);
-          toast.error(result.error);
+          setLoadError(orgRes.error);
+          toast.error(orgRes.error);
+          return;
+        }
+
+        // Load list of customers for picker
+        const custRes = await getClientHubCustomers();
+        if (custRes.success) {
+          setCustomers(custRes.customers);
         }
       } catch (error) {
         console.error("Failed to load stored client hub config:", error);
@@ -109,22 +132,86 @@ export function CustomizationShell() {
     setHasChanges(true);
   }, []);
 
-  const handleReset = useCallback(() => {
-    if (confirm("Reset all customization values to their defaults?")) {
-      setConfig(DEFAULT_CLIENT_HUB_CONFIG);
-      setHasChanges(true);
+  const handleModeChange = useCallback(async (customerId: string) => {
+    setIsLoading(true);
+    setHasChanges(false);
+    setSelectedCustomerId(customerId);
+
+    try {
+      if (!customerId) {
+        // Switch to Org Defaults Mode
+        const orgRes = await getClientHubOrgConfig();
+        if (orgRes.success) {
+          setConfig(orgRes.config);
+          setOrgDefaultConfig(orgRes.config);
+          setOverrideConfig({});
+        } else {
+          toast.error(orgRes.error);
+        }
+      } else {
+        // Switch to Client Override Mode
+        const res = await getClientOverrideEditorState(customerId);
+        if (res.success) {
+          setConfig(res.effectiveConfig);
+          setOrgDefaultConfig(res.orgDefault);
+          setOverrideConfig(res.overrideConfig);
+        } else {
+          toast.error(res.error || "Failed to load client override settings");
+          setSelectedCustomerId(""); // Revert to org defaults mode on failure
+        }
+      }
+    } catch (error) {
+      console.error("Error switching customization mode:", error);
+      toast.error("Failed to switch context.");
+      setSelectedCustomerId("");
+    } finally {
+      setIsLoading(false);
     }
   }, []);
+
+  const handleReset = useCallback(() => {
+    if (confirm("Reset current customization values to their defaults?")) {
+      if (!selectedCustomerId) {
+        setConfig(DEFAULT_CLIENT_HUB_CONFIG);
+      } else {
+        setConfig(orgDefaultConfig);
+      }
+      setHasChanges(true);
+    }
+  }, [selectedCustomerId, orgDefaultConfig]);
 
   const handleSave = useCallback(async () => {
     setIsSaving(true);
     try {
-      const result = await updateClientHubOrgConfig(config);
-      if (result.success) {
-        toast.success("Client Hub default configuration saved and published");
-        setHasChanges(false);
+      if (!selectedCustomerId) {
+        const result = await updateClientHubOrgConfig(config);
+        if (result.success) {
+          toast.success("Client Hub default configuration saved and published");
+          setOrgDefaultConfig(config);
+          setHasChanges(false);
+        } else {
+          toast.error(result.error || "Failed to save configuration");
+        }
       } else {
-        toast.error(result.error || "Failed to save configuration");
+        const result = await updateClientHubCustomerOverride(selectedCustomerId, config);
+        if (result.success) {
+          if (result.isCleared) {
+            toast.success("Client hub overrides cleared; now inheriting from org defaults.");
+            setOverrideConfig({});
+          } else {
+            toast.success("Client hub specific override saved successfully.");
+          }
+          setHasChanges(false);
+          // Reload fresh effective configuration state
+          const reload = await getClientOverrideEditorState(selectedCustomerId);
+          if (reload.success) {
+            setConfig(reload.effectiveConfig);
+            setOrgDefaultConfig(reload.orgDefault);
+            setOverrideConfig(reload.overrideConfig);
+          }
+        } else {
+          toast.error(result.error || "Failed to save client override configuration");
+        }
       }
     } catch (error) {
       console.error("handleSave error:", error);
@@ -132,7 +219,40 @@ export function CustomizationShell() {
     } finally {
       setIsSaving(false);
     }
-  }, [config]);
+  }, [config, selectedCustomerId]);
+
+  const handleClearOverride = useCallback(async () => {
+    if (!selectedCustomerId) return;
+    if (confirm("Reset this client's customization completely and inherit from organization defaults?")) {
+      setIsSaving(true);
+      try {
+        const result = await clearClientHubCustomerOverride(selectedCustomerId);
+        if (result.success) {
+          toast.success("Client configuration has been completely reset to org defaults.");
+          setHasChanges(false);
+          // Reload
+          const reload = await getClientOverrideEditorState(selectedCustomerId);
+          if (reload.success) {
+            setConfig(reload.effectiveConfig);
+            setOrgDefaultConfig(reload.orgDefault);
+            setOverrideConfig({});
+          }
+        } else {
+          toast.error(result.error || "Failed to reset overrides.");
+        }
+      } catch (error) {
+        console.error("handleClearOverride error:", error);
+        toast.error("An unexpected error occurred while resetting customization.");
+      } finally {
+        setIsSaving(false);
+      }
+    }
+  }, [selectedCustomerId]);
+
+  const isSectionOverridden = useCallback((sectionKey: keyof ClientHubConfig) => {
+    if (!selectedCustomerId) return false;
+    return JSON.stringify(orgDefaultConfig[sectionKey]) !== JSON.stringify(config[sectionKey]);
+  }, [selectedCustomerId, orgDefaultConfig, config]);
 
   const isPreviewTab = activeTab === "preview";
 
@@ -195,8 +315,17 @@ export function CustomizationShell() {
         {/* Top bar */}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <StatusBadge tone="success">Active defaults</StatusBadge>
-            {hasChanges && <StatusBadge tone="amber">Unsaved changes</StatusBadge>}
+            {selectedCustomerId ? (
+              <div className="flex items-center gap-2">
+                <StatusBadge tone="amber">Client Specific Override</StatusBadge>
+                {hasChanges && <StatusBadge tone="neutral">Unsaved Changes</StatusBadge>}
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <StatusBadge tone="success">Active Defaults</StatusBadge>
+                {hasChanges && <StatusBadge tone="amber">Unsaved Changes</StatusBadge>}
+              </div>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <Button type="button" variant="secondary" size="sm" onClick={handleReset} disabled={isSaving}>
@@ -210,13 +339,58 @@ export function CustomizationShell() {
           </div>
         </div>
 
-        {/* Persistent settings notice */}
-        <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
-          <p className="font-medium">Organization Default Settings</p>
-          <p className="mt-0.5 text-xs text-blue-700">
-            These customizations define the default branding, visible sections, and content for all clients unless overridden at the individual client level.
-          </p>
+        {/* Mode & Customer Picker dropdown */}
+        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between bg-slate-50 p-4 rounded-xl border border-slate-200">
+          <div className="space-y-1 w-full md:max-w-md">
+            <label htmlFor="mode-picker" className="block text-xs font-semibold text-[var(--text-primary)]">
+              Customization Target Scope
+            </label>
+            <select
+              id="mode-picker"
+              value={selectedCustomerId}
+              onChange={(e) => handleModeChange(e.target.value)}
+              className="w-full h-9 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs text-[var(--text-primary)] shadow-sm focus:border-[var(--brand-cta)] focus:outline-none focus:ring-1 focus:ring-[var(--brand-cta)]"
+            >
+              <option value="">Global Defaults (Applies to all clients by default)</option>
+              {customers.map((c) => (
+                <option key={c.id} value={c.id}>
+                  Client: {c.name} {c.email ? `(${c.email})` : ""}
+                </option>
+              ))}
+            </select>
+          </div>
+          {selectedCustomerId && (
+            <div className="mt-2 md:mt-4">
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={handleClearOverride}
+                disabled={isSaving}
+                className="text-xs text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200"
+              >
+                Reset to Org Defaults
+              </Button>
+            </div>
+          )}
         </div>
+
+        {/* Persistent settings notice */}
+        {!selectedCustomerId ? (
+          <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+            <p className="font-medium">Organization Default Settings</p>
+            <p className="mt-0.5 text-xs text-blue-700">
+              These customizations define the default branding, visible sections, and content for all clients unless overridden at the individual client level.
+            </p>
+          </div>
+        ) : (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            <p className="font-medium">Client-Specific override mode</p>
+            <p className="mt-0.5 text-xs text-amber-700">
+              Editing values here will apply custom overrides strictly to this client. Unmodified settings will continue inheriting organization defaults automatically.
+            </p>
+          </div>
+        )}
 
         {/* Tabs */}
         <div className="flex gap-1 overflow-x-auto border-b border-[var(--border-soft)] pb-1">
@@ -241,6 +415,40 @@ export function CustomizationShell() {
 
         {/* Editor content */}
         <div className="flex-1 overflow-y-auto pr-1">
+          {selectedCustomerId && activeTab !== "preview" && (
+            <div className={cn(
+              "flex items-center justify-between p-3 rounded-lg border mb-4 text-xs",
+              isSectionOverridden(activeTab as any) 
+                ? "bg-amber-50 border-amber-200 text-amber-800" 
+                : "bg-green-50 border-green-200 text-green-800"
+            )}>
+              <div>
+                <span className="font-semibold capitalize">{activeTab} Section Status: </span>
+                {isSectionOverridden(activeTab as any) ? (
+                  <span>This section has <strong>custom overrides</strong> for this client.</span>
+                ) : (
+                  <span>This section is currently <strong>inheriting all values</strong> from organization defaults.</span>
+                )}
+              </div>
+              {isSectionOverridden(activeTab as any) && (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    const next = { ...config };
+                    next[activeTab as keyof ClientHubConfig] = orgDefaultConfig[activeTab as keyof ClientHubConfig] as any;
+                    handleConfigChange(next);
+                    toast.info(`Reverted ${activeTab} section to organization defaults`);
+                  }}
+                  className="text-[0.7rem] px-2 py-0.5 h-6 border-amber-300 hover:bg-amber-100 font-medium"
+                >
+                  Revert Section
+                </Button>
+              )}
+            </div>
+          )}
+
           {activeTab === "branding" && <BrandingSection config={config} onChange={handleConfigChange} />}
           {activeTab === "home" && <HomeDashboardSection config={config} onChange={handleConfigChange} />}
           {activeTab === "invoices" && <InvoicesSection config={config} onChange={handleConfigChange} />}
@@ -251,6 +459,7 @@ export function CustomizationShell() {
           {activeTab === "products" && <ProductsSection config={config} onChange={handleConfigChange} />}
           {activeTab === "navigation" && <NavigationSection config={config} onChange={handleConfigChange} />}
           {activeTab === "preview" && (
+
             <div className="space-y-4">
               <SectionCard title="Preview Controls" description="Switch between client hub pages to preview your customizations.">
                 <div className="flex flex-wrap gap-2">

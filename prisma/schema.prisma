@@ -99,6 +99,7 @@ model Organization {
   branding                     BrandingProfile?
   defaults                     OrgDefaults?
   clientHubOrgConfig           ClientHubOrgConfig?
+  clientHubCustomerOverrides   ClientHubCustomerOverride[]
   customers                    Customer[]
   vendors                      Vendor[]
   employees                    Employee[]
@@ -413,6 +414,21 @@ model ClientHubOrgConfig {
 
   @@map("client_hub_org_config")
 }
+
+model ClientHubCustomerOverride {
+  id             String       @id @default(cuid())
+  organizationId String
+  customerId     String       @unique
+  overrideConfig Json         // Stores a deeply partial ClientHubConfig payload
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customer       Customer     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@map("client_hub_customer_override")
+}
+
 
 // ─── Phase 1: Document Sequencing Platform ────────────────────────────────────
 
@@ -1155,6 +1171,7 @@ model Customer {
   tags              String[]               @default([])
 
   organization     Organization              @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  clientHubOverride ClientHubCustomerOverride?
   invoices         Invoice[]
   virtualAccounts  CustomerVirtualAccount[]
   dunningOptOuts   DunningOptOut[]
