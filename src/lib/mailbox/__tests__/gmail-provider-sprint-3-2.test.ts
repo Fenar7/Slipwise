@@ -99,7 +99,6 @@ describe("gmailProviderAdapter Sprint 3.2", () => {
         new Response(
           JSON.stringify({
             threads: [{ id: "thread-1", historyId: "1500" }],
-            nextPageToken: "page-2",
           }),
           { status: 200, headers: { "Content-Type": "application/json" } },
         ),
@@ -120,9 +119,27 @@ describe("gmailProviderAdapter Sprint 3.2", () => {
           { status: 200, headers: { "Content-Type": "application/json" } },
         ),
       )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            threads: [{ id: "thread-4", historyId: "1900" }],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            threads: [{ id: "thread-5", historyId: "1900" }],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      )
       .mockResolvedValueOnce(makeThreadResponse("thread-1", "1500", "Subject A"))
       .mockResolvedValueOnce(makeThreadResponse("thread-2", "1700", "Subject B"))
       .mockResolvedValueOnce(makeThreadResponse("thread-3", "1900", "Subject C"))
+      .mockResolvedValueOnce(makeThreadResponse("thread-4", "1900", "Subject D"))
+      .mockResolvedValueOnce(makeThreadResponse("thread-5", "1900", "Subject E"))
       .mockResolvedValueOnce(
         new Response(
           JSON.stringify({
@@ -145,13 +162,10 @@ describe("gmailProviderAdapter Sprint 3.2", () => {
     const threadsListCalls = fetchMock.mock.calls.filter(
       (call) => typeof call[0] === "string" && (call[0] as string).includes("/threads?"),
     );
-    expect(threadsListCalls).toHaveLength(3);
-    expect(threadsListCalls[0]?.[0]).toContain("q=in%3Ainbox");
-    expect(threadsListCalls[1]?.[0]).toContain("q=in%3Asent");
-    expect(threadsListCalls[2]?.[0]).toContain("q=in%3Aspam");
+    expect(threadsListCalls).toHaveLength(5);
   });
 
-  it("bounds initial sync to a single recent page per required folder slice to avoid request timeouts", async () => {
+  it("fetches all required Gmail system labels during initial sync including drafts and archive", async () => {
     // Use a far-future expiry so ensureValidAccessToken does not trigger
     // a refresh and consume our carefully-ordered mocks.
     vi.mocked(readMailboxCredential).mockResolvedValue({
@@ -167,8 +181,19 @@ describe("gmailProviderAdapter Sprint 3.2", () => {
         new Response(
           JSON.stringify({
             threads: [{ id: "thread-1", historyId: "1500" }],
-            nextPageToken: "page-2",
           }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ threads: [{ id: "thread-1", historyId: "1500" }] }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ threads: [{ id: "thread-1", historyId: "1500" }] }),
           { status: 200, headers: { "Content-Type": "application/json" } },
         ),
       )
@@ -206,10 +231,13 @@ describe("gmailProviderAdapter Sprint 3.2", () => {
     const threadsListCalls = fetchMock.mock.calls.filter(
       (call) => typeof call[0] === "string" && (call[0] as string).includes("/threads?"),
     );
-    expect(threadsListCalls).toHaveLength(3);
+    // 5 slices: INBOX, SENT, SPAM, DRAFT, ARCHIVE
+    expect(threadsListCalls).toHaveLength(5);
     expect(threadsListCalls[0]?.[0]).toContain("q=in%3Ainbox");
     expect(threadsListCalls[1]?.[0]).toContain("q=in%3Asent");
     expect(threadsListCalls[2]?.[0]).toContain("q=in%3Aspam");
+    expect(threadsListCalls[3]?.[0]).toContain("q=in%3Adraft");
+    expect(threadsListCalls[4]?.[0]).toContain("q=-in%3Ainbox");
     const threadDetailCalls = fetchMock.mock.calls.filter(
       (call) => typeof call[0] === "string" && (call[0] as string).includes("/threads/thread-1"),
     );
@@ -235,6 +263,18 @@ describe("gmailProviderAdapter Sprint 3.2", () => {
       .mockResolvedValueOnce(
         new Response(
           JSON.stringify({ threads: [{ id: "thread-1", historyId: "1600" }] }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ threads: [{ id: "thread-1", historyId: "1700" }] }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ threads: [{ id: "thread-1", historyId: "1700" }] }),
           { status: 200, headers: { "Content-Type": "application/json" } },
         ),
       )

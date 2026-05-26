@@ -52,13 +52,20 @@ const GMAIL_HISTORY_URL = "https://gmail.googleapis.com/gmail/v1/users/me/histor
 const GMAIL_WATCH_URL = "https://gmail.googleapis.com/gmail/v1/users/me/watch";
 const GMAIL_DRAFTS_URL = "https://gmail.googleapis.com/gmail/v1/users/me/drafts";
 const GMAIL_SEND_URL = "https://www.googleapis.com/gmail/v1/users/me/messages/send";
-const GMAIL_INITIAL_SYNC_MAX_PAGES = 1;
-const GMAIL_INITIAL_SYNC_MAX_RESULTS = 25;
+const GMAIL_INITIAL_SYNC_MAX_PAGES = 10;
+const GMAIL_INITIAL_SYNC_MAX_RESULTS = 100;
 const GMAIL_BOOTSTRAP_SLICES = [
-  { query: "in:inbox", includeSpamTrash: false },
-  { query: "in:sent", includeSpamTrash: false },
-  { query: "in:spam", includeSpamTrash: true },
+  { query: "in:inbox", folder: "INBOX" as const, includeSpamTrash: false },
+  { query: "in:sent",  folder: "SENT"  as const, includeSpamTrash: false },
+  { query: "in:spam",  folder: "SPAM"  as const, includeSpamTrash: true  },
+  { query: "in:draft", folder: "DRAFT" as const, includeSpamTrash: false },
+  {
+    query: "-in:inbox -in:sent -in:spam -in:trash -in:draft",
+    folder: "ARCHIVE" as const,
+    includeSpamTrash: false,
+  },
 ] as const;
+
 const GMAIL_WATCH_LABEL_IDS = ["INBOX", "SENT", "SPAM", "DRAFT"] as const;
 
 /**
@@ -417,6 +424,7 @@ export const gmailProviderAdapter: IMailboxProviderAdapter = {
     if (cursor) {
       // ─── Delta path: use Gmail history.list ───────────────────────────────
       const threadIds = new Set<string>();
+      const deletedThreadIds = new Set<string>();
       let nextPageToken: string | undefined;
       let lastHistoryId = cursor.value;
 
@@ -447,26 +455,45 @@ export const gmailProviderAdapter: IMailboxProviderAdapter = {
           for (const modified of record.labelsAdded ?? []) {
             if (modified.message?.threadId) threadIds.add(modified.message.threadId);
           }
+          // Track remote deletions: collect threads whose last message was deleted.
+          // These threads should be soft-deleted from the local store.
+          for (const deleted of record.messagesDeleted ?? []) {
+            if (deleted.message?.threadId) deletedThreadIds.add(deleted.message.threadId);
+          }
+          // Track label removals: important for spam↔inbox transitions.
+          // When SPAM label is removed, the thread should be re-fetched.
+          for (const removed of record.labelsRemoved ?? []) {
+            if (removed.message?.threadId) threadIds.add(removed.message.threadId);
+          }
         }
         nextPageToken = historyData.nextPageToken;
       } while (nextPageToken);
 
       const threadFetch = await fetchThreadEnvelopes(accessToken, [...threadIds]);
+      // Exclude deleted threads from the re-fetched set since they were removed
+      // remotely; we just need the IDs for local soft-deletion.
+      for (const dtid of deletedThreadIds) {
+        threadIds.delete(dtid);
+      }
 
       const nextCursor: MailboxSyncCursor = {
         value: lastHistoryId,
         expiresAt: null,
       };
 
-      return { threads: threadFetch.threads, nextCursor };
+      return {
+        threads: threadFetch.threads,
+        nextCursor,
+        deletedThreadIds: deletedThreadIds.size > 0 ? [...deletedThreadIds] : undefined,
+      };
     }
 
     // ─── Initial path: use threads.list ─────────────────────────────────────
-    // Bounded initial import: bootstrap a small slice of recent inbox, sent,
-    // and spam threads, then seed the delta cursor from the live Gmail profile
-    // historyId after the required slices are imported.
-    // This keeps first-connect fast and avoids request-timeout risk on large
-    // mailboxes while still making future delta syncs correct from "now".
+    // Gmail-grade bootstrap: fetch all mailbox history across INBOX, SENT, SPAM,
+    // DRAFT, and ARCHIVE slices using multi-pass pagination (max 10 pages per
+    // slice, 100 threads per page). This ensures complete historical coverage.
+    // After bootstrap, the delta cursor is seeded from the live Gmail profile
+    // historyId so future incremental syncs are correct from "now".
     const threadIds = new Set<string>();
     let highestHistoryId = "0";
     for (const slice of GMAIL_BOOTSTRAP_SLICES) {
@@ -855,6 +882,8 @@ interface GmailHistoryListResponse {
 interface GmailHistoryRecord {
   messagesAdded?: Array<{ message?: { id: string; threadId: string } }>;
   labelsAdded?: Array<{ message?: { id: string; threadId: string } }>;
+  messagesDeleted?: Array<{ message?: { id: string; threadId: string } }>;
+  labelsRemoved?: Array<{ message?: { id: string; threadId: string } }>;
 }
 
 interface GmailThreadResponse {

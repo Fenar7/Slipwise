@@ -257,7 +257,11 @@ export interface IMailboxProviderAdapter {
     tokenRef: string;
     cursor: MailboxSyncCursor | null;
   }): Promise<
-    | { threads: MailboxThreadEnvelope[]; nextCursor: MailboxSyncCursor | null }
+    | {
+        threads: MailboxThreadEnvelope[];
+        nextCursor: MailboxSyncCursor | null;
+        deletedThreadIds?: string[];
+      }
     | MailboxProviderError
   >;
 

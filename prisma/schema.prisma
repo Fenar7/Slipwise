@@ -252,6 +252,7 @@ model Organization {
   dataResidencyConfig          DataResidencyConfig?
   webhookDeadLetters           WebhookDeadLetter[]
   mailboxSavedViews            MailboxSavedView[]
+  mailboxFolderCoverages       MailboxFolderCoverage[]
   // Mailbox Platform — Phase 2
   mailboxConnections           MailboxConnection[]
   mailboxThreadLinks           MailboxThreadLink[]
@@ -6003,9 +6004,10 @@ model MailboxConnection {
   drafts             MailboxDraft[]
   auditEvents        MailboxAuditEvent[]
   providerCursors    MailboxProviderCursor[]
-  mailboxCredentials MailboxCredential[]
-  mailboxThreads     MailboxThread[]
-  mailboxSyncRuns    MailboxSyncRun[]
+  mailboxCredentials     MailboxCredential[]
+  mailboxThreads         MailboxThread[]
+  mailboxSyncRuns        MailboxSyncRun[]
+  mailboxFolderCoverages MailboxFolderCoverage[]
 
   /// One active connection per org per provider account.
   @@unique([orgId, provider, providerAccountId])
@@ -6357,4 +6359,46 @@ model MailboxSavedView {
 
   @@index([orgId, createdBy])
   @@map("mailbox_saved_view")
+}
+
+/// Folder-level coverage state for truthful Gmail-grade mailbox completeness.
+/// Each row tracks the import state of a single Gmail system label (INBOX, SENT,
+/// SPAM, DRAFT, ARCHIVE) or aggregate source-of-truth (ALL_MAIL).
+///
+/// The four required Gmail labels that MUST reach COMPLETE before the app can
+/// claim "Up to date" are INBOX, SENT, SPAM, and DRAFT. ARCHIVE is informational.
+///
+/// Coverage lifecycle: PENDING → BOOTSTRAPPING → COMPLETE
+///   PENDING:      Never started. The folder has not been bootstrapped.
+///   BOOTSTRAPPING: Bootstrap in progress. Partial data may be visible.
+///   COMPLETE:     Full historical backfill finished. Future deltas keep it current.
+///   RECOVERING:   Previously complete but a gap was detected (stale cursor,
+///                 missed history events). Re-bootstrapping in progress.
+///   ERRORED:      Bootstrap or recovery failed; intervention needed.
+model MailboxFolderCoverage {
+  id                  String   @id @default(cuid())
+  orgId               String
+  mailboxConnectionId String
+  /// Gmail system label: "INBOX" | "SENT" | "SPAM" | "DRAFT" | "ARCHIVE" | "ALL_MAIL"
+  folder              String
+  state               String   @default("PENDING")
+  /// Last cursor value advanced for this folder (historyId or page token).
+  /// Allows bootstrap to resume from where it left off.
+  lastAdvancedCursor  String?
+  /// Total threads imported for this folder during last bootstrap/recovery.
+  totalThreads        Int      @default(0)
+  /// When the folder last reached COMPLETE state.
+  lastCompletedAt     DateTime?
+  /// Error summary if state is ERRORED.
+  errorSummary        String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  organization      Organization      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  mailboxConnection MailboxConnection @relation(fields: [mailboxConnectionId, orgId], references: [id, orgId], onDelete: Cascade)
+
+  @@unique([orgId, mailboxConnectionId, folder])
+  @@index([orgId, mailboxConnectionId])
+  @@index([orgId, mailboxConnectionId, state])
+  @@map("mailbox_folder_coverage")
 }

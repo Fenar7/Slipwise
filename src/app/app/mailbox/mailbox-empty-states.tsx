@@ -219,19 +219,63 @@ export function EmptyInboxState({
   );
 }
 
-export function EmptySentState({ mailboxLabel }: { mailboxLabel: string }) {
+export function EmptySentState({
+  mailboxLabel,
+  syncStatus,
+  onSyncNow,
+  isSyncPending = false,
+}: {
+  mailboxLabel: string;
+  syncStatus?: MailboxSyncPresentation;
+  onSyncNow?: () => void;
+  isSyncPending?: boolean;
+}) {
+  if (syncStatus?.state === "running" || syncStatus?.state === "completed_never_imported") {
+    return (
+      <SyncAwareFolderEmpty
+        mailboxLabel={mailboxLabel}
+        folder="sent mail"
+        syncStatus={syncStatus}
+        onSyncNow={onSyncNow}
+        isSyncPending={isSyncPending}
+      />
+    );
+  }
+
   return (
     <EmptyStateShell
       icon={MailOpen}
       iconBg="rgba(22,41,77,0.07)"
       iconColor="#16294D"
       heading={`${mailboxLabel} has no sent mail`}
-      body="Messages you send from this mailbox will appear here."
+      body="Messages you send from this mailbox will appear here. If this mailbox has sent messages, they will appear once syncing completes."
     />
   );
 }
 
-export function EmptyDraftsState({ mailboxLabel }: { mailboxLabel: string }) {
+export function EmptyDraftsState({
+  mailboxLabel,
+  syncStatus,
+  onSyncNow,
+  isSyncPending = false,
+}: {
+  mailboxLabel: string;
+  syncStatus?: MailboxSyncPresentation;
+  onSyncNow?: () => void;
+  isSyncPending?: boolean;
+}) {
+  if (syncStatus?.state === "running" || syncStatus?.state === "completed_never_imported") {
+    return (
+      <SyncAwareFolderEmpty
+        mailboxLabel={mailboxLabel}
+        folder="drafts"
+        syncStatus={syncStatus}
+        onSyncNow={onSyncNow}
+        isSyncPending={isSyncPending}
+      />
+    );
+  }
+
   return (
     <EmptyStateShell
       icon={Inbox}
@@ -243,7 +287,29 @@ export function EmptyDraftsState({ mailboxLabel }: { mailboxLabel: string }) {
   );
 }
 
-export function EmptySpamState({ mailboxLabel }: { mailboxLabel: string }) {
+export function EmptySpamState({
+  mailboxLabel,
+  syncStatus,
+  onSyncNow,
+  isSyncPending = false,
+}: {
+  mailboxLabel: string;
+  syncStatus?: MailboxSyncPresentation;
+  onSyncNow?: () => void;
+  isSyncPending?: boolean;
+}) {
+  if (syncStatus?.state === "running" || syncStatus?.state === "completed_never_imported") {
+    return (
+      <SyncAwareFolderEmpty
+        mailboxLabel={mailboxLabel}
+        folder="spam"
+        syncStatus={syncStatus}
+        onSyncNow={onSyncNow}
+        isSyncPending={isSyncPending}
+      />
+    );
+  }
+
   return (
     <EmptyStateShell
       icon={AlertTriangle}
@@ -268,6 +334,64 @@ export function EmptySpamState({ mailboxLabel }: { mailboxLabel: string }) {
  *
  * No MailboxSyncSummary card — that is for the settings admin surface.
  */
+/**
+ * Internal: sync-aware empty state for Sent, Spam, Drafts, and Archive folders.
+ * Shows import-in-progress or never-imported states to prevent false empties.
+ */
+function SyncAwareFolderEmpty({
+  mailboxLabel,
+  folder,
+  syncStatus,
+  onSyncNow,
+  isSyncPending,
+}: {
+  mailboxLabel: string;
+  folder: string;
+  syncStatus: MailboxSyncPresentation;
+  onSyncNow?: () => void;
+  isSyncPending: boolean;
+}) {
+  const isActivelyRunning = syncStatus.isSyncing || isSyncPending;
+  const heading = syncStatus.state === "running"
+    ? `Importing ${folder}…`
+    : `${mailboxLabel} ${folder} is waiting`;
+  const body = syncStatus.state === "running"
+    ? `Importing ${folder} from this mailbox. They will appear here automatically.`
+    : `Your mailbox is connected but ${folder} haven't been imported yet. Click Sync now to start importing.`;
+  const showSyncCta = !!onSyncNow && !isActivelyRunning;
+
+  return (
+    <div
+      className="flex h-full flex-col items-center justify-center gap-5 px-6 py-12 text-center"
+      style={{ background: "#F7F8FB" }}
+    >
+      <MailboxSyncStateChip sync={syncStatus} />
+      <div
+        className="flex h-14 w-14 items-center justify-center rounded-2xl"
+        style={{ background: "rgba(59,130,246,0.08)" }}
+        aria-hidden="true"
+      >
+        <Loader2 className="h-7 w-7 animate-spin" style={{ color: "#3B82F6" }} />
+      </div>
+      <div className="max-w-[260px]">
+        <p className="text-sm font-semibold text-[#0F172A]">{heading}</p>
+        <p className="mt-1.5 text-xs leading-relaxed text-[#64748B]">{body}</p>
+      </div>
+      {showSyncCta && (
+        <button
+          type="button"
+          onClick={onSyncNow}
+          className="flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-semibold text-white transition-colors hover:opacity-90"
+          style={{ background: "#16294D" }}
+          aria-label="Sync now"
+        >
+          Sync now
+        </button>
+      )}
+    </div>
+  );
+}
+
 function SyncAwareInboxEmpty({
   mailboxLabel,
   syncStatus,

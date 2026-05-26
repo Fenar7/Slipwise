@@ -13,6 +13,15 @@ export interface MailboxSyncPresentation {
   lastRunMessageCount: number | null;
   stageLabel: string;
   detailLabel: string;
-  /** True when Gmail Sent/Spam coverage recovery is still required. */
+  /** True when Gmail Sent/Spam/Drafts coverage recovery is still required. */
   staleGmailCoverage: boolean;
+  /** Per-folder coverage summary. When present, supersedes staleGmailCoverage for folder-level truth. */
+  folderCoverage?: {
+    overallState: string;
+    coverages: Array<{
+      folder: string;
+      state: string;
+      totalThreads: number;
+    }>;
+  };
 }

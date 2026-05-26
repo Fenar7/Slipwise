@@ -47,6 +47,12 @@ function hasSpamLabel(metadata: unknown): boolean {
   return Array.isArray(labelIds) && labelIds.includes("SPAM");
 }
 
+function hasTrashLabel(metadata: unknown): boolean {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return false;
+  const labelIds = (metadata as Record<string, unknown>).labelIds;
+  return Array.isArray(labelIds) && labelIds.includes("TRASH");
+}
+
 async function resolveSpamThreadIds(
   orgId: string,
   connectionIds: string[],
@@ -193,7 +199,29 @@ export async function listMailboxThreads(
   if (folder === "INBOX" && !status) {
     baseWhere.status = { in: ["OPEN", "PENDING"] };
   } else if (folder === "ARCHIVE") {
+    // Gmail-grade archive semantics: thread must be ARCHIVED, but NOT in
+    // spam and NOT in trash. Spam-to-trash movements should disappear from
+    // archive view even if the thread status was previously ARCHIVED.
+    const spamThreadIds = await resolveSpamThreadIds(orgId, connectionIdsToQuery);
+    const trashRows = await db.mailboxMessage.findMany({
+      where: {
+        orgId,
+        thread: {
+          mailboxConnectionId: { in: connectionIdsToQuery },
+          status: "ARCHIVED",
+        },
+      },
+      select: { threadId: true, providerMetadata: true },
+    });
+    const trashThreadIds = [...new Set(trashRows
+      .filter((row) => hasTrashLabel(row.providerMetadata))
+      .map((row) => row.threadId))];
+    const excludeIds = [...new Set([...spamThreadIds, ...trashThreadIds])];
+
     baseWhere.status = "ARCHIVED";
+    if (excludeIds.length > 0) {
+      baseWhere.id = { notIn: excludeIds };
+    }
   } else if (folder === "SENT") {
     baseWhere.messages = {
       some: {

@@ -22,6 +22,11 @@ import { getMailboxProviderAdapter } from "./provider-registry";
 import { isMailboxProviderError } from "./provider-contracts";
 import type { MailboxProviderError, MailboxThreadEnvelope } from "./provider-contracts";
 import {
+  markFolderCoverageComplete,
+  updateFolderCoverageBootstrapping,
+  initFolderCoverageForBootstrap,
+} from "./folder-coverage-service";
+import {
   classifyProviderError,
   resolveStatusAfterFailure,
   resolveStatusAfterSuccess,
@@ -561,6 +566,20 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
     });
     threadCount += deltaStats.threadCount;
     messageCount += deltaStats.messageCount;
+
+    // ─── Soft-delete threads that were remotely deleted ───────────────────
+    if (delta.deletedThreadIds && delta.deletedThreadIds.length > 0) {
+      await db.mailboxThread.updateMany({
+        where: {
+          orgId: params.orgId,
+          mailboxConnectionId: connection.id,
+          providerThreadId: { in: delta.deletedThreadIds },
+          status: { not: "DELETED" },
+        },
+        data: { status: "DELETED", updatedAt: new Date() },
+      });
+    }
+
     let syncedDrafts = false;
     if (connection.provider === "GMAIL") {
       const draftSync = await adapter.syncDrafts({
@@ -655,6 +674,36 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
 
     const stats = { threadCount, messageCount };
     const nextStatus = resolveStatusAfterSuccess(connection.status);
+
+    // ── Update per-folder coverage after successful sync ─────────────────
+    if (connection.provider === "GMAIL") {
+      if (effectiveMode === "INITIAL") {
+        // Bootstrap completed successfully: mark all required folders as COMPLETE
+        // since the sync service now uses GMAIL_BOOTSTRAP_SLICES which covers
+        // INBOX, SENT, SPAM, DRAFT, ARCHIVE.
+        for (const folder of ["INBOX", "SENT", "SPAM", "DRAFT", "ARCHIVE"] as const) {
+          await markFolderCoverageComplete(
+            params.orgId,
+            connection.id,
+            folder,
+            0, // totalThreads per-folder is tracked by the full sync
+            delta.nextCursor?.value ?? "",
+          );
+        }
+      } else if (recoveredGmailCoverage) {
+        // Recovery sync completed: folders were re-bootstrapped
+        for (const folder of ["INBOX", "SENT", "SPAM", "DRAFT", "ARCHIVE"] as const) {
+          await markFolderCoverageComplete(
+            params.orgId,
+            connection.id,
+            folder,
+            0,
+            delta.nextCursor?.value ?? "",
+          );
+        }
+      }
+    }
+
     await db.mailboxConnection.update({
       where: { id: connection.id },
       data: {
