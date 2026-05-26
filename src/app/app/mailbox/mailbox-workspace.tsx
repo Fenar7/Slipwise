@@ -910,6 +910,19 @@ export function MailboxWorkspace() {
       return (
         <EmptyDraftsState
           mailboxLabel={resolveEmptyMailboxLabel(pathname, activeConnection, viewLabel)}
+          syncStatus={
+            effectiveActiveSync &&
+            (effectiveActiveSync.state === "running" ||
+              effectiveActiveSync.state === "completed_never_imported")
+              ? effectiveActiveSync
+              : undefined
+          }
+          onSyncNow={
+            activeConnection && canSyncActiveMailbox
+              ? () => { void triggerSync(activeConnection.id); }
+              : undefined
+          }
+          isSyncPending={activeConnection ? isSyncPending(activeConnection.id) : false}
         />
       );
     }
@@ -936,6 +949,19 @@ export function MailboxWorkspace() {
         return (
           <EmptySentState
             mailboxLabel={resolveEmptyMailboxLabel(pathname, activeConnection, viewLabel)}
+            syncStatus={
+              effectiveActiveSync &&
+              (effectiveActiveSync.state === "running" ||
+                effectiveActiveSync.state === "completed_never_imported")
+                ? effectiveActiveSync
+                : undefined
+            }
+            onSyncNow={
+              activeConnection && canSyncActiveMailbox
+                ? () => { void triggerSync(activeConnection.id); }
+                : undefined
+            }
+            isSyncPending={activeConnection ? isSyncPending(activeConnection.id) : false}
           />
         );
       }
@@ -943,6 +969,19 @@ export function MailboxWorkspace() {
         return (
           <EmptySpamState
             mailboxLabel={resolveEmptyMailboxLabel(pathname, activeConnection, viewLabel)}
+            syncStatus={
+              effectiveActiveSync &&
+              (effectiveActiveSync.state === "running" ||
+                effectiveActiveSync.state === "completed_never_imported")
+                ? effectiveActiveSync
+                : undefined
+            }
+            onSyncNow={
+              activeConnection && canSyncActiveMailbox
+                ? () => { void triggerSync(activeConnection.id); }
+                : undefined
+            }
+            isSyncPending={activeConnection ? isSyncPending(activeConnection.id) : false}
           />
         );
       }

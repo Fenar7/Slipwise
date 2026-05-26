@@ -103,9 +103,13 @@ export function resolveMailboxSyncPresentation(
 }
 
 export function shouldAutoTriggerMailboxSync(sync: MailboxSyncPresentation): boolean {
+  const hasIncompleteCoverage =
+    sync.folderCoverage != null &&
+    sync.folderCoverage.overallState !== "COMPLETE";
   return (
     sync.state === "completed_never_imported" ||
-    (sync.state === "completed" && sync.staleGmailCoverage)
+    (sync.state === "completed" && sync.staleGmailCoverage) ||
+    (sync.state === "completed" && hasIncompleteCoverage)
   );
 }
 

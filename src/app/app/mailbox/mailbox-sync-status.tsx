@@ -9,11 +9,24 @@ import { formatSyncElapsed } from "./mailbox-sync-ui";
 export function MailboxSyncStateChip({
   sync,
   className,
+  folder,
 }: {
   sync: MailboxSyncPresentation;
   className?: string;
+  /** If provided, shows coverage state for this specific folder. */
+  folder?: string;
 }) {
-  const isRecoveryRecommended = sync.state === "completed" && sync.staleGmailCoverage;
+  // Per-folder coverage detection
+  const folderCov = folder && sync.folderCoverage
+    ? sync.folderCoverage.coverages.find((c) => c.folder === folder)
+    : null;
+  const folderIsIncomplete = folderCov ? folderCov.state !== "COMPLETE" : false;
+  const hasIncompleteRequiredFolders = sync.folderCoverage
+    ? sync.folderCoverage.overallState !== "COMPLETE"
+    : false;
+  const isRecoveryRecommended =
+    sync.state === "completed" &&
+    (sync.staleGmailCoverage || hasIncompleteRequiredFolders);
   const config =
     sync.state === "running"
       ? {

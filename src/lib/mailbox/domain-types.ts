@@ -468,3 +468,113 @@ export interface MailboxSyncAttemptResult {
   /** The sync run record if one was created. */
   runId?: string;
 }
+
+// ── Folder Coverage Types (Sprint 6.3+ Gmail-grade completeness) ──
+
+export const MAILBOX_FOLDER_COVERAGE_FOLDERS = [
+  "INBOX",
+  "SENT",
+  "SPAM",
+  "DRAFT",
+  "ARCHIVE",
+  "ALL_MAIL",
+] as const;
+
+export type MailboxCoverageFolder = (typeof MAILBOX_FOLDER_COVERAGE_FOLDERS)[number];
+
+export const MAILBOX_FOLDER_COVERAGE_STATES = [
+  "PENDING",
+  "BOOTSTRAPPING",
+  "COMPLETE",
+  "RECOVERING",
+  "ERRORED",
+] as const;
+
+export type MailboxFolderCoverageState =
+  (typeof MAILBOX_FOLDER_COVERAGE_STATES)[number];
+
+/** The four Gmail system labels that MUST reach COMPLETE before claiming "Up to date". */
+export const GMAIL_REQUIRED_COVERAGE_FOLDERS: MailboxCoverageFolder[] = [
+  "INBOX",
+  "SENT",
+  "SPAM",
+  "DRAFT",
+];
+
+export interface MailboxFolderCoverageRecord {
+  id: string;
+  orgId: string;
+  mailboxConnectionId: string;
+  folder: string;
+  state: string;
+  lastAdvancedCursor: string | null;
+  totalThreads: number;
+  lastCompletedAt: Date | null;
+  errorSummary: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/** Per-folder coverage summary for UI and sync orchestration. */
+export interface MailboxFolderCoverageSummary {
+  folder: string;
+  state: MailboxFolderCoverageState;
+  totalThreads: number;
+  lastCompletedAt: string | null;
+  errorSummary: string | null;
+}
+
+/** Aggregate coverage state across all required folders. */
+export type MailboxOverallCoverage =
+  | "COMPLETE"       // All required folders are COMPLETE
+  | "PARTIAL"        // At least one required folder is not yet COMPLETE
+  | "BOOTSTRAPPING"  // Bootstrap in progress for at least one folder
+  | "RECOVERING"     // Recovery in progress for at least one folder
+  | "ERRORED"        // At least one folder is ERRORED and no bootstrapping/recovering
+  | "PENDING";       // No folders have been started at all
+
+/**
+ * Compute the overall coverage state from a set of folder coverages.
+ * Required folders are INBOX, SENT, SPAM, DRAFT.
+ */
+export function computeOverallCoverage(
+  coverages: MailboxFolderCoverageSummary[],
+): MailboxOverallCoverage {
+  if (coverages.length === 0) return "PENDING";
+
+  const required = coverages.filter((c) =>
+    GMAIL_REQUIRED_COVERAGE_FOLDERS.includes(c.folder as MailboxCoverageFolder),
+  );
+
+  if (required.length === 0) return "PENDING";
+  if (required.every((c) => c.state === "PENDING")) return "PENDING";
+
+  if (required.some((c) => c.state === "ERRORED")) return "ERRORED";
+  if (required.some((c) => c.state === "BOOTSTRAPPING")) return "BOOTSTRAPPING";
+  if (required.some((c) => c.state === "RECOVERING")) return "RECOVERING";
+  if (required.every((c) => c.state === "COMPLETE")) return "COMPLETE";
+
+  return "PARTIAL";
+}
+
+/**
+ * Determine if a specific folder's empty state means "truly empty"
+ * vs "we haven't finished importing yet".
+ */
+export function folderIsGenuinelyEmpty(
+  coverage: MailboxFolderCoverageSummary | null,
+): boolean {
+  if (!coverage) return false; // No coverage record → don't claim empty
+  if (coverage.state === "COMPLETE" && coverage.totalThreads === 0) return true;
+  return false;
+}
+
+/**
+ * Determine if a folder might have data we haven't imported yet.
+ */
+export function folderMayHaveMoreData(
+  coverage: MailboxFolderCoverageSummary | null,
+): boolean {
+  if (!coverage) return true; // No record → assume more data exists
+  return coverage.state !== "COMPLETE";
+}
