@@ -192,6 +192,13 @@ export interface MailboxProviderError {
  * Provider-neutral: the mailbox core stores these fields directly on
  * MailboxConnection.watchExpiresAt / watchRenewedAt.
  */
+export interface MailboxBootstrapSliceResult {
+  sliceLabel: string;
+  paginationExhausted: boolean;
+  threadCount: number;
+  lastAdvancedCursor: string;
+}
+
 export interface MailboxWatchRenewalResult {
   /** When the renewed watch will expire. Null if the provider does not expose expiry. */
   expiresAt: Date | null;
@@ -260,7 +267,12 @@ export interface IMailboxProviderAdapter {
     | {
         threads: MailboxThreadEnvelope[];
         nextCursor: MailboxSyncCursor | null;
-        deletedThreadIds?: string[];
+        /** Provider message IDs that were remotely deleted. Reconcile locally. */
+        deletedMessageIds?: string[];
+        /** Thread IDs affected by deletion events so we re-fetch them. */
+        deletionAffectedThreadIds?: string[];
+        /** Per-slice bootstrap results. Only present for initial (cursor=null) syncs. */
+        bootstrapSliceResults?: MailboxBootstrapSliceResult[];
       }
     | MailboxProviderError
   >;

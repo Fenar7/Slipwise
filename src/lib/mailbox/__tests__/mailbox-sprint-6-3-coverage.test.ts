@@ -200,3 +200,100 @@ describe("coverage state lifecycle", () => {
     expect(computeOverallCoverage(coverages)).toBe("COMPLETE");
   });
 });
+
+describe("truthful bootstrap completion", () => {
+  it("overallState remains BOOTSTRAPPING when any required folder is BOOTSTRAPPING", () => {
+    // Simulate INBOX and SENT exhausted (COMPLETE), but SPAM hit page cap (BOOTSTRAPPING)
+    const coverages = [
+      makeComplete("INBOX", 100),
+      makeComplete("SENT", 45),
+      makeCoverage("SPAM", "BOOTSTRAPPING", 1000),
+      makeCoverage("DRAFT", "COMPLETE", 5),
+    ];
+    expect(computeOverallCoverage(coverages)).toBe("BOOTSTRAPPING");
+  });
+
+  it("totalThreads is non-zero for non-empty COMPLETE folders", () => {
+    expect(folderIsGenuinelyEmpty(makeCoverage("INBOX", "COMPLETE", 100))).toBe(false);
+    expect(folderIsGenuinelyEmpty(makeCoverage("SENT", "COMPLETE", 1))).toBe(false);
+  });
+
+  it("totalThreads is zero for genuinely empty COMPLETE folders", () => {
+    expect(folderIsGenuinelyEmpty(makeCoverage("SPAM", "COMPLETE", 0))).toBe(true);
+  });
+
+  it("BOOTSTRAPPING folder with threads is never genuinely empty", () => {
+    // Even if totalThreads is 0 during bootstrap, we don't know yet
+    expect(folderIsGenuinelyEmpty(makeCoverage("INBOX", "BOOTSTRAPPING", 0))).toBe(false);
+    expect(folderIsGenuinelyEmpty(makeCoverage("INBOX", "BOOTSTRAPPING", 500))).toBe(false);
+  });
+
+  it("overallState is PARTIAL when some exhausted and others PENDING", () => {
+    const coverages = [
+      makeComplete("INBOX", 200),
+      makeCoverage("SENT", "PENDING", 0),
+      makeCoverage("SPAM", "PENDING", 0),
+      makeComplete("DRAFT", 0),
+    ];
+    expect(computeOverallCoverage(coverages)).toBe("PARTIAL");
+  });
+
+  it("overallState is only COMPLETE when ALL required folders are COMPLETE", () => {
+    const coverages = [
+      makeComplete("INBOX", 200),
+      makeComplete("SENT", 50),
+      makeComplete("SPAM", 0),
+      makeComplete("DRAFT", 12),
+    ];
+    expect(computeOverallCoverage(coverages)).toBe("COMPLETE");
+  });
+});
+
+describe("bootstrap slice exhaustion vs bounded cap", () => {
+  it("bootstrapSliceResults with paginationExhausted=false means folder is not yet COMPLETE", () => {
+    // The sync service should call updateFolderCoverageBootstrapping, not markComplete
+    const coverages = [
+      makeComplete("INBOX", 100),
+      makeCoverage("SENT", "BOOTSTRAPPING", 350),
+      makeCoverage("SPAM", "BOOTSTRAPPING", 1000),
+      makeComplete("DRAFT", 5),
+    ];
+    // SENT and SPAM not exhausted → overall should be BOOTSTRAPPING
+    expect(computeOverallCoverage(coverages)).toBe("BOOTSTRAPPING");
+  });
+
+  it("bootstrapSliceResults with paginationExhausted=true means folder IS COMPLETE", () => {
+    const coverages = [
+      makeComplete("INBOX", 100),
+      makeComplete("SENT", 50),
+      makeComplete("SPAM", 25),
+      makeComplete("DRAFT", 3),
+    ];
+    expect(computeOverallCoverage(coverages)).toBe("COMPLETE");
+  });
+});
+
+describe("no false empties after partial coverage", () => {
+  it("SENT with BOOTSTRAPPING and non-zero threads: not empty, may have more data", () => {
+    const cov = makeCoverage("SENT", "BOOTSTRAPPING", 350);
+    expect(folderIsGenuinelyEmpty(cov)).toBe(false);
+    expect(folderMayHaveMoreData(cov)).toBe(true);
+  });
+
+  it("DRAFT with COMPLETE and 0 threads: genuinely empty, no more data", () => {
+    const cov = makeCoverage("DRAFT", "COMPLETE", 0);
+    expect(folderIsGenuinelyEmpty(cov)).toBe(true);
+    expect(folderMayHaveMoreData(cov)).toBe(false);
+  });
+
+  it("SPAM with COMPLETE and 25 threads: not empty, no more data expected", () => {
+    const cov = makeCoverage("SPAM", "COMPLETE", 25);
+    expect(folderIsGenuinelyEmpty(cov)).toBe(false);
+    expect(folderMayHaveMoreData(cov)).toBe(false);
+  });
+
+  it("null coverage: not genuinely empty, may have more data", () => {
+    expect(folderIsGenuinelyEmpty(null)).toBe(false);
+    expect(folderMayHaveMoreData(null)).toBe(true);
+  });
+});

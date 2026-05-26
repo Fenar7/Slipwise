@@ -424,7 +424,13 @@ export const gmailProviderAdapter: IMailboxProviderAdapter = {
     if (cursor) {
       // ─── Delta path: use Gmail history.list ───────────────────────────────
       const threadIds = new Set<string>();
-      const deletedThreadIds = new Set<string>();
+      // Gmail messagesDeleted is message-level, not thread-level. Collect
+      // provider message IDs so we can reconcile individual message deletion
+      // rather than incorrectly removing entire multi-message threads.
+      const deletedMessageIds = new Set<string>();
+      // Track which threads had any deletion so we know which ones to re-fetch
+      // for accurate local state.
+      const deletionAffectedThreadIds = new Set<string>();
       let nextPageToken: string | undefined;
       let lastHistoryId = cursor.value;
 
@@ -455,13 +461,16 @@ export const gmailProviderAdapter: IMailboxProviderAdapter = {
           for (const modified of record.labelsAdded ?? []) {
             if (modified.message?.threadId) threadIds.add(modified.message.threadId);
           }
-          // Track remote deletions: collect threads whose last message was deleted.
-          // These threads should be soft-deleted from the local store.
+          // Message-level deletion: capture provider message IDs for
+          // individual message removal, not whole-thread deletion.
           for (const deleted of record.messagesDeleted ?? []) {
-            if (deleted.message?.threadId) deletedThreadIds.add(deleted.message.threadId);
+            if (deleted.message?.id) deletedMessageIds.add(deleted.message.id);
+            if (deleted.message?.threadId) {
+              deletionAffectedThreadIds.add(deleted.message.threadId);
+              threadIds.add(deleted.message.threadId);
+            }
           }
           // Track label removals: important for spam↔inbox transitions.
-          // When SPAM label is removed, the thread should be re-fetched.
           for (const removed of record.labelsRemoved ?? []) {
             if (removed.message?.threadId) threadIds.add(removed.message.threadId);
           }
@@ -470,11 +479,6 @@ export const gmailProviderAdapter: IMailboxProviderAdapter = {
       } while (nextPageToken);
 
       const threadFetch = await fetchThreadEnvelopes(accessToken, [...threadIds]);
-      // Exclude deleted threads from the re-fetched set since they were removed
-      // remotely; we just need the IDs for local soft-deletion.
-      for (const dtid of deletedThreadIds) {
-        threadIds.delete(dtid);
-      }
 
       const nextCursor: MailboxSyncCursor = {
         value: lastHistoryId,
@@ -484,25 +488,46 @@ export const gmailProviderAdapter: IMailboxProviderAdapter = {
       return {
         threads: threadFetch.threads,
         nextCursor,
-        deletedThreadIds: deletedThreadIds.size > 0 ? [...deletedThreadIds] : undefined,
+        deletedMessageIds: deletedMessageIds.size > 0 ? [...deletedMessageIds] : undefined,
+        deletionAffectedThreadIds: deletionAffectedThreadIds.size > 0 ? [...deletionAffectedThreadIds] : undefined,
       };
     }
 
     // ─── Initial path: use threads.list ─────────────────────────────────────
     // Gmail-grade bootstrap: fetch all mailbox history across INBOX, SENT, SPAM,
     // DRAFT, and ARCHIVE slices using multi-pass pagination (max 10 pages per
-    // slice, 100 threads per page). This ensures complete historical coverage.
-    // After bootstrap, the delta cursor is seeded from the live Gmail profile
-    // historyId so future incremental syncs are correct from "now".
+    // slice, 100 threads per page). Returns per-slice exhaustion status so the
+    // sync service can decide folder completeness truthfully.
     const threadIds = new Set<string>();
     let highestHistoryId = "0";
+    const bootstrapSliceResults: Array<{
+      sliceLabel: string;
+      paginationExhausted: boolean;
+      threadCount: number;
+      lastAdvancedCursor: string;
+    }> = [];
+
     for (const slice of GMAIL_BOOTSTRAP_SLICES) {
       const sliceResult = await fetchBoundedThreadRefsForQuery(accessToken, slice);
       if (isProviderError(sliceResult)) return sliceResult;
+
+      const sliceLabel = slice.folder;
+      let sliceThreadCount = 0;
+      let sliceHighestHistoryId = highestHistoryId;
+
       for (const threadRef of sliceResult.threadRefs) {
         threadIds.add(threadRef.id);
-        highestHistoryId = maxHistoryId(highestHistoryId, threadRef.historyId);
+        sliceHighestHistoryId = maxHistoryId(sliceHighestHistoryId, threadRef.historyId);
+        sliceThreadCount += 1;
       }
+      highestHistoryId = maxHistoryId(highestHistoryId, sliceHighestHistoryId);
+
+      bootstrapSliceResults.push({
+        sliceLabel,
+        paginationExhausted: sliceResult.paginationExhausted,
+        threadCount: sliceThreadCount,
+        lastAdvancedCursor: sliceHighestHistoryId,
+      });
     }
 
     const threadFetch = await fetchThreadEnvelopes(accessToken, [...threadIds], highestHistoryId);
@@ -516,7 +541,11 @@ export const gmailProviderAdapter: IMailboxProviderAdapter = {
       expiresAt: null,
     };
 
-    return { threads: threadFetch.threads, nextCursor };
+    return {
+      threads: threadFetch.threads,
+      nextCursor,
+      bootstrapSliceResults,
+    };
   },
 
   async syncDrafts({ orgId, tokenRef }) {
@@ -938,7 +967,10 @@ function parseGmailDate(internalDate: string | null | undefined): Date {
 async function fetchBoundedThreadRefsForQuery(
   accessToken: string,
   slice: GmailBootstrapSlice,
-): Promise<{ threadRefs: GmailThreadRef[] } | MailboxProviderError> {
+): Promise<{
+  threadRefs: GmailThreadRef[];
+  paginationExhausted: boolean;
+} | MailboxProviderError> {
   const threadRefs: GmailThreadRef[] = [];
   let nextPageToken: string | undefined;
   let pagesFetched = 0;
@@ -967,7 +999,8 @@ async function fetchBoundedThreadRefsForQuery(
     nextPageToken = data.nextPageToken;
   } while (nextPageToken && pagesFetched < GMAIL_INITIAL_SYNC_MAX_PAGES);
 
-  return { threadRefs };
+  // paginationExhausted is true when there are no more pages on the provider
+  return { threadRefs, paginationExhausted: !nextPageToken };
 }
 
 async function fetchAllDraftIds(
