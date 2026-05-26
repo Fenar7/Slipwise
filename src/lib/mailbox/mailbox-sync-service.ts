@@ -567,17 +567,63 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
     threadCount += deltaStats.threadCount;
     messageCount += deltaStats.messageCount;
 
-    // ─── Soft-delete threads that were remotely deleted ───────────────────
-    if (delta.deletedThreadIds && delta.deletedThreadIds.length > 0) {
-      await db.mailboxThread.updateMany({
+    // ─── Reconcile remote message deletions ───────────────────────────────
+    // Gmail messagesDeleted is message-level. Remove individual messages
+    // first, then re-evaluate affected threads — only mark a thread as DELETED
+    // if it has zero remaining live messages after re-fetch.
+    if (delta.deletedMessageIds && delta.deletedMessageIds.length > 0) {
+      await db.mailboxMessage.deleteMany({
         where: {
           orgId: params.orgId,
-          mailboxConnectionId: connection.id,
-          providerThreadId: { in: delta.deletedThreadIds },
-          status: { not: "DELETED" },
+          thread: {
+            mailboxConnectionId: connection.id,
+          },
+          providerMessageId: { in: delta.deletedMessageIds },
         },
-        data: { status: "DELETED", updatedAt: new Date() },
       });
+    }
+
+    // Re-fetch threads affected by deletion events to reconcile thread state.
+    // If the re-fetched thread has zero messages, it was fully deleted
+    // remotely and we should soft-delete it locally.
+    if (delta.deletionAffectedThreadIds && delta.deletionAffectedThreadIds.length > 0) {
+      for (const providerThreadId of delta.deletionAffectedThreadIds) {
+        const detail = await adapter.fetchThreadDetail({
+          orgId: params.orgId,
+          tokenRef: connection.tokenRef,
+          providerThreadId,
+        });
+        if (isMailboxProviderError(detail)) {
+          // Not found or other error: the thread is gone. Soft-delete it.
+          if (detail.category === "not_found") {
+            await db.mailboxThread.updateMany({
+              where: {
+                orgId: params.orgId,
+                mailboxConnectionId: connection.id,
+                providerThreadId,
+                status: { not: "DELETED" },
+              },
+              data: { status: "DELETED", updatedAt: new Date() },
+            });
+          }
+          continue;
+        }
+        // Thread still exists but may have fewer messages than before.
+        // The individual message deletion above handles message removal.
+        // If there are no messages left in the provider response, the
+        // thread is effectively empty and should be soft-deleted.
+        if (detail.messages.length === 0) {
+          await db.mailboxThread.updateMany({
+            where: {
+              orgId: params.orgId,
+              mailboxConnectionId: connection.id,
+              providerThreadId,
+              status: { not: "DELETED" },
+            },
+            data: { status: "DELETED", updatedAt: new Date() },
+          });
+        }
+      }
     }
 
     let syncedDrafts = false;
@@ -677,29 +723,74 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
 
     // ── Update per-folder coverage after successful sync ─────────────────
     if (connection.provider === "GMAIL") {
-      if (effectiveMode === "INITIAL") {
-        // Bootstrap completed successfully: mark all required folders as COMPLETE
-        // since the sync service now uses GMAIL_BOOTSTRAP_SLICES which covers
-        // INBOX, SENT, SPAM, DRAFT, ARCHIVE.
+      const bootstrapResults = delta.bootstrapSliceResults;
+      if (effectiveMode === "INITIAL" && bootstrapResults && bootstrapResults.length > 0) {
+        // Use per-slice exhaust results for truthful folder completion.
+        // A folder is COMPLETE only if paginationExhausted is true.
+        for (const slice of bootstrapResults) {
+          const folder = slice.sliceLabel as "INBOX" | "SENT" | "SPAM" | "DRAFT" | "ARCHIVE";
+          if (slice.paginationExhausted) {
+            await markFolderCoverageComplete(
+              params.orgId,
+              connection.id,
+              folder,
+              slice.threadCount,
+              slice.lastAdvancedCursor,
+            );
+          } else {
+            await updateFolderCoverageBootstrapping(
+              params.orgId,
+              connection.id,
+              folder,
+              slice.threadCount,
+              slice.lastAdvancedCursor,
+            );
+          }
+        }
+      } else if (effectiveMode === "INITIAL" && (!bootstrapResults || bootstrapResults.length === 0)) {
+        // Fallback: no per-slice results — mark all as BOOTSTRAPPING (not COMPLETE)
         for (const folder of ["INBOX", "SENT", "SPAM", "DRAFT", "ARCHIVE"] as const) {
-          await markFolderCoverageComplete(
+          await updateFolderCoverageBootstrapping(
             params.orgId,
             connection.id,
             folder,
-            0, // totalThreads per-folder is tracked by the full sync
+            threadCount,
             delta.nextCursor?.value ?? "",
           );
         }
       } else if (recoveredGmailCoverage) {
-        // Recovery sync completed: folders were re-bootstrapped
-        for (const folder of ["INBOX", "SENT", "SPAM", "DRAFT", "ARCHIVE"] as const) {
-          await markFolderCoverageComplete(
-            params.orgId,
-            connection.id,
-            folder,
-            0,
-            delta.nextCursor?.value ?? "",
-          );
+        const recoveryResults = delta.bootstrapSliceResults;
+        if (recoveryResults && recoveryResults.length > 0) {
+          for (const slice of recoveryResults) {
+            const folder = slice.sliceLabel as "INBOX" | "SENT" | "SPAM" | "DRAFT" | "ARCHIVE";
+            if (slice.paginationExhausted) {
+              await markFolderCoverageComplete(
+                params.orgId,
+                connection.id,
+                folder,
+                slice.threadCount,
+                slice.lastAdvancedCursor,
+              );
+            } else {
+              await updateFolderCoverageBootstrapping(
+                params.orgId,
+                connection.id,
+                folder,
+                slice.threadCount,
+                slice.lastAdvancedCursor,
+              );
+            }
+          }
+        } else {
+          for (const folder of ["INBOX", "SENT", "SPAM", "DRAFT", "ARCHIVE"] as const) {
+            await updateFolderCoverageBootstrapping(
+              params.orgId,
+              connection.id,
+              folder,
+              threadCount,
+              delta.nextCursor?.value ?? "",
+            );
+          }
         }
       }
     }
