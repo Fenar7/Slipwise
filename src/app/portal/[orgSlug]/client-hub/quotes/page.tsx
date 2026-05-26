@@ -1,4 +1,6 @@
 import { ClientHubQuotesView } from "../components/views";
+import { getPersistedHubConfig } from "../components/config-resolver";
+import { notFound } from "next/navigation";
 
 export default async function ClientHubQuotesPage({
   params,
@@ -6,5 +8,11 @@ export default async function ClientHubQuotesPage({
   params: Promise<{ orgSlug: string }>;
 }) {
   const { orgSlug } = await params;
-  return <ClientHubQuotesView orgSlug={orgSlug} />;
+  const config = await getPersistedHubConfig(orgSlug);
+
+  if (!config.navigation.showQuotes) {
+    notFound();
+  }
+
+  return <ClientHubQuotesView orgSlug={orgSlug} config={config} />;
 }
