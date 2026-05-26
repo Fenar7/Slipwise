@@ -53,41 +53,58 @@ export function MessagingTaskCreate({
   const [selectedConvId, setSelectedConvId] = useState(conversationId ?? "");
   const [dynamicParticipants, setDynamicParticipants] = useState<MessagingParticipant[] | null>(null);
   const [loadingParticipants, setLoadingParticipants] = useState(false);
-  const [scopedConvBlocked, setScopedConvBlocked] = useState<string | null>(null);
+  const [scopedValidation, setScopedValidation] = useState<"idle" | "verifying" | "allowed" | "blocked">("idle");
+  const [scopedBlockMessage, setScopedBlockMessage] = useState<string | null>(null);
 
   // Validate scoped conversation target (archived/locked/non-sendable) when conversationId is provided directly
   useEffect(() => {
-    if (!conversationId) {
-      setScopedConvBlocked(null);
+    if (readOnlyProp) {
+      setScopedValidation("blocked");
+      setScopedBlockMessage("Task creation is not allowed in this conversation.");
       return;
     }
+    if (!conversationId) {
+      setScopedValidation("allowed");
+      setScopedBlockMessage(null);
+      return;
+    }
+    setScopedValidation("verifying");
+    setScopedBlockMessage(null);
     let cancelled = false;
     fetch(`/api/messaging/conversations/${conversationId}`, { credentials: "same-origin" })
       .then((res) => res.json())
       .then((payload) => {
         if (cancelled) return;
         if (!payload.success || !payload.data) {
-          setScopedConvBlocked("This conversation is not available for task creation.");
+          setScopedValidation("blocked");
+          setScopedBlockMessage("This conversation is not available for task creation.");
           return;
         }
         const detail: ApiConversationDetail = payload.data;
         if (detail.archivedAt != null) {
-          setScopedConvBlocked("This conversation is archived. Tasks cannot be created.");
+          setScopedValidation("blocked");
+          setScopedBlockMessage("This conversation is archived. Tasks cannot be created.");
         } else if (detail.lockedAt != null) {
-          setScopedConvBlocked("This conversation is locked. Tasks cannot be created.");
+          setScopedValidation("blocked");
+          setScopedBlockMessage("This conversation is locked. Tasks cannot be created.");
         } else if (detail.canSend === false) {
-          setScopedConvBlocked("You cannot send messages in this conversation. Tasks cannot be created.");
+          setScopedValidation("blocked");
+          setScopedBlockMessage("You cannot send messages in this conversation. Tasks cannot be created.");
         } else {
-          setScopedConvBlocked(null);
+          setScopedValidation("allowed");
+          setScopedBlockMessage(null);
         }
       })
       .catch(() => {
-        if (!cancelled) setScopedConvBlocked("Unable to verify conversation. Task creation is blocked.");
+        if (!cancelled) {
+          setScopedValidation("blocked");
+          setScopedBlockMessage("Unable to verify conversation. Task creation is blocked.");
+        }
       });
     return () => { cancelled = true; };
-  }, [conversationId]);
+  }, [conversationId, readOnlyProp]);
 
-  const readOnly = readOnlyProp || scopedConvBlocked != null;
+  const readOnly = scopedValidation !== "allowed";
 
   // Call hook for global conversation list
   const { channels, dms, groups } = useConversationList();
@@ -155,7 +172,7 @@ export function MessagingTaskCreate({
     }
 
     if (readOnly) {
-      setError(scopedConvBlocked ?? "Task creation is not allowed in this conversation.");
+      setError(scopedBlockMessage ?? "Task creation is not allowed in this conversation.");
       return;
     }
 
@@ -217,9 +234,9 @@ export function MessagingTaskCreate({
           </button>
         </div>
 
-        {(error || scopedConvBlocked) && (
+        {(error || scopedBlockMessage) && (
           <div className="mb-4 rounded-lg bg-red-50 border border-red-200 p-3 text-xs text-[#DC2626]">
-            {scopedConvBlocked ?? error}
+            {scopedBlockMessage ?? error}
           </div>
         )}
 

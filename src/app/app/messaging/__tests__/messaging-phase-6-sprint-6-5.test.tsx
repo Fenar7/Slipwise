@@ -547,22 +547,62 @@ describe("Sprint 6.5 — Closeout Hardening", () => {
     expect(screen.queryByTestId("task-panel-new-btn")).not.toBeInTheDocument();
   });
 
-  // ─── MessagingTaskCreate Scoped Validation ───────────────────────────────────
+  // ─── MessagingTaskCreate Pessimistic Scoped Validation ───────────────────────
 
-  it("blocks submit and shows error when MessagingTaskCreate receives an archived scoped conversationId", async () => {
+  it("keeps submit disabled during verification and blocks archived conversation", async () => {
+    let resolveFetch!: (value: Response) => void;
     const fetchSpy = vi.fn().mockImplementation((url: string) => {
       if (url.includes("/api/messaging/conversations/conv-1")) {
-        return Promise.resolve({
-          ok: true,
-          status: 200,
-          json: () => Promise.resolve({ success: true, data: mockArchivedConvDetail }),
-        });
+        return new Promise<Response>((res) => { resolveFetch = res; });
       }
       return Promise.resolve({
         ok: true,
         status: 200,
         json: () => Promise.resolve({ success: true, data: {} }),
-      });
+      } as Response);
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    render(
+      <MessagingTaskCreate
+        onClose={() => {}}
+        onSuccess={() => {}}
+        conversationId="conv-1"
+      />
+    );
+
+    // Submit must be disabled while validation is in-flight
+    await waitFor(() => {
+      expect(screen.getByTestId("task-create-submit")).toBeDisabled();
+    });
+
+    // Resolve fetch with archived detail
+    resolveFetch({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ success: true, data: mockArchivedConvDetail }),
+    } as Response);
+
+    // Blocked message appears
+    await waitFor(() => {
+      expect(screen.getByText(/This conversation is archived/)).toBeInTheDocument();
+    });
+
+    // Submit remains disabled
+    expect(screen.getByTestId("task-create-submit")).toBeDisabled();
+  });
+
+  it("keeps submit disabled during verification and blocks locked conversation", async () => {
+    let resolveFetch!: (value: Response) => void;
+    const fetchSpy = vi.fn().mockImplementation((url: string) => {
+      if (url.includes("/api/messaging/conversations/conv-1")) {
+        return new Promise<Response>((res) => { resolveFetch = res; });
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ success: true, data: {} }),
+      } as Response);
     });
     vi.stubGlobal("fetch", fetchSpy);
 
@@ -575,44 +615,107 @@ describe("Sprint 6.5 — Closeout Hardening", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText(/This conversation is archived/)).toBeInTheDocument();
+      expect(screen.getByTestId("task-create-submit")).toBeDisabled();
     });
 
-    const submitBtn = screen.getByTestId("task-create-submit");
-    expect(submitBtn).toBeDisabled();
-  });
-
-  it("blocks submit and shows error when MessagingTaskCreate receives a locked scoped conversationId", async () => {
-    const fetchSpy = vi.fn().mockImplementation((url: string) => {
-      if (url.includes("/api/messaging/conversations/conv-1")) {
-        return Promise.resolve({
-          ok: true,
-          status: 200,
-          json: () => Promise.resolve({ success: true, data: mockLockedConvDetail }),
-        });
-      }
-      return Promise.resolve({
-        ok: true,
-        status: 200,
-        json: () => Promise.resolve({ success: true, data: {} }),
-      });
-    });
-    vi.stubGlobal("fetch", fetchSpy);
-
-    render(
-      <MessagingTaskCreate
-        onClose={() => {}}
-        onSuccess={() => {}}
-        conversationId="conv-1"
-      />
-    );
+    resolveFetch({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ success: true, data: mockLockedConvDetail }),
+    } as Response);
 
     await waitFor(() => {
       expect(screen.getByText(/This conversation is locked/)).toBeInTheDocument();
     });
 
-    const submitBtn = screen.getByTestId("task-create-submit");
-    expect(submitBtn).toBeDisabled();
+    expect(screen.getByTestId("task-create-submit")).toBeDisabled();
+  });
+
+  it("keeps submit disabled during verification and blocks non-sendable conversation", async () => {
+    const mockNonSendableDetail = {
+      ...mockConvDetail,
+      canSend: false,
+    };
+    let resolveFetch!: (value: Response) => void;
+    const fetchSpy = vi.fn().mockImplementation((url: string) => {
+      if (url.includes("/api/messaging/conversations/conv-1")) {
+        return new Promise<Response>((res) => { resolveFetch = res; });
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ success: true, data: {} }),
+      } as Response);
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    render(
+      <MessagingTaskCreate
+        onClose={() => {}}
+        onSuccess={() => {}}
+        conversationId="conv-1"
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("task-create-submit")).toBeDisabled();
+    });
+
+    resolveFetch({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ success: true, data: mockNonSendableDetail }),
+    } as Response);
+
+    await waitFor(() => {
+      expect(screen.getByText(/cannot send messages/)).toBeInTheDocument();
+    });
+
+    expect(screen.getByTestId("task-create-submit")).toBeDisabled();
+  });
+
+  it("keeps submit disabled during verification then enables it for valid scoped conversation", async () => {
+    let resolveFetch!: (value: Response) => void;
+    const fetchSpy = vi.fn().mockImplementation((url: string) => {
+      if (url.includes("/api/messaging/conversations/conv-1")) {
+        return new Promise<Response>((res) => { resolveFetch = res; });
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ success: true, data: {} }),
+      } as Response);
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    render(
+      <MessagingTaskCreate
+        onClose={() => {}}
+        onSuccess={() => {}}
+        conversationId="conv-1"
+      />
+    );
+
+    // Fill title before validation resolves
+    await waitFor(() => {
+      expect(screen.getByTestId("task-title-input")).toBeInTheDocument();
+    });
+    fireEvent.change(screen.getByTestId("task-title-input"), { target: { value: "Valid task" } });
+
+    // Submit must still be disabled while verifying
+    expect(screen.getByTestId("task-create-submit")).toBeDisabled();
+
+    // Resolve with valid conversation
+    resolveFetch({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ success: true, data: mockConvDetail }),
+    } as Response);
+
+    // Now submit should be enabled
+    await waitFor(() => {
+      expect(screen.getByTestId("task-create-submit")).not.toBeDisabled();
+    });
   });
 
   // ─── Regression — Sprint 6.2–6.4 behavior preserved ──────────────────────────

@@ -143,6 +143,11 @@ describe("Sprint 6.2 Frontend Integration — Tasks Work Coordination", () => {
     const descInput = screen.getByTestId("task-description");
     fireEvent.change(descInput, { target: { value: "A contiguous and secure refactoring" } });
 
+    // Wait for scoped validation to settle before submitting
+    await waitFor(() => {
+      expect(screen.getByTestId("task-create-submit")).not.toBeDisabled();
+    });
+
     // Submit form
     const submitBtn = screen.getByTestId("task-create-submit");
     fireEvent.click(submitBtn);

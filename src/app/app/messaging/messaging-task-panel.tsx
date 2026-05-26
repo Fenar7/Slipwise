@@ -491,6 +491,7 @@ export function MessagingTaskPanel({ conversationId, onNavigateToOrigin }: Messa
 
   const {
     detail: conversationDetail,
+    loading: detailLoading,
     errorType: detailErrorType,
   } = useConversationDetail(conversationId ?? null);
 
@@ -807,7 +808,7 @@ export function MessagingTaskPanel({ conversationId, onNavigateToOrigin }: Messa
               <p className="text-lg font-bold" style={{ color: "#1C1B1F" }}>{listTasks.filter((t) => t.status === "open").length}</p>
             </div>
           </div>
-          {!conversationReadOnly && (
+          {!conversationReadOnly && !(conversationId && detailLoading) && (
             <button
               type="button"
               data-testid="task-panel-new-btn"
