@@ -142,7 +142,6 @@ export function CustomizationShell() {
 
   const handleModeChange = useCallback(async (customerId: string) => {
     setIsLoading(true);
-    setLifecycleReadiness(null);
 
     try {
       if (!customerId) {
@@ -154,6 +153,7 @@ export function CustomizationShell() {
           setOverrideConfig({});
           setSelectedCustomerId("");
           setHasChanges(false);
+          setLifecycleReadiness(null);
         } else {
           toast.error(orgRes.error);
         }
@@ -170,14 +170,19 @@ export function CustomizationShell() {
           setOverrideConfig(overrideRes.overrideConfig);
           setSelectedCustomerId(customerId);
           setHasChanges(false);
+
+          // Only apply lifecycle state when the target customer context
+          // was successfully adopted — keeps mode and lifecycle aligned.
+          if (lifecycleRes.success) {
+            setLifecycleReadiness(lifecycleRes.readiness);
+          } else {
+            console.warn("Failed to load lifecycle state:", lifecycleRes.error);
+            setLifecycleReadiness(null);
+          }
         } else {
           toast.error(overrideRes.error || "Failed to load client override settings");
-        }
-
-        if (lifecycleRes.success) {
-          setLifecycleReadiness(lifecycleRes.readiness);
-        } else {
-          console.warn("Failed to load lifecycle state:", lifecycleRes.error);
+          // Preserve prior stable state (config, selectedCustomerId, lifecycle)
+          // so a failed switch does not leave the UI inconsistent.
         }
       }
     } catch (error) {

@@ -5,6 +5,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const mockRequireOrgContext = vi.hoisted(() => vi.fn());
 const mockRevalidatePath = vi.hoisted(() => vi.fn());
 
+const mockLogAudit = vi.hoisted(() => vi.fn());
+
 const mockDb = vi.hoisted(() => ({
   clientHubOrgConfig: {
     findUnique: vi.fn(),
@@ -33,6 +35,9 @@ vi.mock("@/lib/db", () => ({ db: mockDb }));
 vi.mock("next/cache", () => ({ revalidatePath: mockRevalidatePath }));
 vi.mock("@/lib/auth", () => ({
   requireOrgContext: mockRequireOrgContext,
+}));
+vi.mock("@/lib/audit", () => ({
+  logAudit: mockLogAudit,
 }));
 
 import {
@@ -323,10 +328,29 @@ describe("Client Hub Per-Client Overrides & Resolver", () => {
     });
   });
 
+  function mockFullCustomer(overrides: Partial<{
+    name: string | null;
+    email: string | null;
+    phone: string | null;
+    address: string | null;
+    taxId: string | null;
+    gstin: string | null;
+  }> = {}) {
+    return {
+      id: CUSTOMER_ID,
+      name: "name" in overrides ? overrides.name : "Alice Corp",
+      email: "email" in overrides ? overrides.email : "alice@test.com",
+      phone: "phone" in overrides ? overrides.phone : "+91 98765 43210",
+      address: "address" in overrides ? overrides.address : "123 Main St, Mumbai",
+      taxId: "taxId" in overrides ? overrides.taxId : "TAX123456",
+      gstin: "gstin" in overrides ? overrides.gstin : null,
+    };
+  }
+
   describe("getClientHubCustomerLifecycle (readiness)", () => {
     it("returns disabled state when no lifecycle record exists", async () => {
       setupAuth();
-      mockDb.customer.findFirst.mockResolvedValue({ id: CUSTOMER_ID, name: "Alice", email: "alice@test.com" });
+      mockDb.customer.findFirst.mockResolvedValue(mockFullCustomer());
       mockDb.clientHubCustomerLifecycle.findUnique.mockResolvedValue(null);
 
       const res = await getClientHubCustomerLifecycle(CUSTOMER_ID);
@@ -341,9 +365,9 @@ describe("Client Hub Per-Client Overrides & Resolver", () => {
       }
     });
 
-    it("returns enabled_ready when enabled and customer has email", async () => {
+    it("returns enabled_ready when enabled and all prerequisites are present", async () => {
       setupAuth();
-      mockDb.customer.findFirst.mockResolvedValue({ id: CUSTOMER_ID, name: "Alice", email: "alice@test.com" });
+      mockDb.customer.findFirst.mockResolvedValue(mockFullCustomer());
       mockDb.clientHubCustomerLifecycle.findUnique.mockResolvedValue({
         enabled: true,
         enabledAt: new Date(),
@@ -365,7 +389,7 @@ describe("Client Hub Per-Client Overrides & Resolver", () => {
 
     it("returns enabled_not_ready when enabled but customer lacks email", async () => {
       setupAuth();
-      mockDb.customer.findFirst.mockResolvedValue({ id: CUSTOMER_ID, name: "Alice", email: null });
+      mockDb.customer.findFirst.mockResolvedValue(mockFullCustomer({ email: null }));
       mockDb.clientHubCustomerLifecycle.findUnique.mockResolvedValue({
         enabled: true,
         enabledAt: new Date(),
@@ -378,6 +402,111 @@ describe("Client Hub Per-Client Overrides & Resolver", () => {
       if (res.success) {
         expect(res.readiness.readinessStatus).toBe("enabled_not_ready");
         expect(res.readiness.previewEligible).toBe(true);
+        expect(res.readiness.inviteEligible).toBe(false);
+        expect(res.readiness.portalReady).toBe(false);
+        expect(res.readiness.blockers).toContain("Customer email is required for portal invite");
+      }
+    });
+
+    it("returns enabled_not_ready when enabled but customer lacks phone", async () => {
+      setupAuth();
+      mockDb.customer.findFirst.mockResolvedValue(mockFullCustomer({ phone: null }));
+      mockDb.clientHubCustomerLifecycle.findUnique.mockResolvedValue({
+        enabled: true,
+        enabledAt: new Date(),
+        disabledAt: null,
+        enabledByUserId: USER_ID,
+      });
+
+      const res = await getClientHubCustomerLifecycle(CUSTOMER_ID);
+      expect(res.success).toBe(true);
+      if (res.success) {
+        expect(res.readiness.readinessStatus).toBe("enabled_not_ready");
+        expect(res.readiness.previewEligible).toBe(true);
+        expect(res.readiness.inviteEligible).toBe(true);
+        expect(res.readiness.portalReady).toBe(false);
+        expect(res.readiness.blockers).toContain("Customer phone is required for portal contact");
+      }
+    });
+
+    it("returns enabled_not_ready when enabled but customer lacks address", async () => {
+      setupAuth();
+      mockDb.customer.findFirst.mockResolvedValue(mockFullCustomer({ address: null }));
+      mockDb.clientHubCustomerLifecycle.findUnique.mockResolvedValue({
+        enabled: true,
+        enabledAt: new Date(),
+        disabledAt: null,
+        enabledByUserId: USER_ID,
+      });
+
+      const res = await getClientHubCustomerLifecycle(CUSTOMER_ID);
+      expect(res.success).toBe(true);
+      if (res.success) {
+        expect(res.readiness.readinessStatus).toBe("enabled_not_ready");
+        expect(res.readiness.previewEligible).toBe(true);
+        expect(res.readiness.inviteEligible).toBe(true);
+        expect(res.readiness.portalReady).toBe(false);
+        expect(res.readiness.blockers).toContain("Customer billing address is required for portal documents");
+      }
+    });
+
+    it("returns enabled_not_ready when enabled but customer lacks tax identifier", async () => {
+      setupAuth();
+      mockDb.customer.findFirst.mockResolvedValue(mockFullCustomer({ taxId: null, gstin: null }));
+      mockDb.clientHubCustomerLifecycle.findUnique.mockResolvedValue({
+        enabled: true,
+        enabledAt: new Date(),
+        disabledAt: null,
+        enabledByUserId: USER_ID,
+      });
+
+      const res = await getClientHubCustomerLifecycle(CUSTOMER_ID);
+      expect(res.success).toBe(true);
+      if (res.success) {
+        expect(res.readiness.readinessStatus).toBe("enabled_not_ready");
+        expect(res.readiness.previewEligible).toBe(true);
+        expect(res.readiness.inviteEligible).toBe(true);
+        expect(res.readiness.portalReady).toBe(false);
+        expect(res.readiness.blockers).toContain(
+          "Customer tax identifier (GSTIN or Tax ID) is required for portal compliance"
+        );
+      }
+    });
+
+    it("accepts gstin as valid tax identifier when taxId is absent", async () => {
+      setupAuth();
+      mockDb.customer.findFirst.mockResolvedValue(mockFullCustomer({ taxId: null, gstin: "27AABCU9603R1ZX" }));
+      mockDb.clientHubCustomerLifecycle.findUnique.mockResolvedValue({
+        enabled: true,
+        enabledAt: new Date(),
+        disabledAt: null,
+        enabledByUserId: USER_ID,
+      });
+
+      const res = await getClientHubCustomerLifecycle(CUSTOMER_ID);
+      expect(res.success).toBe(true);
+      if (res.success) {
+        expect(res.readiness.readinessStatus).toBe("enabled_ready");
+        expect(res.readiness.portalReady).toBe(true);
+        expect(res.readiness.blockers).toHaveLength(0);
+      }
+    });
+
+    it("returns inviteEligible=false but portalReady=true when only email is missing", async () => {
+      setupAuth();
+      mockDb.customer.findFirst.mockResolvedValue(
+        mockFullCustomer({ email: null, phone: "+91 98765 43210", address: "123 Main St", taxId: "TAX123" })
+      );
+      mockDb.clientHubCustomerLifecycle.findUnique.mockResolvedValue({
+        enabled: true,
+        enabledAt: new Date(),
+        disabledAt: null,
+        enabledByUserId: USER_ID,
+      });
+
+      const res = await getClientHubCustomerLifecycle(CUSTOMER_ID);
+      expect(res.success).toBe(true);
+      if (res.success) {
         expect(res.readiness.inviteEligible).toBe(false);
         expect(res.readiness.portalReady).toBe(false);
         expect(res.readiness.blockers).toContain("Customer email is required for portal invite");
@@ -405,7 +534,7 @@ describe("Client Hub Per-Client Overrides & Resolver", () => {
   describe("enableClientHubForCustomer", () => {
     it("upserts lifecycle record with enabled=true", async () => {
       setupAuth();
-      mockDb.customer.findFirst.mockResolvedValue({ id: CUSTOMER_ID });
+      mockDb.customer.findFirst.mockResolvedValue({ id: CUSTOMER_ID, name: "Alice Corp" });
 
       const res = await enableClientHubForCustomer(CUSTOMER_ID);
       expect(res.success).toBe(true);
@@ -419,19 +548,37 @@ describe("Client Hub Per-Client Overrides & Resolver", () => {
       expect(mockRevalidatePath).toHaveBeenCalledWith("/app/settings/portal/client-hub");
     });
 
+    it("writes an audit log when enabling", async () => {
+      setupAuth();
+      mockDb.customer.findFirst.mockResolvedValue({ id: CUSTOMER_ID, name: "Alice Corp" });
+
+      await enableClientHubForCustomer(CUSTOMER_ID);
+      expect(mockLogAudit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          orgId: ORG_ID,
+          actorId: USER_ID,
+          action: "client_hub.enabled",
+          entityType: "ClientHubCustomerLifecycle",
+          entityId: CUSTOMER_ID,
+          metadata: { customerName: "Alice Corp" },
+        })
+      );
+    });
+
     it("denies member access", async () => {
       setupAuth(ORG_ID, USER_ID, "member");
       const res = await enableClientHubForCustomer(CUSTOMER_ID);
       expect(res.success).toBe(false);
       expect(res.error).toContain("Only administrators");
       expect(mockDb.clientHubCustomerLifecycle.upsert).not.toHaveBeenCalled();
+      expect(mockLogAudit).not.toHaveBeenCalled();
     });
   });
 
   describe("disableClientHubForCustomer", () => {
     it("upserts lifecycle record with enabled=false", async () => {
       setupAuth();
-      mockDb.customer.findFirst.mockResolvedValue({ id: CUSTOMER_ID });
+      mockDb.customer.findFirst.mockResolvedValue({ id: CUSTOMER_ID, name: "Alice Corp" });
 
       const res = await disableClientHubForCustomer(CUSTOMER_ID);
       expect(res.success).toBe(true);
@@ -445,12 +592,30 @@ describe("Client Hub Per-Client Overrides & Resolver", () => {
       expect(mockRevalidatePath).toHaveBeenCalledWith("/app/settings/portal/client-hub");
     });
 
+    it("writes an audit log when disabling", async () => {
+      setupAuth();
+      mockDb.customer.findFirst.mockResolvedValue({ id: CUSTOMER_ID, name: "Alice Corp" });
+
+      await disableClientHubForCustomer(CUSTOMER_ID);
+      expect(mockLogAudit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          orgId: ORG_ID,
+          actorId: USER_ID,
+          action: "client_hub.disabled",
+          entityType: "ClientHubCustomerLifecycle",
+          entityId: CUSTOMER_ID,
+          metadata: { customerName: "Alice Corp" },
+        })
+      );
+    });
+
     it("denies member access", async () => {
       setupAuth(ORG_ID, USER_ID, "member");
       const res = await disableClientHubForCustomer(CUSTOMER_ID);
       expect(res.success).toBe(false);
       expect(res.error).toContain("Only administrators");
       expect(mockDb.clientHubCustomerLifecycle.upsert).not.toHaveBeenCalled();
+      expect(mockLogAudit).not.toHaveBeenCalled();
     });
   });
 });

@@ -3,6 +3,7 @@
 import { db } from "@/lib/db";
 import { requireOrgContext } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
+import { logAudit } from "@/lib/audit";
 import {
   ClientHubConfig,
   ClientHubConfigSchema,
@@ -159,7 +160,15 @@ export async function getClientOverrideEditorState(customerId: string) {
     // Securely verify that customer belongs to the active organization context
     const customer = await db.customer.findFirst({
       where: { id: customerId, organizationId: orgId },
-      select: { id: true, name: true, email: true },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        phone: true,
+        address: true,
+        taxId: true,
+        gstin: true,
+      },
     });
 
     if (!customer) {
@@ -321,11 +330,27 @@ export async function clearClientHubCustomerOverride(customerId: string) {
 
 /**
  * Computes the deterministic readiness state for a customer given their lifecycle record.
- * Does not trust inputs blindly — validates org config resolution independently.
+ * Evaluates a coherent set of prerequisites aligned with the PRD readiness model:
+ *   - legal/display name
+ *   - primary email
+ *   - primary phone
+ *   - billing address
+ *   - tax identifiers (taxId or gstin)
+ *
+ * Preview eligibility is independent (enabled => can preview).
+ * Invite eligibility requires email.
+ * Portal ready requires all core prerequisites.
  */
 function computeClientHubReadiness(
   lifecycle: { enabled: boolean } | null,
-  customer: { email: string | null }
+  customer: {
+    name: string | null;
+    email: string | null;
+    phone: string | null;
+    address: string | null;
+    taxId: string | null;
+    gstin: string | null;
+  }
 ): ClientHubCustomerReadiness {
   const enabled = lifecycle?.enabled ?? false;
   const blockers: string[] = [];
@@ -342,9 +367,24 @@ function computeClientHubReadiness(
     };
   }
 
-  // Enabled — check invite prerequisites
+  // Enabled — evaluate readiness prerequisites
+  if (!customer.name || customer.name.trim().length === 0) {
+    blockers.push("Customer name is required for portal identity");
+  }
   if (!customer.email || customer.email.trim().length === 0) {
     blockers.push("Customer email is required for portal invite");
+  }
+  if (!customer.phone || customer.phone.trim().length === 0) {
+    blockers.push("Customer phone is required for portal contact");
+  }
+  if (!customer.address || customer.address.trim().length === 0) {
+    blockers.push("Customer billing address is required for portal documents");
+  }
+  if (
+    (!customer.taxId || customer.taxId.trim().length === 0) &&
+    (!customer.gstin || customer.gstin.trim().length === 0)
+  ) {
+    blockers.push("Customer tax identifier (GSTIN or Tax ID) is required for portal compliance");
   }
 
   const hasBlockers = blockers.length > 0;
@@ -353,7 +393,7 @@ function computeClientHubReadiness(
     enabled: true,
     readinessStatus: hasBlockers ? "enabled_not_ready" : "enabled_ready",
     previewEligible: true,
-    inviteEligible: !hasBlockers,
+    inviteEligible: !(!customer.email || customer.email.trim().length === 0),
     portalReady: !hasBlockers,
     blockers,
   };
@@ -422,7 +462,7 @@ export async function enableClientHubForCustomer(customerId: string) {
 
     const customer = await db.customer.findFirst({
       where: { id: customerId, organizationId: orgId },
-      select: { id: true },
+      select: { id: true, name: true },
     });
 
     if (!customer) {
@@ -446,6 +486,15 @@ export async function enableClientHubForCustomer(customerId: string) {
       },
     });
 
+    void logAudit({
+      orgId,
+      actorId: userId,
+      action: "client_hub.enabled",
+      entityType: "ClientHubCustomerLifecycle",
+      entityId: customerId,
+      metadata: { customerName: customer.name },
+    });
+
     revalidatePath("/app/settings/portal/client-hub");
     return { success: true };
   } catch (error) {
@@ -461,7 +510,7 @@ export async function enableClientHubForCustomer(customerId: string) {
  */
 export async function disableClientHubForCustomer(customerId: string) {
   try {
-    const { orgId, role } = await requireOrgContext();
+    const { orgId, role, userId } = await requireOrgContext();
 
     if (role !== "admin" && role !== "owner") {
       return { success: false, error: "Only administrators can disable Client Hub for customers." };
@@ -469,7 +518,7 @@ export async function disableClientHubForCustomer(customerId: string) {
 
     const customer = await db.customer.findFirst({
       where: { id: customerId, organizationId: orgId },
-      select: { id: true },
+      select: { id: true, name: true },
     });
 
     if (!customer) {
@@ -490,6 +539,15 @@ export async function disableClientHubForCustomer(customerId: string) {
         enabledAt: null,
         enabledByUserId: null,
       },
+    });
+
+    void logAudit({
+      orgId,
+      actorId: userId,
+      action: "client_hub.disabled",
+      entityType: "ClientHubCustomerLifecycle",
+      entityId: customerId,
+      metadata: { customerName: customer.name },
     });
 
     revalidatePath("/app/settings/portal/client-hub");

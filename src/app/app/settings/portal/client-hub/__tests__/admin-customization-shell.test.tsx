@@ -542,4 +542,108 @@ describe("ClientHubCustomizationPage", () => {
     expect(screen.getByText(/portal not ready/i)).toBeInTheDocument();
     expect(screen.getByText(/readiness blockers/i)).toBeInTheDocument();
   });
+
+  it("preserves prior client lifecycle when switching to another client fails", async () => {
+    render(<ClientHubCustomizationPage />);
+    await screen.findByRole("tab", { name: /branding/i });
+
+    // 1. Successfully switch to first client (cust_123) — enabled & ready
+    vi.mocked(getClientOverrideEditorState).mockResolvedValueOnce({
+      success: true,
+      customer: { id: "cust_123", name: "Acme Client", email: "client@acme.com" },
+      orgDefault: mockDefaultConfig,
+      overrideConfig: {},
+      effectiveConfig: mockDefaultConfig,
+    });
+    vi.mocked(getClientHubCustomerLifecycle).mockResolvedValueOnce({
+      success: true,
+      customer: { id: "cust_123", name: "Acme Client", email: "client@acme.com" },
+      lifecycle: { enabled: true, enabledAt: new Date(), disabledAt: null, enabledByUserId: "user-1" },
+      readiness: {
+        enabled: true,
+        readinessStatus: "enabled_ready",
+        previewEligible: true,
+        inviteEligible: true,
+        portalReady: true,
+        blockers: [],
+      },
+    });
+
+    const select = screen.getByLabelText(/customization target scope/i);
+    fireEvent.change(select, { target: { value: "cust_123" } });
+
+    await screen.findByText(/client-specific override mode/i);
+    expect(screen.getByText(/enabled & ready/i)).toBeInTheDocument();
+
+    // 2. Attempt to switch to second client (cust_456) — override fails, lifecycle succeeds
+    vi.mocked(getClientOverrideEditorState).mockResolvedValueOnce({
+      success: false,
+      error: "Failed to load client override settings",
+    });
+    vi.mocked(getClientHubCustomerLifecycle).mockResolvedValueOnce({
+      success: true,
+      customer: { id: "cust_456", name: "Beta Corp", email: "beta@corp.com" },
+      lifecycle: { enabled: false, enabledAt: null, disabledAt: new Date(), enabledByUserId: null },
+      readiness: {
+        enabled: false,
+        readinessStatus: "disabled",
+        previewEligible: false,
+        inviteEligible: false,
+        portalReady: false,
+        blockers: ["Client Hub is not enabled for this customer"],
+      },
+    });
+
+    fireEvent.change(select, { target: { value: "cust_456" } });
+
+    // Wait for loading to finish
+    await screen.findByText(/client-specific override mode/i);
+
+    // Should still show cust_123's lifecycle (enabled & ready), not cust_456's disabled state
+    const selectAfter = screen.getByLabelText(/customization target scope/i);
+    expect(selectAfter).toHaveValue("cust_123");
+    expect(screen.getByText(/enabled & ready/i)).toBeInTheDocument();
+    expect(screen.queryByText(/disabled/i)).not.toBeInTheDocument();
+  });
+
+  it("does not show lifecycle from a failed org-to-client switch", async () => {
+    render(<ClientHubCustomizationPage />);
+    await screen.findByRole("tab", { name: /branding/i });
+
+    // Confirm org-default mode with no lifecycle panel
+    expect(screen.getByText(/organization default settings/i)).toBeInTheDocument();
+    expect(screen.queryByText(/client hub status/i)).not.toBeInTheDocument();
+
+    // Attempt to switch to client where override fails but lifecycle succeeds
+    vi.mocked(getClientOverrideEditorState).mockResolvedValueOnce({
+      success: false,
+      error: "Failed to load client override settings",
+    });
+    vi.mocked(getClientHubCustomerLifecycle).mockResolvedValueOnce({
+      success: true,
+      customer: { id: "cust_123", name: "Acme Client", email: "client@acme.com" },
+      lifecycle: { enabled: true, enabledAt: new Date(), disabledAt: null, enabledByUserId: "user-1" },
+      readiness: {
+        enabled: true,
+        readinessStatus: "enabled_ready",
+        previewEligible: true,
+        inviteEligible: true,
+        portalReady: true,
+        blockers: [],
+      },
+    });
+
+    const select = screen.getByLabelText(/customization target scope/i);
+    fireEvent.change(select, { target: { value: "cust_123" } });
+
+    // Wait for loading spinner to disappear and shell to reappear
+    await screen.findByLabelText(/customization target scope/i);
+
+    // Should remain in org-default mode without a lifecycle panel
+    const selectAfter = screen.getByLabelText(/customization target scope/i);
+    expect(selectAfter).toHaveValue("");
+    expect(screen.getByText(/organization default settings/i)).toBeInTheDocument();
+    expect(screen.queryByText(/client hub status/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/enabled & ready/i)).not.toBeInTheDocument();
+  });
 });
