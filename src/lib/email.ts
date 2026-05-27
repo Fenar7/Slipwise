@@ -10,9 +10,9 @@ interface SendEmailOptions {
 
 export async function sendEmail({ to, subject, html }: SendEmailOptions): Promise<void> {
   if (!resend) {
-    console.log(`[EMAIL DEV] To: ${to} | Subject: ${subject}`);
-    console.log(`[EMAIL DEV] Body preview: ${html.substring(0, 100)}...`);
-    return;
+    throw new Error(
+      "Email provider is not configured. Set RESEND_API_KEY environment variable to send emails."
+    );
   }
   await resend.emails.send({
     from: process.env.RESEND_FROM_EMAIL ?? "noreply@slipwise.app",

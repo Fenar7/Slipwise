@@ -9,7 +9,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react";
 import ClientHubCustomizationPage from "../page";
-import { getClientHubOrgConfig, getClientOverrideEditorState, getClientHubCustomers, getClientHubCustomerAdminState, disableClientHubForCustomer } from "@/app/app/actions/client-hub-actions";
+import { getClientHubOrgConfig, getClientOverrideEditorState, getClientHubCustomers, getClientHubCustomerAdminState, disableClientHubForCustomer, resendClientHubInvite } from "@/app/app/actions/client-hub-actions";
 
 beforeEach(() => {
   cleanup();
@@ -1050,5 +1050,67 @@ describe("ClientHubCustomizationPage", () => {
     await screen.findByText(/disabled/i);
     expect(screen.queryByRole("button", { name: /copy hub link/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /resend invite/i })).not.toBeInTheDocument();
+  });
+
+  it("updates invite state panel after resend invite succeeds", async () => {
+    render(<ClientHubCustomizationPage />);
+    await screen.findByRole("tab", { name: /branding/i });
+
+    vi.mocked(getClientOverrideEditorState).mockResolvedValueOnce({
+      success: true,
+      customer: { id: "cust_123", name: "Acme Client", email: "client@acme.com" },
+      orgDefault: mockDefaultConfig,
+      overrideConfig: {},
+      effectiveConfig: mockDefaultConfig,
+    });
+    vi.mocked(getClientHubCustomerAdminState).mockResolvedValueOnce({
+      success: true,
+      customer: { id: "cust_123", name: "Acme Client", email: "client@acme.com" },
+      adminState: {
+        enabled: true,
+        readinessStatus: "enabled_ready",
+        previewEligible: true,
+        inviteEligible: true,
+        portalReady: true,
+        latestInviteSentAt: "2026-05-20T10:00:00.000Z",
+        latestInviteEmail: "client@acme.com",
+        inviteState: "sent",
+        inviteSentCount: 1,
+        publicAccessHandle: "handle-abc",
+        canonicalHubUrl: "https://app.slipwise.app/portal/acme/client-hub?c=handle-abc",
+        blockers: [],
+      },
+    });
+
+    const select = screen.getByLabelText(/customization target scope/i);
+    fireEvent.change(select, { target: { value: "cust_123" } });
+    await screen.findByText(/client-specific override mode/i);
+    expect(screen.getByText(/invite sent/i)).toBeInTheDocument();
+    expect(screen.getByText(/total invites sent: 1/i)).toBeInTheDocument();
+
+    // Resend and refresh with updated state
+    vi.mocked(resendClientHubInvite).mockResolvedValueOnce({ success: true });
+    vi.mocked(getClientHubCustomerAdminState).mockResolvedValueOnce({
+      success: true,
+      customer: { id: "cust_123", name: "Acme Client", email: "client@acme.com" },
+      adminState: {
+        enabled: true,
+        readinessStatus: "enabled_ready",
+        previewEligible: true,
+        inviteEligible: true,
+        portalReady: true,
+        latestInviteSentAt: "2026-05-27T12:00:00.000Z",
+        latestInviteEmail: "client@acme.com",
+        inviteState: "resent",
+        inviteSentCount: 2,
+        publicAccessHandle: "handle-abc",
+        canonicalHubUrl: "https://app.slipwise.app/portal/acme/client-hub?c=handle-abc",
+        blockers: [],
+      },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /resend invite/i }));
+    await screen.findByText(/total invites sent: 2/i);
+    expect(screen.getByText(/invite resent/i)).toBeInTheDocument();
   });
 });

@@ -756,6 +756,26 @@ describe("Client Hub Per-Client Overrides & Resolver", () => {
       expect(mockSendEmail).not.toHaveBeenCalled();
     });
 
+    it("succeeds enablement but does not persist invite state when email delivery fails", async () => {
+      setupAuth();
+      mockDb.customer.findFirst.mockResolvedValue({ id: CUSTOMER_ID, name: "Alice Corp", email: "alice@test.com" });
+      mockDb.clientHubCustomerLifecycle.findUnique.mockResolvedValue(null);
+      mockDb.organization.findUnique.mockResolvedValue({ slug: "acme", name: "Acme" });
+      mockSendEmail.mockRejectedValue(new Error("Email provider is not configured"));
+
+      const res = await enableClientHubForCustomer(CUSTOMER_ID);
+      expect(res.success).toBe(true);
+      expect(res.inviteSent).toBe(false);
+      expect(res.inviteError).toContain("could not be delivered");
+      // No invite-success transaction should run when delivery fails
+      expect(mockDb._tx.clientHubCustomerLifecycle.update).not.toHaveBeenCalled();
+      expect(mockDb._tx.auditLog.create).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ action: "client_hub.invite_sent" }),
+        })
+      );
+    });
+
     it("preserves existing publicAccessHandle on re-enable", async () => {
       setupAuth();
       mockDb.customer.findFirst.mockResolvedValue({ id: CUSTOMER_ID, name: "Alice Corp", email: "alice@test.com" });

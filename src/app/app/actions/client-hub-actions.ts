@@ -632,7 +632,11 @@ export async function enableClientHubForCustomer(customerId: string) {
     const hasEmail = !!(customer.email && customer.email.trim().length > 0);
     if (hasEmail && org) {
       try {
-        const url = buildCanonicalHubUrl(org.slug);
+        const lifecycleRecord = await db.clientHubCustomerLifecycle.findUnique({
+          where: { customerId },
+          select: { publicAccessHandle: true },
+        });
+        const url = buildCanonicalHubUrl(org.slug, lifecycleRecord?.publicAccessHandle);
         await sendEmail({
           to: customer.email,
           subject: `Welcome to ${org.name} Client Hub`,
