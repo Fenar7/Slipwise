@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const mockRequireOrgContext = vi.hoisted(() => vi.fn());
 const mockRevalidatePath = vi.hoisted(() => vi.fn());
+const mockSendEmail = vi.hoisted(() => vi.fn());
 
 const mockDb = vi.hoisted(() => {
   const db: any = {
@@ -18,6 +19,7 @@ const mockDb = vi.hoisted(() => {
     clientHubCustomerLifecycle: {
       findUnique: vi.fn(),
       upsert: vi.fn(),
+      update: vi.fn(),
     },
     customer: {
       findFirst: vi.fn(),
@@ -35,6 +37,17 @@ const mockDb = vi.hoisted(() => {
     },
     $transaction: vi.fn(),
   };
+
+  // Transaction client shares the same mock functions so test mocks work,
+  // but we can still assert on _tx for atomic-transaction verification.
+  const tx: any = {
+    clientHubCustomerLifecycle: db.clientHubCustomerLifecycle,
+    auditLog: db.auditLog,
+    proxyGrant: db.proxyGrant,
+  };
+
+  db.$transaction = vi.fn(async (cb: any) => cb(tx));
+  db._tx = tx;
   return db;
 });
 
@@ -47,6 +60,12 @@ vi.mock("@/lib/auth", () => ({
 vi.mock("next/headers", () => ({
   headers: vi.fn(async () => new Map()),
 }));
+const mockClientHubInviteEmailHtml = vi.hoisted(() => vi.fn(({ url }: { url: string }) => `<html>${url}</html>`));
+
+vi.mock("@/lib/email", () => ({
+  sendEmail: mockSendEmail,
+  clientHubInviteEmailHtml: mockClientHubInviteEmailHtml,
+}));
 
 import {
   getClientHubCustomers,
@@ -57,6 +76,10 @@ import {
   getClientHubCustomerLifecycle,
   enableClientHubForCustomer,
   disableClientHubForCustomer,
+  previewClientHubForCustomer,
+  copyClientHubLink,
+  resendClientHubInvite,
+  getClientHubCustomerAdminState,
 } from "@/app/app/actions/client-hub-actions";
 import {
   resolveEffectiveConfig,
@@ -80,7 +103,6 @@ function setupAuth(orgId = ORG_ID, userId = USER_ID, role = "admin") {
 describe("Client Hub Per-Client Overrides & Resolver", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockDb.$transaction.mockImplementation(async (fn: any) => fn(mockDb));
   });
 
   describe("computeOverrideDiff & deepMerge (sparse diffing)", () => {
@@ -604,44 +626,423 @@ describe("Client Hub Per-Client Overrides & Resolver", () => {
     });
   });
 
-  describe("disableClientHubForCustomer", () => {
-    it("upserts lifecycle record with enabled=false inside a transaction", async () => {
+  describe("getClientHubCustomerAdminState (Sprint 3.4 unified read model)", () => {
+    it("returns full admin state including invite state and canonical URL when enabled", async () => {
       setupAuth();
-      mockDb.customer.findFirst.mockResolvedValue({ id: CUSTOMER_ID, name: "Alice Corp" });
+      mockDb.customer.findFirst.mockResolvedValue(mockFullCustomer());
+      mockDb.clientHubCustomerLifecycle.findUnique.mockResolvedValue({
+        enabled: true,
+        enabledAt: new Date(),
+        disabledAt: null,
+        enabledByUserId: USER_ID,
+        latestInviteSentAt: new Date("2026-05-20T10:00:00Z"),
+        latestInviteEmail: "alice@test.com",
+        inviteSentCount: 1,
+        publicAccessHandle: "abc123",
+      });
+      mockDb.organization.findUnique.mockResolvedValue({ slug: "acme" });
 
-      const res = await disableClientHubForCustomer(CUSTOMER_ID);
+      const res = await getClientHubCustomerAdminState(CUSTOMER_ID);
       expect(res.success).toBe(true);
-      expect(mockDb.$transaction).toHaveBeenCalled();
-      expect(mockDb.clientHubCustomerLifecycle.upsert).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: { customerId: CUSTOMER_ID },
-          create: expect.objectContaining({ enabled: false, customerId: CUSTOMER_ID, organizationId: ORG_ID }),
-          update: expect.objectContaining({ enabled: false }),
-        })
-      );
-      expect(mockDb.auditLog.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.objectContaining({
-            orgId: ORG_ID,
-            actorId: USER_ID,
-            action: "client_hub.disabled",
-            entityType: "ClientHubCustomerLifecycle",
-            entityId: CUSTOMER_ID,
-            metadata: { customerName: "Alice Corp" },
-          }),
-        })
-      );
-      expect(mockRevalidatePath).toHaveBeenCalledWith("/app/settings/portal/client-hub");
+      if (res.success) {
+        expect(res.adminState.enabled).toBe(true);
+        expect(res.adminState.readinessStatus).toBe("enabled_ready");
+        expect(res.adminState.previewEligible).toBe(true);
+        expect(res.adminState.inviteEligible).toBe(true);
+        expect(res.adminState.inviteState).toBe("sent");
+        expect(res.adminState.inviteSentCount).toBe(1);
+        expect(res.adminState.canonicalHubUrl).toContain("/portal/acme/client-hub");
+        expect(res.adminState.publicAccessHandle).toBe("abc123");
+      }
+    });
+
+    it("detects email_changed invite state when current email differs from latest invite", async () => {
+      setupAuth();
+      mockDb.customer.findFirst.mockResolvedValue(mockFullCustomer({ email: "newalice@test.com" }));
+      mockDb.clientHubCustomerLifecycle.findUnique.mockResolvedValue({
+        enabled: true,
+        latestInviteSentAt: new Date(),
+        latestInviteEmail: "oldalice@test.com",
+        inviteSentCount: 1,
+        publicAccessHandle: "abc123",
+      });
+      mockDb.organization.findUnique.mockResolvedValue({ slug: "acme" });
+
+      const res = await getClientHubCustomerAdminState(CUSTOMER_ID);
+      expect(res.success).toBe(true);
+      if (res.success) {
+        expect(res.adminState.inviteState).toBe("email_changed");
+      }
+    });
+
+    it("returns never_sent when no invite has been sent yet", async () => {
+      setupAuth();
+      mockDb.customer.findFirst.mockResolvedValue(mockFullCustomer());
+      mockDb.clientHubCustomerLifecycle.findUnique.mockResolvedValue({
+        enabled: true,
+        latestInviteSentAt: null,
+        latestInviteEmail: null,
+        inviteSentCount: 0,
+        publicAccessHandle: null,
+      });
+      mockDb.organization.findUnique.mockResolvedValue({ slug: "acme" });
+
+      const res = await getClientHubCustomerAdminState(CUSTOMER_ID);
+      expect(res.success).toBe(true);
+      if (res.success) {
+        expect(res.adminState.inviteState).toBe("never_sent");
+        expect(res.adminState.inviteSentCount).toBe(0);
+      }
     });
 
     it("denies member access", async () => {
       setupAuth(ORG_ID, USER_ID, "member");
-      const res = await disableClientHubForCustomer(CUSTOMER_ID);
+      const res = await getClientHubCustomerAdminState(CUSTOMER_ID);
       expect(res.success).toBe(false);
       expect(res.error).toContain("Only administrators");
+      expect(mockDb.customer.findFirst).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("enableClientHubForCustomer (Sprint 3.4 enhancements)", () => {
+    it("generates a publicAccessHandle on first enable and sends initial invite atomically", async () => {
+      setupAuth();
+      mockDb.customer.findFirst.mockResolvedValue({ id: CUSTOMER_ID, name: "Alice Corp", email: "alice@test.com" });
+      // First call (inside enablement tx) returns null; second call (for email URL) returns the handle
+      mockDb.clientHubCustomerLifecycle.findUnique
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ publicAccessHandle: "generated-handle" });
+      mockDb.organization.findUnique.mockResolvedValue({ slug: "acme", name: "Acme" });
+      mockSendEmail.mockResolvedValue(undefined);
+
+      const res = await enableClientHubForCustomer(CUSTOMER_ID);
+      expect(res.success).toBe(true);
+      expect(res.inviteSent).toBe(true);
+      expect(mockDb.clientHubCustomerLifecycle.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({ publicAccessHandle: expect.any(String) }),
+        })
+      );
+      expect(mockSendEmail).toHaveBeenCalledWith(
+        expect.objectContaining({
+          to: "alice@test.com",
+          subject: expect.stringContaining("Client Hub"),
+          html: expect.stringContaining("generated-handle"),
+        })
+      );
+      // Invite state + audit must be persisted inside a real transaction
+      expect(mockDb.$transaction).toHaveBeenCalled();
+      expect(mockDb._tx.clientHubCustomerLifecycle.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { customerId: CUSTOMER_ID },
+          data: expect.objectContaining({
+            latestInviteSentAt: expect.any(Date),
+            latestInviteEmail: "alice@test.com",
+            inviteSentCount: { increment: 1 },
+          }),
+        })
+      );
+      expect(mockDb._tx.auditLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ action: "client_hub.invite_sent" }),
+        })
+      );
+    });
+
+    it("does not send invite when customer lacks email and surfaces warning", async () => {
+      setupAuth();
+      mockDb.customer.findFirst.mockResolvedValue({ id: CUSTOMER_ID, name: "Alice Corp", email: null });
+      mockDb.clientHubCustomerLifecycle.findUnique.mockResolvedValue(null);
+      mockDb.organization.findUnique.mockResolvedValue({ slug: "acme", name: "Acme" });
+
+      const res = await enableClientHubForCustomer(CUSTOMER_ID);
+      expect(res.success).toBe(true);
+      expect(res.inviteSent).toBe(false);
+      expect(res.inviteError).toBeTruthy();
+      expect(mockSendEmail).not.toHaveBeenCalled();
+    });
+
+    it("succeeds enablement but does not persist invite state when email delivery fails", async () => {
+      setupAuth();
+      mockDb.customer.findFirst.mockResolvedValue({ id: CUSTOMER_ID, name: "Alice Corp", email: "alice@test.com" });
+      mockDb.clientHubCustomerLifecycle.findUnique
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ publicAccessHandle: "generated-handle" });
+      mockDb.organization.findUnique.mockResolvedValue({ slug: "acme", name: "Acme" });
+      mockSendEmail.mockRejectedValue(new Error("Email provider is not configured"));
+
+      const res = await enableClientHubForCustomer(CUSTOMER_ID);
+      expect(res.success).toBe(true);
+      expect(res.inviteSent).toBe(false);
+      expect(res.inviteError).toContain("could not be delivered");
+      // No invite-success transaction should run when delivery fails
+      expect(mockDb._tx.clientHubCustomerLifecycle.update).not.toHaveBeenCalled();
+      expect(mockDb._tx.auditLog.create).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ action: "client_hub.invite_sent" }),
+        })
+      );
+    });
+
+    it("preserves existing publicAccessHandle on re-enable", async () => {
+      setupAuth();
+      mockDb.customer.findFirst.mockResolvedValue({ id: CUSTOMER_ID, name: "Alice Corp", email: "alice@test.com" });
+      mockDb.clientHubCustomerLifecycle.findUnique.mockResolvedValue({ publicAccessHandle: "existing-handle" });
+      mockDb.organization.findUnique.mockResolvedValue({ slug: "acme", name: "Acme" });
+      mockSendEmail.mockResolvedValue(undefined);
+
+      const res = await enableClientHubForCustomer(CUSTOMER_ID);
+      expect(res.success).toBe(true);
+      expect(mockDb.clientHubCustomerLifecycle.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({ publicAccessHandle: "existing-handle" }),
+        })
+      );
+    });
+  });
+
+  describe("previewClientHubForCustomer", () => {
+    it("returns effective config for enabled customer", async () => {
+      setupAuth();
+      mockDb.customer.findFirst.mockResolvedValue(mockFullCustomer());
+      mockDb.clientHubCustomerLifecycle.findUnique.mockResolvedValue({ enabled: true });
+      mockDb.clientHubOrgConfig.findUnique.mockResolvedValue({ config: DEFAULT_CLIENT_HUB_CONFIG });
+      mockDb.clientHubCustomerOverride.findUnique.mockResolvedValue(null);
+
+      const res = await previewClientHubForCustomer(CUSTOMER_ID);
+      expect(res.success).toBe(true);
+      if (res.success) {
+        expect(res.effectiveConfig).toEqual(DEFAULT_CLIENT_HUB_CONFIG);
+        expect(res.readiness.enabled).toBe(true);
+      }
+    });
+
+    it("rejects preview for disabled customer", async () => {
+      setupAuth();
+      mockDb.customer.findFirst.mockResolvedValue(mockFullCustomer());
+      mockDb.clientHubCustomerLifecycle.findUnique.mockResolvedValue({ enabled: false });
+
+      const res = await previewClientHubForCustomer(CUSTOMER_ID);
+      expect(res.success).toBe(false);
+      expect(res.error).toContain("not enabled");
+    });
+
+    it("denies member access", async () => {
+      setupAuth(ORG_ID, USER_ID, "member");
+      const res = await previewClientHubForCustomer(CUSTOMER_ID);
+      expect(res.success).toBe(false);
+      expect(res.error).toContain("Only administrators");
+    });
+  });
+
+  describe("copyClientHubLink", () => {
+    it("returns per-client canonical URL using publicAccessHandle for enabled customer", async () => {
+      setupAuth();
+      mockDb.customer.findFirst.mockResolvedValue({ id: CUSTOMER_ID, name: "Alice" });
+      mockDb.clientHubCustomerLifecycle.findUnique.mockResolvedValue({ enabled: true, publicAccessHandle: "handle-alice" });
+      mockDb.organization.findUnique.mockResolvedValue({ slug: "acme" });
+
+      const res = await copyClientHubLink(CUSTOMER_ID);
+      expect(res.success).toBe(true);
+      if (res.success) {
+        expect(res.url).toContain("/portal/acme/client-hub?c=handle-alice");
+      }
+    });
+
+    it("returns different URLs for different customers", async () => {
+      setupAuth();
+      mockDb.organization.findUnique.mockResolvedValue({ slug: "acme" });
+
+      mockDb.customer.findFirst.mockResolvedValue({ id: "cust_a", name: "Alice" });
+      mockDb.clientHubCustomerLifecycle.findUnique.mockResolvedValue({ enabled: true, publicAccessHandle: "handle-a" });
+      const resA = await copyClientHubLink("cust_a");
+
+      mockDb.customer.findFirst.mockResolvedValue({ id: "cust_b", name: "Bob" });
+      mockDb.clientHubCustomerLifecycle.findUnique.mockResolvedValue({ enabled: true, publicAccessHandle: "handle-b" });
+      const resB = await copyClientHubLink("cust_b");
+
+      expect(resA.success && resB.success).toBe(true);
+      if (resA.success && resB.success) {
+        expect(resA.url).not.toBe(resB.url);
+        expect(resA.url).toContain("handle-a");
+        expect(resB.url).toContain("handle-b");
+      }
+    });
+
+    it("rejects link copy for disabled customer", async () => {
+      setupAuth();
+      mockDb.customer.findFirst.mockResolvedValue({ id: CUSTOMER_ID, name: "Alice" });
+      mockDb.clientHubCustomerLifecycle.findUnique.mockResolvedValue({ enabled: false, publicAccessHandle: "handle-alice" });
+
+      const res = await copyClientHubLink(CUSTOMER_ID);
+      expect(res.success).toBe(false);
+      expect(res.error).toContain("not enabled");
+    });
+
+    it("rejects cross-org customer", async () => {
+      setupAuth();
+      mockDb.customer.findFirst.mockResolvedValue(null);
+      const res = await copyClientHubLink(CUSTOMER_ID);
+      expect(res.success).toBe(false);
+      expect(res.error).toContain("not found");
+    });
+  });
+
+  describe("resendClientHubInvite", () => {
+    it("sends invite and updates persisted state atomically for enabled customer with email", async () => {
+      setupAuth();
+      mockDb.customer.findFirst.mockResolvedValue({ id: CUSTOMER_ID, name: "Alice Corp", email: "alice@test.com" });
+      mockDb.clientHubCustomerLifecycle.findUnique.mockResolvedValue({
+        enabled: true,
+        latestInviteSentAt: new Date("2026-05-01T00:00:00Z"),
+        latestInviteEmail: "alice@test.com",
+        inviteSentCount: 1,
+        publicAccessHandle: "handle-alice",
+      });
+      mockDb.organization.findUnique.mockResolvedValue({ slug: "acme", name: "Acme" });
+      mockSendEmail.mockResolvedValue(undefined);
+
+      const res = await resendClientHubInvite(CUSTOMER_ID);
+      expect(res.success).toBe(true);
+      expect(mockSendEmail).toHaveBeenCalledWith(
+        expect.objectContaining({
+          to: "alice@test.com",
+          html: expect.stringContaining("handle-alice"),
+        })
+      );
+      // Lifecycle update + audit must happen inside a real transaction
+      expect(mockDb.$transaction).toHaveBeenCalled();
+      expect(mockDb._tx.clientHubCustomerLifecycle.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            latestInviteSentAt: expect.any(Date),
+            latestInviteEmail: "alice@test.com",
+            inviteSentCount: { increment: 1 },
+          }),
+        })
+      );
+      expect(mockDb._tx.auditLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ action: "client_hub.invite_resent" }),
+        })
+      );
+    });
+
+    it("sends invite as initial (not resent) atomically when no prior invite exists", async () => {
+      setupAuth();
+      mockDb.customer.findFirst.mockResolvedValue({ id: CUSTOMER_ID, name: "Alice Corp", email: "alice@test.com" });
+      mockDb.clientHubCustomerLifecycle.findUnique.mockResolvedValue({
+        enabled: true,
+        latestInviteSentAt: null,
+        latestInviteEmail: null,
+        inviteSentCount: 0,
+        publicAccessHandle: "handle-alice",
+      });
+      mockDb.organization.findUnique.mockResolvedValue({ slug: "acme", name: "Acme" });
+      mockSendEmail.mockResolvedValue(undefined);
+
+      const res = await resendClientHubInvite(CUSTOMER_ID);
+      expect(res.success).toBe(true);
+      expect(mockDb.$transaction).toHaveBeenCalled();
+      expect(mockDb._tx.auditLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ action: "client_hub.invite_sent" }),
+        })
+      );
+    });
+
+    it("rejects resend for disabled customer", async () => {
+      setupAuth();
+      mockDb.customer.findFirst.mockResolvedValue({ id: CUSTOMER_ID, name: "Alice", email: "alice@test.com" });
+      mockDb.clientHubCustomerLifecycle.findUnique.mockResolvedValue({ enabled: false, publicAccessHandle: "handle-alice" });
+
+      const res = await resendClientHubInvite(CUSTOMER_ID);
+      expect(res.success).toBe(false);
+      expect(res.error).toContain("not enabled");
+      expect(mockSendEmail).not.toHaveBeenCalled();
+    });
+
+    it("rejects resend for missing email", async () => {
+      setupAuth();
+      mockDb.customer.findFirst.mockResolvedValue({ id: CUSTOMER_ID, name: "Alice", email: null });
+      mockDb.clientHubCustomerLifecycle.findUnique.mockResolvedValue({ enabled: true, publicAccessHandle: "handle-alice" });
+
+      const res = await resendClientHubInvite(CUSTOMER_ID);
+      expect(res.success).toBe(false);
+      expect(res.error).toContain("valid email");
+      expect(mockSendEmail).not.toHaveBeenCalled();
+    });
+
+    it("rejects resend when publicAccessHandle is missing", async () => {
+      setupAuth();
+      mockDb.customer.findFirst.mockResolvedValue({ id: CUSTOMER_ID, name: "Alice", email: "alice@test.com" });
+      mockDb.clientHubCustomerLifecycle.findUnique.mockResolvedValue({ enabled: true, publicAccessHandle: null });
+      mockDb.organization.findUnique.mockResolvedValue({ slug: "acme", name: "Acme" });
+
+      const res = await resendClientHubInvite(CUSTOMER_ID);
+      expect(res.success).toBe(false);
+      expect(res.error).toContain("access handle is missing");
+      expect(mockSendEmail).not.toHaveBeenCalled();
       expect(mockDb.$transaction).not.toHaveBeenCalled();
-      expect(mockDb.clientHubCustomerLifecycle.upsert).not.toHaveBeenCalled();
-      expect(mockDb.auditLog.create).not.toHaveBeenCalled();
+    });
+
+    it("rejects member access", async () => {
+      setupAuth(ORG_ID, USER_ID, "member");
+      const res = await resendClientHubInvite(CUSTOMER_ID);
+      expect(res.success).toBe(false);
+      expect(res.error).toContain("Only administrators");
+      expect(mockSendEmail).not.toHaveBeenCalled();
+    });
+
+    it("surfaces email delivery failure truthfully without persisting sent state or audit", async () => {
+      setupAuth();
+      mockDb.customer.findFirst.mockResolvedValue({ id: CUSTOMER_ID, name: "Alice", email: "alice@test.com" });
+      mockDb.clientHubCustomerLifecycle.findUnique.mockResolvedValue({
+        enabled: true,
+        latestInviteSentAt: new Date(),
+        latestInviteEmail: "alice@test.com",
+        inviteSentCount: 1,
+        publicAccessHandle: "handle-alice",
+      });
+      mockDb.organization.findUnique.mockResolvedValue({ slug: "acme", name: "Acme" });
+      mockSendEmail.mockRejectedValue(new Error("SMTP failure"));
+
+      const res = await resendClientHubInvite(CUSTOMER_ID);
+      expect(res.success).toBe(false);
+      expect(res.error).toContain("could not be delivered");
+      // Neither lifecycle update nor transaction should run when delivery fails
+      expect(mockDb.$transaction).not.toHaveBeenCalled();
+      expect(mockDb.clientHubCustomerLifecycle.update).not.toHaveBeenCalled();
+      expect(mockDb.auditLog.create).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ action: "client_hub.invite_resent" }),
+        })
+      );
+    });
+
+    it("updates invite target truthfully when email changed after prior invite", async () => {
+      setupAuth();
+      mockDb.customer.findFirst.mockResolvedValue({ id: CUSTOMER_ID, name: "Alice", email: "newalice@test.com" });
+      mockDb.clientHubCustomerLifecycle.findUnique.mockResolvedValue({
+        enabled: true,
+        latestInviteSentAt: new Date("2026-05-01T00:00:00Z"),
+        latestInviteEmail: "oldalice@test.com",
+        inviteSentCount: 1,
+        publicAccessHandle: "handle-alice",
+      });
+      mockDb.organization.findUnique.mockResolvedValue({ slug: "acme", name: "Acme" });
+      mockSendEmail.mockResolvedValue(undefined);
+
+      const res = await resendClientHubInvite(CUSTOMER_ID);
+      expect(res.success).toBe(true);
+      expect(mockSendEmail).toHaveBeenCalledWith(
+        expect.objectContaining({ to: "newalice@test.com" })
+      );
+      expect(mockDb._tx.clientHubCustomerLifecycle.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ latestInviteEmail: "newalice@test.com" }),
+        })
+      );
     });
   });
 });

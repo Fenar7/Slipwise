@@ -212,6 +212,8 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "tag.default_vendor_set": "Updated vendor default tags",
   "client_hub.enabled": "Enabled Client Hub for customer",
   "client_hub.disabled": "Disabled Client Hub for customer",
+  "client_hub.invite_sent": "Sent Client Hub invite to customer",
+  "client_hub.invite_resent": "Resent Client Hub invite to customer",
 };
 export function getAuditCategory(action: string): string {
   if (

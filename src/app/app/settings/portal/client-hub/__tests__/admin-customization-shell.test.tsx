@@ -9,7 +9,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react";
 import ClientHubCustomizationPage from "../page";
-import { getClientHubOrgConfig, getClientOverrideEditorState, getClientHubCustomers, getClientHubCustomerLifecycle } from "@/app/app/actions/client-hub-actions";
+import { getClientHubOrgConfig, getClientOverrideEditorState, getClientHubCustomers, getClientHubCustomerAdminState, disableClientHubForCustomer, resendClientHubInvite } from "@/app/app/actions/client-hub-actions";
 
 beforeEach(() => {
   cleanup();
@@ -34,17 +34,22 @@ beforeEach(() => {
     overrideConfig: {},
     effectiveConfig: mockDefaultConfig,
   });
-  vi.mocked(getClientHubCustomerLifecycle).mockReset();
-  vi.mocked(getClientHubCustomerLifecycle).mockResolvedValue({
+  vi.mocked(getClientHubCustomerAdminState).mockReset();
+  vi.mocked(getClientHubCustomerAdminState).mockResolvedValue({
     success: true,
     customer: { id: "cust_123", name: "Acme Client", email: "client@acme.com" },
-    lifecycle: null,
-    readiness: {
+    adminState: {
       enabled: false,
       readinessStatus: "disabled",
       previewEligible: false,
       inviteEligible: false,
       portalReady: false,
+      latestInviteSentAt: null,
+      latestInviteEmail: null,
+      inviteState: "disabled",
+      inviteSentCount: 0,
+      publicAccessHandle: null,
+      canonicalHubUrl: null,
       blockers: ["Client Hub is not enabled for this customer"],
     },
   });
@@ -142,21 +147,41 @@ vi.mock("@/app/app/actions/client-hub-actions", () => ({
   }),
   updateClientHubCustomerOverride: vi.fn().mockResolvedValue({ success: true, isCleared: false }),
   clearClientHubCustomerOverride: vi.fn().mockResolvedValue({ success: true }),
-  getClientHubCustomerLifecycle: vi.fn().mockResolvedValue({
+  getClientHubCustomerAdminState: vi.fn().mockResolvedValue({
     success: true,
     customer: { id: "cust_123", name: "Acme Client", email: "client@acme.com" },
-    lifecycle: null,
-    readiness: {
+    adminState: {
       enabled: false,
       readinessStatus: "disabled",
       previewEligible: false,
       inviteEligible: false,
       portalReady: false,
+      latestInviteSentAt: null,
+      latestInviteEmail: null,
+      inviteState: "disabled",
+      inviteSentCount: 0,
+      publicAccessHandle: null,
+      canonicalHubUrl: null,
       blockers: ["Client Hub is not enabled for this customer"],
     },
   }),
   enableClientHubForCustomer: vi.fn().mockResolvedValue({ success: true }),
   disableClientHubForCustomer: vi.fn().mockResolvedValue({ success: true }),
+  previewClientHubForCustomer: vi.fn().mockResolvedValue({
+    success: true,
+    customer: { id: "cust_123", name: "Acme Client", email: "client@acme.com" },
+    effectiveConfig: mockDefaultConfig,
+    readiness: {
+      enabled: true,
+      readinessStatus: "enabled_ready",
+      previewEligible: true,
+      inviteEligible: true,
+      portalReady: true,
+      blockers: [],
+    },
+  }),
+  copyClientHubLink: vi.fn().mockResolvedValue({ success: true, url: "https://app.slipwise.app/portal/acme/client-hub?c=handle-abc" }),
+  resendClientHubInvite: vi.fn().mockResolvedValue({ success: true }),
 }));
 
 describe("ClientHubCustomizationPage", () => {
@@ -438,16 +463,21 @@ describe("ClientHubCustomizationPage", () => {
       overrideConfig: {},
       effectiveConfig: mockDefaultConfig,
     });
-    vi.mocked(getClientHubCustomerLifecycle).mockResolvedValue({
+    vi.mocked(getClientHubCustomerAdminState).mockResolvedValue({
       success: true,
       customer: { id: "cust_123", name: "Acme Client", email: "client@acme.com" },
-      lifecycle: null,
-      readiness: {
+      adminState: {
         enabled: false,
         readinessStatus: "disabled",
         previewEligible: false,
         inviteEligible: false,
         portalReady: false,
+        latestInviteSentAt: null,
+        latestInviteEmail: null,
+        inviteState: "disabled",
+        inviteSentCount: 0,
+        publicAccessHandle: null,
+        canonicalHubUrl: null,
         blockers: ["Client Hub is not enabled for this customer"],
       },
     });
@@ -477,16 +507,21 @@ describe("ClientHubCustomizationPage", () => {
       effectiveConfig: mockDefaultConfig,
     });
 
-    vi.mocked(getClientHubCustomerLifecycle).mockResolvedValueOnce({
+    vi.mocked(getClientHubCustomerAdminState).mockResolvedValueOnce({
       success: true,
       customer: { id: "cust_123", name: "Acme Client", email: "client@acme.com" },
-      lifecycle: { enabled: true, enabledAt: new Date(), disabledAt: null, enabledByUserId: "user-1" },
-      readiness: {
+      adminState: {
         enabled: true,
         readinessStatus: "enabled_ready",
         previewEligible: true,
         inviteEligible: true,
         portalReady: true,
+        latestInviteSentAt: null,
+        latestInviteEmail: null,
+        inviteState: "never_sent",
+        inviteSentCount: 0,
+        publicAccessHandle: "handle-abc",
+        canonicalHubUrl: "https://app.slipwise.app/portal/acme/client-hub?c=handle-abc",
         blockers: [],
       },
     });
@@ -516,16 +551,21 @@ describe("ClientHubCustomizationPage", () => {
       effectiveConfig: mockDefaultConfig,
     });
 
-    vi.mocked(getClientHubCustomerLifecycle).mockResolvedValueOnce({
+    vi.mocked(getClientHubCustomerAdminState).mockResolvedValueOnce({
       success: true,
       customer: { id: "cust_123", name: "Acme Client", email: null },
-      lifecycle: { enabled: true, enabledAt: new Date(), disabledAt: null, enabledByUserId: "user-1" },
-      readiness: {
+      adminState: {
         enabled: true,
         readinessStatus: "enabled_not_ready",
         previewEligible: true,
         inviteEligible: false,
         portalReady: false,
+        latestInviteSentAt: null,
+        latestInviteEmail: null,
+        inviteState: "never_sent",
+        inviteSentCount: 0,
+        publicAccessHandle: "handle-abc",
+        canonicalHubUrl: "https://app.slipwise.app/portal/acme/client-hub?c=handle-abc",
         blockers: ["Customer email is required for portal invite"],
       },
     });
@@ -555,16 +595,21 @@ describe("ClientHubCustomizationPage", () => {
       overrideConfig: {},
       effectiveConfig: mockDefaultConfig,
     });
-    vi.mocked(getClientHubCustomerLifecycle).mockResolvedValueOnce({
+    vi.mocked(getClientHubCustomerAdminState).mockResolvedValueOnce({
       success: true,
       customer: { id: "cust_123", name: "Acme Client", email: "client@acme.com" },
-      lifecycle: { enabled: true, enabledAt: new Date(), disabledAt: null, enabledByUserId: "user-1" },
-      readiness: {
+      adminState: {
         enabled: true,
         readinessStatus: "enabled_ready",
         previewEligible: true,
         inviteEligible: true,
         portalReady: true,
+        latestInviteSentAt: null,
+        latestInviteEmail: null,
+        inviteState: "never_sent",
+        inviteSentCount: 0,
+        publicAccessHandle: "handle-abc",
+        canonicalHubUrl: "https://app.slipwise.app/portal/acme/client-hub?c=handle-abc",
         blockers: [],
       },
     });
@@ -580,16 +625,21 @@ describe("ClientHubCustomizationPage", () => {
       success: false,
       error: "Failed to load client override settings",
     });
-    vi.mocked(getClientHubCustomerLifecycle).mockResolvedValueOnce({
+    vi.mocked(getClientHubCustomerAdminState).mockResolvedValueOnce({
       success: true,
       customer: { id: "cust_456", name: "Beta Corp", email: "beta@corp.com" },
-      lifecycle: { enabled: false, enabledAt: null, disabledAt: new Date(), enabledByUserId: null },
-      readiness: {
+      adminState: {
         enabled: false,
         readinessStatus: "disabled",
         previewEligible: false,
         inviteEligible: false,
         portalReady: false,
+        latestInviteSentAt: null,
+        latestInviteEmail: null,
+        inviteState: "disabled",
+        inviteSentCount: 0,
+        publicAccessHandle: null,
+        canonicalHubUrl: null,
         blockers: ["Client Hub is not enabled for this customer"],
       },
     });
@@ -619,16 +669,21 @@ describe("ClientHubCustomizationPage", () => {
       success: false,
       error: "Failed to load client override settings",
     });
-    vi.mocked(getClientHubCustomerLifecycle).mockResolvedValueOnce({
+    vi.mocked(getClientHubCustomerAdminState).mockResolvedValueOnce({
       success: true,
       customer: { id: "cust_123", name: "Acme Client", email: "client@acme.com" },
-      lifecycle: { enabled: true, enabledAt: new Date(), disabledAt: null, enabledByUserId: "user-1" },
-      readiness: {
+      adminState: {
         enabled: true,
         readinessStatus: "enabled_ready",
         previewEligible: true,
         inviteEligible: true,
         portalReady: true,
+        latestInviteSentAt: null,
+        latestInviteEmail: null,
+        inviteState: "never_sent",
+        inviteSentCount: 0,
+        publicAccessHandle: "handle-abc",
+        canonicalHubUrl: "https://app.slipwise.app/portal/acme/client-hub?c=handle-abc",
         blockers: [],
       },
     });
@@ -645,5 +700,417 @@ describe("ClientHubCustomizationPage", () => {
     expect(screen.getByText(/organization default settings/i)).toBeInTheDocument();
     expect(screen.queryByText(/client hub status/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/enabled & ready/i)).not.toBeInTheDocument();
+  });
+
+  // ─── Sprint 3.4 — Admin Workflow UI Tests ─────────────────────────────────
+
+  it("renders preview, copy link, and resend invite buttons for enabled ready customer", async () => {
+    render(<ClientHubCustomizationPage />);
+    await screen.findByRole("tab", { name: /branding/i });
+
+    vi.mocked(getClientOverrideEditorState).mockResolvedValueOnce({
+      success: true,
+      customer: { id: "cust_123", name: "Acme Client", email: "client@acme.com" },
+      orgDefault: mockDefaultConfig,
+      overrideConfig: {},
+      effectiveConfig: mockDefaultConfig,
+    });
+    vi.mocked(getClientHubCustomerAdminState).mockResolvedValueOnce({
+      success: true,
+      customer: { id: "cust_123", name: "Acme Client", email: "client@acme.com" },
+      adminState: {
+        enabled: true,
+        readinessStatus: "enabled_ready",
+        previewEligible: true,
+        inviteEligible: true,
+        portalReady: true,
+        latestInviteSentAt: null,
+        latestInviteEmail: null,
+        inviteState: "never_sent",
+        inviteSentCount: 0,
+        publicAccessHandle: "handle-abc",
+        canonicalHubUrl: "https://app.slipwise.app/portal/acme/client-hub?c=handle-abc",
+        blockers: [],
+      },
+    });
+
+    const select = screen.getByLabelText(/customization target scope/i);
+    fireEvent.change(select, { target: { value: "cust_123" } });
+
+    await screen.findByText(/client-specific override mode/i);
+    expect(screen.getByText(/enabled & ready/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /preview as client/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /copy hub link/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /send invite/i })).toBeInTheDocument();
+  });
+
+  it("hides action buttons for disabled customer", async () => {
+    render(<ClientHubCustomizationPage />);
+    await screen.findByRole("tab", { name: /branding/i });
+
+    vi.mocked(getClientOverrideEditorState).mockResolvedValueOnce({
+      success: true,
+      customer: { id: "cust_123", name: "Acme Client", email: "client@acme.com" },
+      orgDefault: mockDefaultConfig,
+      overrideConfig: {},
+      effectiveConfig: mockDefaultConfig,
+    });
+    vi.mocked(getClientHubCustomerAdminState).mockResolvedValueOnce({
+      success: true,
+      customer: { id: "cust_123", name: "Acme Client", email: "client@acme.com" },
+      adminState: {
+        enabled: false,
+        readinessStatus: "disabled",
+        previewEligible: false,
+        inviteEligible: false,
+        portalReady: false,
+        latestInviteSentAt: null,
+        latestInviteEmail: null,
+        inviteState: "disabled",
+        inviteSentCount: 0,
+        publicAccessHandle: null,
+        canonicalHubUrl: null,
+        blockers: ["Client Hub is not enabled for this customer"],
+      },
+    });
+
+    const select = screen.getByLabelText(/customization target scope/i);
+    fireEvent.change(select, { target: { value: "cust_123" } });
+
+    await screen.findByText(/client-specific override mode/i);
+    expect(screen.getByText(/disabled/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /preview as client/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /copy hub link/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /resend invite/i })).not.toBeInTheDocument();
+  });
+
+  it("disables resend invite when customer is not invite eligible", async () => {
+    render(<ClientHubCustomizationPage />);
+    await screen.findByRole("tab", { name: /branding/i });
+
+    vi.mocked(getClientOverrideEditorState).mockResolvedValueOnce({
+      success: true,
+      customer: { id: "cust_123", name: "Acme Client", email: null },
+      orgDefault: mockDefaultConfig,
+      overrideConfig: {},
+      effectiveConfig: mockDefaultConfig,
+    });
+    vi.mocked(getClientHubCustomerAdminState).mockResolvedValueOnce({
+      success: true,
+      customer: { id: "cust_123", name: "Acme Client", email: null },
+      adminState: {
+        enabled: true,
+        readinessStatus: "enabled_not_ready",
+        previewEligible: true,
+        inviteEligible: false,
+        portalReady: false,
+        latestInviteSentAt: null,
+        latestInviteEmail: null,
+        inviteState: "never_sent",
+        inviteSentCount: 0,
+        publicAccessHandle: "handle-abc",
+        canonicalHubUrl: "https://app.slipwise.app/portal/acme/client-hub?c=handle-abc",
+        blockers: ["Customer email is required for portal invite"],
+      },
+    });
+
+    const select = screen.getByLabelText(/customization target scope/i);
+    fireEvent.change(select, { target: { value: "cust_123" } });
+
+    await screen.findByText(/client-specific override mode/i);
+    expect(screen.getByText(/enabled — not ready/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /preview as client/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /copy hub link/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /send invite/i })).toBeDisabled();
+  });
+
+  it("opens preview modal when preview button is clicked for enabled customer", async () => {
+    render(<ClientHubCustomizationPage />);
+    await screen.findByRole("tab", { name: /branding/i });
+
+    vi.mocked(getClientOverrideEditorState).mockResolvedValueOnce({
+      success: true,
+      customer: { id: "cust_123", name: "Acme Client", email: "client@acme.com" },
+      orgDefault: mockDefaultConfig,
+      overrideConfig: {},
+      effectiveConfig: mockDefaultConfig,
+    });
+    vi.mocked(getClientHubCustomerAdminState).mockResolvedValueOnce({
+      success: true,
+      customer: { id: "cust_123", name: "Acme Client", email: "client@acme.com" },
+      adminState: {
+        enabled: true,
+        readinessStatus: "enabled_ready",
+        previewEligible: true,
+        inviteEligible: true,
+        portalReady: true,
+        latestInviteSentAt: null,
+        latestInviteEmail: null,
+        inviteState: "never_sent",
+        inviteSentCount: 0,
+        publicAccessHandle: "handle-abc",
+        canonicalHubUrl: "https://app.slipwise.app/portal/acme/client-hub?c=handle-abc",
+        blockers: [],
+      },
+    });
+
+    const select = screen.getByLabelText(/customization target scope/i);
+    fireEvent.change(select, { target: { value: "cust_123" } });
+
+    await screen.findByText(/client-specific override mode/i);
+
+    const previewBtn = screen.getByRole("button", { name: /preview as client/i });
+    fireEvent.click(previewBtn);
+
+    await screen.findByRole("dialog");
+    expect(screen.getByText("Client Hub Preview")).toBeInTheDocument();
+  });
+
+  it("copies hub link to clipboard when copy link button is clicked", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+
+    render(<ClientHubCustomizationPage />);
+    await screen.findByRole("tab", { name: /branding/i });
+
+    vi.mocked(getClientOverrideEditorState).mockResolvedValueOnce({
+      success: true,
+      customer: { id: "cust_123", name: "Acme Client", email: "client@acme.com" },
+      orgDefault: mockDefaultConfig,
+      overrideConfig: {},
+      effectiveConfig: mockDefaultConfig,
+    });
+    vi.mocked(getClientHubCustomerAdminState).mockResolvedValueOnce({
+      success: true,
+      customer: { id: "cust_123", name: "Acme Client", email: "client@acme.com" },
+      adminState: {
+        enabled: true,
+        readinessStatus: "enabled_ready",
+        previewEligible: true,
+        inviteEligible: true,
+        portalReady: true,
+        latestInviteSentAt: null,
+        latestInviteEmail: null,
+        inviteState: "never_sent",
+        inviteSentCount: 0,
+        publicAccessHandle: "handle-abc",
+        canonicalHubUrl: "https://app.slipwise.app/portal/acme/client-hub?c=handle-abc",
+        blockers: [],
+      },
+    });
+
+    const select = screen.getByLabelText(/customization target scope/i);
+    fireEvent.change(select, { target: { value: "cust_123" } });
+
+    await screen.findByText(/client-specific override mode/i);
+
+    const copyBtn = screen.getByRole("button", { name: /copy hub link/i });
+    fireEvent.click(copyBtn);
+
+    await waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith("https://app.slipwise.app/portal/acme/client-hub?c=handle-abc");
+    });
+  });
+
+  // ─── Sprint 3.4 blocker fixes — truthful invite state hydration ───────────
+
+  it("shows truthful invite state panel after selecting a customer", async () => {
+    render(<ClientHubCustomizationPage />);
+    await screen.findByRole("tab", { name: /branding/i });
+
+    vi.mocked(getClientOverrideEditorState).mockResolvedValueOnce({
+      success: true,
+      customer: { id: "cust_123", name: "Acme Client", email: "client@acme.com" },
+      orgDefault: mockDefaultConfig,
+      overrideConfig: {},
+      effectiveConfig: mockDefaultConfig,
+    });
+    vi.mocked(getClientHubCustomerAdminState).mockResolvedValueOnce({
+      success: true,
+      customer: { id: "cust_123", name: "Acme Client", email: "client@acme.com" },
+      adminState: {
+        enabled: true,
+        readinessStatus: "enabled_ready",
+        previewEligible: true,
+        inviteEligible: true,
+        portalReady: true,
+        latestInviteSentAt: "2026-05-20T10:00:00.000Z",
+        latestInviteEmail: "client@acme.com",
+        inviteState: "sent",
+        inviteSentCount: 1,
+        publicAccessHandle: "handle-abc",
+        canonicalHubUrl: "https://app.slipwise.app/portal/acme/client-hub?c=handle-abc",
+        blockers: [],
+      },
+    });
+
+    const select = screen.getByLabelText(/customization target scope/i);
+    fireEvent.change(select, { target: { value: "cust_123" } });
+
+    await screen.findByText(/client-specific override mode/i);
+    expect(screen.getByText(/invite sent/i)).toBeInTheDocument();
+    expect(screen.getByText(/total invites sent: 1/i)).toBeInTheDocument();
+  });
+
+  it("shows email-changed state correctly after refresh", async () => {
+    render(<ClientHubCustomizationPage />);
+    await screen.findByRole("tab", { name: /branding/i });
+
+    vi.mocked(getClientOverrideEditorState).mockResolvedValueOnce({
+      success: true,
+      customer: { id: "cust_123", name: "Acme Client", email: "new@acme.com" },
+      orgDefault: mockDefaultConfig,
+      overrideConfig: {},
+      effectiveConfig: mockDefaultConfig,
+    });
+    vi.mocked(getClientHubCustomerAdminState).mockResolvedValueOnce({
+      success: true,
+      customer: { id: "cust_123", name: "Acme Client", email: "new@acme.com" },
+      adminState: {
+        enabled: true,
+        readinessStatus: "enabled_ready",
+        previewEligible: true,
+        inviteEligible: true,
+        portalReady: true,
+        latestInviteSentAt: "2026-05-20T10:00:00.000Z",
+        latestInviteEmail: "old@acme.com",
+        inviteState: "email_changed",
+        inviteSentCount: 1,
+        publicAccessHandle: "handle-abc",
+        canonicalHubUrl: "https://app.slipwise.app/portal/acme/client-hub?c=handle-abc",
+        blockers: [],
+      },
+    });
+
+    const select = screen.getByLabelText(/customization target scope/i);
+    fireEvent.change(select, { target: { value: "cust_123" } });
+
+    await screen.findByText(/client-specific override mode/i);
+    expect(screen.getByText(/email changed since last invite/i)).toBeInTheDocument();
+  });
+
+  it("clears action availability and shows disabled state after disable", async () => {
+    render(<ClientHubCustomizationPage />);
+    await screen.findByRole("tab", { name: /branding/i });
+
+    // First enable
+    vi.mocked(getClientOverrideEditorState).mockResolvedValueOnce({
+      success: true,
+      customer: { id: "cust_123", name: "Acme Client", email: "client@acme.com" },
+      orgDefault: mockDefaultConfig,
+      overrideConfig: {},
+      effectiveConfig: mockDefaultConfig,
+    });
+    vi.mocked(getClientHubCustomerAdminState).mockResolvedValueOnce({
+      success: true,
+      customer: { id: "cust_123", name: "Acme Client", email: "client@acme.com" },
+      adminState: {
+        enabled: true,
+        readinessStatus: "enabled_ready",
+        previewEligible: true,
+        inviteEligible: true,
+        portalReady: true,
+        latestInviteSentAt: null,
+        latestInviteEmail: null,
+        inviteState: "never_sent",
+        inviteSentCount: 0,
+        publicAccessHandle: "handle-abc",
+        canonicalHubUrl: "https://app.slipwise.app/portal/acme/client-hub?c=handle-abc",
+        blockers: [],
+      },
+    });
+
+    const select = screen.getByLabelText(/customization target scope/i);
+    fireEvent.change(select, { target: { value: "cust_123" } });
+    await screen.findByText(/client-specific override mode/i);
+    expect(screen.getByRole("button", { name: /copy hub link/i })).toBeInTheDocument();
+
+    // Then disable and refresh
+    vi.mocked(disableClientHubForCustomer).mockResolvedValueOnce({ success: true });
+    vi.mocked(getClientHubCustomerAdminState).mockResolvedValueOnce({
+      success: true,
+      customer: { id: "cust_123", name: "Acme Client", email: "client@acme.com" },
+      adminState: {
+        enabled: false,
+        readinessStatus: "disabled",
+        previewEligible: false,
+        inviteEligible: false,
+        portalReady: false,
+        latestInviteSentAt: null,
+        latestInviteEmail: null,
+        inviteState: "disabled",
+        inviteSentCount: 0,
+        publicAccessHandle: null,
+        canonicalHubUrl: null,
+        blockers: ["Client Hub is not enabled for this customer"],
+      },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /disable client hub/i }));
+    await screen.findByText(/disabled/i);
+    expect(screen.queryByRole("button", { name: /copy hub link/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /resend invite/i })).not.toBeInTheDocument();
+  });
+
+  it("updates invite state panel after resend invite succeeds", async () => {
+    render(<ClientHubCustomizationPage />);
+    await screen.findByRole("tab", { name: /branding/i });
+
+    vi.mocked(getClientOverrideEditorState).mockResolvedValueOnce({
+      success: true,
+      customer: { id: "cust_123", name: "Acme Client", email: "client@acme.com" },
+      orgDefault: mockDefaultConfig,
+      overrideConfig: {},
+      effectiveConfig: mockDefaultConfig,
+    });
+    vi.mocked(getClientHubCustomerAdminState).mockResolvedValueOnce({
+      success: true,
+      customer: { id: "cust_123", name: "Acme Client", email: "client@acme.com" },
+      adminState: {
+        enabled: true,
+        readinessStatus: "enabled_ready",
+        previewEligible: true,
+        inviteEligible: true,
+        portalReady: true,
+        latestInviteSentAt: "2026-05-20T10:00:00.000Z",
+        latestInviteEmail: "client@acme.com",
+        inviteState: "sent",
+        inviteSentCount: 1,
+        publicAccessHandle: "handle-abc",
+        canonicalHubUrl: "https://app.slipwise.app/portal/acme/client-hub?c=handle-abc",
+        blockers: [],
+      },
+    });
+
+    const select = screen.getByLabelText(/customization target scope/i);
+    fireEvent.change(select, { target: { value: "cust_123" } });
+    await screen.findByText(/client-specific override mode/i);
+    expect(screen.getByText(/invite sent/i)).toBeInTheDocument();
+    expect(screen.getByText(/total invites sent: 1/i)).toBeInTheDocument();
+
+    // Resend and refresh with updated state
+    vi.mocked(resendClientHubInvite).mockResolvedValueOnce({ success: true });
+    vi.mocked(getClientHubCustomerAdminState).mockResolvedValueOnce({
+      success: true,
+      customer: { id: "cust_123", name: "Acme Client", email: "client@acme.com" },
+      adminState: {
+        enabled: true,
+        readinessStatus: "enabled_ready",
+        previewEligible: true,
+        inviteEligible: true,
+        portalReady: true,
+        latestInviteSentAt: "2026-05-27T12:00:00.000Z",
+        latestInviteEmail: "client@acme.com",
+        inviteState: "resent",
+        inviteSentCount: 2,
+        publicAccessHandle: "handle-abc",
+        canonicalHubUrl: "https://app.slipwise.app/portal/acme/client-hub?c=handle-abc",
+        blockers: [],
+      },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /resend invite/i }));
+    await screen.findByText(/total invites sent: 2/i);
+    expect(screen.getByText(/invite resent/i)).toBeInTheDocument();
   });
 });

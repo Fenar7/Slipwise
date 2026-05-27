@@ -3,6 +3,7 @@
 import { useState, useCallback, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { Modal } from "@/components/ui/modal";
 import {
   Palette,
   LayoutDashboard,
@@ -17,6 +18,11 @@ import {
   RotateCcw,
   Send,
   Save,
+  Copy,
+  Mail,
+  ExternalLink,
+  CheckCircle2,
+  AlertCircle,
 } from "lucide-react";
 import type { ClientHubConfig } from "@/app/portal/[orgSlug]/client-hub/components/customization-contract";
 import { DEFAULT_CLIENT_HUB_CONFIG } from "./mock-config";
@@ -27,11 +33,14 @@ import {
   getClientOverrideEditorState,
   updateClientHubCustomerOverride,
   clearClientHubCustomerOverride,
-  getClientHubCustomerLifecycle,
+  getClientHubCustomerAdminState,
   enableClientHubForCustomer,
   disableClientHubForCustomer,
+  previewClientHubForCustomer,
+  copyClientHubLink,
+  resendClientHubInvite,
 } from "@/app/app/actions/client-hub-actions";
-import type { ClientHubCustomerReadiness } from "@/app/app/actions/client-hub-actions";
+import type { ClientHubCustomerReadiness, ClientHubCustomerAdminState } from "@/app/app/actions/client-hub-actions";
 import { toast } from "sonner";
 import { PreviewPane } from "./preview-pane";
 import {
@@ -71,11 +80,12 @@ const tabs: { id: TabId; label: string; icon: React.ElementType; previewPage?: s
   { id: "preview", label: "Preview", icon: Eye },
 ];
 
-function StatusBadge({ children, tone = "neutral" }: { children: React.ReactNode; tone?: "neutral" | "amber" | "success" }) {
+function StatusBadge({ children, tone = "neutral" }: { children: React.ReactNode; tone?: "neutral" | "amber" | "success" | "red" }) {
   const toneClasses = {
     neutral: "bg-slate-100 text-slate-600",
     amber: "bg-amber-50 text-amber-700",
     success: "bg-green-50 text-green-700",
+    red: "bg-red-50 text-red-700",
   };
   return (
     <span className={cn("rounded-full px-2 py-0.5 text-[0.7rem] font-medium uppercase tracking-wide", toneClasses[tone])}>
@@ -93,21 +103,34 @@ export function CustomizationShell() {
   const [isSaving, setIsSaving] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  // New Per-Client Override State
+  // Per-Client Override State
   const [customers, setCustomers] = useState<{ id: string; name: string; email: string | null }[]>([]);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>("");
   const [orgDefaultConfig, setOrgDefaultConfig] = useState<ClientHubConfig>(DEFAULT_CLIENT_HUB_CONFIG);
   const [overrideConfig, setOverrideConfig] = useState<any>({});
 
-  // Sprint 3.3 — Per-Client Lifecycle State
+  // Sprint 3.3 / 3.4 — Per-Client Lifecycle & Admin State
   const [lifecycleReadiness, setLifecycleReadiness] = useState<ClientHubCustomerReadiness | null>(null);
   const [isLoadingLifecycle, setIsLoadingLifecycle] = useState(false);
+
+  // Sprint 3.4 — Admin Workflow Actions
+  const [adminState, setAdminState] = useState<{
+    latestInviteSentAt: string | null;
+    latestInviteEmail: string | null;
+    inviteState: string;
+    inviteSentCount: number;
+    canonicalHubUrl: string | null;
+  } | null>(null);
+  const [isPreviewing, setIsPreviewing] = useState(false);
+  const [previewModalOpen, setPreviewModalOpen] = useState(false);
+  const [previewConfig, setPreviewConfig] = useState<ClientHubConfig | null>(null);
+  const [isCopyingLink, setIsCopyingLink] = useState(false);
+  const [isResendingInvite, setIsResendingInvite] = useState(false);
 
   useEffect(() => {
     async function loadConfig() {
       try {
         setIsLoading(true);
-        // Load org default config
         const orgRes = await getClientHubOrgConfig();
         if (orgRes.success) {
           setConfig(orgRes.config);
@@ -119,7 +142,6 @@ export function CustomizationShell() {
           return;
         }
 
-        // Load list of customers for picker
         const custRes = await getClientHubCustomers();
         if (custRes.success) {
           setCustomers(custRes.customers);
@@ -140,12 +162,30 @@ export function CustomizationShell() {
     setHasChanges(true);
   }, []);
 
+  const applyAdminState = useCallback((adminState: ClientHubCustomerAdminState) => {
+    const readiness: ClientHubCustomerReadiness = {
+      enabled: adminState.enabled,
+      readinessStatus: adminState.readinessStatus,
+      previewEligible: adminState.previewEligible,
+      inviteEligible: adminState.inviteEligible,
+      portalReady: adminState.portalReady,
+      blockers: adminState.blockers,
+    };
+    setLifecycleReadiness(readiness);
+    setAdminState({
+      latestInviteSentAt: adminState.latestInviteSentAt,
+      latestInviteEmail: adminState.latestInviteEmail,
+      inviteState: adminState.inviteState,
+      inviteSentCount: adminState.inviteSentCount,
+      canonicalHubUrl: adminState.canonicalHubUrl,
+    });
+  }, []);
+
   const handleModeChange = useCallback(async (customerId: string) => {
     setIsLoading(true);
 
     try {
       if (!customerId) {
-        // Switch to Org Defaults Mode
         const orgRes = await getClientHubOrgConfig();
         if (orgRes.success) {
           setConfig(orgRes.config);
@@ -154,14 +194,14 @@ export function CustomizationShell() {
           setSelectedCustomerId("");
           setHasChanges(false);
           setLifecycleReadiness(null);
+          setAdminState(null);
         } else {
           toast.error(orgRes.error);
         }
       } else {
-        // Switch to Client Override Mode
-        const [overrideRes, lifecycleRes] = await Promise.all([
+        const [overrideRes, adminRes] = await Promise.all([
           getClientOverrideEditorState(customerId),
-          getClientHubCustomerLifecycle(customerId),
+          getClientHubCustomerAdminState(customerId),
         ]);
 
         if (overrideRes.success) {
@@ -171,18 +211,15 @@ export function CustomizationShell() {
           setSelectedCustomerId(customerId);
           setHasChanges(false);
 
-          // Only apply lifecycle state when the target customer context
-          // was successfully adopted — keeps mode and lifecycle aligned.
-          if (lifecycleRes.success) {
-            setLifecycleReadiness(lifecycleRes.readiness);
+          if (adminRes.success && "adminState" in adminRes) {
+            applyAdminState(adminRes.adminState);
           } else {
-            console.warn("Failed to load lifecycle state:", lifecycleRes.error);
+            console.warn("Failed to load admin state:", adminRes.error);
             setLifecycleReadiness(null);
+            setAdminState(null);
           }
         } else {
           toast.error(overrideRes.error || "Failed to load client override settings");
-          // Preserve prior stable state (config, selectedCustomerId, lifecycle)
-          // so a failed switch does not leave the UI inconsistent.
         }
       }
     } catch (error) {
@@ -191,7 +228,7 @@ export function CustomizationShell() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [applyAdminState]);
 
   const handleReset = useCallback(() => {
     if (confirm("Reset current customization values to their defaults?")) {
@@ -226,7 +263,6 @@ export function CustomizationShell() {
             toast.success("Client hub specific override saved successfully.");
           }
           setHasChanges(false);
-          // Reload fresh effective configuration state
           const reload = await getClientOverrideEditorState(selectedCustomerId);
           if (reload.success) {
             setConfig(reload.effectiveConfig);
@@ -254,7 +290,6 @@ export function CustomizationShell() {
         if (result.success) {
           toast.success("Client configuration has been completely reset to org defaults.");
           setHasChanges(false);
-          // Reload
           const reload = await getClientOverrideEditorState(selectedCustomerId);
           if (reload.success) {
             setConfig(reload.effectiveConfig);
@@ -273,15 +308,26 @@ export function CustomizationShell() {
     }
   }, [selectedCustomerId]);
 
+  const refreshLifecycle = useCallback(async (customerId: string) => {
+    const refresh = await getClientHubCustomerAdminState(customerId);
+    if (refresh.success && "adminState" in refresh) {
+      applyAdminState(refresh.adminState);
+    }
+  }, [applyAdminState]);
+
   const handleEnableClientHub = useCallback(async () => {
     if (!selectedCustomerId) return;
     setIsLoadingLifecycle(true);
     try {
       const result = await enableClientHubForCustomer(selectedCustomerId);
       if (result.success) {
-        toast.success("Client Hub enabled for this customer");
-        const refresh = await getClientHubCustomerLifecycle(selectedCustomerId);
-        if (refresh.success) setLifecycleReadiness(refresh.readiness);
+        toast.success(result.inviteSent
+          ? "Client Hub enabled and invite sent."
+          : "Client Hub enabled for this customer.");
+        if (result.inviteError) {
+          toast.warning(result.inviteError);
+        }
+        await refreshLifecycle(selectedCustomerId);
       } else {
         toast.error(result.error || "Failed to enable Client Hub");
       }
@@ -291,7 +337,7 @@ export function CustomizationShell() {
     } finally {
       setIsLoadingLifecycle(false);
     }
-  }, [selectedCustomerId]);
+  }, [selectedCustomerId, refreshLifecycle]);
 
   const handleDisableClientHub = useCallback(async () => {
     if (!selectedCustomerId) return;
@@ -300,8 +346,7 @@ export function CustomizationShell() {
       const result = await disableClientHubForCustomer(selectedCustomerId);
       if (result.success) {
         toast.success("Client Hub disabled for this customer");
-        const refresh = await getClientHubCustomerLifecycle(selectedCustomerId);
-        if (refresh.success) setLifecycleReadiness(refresh.readiness);
+        await refreshLifecycle(selectedCustomerId);
       } else {
         toast.error(result.error || "Failed to disable Client Hub");
       }
@@ -311,7 +356,64 @@ export function CustomizationShell() {
     } finally {
       setIsLoadingLifecycle(false);
     }
+  }, [selectedCustomerId, refreshLifecycle]);
+
+  const handlePreviewClientHub = useCallback(async () => {
+    if (!selectedCustomerId) return;
+    setIsPreviewing(true);
+    try {
+      const result = await previewClientHubForCustomer(selectedCustomerId);
+      if (result.success) {
+        setPreviewConfig(result.effectiveConfig);
+        setPreviewModalOpen(true);
+      } else {
+        toast.error(result.error || "Preview failed.");
+      }
+    } catch (error) {
+      console.error("handlePreviewClientHub error:", error);
+      toast.error("Failed to load preview.");
+    } finally {
+      setIsPreviewing(false);
+    }
   }, [selectedCustomerId]);
+
+  const handleCopyLink = useCallback(async () => {
+    if (!selectedCustomerId) return;
+    setIsCopyingLink(true);
+    try {
+      const result = await copyClientHubLink(selectedCustomerId);
+      if (result.success) {
+        await navigator.clipboard.writeText(result.url);
+        toast.success("Hub link copied to clipboard.");
+      } else {
+        toast.error(result.error || "Failed to copy link.");
+      }
+    } catch (error) {
+      console.error("handleCopyLink error:", error);
+      toast.error("Failed to copy link.");
+    } finally {
+      setIsCopyingLink(false);
+    }
+  }, [selectedCustomerId]);
+
+  const handleResendInvite = useCallback(async () => {
+    if (!selectedCustomerId) return;
+    setIsResendingInvite(true);
+    try {
+      const result = await resendClientHubInvite(selectedCustomerId);
+      if (result.success) {
+        toast.success("Invite resent successfully.");
+        await refreshLifecycle(selectedCustomerId);
+      } else {
+        toast.error(result.error || "Failed to resend invite.");
+      }
+    } catch (error) {
+      console.error("handleResendInvite error:", error);
+      toast.error("Failed to resend invite.");
+    } finally {
+      setIsResendingInvite(false);
+    }
+  }, [selectedCustomerId, refreshLifecycle]);
 
   const isSectionOverridden = useCallback((sectionKey: keyof ClientHubConfig) => {
     if (!selectedCustomerId) return false;
@@ -439,9 +541,10 @@ export function CustomizationShell() {
           )}
         </div>
 
-        {/* Sprint 3.3 — Per-Client Lifecycle Status */}
+        {/* Sprint 3.4 — Per-Client Admin Workflow Panel */}
         {selectedCustomerId && (
-          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm space-y-4">
+            {/* Header row */}
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 <span className="text-xs font-semibold text-[var(--text-primary)]">Client Hub Status:</span>
@@ -494,8 +597,99 @@ export function CustomizationShell() {
               </div>
             </div>
 
+            {/* Admin actions row */}
+            {lifecycleReadiness?.enabled && (
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={handlePreviewClientHub}
+                  disabled={isPreviewing || !lifecycleReadiness.previewEligible}
+                  className="text-xs"
+                >
+                  <Eye className="mr-1.5 h-3.5 w-3.5" />
+                  {isPreviewing ? "Loading…" : "Preview as Client"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={handleCopyLink}
+                  disabled={isCopyingLink}
+                  className="text-xs"
+                >
+                  <Copy className="mr-1.5 h-3.5 w-3.5" />
+                  {isCopyingLink ? "Copied" : "Copy Hub Link"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={handleResendInvite}
+                  disabled={isResendingInvite || !lifecycleReadiness.inviteEligible}
+                  className="text-xs"
+                >
+                  <Mail className="mr-1.5 h-3.5 w-3.5" />
+                  {isResendingInvite ? "Sending…" : adminState?.inviteState === "never_sent" ? "Send Invite" : "Resend Invite"}
+                </Button>
+              </div>
+            )}
+
+            {/* Invite / access state */}
+            {adminState && lifecycleReadiness?.enabled && (
+              <div className="rounded-lg border border-slate-100 bg-slate-50 p-3 space-y-2">
+                <div className="flex flex-wrap items-center gap-3 text-xs">
+                  <div className="flex items-center gap-1.5">
+                    {adminState.inviteState === "sent" || adminState.inviteState === "resent" ? (
+                      <CheckCircle2 className="h-3.5 w-3.5 text-green-600" />
+                    ) : adminState.inviteState === "email_changed" ? (
+                      <AlertCircle className="h-3.5 w-3.5 text-amber-600" />
+                    ) : (
+                      <span className="h-3.5 w-3.5 rounded-full bg-slate-300" />
+                    )}
+                    <span className="font-medium text-[var(--text-primary)]">
+                      Invite state:
+                    </span>
+                    <span className={cn(
+                      adminState.inviteState === "sent" || adminState.inviteState === "resent"
+                        ? "text-green-700"
+                        : adminState.inviteState === "email_changed"
+                          ? "text-amber-700"
+                          : "text-slate-600"
+                    )}>
+                      {adminState.inviteState === "sent" && "Invite sent"}
+                      {adminState.inviteState === "resent" && "Invite resent"}
+                      {adminState.inviteState === "never_sent" && "Never sent"}
+                      {adminState.inviteState === "email_changed" && "Email changed since last invite"}
+                    </span>
+                  </div>
+                </div>
+                {adminState.latestInviteSentAt && (
+                  <div className="text-xs text-slate-600">
+                    Last invite: {new Date(adminState.latestInviteSentAt).toLocaleString()}
+                    {adminState.latestInviteEmail && (
+                      <span className="ml-1">to {adminState.latestInviteEmail}</span>
+                    )}
+                  </div>
+                )}
+                {adminState.inviteSentCount > 0 && (
+                  <div className="text-xs text-slate-600">
+                    Total invites sent: {adminState.inviteSentCount}
+                  </div>
+                )}
+                {adminState.canonicalHubUrl && (
+                  <div className="flex items-center gap-1.5 text-xs text-slate-600">
+                    <ExternalLink className="h-3 w-3" />
+                    <span className="truncate">{adminState.canonicalHubUrl}</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Readiness indicators */}
             {lifecycleReadiness && (
-              <div className="mt-3 flex flex-wrap gap-3 text-xs">
+              <div className="flex flex-wrap gap-3 text-xs">
                 <div className="flex items-center gap-1.5">
                   <span className={cn("h-2 w-2 rounded-full", lifecycleReadiness.previewEligible ? "bg-green-500" : "bg-slate-300")} />
                   <span className={lifecycleReadiness.previewEligible ? "text-green-700" : "text-slate-500"}>
@@ -614,7 +808,6 @@ export function CustomizationShell() {
           {activeTab === "products" && <ProductsSection config={config} onChange={handleConfigChange} />}
           {activeTab === "navigation" && <NavigationSection config={config} onChange={handleConfigChange} />}
           {activeTab === "preview" && (
-
             <div className="space-y-4">
               <SectionCard title="Preview Controls" description="Switch between client hub pages to preview your customizations.">
                 <div className="flex flex-wrap gap-2">
@@ -657,6 +850,46 @@ export function CustomizationShell() {
           </div>
         </div>
       </div>
+
+      {/* Preview Modal for customer-scoped effective preview */}
+      <Modal
+        open={previewModalOpen}
+        onClose={() => setPreviewModalOpen(false)}
+        title="Client Hub Preview"
+        subtitle="Effective client-facing hub for the selected customer."
+        size="xl"
+      >
+        <div className="space-y-3">
+          <div className="flex flex-wrap gap-2">
+            {tabs
+              .filter((t) => t.previewPage)
+              .map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => setActivePreviewPage(t.previewPage!)}
+                  className={cn(
+                    "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                    activePreviewPage === t.previewPage
+                      ? "bg-[var(--brand-cta)] text-white"
+                      : "border border-[var(--border-soft)] text-[var(--text-primary)] hover:bg-[var(--surface-subtle)]"
+                  )}
+                >
+                  {t.label}
+                </button>
+              ))}
+          </div>
+          <div className="h-[60vh] rounded-xl border border-[var(--border-soft)] overflow-hidden">
+            {previewConfig ? (
+              <PreviewPane config={previewConfig} previewPage={activePreviewPage} />
+            ) : (
+              <div className="flex h-full items-center justify-center text-xs text-[var(--text-muted)]">
+                Loading preview...
+              </div>
+            )}
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }
