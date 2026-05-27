@@ -31,19 +31,3 @@ export function trackTagDefaultsUpdated(entityType: "customer" | "vendor", tagCo
 export function trackBulkTaggingStarted(docType: "invoice" | "voucher", docCount: number) {
   trackEvent("tag_bulk_started", { doc_type: docType, doc_count: docCount }).catch(() => {});
 }
-
-// ─── Structured event recorder (used by tag-telemetry tests) ──────────────────
-
-export type TagEventPayload = {
-  event: string;
-  orgId: string;
-  tagId: string;
-  entityType?: string;
-  entityId?: string;
-  [key: string]: unknown;
-};
-
-export async function recordTagEvent(payload: TagEventPayload): Promise<void> {
-  if (process.env.NODE_ENV === "production") return;
-  console.log("[tag-telemetry]", JSON.stringify({ ...payload, timestamp: new Date().toISOString() }));
-}

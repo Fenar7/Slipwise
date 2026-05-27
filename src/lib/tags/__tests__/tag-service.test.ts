@@ -1,12 +1,4 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import type { ActionResult } from "../assignment-service";
-
-// TSC cannot narrow discriminated unions through expect(r.success).toBe(true).
-// This helper erases the type so .data and .error are always accessible in tests.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function unwrap<T>(r: ActionResult<T>): { success: boolean; data: T; error: string } {
-  return r as never;
-}
 
 const mocks = vi.hoisted(() => ({
   requireOrgContext: vi.fn(),
@@ -65,7 +57,7 @@ describe("createTag", () => {
     const tag = makeTag();
     mocks.documentTagCreate.mockResolvedValue(tag);
 
-    const result = unwrap(await createTag({ name: "Hotel Sarovar", color: "#3b82f6" }));
+    const result = await createTag({ name: "Hotel Sarovar", color: "#3b82f6" });
 
     expect(result.success).toBe(true);
     expect(result.data).toEqual(tag);
@@ -80,7 +72,7 @@ describe("createTag", () => {
     const tag = makeTag({ name: "  Mumbai Branch  ", slug: "mumbai-branch" });
     mocks.documentTagCreate.mockResolvedValue(tag);
 
-    const result = unwrap(await createTag({ name: "  Mumbai Branch  " }));
+    const result = await createTag({ name: "  Mumbai Branch  " });
 
     expect(result.success).toBe(true);
     expect(mocks.documentTagCreate).toHaveBeenCalledWith(
@@ -91,7 +83,7 @@ describe("createTag", () => {
   it("rejects empty name", async () => {
     mocks.requireRole.mockResolvedValue(ADMIN_CTX);
 
-    const result = unwrap(await createTag({ name: "   " }));
+    const result = await createTag({ name: "   " });
 
     expect(result.success).toBe(false);
     expect(result.error).toBe("Tag name is required");
@@ -100,7 +92,7 @@ describe("createTag", () => {
   it("rejects name with no alphanumeric characters", async () => {
     mocks.requireRole.mockResolvedValue(ADMIN_CTX);
 
-    const result = unwrap(await createTag({ name: "---!!!" }));
+    const result = await createTag({ name: "---!!!" });
 
     expect(result.success).toBe(false);
     expect(result.error).toBe("Tag name must contain at least one letter or number");
@@ -110,7 +102,7 @@ describe("createTag", () => {
     mocks.requireRole.mockResolvedValue(ADMIN_CTX);
     mocks.documentTagFindFirst.mockResolvedValue(makeTag({ slug: "hotel-sarovar" }));
 
-    const result = unwrap(await createTag({ name: "HOTEL SAROVAR" }));
+    const result = await createTag({ name: "HOTEL SAROVAR" });
 
     expect(result.success).toBe(false);
     expect(result.error).toBe("A tag with a similar name already exists in your organization");
@@ -123,7 +115,7 @@ describe("createTag", () => {
   it("requires admin role", async () => {
     mocks.requireRole.mockRejectedValue(new Error("Insufficient permissions"));
 
-    const result = unwrap(await createTag({ name: "Test" }));
+    const result = await createTag({ name: "Test" });
 
     expect(result.success).toBe(false);
     expect(result.error).toBe("Failed to create tag");
@@ -136,7 +128,7 @@ describe("listTags", () => {
     const tags = [makeTag(), makeTag({ id: "tag_002", name: "Wedding Season", slug: "wedding-season" })];
     mocks.documentTagFindMany.mockResolvedValue(tags);
 
-    const result = unwrap(await listTags());
+    const result = await listTags();
 
     expect(result.success).toBe(true);
     expect(result.data).toEqual(tags);
@@ -150,7 +142,7 @@ describe("listTags", () => {
     mocks.requireOrgContext.mockResolvedValue(MEMBER_CTX);
     mocks.documentTagFindMany.mockResolvedValue([]);
 
-    const result = unwrap(await listTags({ includeArchived: true }));
+    const result = await listTags({ includeArchived: true });
 
     expect(result.success).toBe(true);
     expect(mocks.documentTagFindMany).toHaveBeenCalledWith({
@@ -166,7 +158,7 @@ describe("getTag", () => {
     const tag = makeTag();
     mocks.documentTagFindFirst.mockResolvedValue(tag);
 
-    const result = unwrap(await getTag("tag_001"));
+    const result = await getTag("tag_001");
 
     expect(result.success).toBe(true);
     expect(result.data).toEqual(tag);
@@ -179,7 +171,7 @@ describe("getTag", () => {
     mocks.requireOrgContext.mockResolvedValue(MEMBER_CTX);
     mocks.documentTagFindFirst.mockResolvedValue(null);
 
-    const result = unwrap(await getTag("nonexistent"));
+    const result = await getTag("nonexistent");
 
     expect(result.success).toBe(false);
     expect(result.error).toBe("Tag not found");
@@ -189,7 +181,7 @@ describe("getTag", () => {
     mocks.requireOrgContext.mockResolvedValue(MEMBER_CTX);
     mocks.documentTagFindFirst.mockResolvedValue(null);
 
-    const result = unwrap(await getTag("tag_from_other_org"));
+    const result = await getTag("tag_from_other_org");
 
     expect(result.success).toBe(false);
     expect(result.error).toBe("Tag not found");
@@ -205,7 +197,7 @@ describe("renameTag", () => {
     const updated = makeTag({ name: "Hotel Grand", slug: "hotel-grand" });
     mocks.documentTagUpdate.mockResolvedValue(updated);
 
-    const result = unwrap(await renameTag("tag_001", { name: "Hotel Grand" }));
+    const result = await renameTag("tag_001", { name: "Hotel Grand" });
 
     expect(result.success).toBe(true);
     expect(result.data).toEqual(updated);
@@ -222,7 +214,7 @@ describe("renameTag", () => {
     const updated = makeTag({ name: "Hotel Sarovar", slug: "hotel-sarovar" });
     mocks.documentTagUpdate.mockResolvedValue(updated);
 
-    const result = unwrap(await renameTag("tag_001", { name: "Hotel Sarovar" }));
+    const result = await renameTag("tag_001", { name: "Hotel Sarovar" });
 
     expect(result.success).toBe(true);
     expect(mocks.documentTagUpdate).toHaveBeenCalledWith({
@@ -238,7 +230,7 @@ describe("renameTag", () => {
     const conflict = makeTag({ id: "tag_002", name: "New Name", slug: "new-name" });
     mocks.documentTagFindFirst.mockResolvedValueOnce(conflict);
 
-    const result = unwrap(await renameTag("tag_001", { name: "New Name" }));
+    const result = await renameTag("tag_001", { name: "New Name" });
 
     expect(result.success).toBe(false);
     expect(result.error).toBe("A tag with a similar name already exists in your organization");
@@ -248,7 +240,7 @@ describe("renameTag", () => {
     mocks.requireRole.mockResolvedValue(ADMIN_CTX);
     mocks.documentTagFindFirst.mockResolvedValue(null);
 
-    const result = unwrap(await renameTag("nonexistent", { name: "New" }));
+    const result = await renameTag("nonexistent", { name: "New" });
 
     expect(result.success).toBe(false);
     expect(result.error).toBe("Tag not found");
@@ -257,7 +249,7 @@ describe("renameTag", () => {
   it("requires admin role", async () => {
     mocks.requireRole.mockRejectedValue(new Error("Insufficient permissions"));
 
-    const result = unwrap(await renameTag("tag_001", { name: "New" }));
+    const result = await renameTag("tag_001", { name: "New" });
 
     expect(result.success).toBe(false);
     expect(result.error).toBe("Failed to rename tag");
@@ -272,7 +264,7 @@ describe("archiveTag", () => {
     const archived = makeTag({ isArchived: true });
     mocks.documentTagUpdate.mockResolvedValue(archived);
 
-    const result = unwrap(await archiveTag("tag_001"));
+    const result = await archiveTag("tag_001");
 
     expect(result.success).toBe(true);
     expect(result.data.isArchived).toBe(true);
@@ -286,7 +278,7 @@ describe("archiveTag", () => {
     mocks.requireRole.mockResolvedValue(ADMIN_CTX);
     mocks.documentTagFindFirst.mockResolvedValue(null);
 
-    const result = unwrap(await archiveTag("nonexistent"));
+    const result = await archiveTag("nonexistent");
 
     expect(result.success).toBe(false);
     expect(result.error).toBe("Tag not found");
@@ -295,7 +287,7 @@ describe("archiveTag", () => {
   it("requires admin role", async () => {
     mocks.requireRole.mockRejectedValue(new Error("Insufficient permissions"));
 
-    const result = unwrap(await archiveTag("tag_001"));
+    const result = await archiveTag("tag_001");
 
     expect(result.success).toBe(false);
     expect(result.error).toBe("Failed to archive tag");
@@ -310,7 +302,7 @@ describe("unarchiveTag", () => {
     const active = makeTag({ isArchived: false });
     mocks.documentTagUpdate.mockResolvedValue(active);
 
-    const result = unwrap(await unarchiveTag("tag_001"));
+    const result = await unarchiveTag("tag_001");
 
     expect(result.success).toBe(true);
     expect(result.data.isArchived).toBe(false);
@@ -324,7 +316,7 @@ describe("unarchiveTag", () => {
     mocks.requireRole.mockResolvedValue(ADMIN_CTX);
     mocks.documentTagFindFirst.mockResolvedValue(null);
 
-    const result = unwrap(await unarchiveTag("nonexistent"));
+    const result = await unarchiveTag("nonexistent");
 
     expect(result.success).toBe(false);
     expect(result.error).toBe("Tag not found");

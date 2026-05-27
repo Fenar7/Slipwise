@@ -100,7 +100,12 @@ export async function signMfaCookieEdge(
     enc.encode(`${header}.${body}`)
   );
 
-  const sigBase64 = Buffer.from(signature).toString("base64url");
+  const sigBase64 = btoa(
+    String.fromCharCode(...new Uint8Array(signature))
+  )
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=/g, "");
 
   return `${header}.${body}.${sigBase64}`;
 }

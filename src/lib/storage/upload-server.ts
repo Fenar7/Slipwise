@@ -122,13 +122,13 @@ export async function uploadFileServer(
   }
 
   const result: UploadResult = {
-    storageKey: data!.path,
+    storageKey: data.path,
   };
 
   if (bucket === "logos") {
     const { data: urlData } = supabase.storage
       .from(bucket)
-      .getPublicUrl(data!.path);
+      .getPublicUrl(data.path);
     result.publicUrl = urlData.publicUrl;
   }
 

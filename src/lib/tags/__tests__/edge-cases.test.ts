@@ -1,10 +1,4 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import type { ActionResult } from "../assignment-service";
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function unwrap<T>(r: ActionResult<T>): { success: boolean; data: T; error: string } {
-  return r as never;
-}
 
 const mocks = vi.hoisted(() => ({
   requireOrgContext: vi.fn(),
@@ -55,10 +49,6 @@ vi.mock("@/lib/audit", () => ({ logAudit: mocks.logAudit }));
 vi.mock("@/lib/tags/assignment-service", () => ({
   setCustomerDefaultTags: mocks.setCustomerDefaultTags,
   setVendorDefaultTags: mocks.setVendorDefaultTags,
-}));
-
-vi.mock("../../intel/reports/tag-analytics/actions", () => ({
-  getTagAnalytics: vi.fn().mockResolvedValue({ success: true, data: [] }),
 }));
 
 import { createTag, renameTag, archiveTag, unarchiveTag } from "../tag-service";
@@ -117,7 +107,7 @@ describe("archive preserves historical identity", () => {
     mocks.documentTagFindFirst.mockResolvedValue({ id: "tag_z", name: "Old Tag", orgId: ORG_ID });
     mocks.documentTagUpdate.mockResolvedValue({ id: "tag_z", name: "Old Tag", orgId: ORG_ID, slug: "old-tag", isArchived: true });
 
-    const result = unwrap(await archiveTag("tag_z"));
+    const result = await archiveTag("tag_z");
 
     expect(result.success).toBe(true);
     expect(result.success && result.data?.id).toBe("tag_z");
@@ -129,7 +119,7 @@ describe("archive preserves historical identity", () => {
       .mockResolvedValueOnce(null);
     mocks.documentTagUpdate.mockResolvedValue({ id: "tag_r", name: "New Name", orgId: ORG_ID, slug: "new-name" });
 
-    const result = unwrap(await renameTag("tag_r", { name: "New Name" }));
+    const result = await renameTag("tag_r", { name: "New Name" });
 
     expect(result.success).toBe(true);
     expect(result.success && result.data?.id).toBe("tag_r");
@@ -140,7 +130,7 @@ describe("archive preserves historical identity", () => {
     mocks.documentTagFindFirst.mockResolvedValue({ id: "tag_u", name: "Was Archived", orgId: ORG_ID });
     mocks.documentTagUpdate.mockResolvedValue({ id: "tag_u", name: "Was Archived", orgId: ORG_ID, slug: "was-archived", isArchived: false });
 
-    const result = unwrap(await unarchiveTag("tag_u"));
+    const result = await unarchiveTag("tag_u");
 
     expect(result.success).toBe(true);
   });
@@ -150,7 +140,7 @@ describe("cross-org safety", () => {
   it("rejects tag lookup from different org", async () => {
     mocks.documentTagFindFirst.mockResolvedValue(null);
 
-    const result = unwrap(await archiveTag("other_org_tag"));
+    const result = await archiveTag("other_org_tag");
 
     expect(result.success).toBe(false);
     expect(result.error).toBe("Tag not found");
@@ -159,18 +149,18 @@ describe("cross-org safety", () => {
 
 describe("empty/invalid inputs", () => {
   it("rejects empty tag name on create", async () => {
-    const result = unwrap(await createTag({ name: "  " }));
+    const result = await createTag({ name: "  " });
     expect(result.success).toBe(false);
   });
 
   it("rejects tag name with no alphanumeric chars", async () => {
-    const result = unwrap(await createTag({ name: "!!!" }));
+    const result = await createTag({ name: "!!!" });
     expect(result.success).toBe(false);
   });
 
   it("rejects rename to empty name", async () => {
     mocks.documentTagFindFirst.mockResolvedValue({ id: "tag_e", name: "Exists", orgId: ORG_ID });
-    const result = unwrap(await renameTag("tag_e", { name: "" }));
+    const result = await renameTag("tag_e", { name: "" });
     expect(result.success).toBe(false);
   });
 });
@@ -180,7 +170,7 @@ describe("duplicate name rejection", () => {
     mocks.documentTagFindFirst.mockResolvedValue({ id: "existing", name: "Priority", slug: "priority", orgId: ORG_ID });
     mocks.documentTagFindMany.mockResolvedValue([{ id: "existing" }]);
 
-    const result = unwrap(await createTag({ name: "Priority" }));
+    const result = await createTag({ name: "Priority" });
 
     expect(result.success).toBe(false);
   });
@@ -201,7 +191,7 @@ describe("multi-tag attribution correctness", () => {
     ]);
     mocks.invoiceAggregate.mockResolvedValue(makeAgg(10000, 1));
 
-    const result = unwrap(await getTagAnalytics({ mode: "revenue" }));
+    const result = await getTagAnalytics({ mode: "revenue" });
 
     const alpha = result.topTags.find((t: { tagName: string }) => t.tagName === "Alpha")!;
     const beta = result.topTags.find((t: { tagName: string }) => t.tagName === "Beta")!;
@@ -217,7 +207,7 @@ describe("zero-tag documents", () => {
     mocks.invoiceFindMany.mockResolvedValue([]);
     mocks.invoiceAggregate.mockResolvedValue(makeAgg(0, 0));
 
-    const result = unwrap(await getTagAnalytics({ mode: "revenue" }));
+    const result = await getTagAnalytics({ mode: "revenue" });
 
     expect(result.topTags).toEqual([]);
     expect(result.monthlyTrend).toEqual([]);
@@ -246,7 +236,7 @@ describe("archived tag handling in reports", () => {
     ]);
     mocks.invoiceAggregate.mockResolvedValue(makeAgg(5000, 1));
 
-    const result = unwrap(await getTagAnalytics({ mode: "revenue" }));
+    const result = await getTagAnalytics({ mode: "revenue" });
 
     expect(result.topTags).toHaveLength(1);
     expect(result.topTags[0].tagName).toBe("Old Tag");
@@ -267,7 +257,7 @@ describe("high-cardinality tag catalogs", () => {
     mocks.invoiceFindMany.mockResolvedValue(invoices);
     mocks.invoiceAggregate.mockResolvedValue(makeAgg(127500, 50));
 
-    const result = unwrap(await getTagAnalytics({ mode: "revenue" }));
+    const result = await getTagAnalytics({ mode: "revenue" });
 
     expect(result.topTags.length).toBeLessThanOrEqual(20);
     expect(result.summary.totalInvoiceCount).toBe(50);
