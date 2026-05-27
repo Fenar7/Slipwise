@@ -6,10 +6,49 @@
  * tab switching works, and save action is wired up.
  */
 
-import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react";
 import ClientHubCustomizationPage from "../page";
-import { getClientHubOrgConfig, getClientOverrideEditorState } from "@/app/app/actions/client-hub-actions";
+import { getClientHubOrgConfig, getClientOverrideEditorState, getClientHubCustomers, getClientHubCustomerLifecycle } from "@/app/app/actions/client-hub-actions";
+
+beforeEach(() => {
+  cleanup();
+  vi.mocked(getClientHubOrgConfig).mockReset();
+  vi.mocked(getClientHubOrgConfig).mockResolvedValue({
+    success: true,
+    config: mockDefaultConfig,
+    isNew: false,
+  });
+  vi.mocked(getClientHubCustomers).mockReset();
+  vi.mocked(getClientHubCustomers).mockResolvedValue({
+    success: true,
+    customers: [
+      { id: "cust_123", name: "Acme Client", email: "client@acme.com" },
+    ],
+  });
+  vi.mocked(getClientOverrideEditorState).mockReset();
+  vi.mocked(getClientOverrideEditorState).mockResolvedValue({
+    success: true,
+    customer: { id: "cust_123", name: "Acme Client", email: "client@acme.com" },
+    orgDefault: mockDefaultConfig,
+    overrideConfig: {},
+    effectiveConfig: mockDefaultConfig,
+  });
+  vi.mocked(getClientHubCustomerLifecycle).mockReset();
+  vi.mocked(getClientHubCustomerLifecycle).mockResolvedValue({
+    success: true,
+    customer: { id: "cust_123", name: "Acme Client", email: "client@acme.com" },
+    lifecycle: null,
+    readiness: {
+      enabled: false,
+      readinessStatus: "disabled",
+      previewEligible: false,
+      inviteEligible: false,
+      portalReady: false,
+      blockers: ["Client Hub is not enabled for this customer"],
+    },
+  });
+});
 
 const mockUseActiveOrg = vi.hoisted(() => vi.fn(() => ({ activeOrg: { id: "org_001", name: "Acme", slug: "acme" } })));
 const mockUsePermissions = vi.hoisted(() => vi.fn(() => ({ role: "admin" })));
@@ -103,6 +142,21 @@ vi.mock("@/app/app/actions/client-hub-actions", () => ({
   }),
   updateClientHubCustomerOverride: vi.fn().mockResolvedValue({ success: true, isCleared: false }),
   clearClientHubCustomerOverride: vi.fn().mockResolvedValue({ success: true }),
+  getClientHubCustomerLifecycle: vi.fn().mockResolvedValue({
+    success: true,
+    customer: { id: "cust_123", name: "Acme Client", email: "client@acme.com" },
+    lifecycle: null,
+    readiness: {
+      enabled: false,
+      readinessStatus: "disabled",
+      previewEligible: false,
+      inviteEligible: false,
+      portalReady: false,
+      blockers: ["Client Hub is not enabled for this customer"],
+    },
+  }),
+  enableClientHubForCustomer: vi.fn().mockResolvedValue({ success: true }),
+  disableClientHubForCustomer: vi.fn().mockResolvedValue({ success: true }),
 }));
 
 describe("ClientHubCustomizationPage", () => {
@@ -299,8 +353,9 @@ describe("ClientHubCustomizationPage", () => {
     const select = screen.getByLabelText(/customization target scope/i);
     fireEvent.change(select, { target: { value: "cust_123" } });
 
-    // Wait for loading to resolve and org-default UI to reappear
-    await screen.findByText(/organization default settings/i);
+    // Wait for the async handleModeChange to fully resolve by waiting for
+    // the select to reappear after the loading spinner unmounts.
+    await screen.findByLabelText(/customization target scope/i);
 
     // Re-query select after loading spinner unmounts and shell remounts
     const selectAfter = screen.getByLabelText(/customization target scope/i);
@@ -360,13 +415,131 @@ describe("ClientHubCustomizationPage", () => {
     const select = screen.getByLabelText(/customization target scope/i);
     fireEvent.change(select, { target: { value: "cust_123" } });
 
-    // Wait for loading to resolve
-    await screen.findByText(/organization default settings/i);
+    // Wait for the async handleModeChange to fully resolve by waiting for
+    // the select to reappear after the loading spinner unmounts.
+    await screen.findByLabelText(/customization target scope/i);
 
     // Should still be in org defaults mode with no stale client values
     const selectAfter = screen.getByLabelText(/customization target scope/i);
     expect(screen.getByText(/organization default settings/i)).toBeInTheDocument();
     expect(selectAfter).toHaveValue("");
     expect(screen.queryByText(/client-specific override mode/i)).not.toBeInTheDocument();
+  });
+
+  it("renders lifecycle status as disabled when switching to a client with no lifecycle record", async () => {
+    render(<ClientHubCustomizationPage />);
+    await screen.findByRole("tab", { name: /branding/i });
+
+    // Explicitly reset mocks to default success behavior to avoid test-isolation drift
+    vi.mocked(getClientOverrideEditorState).mockResolvedValue({
+      success: true,
+      customer: { id: "cust_123", name: "Acme Client", email: "client@acme.com" },
+      orgDefault: mockDefaultConfig,
+      overrideConfig: {},
+      effectiveConfig: mockDefaultConfig,
+    });
+    vi.mocked(getClientHubCustomerLifecycle).mockResolvedValue({
+      success: true,
+      customer: { id: "cust_123", name: "Acme Client", email: "client@acme.com" },
+      lifecycle: null,
+      readiness: {
+        enabled: false,
+        readinessStatus: "disabled",
+        previewEligible: false,
+        inviteEligible: false,
+        portalReady: false,
+        blockers: ["Client Hub is not enabled for this customer"],
+      },
+    });
+
+    const select = screen.getByLabelText(/customization target scope/i);
+    fireEvent.change(select, { target: { value: "cust_123" } });
+
+    await screen.findByText(/client-specific override mode/i);
+
+    expect(screen.getByText(/disabled/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /enable client hub/i })).toBeInTheDocument();
+    expect(screen.getByText(/preview not eligible/i)).toBeInTheDocument();
+    expect(screen.getByText(/invite not eligible/i)).toBeInTheDocument();
+    expect(screen.getByText(/portal not ready/i)).toBeInTheDocument();
+    expect(screen.getByText(/readiness blockers/i)).toBeInTheDocument();
+  });
+
+  it("renders lifecycle status as enabled and ready when customer is enabled", async () => {
+    render(<ClientHubCustomizationPage />);
+    await screen.findByRole("tab", { name: /branding/i });
+
+    vi.mocked(getClientOverrideEditorState).mockResolvedValueOnce({
+      success: true,
+      customer: { id: "cust_123", name: "Acme Client", email: "client@acme.com" },
+      orgDefault: mockDefaultConfig,
+      overrideConfig: {},
+      effectiveConfig: mockDefaultConfig,
+    });
+
+    vi.mocked(getClientHubCustomerLifecycle).mockResolvedValueOnce({
+      success: true,
+      customer: { id: "cust_123", name: "Acme Client", email: "client@acme.com" },
+      lifecycle: { enabled: true, enabledAt: new Date(), disabledAt: null, enabledByUserId: "user-1" },
+      readiness: {
+        enabled: true,
+        readinessStatus: "enabled_ready",
+        previewEligible: true,
+        inviteEligible: true,
+        portalReady: true,
+        blockers: [],
+      },
+    });
+
+    const select = screen.getByLabelText(/customization target scope/i);
+    fireEvent.change(select, { target: { value: "cust_123" } });
+
+    await screen.findByText(/client-specific override mode/i);
+
+    expect(screen.getByText(/enabled & ready/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /disable client hub/i })).toBeInTheDocument();
+    expect(screen.getByText(/preview eligible/i)).toBeInTheDocument();
+    expect(screen.getByText(/invite eligible/i)).toBeInTheDocument();
+    expect(screen.getByText(/portal ready/i)).toBeInTheDocument();
+    expect(screen.queryByText(/readiness blockers/i)).not.toBeInTheDocument();
+  });
+
+  it("renders lifecycle status as enabled not ready when customer lacks email", async () => {
+    render(<ClientHubCustomizationPage />);
+    await screen.findByRole("tab", { name: /branding/i });
+
+    vi.mocked(getClientOverrideEditorState).mockResolvedValueOnce({
+      success: true,
+      customer: { id: "cust_123", name: "Acme Client", email: null },
+      orgDefault: mockDefaultConfig,
+      overrideConfig: {},
+      effectiveConfig: mockDefaultConfig,
+    });
+
+    vi.mocked(getClientHubCustomerLifecycle).mockResolvedValueOnce({
+      success: true,
+      customer: { id: "cust_123", name: "Acme Client", email: null },
+      lifecycle: { enabled: true, enabledAt: new Date(), disabledAt: null, enabledByUserId: "user-1" },
+      readiness: {
+        enabled: true,
+        readinessStatus: "enabled_not_ready",
+        previewEligible: true,
+        inviteEligible: false,
+        portalReady: false,
+        blockers: ["Customer email is required for portal invite"],
+      },
+    });
+
+    const select = screen.getByLabelText(/customization target scope/i);
+    fireEvent.change(select, { target: { value: "cust_123" } });
+
+    await screen.findByText(/client-specific override mode/i);
+
+    expect(screen.getByText(/enabled — not ready/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /disable client hub/i })).toBeInTheDocument();
+    expect(screen.getByText(/preview eligible/i)).toBeInTheDocument();
+    expect(screen.getByText(/invite not eligible/i)).toBeInTheDocument();
+    expect(screen.getByText(/portal not ready/i)).toBeInTheDocument();
+    expect(screen.getByText(/readiness blockers/i)).toBeInTheDocument();
   });
 });

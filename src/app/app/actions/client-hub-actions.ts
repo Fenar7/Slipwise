@@ -16,6 +16,17 @@ import {
   resolveEffectiveConfig,
 } from "@/app/portal/[orgSlug]/client-hub/components/config-resolver";
 
+export type ClientHubReadinessStatus = "disabled" | "enabled_not_ready" | "enabled_ready";
+
+export type ClientHubCustomerReadiness = {
+  enabled: boolean;
+  readinessStatus: ClientHubReadinessStatus;
+  previewEligible: boolean;
+  inviteEligible: boolean;
+  portalReady: boolean;
+  blockers: string[];
+};
+
 export type GetClientHubOrgConfigResult =
   | { success: true; config: ClientHubConfig; isNew: boolean }
   | { success: false; error: string };
@@ -305,5 +316,186 @@ export async function clearClientHubCustomerOverride(customerId: string) {
   } catch (error) {
     console.error("clearClientHubCustomerOverride error:", error);
     return { success: false, error: "Failed to reset client override configuration." };
+  }
+}
+
+/**
+ * Computes the deterministic readiness state for a customer given their lifecycle record.
+ * Does not trust inputs blindly — validates org config resolution independently.
+ */
+function computeClientHubReadiness(
+  lifecycle: { enabled: boolean } | null,
+  customer: { email: string | null }
+): ClientHubCustomerReadiness {
+  const enabled = lifecycle?.enabled ?? false;
+  const blockers: string[] = [];
+
+  if (!enabled) {
+    blockers.push("Client Hub is not enabled for this customer");
+    return {
+      enabled: false,
+      readinessStatus: "disabled",
+      previewEligible: false,
+      inviteEligible: false,
+      portalReady: false,
+      blockers,
+    };
+  }
+
+  // Enabled — check invite prerequisites
+  if (!customer.email || customer.email.trim().length === 0) {
+    blockers.push("Customer email is required for portal invite");
+  }
+
+  const hasBlockers = blockers.length > 0;
+
+  return {
+    enabled: true,
+    readinessStatus: hasBlockers ? "enabled_not_ready" : "enabled_ready",
+    previewEligible: true,
+    inviteEligible: !hasBlockers,
+    portalReady: !hasBlockers,
+    blockers,
+  };
+}
+
+/**
+ * Fetch the Client Hub lifecycle and computed readiness state for a specific customer.
+ * Admin/owner restricted. Returns truthful access-denied for non-admin callers.
+ */
+export async function getClientHubCustomerLifecycle(customerId: string) {
+  try {
+    const { orgId, role } = await requireOrgContext();
+
+    if (role !== "admin" && role !== "owner") {
+      return { success: false, error: "Only administrators can access Client Hub lifecycle settings." };
+    }
+
+    const customer = await db.customer.findFirst({
+      where: { id: customerId, organizationId: orgId },
+      select: { id: true, name: true, email: true },
+    });
+
+    if (!customer) {
+      return { success: false, error: "Customer not found or access denied." };
+    }
+
+    const lifecycle = await db.clientHubCustomerLifecycle.findUnique({
+      where: { customerId },
+    });
+
+    const readiness = computeClientHubReadiness(lifecycle, customer);
+
+    return {
+      success: true,
+      customer,
+      lifecycle: lifecycle
+        ? {
+            enabled: lifecycle.enabled,
+            enabledAt: lifecycle.enabledAt,
+            disabledAt: lifecycle.disabledAt,
+            enabledByUserId: lifecycle.enabledByUserId,
+            createdAt: lifecycle.createdAt,
+            updatedAt: lifecycle.updatedAt,
+          }
+        : null,
+      readiness,
+    };
+  } catch (error) {
+    console.error("getClientHubCustomerLifecycle error:", error);
+    return { success: false, error: "Failed to load client lifecycle state." };
+  }
+}
+
+/**
+ * Enable Client Hub for a specific customer.
+ * Creates a lifecycle record if none exists, or updates the existing one.
+ * Admin/owner restricted with org/customer scoping.
+ */
+export async function enableClientHubForCustomer(customerId: string) {
+  try {
+    const { orgId, role, userId } = await requireOrgContext();
+
+    if (role !== "admin" && role !== "owner") {
+      return { success: false, error: "Only administrators can enable Client Hub for customers." };
+    }
+
+    const customer = await db.customer.findFirst({
+      where: { id: customerId, organizationId: orgId },
+      select: { id: true },
+    });
+
+    if (!customer) {
+      return { success: false, error: "Customer not found or access denied." };
+    }
+
+    await db.clientHubCustomerLifecycle.upsert({
+      where: { customerId },
+      create: {
+        organizationId: orgId,
+        customerId,
+        enabled: true,
+        enabledAt: new Date(),
+        enabledByUserId: userId,
+      },
+      update: {
+        enabled: true,
+        enabledAt: new Date(),
+        disabledAt: null,
+        enabledByUserId: userId,
+      },
+    });
+
+    revalidatePath("/app/settings/portal/client-hub");
+    return { success: true };
+  } catch (error) {
+    console.error("enableClientHubForCustomer error:", error);
+    return { success: false, error: "Failed to enable Client Hub for customer." };
+  }
+}
+
+/**
+ * Disable Client Hub for a specific customer.
+ * Updates the lifecycle record to mark the customer as disabled.
+ * Admin/owner restricted with org/customer scoping.
+ */
+export async function disableClientHubForCustomer(customerId: string) {
+  try {
+    const { orgId, role } = await requireOrgContext();
+
+    if (role !== "admin" && role !== "owner") {
+      return { success: false, error: "Only administrators can disable Client Hub for customers." };
+    }
+
+    const customer = await db.customer.findFirst({
+      where: { id: customerId, organizationId: orgId },
+      select: { id: true },
+    });
+
+    if (!customer) {
+      return { success: false, error: "Customer not found or access denied." };
+    }
+
+    await db.clientHubCustomerLifecycle.upsert({
+      where: { customerId },
+      create: {
+        organizationId: orgId,
+        customerId,
+        enabled: false,
+        disabledAt: new Date(),
+      },
+      update: {
+        enabled: false,
+        disabledAt: new Date(),
+        enabledAt: null,
+        enabledByUserId: null,
+      },
+    });
+
+    revalidatePath("/app/settings/portal/client-hub");
+    return { success: true };
+  } catch (error) {
+    console.error("disableClientHubForCustomer error:", error);
+    return { success: false, error: "Failed to disable Client Hub for customer." };
   }
 }

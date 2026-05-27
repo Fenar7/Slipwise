@@ -14,6 +14,10 @@ const mockDb = vi.hoisted(() => ({
     upsert: vi.fn(),
     deleteMany: vi.fn(),
   },
+  clientHubCustomerLifecycle: {
+    findUnique: vi.fn(),
+    upsert: vi.fn(),
+  },
   customer: {
     findFirst: vi.fn(),
     findUnique: vi.fn(),
@@ -37,6 +41,9 @@ import {
   updateClientHubCustomerOverride,
   clearClientHubCustomerOverride,
   getClientHubOrgConfig,
+  getClientHubCustomerLifecycle,
+  enableClientHubForCustomer,
+  disableClientHubForCustomer,
 } from "@/app/app/actions/client-hub-actions";
 import {
   resolveEffectiveConfig,
@@ -313,6 +320,137 @@ describe("Client Hub Per-Client Overrides & Resolver", () => {
         where: { customerId: CUSTOMER_ID },
       });
       expect(mockRevalidatePath).toHaveBeenCalledWith("/app/settings/portal/client-hub");
+    });
+  });
+
+  describe("getClientHubCustomerLifecycle (readiness)", () => {
+    it("returns disabled state when no lifecycle record exists", async () => {
+      setupAuth();
+      mockDb.customer.findFirst.mockResolvedValue({ id: CUSTOMER_ID, name: "Alice", email: "alice@test.com" });
+      mockDb.clientHubCustomerLifecycle.findUnique.mockResolvedValue(null);
+
+      const res = await getClientHubCustomerLifecycle(CUSTOMER_ID);
+      expect(res.success).toBe(true);
+      if (res.success) {
+        expect(res.readiness.enabled).toBe(false);
+        expect(res.readiness.readinessStatus).toBe("disabled");
+        expect(res.readiness.previewEligible).toBe(false);
+        expect(res.readiness.inviteEligible).toBe(false);
+        expect(res.readiness.portalReady).toBe(false);
+        expect(res.readiness.blockers).toContain("Client Hub is not enabled for this customer");
+      }
+    });
+
+    it("returns enabled_ready when enabled and customer has email", async () => {
+      setupAuth();
+      mockDb.customer.findFirst.mockResolvedValue({ id: CUSTOMER_ID, name: "Alice", email: "alice@test.com" });
+      mockDb.clientHubCustomerLifecycle.findUnique.mockResolvedValue({
+        enabled: true,
+        enabledAt: new Date(),
+        disabledAt: null,
+        enabledByUserId: USER_ID,
+      });
+
+      const res = await getClientHubCustomerLifecycle(CUSTOMER_ID);
+      expect(res.success).toBe(true);
+      if (res.success) {
+        expect(res.readiness.enabled).toBe(true);
+        expect(res.readiness.readinessStatus).toBe("enabled_ready");
+        expect(res.readiness.previewEligible).toBe(true);
+        expect(res.readiness.inviteEligible).toBe(true);
+        expect(res.readiness.portalReady).toBe(true);
+        expect(res.readiness.blockers).toHaveLength(0);
+      }
+    });
+
+    it("returns enabled_not_ready when enabled but customer lacks email", async () => {
+      setupAuth();
+      mockDb.customer.findFirst.mockResolvedValue({ id: CUSTOMER_ID, name: "Alice", email: null });
+      mockDb.clientHubCustomerLifecycle.findUnique.mockResolvedValue({
+        enabled: true,
+        enabledAt: new Date(),
+        disabledAt: null,
+        enabledByUserId: USER_ID,
+      });
+
+      const res = await getClientHubCustomerLifecycle(CUSTOMER_ID);
+      expect(res.success).toBe(true);
+      if (res.success) {
+        expect(res.readiness.readinessStatus).toBe("enabled_not_ready");
+        expect(res.readiness.previewEligible).toBe(true);
+        expect(res.readiness.inviteEligible).toBe(false);
+        expect(res.readiness.portalReady).toBe(false);
+        expect(res.readiness.blockers).toContain("Customer email is required for portal invite");
+      }
+    });
+
+    it("denies member access", async () => {
+      setupAuth(ORG_ID, USER_ID, "member");
+      const res = await getClientHubCustomerLifecycle(CUSTOMER_ID);
+      expect(res.success).toBe(false);
+      expect(res.error).toContain("Only administrators");
+      expect(mockDb.clientHubCustomerLifecycle.findUnique).not.toHaveBeenCalled();
+    });
+
+    it("rejects cross-org customer", async () => {
+      setupAuth();
+      mockDb.customer.findFirst.mockResolvedValue(null);
+
+      const res = await getClientHubCustomerLifecycle(CUSTOMER_ID);
+      expect(res.success).toBe(false);
+      expect(res.error).toContain("Customer not found");
+    });
+  });
+
+  describe("enableClientHubForCustomer", () => {
+    it("upserts lifecycle record with enabled=true", async () => {
+      setupAuth();
+      mockDb.customer.findFirst.mockResolvedValue({ id: CUSTOMER_ID });
+
+      const res = await enableClientHubForCustomer(CUSTOMER_ID);
+      expect(res.success).toBe(true);
+      expect(mockDb.clientHubCustomerLifecycle.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { customerId: CUSTOMER_ID },
+          create: expect.objectContaining({ enabled: true, customerId: CUSTOMER_ID, organizationId: ORG_ID }),
+          update: expect.objectContaining({ enabled: true }),
+        })
+      );
+      expect(mockRevalidatePath).toHaveBeenCalledWith("/app/settings/portal/client-hub");
+    });
+
+    it("denies member access", async () => {
+      setupAuth(ORG_ID, USER_ID, "member");
+      const res = await enableClientHubForCustomer(CUSTOMER_ID);
+      expect(res.success).toBe(false);
+      expect(res.error).toContain("Only administrators");
+      expect(mockDb.clientHubCustomerLifecycle.upsert).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("disableClientHubForCustomer", () => {
+    it("upserts lifecycle record with enabled=false", async () => {
+      setupAuth();
+      mockDb.customer.findFirst.mockResolvedValue({ id: CUSTOMER_ID });
+
+      const res = await disableClientHubForCustomer(CUSTOMER_ID);
+      expect(res.success).toBe(true);
+      expect(mockDb.clientHubCustomerLifecycle.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { customerId: CUSTOMER_ID },
+          create: expect.objectContaining({ enabled: false, customerId: CUSTOMER_ID, organizationId: ORG_ID }),
+          update: expect.objectContaining({ enabled: false }),
+        })
+      );
+      expect(mockRevalidatePath).toHaveBeenCalledWith("/app/settings/portal/client-hub");
+    });
+
+    it("denies member access", async () => {
+      setupAuth(ORG_ID, USER_ID, "member");
+      const res = await disableClientHubForCustomer(CUSTOMER_ID);
+      expect(res.success).toBe(false);
+      expect(res.error).toContain("Only administrators");
+      expect(mockDb.clientHubCustomerLifecycle.upsert).not.toHaveBeenCalled();
     });
   });
 });

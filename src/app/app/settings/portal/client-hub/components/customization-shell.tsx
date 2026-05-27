@@ -27,7 +27,11 @@ import {
   getClientOverrideEditorState,
   updateClientHubCustomerOverride,
   clearClientHubCustomerOverride,
+  getClientHubCustomerLifecycle,
+  enableClientHubForCustomer,
+  disableClientHubForCustomer,
 } from "@/app/app/actions/client-hub-actions";
+import type { ClientHubCustomerReadiness } from "@/app/app/actions/client-hub-actions";
 import { toast } from "sonner";
 import { PreviewPane } from "./preview-pane";
 import {
@@ -95,6 +99,10 @@ export function CustomizationShell() {
   const [orgDefaultConfig, setOrgDefaultConfig] = useState<ClientHubConfig>(DEFAULT_CLIENT_HUB_CONFIG);
   const [overrideConfig, setOverrideConfig] = useState<any>({});
 
+  // Sprint 3.3 — Per-Client Lifecycle State
+  const [lifecycleReadiness, setLifecycleReadiness] = useState<ClientHubCustomerReadiness | null>(null);
+  const [isLoadingLifecycle, setIsLoadingLifecycle] = useState(false);
+
   useEffect(() => {
     async function loadConfig() {
       try {
@@ -134,6 +142,7 @@ export function CustomizationShell() {
 
   const handleModeChange = useCallback(async (customerId: string) => {
     setIsLoading(true);
+    setLifecycleReadiness(null);
 
     try {
       if (!customerId) {
@@ -150,15 +159,25 @@ export function CustomizationShell() {
         }
       } else {
         // Switch to Client Override Mode
-        const res = await getClientOverrideEditorState(customerId);
-        if (res.success) {
-          setConfig(res.effectiveConfig);
-          setOrgDefaultConfig(res.orgDefault);
-          setOverrideConfig(res.overrideConfig);
+        const [overrideRes, lifecycleRes] = await Promise.all([
+          getClientOverrideEditorState(customerId),
+          getClientHubCustomerLifecycle(customerId),
+        ]);
+
+        if (overrideRes.success) {
+          setConfig(overrideRes.effectiveConfig);
+          setOrgDefaultConfig(overrideRes.orgDefault);
+          setOverrideConfig(overrideRes.overrideConfig);
           setSelectedCustomerId(customerId);
           setHasChanges(false);
         } else {
-          toast.error(res.error || "Failed to load client override settings");
+          toast.error(overrideRes.error || "Failed to load client override settings");
+        }
+
+        if (lifecycleRes.success) {
+          setLifecycleReadiness(lifecycleRes.readiness);
+        } else {
+          console.warn("Failed to load lifecycle state:", lifecycleRes.error);
         }
       }
     } catch (error) {
@@ -246,6 +265,46 @@ export function CustomizationShell() {
       } finally {
         setIsSaving(false);
       }
+    }
+  }, [selectedCustomerId]);
+
+  const handleEnableClientHub = useCallback(async () => {
+    if (!selectedCustomerId) return;
+    setIsLoadingLifecycle(true);
+    try {
+      const result = await enableClientHubForCustomer(selectedCustomerId);
+      if (result.success) {
+        toast.success("Client Hub enabled for this customer");
+        const refresh = await getClientHubCustomerLifecycle(selectedCustomerId);
+        if (refresh.success) setLifecycleReadiness(refresh.readiness);
+      } else {
+        toast.error(result.error || "Failed to enable Client Hub");
+      }
+    } catch (error) {
+      console.error("handleEnableClientHub error:", error);
+      toast.error("Failed to enable Client Hub");
+    } finally {
+      setIsLoadingLifecycle(false);
+    }
+  }, [selectedCustomerId]);
+
+  const handleDisableClientHub = useCallback(async () => {
+    if (!selectedCustomerId) return;
+    setIsLoadingLifecycle(true);
+    try {
+      const result = await disableClientHubForCustomer(selectedCustomerId);
+      if (result.success) {
+        toast.success("Client Hub disabled for this customer");
+        const refresh = await getClientHubCustomerLifecycle(selectedCustomerId);
+        if (refresh.success) setLifecycleReadiness(refresh.readiness);
+      } else {
+        toast.error(result.error || "Failed to disable Client Hub");
+      }
+    } catch (error) {
+      console.error("handleDisableClientHub error:", error);
+      toast.error("Failed to disable Client Hub");
+    } finally {
+      setIsLoadingLifecycle(false);
     }
   }, [selectedCustomerId]);
 
@@ -374,6 +433,97 @@ export function CustomizationShell() {
             </div>
           )}
         </div>
+
+        {/* Sprint 3.3 — Per-Client Lifecycle Status */}
+        {selectedCustomerId && (
+          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold text-[var(--text-primary)]">Client Hub Status:</span>
+                {isLoadingLifecycle ? (
+                  <span className="text-xs text-[var(--text-muted)]">Loading...</span>
+                ) : lifecycleReadiness ? (
+                  <StatusBadge
+                    tone={
+                      lifecycleReadiness.readinessStatus === "enabled_ready"
+                        ? "success"
+                        : lifecycleReadiness.readinessStatus === "enabled_not_ready"
+                          ? "amber"
+                          : "neutral"
+                    }
+                  >
+                    {lifecycleReadiness.readinessStatus === "enabled_ready"
+                      ? "Enabled & Ready"
+                      : lifecycleReadiness.readinessStatus === "enabled_not_ready"
+                        ? "Enabled — Not Ready"
+                        : "Disabled"}
+                  </StatusBadge>
+                ) : (
+                  <StatusBadge tone="neutral">Unknown</StatusBadge>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                {lifecycleReadiness?.enabled ? (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={handleDisableClientHub}
+                    disabled={isLoadingLifecycle}
+                    className="text-xs text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200"
+                  >
+                    Disable Client Hub
+                  </Button>
+                ) : (
+                  <Button
+                    type="button"
+                    variant="primary"
+                    size="sm"
+                    onClick={handleEnableClientHub}
+                    disabled={isLoadingLifecycle}
+                    className="text-xs"
+                  >
+                    Enable Client Hub
+                  </Button>
+                )}
+              </div>
+            </div>
+
+            {lifecycleReadiness && (
+              <div className="mt-3 flex flex-wrap gap-3 text-xs">
+                <div className="flex items-center gap-1.5">
+                  <span className={cn("h-2 w-2 rounded-full", lifecycleReadiness.previewEligible ? "bg-green-500" : "bg-slate-300")} />
+                  <span className={lifecycleReadiness.previewEligible ? "text-green-700" : "text-slate-500"}>
+                    Preview {lifecycleReadiness.previewEligible ? "Eligible" : "Not Eligible"}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className={cn("h-2 w-2 rounded-full", lifecycleReadiness.inviteEligible ? "bg-green-500" : "bg-slate-300")} />
+                  <span className={lifecycleReadiness.inviteEligible ? "text-green-700" : "text-slate-500"}>
+                    Invite {lifecycleReadiness.inviteEligible ? "Eligible" : "Not Eligible"}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className={cn("h-2 w-2 rounded-full", lifecycleReadiness.portalReady ? "bg-green-500" : "bg-slate-300")} />
+                  <span className={lifecycleReadiness.portalReady ? "text-green-700" : "text-slate-500"}>
+                    Portal {lifecycleReadiness.portalReady ? "Ready" : "Not Ready"}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {lifecycleReadiness && lifecycleReadiness.blockers.length > 0 && (
+              <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2">
+                <p className="text-xs font-semibold text-red-800">Readiness Blockers</p>
+                <ul className="mt-1 list-disc list-inside text-xs text-red-700">
+                  {lifecycleReadiness.blockers.map((b, i) => (
+                    <li key={i}>{b}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Persistent settings notice */}
         {!selectedCustomerId ? (
