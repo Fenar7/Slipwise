@@ -9,7 +9,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import ClientHubCustomizationPage from "../page";
-import { getClientHubOrgConfig } from "@/app/app/actions/client-hub-actions";
+import { getClientHubOrgConfig, getClientOverrideEditorState } from "@/app/app/actions/client-hub-actions";
 
 const mockUseActiveOrg = vi.hoisted(() => vi.fn(() => ({ activeOrg: { id: "org_001", name: "Acme", slug: "acme" } })));
 const mockUsePermissions = vi.hoisted(() => vi.fn(() => ({ role: "admin" })));
@@ -283,5 +283,90 @@ describe("ClientHubCustomizationPage", () => {
     await screen.findByRole("tab", { name: /branding/i });
     expect(screen.queryByText("Failed to Load Settings")).not.toBeInTheDocument();
     expect(screen.getByText("Client Hub Customization")).toBeInTheDocument();
+  });
+
+  it("stays in org-default mode when switching to a client fails to load", async () => {
+    render(<ClientHubCustomizationPage />);
+
+    await screen.findByRole("tab", { name: /branding/i });
+    expect(screen.getByText(/organization default settings/i)).toBeInTheDocument();
+
+    vi.mocked(getClientOverrideEditorState).mockResolvedValueOnce({
+      success: false,
+      error: "Failed to load client override settings",
+    });
+
+    const select = screen.getByLabelText(/customization target scope/i);
+    fireEvent.change(select, { target: { value: "cust_123" } });
+
+    // Wait for loading to resolve and org-default UI to reappear
+    await screen.findByText(/organization default settings/i);
+
+    // Re-query select after loading spinner unmounts and shell remounts
+    const selectAfter = screen.getByLabelText(/customization target scope/i);
+    expect(screen.queryByText(/client-specific override mode/i)).not.toBeInTheDocument();
+    expect(selectAfter).toHaveValue("");
+  });
+
+  it("remains on the current client when switching to another client fails to load", async () => {
+    render(<ClientHubCustomizationPage />);
+
+    await screen.findByRole("tab", { name: /branding/i });
+
+    // Successfully switch to first client
+    vi.mocked(getClientOverrideEditorState).mockResolvedValueOnce({
+      success: true,
+      customer: { id: "cust_123", name: "Acme Client", email: "client@acme.com" },
+      orgDefault: mockDefaultConfig,
+      overrideConfig: { branding: { accentColor: "#ff0000" } },
+      effectiveConfig: {
+        ...mockDefaultConfig,
+        branding: { ...mockDefaultConfig.branding, accentColor: "#ff0000" },
+      },
+    });
+
+    const select = screen.getByLabelText(/customization target scope/i);
+    fireEvent.change(select, { target: { value: "cust_123" } });
+
+    await screen.findByText(/client-specific override mode/i);
+    expect(select).toHaveValue("cust_123");
+
+    // Attempt to switch to a second client that fails
+    vi.mocked(getClientOverrideEditorState).mockResolvedValueOnce({
+      success: false,
+      error: "Failed to load client override settings",
+    });
+
+    fireEvent.change(select, { target: { value: "cust_456" } });
+
+    // Should remain on the first client after load failure
+    await screen.findByText(/client-specific override mode/i);
+    const selectAfter = screen.getByLabelText(/customization target scope/i);
+    expect(selectAfter).toHaveValue("cust_123");
+    expect(screen.getByText(/client-specific override mode/i)).toBeInTheDocument();
+  });
+
+  it("retains org-default config values when a client switch fails", async () => {
+    render(<ClientHubCustomizationPage />);
+
+    await screen.findByRole("tab", { name: /branding/i });
+    expect(screen.getByText(/organization default settings/i)).toBeInTheDocument();
+
+    vi.mocked(getClientOverrideEditorState).mockResolvedValueOnce({
+      success: false,
+      error: "Failed to load client override settings",
+    });
+
+    const select = screen.getByLabelText(/customization target scope/i);
+    fireEvent.change(select, { target: { value: "cust_123" } });
+
+    // Wait for loading to resolve
+    await screen.findByText(/organization default settings/i);
+
+    // Should still be in org defaults mode with no stale client values
+    const selectAfter = screen.getByLabelText(/customization target scope/i);
+    expect(screen.getByText(/organization default settings/i)).toBeInTheDocument();
+    expect(selectAfter).toHaveValue("");
+    expect(screen.queryByText(/client-specific override mode/i)).not.toBeInTheDocument();
   });
 });

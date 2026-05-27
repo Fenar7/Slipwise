@@ -108,7 +108,12 @@ export async function updateClientHubOrgConfig(input: ClientHubConfig) {
  */
 export async function getClientHubCustomers() {
   try {
-    const { orgId } = await requireOrgContext();
+    const { orgId, role } = await requireOrgContext();
+
+    // Enforce admin/owner authorization for admin settings data
+    if (role !== "admin" && role !== "owner") {
+      return { success: false, error: "Only administrators can access Client Hub customer settings." };
+    }
 
     const customers = await db.customer.findMany({
       where: { organizationId: orgId },
@@ -133,7 +138,12 @@ export async function getClientHubCustomers() {
  */
 export async function getClientOverrideEditorState(customerId: string) {
   try {
-    const { orgId } = await requireOrgContext();
+    const { orgId, role } = await requireOrgContext();
+
+    // Enforce admin/owner authorization for admin settings data
+    if (role !== "admin" && role !== "owner") {
+      return { success: false, error: "Only administrators can access Client Hub override settings." };
+    }
 
     // Securely verify that customer belongs to the active organization context
     const customer = await db.customer.findFirst({

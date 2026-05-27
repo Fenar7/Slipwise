@@ -134,8 +134,6 @@ export function CustomizationShell() {
 
   const handleModeChange = useCallback(async (customerId: string) => {
     setIsLoading(true);
-    setHasChanges(false);
-    setSelectedCustomerId(customerId);
 
     try {
       if (!customerId) {
@@ -145,6 +143,8 @@ export function CustomizationShell() {
           setConfig(orgRes.config);
           setOrgDefaultConfig(orgRes.config);
           setOverrideConfig({});
+          setSelectedCustomerId("");
+          setHasChanges(false);
         } else {
           toast.error(orgRes.error);
         }
@@ -155,15 +155,15 @@ export function CustomizationShell() {
           setConfig(res.effectiveConfig);
           setOrgDefaultConfig(res.orgDefault);
           setOverrideConfig(res.overrideConfig);
+          setSelectedCustomerId(customerId);
+          setHasChanges(false);
         } else {
           toast.error(res.error || "Failed to load client override settings");
-          setSelectedCustomerId(""); // Revert to org defaults mode on failure
         }
       }
     } catch (error) {
       console.error("Error switching customization mode:", error);
       toast.error("Failed to switch context.");
-      setSelectedCustomerId("");
     } finally {
       setIsLoading(false);
     }

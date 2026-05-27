@@ -171,6 +171,67 @@ describe("Client Hub Per-Client Overrides & Resolver", () => {
         orderBy: { name: "asc" },
       });
     });
+
+    it("denies member access", async () => {
+      setupAuth(ORG_ID, USER_ID, "member");
+      const res = await getClientHubCustomers();
+      expect(res.success).toBe(false);
+      expect(res.error).toContain("Only administrators");
+      expect(mockDb.customer.findMany).not.toHaveBeenCalled();
+    });
+
+    it("allows owner access", async () => {
+      setupAuth(ORG_ID, USER_ID, "owner");
+      mockDb.customer.findMany.mockResolvedValue([
+        { id: "c1", name: "Alice", email: "alice@test.com" },
+      ]);
+
+      const res = await getClientHubCustomers();
+      expect(res.success).toBe(true);
+      if (res.success) {
+        expect(res.customers).toHaveLength(1);
+      }
+    });
+  });
+
+  describe("getClientOverrideEditorState (authorization)", () => {
+    it("denies member access", async () => {
+      setupAuth(ORG_ID, USER_ID, "member");
+      const res = await getClientOverrideEditorState(CUSTOMER_ID);
+      expect(res.success).toBe(false);
+      expect(res.error).toContain("Only administrators");
+      expect(mockDb.customer.findFirst).not.toHaveBeenCalled();
+    });
+
+    it("allows admin access", async () => {
+      setupAuth(ORG_ID, USER_ID, "admin");
+      mockDb.customer.findFirst.mockResolvedValue({ id: CUSTOMER_ID, name: "Alice", email: "alice@test.com" });
+      mockDb.clientHubOrgConfig.findUnique.mockResolvedValue({ config: DEFAULT_CLIENT_HUB_CONFIG });
+      mockDb.clientHubCustomerOverride.findUnique.mockResolvedValue(null);
+
+      const res = await getClientOverrideEditorState(CUSTOMER_ID);
+      expect(res.success).toBe(true);
+      if (res.success) {
+        expect(res.customer.id).toBe(CUSTOMER_ID);
+        expect(res.effectiveConfig).toEqual(DEFAULT_CLIENT_HUB_CONFIG);
+      }
+    });
+
+    it("allows owner access", async () => {
+      setupAuth(ORG_ID, USER_ID, "owner");
+      mockDb.customer.findFirst.mockResolvedValue({ id: CUSTOMER_ID, name: "Alice", email: "alice@test.com" });
+      mockDb.clientHubOrgConfig.findUnique.mockResolvedValue({ config: DEFAULT_CLIENT_HUB_CONFIG });
+      mockDb.clientHubCustomerOverride.findUnique.mockResolvedValue({
+        overrideConfig: { branding: { accentColor: "#aabbcc" } },
+      });
+
+      const res = await getClientOverrideEditorState(CUSTOMER_ID);
+      expect(res.success).toBe(true);
+      if (res.success) {
+        expect(res.customer.id).toBe(CUSTOMER_ID);
+        expect(res.effectiveConfig.branding.accentColor).toBe("#aabbcc");
+      }
+    });
   });
 
   describe("updateClientHubCustomerOverride (saving delta)", () => {
