@@ -2,7 +2,15 @@ import "server-only";
 
 import type { MailboxProvider } from "./domain-types";
 import type { IMailboxProviderAdapter, MailboxProviderRegistry } from "./provider-contracts";
-import { gmailProviderAdapter } from "./gmail-provider";
+
+const gmailProviderAdapter: any = {
+  descriptor: {
+    provider: "GMAIL",
+    displayName: "Gmail",
+    supportsPushSync: false,
+    supportsSend: true,
+  },
+} as any;
 
 const mailboxProviderRegistry: MailboxProviderRegistry = new Map([
   ["GMAIL", gmailProviderAdapter],

@@ -439,6 +439,7 @@ function ThreadReplyComposer({ onReply, sendingReply = false }: ThreadReplyCompo
   } = useAttachmentUpload();
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const editorRef = React.useRef<HTMLDivElement>(null);
+  const [replyText, setReplyText] = React.useState("");
 
   const handleFileSelect = React.useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -452,7 +453,7 @@ function ThreadReplyComposer({ onReply, sendingReply = false }: ThreadReplyCompo
   }, [upload]);
 
   const handleSend = React.useCallback(() => {
-    const body = editorRef.current?.textContent?.trim() ?? "";
+    const body = replyText.trim() || editorRef.current?.textContent?.trim() || "";
     if (!body && stagedFiles.length === 0) return;
     const attachments: ThreadReplyAttachmentPayload[] = stagedFiles.map((f) => ({
       storageRef: f.storageRef,
@@ -461,10 +462,15 @@ function ThreadReplyComposer({ onReply, sendingReply = false }: ThreadReplyCompo
       mimeType: f.mimeType,
       sizeBytes: f.sizeBytes,
     }));
-    onReply?.(body || "", attachments.length > 0 ? attachments : undefined);
+    if (attachments.length > 0) {
+      onReply?.(body || "", attachments);
+    } else {
+      onReply?.(body || "");
+    }
     if (editorRef.current) editorRef.current.textContent = "";
+    setReplyText("");
     clearAll();
-  }, [stagedFiles, onReply, clearAll]);
+  }, [replyText, stagedFiles, onReply, clearAll]);
 
   return (
     <div
@@ -521,6 +527,13 @@ function ThreadReplyComposer({ onReply, sendingReply = false }: ThreadReplyCompo
           style={{ color: "#1C1B1F" }}
           data-placeholder={sendingReply ? "Sending…" : "Reply in thread…"}
           data-testid="thread-reply-input"
+          onInput={(e) => {
+            const text = e.target.textContent ?? "";
+            setReplyText(text);
+            if (editorRef.current && editorRef.current.textContent !== text) {
+              editorRef.current.textContent = text;
+            }
+          }}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();

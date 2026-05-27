@@ -10,7 +10,7 @@ import {
   requireValidDate,
   MessagingApiError,
   MessagingApiErrorCode,
-} from "../../../../../_utils";
+} from "../../../../_utils";
 import type { MessagingTaskStatus } from "@/lib/messaging/domain-types";
 
 export const runtime = "nodejs";

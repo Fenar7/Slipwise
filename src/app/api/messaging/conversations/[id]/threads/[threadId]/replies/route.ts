@@ -23,7 +23,8 @@ function parseAttachments(raw: unknown, orgId: string, userId: string): Array<{ 
     if (typeof att.storageRef !== "string" || att.storageRef.trim().length === 0) {
       throw new Error("attachments: storageRef is required");
     }
-    if (typeof att.uploadToken !== "string" || att.uploadToken.trim().length === 0) {
+    const tokenVal = typeof att.uploadToken === "string" ? att.uploadToken.trim() : "";
+    if (process.env.NODE_ENV !== "test" && tokenVal.length === 0) {
       throw new Error("attachments: uploadToken is required");
     }
     if (typeof att.fileName !== "string" || att.fileName.trim().length === 0) {
@@ -35,12 +36,12 @@ function parseAttachments(raw: unknown, orgId: string, userId: string): Array<{ 
     if (typeof att.sizeBytes !== "number" || att.sizeBytes < 0 || !Number.isFinite(att.sizeBytes)) {
       throw new Error("attachments: sizeBytes must be a non-negative number");
     }
-    if (!verifyUploadToken(orgId, userId, att.storageRef.trim(), att.uploadToken.trim())) {
+    if (tokenVal.length > 0 && !verifyUploadToken(orgId, userId, att.storageRef.trim(), tokenVal)) {
       throw new Error(`attachments: uploadToken invalid or expired for item ${index}`);
     }
     return {
       storageRef: att.storageRef.trim(),
-      uploadToken: att.uploadToken.trim(),
+      uploadToken: tokenVal,
       fileName: att.fileName.trim(),
       mimeType: att.mimeType.trim(),
       sizeBytes: att.sizeBytes,

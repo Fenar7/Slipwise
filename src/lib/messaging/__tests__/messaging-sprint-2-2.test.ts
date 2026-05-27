@@ -400,6 +400,7 @@ describe("conversation service", () => {
     });
 
     it("creates a DM with exactly two participants and no visibility", async () => {
+      db.conversation.findMany.mockResolvedValue([]);
       db.conversation.create.mockResolvedValue(
         makeConversationRow({ type: "DM", name: null, visibility: null, dmPeerId: USER_2 }),
       );
