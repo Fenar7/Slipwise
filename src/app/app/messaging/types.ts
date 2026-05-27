@@ -70,7 +70,7 @@ export interface MessagingGroup {
 
 // ─── Tasks ───────────────────────────────────────────────────────────────────
 
-export type TaskStatus = "open" | "in-progress" | "done" | "overdue";
+export type TaskStatus = "open" | "in-progress" | "done" | "overdue" | "cancelled";
 
 export interface MessagingTask {
   id: string;
@@ -301,6 +301,12 @@ export interface MessagingTaskDetail extends MessagingTask {
   description: string | null;
   createdAt: string; // ISO
   createdBy: string; // participant name
+  originatingMessageId?: string | null;
+  reminderAt?: string | null;
+  reminderSentAt?: string | null;
+  dbStatus?: TaskStatus | null;
+  conversationName?: string | null;
+  conversationType?: "CHANNEL" | "DM" | "GROUP";
 }
 
 export type CalendarConnectionStatus =
@@ -316,7 +322,7 @@ export interface CalendarConnection {
 }
 
 export type MeetingTab = "upcoming" | "past" | "calendar";
-export type TaskFilterStatus = "all" | "open" | "in-progress" | "done" | "overdue";
+export type TaskFilterStatus = "all" | "open" | "in-progress" | "done" | "overdue" | "cancelled";
 
 // ─── Sprint 1.6 — Search, Files, Notifications, and Final Polish ─────────────
 

@@ -19,6 +19,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
+import "./local-setup";
+
 // ─── Mock Prisma client ───────────────────────────────────────────────────────
 
 function makeFn() {
@@ -400,6 +402,7 @@ describe("conversation service", () => {
     });
 
     it("creates a DM with exactly two participants and no visibility", async () => {
+      (db.conversation.findMany as any).mockResolvedValue([]);
       db.conversation.create.mockResolvedValue(
         makeConversationRow({ type: "DM", name: null, visibility: null, dmPeerId: USER_2 }),
       );

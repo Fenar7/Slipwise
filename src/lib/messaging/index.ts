@@ -136,9 +136,6 @@ export type {
   DisconnectCalendarInput,
   CreateRetentionPolicyInput,
   UpdateRetentionPolicyInput,
-  ConversationSummary,
-  MessageSummary,
-  ParticipantSummary,
 } from "./service-contracts";
 export {
   isValidConversationType,
@@ -295,6 +292,8 @@ export type {
   ThreadSummary,
   ReadStateSummary,
   MessageDetail,
+  TaskSummary,
+  TaskPriorityString,
 } from "./read-shapes";
 export {
   toConversationSummary,
@@ -302,6 +301,7 @@ export {
   toParticipantSummary,
   toConversationDetail,
   toMessageDetail,
+  toTaskSummary,
 } from "./read-shapes";
 
 // Read models (aggregated queries returning UI shapes)
@@ -309,6 +309,8 @@ export {
   listConversationSummariesForUser,
   getConversationDetail,
   getMessageDetail,
+  getConversationTaskSummaries,
+  getOrgTaskSummaries,
   type ListConversationSummariesOptions,
   type GetConversationDetailOptions,
 } from "./read-models";
@@ -391,3 +393,7 @@ export type {
   MessagingRealtimeServerOptions,
   MessagingRealtimeServer,
 } from "./realtime/server";
+
+// Errors
+export { ConversationAccessError, InvalidInputError, NotFoundError } from "./errors";
+

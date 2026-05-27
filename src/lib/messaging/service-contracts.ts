@@ -339,6 +339,7 @@ export interface CreateTaskInput {
   priority?: number;
   assigneeId?: string | null;
   dueDate?: Date | null;
+  reminderAt?: Date | null;
   createdBy: string;
 }
 
@@ -347,6 +348,8 @@ export interface UpdateTaskStatusInput {
   taskId: string;
   status: MessagingTaskStatus;
   actorId: string;
+  /** URL conversation id — validated against task.conversationId for route contract integrity */
+  conversationId: string;
 }
 
 export interface AssignTaskInput {
@@ -354,6 +357,22 @@ export interface AssignTaskInput {
   taskId: string;
   assigneeId: string | null;
   actorId: string;
+  /** URL conversation id — validated against task.conversationId for route contract integrity */
+  conversationId: string;
+}
+
+export interface UpdateTaskInput {
+  orgId: string;
+  taskId: string;
+  actorId: string;
+  conversationId: string;
+  title?: string;
+  description?: string | null;
+  priority?: number;
+  dueDate?: Date | null;
+  reminderAt?: Date | null;
+  assigneeId?: string | null;
+  status?: MessagingTaskStatus;
 }
 
 // ─── Meeting service contracts ───────────────────────────────────────────────

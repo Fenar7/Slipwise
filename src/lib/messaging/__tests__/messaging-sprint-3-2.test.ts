@@ -17,6 +17,8 @@ import { NextRequest } from "next/server";
 
 vi.mock("server-only", () => ({}));
 
+import "./local-setup";
+
 function makeFn() {
   return vi.fn();
 }

@@ -12,6 +12,8 @@ import {
 import { MessagingReadingWorkspace } from "./messaging-reading-workspace";
 import { MessagingSearchPanel } from "./messaging-search-panel";
 import { MessagingNotificationsPanel } from "./messaging-notifications-panel";
+import { MessagingTaskRail } from "./messaging-task-rail";
+import { MessagingTaskCreate } from "./messaging-task-create";
 import type {
   MessagingSection,
   MessagingWorkspaceState,
@@ -84,6 +86,16 @@ export function MessagingWorkspace() {
   const [notifications, setNotifications] = useState<MessagingNotification[]>(MOCK_NOTIFICATIONS);
   const [pendingCreateId, setPendingCreateId] = useState<string | null>(null);
 
+  // Sprint 6.2: jump-to-message from task detail
+  const [jumpToMessageId, setJumpToMessageId] = useState<string | null>(null);
+
+  // Sprint 6.6: create task from message modal
+  const [taskCreateModal, setTaskCreateModal] = useState<{
+    open: boolean;
+    originatingMessageId: string | null;
+    originatingMessagePreview: string | null;
+  }>({ open: false, originatingMessageId: null, originatingMessagePreview: null });
+
   const unreadCount = notifications.filter((n) => !n.read).length;
 
   // Register contextual tabs and action buttons in the global top bar
@@ -147,6 +159,40 @@ export function MessagingWorkspace() {
   } = useConversationList();
 
   const activeConvId = activeConversation?.id ?? null;
+
+  // Sprint 6.6: open task create modal anchored to a message
+  const handleCreateTaskFromMessage = React.useCallback((messageId: string, messageBody: string) => {
+    setTaskCreateModal({
+      open: true,
+      originatingMessageId: messageId,
+      originatingMessagePreview: messageBody.length > 60 ? messageBody.slice(0, 60) + "…" : messageBody,
+    });
+  }, []);
+
+  // Sprint 6.2: navigate from task detail to originating message/thread
+  const handleNavigateToOrigin = React.useCallback((conversationId: string, messageId: string | null) => {
+    setJumpToMessageId(messageId);
+    const all = [...liveChannels, ...liveDms, ...liveGroups];
+    const found = all.find((c) => c.id === conversationId);
+    if (found) {
+      const kind = found.type === "CHANNEL" ? "channel" : found.type === "DM" ? "dm" : "group";
+      const section: MessagingSection = kind === "channel" ? "channels" : kind === "dm" ? "dms" : "groups";
+      setActiveSection(section);
+      setActiveConversations((prev) => ({
+        ...prev,
+        [section]: toActiveConversation(found, kind),
+      }));
+    }
+  }, [liveChannels, liveDms, liveGroups, setActiveSection]);
+
+  // Clear jumpToMessageId after the reading workspace has consumed it
+  React.useEffect(() => {
+    if (jumpToMessageId) {
+      setJumpToMessageId(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeConvId]);
+
   const { detail: activeDetail, refresh: refreshDetail, errorType: detailErrorType } = useConversationDetail(activeConvId);
 
   const { send: sendMessage, sending: sendingMessage, error: sendError, clearError: clearSendError } = useSendMessage();
@@ -398,6 +444,7 @@ export function MessagingWorkspace() {
               <div className="flex min-h-0 flex-1 overflow-hidden">
                 <MessagingReadingWorkspace
                   conversation={displayConversation}
+                  initialThreadAnchorMessageId={jumpToMessageId}
                   sectionKind={
                     state.activeSection === "channels"
                       ? "channel"
@@ -442,14 +489,40 @@ export function MessagingWorkspace() {
                     await refreshDetail();
                     await refreshList();
                   }}
+                  onCreateTaskFromMessage={handleCreateTaskFromMessage}
                 />
               </div>
             </div>
           ) : (
             /* Sprint 1.1 pane for tasks / meetings / files / admin */
-            <MessagingWorkspacePane activeSection={state.activeSection} conversationId={activeConvId} />
+            <MessagingWorkspacePane activeSection={state.activeSection} conversationId={activeConvId} onNavigateToOrigin={handleNavigateToOrigin} />
           )}
         </div>
+
+        {taskCreateModal.open && activeConvId && (
+          <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/40">
+            <MessagingTaskCreate
+              conversationId={activeConvId}
+              participants={activeDetail?.participantProfiles?.map((p) => ({
+                id: p.userId,
+                name: p.name,
+                avatarInitials: p.avatarInitials,
+                role: "member",
+                presence: "offline",
+              })) ?? []}
+              originatingMessageId={taskCreateModal.originatingMessageId}
+              originatingMessagePreview={taskCreateModal.originatingMessagePreview}
+              onClose={() =>
+                setTaskCreateModal({ open: false, originatingMessageId: null, originatingMessagePreview: null })
+              }
+              onSuccess={() => {
+                setTaskCreateModal({ open: false, originatingMessageId: null, originatingMessagePreview: null });
+                refreshDetail();
+                refreshList();
+              }}
+            />
+          </div>
+        )}
 
         {notifOpen && (
           <MessagingNotificationsPanel
@@ -466,6 +539,11 @@ export function MessagingWorkspace() {
           />
         )}
       </div>
+
+      {/* Right task rail — conversation-scoped task list (Sprint 6.1) */}
+      {isConversationSection && (
+        <MessagingTaskRail conversationId={activeConvId} degraded={realtimeDegraded} />
+      )}
     </div>
   );
 }

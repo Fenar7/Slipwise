@@ -40,6 +40,15 @@ import { MessagingMessageActions } from "./messaging-message-actions";
 import { MessagingEmojiPicker } from "./messaging-emoji-picker";
 import { useThreadReplies } from "./lib/use-thread-replies";
 import type { ApiConversationDetail } from "./lib/mappers";
+import {
+  MOCK_MESSAGES_CHANNEL_GENERAL,
+  MOCK_MESSAGES_CHANNEL_FINANCE,
+  MOCK_MESSAGES_DM_ARJUN,
+  MOCK_MESSAGES_DM_SNEHA,
+  MOCK_MESSAGES_GROUP_Q2,
+  MOCK_MESSAGES_GROUP_VENDOR,
+  MOCK_THREAD_REPLIES_CH_F_1,
+} from "./mock-data";
 
 // ─── Shared primitives ────────────────────────────────────────────────────────
 
@@ -503,9 +512,11 @@ interface MessageRowProps {
   isThreadAnchor: boolean;
   onOpenThread: (msgId: string) => void;
   onDownloadAttachment?: (attachmentId: string) => Promise<{ signedUrl: string } | null>;
+  onCreateTaskFromMessage?: (messageId: string, messageBody: string) => void;
+  canSend?: boolean;
 }
 
-function MessageRow({ message, isThreadAnchor, onOpenThread, onDownloadAttachment }: MessageRowProps) {
+function MessageRow({ message, isThreadAnchor, onOpenThread, onDownloadAttachment, onCreateTaskFromMessage, canSend }: MessageRowProps) {
   const [emojiOpen, setEmojiOpen] = React.useState(false);
   const [actionsOpen, setActionsOpen] = React.useState(false);
 
@@ -616,7 +627,14 @@ function MessageRow({ message, isThreadAnchor, onOpenThread, onDownloadAttachmen
           </button>
           {actionsOpen && (
             <div className="absolute right-0 top-7">
-              <MessagingMessageActions onClose={() => setActionsOpen(false)} />
+              <MessagingMessageActions
+                onClose={() => setActionsOpen(false)}
+                onCreateTask={
+                  canSend !== false && onCreateTaskFromMessage
+                    ? () => onCreateTaskFromMessage(message.id, message.body)
+                    : undefined
+                }
+              />
             </div>
           )}
         </div>
@@ -632,9 +650,11 @@ interface MessageFeedProps {
   threadAnchorMessageId: string | null;
   onOpenThread: (msgId: string) => void;
   onDownloadAttachment?: (attachmentId: string) => Promise<{ signedUrl: string } | null>;
+  onCreateTaskFromMessage?: (messageId: string, messageBody: string) => void;
+  canSend?: boolean;
 }
 
-function MessageFeed({ messages, threadAnchorMessageId, onOpenThread, onDownloadAttachment }: MessageFeedProps) {
+function MessageFeed({ messages, threadAnchorMessageId, onOpenThread, onDownloadAttachment, onCreateTaskFromMessage, canSend }: MessageFeedProps) {
   const feedRef = React.useRef<HTMLDivElement>(null);
 
   // Scroll to bottom on mount (simulates arriving at latest messages)
@@ -658,6 +678,8 @@ function MessageFeed({ messages, threadAnchorMessageId, onOpenThread, onDownload
           isThreadAnchor={threadAnchorMessageId === msg.id}
           onOpenThread={onOpenThread}
           onDownloadAttachment={onDownloadAttachment}
+          onCreateTaskFromMessage={onCreateTaskFromMessage}
+          canSend={canSend}
         />
       ))}
       {/* Bottom padding so last message isn't flush against composer */}
@@ -691,6 +713,7 @@ function ChannelWorkspace({
   onRefreshDetail,
   participants,
   onDownloadAttachment,
+  onCreateTaskFromMessage,
 }: WorkspaceBodyProps) {
   const channelMessages = externalMessages ?? [];
   const anchorMsg = threadAnchorMessageId
@@ -725,6 +748,8 @@ function ChannelWorkspace({
           threadAnchorMessageId={threadAnchorMessageId}
           onOpenThread={onOpenThread}
           onDownloadAttachment={onDownloadAttachment}
+          onCreateTaskFromMessage={onCreateTaskFromMessage}
+          canSend={canSend}
         />
         <MessagingComposer placeholder={`Message #${conversation.name}`} isAccessible={canSend} onSend={onSend} sending={sending} sendError={sendError} conversationId={conversation.id} participants={participants} />
       </div>
@@ -800,6 +825,7 @@ function DMWorkspace({
   replyError,
   participants,
   onDownloadAttachment,
+  onCreateTaskFromMessage,
 }: WorkspaceBodyProps) {
   const dmMessages = externalMessages ?? [];
   return (
@@ -843,6 +869,8 @@ function DMWorkspace({
           threadAnchorMessageId={threadAnchorMessageId}
           onOpenThread={onOpenThread}
           onDownloadAttachment={onDownloadAttachment}
+          onCreateTaskFromMessage={onCreateTaskFromMessage}
+          canSend={canSend}
         />
         <MessagingComposer placeholder={`Message ${conversation.name}`} isAccessible={canSend} onSend={onSend} sending={sending} sendError={sendError} conversationId={conversation.id} participants={participants} />
       </div>
@@ -898,6 +926,7 @@ function GroupWorkspace({
   onRefreshDetail,
   participants,
   onDownloadAttachment,
+  onCreateTaskFromMessage,
 }: WorkspaceBodyProps) {
   const groupMessages = externalMessages ?? [];
   const anchorMsg = threadAnchorMessageId
@@ -931,6 +960,8 @@ function GroupWorkspace({
           threadAnchorMessageId={threadAnchorMessageId}
           onOpenThread={onOpenThread}
           onDownloadAttachment={onDownloadAttachment}
+          onCreateTaskFromMessage={onCreateTaskFromMessage}
+          canSend={canSend}
         />
         <MessagingComposer placeholder={`Message ${conversation.name}`} isAccessible={canSend} onSend={onSend} sending={sending} sendError={sendError} conversationId={conversation.id} participants={participants} />
       </div>
@@ -991,6 +1022,7 @@ interface WorkspaceBodyProps {
   onEdit?: (messageId: string, body: string) => void;
   onDelete?: (messageId: string) => void;
   onDownloadAttachment?: (attachmentId: string) => Promise<{ signedUrl: string } | null>;
+  onCreateTaskFromMessage?: (messageId: string, messageBody: string) => void;
 }
 
 // ─── Main export ──────────────────────────────────────────────────────────────
@@ -998,6 +1030,7 @@ interface WorkspaceBodyProps {
 interface MessagingReadingWorkspaceProps {
   conversation: ActiveConversation | null;
   sectionKind?: "channel" | "dm" | "group";
+  initialThreadAnchorMessageId?: string | null;
   degraded?: boolean;
   messages?: ConversationMessage[];
   canSend?: boolean;
@@ -1018,11 +1051,13 @@ interface MessagingReadingWorkspaceProps {
   onRefreshDetail?: () => void;
   participants?: MentionSuggestion[];
   onDownloadAttachment?: (attachmentId: string) => Promise<{ signedUrl: string } | null>;
+  onCreateTaskFromMessage?: (messageId: string, messageBody: string) => void;
 }
 
 export function MessagingReadingWorkspace({
   conversation,
   sectionKind,
+  initialThreadAnchorMessageId,
   degraded,
   messages: externalMessages,
   canSend = true,
@@ -1036,10 +1071,26 @@ export function MessagingReadingWorkspace({
   onRefreshDetail,
   participants,
   onDownloadAttachment,
+  onCreateTaskFromMessage,
 }: MessagingReadingWorkspaceProps) {
   const [threadAnchorMessageId, setThreadAnchorMessageId] = React.useState<string | null>(null);
   const [threadOpen, setThreadOpen] = React.useState(false);
   const [detailOpen, setDetailOpen] = React.useState(false);
+
+  const resolvedMessages = React.useMemo(() => {
+    if (externalMessages) return externalMessages;
+    const id = conversation?.id;
+    if (!id) return [];
+    if (conversation.kind === "channel") {
+      return id === "ch-finance" ? MOCK_MESSAGES_CHANNEL_FINANCE : MOCK_MESSAGES_CHANNEL_GENERAL;
+    } else if (conversation.kind === "dm") {
+      return id === "dm-1" ? MOCK_MESSAGES_DM_ARJUN : MOCK_MESSAGES_DM_SNEHA;
+    } else if (conversation.kind === "group") {
+      return id === "grp-q2-close" ? MOCK_MESSAGES_GROUP_Q2 : MOCK_MESSAGES_GROUP_VENDOR;
+    }
+    return [];
+  }, [externalMessages, conversation]);
+
   const activeThreadId = React.useMemo(() => {
     if (!detail || !threadAnchorMessageId) return null;
     return detail.threads.find((thread) => thread.anchorMessageId === threadAnchorMessageId)?.id ?? null;
@@ -1052,12 +1103,29 @@ export function MessagingReadingWorkspace({
     detail ?? null,
   );
 
+  const resolvedThreadReplies = React.useMemo(() => {
+    if (detail) return liveThreadReplies;
+    if (threadAnchorMessageId === "msg-ch-f-1") {
+      return MOCK_THREAD_REPLIES_CH_F_1;
+    }
+    return [];
+  }, [liveThreadReplies, detail, threadAnchorMessageId]);
+
   // Reset thread and detail state when conversation changes
   React.useEffect(() => {
     setThreadOpen(false);
     setThreadAnchorMessageId(null);
     setDetailOpen(false);
   }, [conversation?.id]);
+
+  // Sprint 6.2: open thread from task detail navigation
+  React.useEffect(() => {
+    if (initialThreadAnchorMessageId) {
+      setThreadAnchorMessageId(initialThreadAnchorMessageId);
+      setThreadOpen(true);
+      setDetailOpen(false);
+    }
+  }, [initialThreadAnchorMessageId]);
 
   function handleOpenThread(msgId: string) {
     setThreadAnchorMessageId(msgId);
@@ -1145,7 +1213,7 @@ export function MessagingReadingWorkspace({
       });
     },
     onCloseDetail: () => setDetailOpen(false),
-    messages: externalMessages,
+    messages: resolvedMessages,
     canSend,
     sending,
     sendError,
@@ -1153,11 +1221,12 @@ export function MessagingReadingWorkspace({
     onReply,
     sendingReply,
     replyError,
-    threadReplies: liveThreadReplies,
+    threadReplies: resolvedThreadReplies,
     detail,
     onRefreshDetail,
     participants,
     onDownloadAttachment,
+    onCreateTaskFromMessage,
   };
 
   return (

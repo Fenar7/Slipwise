@@ -10,6 +10,7 @@ import {
   Copy,
   MoreHorizontal,
   Pencil,
+  CheckSquare,
 } from "lucide-react";
 
 interface MessagingMessageActionsProps {
@@ -21,6 +22,7 @@ interface MessagingMessageActionsProps {
   onReport?: () => void;
   onDelete?: () => void;
   onEdit?: () => void;
+  onCreateTask?: () => void;
 }
 
 export function MessagingMessageActions({
@@ -32,6 +34,7 @@ export function MessagingMessageActions({
   onReport,
   onDelete,
   onEdit,
+  onCreateTask,
 }: MessagingMessageActionsProps) {
   const actions = [
     { label: "React", icon: Smile, testId: "msg-action-react", onClick: onReact },
@@ -39,6 +42,7 @@ export function MessagingMessageActions({
     { label: "Edit", icon: Pencil, testId: "msg-action-edit", onClick: onEdit },
     { label: "Pin message", icon: Pin, testId: "msg-action-pin", onClick: onPin },
     { label: "Copy text", icon: Copy, testId: "msg-action-copy", onClick: onCopy },
+    ...(onCreateTask ? [{ label: "Create task", icon: CheckSquare, testId: "msg-action-create-task", onClick: onCreateTask }] : []),
     { label: "Report", icon: Flag, testId: "msg-action-report", onClick: onReport },
     { label: "Delete", icon: Trash2, testId: "msg-action-delete", onClick: onDelete, danger: true },
   ];

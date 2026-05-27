@@ -270,7 +270,7 @@ export async function replyToThread(
         threadId: input.threadId,
         authorId: input.authorId,
         body: input.body,
-        contentMeta: input.contentMeta ?? null,
+        contentMeta: (input.contentMeta ?? Prisma.JsonNull) as Prisma.InputJsonValue,
         participantCountAtSend: participantCount,
       },
     });

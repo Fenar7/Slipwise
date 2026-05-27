@@ -314,6 +314,8 @@ export interface MessagingTaskRecord {
   priority: number;
   assigneeId: string | null;
   dueDate: Date | null;
+  reminderAt: Date | null;
+  reminderSentAt: Date | null;
   completedAt: Date | null;
   completedBy: string | null;
   createdBy: string;
@@ -322,10 +324,11 @@ export interface MessagingTaskRecord {
 }
 
 export function taskIsOpen(record: MessagingTaskRecord): boolean {
-  return record.status === "OPEN" || record.status === "IN_PROGRESS";
+  return record.status === "OPEN" || record.status === "IN_PROGRESS" || record.status === "OVERDUE";
 }
 
 export function taskIsOverdue(record: MessagingTaskRecord): boolean {
+  if (record.status === "OVERDUE") return true;
   if (!record.dueDate) return false;
   if (!taskIsOpen(record)) return false;
   return record.dueDate < new Date();

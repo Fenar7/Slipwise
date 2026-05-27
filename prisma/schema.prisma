@@ -6632,6 +6632,10 @@ model MessagingTask {
   /// The user this task is assigned to.
   assigneeId     String?             @db.Uuid
   dueDate        DateTime?
+  /// When the user wants to be reminded about this task.
+  reminderAt     DateTime?
+  /// When the reminder was actually dispatched (null = not yet sent).
+  reminderSentAt DateTime?
   completedAt    DateTime?
   completedBy    String?             @db.Uuid
   createdBy      String              @db.Uuid
@@ -6644,6 +6648,7 @@ model MessagingTask {
   @@index([orgId, conversationId, status])
   @@index([orgId, assigneeId, status])
   @@index([orgId, status, dueDate])
+  @@index([orgId, reminderAt, reminderSentAt])
   @@map("messaging_task")
 }
 

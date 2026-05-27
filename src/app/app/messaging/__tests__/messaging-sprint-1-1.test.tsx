@@ -11,9 +11,21 @@
  * - Nav item added to suite nav
  */
 
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import React from "react";
+
+vi.mock("@/app/app/messaging/lib/use-conversation-list");
+vi.mock("@/app/app/messaging/lib/use-conversation-detail");
+vi.mock("@/app/app/messaging/lib/use-conversation-tasks");
+vi.mock("@/app/app/messaging/lib/use-thread-replies");
+vi.mock("@/app/app/messaging/lib/use-attachment-files");
+
+import { setupLegacyMessagingMocks } from "./legacy-setup-helper";
+
+beforeEach(() => {
+  setupLegacyMessagingMocks();
+});
 
 // ─── Mock next/navigation ─────────────────────────────────────────────────────
 
@@ -54,7 +66,7 @@ import {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function renderLeftRail(activeSection = "channels" as const) {
+function renderLeftRail(activeSection: any = "channels") {
   return render(
     <MessagingLeftRail
       activeSection={activeSection}

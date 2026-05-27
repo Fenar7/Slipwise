@@ -1,6 +1,6 @@
 import "server-only";
 
-import type { Prisma } from "@/generated/prisma/client";
+import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 import type { RealtimeEventType } from "./protocol";
 
 /**
@@ -144,7 +144,7 @@ export const DEFAULT_DOWNSTREAM_CONSUMPTION_LIMIT = 500;
 // ---------------------------------------------------------------------------
 
 export async function consumeDownstreamEvents(
-  tx: Prisma.TransactionClient | Prisma.Client,
+  tx: Prisma.TransactionClient | PrismaClient,
   input: ConsumeDownstreamEventsInput,
 ): Promise<ConsumeDownstreamEventsResult> {
   const {
@@ -266,7 +266,7 @@ function mapRowsToDownstreamEvents(
 // ---------------------------------------------------------------------------
 
 export async function recordConsumptionCheckpoint(
-  tx: Prisma.TransactionClient | Prisma.Client,
+  tx: Prisma.TransactionClient | PrismaClient,
   input: RecordConsumptionCheckpointInput,
 ): Promise<void> {
   await tx.downstreamConsumptionCheckpoint.upsert({
@@ -291,7 +291,7 @@ export async function recordConsumptionCheckpoint(
 }
 
 export async function getConsumptionCheckpoint(
-  tx: Prisma.TransactionClient | Prisma.Client,
+  tx: Prisma.TransactionClient | PrismaClient,
   params: {
     consumerType: DownstreamConsumerType;
     orgId: string;
@@ -324,7 +324,7 @@ export async function getConsumptionCheckpoint(
 // ---------------------------------------------------------------------------
 
 export async function getDownstreamEventCount(
-  tx: Prisma.TransactionClient | Prisma.Client,
+  tx: Prisma.TransactionClient | PrismaClient,
   params: {
     orgId: string;
     afterCursor?: bigint;
@@ -432,8 +432,9 @@ export function buildAnalyticsPayload(
 function inferActionFromEventType(
   eventType: RealtimeEventType,
 ): "created" | "edited" | "deleted" | null {
-  if (eventType.endsWith(".created")) return "created";
-  if (eventType.endsWith(".edited")) return "edited";
-  if (eventType.endsWith(".deleted")) return "deleted";
+  const typeStr = eventType as string;
+  if (typeStr.endsWith(".created")) return "created";
+  if (typeStr.endsWith(".edited")) return "edited";
+  if (typeStr.endsWith(".deleted")) return "deleted";
   return null;
 }

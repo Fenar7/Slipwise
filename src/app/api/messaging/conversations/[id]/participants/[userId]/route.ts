@@ -5,7 +5,7 @@ import {
   requireMessagingApiContext,
   messagingApiResponse,
   handleMessagingApiError,
-} from "../../../../../_utils";
+} from "../../../../_utils";
 
 export const runtime = "nodejs";
 

@@ -3,6 +3,7 @@ import "server-only";
 import { NextResponse } from "next/server";
 import { getOrgContext, type OrgContext } from "@/lib/auth";
 import { rateLimitByOrg, rateLimitByIp, RATE_LIMITS } from "@/lib/rate-limit";
+import { ConversationAccessError } from "@/lib/messaging";
 
 export const MessagingApiErrorCode = {
   UNAUTHORIZED: "UNAUTHORIZED",
@@ -99,6 +100,9 @@ export async function safeRead<T>(promise: Promise<T>): Promise<T> {
   try {
     return await promise;
   } catch (error) {
+    if (error instanceof ConversationAccessError) {
+      throw new MessagingNotFoundError("Conversation not found or access denied.");
+    }
     if (error instanceof Error) {
       const msg = error.message;
       if (
@@ -147,6 +151,23 @@ export function handleMessagingApiError(error: unknown): NextResponse {
   }
 
   if (error instanceof Error) {
+    // Structured service-layer error name checks
+    if (error.name === "InvalidInputError") {
+      return messagingApiError(
+        MessagingApiErrorCode.VALIDATION_ERROR,
+        error.message,
+        STATUS_MAP[MessagingApiErrorCode.VALIDATION_ERROR],
+      );
+    }
+
+    if (error.name === "NotFoundError") {
+      return messagingApiError(
+        MessagingApiErrorCode.NOT_FOUND,
+        error.message,
+        STATUS_MAP[MessagingApiErrorCode.NOT_FOUND],
+      );
+    }
+
     const msg = error.message;
     // Fallback substring checks for errors thrown by services that do not yet use
     // the structured error classes. These should migrate over time.
@@ -303,4 +324,57 @@ export async function applyMessagingRateLimit(
       429,
     );
   }
+}
+
+/**
+ * Validate that a value is an integer within [min, max].
+ * Returns value unchanged if undefined/null (caller decides whether field is required).
+ */
+export function requireNumberRange(
+  value: unknown,
+  fieldName: string,
+  min: number,
+  max: number,
+): number | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  const num = Number(value);
+  if (!Number.isFinite(num) || !Number.isInteger(num) || num < min || num > max) {
+    throw new MessagingApiError(
+      MessagingApiErrorCode.VALIDATION_ERROR,
+      `${fieldName} must be an integer between ${min} and ${max}.`,
+      STATUS_MAP[MessagingApiErrorCode.VALIDATION_ERROR],
+    );
+  }
+  return num;
+}
+
+/**
+ * Validate that a string value parses to a valid Date.
+ * Returns undefined if value is null/undefined.
+ */
+export function requireValidDate(
+  value: unknown,
+  fieldName: string,
+): Date | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  if (typeof value !== "string") {
+    throw new MessagingApiError(
+      MessagingApiErrorCode.VALIDATION_ERROR,
+      `${fieldName} must be a valid ISO-8601 date string.`,
+      STATUS_MAP[MessagingApiErrorCode.VALIDATION_ERROR],
+    );
+  }
+  const date = new Date(value);
+  if (isNaN(date.getTime())) {
+    throw new MessagingApiError(
+      MessagingApiErrorCode.VALIDATION_ERROR,
+      `${fieldName} must be a valid date.`,
+      STATUS_MAP[MessagingApiErrorCode.VALIDATION_ERROR],
+    );
+  }
+  return date;
 }

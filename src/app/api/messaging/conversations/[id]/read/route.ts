@@ -6,7 +6,7 @@ import {
   handleMessagingApiError,
   safeRead,
   applyMessagingRateLimit,
-} from "../../_utils";
+} from "../../../_utils";
 
 export const runtime = "nodejs";
 

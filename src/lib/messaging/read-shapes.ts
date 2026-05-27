@@ -27,6 +27,8 @@ import type {
   ConversationMessageStatus,
   ConversationParticipantRole,
   ConversationAttachmentRecord,
+  MessagingTaskRecord,
+  MessagingTaskStatus,
 } from "./domain-types";
 
 import {
@@ -41,6 +43,7 @@ import {
   messageIsDeleted,
   messageIsEdited,
   threadIsResolved,
+  taskIsOverdue,
 } from "./domain-types";
 
 // ─── Conversation Summary ───────────────────────────────────────────────────────
@@ -400,5 +403,76 @@ export function toMessageDetail(input: MessageDetailInput): MessageDetail {
     reactions,
     mentions,
     attachments: attachments.map(toAttachmentSummary),
+  };
+}
+
+
+// ─── Task Summary ─────────────────────────────────────────────────────────────
+
+/** Server-side priority mapping: Prisma Int -> UI string contract. */
+export type TaskPriorityString = "low" | "medium" | "high" | "critical";
+
+function priorityNumberToString(priority: number): TaskPriorityString {
+  switch (priority) {
+    case 0: return "low";
+    case 1: return "medium";
+    case 2: return "high";
+    case 3: return "critical";
+    default: return "low";
+  }
+}
+
+export interface TaskSummary {
+  id: string;
+  orgId: string;
+  conversationId: string;
+  originatingMessageId: string | null;
+  title: string;
+  description: string | null;
+  status: MessagingTaskStatus;
+  priority: TaskPriorityString;
+  isOverdue: boolean;
+  assigneeId: string | null;
+  assigneeName: string | null;
+  assigneeAvatarInitials: string | null;
+  dueDate: string | null;
+  reminderAt: string | null;
+  reminderSentAt: string | null;
+  createdBy: string;
+  createdByName: string | null;
+  createdAt: string;
+  conversationName?: string | null;
+  conversationType?: ConversationType;
+}
+
+
+export interface TaskSummaryInput {
+  record: MessagingTaskRecord;
+  assigneeName: string | null;
+  assigneeAvatarInitials: string | null;
+  createdByName: string | null;
+}
+
+export function toTaskSummary(input: TaskSummaryInput): TaskSummary {
+  const { record, assigneeName, assigneeAvatarInitials, createdByName } = input;
+  return {
+    id: record.id,
+    orgId: record.orgId,
+    conversationId: record.conversationId,
+    originatingMessageId: record.originatingMessageId,
+    title: record.title,
+    description: record.description,
+    status: record.status,
+    priority: priorityNumberToString(record.priority),
+    isOverdue: taskIsOverdue(record),
+    assigneeId: record.assigneeId,
+    assigneeName,
+    assigneeAvatarInitials,
+    dueDate: record.dueDate?.toISOString() ?? null,
+    reminderAt: record.reminderAt?.toISOString() ?? null,
+    reminderSentAt: record.reminderSentAt?.toISOString() ?? null,
+    createdBy: record.createdBy,
+    createdByName,
+    createdAt: record.createdAt.toISOString(),
   };
 }
