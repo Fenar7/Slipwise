@@ -60,9 +60,11 @@ vi.mock("@/lib/auth", () => ({
 vi.mock("next/headers", () => ({
   headers: vi.fn(async () => new Map()),
 }));
+const mockClientHubInviteEmailHtml = vi.hoisted(() => vi.fn(({ url }: { url: string }) => `<html>${url}</html>`));
+
 vi.mock("@/lib/email", () => ({
   sendEmail: mockSendEmail,
-  clientHubInviteEmailHtml: vi.fn(() => "<html>mock</html>"),
+  clientHubInviteEmailHtml: mockClientHubInviteEmailHtml,
 }));
 
 import {
@@ -706,7 +708,10 @@ describe("Client Hub Per-Client Overrides & Resolver", () => {
     it("generates a publicAccessHandle on first enable and sends initial invite atomically", async () => {
       setupAuth();
       mockDb.customer.findFirst.mockResolvedValue({ id: CUSTOMER_ID, name: "Alice Corp", email: "alice@test.com" });
-      mockDb.clientHubCustomerLifecycle.findUnique.mockResolvedValue(null);
+      // First call (inside enablement tx) returns null; second call (for email URL) returns the handle
+      mockDb.clientHubCustomerLifecycle.findUnique
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ publicAccessHandle: "generated-handle" });
       mockDb.organization.findUnique.mockResolvedValue({ slug: "acme", name: "Acme" });
       mockSendEmail.mockResolvedValue(undefined);
 
@@ -722,6 +727,7 @@ describe("Client Hub Per-Client Overrides & Resolver", () => {
         expect.objectContaining({
           to: "alice@test.com",
           subject: expect.stringContaining("Client Hub"),
+          html: expect.stringContaining("generated-handle"),
         })
       );
       // Invite state + audit must be persisted inside a real transaction
@@ -759,7 +765,9 @@ describe("Client Hub Per-Client Overrides & Resolver", () => {
     it("succeeds enablement but does not persist invite state when email delivery fails", async () => {
       setupAuth();
       mockDb.customer.findFirst.mockResolvedValue({ id: CUSTOMER_ID, name: "Alice Corp", email: "alice@test.com" });
-      mockDb.clientHubCustomerLifecycle.findUnique.mockResolvedValue(null);
+      mockDb.clientHubCustomerLifecycle.findUnique
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ publicAccessHandle: "generated-handle" });
       mockDb.organization.findUnique.mockResolvedValue({ slug: "acme", name: "Acme" });
       mockSendEmail.mockRejectedValue(new Error("Email provider is not configured"));
 
@@ -889,6 +897,7 @@ describe("Client Hub Per-Client Overrides & Resolver", () => {
         latestInviteSentAt: new Date("2026-05-01T00:00:00Z"),
         latestInviteEmail: "alice@test.com",
         inviteSentCount: 1,
+        publicAccessHandle: "handle-alice",
       });
       mockDb.organization.findUnique.mockResolvedValue({ slug: "acme", name: "Acme" });
       mockSendEmail.mockResolvedValue(undefined);
@@ -896,7 +905,10 @@ describe("Client Hub Per-Client Overrides & Resolver", () => {
       const res = await resendClientHubInvite(CUSTOMER_ID);
       expect(res.success).toBe(true);
       expect(mockSendEmail).toHaveBeenCalledWith(
-        expect.objectContaining({ to: "alice@test.com" })
+        expect.objectContaining({
+          to: "alice@test.com",
+          html: expect.stringContaining("handle-alice"),
+        })
       );
       // Lifecycle update + audit must happen inside a real transaction
       expect(mockDb.$transaction).toHaveBeenCalled();
@@ -924,6 +936,7 @@ describe("Client Hub Per-Client Overrides & Resolver", () => {
         latestInviteSentAt: null,
         latestInviteEmail: null,
         inviteSentCount: 0,
+        publicAccessHandle: "handle-alice",
       });
       mockDb.organization.findUnique.mockResolvedValue({ slug: "acme", name: "Acme" });
       mockSendEmail.mockResolvedValue(undefined);
@@ -941,7 +954,7 @@ describe("Client Hub Per-Client Overrides & Resolver", () => {
     it("rejects resend for disabled customer", async () => {
       setupAuth();
       mockDb.customer.findFirst.mockResolvedValue({ id: CUSTOMER_ID, name: "Alice", email: "alice@test.com" });
-      mockDb.clientHubCustomerLifecycle.findUnique.mockResolvedValue({ enabled: false });
+      mockDb.clientHubCustomerLifecycle.findUnique.mockResolvedValue({ enabled: false, publicAccessHandle: "handle-alice" });
 
       const res = await resendClientHubInvite(CUSTOMER_ID);
       expect(res.success).toBe(false);
@@ -952,12 +965,25 @@ describe("Client Hub Per-Client Overrides & Resolver", () => {
     it("rejects resend for missing email", async () => {
       setupAuth();
       mockDb.customer.findFirst.mockResolvedValue({ id: CUSTOMER_ID, name: "Alice", email: null });
-      mockDb.clientHubCustomerLifecycle.findUnique.mockResolvedValue({ enabled: true });
+      mockDb.clientHubCustomerLifecycle.findUnique.mockResolvedValue({ enabled: true, publicAccessHandle: "handle-alice" });
 
       const res = await resendClientHubInvite(CUSTOMER_ID);
       expect(res.success).toBe(false);
       expect(res.error).toContain("valid email");
       expect(mockSendEmail).not.toHaveBeenCalled();
+    });
+
+    it("rejects resend when publicAccessHandle is missing", async () => {
+      setupAuth();
+      mockDb.customer.findFirst.mockResolvedValue({ id: CUSTOMER_ID, name: "Alice", email: "alice@test.com" });
+      mockDb.clientHubCustomerLifecycle.findUnique.mockResolvedValue({ enabled: true, publicAccessHandle: null });
+      mockDb.organization.findUnique.mockResolvedValue({ slug: "acme", name: "Acme" });
+
+      const res = await resendClientHubInvite(CUSTOMER_ID);
+      expect(res.success).toBe(false);
+      expect(res.error).toContain("access handle is missing");
+      expect(mockSendEmail).not.toHaveBeenCalled();
+      expect(mockDb.$transaction).not.toHaveBeenCalled();
     });
 
     it("rejects member access", async () => {
@@ -976,6 +1002,7 @@ describe("Client Hub Per-Client Overrides & Resolver", () => {
         latestInviteSentAt: new Date(),
         latestInviteEmail: "alice@test.com",
         inviteSentCount: 1,
+        publicAccessHandle: "handle-alice",
       });
       mockDb.organization.findUnique.mockResolvedValue({ slug: "acme", name: "Acme" });
       mockSendEmail.mockRejectedValue(new Error("SMTP failure"));
@@ -1001,6 +1028,7 @@ describe("Client Hub Per-Client Overrides & Resolver", () => {
         latestInviteSentAt: new Date("2026-05-01T00:00:00Z"),
         latestInviteEmail: "oldalice@test.com",
         inviteSentCount: 1,
+        publicAccessHandle: "handle-alice",
       });
       mockDb.organization.findUnique.mockResolvedValue({ slug: "acme", name: "Acme" });
       mockSendEmail.mockResolvedValue(undefined);

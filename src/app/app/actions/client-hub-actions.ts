@@ -910,7 +910,14 @@ export async function resendClientHubInvite(customerId: string) {
       userAgent: hdrs.get("user-agent") || null,
     };
 
-    const url = buildCanonicalHubUrl(org.slug);
+    if (!lifecycle.publicAccessHandle) {
+      return {
+        success: false,
+        error: "Customer access handle is missing. Please disable and re-enable Client Hub for this customer.",
+      };
+    }
+
+    const url = buildCanonicalHubUrl(org.slug, lifecycle.publicAccessHandle);
 
     // Attempt delivery before persisting sent-success state
     try {
