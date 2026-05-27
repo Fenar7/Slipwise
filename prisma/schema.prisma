@@ -431,18 +431,25 @@ model ClientHubCustomerOverride {
 }
 
 model ClientHubCustomerLifecycle {
-  id             String       @id @default(cuid())
-  organizationId String
-  customerId     String       @unique
-  enabled        Boolean      @default(false)
-  enabledAt      DateTime?
-  disabledAt     DateTime?
-  enabledByUserId String?     @db.Uuid
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  id                 String       @id @default(cuid())
+  organizationId     String
+  customerId         String       @unique
+  enabled            Boolean      @default(false)
+  enabledAt          DateTime?
+  disabledAt         DateTime?
+  enabledByUserId    String?      @db.Uuid
 
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  customer       Customer     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  // Sprint 3.4: invite/admin operational state
+  latestInviteSentAt DateTime?
+  latestInviteEmail  String?
+  inviteSentCount    Int          @default(0)
+  publicAccessHandle String?      @unique
+
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  organization       Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customer           Customer     @relation(fields: [customerId], references: [id], onDelete: Cascade)
 
   @@index([organizationId, customerId])
   @@map("client_hub_customer_lifecycle")
