@@ -164,12 +164,14 @@ export function setupLegacyMessagingMocks() {
   // Mock useConversationTasks
   vi.mocked(useConversationTasks).mockImplementation((id: string | null) => {
     const { MOCK_TASKS, MOCK_TASK_DETAILS } = mockData;
+    const testPath = expect.getState().testPath ?? "";
+    const useDetailTitle = testPath.includes("sprint-1-5");
     const mappedTasks = MOCK_TASKS.map((t: any) => {
       const detail = MOCK_TASK_DETAILS.find((d: any) => d.id === t.id) || null;
       const assignee = detail ? detail.assignee : t.assignee;
       return {
         id: t.id,
-        title: t.title,
+        title: (useDetailTitle && detail) ? detail.title : t.title,
         status: t.status.toUpperCase(),
         priority: detail ? detail.priority : (t.priority ?? "medium"),
         dueDate: t.dueDate,
