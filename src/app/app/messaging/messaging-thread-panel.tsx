@@ -528,7 +528,7 @@ function ThreadReplyComposer({ onReply, sendingReply = false }: ThreadReplyCompo
           data-placeholder={sendingReply ? "Sending…" : "Reply in thread…"}
           data-testid="thread-reply-input"
           onInput={(e) => {
-            const text = e.target.textContent ?? "";
+            const text = (e.target as HTMLElement).textContent ?? "";
             setReplyText(text);
             if (editorRef.current && editorRef.current.textContent !== text) {
               editorRef.current.textContent = text;

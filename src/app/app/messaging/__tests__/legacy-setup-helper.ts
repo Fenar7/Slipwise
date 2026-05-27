@@ -1,4 +1,4 @@
-import { vi } from "vitest";
+import { expect, vi } from "vitest";
 import * as mockData from "../mock-data";
 import { useConversationList } from "../lib/use-conversation-list";
 import { useConversationDetail } from "../lib/use-conversation-detail";
@@ -64,13 +64,13 @@ export function setupLegacyMessagingMocks() {
       loading: false,
       error: null,
       empty: false,
-      refresh: vi.fn(),
-    };
+      refresh: vi.fn() as any,
+    } as any;
   });
 
   // Mock useConversationDetail
   vi.mocked(useConversationDetail).mockImplementation((id: string | null) => {
-    if (!id) return { detail: null, loading: false, errorType: "none", errorMessage: null, refresh: vi.fn() };
+    if (!id) return { detail: null, loading: false, errorType: "none", errorMessage: null, refresh: vi.fn() as any } as any;
     const {
       MOCK_CHANNELS, MOCK_DMS, MOCK_GROUPS,
       MOCK_MESSAGES_CHANNEL_GENERAL, MOCK_MESSAGES_CHANNEL_FINANCE,
@@ -158,7 +158,7 @@ export function setupLegacyMessagingMocks() {
       currentUserId: "u1",
     };
 
-    return { detail, loading: false, errorType: "none", errorMessage: null, refresh: vi.fn() };
+    return { detail, loading: false, errorType: "none", errorMessage: null, refresh: vi.fn() as any } as any;
   });
 
   // Mock useConversationTasks
@@ -184,11 +184,11 @@ export function setupLegacyMessagingMocks() {
         conversationId: t.conversationRef,
       };
     });
-    return { tasks: mappedTasks, loading: false, errorType: "none", errorMessage: null, refresh: vi.fn() };
+    return { tasks: mappedTasks, loading: false, errorType: "none", errorMessage: null, refresh: vi.fn() as any } as any;
   });
 
   // Mock useThreadReplies
-  vi.mocked(useThreadReplies).mockImplementation((conversationId: string | null, threadId: string | null) => {
+  vi.mocked(useThreadReplies).mockImplementation((conversationId: string | null, threadId: string | null, detail?: any) => {
     const { MOCK_THREAD_REPLIES_CH_F_1 } = mockData;
     const replies = threadId ? MOCK_THREAD_REPLIES_CH_F_1.map((r: any) => ({
       id: r.id,
@@ -206,7 +206,7 @@ export function setupLegacyMessagingMocks() {
       attachmentCount: 0,
       createdAt: r.sentAt || "2026-05-09T10:30:00Z",
     })) : [];
-    return { replies, loading: false, error: null, refresh: vi.fn() };
+    return { replies, loading: false, error: null, refresh: vi.fn() as any } as any;
   });
 
   // Mock useAttachmentFiles

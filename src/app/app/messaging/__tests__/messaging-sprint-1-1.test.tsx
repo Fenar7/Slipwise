@@ -66,7 +66,7 @@ import {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function renderLeftRail(activeSection = "channels" as const) {
+function renderLeftRail(activeSection: any = "channels") {
   return render(
     <MessagingLeftRail
       activeSection={activeSection}

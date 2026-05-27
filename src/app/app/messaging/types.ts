@@ -302,7 +302,7 @@ export interface MessagingTaskDetail extends MessagingTask {
   createdAt: string; // ISO
   createdBy: string; // participant name
   originatingMessageId?: string | null;
-  reminderAt: string | null;
+  reminderAt?: string | null;
   reminderSentAt?: string | null;
   dbStatus?: TaskStatus | null;
   conversationName?: string | null;

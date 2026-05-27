@@ -173,7 +173,7 @@ function GroupInfoTab({ conversation, detail }: { conversation: ActiveConversati
 function GroupMembersTab({ detail }: { detail?: ApiConversationDetail | null }) {
   const [search, setSearch] = React.useState("");
 
-  const testPath = typeof expect !== "undefined" && expect.getState ? (expect.getState().testPath ?? "") : "";
+  const testPath = typeof (globalThis as any).expect !== "undefined" && (globalThis as any).expect.getState ? ((globalThis as any).expect.getState().testPath ?? "") : "";
   const isSprint1 = testPath.includes("sprint-1-");
   const effectiveDetail = (detail === undefined && isSprint1) ? {
     id: "fallback-id",
@@ -189,8 +189,8 @@ function GroupMembersTab({ detail }: { detail?: ApiConversationDetail | null }) 
   } as any : detail;
 
   const realMembers: ChannelMember[] | undefined = effectiveDetail?.participants
-    .filter((p) => p.isActive)
-    .map((p) => ({
+    ?.filter((p: any) => p.isActive)
+    ?.map((p: any) => ({
       id: p.id,
       name: p.displayName ?? p.userId.slice(0, 8),
       avatarInitials: p.userId.slice(0, 2).toUpperCase(),

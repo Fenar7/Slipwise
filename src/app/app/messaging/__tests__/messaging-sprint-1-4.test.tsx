@@ -180,7 +180,7 @@ describe("MessagingGroupDetail", () => {
 
 describe("MessagingChannelCreate", () => {
   function render_cc(onClose = vi.fn()) {
-    return render(<MessagingChannelCreate onClose={onClose} />);
+    return render(<MessagingChannelCreate onClose={onClose} onCreate={vi.fn()} />);
   }
 
   it("renders channel-create-modal", () => {
@@ -226,7 +226,7 @@ describe("MessagingChannelCreate", () => {
 
   it("pressing Escape calls onClose", () => {
     const onClose = vi.fn();
-    render(<MessagingChannelCreate onClose={onClose} />);
+    render(<MessagingChannelCreate onClose={onClose} onCreate={vi.fn()} />);
     fireEvent.keyDown(document, { key: "Escape" });
     expect(onClose).toHaveBeenCalled();
   });
@@ -236,7 +236,7 @@ describe("MessagingChannelCreate", () => {
 
 describe("MessagingGroupCreate", () => {
   function render_gc(onClose = vi.fn()) {
-    return render(<MessagingGroupCreate onClose={onClose} />);
+    return render(<MessagingGroupCreate onClose={onClose} onCreate={vi.fn()} />);
   }
 
   it("renders group-create-modal", () => {
@@ -268,7 +268,7 @@ describe("MessagingGroupCreate", () => {
 
   it("pressing Escape calls onClose", () => {
     const onClose = vi.fn();
-    render(<MessagingGroupCreate onClose={onClose} />);
+    render(<MessagingGroupCreate onClose={onClose} onCreate={vi.fn()} />);
     fireEvent.keyDown(document, { key: "Escape" });
     expect(onClose).toHaveBeenCalled();
   });
