@@ -3,6 +3,8 @@
 import { db } from "@/lib/db";
 import { requireOrgContext } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
+import { logAuditTx } from "@/lib/audit";
+import { headers } from "next/headers";
 import {
   ClientHubConfig,
   ClientHubConfigSchema,
@@ -15,6 +17,17 @@ import {
   safeValidateHubConfig,
   resolveEffectiveConfig,
 } from "@/app/portal/[orgSlug]/client-hub/components/config-resolver";
+
+export type ClientHubReadinessStatus = "disabled" | "enabled_not_ready" | "enabled_ready";
+
+export type ClientHubCustomerReadiness = {
+  enabled: boolean;
+  readinessStatus: ClientHubReadinessStatus;
+  previewEligible: boolean;
+  inviteEligible: boolean;
+  portalReady: boolean;
+  blockers: string[];
+};
 
 export type GetClientHubOrgConfigResult =
   | { success: true; config: ClientHubConfig; isNew: boolean }
@@ -108,7 +121,12 @@ export async function updateClientHubOrgConfig(input: ClientHubConfig) {
  */
 export async function getClientHubCustomers() {
   try {
-    const { orgId } = await requireOrgContext();
+    const { orgId, role } = await requireOrgContext();
+
+    // Enforce admin/owner authorization for admin settings data
+    if (role !== "admin" && role !== "owner") {
+      return { success: false, error: "Only administrators can access Client Hub customer settings." };
+    }
 
     const customers = await db.customer.findMany({
       where: { organizationId: orgId },
@@ -133,7 +151,12 @@ export async function getClientHubCustomers() {
  */
 export async function getClientOverrideEditorState(customerId: string) {
   try {
-    const { orgId } = await requireOrgContext();
+    const { orgId, role } = await requireOrgContext();
+
+    // Enforce admin/owner authorization for admin settings data
+    if (role !== "admin" && role !== "owner") {
+      return { success: false, error: "Only administrators can access Client Hub override settings." };
+    }
 
     // Securely verify that customer belongs to the active organization context
     const customer = await db.customer.findFirst({
@@ -295,5 +318,261 @@ export async function clearClientHubCustomerOverride(customerId: string) {
   } catch (error) {
     console.error("clearClientHubCustomerOverride error:", error);
     return { success: false, error: "Failed to reset client override configuration." };
+  }
+}
+
+/**
+ * Computes the deterministic readiness state for a customer given their lifecycle record.
+ * Evaluates a coherent set of prerequisites aligned with the PRD readiness model:
+ *   - legal/display name
+ *   - primary email
+ *   - primary phone
+ *   - billing address
+ *   - tax identifiers (taxId or gstin)
+ *
+ * Preview eligibility is independent (enabled => can preview).
+ * Invite eligibility requires email.
+ * Portal ready requires all core prerequisites.
+ */
+function computeClientHubReadiness(
+  lifecycle: { enabled: boolean } | null,
+  customer: {
+    name: string | null;
+    email: string | null;
+    phone: string | null;
+    address: string | null;
+    taxId: string | null;
+    gstin: string | null;
+  }
+): ClientHubCustomerReadiness {
+  const enabled = lifecycle?.enabled ?? false;
+  const blockers: string[] = [];
+
+  if (!enabled) {
+    blockers.push("Client Hub is not enabled for this customer");
+    return {
+      enabled: false,
+      readinessStatus: "disabled",
+      previewEligible: false,
+      inviteEligible: false,
+      portalReady: false,
+      blockers,
+    };
+  }
+
+  // Enabled — evaluate readiness prerequisites
+  if (!customer.name || customer.name.trim().length === 0) {
+    blockers.push("Customer name is required for portal identity");
+  }
+  if (!customer.email || customer.email.trim().length === 0) {
+    blockers.push("Customer email is required for portal invite");
+  }
+  if (!customer.phone || customer.phone.trim().length === 0) {
+    blockers.push("Customer phone is required for portal contact");
+  }
+  if (!customer.address || customer.address.trim().length === 0) {
+    blockers.push("Customer billing address is required for portal documents");
+  }
+  if (
+    (!customer.taxId || customer.taxId.trim().length === 0) &&
+    (!customer.gstin || customer.gstin.trim().length === 0)
+  ) {
+    blockers.push("Customer tax identifier (GSTIN or Tax ID) is required for portal compliance");
+  }
+
+  const hasBlockers = blockers.length > 0;
+
+  return {
+    enabled: true,
+    readinessStatus: hasBlockers ? "enabled_not_ready" : "enabled_ready",
+    previewEligible: true,
+    inviteEligible: !(!customer.email || customer.email.trim().length === 0),
+    portalReady: !hasBlockers,
+    blockers,
+  };
+}
+
+/**
+ * Fetch the Client Hub lifecycle and computed readiness state for a specific customer.
+ * Admin/owner restricted. Returns truthful access-denied for non-admin callers.
+ */
+export async function getClientHubCustomerLifecycle(customerId: string) {
+  try {
+    const { orgId, role } = await requireOrgContext();
+
+    if (role !== "admin" && role !== "owner") {
+      return { success: false, error: "Only administrators can access Client Hub lifecycle settings." };
+    }
+
+    const customer = await db.customer.findFirst({
+      where: { id: customerId, organizationId: orgId },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        phone: true,
+        address: true,
+        taxId: true,
+        gstin: true,
+      },
+    });
+
+    if (!customer) {
+      return { success: false, error: "Customer not found or access denied." };
+    }
+
+    const lifecycle = await db.clientHubCustomerLifecycle.findUnique({
+      where: { customerId },
+    });
+
+    const readiness = computeClientHubReadiness(lifecycle, customer);
+
+    return {
+      success: true,
+      customer,
+      lifecycle: lifecycle
+        ? {
+            enabled: lifecycle.enabled,
+            enabledAt: lifecycle.enabledAt,
+            disabledAt: lifecycle.disabledAt,
+            enabledByUserId: lifecycle.enabledByUserId,
+            createdAt: lifecycle.createdAt,
+            updatedAt: lifecycle.updatedAt,
+          }
+        : null,
+      readiness,
+    };
+  } catch (error) {
+    console.error("getClientHubCustomerLifecycle error:", error);
+    return { success: false, error: "Failed to load client lifecycle state." };
+  }
+}
+
+/**
+ * Enable Client Hub for a specific customer.
+ * Creates a lifecycle record if none exists, or updates the existing one.
+ * Admin/owner restricted with org/customer scoping.
+ */
+export async function enableClientHubForCustomer(customerId: string) {
+  try {
+    const { orgId, role, userId } = await requireOrgContext();
+
+    if (role !== "admin" && role !== "owner") {
+      return { success: false, error: "Only administrators can enable Client Hub for customers." };
+    }
+
+    const customer = await db.customer.findFirst({
+      where: { id: customerId, organizationId: orgId },
+      select: { id: true, name: true },
+    });
+
+    if (!customer) {
+      return { success: false, error: "Customer not found or access denied." };
+    }
+
+    const hdrs = await headers();
+    const auditHeaders = {
+      ipAddress: hdrs.get("x-forwarded-for") || hdrs.get("x-real-ip") || null,
+      userAgent: hdrs.get("user-agent") || null,
+    };
+
+    await db.$transaction(async (tx) => {
+      await tx.clientHubCustomerLifecycle.upsert({
+        where: { customerId },
+        create: {
+          organizationId: orgId,
+          customerId,
+          enabled: true,
+          enabledAt: new Date(),
+          enabledByUserId: userId,
+        },
+        update: {
+          enabled: true,
+          enabledAt: new Date(),
+          disabledAt: null,
+          enabledByUserId: userId,
+        },
+      });
+
+      await logAuditTx(tx, {
+        orgId,
+        actorId: userId,
+        action: "client_hub.enabled",
+        entityType: "ClientHubCustomerLifecycle",
+        entityId: customerId,
+        metadata: { customerName: customer.name },
+        ...auditHeaders,
+      });
+    });
+
+    revalidatePath("/app/settings/portal/client-hub");
+    return { success: true };
+  } catch (error) {
+    console.error("enableClientHubForCustomer error:", error);
+    return { success: false, error: "Failed to enable Client Hub for customer." };
+  }
+}
+
+/**
+ * Disable Client Hub for a specific customer.
+ * Updates the lifecycle record to mark the customer as disabled.
+ * Admin/owner restricted with org/customer scoping.
+ */
+export async function disableClientHubForCustomer(customerId: string) {
+  try {
+    const { orgId, role, userId } = await requireOrgContext();
+
+    if (role !== "admin" && role !== "owner") {
+      return { success: false, error: "Only administrators can disable Client Hub for customers." };
+    }
+
+    const customer = await db.customer.findFirst({
+      where: { id: customerId, organizationId: orgId },
+      select: { id: true, name: true },
+    });
+
+    if (!customer) {
+      return { success: false, error: "Customer not found or access denied." };
+    }
+
+    const hdrs = await headers();
+    const auditHeaders = {
+      ipAddress: hdrs.get("x-forwarded-for") || hdrs.get("x-real-ip") || null,
+      userAgent: hdrs.get("user-agent") || null,
+    };
+
+    await db.$transaction(async (tx) => {
+      await tx.clientHubCustomerLifecycle.upsert({
+        where: { customerId },
+        create: {
+          organizationId: orgId,
+          customerId,
+          enabled: false,
+          disabledAt: new Date(),
+        },
+        update: {
+          enabled: false,
+          disabledAt: new Date(),
+          enabledAt: null,
+          enabledByUserId: null,
+        },
+      });
+
+      await logAuditTx(tx, {
+        orgId,
+        actorId: userId,
+        action: "client_hub.disabled",
+        entityType: "ClientHubCustomerLifecycle",
+        entityId: customerId,
+        metadata: { customerName: customer.name },
+        ...auditHeaders,
+      });
+    });
+
+    revalidatePath("/app/settings/portal/client-hub");
+    return { success: true };
+  } catch (error) {
+    console.error("disableClientHubForCustomer error:", error);
+    return { success: false, error: "Failed to disable Client Hub for customer." };
   }
 }

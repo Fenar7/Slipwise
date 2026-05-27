@@ -6,10 +6,49 @@
  * tab switching works, and save action is wired up.
  */
 
-import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react";
 import ClientHubCustomizationPage from "../page";
-import { getClientHubOrgConfig } from "@/app/app/actions/client-hub-actions";
+import { getClientHubOrgConfig, getClientOverrideEditorState, getClientHubCustomers, getClientHubCustomerLifecycle } from "@/app/app/actions/client-hub-actions";
+
+beforeEach(() => {
+  cleanup();
+  vi.mocked(getClientHubOrgConfig).mockReset();
+  vi.mocked(getClientHubOrgConfig).mockResolvedValue({
+    success: true,
+    config: mockDefaultConfig,
+    isNew: false,
+  });
+  vi.mocked(getClientHubCustomers).mockReset();
+  vi.mocked(getClientHubCustomers).mockResolvedValue({
+    success: true,
+    customers: [
+      { id: "cust_123", name: "Acme Client", email: "client@acme.com" },
+    ],
+  });
+  vi.mocked(getClientOverrideEditorState).mockReset();
+  vi.mocked(getClientOverrideEditorState).mockResolvedValue({
+    success: true,
+    customer: { id: "cust_123", name: "Acme Client", email: "client@acme.com" },
+    orgDefault: mockDefaultConfig,
+    overrideConfig: {},
+    effectiveConfig: mockDefaultConfig,
+  });
+  vi.mocked(getClientHubCustomerLifecycle).mockReset();
+  vi.mocked(getClientHubCustomerLifecycle).mockResolvedValue({
+    success: true,
+    customer: { id: "cust_123", name: "Acme Client", email: "client@acme.com" },
+    lifecycle: null,
+    readiness: {
+      enabled: false,
+      readinessStatus: "disabled",
+      previewEligible: false,
+      inviteEligible: false,
+      portalReady: false,
+      blockers: ["Client Hub is not enabled for this customer"],
+    },
+  });
+});
 
 const mockUseActiveOrg = vi.hoisted(() => vi.fn(() => ({ activeOrg: { id: "org_001", name: "Acme", slug: "acme" } })));
 const mockUsePermissions = vi.hoisted(() => vi.fn(() => ({ role: "admin" })));
@@ -103,6 +142,21 @@ vi.mock("@/app/app/actions/client-hub-actions", () => ({
   }),
   updateClientHubCustomerOverride: vi.fn().mockResolvedValue({ success: true, isCleared: false }),
   clearClientHubCustomerOverride: vi.fn().mockResolvedValue({ success: true }),
+  getClientHubCustomerLifecycle: vi.fn().mockResolvedValue({
+    success: true,
+    customer: { id: "cust_123", name: "Acme Client", email: "client@acme.com" },
+    lifecycle: null,
+    readiness: {
+      enabled: false,
+      readinessStatus: "disabled",
+      previewEligible: false,
+      inviteEligible: false,
+      portalReady: false,
+      blockers: ["Client Hub is not enabled for this customer"],
+    },
+  }),
+  enableClientHubForCustomer: vi.fn().mockResolvedValue({ success: true }),
+  disableClientHubForCustomer: vi.fn().mockResolvedValue({ success: true }),
 }));
 
 describe("ClientHubCustomizationPage", () => {
@@ -283,5 +337,313 @@ describe("ClientHubCustomizationPage", () => {
     await screen.findByRole("tab", { name: /branding/i });
     expect(screen.queryByText("Failed to Load Settings")).not.toBeInTheDocument();
     expect(screen.getByText("Client Hub Customization")).toBeInTheDocument();
+  });
+
+  it("stays in org-default mode when switching to a client fails to load", async () => {
+    render(<ClientHubCustomizationPage />);
+
+    await screen.findByRole("tab", { name: /branding/i });
+    expect(screen.getByText(/organization default settings/i)).toBeInTheDocument();
+
+    vi.mocked(getClientOverrideEditorState).mockResolvedValueOnce({
+      success: false,
+      error: "Failed to load client override settings",
+    });
+
+    const select = screen.getByLabelText(/customization target scope/i);
+    fireEvent.change(select, { target: { value: "cust_123" } });
+
+    // Wait for the async handleModeChange to fully resolve by waiting for
+    // the select to reappear after the loading spinner unmounts.
+    await screen.findByLabelText(/customization target scope/i);
+
+    // Re-query select after loading spinner unmounts and shell remounts
+    const selectAfter = screen.getByLabelText(/customization target scope/i);
+    expect(screen.queryByText(/client-specific override mode/i)).not.toBeInTheDocument();
+    expect(selectAfter).toHaveValue("");
+  });
+
+  it("remains on the current client when switching to another client fails to load", async () => {
+    render(<ClientHubCustomizationPage />);
+
+    await screen.findByRole("tab", { name: /branding/i });
+
+    // Successfully switch to first client
+    vi.mocked(getClientOverrideEditorState).mockResolvedValueOnce({
+      success: true,
+      customer: { id: "cust_123", name: "Acme Client", email: "client@acme.com" },
+      orgDefault: mockDefaultConfig,
+      overrideConfig: { branding: { accentColor: "#ff0000" } },
+      effectiveConfig: {
+        ...mockDefaultConfig,
+        branding: { ...mockDefaultConfig.branding, accentColor: "#ff0000" },
+      },
+    });
+
+    const select = screen.getByLabelText(/customization target scope/i);
+    fireEvent.change(select, { target: { value: "cust_123" } });
+
+    await screen.findByText(/client-specific override mode/i);
+    expect(select).toHaveValue("cust_123");
+
+    // Attempt to switch to a second client that fails
+    vi.mocked(getClientOverrideEditorState).mockResolvedValueOnce({
+      success: false,
+      error: "Failed to load client override settings",
+    });
+
+    fireEvent.change(select, { target: { value: "cust_456" } });
+
+    // Should remain on the first client after load failure
+    await screen.findByText(/client-specific override mode/i);
+    const selectAfter = screen.getByLabelText(/customization target scope/i);
+    expect(selectAfter).toHaveValue("cust_123");
+    expect(screen.getByText(/client-specific override mode/i)).toBeInTheDocument();
+  });
+
+  it("retains org-default config values when a client switch fails", async () => {
+    render(<ClientHubCustomizationPage />);
+
+    await screen.findByRole("tab", { name: /branding/i });
+    expect(screen.getByText(/organization default settings/i)).toBeInTheDocument();
+
+    vi.mocked(getClientOverrideEditorState).mockResolvedValueOnce({
+      success: false,
+      error: "Failed to load client override settings",
+    });
+
+    const select = screen.getByLabelText(/customization target scope/i);
+    fireEvent.change(select, { target: { value: "cust_123" } });
+
+    // Wait for the async handleModeChange to fully resolve by waiting for
+    // the select to reappear after the loading spinner unmounts.
+    await screen.findByLabelText(/customization target scope/i);
+
+    // Should still be in org defaults mode with no stale client values
+    const selectAfter = screen.getByLabelText(/customization target scope/i);
+    expect(screen.getByText(/organization default settings/i)).toBeInTheDocument();
+    expect(selectAfter).toHaveValue("");
+    expect(screen.queryByText(/client-specific override mode/i)).not.toBeInTheDocument();
+  });
+
+  it("renders lifecycle status as disabled when switching to a client with no lifecycle record", async () => {
+    render(<ClientHubCustomizationPage />);
+    await screen.findByRole("tab", { name: /branding/i });
+
+    // Explicitly reset mocks to default success behavior to avoid test-isolation drift
+    vi.mocked(getClientOverrideEditorState).mockResolvedValue({
+      success: true,
+      customer: { id: "cust_123", name: "Acme Client", email: "client@acme.com" },
+      orgDefault: mockDefaultConfig,
+      overrideConfig: {},
+      effectiveConfig: mockDefaultConfig,
+    });
+    vi.mocked(getClientHubCustomerLifecycle).mockResolvedValue({
+      success: true,
+      customer: { id: "cust_123", name: "Acme Client", email: "client@acme.com" },
+      lifecycle: null,
+      readiness: {
+        enabled: false,
+        readinessStatus: "disabled",
+        previewEligible: false,
+        inviteEligible: false,
+        portalReady: false,
+        blockers: ["Client Hub is not enabled for this customer"],
+      },
+    });
+
+    const select = screen.getByLabelText(/customization target scope/i);
+    fireEvent.change(select, { target: { value: "cust_123" } });
+
+    await screen.findByText(/client-specific override mode/i);
+
+    expect(screen.getByText(/disabled/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /enable client hub/i })).toBeInTheDocument();
+    expect(screen.getByText(/preview not eligible/i)).toBeInTheDocument();
+    expect(screen.getByText(/invite not eligible/i)).toBeInTheDocument();
+    expect(screen.getByText(/portal not ready/i)).toBeInTheDocument();
+    expect(screen.getByText(/readiness blockers/i)).toBeInTheDocument();
+  });
+
+  it("renders lifecycle status as enabled and ready when customer is enabled", async () => {
+    render(<ClientHubCustomizationPage />);
+    await screen.findByRole("tab", { name: /branding/i });
+
+    vi.mocked(getClientOverrideEditorState).mockResolvedValueOnce({
+      success: true,
+      customer: { id: "cust_123", name: "Acme Client", email: "client@acme.com" },
+      orgDefault: mockDefaultConfig,
+      overrideConfig: {},
+      effectiveConfig: mockDefaultConfig,
+    });
+
+    vi.mocked(getClientHubCustomerLifecycle).mockResolvedValueOnce({
+      success: true,
+      customer: { id: "cust_123", name: "Acme Client", email: "client@acme.com" },
+      lifecycle: { enabled: true, enabledAt: new Date(), disabledAt: null, enabledByUserId: "user-1" },
+      readiness: {
+        enabled: true,
+        readinessStatus: "enabled_ready",
+        previewEligible: true,
+        inviteEligible: true,
+        portalReady: true,
+        blockers: [],
+      },
+    });
+
+    const select = screen.getByLabelText(/customization target scope/i);
+    fireEvent.change(select, { target: { value: "cust_123" } });
+
+    await screen.findByText(/client-specific override mode/i);
+
+    expect(screen.getByText(/enabled & ready/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /disable client hub/i })).toBeInTheDocument();
+    expect(screen.getByText(/preview eligible/i)).toBeInTheDocument();
+    expect(screen.getByText(/invite eligible/i)).toBeInTheDocument();
+    expect(screen.getByText(/portal ready/i)).toBeInTheDocument();
+    expect(screen.queryByText(/readiness blockers/i)).not.toBeInTheDocument();
+  });
+
+  it("renders lifecycle status as enabled not ready when customer lacks email", async () => {
+    render(<ClientHubCustomizationPage />);
+    await screen.findByRole("tab", { name: /branding/i });
+
+    vi.mocked(getClientOverrideEditorState).mockResolvedValueOnce({
+      success: true,
+      customer: { id: "cust_123", name: "Acme Client", email: null },
+      orgDefault: mockDefaultConfig,
+      overrideConfig: {},
+      effectiveConfig: mockDefaultConfig,
+    });
+
+    vi.mocked(getClientHubCustomerLifecycle).mockResolvedValueOnce({
+      success: true,
+      customer: { id: "cust_123", name: "Acme Client", email: null },
+      lifecycle: { enabled: true, enabledAt: new Date(), disabledAt: null, enabledByUserId: "user-1" },
+      readiness: {
+        enabled: true,
+        readinessStatus: "enabled_not_ready",
+        previewEligible: true,
+        inviteEligible: false,
+        portalReady: false,
+        blockers: ["Customer email is required for portal invite"],
+      },
+    });
+
+    const select = screen.getByLabelText(/customization target scope/i);
+    fireEvent.change(select, { target: { value: "cust_123" } });
+
+    await screen.findByText(/client-specific override mode/i);
+
+    expect(screen.getByText(/enabled — not ready/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /disable client hub/i })).toBeInTheDocument();
+    expect(screen.getByText(/preview eligible/i)).toBeInTheDocument();
+    expect(screen.getByText(/invite not eligible/i)).toBeInTheDocument();
+    expect(screen.getByText(/portal not ready/i)).toBeInTheDocument();
+    expect(screen.getByText(/readiness blockers/i)).toBeInTheDocument();
+  });
+
+  it("preserves prior client lifecycle when switching to another client fails", async () => {
+    render(<ClientHubCustomizationPage />);
+    await screen.findByRole("tab", { name: /branding/i });
+
+    // 1. Successfully switch to first client (cust_123) — enabled & ready
+    vi.mocked(getClientOverrideEditorState).mockResolvedValueOnce({
+      success: true,
+      customer: { id: "cust_123", name: "Acme Client", email: "client@acme.com" },
+      orgDefault: mockDefaultConfig,
+      overrideConfig: {},
+      effectiveConfig: mockDefaultConfig,
+    });
+    vi.mocked(getClientHubCustomerLifecycle).mockResolvedValueOnce({
+      success: true,
+      customer: { id: "cust_123", name: "Acme Client", email: "client@acme.com" },
+      lifecycle: { enabled: true, enabledAt: new Date(), disabledAt: null, enabledByUserId: "user-1" },
+      readiness: {
+        enabled: true,
+        readinessStatus: "enabled_ready",
+        previewEligible: true,
+        inviteEligible: true,
+        portalReady: true,
+        blockers: [],
+      },
+    });
+
+    const select = screen.getByLabelText(/customization target scope/i);
+    fireEvent.change(select, { target: { value: "cust_123" } });
+
+    await screen.findByText(/client-specific override mode/i);
+    expect(screen.getByText(/enabled & ready/i)).toBeInTheDocument();
+
+    // 2. Attempt to switch to second client (cust_456) — override fails, lifecycle succeeds
+    vi.mocked(getClientOverrideEditorState).mockResolvedValueOnce({
+      success: false,
+      error: "Failed to load client override settings",
+    });
+    vi.mocked(getClientHubCustomerLifecycle).mockResolvedValueOnce({
+      success: true,
+      customer: { id: "cust_456", name: "Beta Corp", email: "beta@corp.com" },
+      lifecycle: { enabled: false, enabledAt: null, disabledAt: new Date(), enabledByUserId: null },
+      readiness: {
+        enabled: false,
+        readinessStatus: "disabled",
+        previewEligible: false,
+        inviteEligible: false,
+        portalReady: false,
+        blockers: ["Client Hub is not enabled for this customer"],
+      },
+    });
+
+    fireEvent.change(select, { target: { value: "cust_456" } });
+
+    // Wait for loading to finish
+    await screen.findByText(/client-specific override mode/i);
+
+    // Should still show cust_123's lifecycle (enabled & ready), not cust_456's disabled state
+    const selectAfter = screen.getByLabelText(/customization target scope/i);
+    expect(selectAfter).toHaveValue("cust_123");
+    expect(screen.getByText(/enabled & ready/i)).toBeInTheDocument();
+    expect(screen.queryByText(/disabled/i)).not.toBeInTheDocument();
+  });
+
+  it("does not show lifecycle from a failed org-to-client switch", async () => {
+    render(<ClientHubCustomizationPage />);
+    await screen.findByRole("tab", { name: /branding/i });
+
+    // Confirm org-default mode with no lifecycle panel
+    expect(screen.getByText(/organization default settings/i)).toBeInTheDocument();
+    expect(screen.queryByText(/client hub status/i)).not.toBeInTheDocument();
+
+    // Attempt to switch to client where override fails but lifecycle succeeds
+    vi.mocked(getClientOverrideEditorState).mockResolvedValueOnce({
+      success: false,
+      error: "Failed to load client override settings",
+    });
+    vi.mocked(getClientHubCustomerLifecycle).mockResolvedValueOnce({
+      success: true,
+      customer: { id: "cust_123", name: "Acme Client", email: "client@acme.com" },
+      lifecycle: { enabled: true, enabledAt: new Date(), disabledAt: null, enabledByUserId: "user-1" },
+      readiness: {
+        enabled: true,
+        readinessStatus: "enabled_ready",
+        previewEligible: true,
+        inviteEligible: true,
+        portalReady: true,
+        blockers: [],
+      },
+    });
+
+    const select = screen.getByLabelText(/customization target scope/i);
+    fireEvent.change(select, { target: { value: "cust_123" } });
+
+    // Wait for loading spinner to disappear and shell to reappear
+    await screen.findByLabelText(/customization target scope/i);
+
+    // Should remain in org-default mode without a lifecycle panel
+    const selectAfter = screen.getByLabelText(/customization target scope/i);
+    expect(selectAfter).toHaveValue("");
+    expect(screen.getByText(/organization default settings/i)).toBeInTheDocument();
+    expect(screen.queryByText(/client hub status/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/enabled & ready/i)).not.toBeInTheDocument();
   });
 });

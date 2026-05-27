@@ -100,6 +100,7 @@ model Organization {
   defaults                     OrgDefaults?
   clientHubOrgConfig           ClientHubOrgConfig?
   clientHubCustomerOverrides   ClientHubCustomerOverride[]
+  clientHubCustomerLifecycles  ClientHubCustomerLifecycle[]
   customers                    Customer[]
   vendors                      Vendor[]
   employees                    Employee[]
@@ -429,6 +430,23 @@ model ClientHubCustomerOverride {
   @@map("client_hub_customer_override")
 }
 
+model ClientHubCustomerLifecycle {
+  id             String       @id @default(cuid())
+  organizationId String
+  customerId     String       @unique
+  enabled        Boolean      @default(false)
+  enabledAt      DateTime?
+  disabledAt     DateTime?
+  enabledByUserId String?     @db.Uuid
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customer       Customer     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, customerId])
+  @@map("client_hub_customer_lifecycle")
+}
 
 // ─── Phase 1: Document Sequencing Platform ────────────────────────────────────
 
@@ -1172,6 +1190,7 @@ model Customer {
 
   organization     Organization              @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   clientHubOverride ClientHubCustomerOverride?
+  clientHubLifecycle ClientHubCustomerLifecycle?
   invoices         Invoice[]
   virtualAccounts  CustomerVirtualAccount[]
   dunningOptOuts   DunningOptOut[]

@@ -210,6 +210,8 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "tag.bulk_removed": "Bulk-removed tags from documents",
   "tag.default_customer_set": "Updated customer default tags",
   "tag.default_vendor_set": "Updated vendor default tags",
+  "client_hub.enabled": "Enabled Client Hub for customer",
+  "client_hub.disabled": "Disabled Client Hub for customer",
 };
 export function getAuditCategory(action: string): string {
   if (
@@ -238,5 +240,6 @@ export function getAuditCategory(action: string): string {
     action.startsWith("recurring.")
   )
     return "System";
+  if (action.startsWith("client_hub.")) return "Settings";
   return "Other";
 }
