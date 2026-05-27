@@ -5,30 +5,38 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const mockRequireOrgContext = vi.hoisted(() => vi.fn());
 const mockRevalidatePath = vi.hoisted(() => vi.fn());
 
-const mockLogAudit = vi.hoisted(() => vi.fn());
-
-const mockDb = vi.hoisted(() => ({
-  clientHubOrgConfig: {
-    findUnique: vi.fn(),
-  },
-  clientHubCustomerOverride: {
-    findUnique: vi.fn(),
-    upsert: vi.fn(),
-    deleteMany: vi.fn(),
-  },
-  clientHubCustomerLifecycle: {
-    findUnique: vi.fn(),
-    upsert: vi.fn(),
-  },
-  customer: {
-    findFirst: vi.fn(),
-    findUnique: vi.fn(),
-    findMany: vi.fn(),
-  },
-  organization: {
-    findUnique: vi.fn(),
-  },
-}));
+const mockDb = vi.hoisted(() => {
+  const db: any = {
+    clientHubOrgConfig: {
+      findUnique: vi.fn(),
+    },
+    clientHubCustomerOverride: {
+      findUnique: vi.fn(),
+      upsert: vi.fn(),
+      deleteMany: vi.fn(),
+    },
+    clientHubCustomerLifecycle: {
+      findUnique: vi.fn(),
+      upsert: vi.fn(),
+    },
+    customer: {
+      findFirst: vi.fn(),
+      findUnique: vi.fn(),
+      findMany: vi.fn(),
+    },
+    organization: {
+      findUnique: vi.fn(),
+    },
+    proxyGrant: {
+      findFirst: vi.fn(),
+    },
+    auditLog: {
+      create: vi.fn(),
+    },
+    $transaction: vi.fn(),
+  };
+  return db;
+});
 
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/db", () => ({ db: mockDb }));
@@ -36,8 +44,8 @@ vi.mock("next/cache", () => ({ revalidatePath: mockRevalidatePath }));
 vi.mock("@/lib/auth", () => ({
   requireOrgContext: mockRequireOrgContext,
 }));
-vi.mock("@/lib/audit", () => ({
-  logAudit: mockLogAudit,
+vi.mock("next/headers", () => ({
+  headers: vi.fn(async () => new Map()),
 }));
 
 import {
@@ -72,6 +80,7 @@ function setupAuth(orgId = ORG_ID, userId = USER_ID, role = "admin") {
 describe("Client Hub Per-Client Overrides & Resolver", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockDb.$transaction.mockImplementation(async (fn: any) => fn(mockDb));
   });
 
   describe("computeOverrideDiff & deepMerge (sparse diffing)", () => {
@@ -348,6 +357,29 @@ describe("Client Hub Per-Client Overrides & Resolver", () => {
   }
 
   describe("getClientHubCustomerLifecycle (readiness)", () => {
+    it("selects the full prerequisite field set from the database", async () => {
+      setupAuth();
+      mockDb.customer.findFirst.mockResolvedValue(mockFullCustomer());
+      mockDb.clientHubCustomerLifecycle.findUnique.mockResolvedValue(null);
+
+      await getClientHubCustomerLifecycle(CUSTOMER_ID);
+
+      expect(mockDb.customer.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: CUSTOMER_ID, organizationId: ORG_ID },
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            phone: true,
+            address: true,
+            taxId: true,
+            gstin: true,
+          },
+        })
+      );
+    });
+
     it("returns disabled state when no lifecycle record exists", async () => {
       setupAuth();
       mockDb.customer.findFirst.mockResolvedValue(mockFullCustomer());
@@ -532,12 +564,13 @@ describe("Client Hub Per-Client Overrides & Resolver", () => {
   });
 
   describe("enableClientHubForCustomer", () => {
-    it("upserts lifecycle record with enabled=true", async () => {
+    it("upserts lifecycle record with enabled=true inside a transaction", async () => {
       setupAuth();
       mockDb.customer.findFirst.mockResolvedValue({ id: CUSTOMER_ID, name: "Alice Corp" });
 
       const res = await enableClientHubForCustomer(CUSTOMER_ID);
       expect(res.success).toBe(true);
+      expect(mockDb.$transaction).toHaveBeenCalled();
       expect(mockDb.clientHubCustomerLifecycle.upsert).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { customerId: CUSTOMER_ID },
@@ -545,24 +578,19 @@ describe("Client Hub Per-Client Overrides & Resolver", () => {
           update: expect.objectContaining({ enabled: true }),
         })
       );
-      expect(mockRevalidatePath).toHaveBeenCalledWith("/app/settings/portal/client-hub");
-    });
-
-    it("writes an audit log when enabling", async () => {
-      setupAuth();
-      mockDb.customer.findFirst.mockResolvedValue({ id: CUSTOMER_ID, name: "Alice Corp" });
-
-      await enableClientHubForCustomer(CUSTOMER_ID);
-      expect(mockLogAudit).toHaveBeenCalledWith(
+      expect(mockDb.auditLog.create).toHaveBeenCalledWith(
         expect.objectContaining({
-          orgId: ORG_ID,
-          actorId: USER_ID,
-          action: "client_hub.enabled",
-          entityType: "ClientHubCustomerLifecycle",
-          entityId: CUSTOMER_ID,
-          metadata: { customerName: "Alice Corp" },
+          data: expect.objectContaining({
+            orgId: ORG_ID,
+            actorId: USER_ID,
+            action: "client_hub.enabled",
+            entityType: "ClientHubCustomerLifecycle",
+            entityId: CUSTOMER_ID,
+            metadata: { customerName: "Alice Corp" },
+          }),
         })
       );
+      expect(mockRevalidatePath).toHaveBeenCalledWith("/app/settings/portal/client-hub");
     });
 
     it("denies member access", async () => {
@@ -570,18 +598,20 @@ describe("Client Hub Per-Client Overrides & Resolver", () => {
       const res = await enableClientHubForCustomer(CUSTOMER_ID);
       expect(res.success).toBe(false);
       expect(res.error).toContain("Only administrators");
+      expect(mockDb.$transaction).not.toHaveBeenCalled();
       expect(mockDb.clientHubCustomerLifecycle.upsert).not.toHaveBeenCalled();
-      expect(mockLogAudit).not.toHaveBeenCalled();
+      expect(mockDb.auditLog.create).not.toHaveBeenCalled();
     });
   });
 
   describe("disableClientHubForCustomer", () => {
-    it("upserts lifecycle record with enabled=false", async () => {
+    it("upserts lifecycle record with enabled=false inside a transaction", async () => {
       setupAuth();
       mockDb.customer.findFirst.mockResolvedValue({ id: CUSTOMER_ID, name: "Alice Corp" });
 
       const res = await disableClientHubForCustomer(CUSTOMER_ID);
       expect(res.success).toBe(true);
+      expect(mockDb.$transaction).toHaveBeenCalled();
       expect(mockDb.clientHubCustomerLifecycle.upsert).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { customerId: CUSTOMER_ID },
@@ -589,24 +619,19 @@ describe("Client Hub Per-Client Overrides & Resolver", () => {
           update: expect.objectContaining({ enabled: false }),
         })
       );
-      expect(mockRevalidatePath).toHaveBeenCalledWith("/app/settings/portal/client-hub");
-    });
-
-    it("writes an audit log when disabling", async () => {
-      setupAuth();
-      mockDb.customer.findFirst.mockResolvedValue({ id: CUSTOMER_ID, name: "Alice Corp" });
-
-      await disableClientHubForCustomer(CUSTOMER_ID);
-      expect(mockLogAudit).toHaveBeenCalledWith(
+      expect(mockDb.auditLog.create).toHaveBeenCalledWith(
         expect.objectContaining({
-          orgId: ORG_ID,
-          actorId: USER_ID,
-          action: "client_hub.disabled",
-          entityType: "ClientHubCustomerLifecycle",
-          entityId: CUSTOMER_ID,
-          metadata: { customerName: "Alice Corp" },
+          data: expect.objectContaining({
+            orgId: ORG_ID,
+            actorId: USER_ID,
+            action: "client_hub.disabled",
+            entityType: "ClientHubCustomerLifecycle",
+            entityId: CUSTOMER_ID,
+            metadata: { customerName: "Alice Corp" },
+          }),
         })
       );
+      expect(mockRevalidatePath).toHaveBeenCalledWith("/app/settings/portal/client-hub");
     });
 
     it("denies member access", async () => {
@@ -614,8 +639,9 @@ describe("Client Hub Per-Client Overrides & Resolver", () => {
       const res = await disableClientHubForCustomer(CUSTOMER_ID);
       expect(res.success).toBe(false);
       expect(res.error).toContain("Only administrators");
+      expect(mockDb.$transaction).not.toHaveBeenCalled();
       expect(mockDb.clientHubCustomerLifecycle.upsert).not.toHaveBeenCalled();
-      expect(mockLogAudit).not.toHaveBeenCalled();
+      expect(mockDb.auditLog.create).not.toHaveBeenCalled();
     });
   });
 });

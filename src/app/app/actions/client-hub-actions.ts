@@ -3,7 +3,8 @@
 import { db } from "@/lib/db";
 import { requireOrgContext } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
-import { logAudit } from "@/lib/audit";
+import { logAuditTx } from "@/lib/audit";
+import { headers } from "next/headers";
 import {
   ClientHubConfig,
   ClientHubConfigSchema,
@@ -413,7 +414,15 @@ export async function getClientHubCustomerLifecycle(customerId: string) {
 
     const customer = await db.customer.findFirst({
       where: { id: customerId, organizationId: orgId },
-      select: { id: true, name: true, email: true },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        phone: true,
+        address: true,
+        taxId: true,
+        gstin: true,
+      },
     });
 
     if (!customer) {
@@ -469,30 +478,39 @@ export async function enableClientHubForCustomer(customerId: string) {
       return { success: false, error: "Customer not found or access denied." };
     }
 
-    await db.clientHubCustomerLifecycle.upsert({
-      where: { customerId },
-      create: {
-        organizationId: orgId,
-        customerId,
-        enabled: true,
-        enabledAt: new Date(),
-        enabledByUserId: userId,
-      },
-      update: {
-        enabled: true,
-        enabledAt: new Date(),
-        disabledAt: null,
-        enabledByUserId: userId,
-      },
-    });
+    const hdrs = await headers();
+    const auditHeaders = {
+      ipAddress: hdrs.get("x-forwarded-for") || hdrs.get("x-real-ip") || null,
+      userAgent: hdrs.get("user-agent") || null,
+    };
 
-    void logAudit({
-      orgId,
-      actorId: userId,
-      action: "client_hub.enabled",
-      entityType: "ClientHubCustomerLifecycle",
-      entityId: customerId,
-      metadata: { customerName: customer.name },
+    await db.$transaction(async (tx) => {
+      await tx.clientHubCustomerLifecycle.upsert({
+        where: { customerId },
+        create: {
+          organizationId: orgId,
+          customerId,
+          enabled: true,
+          enabledAt: new Date(),
+          enabledByUserId: userId,
+        },
+        update: {
+          enabled: true,
+          enabledAt: new Date(),
+          disabledAt: null,
+          enabledByUserId: userId,
+        },
+      });
+
+      await logAuditTx(tx, {
+        orgId,
+        actorId: userId,
+        action: "client_hub.enabled",
+        entityType: "ClientHubCustomerLifecycle",
+        entityId: customerId,
+        metadata: { customerName: customer.name },
+        ...auditHeaders,
+      });
     });
 
     revalidatePath("/app/settings/portal/client-hub");
@@ -525,29 +543,38 @@ export async function disableClientHubForCustomer(customerId: string) {
       return { success: false, error: "Customer not found or access denied." };
     }
 
-    await db.clientHubCustomerLifecycle.upsert({
-      where: { customerId },
-      create: {
-        organizationId: orgId,
-        customerId,
-        enabled: false,
-        disabledAt: new Date(),
-      },
-      update: {
-        enabled: false,
-        disabledAt: new Date(),
-        enabledAt: null,
-        enabledByUserId: null,
-      },
-    });
+    const hdrs = await headers();
+    const auditHeaders = {
+      ipAddress: hdrs.get("x-forwarded-for") || hdrs.get("x-real-ip") || null,
+      userAgent: hdrs.get("user-agent") || null,
+    };
 
-    void logAudit({
-      orgId,
-      actorId: userId,
-      action: "client_hub.disabled",
-      entityType: "ClientHubCustomerLifecycle",
-      entityId: customerId,
-      metadata: { customerName: customer.name },
+    await db.$transaction(async (tx) => {
+      await tx.clientHubCustomerLifecycle.upsert({
+        where: { customerId },
+        create: {
+          organizationId: orgId,
+          customerId,
+          enabled: false,
+          disabledAt: new Date(),
+        },
+        update: {
+          enabled: false,
+          disabledAt: new Date(),
+          enabledAt: null,
+          enabledByUserId: null,
+        },
+      });
+
+      await logAuditTx(tx, {
+        orgId,
+        actorId: userId,
+        action: "client_hub.disabled",
+        entityType: "ClientHubCustomerLifecycle",
+        entityId: customerId,
+        metadata: { customerName: customer.name },
+        ...auditHeaders,
+      });
     });
 
     revalidatePath("/app/settings/portal/client-hub");
