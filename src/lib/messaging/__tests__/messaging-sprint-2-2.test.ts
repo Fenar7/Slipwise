@@ -19,6 +19,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
+import "./local-setup";
+
 // ─── Mock Prisma client ───────────────────────────────────────────────────────
 
 function makeFn() {

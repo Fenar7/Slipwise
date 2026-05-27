@@ -1,4 +1,3 @@
-import { describe, it, expect } from "vitest";
 import { productModules } from "@/lib/modules";
 
 describe("productModules", () => {

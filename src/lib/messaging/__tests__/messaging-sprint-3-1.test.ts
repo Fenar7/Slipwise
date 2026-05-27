@@ -18,6 +18,8 @@ import { NextRequest } from "next/server";
 
 vi.mock("server-only", () => ({}));
 
+import "./local-setup";
+
 // ─── Mock Prisma client ───────────────────────────────────────────────────────
 
 function makeFn() {
