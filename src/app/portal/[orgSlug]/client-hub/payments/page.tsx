@@ -1,4 +1,6 @@
 import { ClientHubPaymentsView } from "../components/views";
+import { getPersistedHubConfig } from "../components/config-resolver";
+import { notFound } from "next/navigation";
 
 export default async function ClientHubPaymentsPage({
   params,
@@ -6,5 +8,11 @@ export default async function ClientHubPaymentsPage({
   params: Promise<{ orgSlug: string }>;
 }) {
   const { orgSlug } = await params;
-  return <ClientHubPaymentsView orgSlug={orgSlug} />;
+  const config = await getPersistedHubConfig(orgSlug);
+
+  if (!config.navigation.showPayments) {
+    notFound();
+  }
+
+  return <ClientHubPaymentsView orgSlug={orgSlug} config={config} />;
 }

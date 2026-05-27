@@ -9,7 +9,12 @@ import { describe, it, expect, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 
 const mockUseParams = vi.hoisted(() => vi.fn(() => ({ orgSlug: "acme" })));
-vi.mock("next/navigation", () => ({ useParams: mockUseParams }));
+vi.mock("next/navigation", () => ({
+  useParams: mockUseParams,
+  notFound: () => {
+    throw new Error("404");
+  },
+}));
 
 import DashboardPage from "../page";
 import InvoicesPage from "../invoices/page";

@@ -1,6 +1,9 @@
 import type { ReactNode } from "react";
 import { db } from "@/lib/db";
 import { buildHubThemeStyle, ClientHubFooter, ClientHubHeader, DEFAULT_HUB_ACCENT, getHubNavItems } from "./components/views";
+import { DEFAULT_CLIENT_HUB_CONFIG } from "@/app/app/settings/portal/client-hub/components/mock-config";
+import type { ClientHubConfig } from "./components/customization-contract";
+import { safeValidateHubConfig } from "./components/config-resolver";
 
 type OrgLayoutData = {
   id: string;
@@ -19,6 +22,9 @@ type OrgLayoutData = {
     portalEnabled: boolean;
     portalSupportEmail: string | null;
     portalSupportPhone: string | null;
+  } | null;
+  clientHubOrgConfig: {
+    config: any;
   } | null;
 };
 
@@ -50,6 +56,9 @@ export default async function ClientHubLayout({
           portalSupportPhone: true,
         },
       },
+      clientHubOrgConfig: {
+        select: { config: true },
+      },
     },
   });
 
@@ -69,6 +78,7 @@ export default async function ClientHubLayout({
         portalSupportEmail: "support@acme.com",
         portalSupportPhone: "+91 98765 43210",
       },
+      clientHubOrgConfig: null,
     };
   }
 
@@ -90,9 +100,12 @@ export default async function ClientHubLayout({
     );
   }
 
-  const accentColor = org.branding?.accentColor ?? DEFAULT_HUB_ACCENT;
-  const logoUrl = org.branding?.logoUrl ?? org.logo;
-  const navItems = getHubNavItems(orgSlug);
+  // Load client hub organization configuration securely with validation
+  const config = safeValidateHubConfig(org.clientHubOrgConfig?.config);
+
+  const accentColor = config.branding?.accentColor ?? org.branding?.accentColor ?? DEFAULT_HUB_ACCENT;
+  const logoUrl = config.branding?.logoUrl ?? org.branding?.logoUrl ?? org.logo;
+  const navItems = getHubNavItems(orgSlug, config);
 
   return (
     <div
@@ -117,10 +130,10 @@ export default async function ClientHubLayout({
       <main className="mx-auto w-full max-w-[1480px] flex-1 px-5 py-6 sm:px-6 sm:py-8 lg:px-10">{children}</main>
       <ClientHubFooter
         orgName={org.name}
-        supportEmail={org.defaults?.portalSupportEmail}
-        supportPhone={org.defaults?.portalSupportPhone}
-        footerText="A calmer, clearer place to work with us."
-        showPoweredBy={!org.whiteLabel?.removeBranding}
+        supportEmail={config.contact?.supportEmail || org.defaults?.portalSupportEmail}
+        supportPhone={config.contact?.supportPhone || org.defaults?.portalSupportPhone}
+        footerText={config.navigation?.footerText || "A calmer, clearer place to work with us."}
+        showPoweredBy={!config.branding?.removePoweredBy && !org.whiteLabel?.removeBranding}
       />
     </div>
   );
