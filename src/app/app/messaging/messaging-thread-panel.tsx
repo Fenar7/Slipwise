@@ -31,6 +31,8 @@ import {
 } from "lucide-react";
 import type { ConversationMessage, MessageReaction, EditState } from "./types";
 import { useAttachmentUpload, type UploadedAttachment } from "./lib/use-attachment-upload";
+import { MentionText } from "./messaging-mention-text";
+import { FormattingToolbar } from "./messaging-formatting-toolbar";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -325,9 +327,9 @@ function ThreadReplyRow({
           />
         ) : (
           <>
-            <p className="mt-0.5 text-xs leading-relaxed" style={{ color: "#1C1B1F" }}>
-              {reply.body}
-            </p>
+            <div className="mt-0.5 text-xs leading-relaxed" style={{ color: "#1C1B1F" }}>
+              <MentionText text={reply.body} />
+            </div>
             {reply.attachmentRecords && reply.attachmentRecords.length > 0 && (
             <div className="mt-1.5 flex flex-wrap gap-1">
               {reply.attachmentRecords.map((att) => (
@@ -387,9 +389,9 @@ function ThreadAnchorMessage({ message }: { message: ConversationMessage }) {
               {formatTime(message.sentAt)}
             </span>
           </div>
-          <p className="mt-0.5 text-sm leading-relaxed" style={{ color: "#1C1B1F" }}>
-            {message.body}
-          </p>
+          <div className="mt-0.5 text-sm leading-relaxed" style={{ color: "#1C1B1F" }}>
+            <MentionText text={message.body} />
+          </div>
           {message.attachmentRecords && message.attachmentRecords.length > 0 && (
             <div className="mt-1.5 flex flex-wrap gap-1">
               {message.attachmentRecords.map((att) => (
@@ -472,6 +474,60 @@ function ThreadReplyComposer({ onReply, sendingReply = false }: ThreadReplyCompo
     clearAll();
   }, [replyText, stagedFiles, onReply, clearAll]);
 
+  function applyFormat(type: string) {
+    if (!editorRef.current) return;
+    editorRef.current.focus();
+    const selection = window.getSelection();
+    if (!selection) return;
+    let selectedText = "";
+    let range: Range | null = null;
+    if (selection.rangeCount > 0) {
+      range = selection.getRangeAt(0);
+      if (editorRef.current.contains(range.commonAncestorContainer)) {
+        selectedText = range.toString();
+      }
+    }
+    let formattedText = "";
+    switch (type) {
+      case "bold":
+        formattedText = `**${selectedText || "bold text"}**`;
+        break;
+      case "italic":
+        formattedText = `*${selectedText || "italic text"}*`;
+        break;
+      case "strikethrough":
+        formattedText = `~~${selectedText || "strikethrough text"}~~`;
+        break;
+      case "link":
+        formattedText = `[${selectedText || "link text"}](https://example.com)`;
+        break;
+      case "bulleted list":
+      case "list":
+        formattedText = `\n- ${selectedText || "list item"}`;
+        break;
+      case "code block":
+      case "code":
+        formattedText = `\`\`\`\n${selectedText || "code"}\n\`\`\``;
+        break;
+      default:
+        formattedText = selectedText;
+    }
+    if (range && editorRef.current.contains(range.commonAncestorContainer)) {
+      range.deleteContents();
+      const textNode = document.createTextNode(formattedText);
+      range.insertNode(textNode);
+      range.setStartAfter(textNode);
+      range.setEndAfter(textNode);
+      selection.removeAllRanges();
+      selection.addRange(range);
+    } else {
+      const textNode = document.createTextNode(formattedText);
+      editorRef.current.appendChild(textNode);
+    }
+    const newContent = editorRef.current.textContent ?? "";
+    setReplyText(newContent);
+  }
+
   return (
     <div
       className="shrink-0 border-t px-3 py-2.5"
@@ -513,56 +569,59 @@ function ThreadReplyComposer({ onReply, sendingReply = false }: ThreadReplyCompo
       )}
 
       <div
-        className="flex items-center gap-2 rounded-xl border bg-[#f8f9fc] px-3 py-2 transition-shadow focus-within:shadow-sm focus-within:border-gray-300"
+        className="flex flex-col rounded-xl border bg-[#f8f9fc] transition-shadow focus-within:shadow-sm focus-within:border-gray-300"
         style={{ borderColor: "#E0E0E0" }}
       >
-        <div
-          ref={editorRef}
-          role="textbox"
-          aria-label="Reply in thread"
-          aria-multiline="true"
-          contentEditable={!sendingReply}
-          suppressContentEditableWarning
-          className="flex-1 text-xs outline-none empty:before:content-[attr(data-placeholder)] empty:before:text-[#C4C4C4]"
-          style={{ color: "#1C1B1F" }}
-          data-placeholder={sendingReply ? "Sending…" : "Reply in thread…"}
-          data-testid="thread-reply-input"
-          onInput={(e) => {
-            const text = (e.target as HTMLElement).textContent ?? "";
-            setReplyText(text);
-            if (editorRef.current && editorRef.current.textContent !== text) {
-              editorRef.current.textContent = text;
-            }
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              handleSend();
-            }
-          }}
-        />
-        <button
-          type="button"
-          onClick={() => fileInputRef.current?.click()}
-          disabled={sendingReply || uploading}
-          className="shrink-0 flex h-6 w-6 items-center justify-center rounded hover:bg-gray-200 transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#DC2626]"
-          aria-label="Attach file"
-          data-testid="thread-attach-button"
-        >
-          {uploading ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" style={{ color: "#C4C4C4" }} />
-          ) : (
-            <Paperclip className="h-3.5 w-3.5" style={{ color: "#79747E" }} />
-          )}
-        </button>
-        <input
-          ref={fileInputRef}
-          type="file"
-          className="sr-only"
-          multiple
-          data-testid="thread-file-input"
-          onChange={handleFileSelect}
-        />
+        <FormattingToolbar onFormat={applyFormat} testId="thread-formatting-toolbar" />
+        <div className="flex items-center gap-2 px-3 py-2">
+          <div
+            ref={editorRef}
+            role="textbox"
+            aria-label="Reply in thread"
+            aria-multiline="true"
+            contentEditable={!sendingReply}
+            suppressContentEditableWarning
+            className="flex-1 text-xs outline-none empty:before:content-[attr(data-placeholder)] empty:before:text-[#C4C4C4]"
+            style={{ color: "#1C1B1F" }}
+            data-placeholder={sendingReply ? "Sending…" : "Reply in thread…"}
+            data-testid="thread-reply-input"
+            onInput={(e) => {
+              const text = (e.target as HTMLElement).textContent ?? "";
+              setReplyText(text);
+              if (editorRef.current && editorRef.current.textContent !== text) {
+                editorRef.current.textContent = text;
+              }
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                handleSend();
+              }
+            }}
+          />
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={sendingReply || uploading}
+            className="shrink-0 flex h-6 w-6 items-center justify-center rounded hover:bg-gray-200 transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#DC2626]"
+            aria-label="Attach file"
+            data-testid="thread-attach-button"
+          >
+            {uploading ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" style={{ color: "#C4C4C4" }} />
+            ) : (
+              <Paperclip className="h-3.5 w-3.5" style={{ color: "#79747E" }} />
+            )}
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            className="sr-only"
+            multiple
+            data-testid="thread-file-input"
+            onChange={handleFileSelect}
+          />
+        </div>
       </div>
     </div>
   );
