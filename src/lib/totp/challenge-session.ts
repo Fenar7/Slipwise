@@ -103,7 +103,7 @@ export async function verifyChallengeToken(
     const isValid = await webCrypto.subtle.verify(
       "HMAC",
       key,
-      sigBytes,
+      sigBytes as unknown as BufferSource,
       enc.encode(`${header}.${body}`)
     );
     if (!isValid) return null;

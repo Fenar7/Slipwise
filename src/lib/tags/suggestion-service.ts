@@ -3,6 +3,9 @@
 import { db } from "@/lib/db";
 import { requireOrgContext } from "@/lib/auth";
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const dbAny = db as any;
+
 export type SuggestionContext = {
   counterpartyId: string;
   counterpartyType: "customer" | "vendor";
@@ -42,11 +45,11 @@ export async function getSuggestedTags(
   // 1. Counterparty default tags
   const defaultAssignments =
     counterpartyType === "customer"
-      ? await db.customerDefaultTag.findMany({
+      ? await dbAny.customerDefaultTag.findMany({
           where: { customerId: counterpartyId, tag: { orgId, isArchived: false } },
           include: { tag: { select: { id: true, name: true, slug: true, color: true } } },
         })
-      : await db.vendorDefaultTag.findMany({
+      : await dbAny.vendorDefaultTag.findMany({
           where: { vendorId: counterpartyId, tag: { orgId, isArchived: false } },
           include: { tag: { select: { id: true, name: true, slug: true, color: true } } },
         });
@@ -61,7 +64,7 @@ export async function getSuggestedTags(
   // 2. Recent tags used with this counterparty
   if (results.length < limit) {
     if (documentType === "invoice" && counterpartyType === "customer") {
-      const recent = await db.invoiceTagAssignment.findMany({
+      const recent = await dbAny.invoiceTagAssignment.findMany({
         where: { invoice: { organizationId: orgId, archivedAt: null, customerId: counterpartyId }, tag: { orgId, isArchived: false } },
         include: { tag: { select: { id: true, name: true, slug: true, color: true } } },
         orderBy: { invoice: { createdAt: "desc" } },
@@ -69,16 +72,16 @@ export async function getSuggestedTags(
       });
       const counts = new Map<string, number>();
       for (const a of recent) counts.set(a.tag.id, (counts.get(a.tag.id) ?? 0) + 1);
-      for (const [tagId, count] of [...counts.entries()].sort((a, b) => b[1] - a[1])) {
+      for (const [tagId, count] of [...counts.entries()].sort((a: [string, number], b: [string, number]) => b[1] - a[1])) {
         if (!seen.has(tagId) && results.length < limit) {
-          const a = recent.find((r) => r.tag.id === tagId)!;
+          const a = recent.find((r: { tag: { id: string } }) => r.tag.id === tagId)!;
           seen.add(tagId);
           results.push({ id: a.tag.id, name: a.tag.name, slug: a.tag.slug, color: a.tag.color, source: "recent", usageCount: count });
         }
       }
     }
     if (documentType === "voucher" && counterpartyType === "vendor") {
-      const recent = await db.voucherTagAssignment.findMany({
+      const recent = await dbAny.voucherTagAssignment.findMany({
         where: { voucher: { organizationId: orgId, archivedAt: null, vendorId: counterpartyId }, tag: { orgId, isArchived: false } },
         include: { tag: { select: { id: true, name: true, slug: true, color: true } } },
         orderBy: { voucher: { createdAt: "desc" } },
@@ -86,9 +89,9 @@ export async function getSuggestedTags(
       });
       const counts = new Map<string, number>();
       for (const a of recent) counts.set(a.tag.id, (counts.get(a.tag.id) ?? 0) + 1);
-      for (const [tagId, count] of [...counts.entries()].sort((a, b) => b[1] - a[1])) {
+      for (const [tagId, count] of [...counts.entries()].sort((a: [string, number], b: [string, number]) => b[1] - a[1])) {
         if (!seen.has(tagId) && results.length < limit) {
-          const a = recent.find((r) => r.tag.id === tagId)!;
+          const a = recent.find((r: { tag: { id: string } }) => r.tag.id === tagId)!;
           seen.add(tagId);
           results.push({ id: a.tag.id, name: a.tag.name, slug: a.tag.slug, color: a.tag.color, source: "recent", usageCount: count });
         }
@@ -99,21 +102,21 @@ export async function getSuggestedTags(
   // 3. Org-wide popular tags as fallback
   if (results.length < limit) {
     const popular = documentType === "invoice"
-      ? await db.invoiceTagAssignment.findMany({
+      ? await dbAny.invoiceTagAssignment.findMany({
           where: { invoice: { organizationId: orgId, archivedAt: null }, tag: { orgId, isArchived: false } },
           include: { tag: { select: { id: true, name: true, slug: true, color: true } } },
           take: 200,
         })
-      : await db.voucherTagAssignment.findMany({
+      : await dbAny.voucherTagAssignment.findMany({
           where: { voucher: { organizationId: orgId, archivedAt: null }, tag: { orgId, isArchived: false } },
           include: { tag: { select: { id: true, name: true, slug: true, color: true } } },
           take: 200,
         });
     const counts = new Map<string, number>();
     for (const a of popular) counts.set(a.tag.id, (counts.get(a.tag.id) ?? 0) + 1);
-    for (const [tagId, count] of [...counts.entries()].sort((a, b) => b[1] - a[1])) {
+    for (const [tagId, count] of [...counts.entries()].sort((a: [string, number], b: [string, number]) => b[1] - a[1])) {
       if (!seen.has(tagId) && results.length < limit) {
-        const a = popular.find((r) => r.tag.id === tagId)!;
+        const a = popular.find((r: { tag: { id: string } }) => r.tag.id === tagId)!;
         seen.add(tagId);
         results.push({ id: a.tag.id, name: a.tag.name, slug: a.tag.slug, color: a.tag.color, source: "popular", usageCount: count });
       }

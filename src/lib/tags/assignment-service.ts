@@ -5,6 +5,9 @@ import { requireOrgContext, hasRole } from "@/lib/auth";
 import type { TagData } from "./tag-service";
 import { logAudit } from "@/lib/audit";
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const dbAny = db as any;
+
 export type ActionResult<T> =
   | { success: true; data: T }
   | { success: false; error: string };
@@ -70,13 +73,13 @@ export async function addInvoiceTag(
     });
     if (!tag) return { success: false, error: "Tag not found" };
 
-    const existing = await db.invoiceTagAssignment.findFirst({
+    const existing = await dbAny.invoiceTagAssignment.findFirst({
       where: { invoiceId, tagId },
       select: { id: true },
     });
 
     if (!existing) {
-      await db.invoiceTagAssignment.create({ data: { invoiceId, tagId } });
+      await dbAny.invoiceTagAssignment.create({ data: { invoiceId, tagId } });
       void assignAudit(orgId, userId, "tag.assigned_invoice", "Invoice", invoiceId, { tagId });
     }
 
@@ -99,7 +102,7 @@ export async function removeInvoiceTag(
       return { success: false, error: "Invoice not found" };
     }
 
-    await db.invoiceTagAssignment.deleteMany({
+    await dbAny.invoiceTagAssignment.deleteMany({
       where: { invoiceId, tagId },
     });
 
@@ -137,16 +140,16 @@ export async function setInvoiceTags(
     }
 
     // Diff audit: capture added and removed IDs
-    const prev = await db.invoiceTagAssignment.findMany({ where: { invoiceId }, select: { tagId: true } });
-    const prevIds = new Set(prev.map((a) => a.tagId));
+    const prev = await dbAny.invoiceTagAssignment.findMany({ where: { invoiceId }, select: { tagId: true } });
+    const prevIds = new Set(prev.map((a: { tagId: string }) => a.tagId));
     const newIds = new Set(tagIds);
     const added = tagIds.filter((id) => !prevIds.has(id));
-    const removed = [...prevIds].filter((id) => !newIds.has(id));
+    const removed = ([...prevIds] as string[]).filter((id) => !newIds.has(id));
 
     await db.$transaction([
-      db.invoiceTagAssignment.deleteMany({ where: { invoiceId } }),
+      dbAny.invoiceTagAssignment.deleteMany({ where: { invoiceId } }),
       ...tagIds.map((tagId) =>
-        db.invoiceTagAssignment.create({ data: { invoiceId, tagId } })
+        dbAny.invoiceTagAssignment.create({ data: { invoiceId, tagId } })
       ),
     ]);
 
@@ -165,8 +168,8 @@ export async function getInvoiceTags(invoiceId: string): Promise<ActionResult<Ta
   try {
     const { orgId } = await requireOrgContext();
     if (!(await verifyOrgEntity(orgId, "invoice", invoiceId))) return { success: false, error: "Invoice not found" };
-    const assignments = await db.invoiceTagAssignment.findMany({ where: { invoiceId }, include: { tag: true }, orderBy: { tag: { name: "asc" } } });
-    return { success: true, data: assignments.map((a) => a.tag as TagData) };
+    const assignments = await dbAny.invoiceTagAssignment.findMany({ where: { invoiceId }, include: { tag: true }, orderBy: { tag: { name: "asc" } } });
+    return { success: true, data: assignments.map((a: { tag: TagData }) => a.tag as TagData) };
   } catch (error) {
     console.error("getInvoiceTags error:", error);
     return { success: false, error: "Failed to get invoice tags" };
@@ -182,9 +185,9 @@ export async function addVoucherTag(voucherId: string, tagId: string): Promise<A
     if (!(await verifyOrgEntity(orgId, "voucher", voucherId))) return { success: false, error: "Voucher not found" };
     const tag = await db.documentTag.findFirst({ where: { id: tagId, orgId }, select: { id: true } });
     if (!tag) return { success: false, error: "Tag not found" };
-    const existing = await db.voucherTagAssignment.findFirst({ where: { voucherId, tagId }, select: { id: true } });
+    const existing = await dbAny.voucherTagAssignment.findFirst({ where: { voucherId, tagId }, select: { id: true } });
     if (!existing) {
-      await db.voucherTagAssignment.create({ data: { voucherId, tagId } });
+      await dbAny.voucherTagAssignment.create({ data: { voucherId, tagId } });
       void assignAudit(orgId, userId, "tag.assigned_voucher", "Voucher", voucherId, { tagId });
     }
     return { success: true, data: null };
@@ -199,7 +202,7 @@ export async function removeVoucherTag(voucherId: string, tagId: string): Promis
     const { orgId, userId, role } = await requireOrgContext();
     if (!hasRole(role, "voucher_operator")) return { success: false, error: "Insufficient permissions" };
     if (!(await verifyOrgEntity(orgId, "voucher", voucherId))) return { success: false, error: "Voucher not found" };
-    await db.voucherTagAssignment.deleteMany({ where: { voucherId, tagId } });
+    await dbAny.voucherTagAssignment.deleteMany({ where: { voucherId, tagId } });
     void assignAudit(orgId, userId, "tag.removed_voucher", "Voucher", voucherId, { tagId });
     return { success: true, data: null };
   } catch (error) {
@@ -219,12 +222,12 @@ export async function setVoucherTags(voucherId: string, tagIds: string[]): Promi
       const invalidIds = tagIds.filter((id) => !validIds.has(id));
       if (invalidIds.length > 0) return { success: false, error: `Tags not found: ${invalidIds.join(", ")}` };
     }
-    const prev = await db.voucherTagAssignment.findMany({ where: { voucherId }, select: { tagId: true } });
-    const prevIds = new Set(prev.map((a) => a.tagId));
+    const prev = await dbAny.voucherTagAssignment.findMany({ where: { voucherId }, select: { tagId: true } });
+    const prevIds = new Set(prev.map((a: { tagId: string }) => a.tagId));
     const newIds = new Set(tagIds);
     const added = tagIds.filter((id) => !prevIds.has(id));
-    const removed = [...prevIds].filter((id) => !newIds.has(id));
-    await db.$transaction([db.voucherTagAssignment.deleteMany({ where: { voucherId } }), ...tagIds.map((t) => db.voucherTagAssignment.create({ data: { voucherId, tagId: t } }))]);
+    const removed = ([...prevIds] as string[]).filter((id) => !newIds.has(id));
+    await db.$transaction([dbAny.voucherTagAssignment.deleteMany({ where: { voucherId } }), ...tagIds.map((t) => dbAny.voucherTagAssignment.create({ data: { voucherId, tagId: t } }))]);
     if (added.length > 0 || removed.length > 0) {
       void assignAudit(orgId, userId, "tag.assigned_voucher", "Voucher", voucherId, { added, removed, final: tagIds });
     }
@@ -239,8 +242,8 @@ export async function getVoucherTags(voucherId: string): Promise<ActionResult<Ta
   try {
     const { orgId } = await requireOrgContext();
     if (!(await verifyOrgEntity(orgId, "voucher", voucherId))) return { success: false, error: "Voucher not found" };
-    const assignments = await db.voucherTagAssignment.findMany({ where: { voucherId }, include: { tag: true }, orderBy: { tag: { name: "asc" } } });
-    return { success: true, data: assignments.map((a) => a.tag as TagData) };
+    const assignments = await dbAny.voucherTagAssignment.findMany({ where: { voucherId }, include: { tag: true }, orderBy: { tag: { name: "asc" } } });
+    return { success: true, data: assignments.map((a: { tag: TagData }) => a.tag as TagData) };
   } catch (error) {
     console.error("getVoucherTags error:", error);
     return { success: false, error: "Failed to get voucher tags" };
@@ -256,9 +259,9 @@ export async function addCustomerDefaultTag(customerId: string, tagId: string): 
     if (!(await verifyOrgEntity(orgId, "customer", customerId))) return { success: false, error: "Customer not found" };
     const tag = await db.documentTag.findFirst({ where: { id: tagId, orgId }, select: { id: true } });
     if (!tag) return { success: false, error: "Tag not found" };
-    const existing = await db.customerDefaultTag.findFirst({ where: { customerId, tagId }, select: { id: true } });
+    const existing = await dbAny.customerDefaultTag.findFirst({ where: { customerId, tagId }, select: { id: true } });
     if (!existing) {
-      await db.customerDefaultTag.create({ data: { customerId, tagId } });
+      await dbAny.customerDefaultTag.create({ data: { customerId, tagId } });
       void assignAudit(orgId, userId, "tag.default_customer_set", "Customer", customerId, { tagId });
     }
     return { success: true, data: null };
@@ -273,7 +276,7 @@ export async function removeCustomerDefaultTag(customerId: string, tagId: string
     const { orgId, userId, role } = await requireOrgContext();
     if (!hasRole(role, "invoice_operator")) return { success: false, error: "Insufficient permissions" };
     if (!(await verifyOrgEntity(orgId, "customer", customerId))) return { success: false, error: "Customer not found" };
-    await db.customerDefaultTag.deleteMany({ where: { customerId, tagId } });
+    await dbAny.customerDefaultTag.deleteMany({ where: { customerId, tagId } });
     void assignAudit(orgId, userId, "tag.default_customer_set", "Customer", customerId, { tagId, removed: true });
     return { success: true, data: null };
   } catch (error) {
@@ -292,12 +295,12 @@ export async function setCustomerDefaultTags(customerId: string, tagIds: string[
       const validIds = new Set(tags.map((t) => t.id));
       if (tagIds.filter((id) => !validIds.has(id)).length > 0) return { success: false, error: "One or more tags not found" };
     }
-    const prev = await db.customerDefaultTag.findMany({ where: { customerId }, select: { tagId: true } });
-    const prevIds = new Set(prev.map((a) => a.tagId));
+    const prev = await dbAny.customerDefaultTag.findMany({ where: { customerId }, select: { tagId: true } });
+    const prevIds = new Set(prev.map((a: { tagId: string }) => a.tagId));
     const newIds = new Set(tagIds);
     const added = tagIds.filter((id) => !prevIds.has(id));
-    const removed = [...prevIds].filter((id) => !newIds.has(id));
-    await db.$transaction([db.customerDefaultTag.deleteMany({ where: { customerId } }), ...tagIds.map((t) => db.customerDefaultTag.create({ data: { customerId, tagId: t } }))]);
+    const removed = ([...prevIds] as string[]).filter((id) => !newIds.has(id));
+    await db.$transaction([dbAny.customerDefaultTag.deleteMany({ where: { customerId } }), ...tagIds.map((t) => dbAny.customerDefaultTag.create({ data: { customerId, tagId: t } }))]);
     if (added.length > 0 || removed.length > 0 || tagIds.length === 0) {
       void assignAudit(orgId, userId, "tag.default_customer_set", "Customer", customerId, { added, removed, final: tagIds });
     }
@@ -312,8 +315,8 @@ export async function getCustomerDefaultTags(customerId: string): Promise<Action
   try {
     const { orgId } = await requireOrgContext();
     if (!(await verifyOrgEntity(orgId, "customer", customerId))) return { success: false, error: "Customer not found" };
-    const defaults = await db.customerDefaultTag.findMany({ where: { customerId }, include: { tag: true }, orderBy: { tag: { name: "asc" } } });
-    return { success: true, data: defaults.map((d) => d.tag as TagData) };
+    const defaults = await dbAny.customerDefaultTag.findMany({ where: { customerId }, include: { tag: true }, orderBy: { tag: { name: "asc" } } });
+    return { success: true, data: defaults.map((d: { tag: TagData }) => d.tag as TagData) };
   } catch (error) {
     console.error("getCustomerDefaultTags error:", error);
     return { success: false, error: "Failed to get customer default tags" };
@@ -329,9 +332,9 @@ export async function addVendorDefaultTag(vendorId: string, tagId: string): Prom
     if (!(await verifyOrgEntity(orgId, "vendor", vendorId))) return { success: false, error: "Vendor not found" };
     const tag = await db.documentTag.findFirst({ where: { id: tagId, orgId }, select: { id: true } });
     if (!tag) return { success: false, error: "Tag not found" };
-    const existing = await db.vendorDefaultTag.findFirst({ where: { vendorId, tagId }, select: { id: true } });
+    const existing = await dbAny.vendorDefaultTag.findFirst({ where: { vendorId, tagId }, select: { id: true } });
     if (!existing) {
-      await db.vendorDefaultTag.create({ data: { vendorId, tagId } });
+      await dbAny.vendorDefaultTag.create({ data: { vendorId, tagId } });
       void assignAudit(orgId, userId, "tag.default_vendor_set", "Vendor", vendorId, { tagId });
     }
     return { success: true, data: null };
@@ -346,7 +349,7 @@ export async function removeVendorDefaultTag(vendorId: string, tagId: string): P
     const { orgId, userId, role } = await requireOrgContext();
     if (!hasRole(role, "voucher_operator")) return { success: false, error: "Insufficient permissions" };
     if (!(await verifyOrgEntity(orgId, "vendor", vendorId))) return { success: false, error: "Vendor not found" };
-    await db.vendorDefaultTag.deleteMany({ where: { vendorId, tagId } });
+    await dbAny.vendorDefaultTag.deleteMany({ where: { vendorId, tagId } });
     void assignAudit(orgId, userId, "tag.default_vendor_set", "Vendor", vendorId, { tagId, removed: true });
     return { success: true, data: null };
   } catch (error) {
@@ -365,12 +368,12 @@ export async function setVendorDefaultTags(vendorId: string, tagIds: string[]): 
       const validIds = new Set(tags.map((t) => t.id));
       if (tagIds.filter((id) => !validIds.has(id)).length > 0) return { success: false, error: "One or more tags not found" };
     }
-    const prev = await db.vendorDefaultTag.findMany({ where: { vendorId }, select: { tagId: true } });
-    const prevIds = new Set(prev.map((a) => a.tagId));
+    const prev = await dbAny.vendorDefaultTag.findMany({ where: { vendorId }, select: { tagId: true } });
+    const prevIds = new Set(prev.map((a: { tagId: string }) => a.tagId));
     const newIds = new Set(tagIds);
     const added = tagIds.filter((id) => !prevIds.has(id));
-    const removed = [...prevIds].filter((id) => !newIds.has(id));
-    await db.$transaction([db.vendorDefaultTag.deleteMany({ where: { vendorId } }), ...tagIds.map((t) => db.vendorDefaultTag.create({ data: { vendorId, tagId: t } }))]);
+    const removed = ([...prevIds] as string[]).filter((id) => !newIds.has(id));
+    await db.$transaction([dbAny.vendorDefaultTag.deleteMany({ where: { vendorId } }), ...tagIds.map((t) => dbAny.vendorDefaultTag.create({ data: { vendorId, tagId: t } }))]);
     if (added.length > 0 || removed.length > 0 || tagIds.length === 0) {
       void assignAudit(orgId, userId, "tag.default_vendor_set", "Vendor", vendorId, { added, removed, final: tagIds });
     }
@@ -385,8 +388,8 @@ export async function getVendorDefaultTags(vendorId: string): Promise<ActionResu
   try {
     const { orgId } = await requireOrgContext();
     if (!(await verifyOrgEntity(orgId, "vendor", vendorId))) return { success: false, error: "Vendor not found" };
-    const defaults = await db.vendorDefaultTag.findMany({ where: { vendorId }, include: { tag: true }, orderBy: { tag: { name: "asc" } } });
-    return { success: true, data: defaults.map((d) => d.tag as TagData) };
+    const defaults = await dbAny.vendorDefaultTag.findMany({ where: { vendorId }, include: { tag: true }, orderBy: { tag: { name: "asc" } } });
+    return { success: true, data: defaults.map((d: { tag: TagData }) => d.tag as TagData) };
   } catch (error) {
     console.error("getVendorDefaultTags error:", error);
     return { success: false, error: "Failed to get vendor default tags" };
