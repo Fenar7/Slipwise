@@ -136,9 +136,6 @@ export type {
   DisconnectCalendarInput,
   CreateRetentionPolicyInput,
   UpdateRetentionPolicyInput,
-  ConversationSummary,
-  MessageSummary,
-  ParticipantSummary,
 } from "./service-contracts";
 export {
   isValidConversationType,

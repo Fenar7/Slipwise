@@ -1,9 +1,21 @@
 /**
  * Sprint 1.3 — Composer and Thread UX tests
  */
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, within } from "@testing-library/react";
 import React from "react";
+
+vi.mock("@/app/app/messaging/lib/use-conversation-list");
+vi.mock("@/app/app/messaging/lib/use-conversation-detail");
+vi.mock("@/app/app/messaging/lib/use-conversation-tasks");
+vi.mock("@/app/app/messaging/lib/use-thread-replies");
+vi.mock("@/app/app/messaging/lib/use-attachment-files");
+
+import { setupLegacyMessagingMocks } from "./legacy-setup-helper";
+
+beforeEach(() => {
+  setupLegacyMessagingMocks();
+});
 
 vi.mock("next/navigation", () => ({
   usePathname: () => "/app/messaging",

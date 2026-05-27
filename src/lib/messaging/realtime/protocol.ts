@@ -231,6 +231,8 @@ export type RealtimeEventType =
   | "conversation.message.created"
   | "conversation.message.edited"
   | "conversation.message.deleted"
+  | "conversation.message.reaction.added"
+  | "conversation.message.reaction.removed"
   | "conversation.thread.created"
   | "conversation.thread.replied"
   | "conversation.thread.resolved"

@@ -1,7 +1,7 @@
 import "server-only";
 
 import { randomBytes } from "crypto";
-import type { Prisma } from "@/generated/prisma/client";
+import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 import type { RealtimeEventType } from "./protocol";
 
 /**
@@ -148,7 +148,7 @@ export const DEFAULT_REPLAY_RETENTION_HOURS = 72;
  * currently authorized for the conversation before calling replay.
  */
 export async function replayConversationEvents(
-  tx: Prisma.TransactionClient | Prisma.Client,
+  tx: Prisma.TransactionClient | PrismaClient,
   params: {
     orgId: string;
     conversationId: string;
@@ -213,7 +213,7 @@ export async function replayConversationEvents(
 // ---------------------------------------------------------------------------
 
 export async function getReplayWindowStats(
-  tx: Prisma.TransactionClient | Prisma.Client,
+  tx: Prisma.TransactionClient | PrismaClient,
   params: { orgId: string; conversationId: string; afterCursor: string },
 ): Promise<{ count: number; oldestCursor: bigint | null; newestCursor: bigint | null }> {
   const after = BigInt(params.afterCursor);
