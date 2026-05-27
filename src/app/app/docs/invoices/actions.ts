@@ -302,6 +302,33 @@ async function reverseInvoiceInventoryTx(
 
 // ─── Invoice Actions ──────────────────────────────────────────────────────────
 
+/**
+ * Verify that a customerId belongs to the active org.
+ * Returns the validated id, or null when no customer is linked.
+ * Throws on cross-org or missing customer to prevent forged linkage.
+ */
+async function resolveValidatedCustomerId(
+  orgId: string,
+  customerId?: string | null,
+): Promise<string | null> {
+  if (!customerId) {
+    return null;
+  }
+
+  const customer = await db.customer.findFirst({
+    where: { id: customerId, organizationId: orgId },
+    select: { id: true },
+  });
+
+  if (!customer) {
+    throw new Error(
+      "Customer not found or does not belong to this organisation.",
+    );
+  }
+
+  return customer.id;
+}
+
 export async function resolveInvoiceAutofillAction(params: {
   customerId?: string;
   templateParam?: string;
@@ -395,6 +422,9 @@ export async function saveInvoice(
     const invoiceDate = normalizeInvoiceDateInput(input.invoiceDate, "Invoice date");
     const dueDate = normalizeOptionalInvoiceDateInput(input.dueDate, "Due date");
 
+    // Validate customer belongs to this org before any write
+    const validatedCustomerId = await resolveValidatedCustomerId(orgId, input.customerId);
+
     const invoice = await db.$transaction(async (tx) => {
       if (status === "ISSUED") {
         const assigned = await assignNextInvoiceNumber(orgId, invoiceDate, tx);
@@ -407,7 +437,7 @@ export async function saveInvoice(
       const created = await tx.invoice.create({
         data: {
           organizationId: orgId,
-          customerId: input.customerId || null,
+          customerId: validatedCustomerId,
           invoiceNumber,
           invoiceDate,
           dueDate,
@@ -549,6 +579,11 @@ export async function updateInvoice(
       return { success: false, error: "Posted invoices cannot be edited" };
     }
 
+    // Validate customer belongs to this org before any write
+    const validatedCustomerId = input.customerId !== undefined
+      ? await resolveValidatedCustomerId(orgId, input.customerId)
+      : undefined;
+
     const normalizedInvoice = input.lineItems
       ? normalizeInvoiceLineItems(input.lineItems)
       : null;
@@ -557,7 +592,7 @@ export async function updateInvoice(
       await tx.invoice.update({
         where: { id },
         data: {
-          customerId: input.customerId,
+          customerId: validatedCustomerId,
           ...(input.invoiceDate !== undefined
             ? { invoiceDate: normalizeInvoiceDateInput(input.invoiceDate, "Invoice date") }
             : {}),

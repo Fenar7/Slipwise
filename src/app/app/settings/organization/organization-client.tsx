@@ -27,6 +27,9 @@ type SaveFinancialsAction = (data: {
   taxId: string;
   gstin: string;
   businessAddress: string;
+  defaultInvoiceNotes: string;
+  defaultInvoiceTerms: string;
+  defaultInvoiceAuthorizedBy: string;
 }) => Promise<void>;
 
 interface OrganizationClientProps {
@@ -41,6 +44,9 @@ interface OrganizationClientProps {
     taxId: string | null;
     gstin: string | null;
     businessAddress: string | null;
+    defaultInvoiceNotes: string | null;
+    defaultInvoiceTerms: string | null;
+    defaultInvoiceAuthorizedBy: string | null;
   } | null;
   saveBranding: SaveBrandingAction;
   saveFinancials: SaveFinancialsAction;
@@ -63,6 +69,9 @@ export function OrganizationClient({
   const [taxId, setTaxId] = useState(initialDefaults?.taxId ?? "");
   const [gstin, setGstin] = useState(initialDefaults?.gstin ?? "");
   const [businessAddress, setBusinessAddress] = useState(initialDefaults?.businessAddress ?? "");
+  const [defaultInvoiceNotes, setDefaultInvoiceNotes] = useState(initialDefaults?.defaultInvoiceNotes ?? "");
+  const [defaultInvoiceTerms, setDefaultInvoiceTerms] = useState(initialDefaults?.defaultInvoiceTerms ?? "");
+  const [defaultInvoiceAuthorizedBy, setDefaultInvoiceAuthorizedBy] = useState(initialDefaults?.defaultInvoiceAuthorizedBy ?? "");
   const [saving, setSaving] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
@@ -88,6 +97,9 @@ export function OrganizationClient({
       taxId,
       gstin,
       businessAddress,
+      defaultInvoiceNotes,
+      defaultInvoiceTerms,
+      defaultInvoiceAuthorizedBy,
     });
     setSaving(null);
     setSuccess("financials");
@@ -232,6 +244,49 @@ export function OrganizationClient({
                 rows={3}
                 className="w-full rounded-lg border border-[var(--border-soft)] bg-white px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--focus-ring)] resize-none"
                 placeholder="Enter registered business address"
+              />
+            </SettingsFormField>
+
+            <div className="border-t border-[var(--border-soft)] pt-5 mt-5">
+              <p className="text-xs font-medium text-[var(--text-muted)] mb-4 uppercase tracking-wide">
+                Invoice defaults
+              </p>
+            </div>
+
+            <SettingsFormField
+              label="Default invoice notes"
+              hint="Pre-filled on new invoices. Operators can override per invoice."
+            >
+              <textarea
+                value={defaultInvoiceNotes}
+                onChange={(e) => setDefaultInvoiceNotes(e.target.value)}
+                rows={2}
+                className="w-full rounded-lg border border-[var(--border-soft)] bg-white px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--focus-ring)] resize-none"
+                placeholder="e.g. Thank you for your business."
+              />
+            </SettingsFormField>
+
+            <SettingsFormField
+              label="Default invoice terms"
+              hint="Pre-filled on new invoices."
+            >
+              <textarea
+                value={defaultInvoiceTerms}
+                onChange={(e) => setDefaultInvoiceTerms(e.target.value)}
+                rows={2}
+                className="w-full rounded-lg border border-[var(--border-soft)] bg-white px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--focus-ring)] resize-none"
+                placeholder="e.g. Payment due within 30 days."
+              />
+            </SettingsFormField>
+
+            <SettingsFormField
+              label="Default authorised by"
+              hint="Name shown in the signature block of new invoices."
+            >
+              <Input
+                value={defaultInvoiceAuthorizedBy}
+                onChange={(e) => setDefaultInvoiceAuthorizedBy(e.target.value)}
+                placeholder="e.g. Jane Doe"
               />
             </SettingsFormField>
 
