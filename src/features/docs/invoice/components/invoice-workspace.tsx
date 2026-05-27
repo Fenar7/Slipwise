@@ -44,7 +44,9 @@ import {
   saveInvoice,
   updateInvoice,
   issueInvoice,
+  resolveInvoiceAutofillAction,
 } from "@/app/app/docs/invoices/actions";
+import type { InvoiceAutofillPayload } from "@/app/app/docs/invoices/autofill-resolver";
 
 type InvoiceActionState =
   | { status: "idle" }
@@ -229,9 +231,11 @@ interface InvoicePanelProps {
   setTagIds?: (ids: string[]) => void;
   suggestions?: SuggestedTag[];
   loadSuggestions?: (customerId: string) => void;
+  onCustomerChange?: (customer: { id: string; name: string; email: string | null; phone: string | null; address: string | null; taxId: string | null; gstin: string | null } | null) => void;
+  initialCustomerId?: string;
 }
 
-function InvoicePanel({ customers = [], inventoryItems = [], tagIds = [], setTagIds = () => {}, suggestions = [], loadSuggestions }: InvoicePanelProps) {
+function InvoicePanel({ customers = [], inventoryItems = [], tagIds = [], setTagIds = () => {}, suggestions = [], loadSuggestions, onCustomerChange, initialCustomerId }: InvoicePanelProps) {
   const { control, getValues, setValue, trigger } = useFormContextSafe();
   const values = useWatch({ control }) as InvoiceFormValues;
   const [selectedTemplateId, setSelectedTemplateId] = useState<InvoiceFormValues["templateId"]>(() => getValues("templateId") ?? "professional");
@@ -514,7 +518,7 @@ function InvoicePanel({ customers = [], inventoryItems = [], tagIds = [], setTag
                 title="Client details"
                 description="Control how the client block appears in the invoice preview."
               >
-                <CustomerPicker customers={customers} onTagPrefill={setTagIds} onCustomerSelect={loadSuggestions} />
+                <CustomerPicker customers={customers} onTagPrefill={setTagIds} onCustomerSelect={loadSuggestions} onCustomerChange={onCustomerChange} initialCustomerId={initialCustomerId} />
                 <TextField<InvoiceFormValues>
                   name="clientName"
                   label="Client name"
@@ -799,6 +803,7 @@ interface InvoiceWorkspaceProps {
   existingInvoice?: ExistingInvoice | null;
   initialTemplateId?: string;
   initialAccentColor?: string;
+  initialAutofill?: InvoiceAutofillPayload;
   customers?: Array<{
     id: string;
     name: string;
@@ -821,19 +826,38 @@ export function InvoiceWorkspace({
   existingInvoice,
   initialTemplateId,
   initialAccentColor,
+  initialAutofill,
   customers = [],
   inventoryItems = [],
 }: InvoiceWorkspaceProps) {
-  const baseValues = existingInvoice
-    ? convertInvoiceToFormValues(existingInvoice)
-    : { ...invoiceDefaultValues, branding: { ...invoiceDefaultValues.branding, accentColor: initialAccentColor ?? invoiceDefaultValues.branding.accentColor } };
-  const defaultValues = initialTemplateId && !existingInvoice
-    ? { ...baseValues, templateId: initialTemplateId as InvoiceTemplateId }
-    : baseValues;
+  // Build initial form values: existing invoice > autofill payload > safe defaults
+  const buildDefaultValues = (): InvoiceFormValues => {
+    if (existingInvoice) {
+      return convertInvoiceToFormValues(existingInvoice);
+    }
+
+    const base = {
+      ...invoiceDefaultValues,
+      branding: {
+        ...invoiceDefaultValues.branding,
+        accentColor: initialAccentColor ?? invoiceDefaultValues.branding.accentColor,
+      },
+    };
+
+    if (initialTemplateId) {
+      base.templateId = initialTemplateId as InvoiceTemplateId;
+    }
+
+    if (initialAutofill) {
+      return applyAutofillToDefaults(base, initialAutofill);
+    }
+
+    return base;
+  };
 
   const methods = useForm<InvoiceFormValues>({
     resolver: zodResolver(invoiceFormSchema),
-    defaultValues,
+    defaultValues: buildDefaultValues(),
     mode: "onChange",
   });
 
@@ -845,6 +869,10 @@ export function InvoiceWorkspace({
   );
   const [isSaving, setIsSaving] = useState(false);
 
+  const [customerId, setCustomerId] = useState<string>(
+    existingInvoice?.customerId ?? initialAutofill?.customerId ?? ""
+  );
+
   const [tagIds, setTagIds] = useState<string[]>(
     existingInvoice?.tagAssignments?.map((a) => a.tag.id) ?? []
   );
@@ -855,6 +883,25 @@ export function InvoiceWorkspace({
       const result = await getSuggestedTags({ counterpartyId: customerId, counterpartyType: "customer", documentType: "invoice", limit: 8 });
       setSuggestions(result.filter((s) => s.source !== "default"));
     } catch { setSuggestions([]); }
+  };
+
+  const handleCustomerChange = async (customer: { id: string } | null) => {
+    if (!customer) {
+      setCustomerId("");
+      return;
+    }
+
+    setCustomerId(customer.id);
+
+    // Re-run autofill resolver for the newly selected customer
+    try {
+      const result = await resolveInvoiceAutofillAction({ customerId: customer.id });
+      if (result.success) {
+        applyAutofillToForm(methods, result.data);
+      }
+    } catch {
+      // Autofill is best-effort — operator can still fill fields manually
+    }
   };
 
   const handleSaveDraft = async (): Promise<string | undefined> => {
@@ -871,6 +918,7 @@ export function InvoiceWorkspace({
       }));
       const result = savedId
         ? await updateInvoice(savedId, {
+            customerId: customerId || undefined,
             invoiceDate: values.invoiceDate,
             dueDate: values.dueDate || undefined,
             notes: values.notes || undefined,
@@ -880,6 +928,7 @@ export function InvoiceWorkspace({
           })
         : await saveInvoice(
             {
+              customerId: customerId || undefined,
               invoiceDate: values.invoiceDate,
               dueDate: values.dueDate || undefined,
               notes: values.notes || undefined,
@@ -942,7 +991,7 @@ export function InvoiceWorkspace({
 
   return (
     <FormProvider {...methods}>
-      <InvoicePanel customers={customers} inventoryItems={inventoryItems} tagIds={tagIds} setTagIds={setTagIds} suggestions={suggestions} loadSuggestions={loadSuggestions} />
+      <InvoicePanel customers={customers} inventoryItems={inventoryItems} tagIds={tagIds} setTagIds={setTagIds} suggestions={suggestions} loadSuggestions={loadSuggestions} onCustomerChange={handleCustomerChange} initialCustomerId={customerId || undefined} />
       <InvoiceSaveBar
         onSaveDraft={() => void handleSaveDraft()}
         onIssue={() => void handleIssue()}
@@ -984,5 +1033,71 @@ function convertInvoiceToFormValues(invoice: ExistingInvoice): InvoiceFormValues
       discountAmount: String(item.discount),
     })),
   };
+}
+
+// ─── Autofill helpers ─────────────────────────────────────────────────────────
+
+function applyAutofillToDefaults(
+  defaults: InvoiceFormValues,
+  autofill: InvoiceAutofillPayload,
+): InvoiceFormValues {
+  return {
+    ...defaults,
+    templateId: (autofill.templateId || defaults.templateId) as InvoiceTemplateId,
+    clientName: autofill.clientName || defaults.clientName,
+    clientAddress: autofill.clientAddress || defaults.clientAddress,
+    shippingAddress: autofill.shippingAddress || defaults.shippingAddress,
+    clientEmail: autofill.clientEmail || defaults.clientEmail,
+    clientPhone: autofill.clientPhone || defaults.clientPhone,
+    clientTaxId: autofill.clientTaxId || defaults.clientTaxId,
+    businessTaxId: autofill.businessTaxId || defaults.businessTaxId,
+    invoiceDate: autofill.invoiceDate || defaults.invoiceDate,
+    dueDate: autofill.dueDate || defaults.dueDate,
+    placeOfSupply: autofill.placeOfSupply || defaults.placeOfSupply,
+    notes: autofill.notes || defaults.notes,
+    terms: autofill.terms || defaults.terms,
+    bankName: autofill.bankName || defaults.bankName,
+    bankAccountNumber: autofill.bankAccountNumber || defaults.bankAccountNumber,
+    bankIfsc: autofill.bankIfsc || defaults.bankIfsc,
+    authorizedBy: autofill.authorizedBy || defaults.authorizedBy,
+    amountPaid: autofill.amountPaid || defaults.amountPaid,
+    branding: {
+      ...defaults.branding,
+      companyName: autofill.branding.companyName || defaults.branding.companyName,
+      address: autofill.branding.address || defaults.branding.address,
+      email: autofill.branding.email || defaults.branding.email,
+      phone: autofill.branding.phone || defaults.branding.phone,
+    },
+  };
+}
+
+function applyAutofillToForm(
+  methods: ReturnType<typeof useForm<InvoiceFormValues>>,
+  autofill: InvoiceAutofillPayload,
+): void {
+  const set = methods.setValue;
+  const opts = { shouldDirty: true, shouldTouch: true, shouldValidate: false };
+
+  set("clientName", autofill.clientName, opts);
+  set("clientAddress", autofill.clientAddress, opts);
+  set("shippingAddress", autofill.shippingAddress, opts);
+  set("clientEmail", autofill.clientEmail, opts);
+  set("clientPhone", autofill.clientPhone, opts);
+  set("clientTaxId", autofill.clientTaxId, opts);
+  set("businessTaxId", autofill.businessTaxId, opts);
+  set("invoiceDate", autofill.invoiceDate, opts);
+  set("dueDate", autofill.dueDate, opts);
+  set("placeOfSupply", autofill.placeOfSupply, opts);
+  set("notes", autofill.notes, opts);
+  set("terms", autofill.terms, opts);
+  set("bankName", autofill.bankName, opts);
+  set("bankAccountNumber", autofill.bankAccountNumber, opts);
+  set("bankIfsc", autofill.bankIfsc, opts);
+  set("authorizedBy", autofill.authorizedBy, opts);
+  set("amountPaid", autofill.amountPaid, opts);
+  set("branding.companyName", autofill.branding.companyName, opts);
+  set("branding.address", autofill.branding.address, opts);
+  set("branding.email", autofill.branding.email, opts);
+  set("branding.phone", autofill.branding.phone, opts);
 }
 // SPRINT 4.2 placeholder

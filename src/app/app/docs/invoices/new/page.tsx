@@ -3,6 +3,7 @@ import { InvoiceBrandingWrapper } from "./branding-wrapper";
 import { listCustomers } from "@/app/app/data/actions";
 import { getOrgDefaults } from "@/app/app/actions/org-defaults-actions";
 import { listInventoryItems } from "@/app/app/inventory/items/actions";
+import { resolveInvoiceAutofill } from "@/app/app/docs/invoices/autofill-resolver";
 
 export const metadata: Metadata = {
   title: "Invoice Studio",
@@ -10,20 +11,23 @@ export const metadata: Metadata = {
 };
 
 interface PageProps {
-  searchParams: Promise<{ template?: string }>;
+  searchParams: Promise<{ template?: string; customerId?: string }>;
 }
 
 export default async function NewInvoicePage({ searchParams }: PageProps) {
   const params = await searchParams;
-  const [customersResult, inventoryResult, defaults] = await Promise.all([
+  const [customersResult, inventoryResult, autofill] = await Promise.all([
     listCustomers({ limit: 200 }).catch(() => ({ customers: [] })),
     listInventoryItems({ pageSize: 100 }).catch(() => ({ success: false as const, error: "Inventory unavailable" })),
-    getOrgDefaults().catch(() => null),
+    resolveInvoiceAutofill({
+      customerId: params.customerId || undefined,
+      templateParam: params.template || undefined,
+    }).catch(() => null),
   ]);
-  const templateId = params.template || defaults?.defaultInvoiceTemplate || undefined;
   return (
     <InvoiceBrandingWrapper
-      initialTemplateId={templateId}
+      initialTemplateId={autofill?.templateId}
+      initialAutofill={autofill ?? undefined}
       customers={customersResult.customers}
       inventoryItems={inventoryResult.success ? inventoryResult.data.items : []}
     />

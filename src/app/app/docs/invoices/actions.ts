@@ -28,6 +28,8 @@ import { getSequenceConfig } from "@/features/sequences/services/sequence-admin"
 import { rateLimitByOrg, RATE_LIMITS } from "@/lib/rate-limit";
 import type { ConsumeResult } from "@/features/sequences/types";
 import { setInvoiceTags } from "@/lib/tags/assignment-service";
+import { resolveInvoiceAutofill } from "./autofill-resolver";
+import type { InvoiceAutofillPayload } from "./autofill-resolver";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -299,6 +301,21 @@ async function reverseInvoiceInventoryTx(
 }
 
 // ─── Invoice Actions ──────────────────────────────────────────────────────────
+
+export async function resolveInvoiceAutofillAction(params: {
+  customerId?: string;
+  templateParam?: string;
+}): Promise<ActionResult<InvoiceAutofillPayload>> {
+  try {
+    const payload = await resolveInvoiceAutofill(params);
+    return { success: true, data: payload };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to resolve invoice autofill",
+    };
+  }
+}
 
 /**
  * Assign the next official invoice number via the sequence engine.
