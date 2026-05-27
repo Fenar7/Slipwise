@@ -169,3 +169,88 @@ export const ClientHubConfigSchema = z.object({
   products: ProductsConfigSchema,
   navigation: NavigationConfigSchema,
 });
+
+export const ClientHubOverrideSchema = z.object({
+  branding: BrandingConfigSchema.partial().optional(),
+  homeDashboard: HomeDashboardConfigSchema.partial().optional(),
+  invoices: InvoicesConfigSchema.partial().optional(),
+  quotes: QuotesConfigSchema.partial().optional(),
+  payments: PaymentsConfigSchema.partial().optional(),
+  about: AboutConfigSchema.partial().optional(),
+  contact: ContactConfigSchema.partial().optional(),
+  products: ProductsConfigSchema.partial().optional(),
+  navigation: NavigationConfigSchema.partial().optional(),
+}).partial();
+
+export type ClientHubOverride = z.infer<typeof ClientHubOverrideSchema>;
+
+/**
+ * Deterministically merges partial overrides into a target configuration.
+ * Treated recursively, preserving nested structures. Arrays are replaced directly.
+ */
+export function deepMerge<T extends Record<string, any>>(target: T, source: any): T {
+  if (!source || typeof source !== "object") {
+    return target;
+  }
+  const result = { ...target } as any;
+  for (const key of Object.keys(target)) {
+    const targetValue = target[key];
+    const sourceValue = source[key];
+
+    if (sourceValue !== undefined) {
+      if (
+        targetValue &&
+        typeof targetValue === "object" &&
+        !Array.isArray(targetValue) &&
+        sourceValue &&
+        typeof sourceValue === "object" &&
+        !Array.isArray(sourceValue)
+      ) {
+        result[key] = deepMerge(targetValue, sourceValue);
+      } else {
+        result[key] = sourceValue;
+      }
+    }
+  }
+  return result;
+}
+
+/**
+ * Computes a minimal sparse override diff representing values changed from org defaults.
+ * Empty sections or identical properties are omitted.
+ */
+export function computeOverrideDiff(orgDefault: ClientHubConfig, edited: ClientHubConfig): ClientHubOverride {
+  const diff: any = {};
+
+  for (const sectionKey of Object.keys(orgDefault) as Array<keyof ClientHubConfig>) {
+    const defaultSection = orgDefault[sectionKey];
+    const editedSection = edited[sectionKey];
+
+    if (typeof defaultSection === "object" && defaultSection !== null && !Array.isArray(defaultSection)) {
+      const sectionDiff: any = {};
+      let hasSectionDiff = false;
+
+      for (const fieldKey of Object.keys(defaultSection)) {
+        const defaultValue = (defaultSection as any)[fieldKey];
+        const editedValue = (editedSection as any)[fieldKey];
+
+        if (Array.isArray(defaultValue) && Array.isArray(editedValue)) {
+          if (JSON.stringify(defaultValue) !== JSON.stringify(editedValue)) {
+            sectionDiff[fieldKey] = editedValue;
+            hasSectionDiff = true;
+          }
+        } else if (defaultValue !== editedValue) {
+          sectionDiff[fieldKey] = editedValue;
+          hasSectionDiff = true;
+        }
+      }
+
+      if (hasSectionDiff) {
+        diff[sectionKey] = sectionDiff;
+      }
+    }
+  }
+
+  return diff;
+}
+
