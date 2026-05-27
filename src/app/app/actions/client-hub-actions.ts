@@ -161,15 +161,7 @@ export async function getClientOverrideEditorState(customerId: string) {
     // Securely verify that customer belongs to the active organization context
     const customer = await db.customer.findFirst({
       where: { id: customerId, organizationId: orgId },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        phone: true,
-        address: true,
-        taxId: true,
-        gstin: true,
-      },
+      select: { id: true, name: true, email: true },
     });
 
     if (!customer) {
