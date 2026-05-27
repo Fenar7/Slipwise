@@ -1,5 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { ActionResult } from "../assignment-service";
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function unwrap<T>(r: ActionResult<T>): { success: boolean; data: T; error: string } {
+  return r as never;
+}
 const mocks = vi.hoisted(() => ({
   requireOrgContext: vi.fn(),
   hasRole: vi.fn(),
@@ -150,7 +155,7 @@ describe("addInvoiceTag", () => {
     allowTag();
     mocks.invoiceTagAssignmentFindFirst.mockResolvedValue(null);
 
-    const result = await addInvoiceTag("invoice_1", "tag_001");
+    const result = unwrap(await addInvoiceTag("invoice_1", "tag_001"));
     expect(result.success).toBe(true);
     expect(mocks.invoiceTagAssignmentCreate).toHaveBeenCalledWith({
       data: { invoiceId: "invoice_1", tagId: "tag_001" },
@@ -162,7 +167,7 @@ describe("addInvoiceTag", () => {
     allowTag();
     mocks.invoiceTagAssignmentFindFirst.mockResolvedValue({ id: "assign_1" });
 
-    const result = await addInvoiceTag("invoice_1", "tag_001");
+    const result = unwrap(await addInvoiceTag("invoice_1", "tag_001"));
     expect(result.success).toBe(true);
     expect(mocks.invoiceTagAssignmentCreate).not.toHaveBeenCalled();
   });
@@ -170,7 +175,7 @@ describe("addInvoiceTag", () => {
   it("rejects non-existent invoice", async () => {
     mocks.invoiceFindFirst.mockResolvedValue(null);
 
-    const result = await addInvoiceTag("invoice_1", "tag_001");
+    const result = unwrap(await addInvoiceTag("invoice_1", "tag_001"));
     expect(result.success).toBe(false);
     expect(result.error).toBe("Invoice not found");
   });
@@ -179,7 +184,7 @@ describe("addInvoiceTag", () => {
     allowEntity("invoice");
     mocks.documentTagFindFirst.mockResolvedValue(null);
 
-    const result = await addInvoiceTag("invoice_1", "tag_001");
+    const result = unwrap(await addInvoiceTag("invoice_1", "tag_001"));
     expect(result.success).toBe(false);
     expect(result.error).toBe("Tag not found");
   });
@@ -189,7 +194,7 @@ describe("removeInvoiceTag", () => {
   it("removes a tag from an invoice", async () => {
     allowEntity("invoice");
 
-    const result = await removeInvoiceTag("invoice_1", "tag_001");
+    const result = unwrap(await removeInvoiceTag("invoice_1", "tag_001"));
     expect(result.success).toBe(true);
     expect(mocks.invoiceTagAssignmentDeleteMany).toHaveBeenCalledWith({
       where: { invoiceId: "invoice_1", tagId: "tag_001" },
@@ -202,7 +207,7 @@ describe("setInvoiceTags", () => {
     allowEntity("invoice");
     mocks.documentTagFindMany.mockResolvedValue([{ id: "tag_001" }, { id: "tag_002" }]);
 
-    const result = await setInvoiceTags("invoice_1", ["tag_001", "tag_002"]);
+    const result = unwrap(await setInvoiceTags("invoice_1", ["tag_001", "tag_002"]));
     expect(result.success).toBe(true);
     expect(mocks.invoiceTagAssignmentDeleteMany).toHaveBeenCalledWith({
       where: { invoiceId: "invoice_1" },
@@ -213,7 +218,7 @@ describe("setInvoiceTags", () => {
   it("accepts empty array to clear all tags", async () => {
     allowEntity("invoice");
 
-    const result = await setInvoiceTags("invoice_1", []);
+    const result = unwrap(await setInvoiceTags("invoice_1", []));
     expect(result.success).toBe(true);
     expect(mocks.invoiceTagAssignmentDeleteMany).toHaveBeenCalled();
     expect(mocks.invoiceTagAssignmentCreate).not.toHaveBeenCalled();
@@ -223,7 +228,7 @@ describe("setInvoiceTags", () => {
     allowEntity("invoice");
     mocks.documentTagFindMany.mockResolvedValue([{ id: "tag_001" }]);
 
-    const result = await setInvoiceTags("invoice_1", ["tag_001", "invalid_tag"]);
+    const result = unwrap(await setInvoiceTags("invoice_1", ["tag_001", "invalid_tag"]));
     expect(result.success).toBe(false);
     expect(result.error).toContain("Tags not found");
   });
@@ -237,7 +242,7 @@ describe("getInvoiceTags", () => {
       { tag: makeTag("tag_002", { name: "Mumbai Branch" }) },
     ]);
 
-    const result = await getInvoiceTags("invoice_1");
+    const result = unwrap(await getInvoiceTags("invoice_1"));
     expect(result.success).toBe(true);
     expect(result.data).toHaveLength(2);
   });
@@ -253,14 +258,14 @@ describe("addVoucherTag", () => {
     allowTag();
     mocks.voucherTagAssignmentFindFirst.mockResolvedValue(null);
 
-    const result = await addVoucherTag("voucher_1", "tag_001");
+    const result = unwrap(await addVoucherTag("voucher_1", "tag_001"));
     expect(result.success).toBe(true);
   });
 
   it("rejects non-existent voucher", async () => {
     mocks.voucherFindFirst.mockResolvedValue(null);
 
-    const result = await addVoucherTag("voucher_1", "tag_001");
+    const result = unwrap(await addVoucherTag("voucher_1", "tag_001"));
     expect(result.success).toBe(false);
     expect(result.error).toBe("Voucher not found");
   });
@@ -271,7 +276,7 @@ describe("setVoucherTags", () => {
     allowEntity("voucher");
     mocks.documentTagFindMany.mockResolvedValue([{ id: "tag_001" }]);
 
-    const result = await setVoucherTags("voucher_1", ["tag_001"]);
+    const result = unwrap(await setVoucherTags("voucher_1", ["tag_001"]));
     expect(result.success).toBe(true);
   });
 });
@@ -286,14 +291,14 @@ describe("addCustomerDefaultTag", () => {
     allowTag();
     mocks.customerDefaultTagFindFirst.mockResolvedValue(null);
 
-    const result = await addCustomerDefaultTag("customer_1", "tag_001");
+    const result = unwrap(await addCustomerDefaultTag("customer_1", "tag_001"));
     expect(result.success).toBe(true);
   });
 
   it("rejects non-existent customer", async () => {
     mocks.customerFindFirst.mockResolvedValue(null);
 
-    const result = await addCustomerDefaultTag("customer_1", "tag_001");
+    const result = unwrap(await addCustomerDefaultTag("customer_1", "tag_001"));
     expect(result.success).toBe(false);
     expect(result.error).toBe("Customer not found");
   });
@@ -306,7 +311,7 @@ describe("getCustomerDefaultTags", () => {
       { tag: makeTag("tag_001") },
     ]);
 
-    const result = await getCustomerDefaultTags("customer_1");
+    const result = unwrap(await getCustomerDefaultTags("customer_1"));
     expect(result.success).toBe(true);
     expect(result.data).toHaveLength(1);
   });
@@ -322,7 +327,7 @@ describe("addVendorDefaultTag", () => {
     allowTag();
     mocks.vendorDefaultTagFindFirst.mockResolvedValue(null);
 
-    const result = await addVendorDefaultTag("vendor_1", "tag_001");
+    const result = unwrap(await addVendorDefaultTag("vendor_1", "tag_001"));
     expect(result.success).toBe(true);
   });
 });
@@ -332,7 +337,7 @@ describe("setVendorDefaultTags", () => {
     allowEntity("vendor");
     mocks.documentTagFindMany.mockResolvedValue([{ id: "tag_001" }, { id: "tag_003" }]);
 
-    const result = await setVendorDefaultTags("vendor_1", ["tag_001", "tag_003"]);
+    const result = unwrap(await setVendorDefaultTags("vendor_1", ["tag_001", "tag_003"]));
     expect(result.success).toBe(true);
     expect(mocks.vendorDefaultTagDeleteMany).toHaveBeenCalledWith({
       where: { vendorId: "vendor_1" },
