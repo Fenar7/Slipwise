@@ -56,8 +56,12 @@ function getBaseUrl(): string {
   return process.env.NEXT_PUBLIC_APP_URL || "https://app.slipwise.app";
 }
 
-function buildCanonicalHubUrl(orgSlug: string): string {
-  return `${getBaseUrl()}/portal/${orgSlug}/client-hub`;
+function buildCanonicalHubUrl(orgSlug: string, publicAccessHandle?: string | null): string {
+  const base = `${getBaseUrl()}/portal/${orgSlug}/client-hub`;
+  if (publicAccessHandle) {
+    return `${base}?c=${publicAccessHandle}`;
+  }
+  return base;
 }
 
 function generatePublicAccessHandle(): string {
@@ -107,7 +111,7 @@ function computeClientHubAdminState(
     inviteState,
     inviteSentCount: lifecycle?.inviteSentCount ?? 0,
     publicAccessHandle: lifecycle?.publicAccessHandle ?? null,
-    canonicalHubUrl: readiness.enabled ? buildCanonicalHubUrl(orgSlug) : null,
+    canonicalHubUrl: readiness.enabled ? buildCanonicalHubUrl(orgSlug, lifecycle?.publicAccessHandle ?? null) : null,
     blockers: readiness.blockers,
   };
 }
@@ -640,23 +644,25 @@ export async function enableClientHubForCustomer(customerId: string) {
         });
         inviteSent = true;
 
-        await db.clientHubCustomerLifecycle.update({
-          where: { customerId },
-          data: {
-            latestInviteSentAt: new Date(),
-            latestInviteEmail: customer.email,
-            inviteSentCount: { increment: 1 },
-          },
-        });
+        await db.$transaction(async (tx) => {
+          await tx.clientHubCustomerLifecycle.update({
+            where: { customerId },
+            data: {
+              latestInviteSentAt: new Date(),
+              latestInviteEmail: customer.email,
+              inviteSentCount: { increment: 1 },
+            },
+          });
 
-        await logAuditTx(db, {
-          orgId,
-          actorId: userId,
-          action: "client_hub.invite_sent",
-          entityType: "ClientHubCustomerLifecycle",
-          entityId: customerId,
-          metadata: { customerName: customer.name, email: customer.email, type: "initial" },
-          ...auditHeaders,
+          await logAuditTx(tx, {
+            orgId,
+            actorId: userId,
+            action: "client_hub.invite_sent",
+            entityType: "ClientHubCustomerLifecycle",
+            entityId: customerId,
+            metadata: { customerName: customer.name, email: customer.email, type: "initial" },
+            ...auditHeaders,
+          });
         });
       } catch (emailError) {
         console.error("enableClientHubForCustomer: initial invite delivery failed:", emailError);
@@ -816,7 +822,7 @@ export async function copyClientHubLink(customerId: string) {
 
     const lifecycle = await db.clientHubCustomerLifecycle.findUnique({
       where: { customerId },
-      select: { enabled: true },
+      select: { enabled: true, publicAccessHandle: true },
     });
 
     if (!lifecycle?.enabled) {
@@ -835,7 +841,7 @@ export async function copyClientHubLink(customerId: string) {
       return { success: false, error: "Organization slug not found." };
     }
 
-    const url = buildCanonicalHubUrl(org.slug);
+    const url = buildCanonicalHubUrl(org.slug, lifecycle.publicAccessHandle);
     return { success: true, url };
   } catch (error) {
     console.error("copyClientHubLink error:", error);

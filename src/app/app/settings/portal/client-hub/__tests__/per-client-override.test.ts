@@ -37,6 +37,17 @@ const mockDb = vi.hoisted(() => {
     },
     $transaction: vi.fn(),
   };
+
+  // Transaction client shares the same mock functions so test mocks work,
+  // but we can still assert on _tx for atomic-transaction verification.
+  const tx: any = {
+    clientHubCustomerLifecycle: db.clientHubCustomerLifecycle,
+    auditLog: db.auditLog,
+    proxyGrant: db.proxyGrant,
+  };
+
+  db.$transaction = vi.fn(async (cb: any) => cb(tx));
+  db._tx = tx;
   return db;
 });
 
@@ -90,7 +101,6 @@ function setupAuth(orgId = ORG_ID, userId = USER_ID, role = "admin") {
 describe("Client Hub Per-Client Overrides & Resolver", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockDb.$transaction.mockImplementation(async (fn: any) => fn(mockDb));
   });
 
   describe("computeOverrideDiff & deepMerge (sparse diffing)", () => {
@@ -693,7 +703,7 @@ describe("Client Hub Per-Client Overrides & Resolver", () => {
   });
 
   describe("enableClientHubForCustomer (Sprint 3.4 enhancements)", () => {
-    it("generates a publicAccessHandle on first enable and sends initial invite", async () => {
+    it("generates a publicAccessHandle on first enable and sends initial invite atomically", async () => {
       setupAuth();
       mockDb.customer.findFirst.mockResolvedValue({ id: CUSTOMER_ID, name: "Alice Corp", email: "alice@test.com" });
       mockDb.clientHubCustomerLifecycle.findUnique.mockResolvedValue(null);
@@ -714,7 +724,9 @@ describe("Client Hub Per-Client Overrides & Resolver", () => {
           subject: expect.stringContaining("Client Hub"),
         })
       );
-      expect(mockDb.clientHubCustomerLifecycle.update).toHaveBeenCalledWith(
+      // Invite state + audit must be persisted inside a real transaction
+      expect(mockDb.$transaction).toHaveBeenCalled();
+      expect(mockDb._tx.clientHubCustomerLifecycle.update).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { customerId: CUSTOMER_ID },
           data: expect.objectContaining({
@@ -724,7 +736,7 @@ describe("Client Hub Per-Client Overrides & Resolver", () => {
           }),
         })
       );
-      expect(mockDb.auditLog.create).toHaveBeenCalledWith(
+      expect(mockDb._tx.auditLog.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({ action: "client_hub.invite_sent" }),
         })
@@ -796,23 +808,43 @@ describe("Client Hub Per-Client Overrides & Resolver", () => {
   });
 
   describe("copyClientHubLink", () => {
-    it("returns canonical URL for enabled customer", async () => {
+    it("returns per-client canonical URL using publicAccessHandle for enabled customer", async () => {
       setupAuth();
       mockDb.customer.findFirst.mockResolvedValue({ id: CUSTOMER_ID, name: "Alice" });
-      mockDb.clientHubCustomerLifecycle.findUnique.mockResolvedValue({ enabled: true });
+      mockDb.clientHubCustomerLifecycle.findUnique.mockResolvedValue({ enabled: true, publicAccessHandle: "handle-alice" });
       mockDb.organization.findUnique.mockResolvedValue({ slug: "acme" });
 
       const res = await copyClientHubLink(CUSTOMER_ID);
       expect(res.success).toBe(true);
       if (res.success) {
-        expect(res.url).toContain("/portal/acme/client-hub");
+        expect(res.url).toContain("/portal/acme/client-hub?c=handle-alice");
+      }
+    });
+
+    it("returns different URLs for different customers", async () => {
+      setupAuth();
+      mockDb.organization.findUnique.mockResolvedValue({ slug: "acme" });
+
+      mockDb.customer.findFirst.mockResolvedValue({ id: "cust_a", name: "Alice" });
+      mockDb.clientHubCustomerLifecycle.findUnique.mockResolvedValue({ enabled: true, publicAccessHandle: "handle-a" });
+      const resA = await copyClientHubLink("cust_a");
+
+      mockDb.customer.findFirst.mockResolvedValue({ id: "cust_b", name: "Bob" });
+      mockDb.clientHubCustomerLifecycle.findUnique.mockResolvedValue({ enabled: true, publicAccessHandle: "handle-b" });
+      const resB = await copyClientHubLink("cust_b");
+
+      expect(resA.success && resB.success).toBe(true);
+      if (resA.success && resB.success) {
+        expect(resA.url).not.toBe(resB.url);
+        expect(resA.url).toContain("handle-a");
+        expect(resB.url).toContain("handle-b");
       }
     });
 
     it("rejects link copy for disabled customer", async () => {
       setupAuth();
       mockDb.customer.findFirst.mockResolvedValue({ id: CUSTOMER_ID, name: "Alice" });
-      mockDb.clientHubCustomerLifecycle.findUnique.mockResolvedValue({ enabled: false });
+      mockDb.clientHubCustomerLifecycle.findUnique.mockResolvedValue({ enabled: false, publicAccessHandle: "handle-alice" });
 
       const res = await copyClientHubLink(CUSTOMER_ID);
       expect(res.success).toBe(false);
@@ -829,7 +861,7 @@ describe("Client Hub Per-Client Overrides & Resolver", () => {
   });
 
   describe("resendClientHubInvite", () => {
-    it("sends invite and updates persisted state for enabled customer with email", async () => {
+    it("sends invite and updates persisted state atomically for enabled customer with email", async () => {
       setupAuth();
       mockDb.customer.findFirst.mockResolvedValue({ id: CUSTOMER_ID, name: "Alice Corp", email: "alice@test.com" });
       mockDb.clientHubCustomerLifecycle.findUnique.mockResolvedValue({
@@ -846,7 +878,9 @@ describe("Client Hub Per-Client Overrides & Resolver", () => {
       expect(mockSendEmail).toHaveBeenCalledWith(
         expect.objectContaining({ to: "alice@test.com" })
       );
-      expect(mockDb.clientHubCustomerLifecycle.update).toHaveBeenCalledWith(
+      // Lifecycle update + audit must happen inside a real transaction
+      expect(mockDb.$transaction).toHaveBeenCalled();
+      expect(mockDb._tx.clientHubCustomerLifecycle.update).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
             latestInviteSentAt: expect.any(Date),
@@ -855,14 +889,14 @@ describe("Client Hub Per-Client Overrides & Resolver", () => {
           }),
         })
       );
-      expect(mockDb.auditLog.create).toHaveBeenCalledWith(
+      expect(mockDb._tx.auditLog.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({ action: "client_hub.invite_resent" }),
         })
       );
     });
 
-    it("sends invite as initial (not resent) when no prior invite exists", async () => {
+    it("sends invite as initial (not resent) atomically when no prior invite exists", async () => {
       setupAuth();
       mockDb.customer.findFirst.mockResolvedValue({ id: CUSTOMER_ID, name: "Alice Corp", email: "alice@test.com" });
       mockDb.clientHubCustomerLifecycle.findUnique.mockResolvedValue({
@@ -876,7 +910,8 @@ describe("Client Hub Per-Client Overrides & Resolver", () => {
 
       const res = await resendClientHubInvite(CUSTOMER_ID);
       expect(res.success).toBe(true);
-      expect(mockDb.auditLog.create).toHaveBeenCalledWith(
+      expect(mockDb.$transaction).toHaveBeenCalled();
+      expect(mockDb._tx.auditLog.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({ action: "client_hub.invite_sent" }),
         })
@@ -913,7 +948,7 @@ describe("Client Hub Per-Client Overrides & Resolver", () => {
       expect(mockSendEmail).not.toHaveBeenCalled();
     });
 
-    it("surfaces email delivery failure truthfully without persisting sent state", async () => {
+    it("surfaces email delivery failure truthfully without persisting sent state or audit", async () => {
       setupAuth();
       mockDb.customer.findFirst.mockResolvedValue({ id: CUSTOMER_ID, name: "Alice", email: "alice@test.com" });
       mockDb.clientHubCustomerLifecycle.findUnique.mockResolvedValue({
@@ -928,6 +963,8 @@ describe("Client Hub Per-Client Overrides & Resolver", () => {
       const res = await resendClientHubInvite(CUSTOMER_ID);
       expect(res.success).toBe(false);
       expect(res.error).toContain("could not be delivered");
+      // Neither lifecycle update nor transaction should run when delivery fails
+      expect(mockDb.$transaction).not.toHaveBeenCalled();
       expect(mockDb.clientHubCustomerLifecycle.update).not.toHaveBeenCalled();
       expect(mockDb.auditLog.create).not.toHaveBeenCalledWith(
         expect.objectContaining({
@@ -953,7 +990,7 @@ describe("Client Hub Per-Client Overrides & Resolver", () => {
       expect(mockSendEmail).toHaveBeenCalledWith(
         expect.objectContaining({ to: "newalice@test.com" })
       );
-      expect(mockDb.clientHubCustomerLifecycle.update).toHaveBeenCalledWith(
+      expect(mockDb._tx.clientHubCustomerLifecycle.update).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({ latestInviteEmail: "newalice@test.com" }),
         })

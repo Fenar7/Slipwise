@@ -33,14 +33,14 @@ import {
   getClientOverrideEditorState,
   updateClientHubCustomerOverride,
   clearClientHubCustomerOverride,
-  getClientHubCustomerLifecycle,
+  getClientHubCustomerAdminState,
   enableClientHubForCustomer,
   disableClientHubForCustomer,
   previewClientHubForCustomer,
   copyClientHubLink,
   resendClientHubInvite,
 } from "@/app/app/actions/client-hub-actions";
-import type { ClientHubCustomerReadiness } from "@/app/app/actions/client-hub-actions";
+import type { ClientHubCustomerReadiness, ClientHubCustomerAdminState } from "@/app/app/actions/client-hub-actions";
 import { toast } from "sonner";
 import { PreviewPane } from "./preview-pane";
 import {
@@ -162,21 +162,22 @@ export function CustomizationShell() {
     setHasChanges(true);
   }, []);
 
-  const applyAdminState = useCallback((payload: {
-    readiness: ClientHubCustomerReadiness;
-    latestInviteSentAt?: string | null;
-    latestInviteEmail?: string | null;
-    inviteState?: string;
-    inviteSentCount?: number;
-    canonicalHubUrl?: string | null;
-  }) => {
-    setLifecycleReadiness(payload.readiness);
+  const applyAdminState = useCallback((adminState: ClientHubCustomerAdminState) => {
+    const readiness: ClientHubCustomerReadiness = {
+      enabled: adminState.enabled,
+      readinessStatus: adminState.readinessStatus,
+      previewEligible: adminState.previewEligible,
+      inviteEligible: adminState.inviteEligible,
+      portalReady: adminState.portalReady,
+      blockers: adminState.blockers,
+    };
+    setLifecycleReadiness(readiness);
     setAdminState({
-      latestInviteSentAt: payload.latestInviteSentAt ?? null,
-      latestInviteEmail: payload.latestInviteEmail ?? null,
-      inviteState: payload.inviteState ?? "disabled",
-      inviteSentCount: payload.inviteSentCount ?? 0,
-      canonicalHubUrl: payload.canonicalHubUrl ?? null,
+      latestInviteSentAt: adminState.latestInviteSentAt,
+      latestInviteEmail: adminState.latestInviteEmail,
+      inviteState: adminState.inviteState,
+      inviteSentCount: adminState.inviteSentCount,
+      canonicalHubUrl: adminState.canonicalHubUrl,
     });
   }, []);
 
@@ -198,9 +199,9 @@ export function CustomizationShell() {
           toast.error(orgRes.error);
         }
       } else {
-        const [overrideRes, lifecycleRes] = await Promise.all([
+        const [overrideRes, adminRes] = await Promise.all([
           getClientOverrideEditorState(customerId),
-          getClientHubCustomerLifecycle(customerId),
+          getClientHubCustomerAdminState(customerId),
         ]);
 
         if (overrideRes.success) {
@@ -210,14 +211,10 @@ export function CustomizationShell() {
           setSelectedCustomerId(customerId);
           setHasChanges(false);
 
-          if (lifecycleRes.success && "readiness" in lifecycleRes) {
-            applyAdminState({
-              readiness: lifecycleRes.readiness,
-              // The legacy lifecycle response only includes readiness; admin detail fields
-              // will be hydrated on first admin workflow interaction or next refresh.
-            });
+          if (adminRes.success && "adminState" in adminRes) {
+            applyAdminState(adminRes.adminState);
           } else {
-            console.warn("Failed to load lifecycle state:", lifecycleRes.error);
+            console.warn("Failed to load admin state:", adminRes.error);
             setLifecycleReadiness(null);
             setAdminState(null);
           }
@@ -312,9 +309,9 @@ export function CustomizationShell() {
   }, [selectedCustomerId]);
 
   const refreshLifecycle = useCallback(async (customerId: string) => {
-    const refresh = await getClientHubCustomerLifecycle(customerId);
-    if (refresh.success && "readiness" in refresh) {
-      applyAdminState({ readiness: refresh.readiness });
+    const refresh = await getClientHubCustomerAdminState(customerId);
+    if (refresh.success && "adminState" in refresh) {
+      applyAdminState(refresh.adminState);
     }
   }, [applyAdminState]);
 
