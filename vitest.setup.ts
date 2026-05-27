@@ -1,6 +1,6 @@
 import "dotenv/config";
 import "@testing-library/jest-dom/vitest";
-import { beforeEach, vi } from "vitest";
+import { beforeEach, expect, vi } from "vitest";
 
 class ResizeObserverMock {
   observe() {}
@@ -311,7 +311,7 @@ vi.mock("@/app/app/messaging/lib/use-thread-replies", async (importOriginal) => 
         })) : [];
         return { replies, loading: false, error: null, refresh: vi.fn() };
       }
-      return actual.useThreadReplies(conversationId, threadId);
+      return actual.useThreadReplies(conversationId, threadId, null);
     }
   };
 });
