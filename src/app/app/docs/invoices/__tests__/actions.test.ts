@@ -20,6 +20,9 @@ vi.mock("@/lib/db", () => ({
     stockEvent: {
       findMany: vi.fn(),
     },
+    customer: {
+      findFirst: vi.fn(),
+    },
   },
 }));
 
@@ -99,7 +102,7 @@ import { checkUsageLimit } from "@/lib/usage-metering";
 import { rateLimitByOrg } from "@/lib/rate-limit";
 import { consumeSequenceNumber } from "@/features/sequences/services/sequence-engine";
 import { getSequenceConfig } from "@/features/sequences/services/sequence-admin";
-import { cancelInvoice, issueInvoice, listInvoices, reissueInvoice, saveInvoice } from "../actions";
+import { cancelInvoice, issueInvoice, listInvoices, reissueInvoice, saveInvoice, updateInvoice } from "../actions";
 
 const ORG_ID = "org-1";
 const USER_ID = "user-1";
@@ -452,6 +455,128 @@ describe("invoice accounting transitions", () => {
           sequenceId: "seq-1",
           sequencePeriodId: "per-1",
           sequenceNumber: 1,
+        }),
+      }),
+    );
+  });
+
+  // ─── Sprint 4.1: org-scoped customerId validation ─────────────────────────
+
+  it("saveInvoice rejects cross-org customerId", async () => {
+    // Customer lookup returns null — customer does not belong to this org
+    vi.mocked(db.customer.findFirst).mockResolvedValue(null);
+
+    const result = await saveInvoice(
+      {
+        customerId: "foreign-cust",
+        invoiceDate: "2026-04-23",
+        formData: { source: "test" },
+        lineItems: [
+          { description: "Test", quantity: 1, unitPrice: 100, taxRate: 0, discount: 0 },
+        ],
+      },
+      "DRAFT",
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.success === false && result.error).toContain(
+      "Customer not found or does not belong to this organisation",
+    );
+    expect(db.invoice.create).not.toHaveBeenCalled();
+  });
+
+  it("updateInvoice rejects cross-org customerId", async () => {
+    vi.mocked(db.invoice.findFirst).mockResolvedValue({
+      id: "inv-1",
+      organizationId: ORG_ID,
+      status: "DRAFT",
+      accountingStatus: "PENDING",
+      postedJournalEntryId: null,
+    } as any);
+    // Customer lookup returns null
+    vi.mocked(db.customer.findFirst).mockResolvedValue(null);
+
+    const result = await updateInvoice("inv-1", {
+      customerId: "foreign-cust",
+      invoiceDate: "2026-04-23",
+      formData: { source: "test" },
+      lineItems: [
+        { description: "Test", quantity: 1, unitPrice: 100, taxRate: 0, discount: 0 },
+      ],
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.success === false && result.error).toContain(
+      "Customer not found or does not belong to this organisation",
+    );
+    expect(db.invoice.update).not.toHaveBeenCalled();
+  });
+
+  it("saveInvoice persists valid in-org customerId", async () => {
+    vi.mocked(db.customer.findFirst).mockResolvedValue({
+      id: "cust-valid",
+    } as any);
+    vi.mocked(db.invoice.create).mockResolvedValue({
+      id: "inv-new",
+      invoiceNumber: null,
+      status: "DRAFT",
+      customerId: "cust-valid",
+      totalAmount: 100,
+    } as any);
+
+    const result = await saveInvoice(
+      {
+        customerId: "cust-valid",
+        invoiceDate: "2026-04-23",
+        formData: { source: "test" },
+        lineItems: [
+          { description: "Test", quantity: 1, unitPrice: 100, taxRate: 0, discount: 0 },
+        ],
+      },
+      "DRAFT",
+    );
+
+    expect(result.success).toBe(true);
+    expect(db.customer.findFirst).toHaveBeenCalledWith({
+      where: { id: "cust-valid", organizationId: ORG_ID },
+      select: { id: true },
+    });
+    expect(db.invoice.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          customerId: "cust-valid",
+        }),
+      }),
+    );
+  });
+
+  it("saveInvoice allows blank/undefined customerId", async () => {
+    vi.mocked(db.invoice.create).mockResolvedValue({
+      id: "inv-new",
+      invoiceNumber: null,
+      status: "DRAFT",
+      customerId: null,
+      totalAmount: 100,
+    } as any);
+
+    const result = await saveInvoice(
+      {
+        invoiceDate: "2026-04-23",
+        formData: { source: "test" },
+        lineItems: [
+          { description: "Test", quantity: 1, unitPrice: 100, taxRate: 0, discount: 0 },
+        ],
+      },
+      "DRAFT",
+    );
+
+    expect(result.success).toBe(true);
+    // Should not have attempted customer lookup
+    expect(db.customer.findFirst).not.toHaveBeenCalled();
+    expect(db.invoice.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          customerId: null,
         }),
       }),
     );

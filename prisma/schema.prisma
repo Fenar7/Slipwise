@@ -331,6 +331,11 @@ model OrgDefaults {
   defaultVoucherTemplate String @default("minimal-office")
   defaultSlipTemplate    String @default("modern-premium")
 
+  // Sprint 4.1: Invoice autofill defaults
+  defaultInvoiceNotes        String?
+  defaultInvoiceTerms        String?
+  defaultInvoiceAuthorizedBy String?
+
   upiVpa       String?
   gstStateCode String?
   panNumber    String?
@@ -1178,6 +1183,7 @@ model Customer {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
+  paymentTermsDays   Int     @default(30)
   paymentHealthScore Int     @default(100)
   preferredLanguage  String?
   razorpayCustomerId String? @unique

@@ -1,6 +1,7 @@
 "use client";
 import { useOrgBranding } from "@/hooks/use-org-branding";
 import { InvoiceWorkspace } from "@/features/docs/invoice/components/invoice-workspace";
+import type { InvoiceAutofillPayload } from "@/app/app/docs/invoices/autofill-resolver";
 
 export type ExistingInvoice = {
   id: string;
@@ -11,6 +12,7 @@ export type ExistingInvoice = {
   notes: string | null;
   formData: unknown;
   totalAmount: number;
+  customerId: string | null;
   lineItems: Array<{
     id: string;
     description: string;
@@ -39,6 +41,7 @@ export type ExistingInvoice = {
 interface InvoiceBrandingWrapperProps {
   existingInvoice?: ExistingInvoice | null;
   initialTemplateId?: string;
+  initialAutofill?: InvoiceAutofillPayload;
   customers?: Array<{
     id: string;
     name: string;
@@ -60,6 +63,7 @@ interface InvoiceBrandingWrapperProps {
 export function InvoiceBrandingWrapper({
   existingInvoice,
   initialTemplateId,
+  initialAutofill,
   customers = [],
   inventoryItems = [],
 }: InvoiceBrandingWrapperProps) {
@@ -79,6 +83,7 @@ export function InvoiceBrandingWrapper({
         existingInvoice={existingInvoice}
         initialTemplateId={initialTemplateId}
         initialAccentColor={branding.accentColor}
+        initialAutofill={initialAutofill}
         customers={customers}
         inventoryItems={inventoryItems}
       />

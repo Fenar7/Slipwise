@@ -33,6 +33,9 @@ export async function saveOrgFinancials({
   taxId,
   gstin,
   businessAddress,
+  defaultInvoiceNotes,
+  defaultInvoiceTerms,
+  defaultInvoiceAuthorizedBy,
 }: {
   organizationId: string;
   bankName: string;
@@ -41,10 +44,34 @@ export async function saveOrgFinancials({
   taxId: string;
   gstin: string;
   businessAddress: string;
+  defaultInvoiceNotes: string;
+  defaultInvoiceTerms: string;
+  defaultInvoiceAuthorizedBy: string;
 }) {
   await db.orgDefaults.upsert({
     where: { organizationId },
-    create: { organizationId, bankName, bankAccount, bankIFSC, taxId, gstin, businessAddress },
-    update: { bankName, bankAccount, bankIFSC, taxId, gstin, businessAddress },
+    create: {
+      organizationId,
+      bankName,
+      bankAccount,
+      bankIFSC,
+      taxId,
+      gstin,
+      businessAddress,
+      defaultInvoiceNotes: defaultInvoiceNotes || null,
+      defaultInvoiceTerms: defaultInvoiceTerms || null,
+      defaultInvoiceAuthorizedBy: defaultInvoiceAuthorizedBy || null,
+    },
+    update: {
+      bankName,
+      bankAccount,
+      bankIFSC,
+      taxId,
+      gstin,
+      businessAddress,
+      defaultInvoiceNotes: defaultInvoiceNotes || null,
+      defaultInvoiceTerms: defaultInvoiceTerms || null,
+      defaultInvoiceAuthorizedBy: defaultInvoiceAuthorizedBy || null,
+    },
   });
 }

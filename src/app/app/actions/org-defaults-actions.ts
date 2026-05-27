@@ -9,6 +9,9 @@ export type OrgDefaultsInput = {
   defaultVoucherTemplate?: string;
   defaultSlipTemplate?: string;
   defaultCurrency?: string;
+  defaultInvoiceNotes?: string;
+  defaultInvoiceTerms?: string;
+  defaultInvoiceAuthorizedBy?: string;
 };
 
 export async function getOrgDefaults() {
