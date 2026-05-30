@@ -6305,6 +6305,8 @@ model MailboxSyncRun {
   errorCategory       String?
   errorSummary        String?
   stats               Json?
+  /** Last heartbeat/progress update during a running sync. Used for stall detection. */
+  lastHeartbeatAt     DateTime?
   createdBy           String               @db.Uuid
   createdAt           DateTime             @default(now())
   updatedAt           DateTime             @updatedAt

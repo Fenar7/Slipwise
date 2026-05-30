@@ -106,6 +106,12 @@ export function shouldAutoTriggerMailboxSync(sync: MailboxSyncPresentation): boo
   const hasIncompleteCoverage =
     sync.folderCoverage != null &&
     sync.folderCoverage.overallState !== "COMPLETE";
+
+  // Do not auto-trigger if the last run failed or is stalled — the user
+  // should manually retry so we do not create an opaque endless loop.
+  if (sync.state === "failed") return false;
+  if (sync.state === "running") return false;
+
   return (
     sync.state === "completed_never_imported" ||
     (sync.state === "completed" && sync.staleGmailCoverage) ||

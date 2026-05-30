@@ -471,7 +471,8 @@ export function MailboxWorkspace() {
    *
    * Guard: only trigger once per `lastSyncAt` value so we do not loop
    * endlessly, but we DO resume automatically after a prior sync completes
-   * and coverage is still partial.
+   * and coverage is still partial. Stalled or failed runs are excluded —
+   * the user must manually retry those to avoid opaque endless loops.
    */
   const autoSyncLastStampRef = useRef<Record<string, string | null>>({});
   useEffect(() => {
@@ -916,7 +917,8 @@ export function MailboxWorkspace() {
           syncStatus={
             effectiveActiveSync &&
             (effectiveActiveSync.state === "running" ||
-              effectiveActiveSync.state === "completed_never_imported")
+              effectiveActiveSync.state === "completed_never_imported" ||
+              effectiveActiveSync.state === "failed")
               ? effectiveActiveSync
               : undefined
           }
@@ -955,7 +957,8 @@ export function MailboxWorkspace() {
             syncStatus={
               effectiveActiveSync &&
               (effectiveActiveSync.state === "running" ||
-                effectiveActiveSync.state === "completed_never_imported")
+                effectiveActiveSync.state === "completed_never_imported" ||
+                effectiveActiveSync.state === "failed")
                 ? effectiveActiveSync
                 : undefined
             }
@@ -975,7 +978,8 @@ export function MailboxWorkspace() {
             syncStatus={
               effectiveActiveSync &&
               (effectiveActiveSync.state === "running" ||
-                effectiveActiveSync.state === "completed_never_imported")
+                effectiveActiveSync.state === "completed_never_imported" ||
+                effectiveActiveSync.state === "failed")
                 ? effectiveActiveSync
                 : undefined
             }

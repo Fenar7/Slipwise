@@ -230,7 +230,7 @@ export function EmptySentState({
   onSyncNow?: () => void;
   isSyncPending?: boolean;
 }) {
-  if (syncStatus?.state === "running" || syncStatus?.state === "completed_never_imported") {
+  if (syncStatus?.state === "running" || syncStatus?.state === "completed_never_imported" || syncStatus?.state === "failed") {
     return (
       <SyncAwareFolderEmpty
         mailboxLabel={mailboxLabel}
@@ -264,7 +264,7 @@ export function EmptyDraftsState({
   onSyncNow?: () => void;
   isSyncPending?: boolean;
 }) {
-  if (syncStatus?.state === "running" || syncStatus?.state === "completed_never_imported") {
+  if (syncStatus?.state === "running" || syncStatus?.state === "completed_never_imported" || syncStatus?.state === "failed") {
     return (
       <SyncAwareFolderEmpty
         mailboxLabel={mailboxLabel}
@@ -298,7 +298,7 @@ export function EmptySpamState({
   onSyncNow?: () => void;
   isSyncPending?: boolean;
 }) {
-  if (syncStatus?.state === "running" || syncStatus?.state === "completed_never_imported") {
+  if (syncStatus?.state === "running" || syncStatus?.state === "completed_never_imported" || syncStatus?.state === "failed") {
     return (
       <SyncAwareFolderEmpty
         mailboxLabel={mailboxLabel}
@@ -352,13 +352,25 @@ function SyncAwareFolderEmpty({
   isSyncPending: boolean;
 }) {
   const isActivelyRunning = syncStatus.isSyncing || isSyncPending;
-  const heading = syncStatus.state === "running"
-    ? `Importing ${folder}…`
-    : `${mailboxLabel} ${folder} is waiting`;
-  const body = syncStatus.state === "running"
-    ? `Importing ${folder} from this mailbox. They will appear here automatically.`
-    : `Your mailbox is connected but ${folder} haven't been imported yet. Click Sync now to start importing.`;
+  const heading = (() => {
+    if (syncStatus.state === "running") return `Importing ${folder}…`;
+    if (syncStatus.state === "failed") return "Sync needs attention";
+    return `${mailboxLabel} ${folder} is waiting`;
+  })();
+  const body = (() => {
+    if (syncStatus.state === "running") {
+      return `Importing ${folder} from this mailbox. They will appear here automatically.`;
+    }
+    if (syncStatus.state === "failed") {
+      return syncStatus.lastErrorSummary ?? "Sync encountered a problem. Try syncing again.";
+    }
+    return `Your mailbox is connected but ${folder} haven't been imported yet. Click Sync now to start importing.`;
+  })();
   const showSyncCta = !!onSyncNow && !isActivelyRunning;
+
+  const iconBg = syncStatus.state === "failed"
+    ? "rgba(245,158,11,0.08)"
+    : "rgba(59,130,246,0.08)";
 
   return (
     <div
@@ -368,10 +380,14 @@ function SyncAwareFolderEmpty({
       <MailboxSyncStateChip sync={syncStatus} />
       <div
         className="flex h-14 w-14 items-center justify-center rounded-2xl"
-        style={{ background: "rgba(59,130,246,0.08)" }}
+        style={{ background: iconBg }}
         aria-hidden="true"
       >
-        <Loader2 className="h-7 w-7 animate-spin" style={{ color: "#3B82F6" }} />
+        {syncStatus.state === "failed" ? (
+          <AlertTriangle className="h-7 w-7" style={{ color: "#F59E0B" }} />
+        ) : (
+          <Loader2 className="h-7 w-7 animate-spin" style={{ color: "#3B82F6" }} />
+        )}
       </div>
       <div className="max-w-[260px]">
         <p className="text-sm font-semibold text-[#0F172A]">{heading}</p>
@@ -441,6 +457,8 @@ function SyncAwareInboxEmpty({
     ? formatSyncElapsed(syncStatus.currentRunStartedAt)
     : null;
 
+  // Show "Sync now" CTA when not running and not pending — including when
+  // the run is stalled/failed so the user can retry.
   const showSyncCta =
     !!onSyncNow &&
     !isActivelyRunning &&

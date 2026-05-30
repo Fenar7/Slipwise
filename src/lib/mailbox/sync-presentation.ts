@@ -13,6 +13,13 @@ function isActiveLease(record: MailboxConnectionRecord, now = Date.now()): boole
 /** Runs older than this are considered stale and must not be treated as active. */
 const STALE_RUN_THRESHOLD_MS = 30 * 60 * 1000;
 
+/**
+ * If a running run's lastHeartbeatAt is older than this threshold,
+ * the run is considered stalled — it is still technically alive but
+ * not making observable progress.
+ */
+const STALL_DETECTION_THRESHOLD_MS = 5 * 60 * 1000;
+
 function parseSyncStats(stats: Record<string, unknown> | null): {
   threadCount: number | null;
   messageCount: number | null;
@@ -27,6 +34,23 @@ function parseSyncStats(stats: Record<string, unknown> | null): {
     typeof stats.messageCount === "number" ? stats.messageCount : null;
 
   return { threadCount, messageCount };
+}
+
+/**
+ * Determine if a running sync run is stalled — alive but not making
+ * observable progress. Returns true when:
+ * - The run is RUNNING
+ * - A lastHeartbeatAt exists and is older than STALL_DETECTION_THRESHOLD_MS
+ * - No stats have been persisted yet (threadCount is 0 or null)
+ *
+ * If stats exist but heartbeat is old, we still consider it stalled because
+ * the run may have completed ingestion but is stuck in post-processing.
+ */
+function isRunStalled(run: MailboxSyncRunRecord, now: Date): boolean {
+  if (run.status !== "RUNNING") return false;
+  if (!run.lastHeartbeatAt) return false;
+  const heartbeatAge = now.getTime() - run.lastHeartbeatAt.getTime();
+  return heartbeatAge > STALL_DETECTION_THRESHOLD_MS;
 }
 
 
@@ -47,12 +71,18 @@ export function buildMailboxSyncPresentation(
   const latestCompletedRun = syncRuns.latestCompletedRun ?? null;
   const activeLease = isActiveLease(record, now);
 
-  // A run is only "actually running" if it is RUNNING and not stale.
-  // This prevents crashed/timed-out syncs from showing "Syncing" forever.
+  // A run is only "actually running" if it is RUNNING, not stale, and not stalled.
+  // Stale runs (older than 30 min) are treated as crashed/timed-out.
+  // Stalled runs (alive but no heartbeat in 5+ min) are treated as needing attention.
   const isLatestRunActive =
     latestRun?.status === "RUNNING" &&
     latestRun.startedAt.getTime() > now - STALE_RUN_THRESHOLD_MS;
-  const isSyncing = activeLease || isLatestRunActive;
+  const isStaleRunningRun = latestRun?.status === "RUNNING" && !isLatestRunActive;
+  const isStalledRun = latestRun ? isRunStalled(latestRun, new Date(now)) : false;
+
+  // A stalled run is alive but not making progress — present as failed/attention-needed,
+  // not as a healthy active import.
+  const isSyncing = (activeLease || isLatestRunActive) && !isStalledRun;
 
   const latestCompletedAt =
     latestCompletedRun?.completedAt?.toISOString() ??
@@ -60,12 +90,13 @@ export function buildMailboxSyncPresentation(
     null;
 
   const latestRunStats = parseSyncStats(latestCompletedRun?.stats ?? null);
-  const isStaleRunningRun = latestRun?.status === "RUNNING" && !isLatestRunActive;
   const failedSummary =
     latestRun?.status === "FAILED"
       ? latestRun.errorSummary
       : isStaleRunningRun
         ? "A previous sync did not finish. Try syncing again."
+        : isStalledRun
+          ? "Sync is running but has not made recent progress. It may recover automatically, or try syncing again."
       : record.lastSyncError;
 
   if (record.status === "RECONNECT_REQUIRED" || record.status === "DISCONNECTED") {
@@ -118,6 +149,9 @@ export function buildMailboxSyncPresentation(
     // A stale RUNNING run (crashed / timed-out) is presented as failed so the
     // UI does not show "Syncing" forever and the user can retry.
     isStaleRunningRun ||
+    // A stalled RUNNING run (alive but no progress) is also presented as
+    // needing attention so the user can retry or investigate.
+    isStalledRun ||
     (!!record.lastSyncError &&
       record.status !== "RECONNECT_REQUIRED" &&
       record.status !== "DISCONNECTED");
