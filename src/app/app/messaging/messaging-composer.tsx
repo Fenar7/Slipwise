@@ -20,7 +20,7 @@ import {
   AlertTriangle,
   Loader2,
 } from "lucide-react";
-import { FormattingToolbar } from "./messaging-formatting-toolbar";
+import { FormattingToolbar, applyComposerFormat } from "./messaging-formatting-toolbar";
 import type {
   AttachedFile,
   MentionSuggestion,
@@ -454,57 +454,7 @@ export function MessagingComposer({
   const displayHasContent = simulatedState === "has-content" ? true : hasContent;
 
   function applyFormat(type: string) {
-    if (!inputRef.current) return;
-    inputRef.current.focus();
-    const selection = window.getSelection();
-    if (!selection) return;
-    let selectedText = "";
-    let range: Range | null = null;
-    if (selection.rangeCount > 0) {
-      range = selection.getRangeAt(0);
-      if (inputRef.current.contains(range.commonAncestorContainer)) {
-        selectedText = range.toString();
-      }
-    }
-    let formattedText = "";
-    switch (type) {
-      case "bold":
-        formattedText = `**${selectedText || "bold text"}**`;
-        break;
-      case "italic":
-        formattedText = `*${selectedText || "italic text"}*`;
-        break;
-      case "strikethrough":
-        formattedText = `~~${selectedText || "strikethrough text"}~~`;
-        break;
-      case "link":
-        formattedText = `[${selectedText || "link text"}](https://example.com)`;
-        break;
-      case "bulleted list":
-      case "list":
-        formattedText = `\n- ${selectedText || "list item"}`;
-        break;
-      case "code block":
-      case "code":
-        formattedText = `\`\`\`\n${selectedText || "code"}\n\`\`\``;
-        break;
-      default:
-        formattedText = selectedText;
-    }
-    if (range && inputRef.current.contains(range.commonAncestorContainer)) {
-      range.deleteContents();
-      const textNode = document.createTextNode(formattedText);
-      range.insertNode(textNode);
-      range.setStartAfter(textNode);
-      range.setEndAfter(textNode);
-      selection.removeAllRanges();
-      selection.addRange(range);
-    } else {
-      const textNode = document.createTextNode(formattedText);
-      inputRef.current.appendChild(textNode);
-    }
-    const newContent = inputRef.current.textContent ?? "";
-    setInputValue(newContent);
+    applyComposerFormat(type, inputRef, setInputValue);
   }
 
   if (restricted || !isAccessible) {

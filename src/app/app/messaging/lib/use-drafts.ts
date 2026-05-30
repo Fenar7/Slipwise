@@ -4,7 +4,6 @@ import { useState, useCallback, useRef } from "react";
 export interface DraftData {
   id: string;
   body: string;
-  contentMeta: Record<string, unknown> | null;
   updatedAt: string;
 }
 
@@ -50,7 +49,6 @@ export function useDrafts() {
     conversationId: string,
     body: string,
     threadId?: string | null,
-    contentMeta?: Record<string, unknown> | null,
   ): Promise<DraftData | null> => {
     const guardKey = `save::${conversationId}::${threadId ?? "top"}::${Date.now()}`;
     guardRef.current = guardKey;
@@ -64,7 +62,6 @@ export function useDrafts() {
         body: JSON.stringify({
           body,
           threadId: threadId ?? null,
-          contentMeta: contentMeta ?? null,
         }),
       });
       const payload = await res.json();

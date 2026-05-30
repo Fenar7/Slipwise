@@ -32,7 +32,7 @@ import {
 import type { ConversationMessage, MessageReaction, EditState } from "./types";
 import { useAttachmentUpload, type UploadedAttachment } from "./lib/use-attachment-upload";
 import { MentionText } from "./messaging-mention-text";
-import { FormattingToolbar } from "./messaging-formatting-toolbar";
+import { FormattingToolbar, applyComposerFormat } from "./messaging-formatting-toolbar";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -475,57 +475,7 @@ function ThreadReplyComposer({ onReply, sendingReply = false }: ThreadReplyCompo
   }, [replyText, stagedFiles, onReply, clearAll]);
 
   function applyFormat(type: string) {
-    if (!editorRef.current) return;
-    editorRef.current.focus();
-    const selection = window.getSelection();
-    if (!selection) return;
-    let selectedText = "";
-    let range: Range | null = null;
-    if (selection.rangeCount > 0) {
-      range = selection.getRangeAt(0);
-      if (editorRef.current.contains(range.commonAncestorContainer)) {
-        selectedText = range.toString();
-      }
-    }
-    let formattedText = "";
-    switch (type) {
-      case "bold":
-        formattedText = `**${selectedText || "bold text"}**`;
-        break;
-      case "italic":
-        formattedText = `*${selectedText || "italic text"}*`;
-        break;
-      case "strikethrough":
-        formattedText = `~~${selectedText || "strikethrough text"}~~`;
-        break;
-      case "link":
-        formattedText = `[${selectedText || "link text"}](https://example.com)`;
-        break;
-      case "bulleted list":
-      case "list":
-        formattedText = `\n- ${selectedText || "list item"}`;
-        break;
-      case "code block":
-      case "code":
-        formattedText = `\`\`\`\n${selectedText || "code"}\n\`\`\``;
-        break;
-      default:
-        formattedText = selectedText;
-    }
-    if (range && editorRef.current.contains(range.commonAncestorContainer)) {
-      range.deleteContents();
-      const textNode = document.createTextNode(formattedText);
-      range.insertNode(textNode);
-      range.setStartAfter(textNode);
-      range.setEndAfter(textNode);
-      selection.removeAllRanges();
-      selection.addRange(range);
-    } else {
-      const textNode = document.createTextNode(formattedText);
-      editorRef.current.appendChild(textNode);
-    }
-    const newContent = editorRef.current.textContent ?? "";
-    setReplyText(newContent);
+    applyComposerFormat(type, editorRef, setReplyText);
   }
 
   return (

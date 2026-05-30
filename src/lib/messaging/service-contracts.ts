@@ -186,7 +186,6 @@ export interface SendMessageInput {
   threadId?: string | null;
   authorId: string;
   body: string;
-  contentMeta?: Record<string, unknown> | null;
   /** Structured attachment metadata to link to the message transactionally. */
   attachments?: MessageAttachmentDescriptor[];
   /** Mentioned userIds with offset ranges (optional; may be computed by service). */
@@ -222,7 +221,6 @@ export interface ReplyToThreadInput {
   threadId: string;
   authorId: string;
   body: string;
-  contentMeta?: Record<string, unknown> | null;
   attachments?: MessageAttachmentDescriptor[];
   mentions?: Array<{ userId: string; offsetStart: number; offsetEnd: number }>;
 }
@@ -265,7 +263,6 @@ export interface SaveDraftInput {
   threadId?: string | null;
   userId: string;
   body: string;
-  contentMeta?: Record<string, unknown> | null;
 }
 
 export interface GetDraftInput {

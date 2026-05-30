@@ -216,7 +216,7 @@ describe("useDrafts", () => {
       "/api/messaging/conversations/conv-1/draft",
       expect.objectContaining({
         method: "POST",
-        body: JSON.stringify({ body: "hello", threadId: "thread-1", contentMeta: null }),
+        body: JSON.stringify({ body: "hello", threadId: "thread-1" }),
       }),
     );
     expect(fetchMock.mock.calls[1][0]).toContain("/api/messaging/conversations/conv-1/draft?threadId=thread-1");

@@ -80,6 +80,18 @@ describe("Phase 6 - Messaging Rich Content Rendering", () => {
     expect(container.querySelector("img")).not.toBeInTheDocument();
     expect(container.textContent).toContain("<script>alert('xss')</script>");
   });
+
+  it("renders fenced code blocks in pre/code elements", () => {
+    const { container } = render(
+      <MentionText text={"Here is code:\n```\nconst x = 1;\nconst y = 2;\n```"} />
+    );
+    const pre = container.querySelector("pre");
+    expect(pre).toBeInTheDocument();
+    const code = pre?.querySelector("code");
+    expect(code).toBeInTheDocument();
+    expect(code?.textContent).toContain("const x = 1;");
+    expect(code?.textContent).toContain("const y = 2;");
+  });
 });
 
 describe("Phase 6 - Mention compatibility inside rich formatting", () => {
@@ -93,6 +105,14 @@ describe("Phase 6 - Mention compatibility inside rich formatting", () => {
     render(<MentionText text="*Hey @Sneha Rao check this*" />);
     expect(screen.getByTestId("message-mention")).toBeInTheDocument();
     expect(screen.getByTestId("message-mention").textContent).toBe("@Sneha Rao");
+  });
+
+  it("renders a mention inside strikethrough text correctly", () => {
+    render(<MentionText text="~~Hey @Priya Sharma disregard this~~" />);
+    expect(screen.getByTestId("message-mention")).toBeInTheDocument();
+    expect(screen.getByTestId("message-mention").textContent).toBe("@Priya Sharma");
+    const del = document.querySelector("del");
+    expect(del).toBeInTheDocument();
   });
 
   it("renders a mention inside a bullet list item correctly", () => {

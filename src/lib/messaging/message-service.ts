@@ -182,7 +182,6 @@ export async function sendMessage(
         threadId: input.threadId ?? null,
         authorId: input.authorId,
         body: input.body,
-        contentMeta: (input.contentMeta ?? Prisma.JsonNull) as Prisma.InputJsonValue,
         participantCountAtSend: participantCount,
       },
     });
