@@ -8,6 +8,7 @@ import { ConversationAccessError, InvalidInputError, NotFoundError } from "./err
 import { requireConversationAccess } from "./authorization";
 import { toConversationRecord, toParticipantRecord } from "./mappers";
 import { sendTaskAssignmentNotification } from "./task-reminders";
+import { logMessagingAudit, logMessagingAuditTx } from "./audit";
 import type {
   CreateTaskInput,
   UpdateTaskStatusInput,
@@ -112,22 +113,36 @@ export async function createTask(input: CreateTaskInput): Promise<MessagingTaskR
 
   validateReminderAt(input.reminderAt, input.dueDate);
 
-  const task = await db.messagingTask.create({
-    data: {
+  const task = await db.$transaction(async (tx) => {
+    const created = await tx.messagingTask.create({
+      data: {
+        orgId,
+        conversationId,
+        title: input.title,
+        description: input.description ?? null,
+        priority: input.priority ?? 0,
+        assigneeId: input.assigneeId ?? null,
+        dueDate: input.dueDate ?? null,
+        reminderAt: input.reminderAt ?? null,
+        originatingMessageId: input.originatingMessageId ?? null,
+        createdBy,
+      },
+    });
+
+    await logMessagingAuditTx(tx, {
       orgId,
-      conversationId,
-      title: input.title,
-      description: input.description ?? null,
-      priority: input.priority ?? 0,
-      assigneeId: input.assigneeId ?? null,
-      dueDate: input.dueDate ?? null,
-      reminderAt: input.reminderAt ?? null,
-      originatingMessageId: input.originatingMessageId ?? null,
-      createdBy,
-    },
+      actorId: createdBy,
+      action: "TASK_CREATED",
+      summary: `Task created: ${created.title}`,
+      conversationId: created.conversationId,
+      taskId: created.id,
+      metadata: null,
+    });
+
+    return created;
   });
 
-  // Emit assignment notification when task is created with an initial assignee
+  // Emit assignment notification when task is created with an initial assignee (fire-and-forget)
   if (assigneeId) {
     sendTaskAssignmentNotification(
       {
@@ -198,9 +213,24 @@ export async function updateTaskStatus(input: UpdateTaskStatusInput): Promise<Me
     updateData.completedBy = null;
   }
 
-  const updatedTask = await db.messagingTask.update({
-    where: { id: taskId },
-    data: updateData,
+  const updatedTask = await db.$transaction(async (tx) => {
+    const updated = await tx.messagingTask.update({
+      where: { id: taskId },
+      data: updateData,
+    });
+
+    const auditAction = status === "DONE" ? "TASK_COMPLETED" : status === "CANCELLED" ? "TASK_UPDATED" : "TASK_UPDATED";
+    await logMessagingAuditTx(tx, {
+      orgId,
+      actorId,
+      action: auditAction,
+      summary: `Task ${status === "DONE" ? "completed" : status === "CANCELLED" ? "cancelled" : "updated"}: ${updated.title}`,
+      conversationId: updated.conversationId,
+      taskId: updated.id,
+      metadata: { previousStatus: task.status, newStatus: status },
+    });
+
+    return updated;
   });
 
   return toTaskRecord(updatedTask);
@@ -260,14 +290,27 @@ export async function assignTask(input: AssignTaskInput): Promise<MessagingTaskR
     }
   }
 
-  const updatedTask = await db.messagingTask.update({
-    where: { id: taskId },
-    data: { assigneeId },
+  const updatedTask = await db.$transaction(async (tx) => {
+    const updated = await tx.messagingTask.update({
+      where: { id: taskId },
+      data: { assigneeId },
+    });
+
+    await logMessagingAuditTx(tx, {
+      orgId,
+      actorId,
+      action: "TASK_UPDATED",
+      summary: `Task assignee ${assigneeId === null ? "cleared" : "updated"}: ${updated.title}`,
+      conversationId: updated.conversationId,
+      taskId: updated.id,
+      metadata: { previousAssigneeId: task.assigneeId, newAssigneeId: assigneeId },
+    });
+
+    return updated;
   });
 
-  // Emit assignment notification when a non-null assignee is set
+  // Emit assignment notification when a non-null assignee is set (fire-and-forget)
   if (assigneeId && assigneeId !== task.assigneeId) {
-    // Fire-and-forget: notification failure must not block the assignment
     sendTaskAssignmentNotification(
       {
         id: task.id,
@@ -371,12 +414,26 @@ export async function updateTask(input: UpdateTaskInput): Promise<MessagingTaskR
     }
   }
 
-  const updatedTask = await db.messagingTask.update({
-    where: { id: taskId },
-    data: updateData,
+  const updatedTask = await db.$transaction(async (tx) => {
+    const updated = await tx.messagingTask.update({
+      where: { id: taskId },
+      data: updateData,
+    });
+
+    await logMessagingAuditTx(tx, {
+      orgId,
+      actorId,
+      action: "TASK_UPDATED",
+      summary: `Task updated: ${updated.title}`,
+      conversationId: updated.conversationId,
+      taskId: updated.id,
+      metadata: { updatedFields: Object.keys(updateData) },
+    });
+
+    return updated;
   });
 
-  // Emit assignment notification when assignee changes to a new non-null value
+  // Emit assignment notification when assignee changes to a new non-null value (fire-and-forget)
   if (
     input.assigneeId !== undefined &&
     input.assigneeId !== null &&

@@ -1,19 +1,5 @@
 import "server-only";
 
-/**
- * Messaging read-model service functions.
- *
- * These functions aggregate data from multiple service queries to produce
- * UI-facing read shapes. They are the authoritative server-side read layer
- * for the messaging workspace.
- *
- * Rules:
- * - All functions are org-scoped and membership-aware.
- * - No raw Prisma records leak into outputs.
- * - Deterministic ordering: messages ascending by createdAt, threads descending by createdAt.
- * - Pagination is explicit and bounded.
- */
-
 import { db } from "@/lib/db";
 import type {
   ConversationRecord,
@@ -32,6 +18,7 @@ import {
   type MessageDetail,
   type TaskSummary,
 } from "./read-shapes";
+import { getMessagingAuditActionLabel } from "./audit";
 import {
   getConversationById,
   listConversationsForUser,
@@ -50,6 +37,7 @@ import {
   listAllTasksForUser,
 } from "./task-service";
 import type { TaskListFilterInput } from "./service-contracts";
+import type { MessagingAuditAction } from "./domain-types";
 
 // ─── Conversation list read model ───────────────────────────────────────────────
 
@@ -463,4 +451,214 @@ export async function getOrgTaskSummaries(
     hasMore: result.hasMore,
   };
 }
+
+// ─── Timeline event types ──────────────────────────────────────────────────
+
+export interface TimelineEvent {
+  action: MessagingAuditAction;
+  label: string;
+  summary: string;
+  actorId: string;
+  createdAt: Date;
+  metadata: Record<string, unknown> | null;
+  /** Mapped truthful event type for display logic. */
+  eventType:
+    | "task_created"
+    | "task_completed"
+    | "task_cancelled"
+    | "task_reopened"
+    | "task_assigned"
+    | "task_assignee_cleared"
+    | "task_due_date_changed"
+    | "task_reminder_changed"
+    | "task_reminder_sent"
+    | "task_updated";
+}
+
+/**
+ * Map a raw audit event to a truthful timeline event type.
+ * Uses the action enum + metadata heuristics rather than relying on generic labels alone.
+ */
+export function mapToTimelineEvent(event: {
+  action: MessagingAuditAction;
+  summary: string;
+  actorId: string;
+  createdAt: Date;
+  metadata: Record<string, unknown> | null;
+}): TimelineEvent {
+  const { action, summary, actorId, createdAt, metadata } = event;
+
+  let eventType: TimelineEvent["eventType"];
+
+  switch (action) {
+    case "TASK_CREATED":
+      eventType = "task_created";
+      break;
+    case "TASK_COMPLETED":
+      eventType = "task_completed";
+      break;
+    case "TASK_ASSIGNED":
+      eventType = "task_assigned";
+      break;
+    case "TASK_UPDATED": {
+      const previousStatus = metadata?.previousStatus;
+      const newStatus = metadata?.newStatus;
+      const updatedFields = metadata?.updatedFields;
+      const newAssigneeId = metadata?.newAssigneeId;
+      const previousAssigneeId = metadata?.previousAssigneeId;
+
+      if (
+        typeof newStatus === "string" &&
+        newStatus === "CANCELLED" &&
+        typeof previousStatus === "string" &&
+        previousStatus !== "CANCELLED"
+      ) {
+        eventType = "task_cancelled";
+      } else if (
+        typeof previousStatus === "string" &&
+        previousStatus === "DONE" &&
+        typeof newStatus === "string" &&
+        newStatus !== "DONE"
+      ) {
+        eventType = "task_reopened";
+      } else if (metadata?.reminderType === "scheduled") {
+        eventType = "task_reminder_sent";
+      } else if (newAssigneeId !== undefined || previousAssigneeId !== undefined) {
+        eventType = newAssigneeId === null ? "task_assignee_cleared" : "task_assigned";
+      } else if (Array.isArray(updatedFields) && updatedFields.includes("dueDate")) {
+        eventType = "task_due_date_changed";
+      } else if (Array.isArray(updatedFields) && (updatedFields.includes("reminderAt") || updatedFields.includes("reminderSentAt"))) {
+        eventType = "task_reminder_changed";
+      } else {
+        eventType = "task_updated";
+      }
+      break;
+    }
+    default:
+      eventType = "task_updated";
+  }
+
+  return {
+    action,
+    label: getMessagingAuditActionLabel(action),
+    summary,
+    actorId,
+    createdAt,
+    metadata,
+    eventType,
+  };
+}
+
+// ─── Task activity timeline (permission-gated) ─────────────────────────────
+
+/**
+ * Get the activity timeline for a task.
+ * Requires the requesting user to be an active participant in the task's conversation.
+ * Returns null if the user does not have access (no metadata leakage).
+ */
+export async function getTaskActivityTimeline(
+  orgId: string,
+  taskId: string,
+  userId: string,
+): Promise<TimelineEvent[] | null> {
+  const task = await db.messagingTask.findUnique({
+    where: { id: taskId, orgId },
+    select: { conversationId: true },
+  });
+
+  if (!task) return null;
+
+  const membership = await db.conversationParticipant.findFirst({
+    where: {
+      ...participantOrgSafeWhere(orgId, task.conversationId, userId),
+      leftAt: null,
+    },
+  });
+
+  if (!membership) return null;
+
+  const events = await db.messagingAuditEvent.findMany({
+    where: { orgId, taskId },
+    orderBy: { createdAt: "asc" },
+    select: {
+      action: true,
+      summary: true,
+      actorId: true,
+      createdAt: true,
+      metadata: true,
+    },
+  });
+
+  return events.map(mapToTimelineEvent);
+}
+
+// ─── Diagnostics types ─────────────────────────────────────────────────────
+
+export interface TaskHealthDiagnostics {
+  statusCounts: Record<string, number>;
+  overdueCount: number;
+  reminderDispatchedCount: number;
+  reminderPendingCount: number;
+}
+
+// ─── Admin/support task diagnostics (permission-gated) ─────────────────────
+
+/**
+ * Get task health diagnostics for an org.
+ * Only accessible to org admin/support audience.
+ * Returns null for non-admin callers (no info leakage).
+ */
+export async function getTaskHealthDiagnostics(
+  orgId: string,
+  userId: string,
+): Promise<TaskHealthDiagnostics | null> {
+  const member = await db.member.findFirst({
+    where: { organizationId: orgId, userId },
+    select: { role: true },
+  });
+
+  if (!member) return null;
+  const orgRole = member.role?.toLowerCase() ?? "";
+  const isAdmin = orgRole === "owner" || orgRole === "admin";
+  if (!isAdmin) return null;
+
+  const [statusCounts, overdueCount, reminderDispatchedCount, reminderPendingCount] = await Promise.all([
+    db.messagingTask.groupBy({
+      by: ["status"],
+      where: { orgId },
+      _count: { _all: true },
+    }),
+    db.messagingTask.count({
+      where: {
+        orgId,
+        status: { in: ["OPEN", "IN_PROGRESS", "OVERDUE"] },
+        dueDate: { lt: new Date() },
+      },
+    }),
+    db.messagingTask.count({
+      where: { orgId, reminderSentAt: { not: null } },
+    }),
+    db.messagingTask.count({
+      where: {
+        orgId,
+        reminderAt: { not: null },
+        reminderSentAt: null,
+        status: { in: ["OPEN", "IN_PROGRESS", "OVERDUE"] },
+      },
+    }),
+  ]);
+
+  const statusMap: Record<string, number> = {};
+  for (const row of statusCounts) {
+    statusMap[row.status] = row._count._all;
+  }
+
+  return {
+    statusCounts: statusMap,
+    overdueCount,
+    reminderDispatchedCount,
+    reminderPendingCount,
+  };
+}
+
 
