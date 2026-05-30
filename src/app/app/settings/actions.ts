@@ -44,6 +44,7 @@ export async function saveOrgFinancials({
   defaultInvoiceAuthorizedBy,
   defaultQuoteNotes,
   defaultQuoteTerms,
+  quoteValidityDays,
 }: {
   bankName: string;
   bankAccount: string;
@@ -60,6 +61,7 @@ export async function saveOrgFinancials({
   defaultInvoiceAuthorizedBy: string;
   defaultQuoteNotes: string;
   defaultQuoteTerms: string;
+  quoteValidityDays: number;
 }) {
   const { orgId } = await requireRole("admin");
 
@@ -82,6 +84,7 @@ export async function saveOrgFinancials({
       defaultInvoiceAuthorizedBy: defaultInvoiceAuthorizedBy || null,
       defaultQuoteNotes: defaultQuoteNotes || null,
       defaultQuoteTerms: defaultQuoteTerms || null,
+      quoteValidityDays,
     },
     update: {
       bankName,
@@ -99,6 +102,7 @@ export async function saveOrgFinancials({
       defaultInvoiceAuthorizedBy: defaultInvoiceAuthorizedBy || null,
       defaultQuoteNotes: defaultQuoteNotes || null,
       defaultQuoteTerms: defaultQuoteTerms || null,
+      quoteValidityDays,
     },
   });
 }

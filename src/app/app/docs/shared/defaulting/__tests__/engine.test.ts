@@ -179,6 +179,36 @@ describe("Shared Client Defaulting Engine", () => {
       expect(result.branding.accentColor).toBe("#ff0000");
     });
 
+    it("template query param overrides org default", async () => {
+      vi.mocked(db.organization.findUnique).mockResolvedValue({
+        id: mockOrgId,
+        name: "Test Org",
+      } as never);
+
+      vi.mocked(db.orgDefaults.findUnique).mockResolvedValue({
+        id: "1",
+        organizationId: mockOrgId,
+        defaultVoucherTemplate: "minimal-office",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      } as never);
+
+      vi.mocked(db.brandingProfile.findUnique).mockResolvedValue({
+        id: "1",
+        organizationId: mockOrgId,
+        accentColor: "#dc2626",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      } as never);
+
+      const result = await resolveVoucherDefaults({
+        orgId: mockOrgId,
+        templateParam: "custom-voucher",
+      });
+
+      expect(result.templateId).toBe("custom-voucher");
+    });
+
     it("resolves vendor-linked defaults when vendor is provided", async () => {
       vi.mocked(db.organization.findUnique).mockResolvedValue({
         id: mockOrgId,

@@ -98,6 +98,7 @@ export async function resolveInvoiceDefaults(params: {
 export async function resolveVoucherDefaults(params: {
   orgId: string;
   vendorId?: string;
+  templateParam?: string;
 }): Promise<VoucherDefaults> {
   const [org, orgDefaults, brandingProfile] = await Promise.all([
     db.organization.findUnique({
@@ -115,7 +116,7 @@ export async function resolveVoucherDefaults(params: {
   const companyName = org?.name?.trim() || "";
   const address = orgDefaults?.businessAddress?.trim() || "";
   const accentColor = brandingProfile?.accentColor?.trim() || "#dc2626";
-  const templateId = orgDefaults?.defaultVoucherTemplate?.trim() || "minimal-office";
+  const templateId = params.templateParam?.trim() || orgDefaults?.defaultVoucherTemplate?.trim() || "minimal-office";
   const date = todayIso();
   const notes = orgDefaults?.defaultVoucherNotes?.trim() || "";
   const approvedBy = orgDefaults?.defaultVoucherApprovedBy?.trim() || "";

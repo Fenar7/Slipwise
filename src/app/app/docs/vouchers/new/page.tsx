@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { VoucherBrandingWrapper } from "./branding-wrapper";
 import { listVendors } from "@/app/app/data/actions";
-import { getOrgDefaults } from "@/app/app/actions/org-defaults-actions";
 import { resolveVoucherAutofill } from "../autofill-resolver";
 
 export const metadata: Metadata = {
@@ -15,18 +14,17 @@ export default async function NewVoucherPage({
   searchParams: Promise<{ template?: string; vendorId?: string }>;
 }) {
   const params = await searchParams;
-  const [vendorResult, defaults, autofillPayload] = await Promise.all([
+  const [vendorResult, autofillPayload] = await Promise.all([
     listVendors({ limit: 100 }).catch(() => ({ vendors: [] })),
-    getOrgDefaults().catch(() => null),
-    params.vendorId
-      ? resolveVoucherAutofill({ vendorId: params.vendorId }).catch(() => null)
-      : resolveVoucherAutofill({}).catch(() => null),
+    resolveVoucherAutofill({
+      vendorId: params.vendorId,
+      templateParam: params.template,
+    }).catch(() => null),
   ]);
-  const templateId = params.template || defaults?.defaultVoucherTemplate || autofillPayload?.templateId || undefined;
   return (
     <VoucherBrandingWrapper
       vendors={vendorResult.vendors}
-      initialTemplateId={templateId}
+      initialTemplateId={autofillPayload?.templateId}
       initialAutofill={autofillPayload}
     />
   );

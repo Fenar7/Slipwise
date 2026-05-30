@@ -24,11 +24,13 @@ export async function validateVoucherVendor(vendorId: string | undefined | null,
 
 export async function resolveVoucherAutofill(params: {
   vendorId?: string;
+  templateParam?: string;
 }): Promise<VoucherAutofillPayload> {
   const { orgId } = await requireOrgContext();
   const defaults = await resolveVoucherDefaults({
     orgId,
     vendorId: params.vendorId,
+    templateParam: params.templateParam,
   });
   return {
     ...defaults,

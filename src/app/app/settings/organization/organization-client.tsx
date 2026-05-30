@@ -34,6 +34,7 @@ type SaveFinancialsAction = (data: {
   defaultInvoiceAuthorizedBy: string;
   defaultQuoteNotes: string;
   defaultQuoteTerms: string;
+  quoteValidityDays: number;
 }) => Promise<void>;
 
 interface OrganizationClientProps {
@@ -57,6 +58,7 @@ interface OrganizationClientProps {
     defaultInvoiceAuthorizedBy: string | null;
     defaultQuoteNotes: string | null;
     defaultQuoteTerms: string | null;
+    quoteValidityDays: number | null;
   } | null;
   saveBranding: SaveBrandingAction;
   saveFinancials: SaveFinancialsAction;
@@ -84,6 +86,7 @@ export function OrganizationClient({
   const [defaultInvoiceAuthorizedBy, setDefaultInvoiceAuthorizedBy] = useState(initialDefaults?.defaultInvoiceAuthorizedBy ?? "");
   const [defaultQuoteNotes, setDefaultQuoteNotes] = useState(initialDefaults?.defaultQuoteNotes ?? "");
   const [defaultQuoteTerms, setDefaultQuoteTerms] = useState(initialDefaults?.defaultQuoteTerms ?? "");
+  const [quoteValidityDays, setQuoteValidityDays] = useState(initialDefaults?.quoteValidityDays ?? 14);
   const [defaultVoucherNotes, setDefaultVoucherNotes] = useState(initialDefaults?.defaultVoucherNotes ?? "");
   const [defaultVoucherApprovedBy, setDefaultVoucherApprovedBy] = useState(initialDefaults?.defaultVoucherApprovedBy ?? "");
   const [defaultVoucherReceivedBy, setDefaultVoucherReceivedBy] = useState(initialDefaults?.defaultVoucherReceivedBy ?? "");
@@ -121,6 +124,7 @@ export function OrganizationClient({
       defaultInvoiceAuthorizedBy,
       defaultQuoteNotes,
       defaultQuoteTerms,
+      quoteValidityDays,
     });
     setSaving(null);
     setSuccess("financials");
@@ -340,6 +344,20 @@ export function OrganizationClient({
                 rows={2}
                 className="w-full rounded-lg border border-[var(--border-soft)] bg-white px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--focus-ring)] resize-none"
                 placeholder="e.g. 50% advance, 50% upon delivery."
+              />
+            </SettingsFormField>
+
+            <SettingsFormField
+              label="Quote validity (days)"
+              hint="Number of days a quote remains valid from issue date."
+            >
+              <Input
+                type="number"
+                min="1"
+                max="365"
+                value={quoteValidityDays}
+                onChange={(e) => setQuoteValidityDays(parseInt(e.target.value) || 14)}
+                placeholder="14"
               />
             </SettingsFormField>
 
