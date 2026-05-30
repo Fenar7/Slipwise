@@ -77,8 +77,9 @@ describe("Sprint 6.4 Service layer — Global Tasks Workspace", () => {
       where: {
         orgId: "org-1",
         conversationId: { in: ["conv-1", "conv-2"] },
+        status: { in: ["OPEN", "IN_PROGRESS", "OVERDUE"] },
       },
-      orderBy: [{ dueDate: "asc" }, { createdAt: "desc" }],
+      orderBy: [{ dueDate: "asc" }, { id: "asc" }],
       take: 21,
       skip: 0,
       cursor: undefined,

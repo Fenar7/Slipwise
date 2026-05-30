@@ -47,7 +47,7 @@ export async function listTasksForConversation(
 
   const rows = await db.messagingTask.findMany({
     where: { orgId, conversationId },
-    orderBy: [{ dueDate: "asc" }, { createdAt: "desc" }],
+    orderBy: [{ dueDate: "asc" }, { id: "asc" }],
   });
 
   return rows.map(toTaskRecord);
@@ -388,42 +388,38 @@ export async function listAllTasksForUser(
     conversationId: { in: targetConversationIds },
   };
 
-  // Apply scope-specific predicates at the DB level
+  // OVERDUE is included in the open-family set because taskIsOpen() treats it as
+  // open, and existing stored OVERDUE rows must remain visible in default views.
+  const OPEN_FAMILY_STATUSES = ["OPEN", "IN_PROGRESS", "OVERDUE"] as const;
   const now = new Date();
-  switch (scope) {
-    case "open":
-      where.status = { in: ["OPEN", "IN_PROGRESS"] };
-      break;
-    case "done":
-      where.status = "DONE";
-      break;
-    case "cancelled":
-      where.status = "CANCELLED";
-      break;
-    case "overdue":
-      where.status = { in: ["OPEN", "IN_PROGRESS"] };
-      where.dueDate = { lt: now };
-      break;
-    case "due_soon": {
-      const upperBound = new Date();
-      upperBound.setDate(upperBound.getDate() + 7);
-      where.status = { in: ["OPEN", "IN_PROGRESS"] };
-      where.dueDate = { gte: now, lte: upperBound };
-      break;
-    }
-    case "assigned":
-      where.assigneeId = userId;
-      break;
-    case "created":
-      where.createdBy = userId;
-      break;
-    // No scope = all accessible tasks (default)
+
+  if (scope === "done") {
+    where.status = "DONE";
+  } else if (scope === "cancelled") {
+    where.status = "CANCELLED";
+  } else if (scope === "overdue") {
+    where.status = { in: [...OPEN_FAMILY_STATUSES] };
+    where.dueDate = { lt: now };
+  } else if (scope === "due_soon") {
+    const upperBound = new Date();
+    upperBound.setDate(upperBound.getDate() + 7);
+    where.status = { in: [...OPEN_FAMILY_STATUSES] };
+    where.dueDate = { gte: now, lte: upperBound };
+  } else if (scope === "assigned") {
+    where.assigneeId = userId;
+  } else if (scope === "created") {
+    where.createdBy = userId;
+  } else {
+    // Default (no scope or scope=open): accessible open work only.
+    // DONE and CANCELLED are excluded from the default global view.
+    where.status = { in: [...OPEN_FAMILY_STATUSES] };
   }
 
-  // Cursor-based pagination: fetch one extra to detect hasMore
+  // Stable pagination: dueDate asc, then id as unique tiebreaker for deterministic
+  // cursor-based pagination. Tasks with equal dueDate will not reorder/skip across pages.
   const rows = await db.messagingTask.findMany({
     where,
-    orderBy: [{ dueDate: "asc" }, { createdAt: "desc" }],
+    orderBy: [{ dueDate: "asc" }, { id: "asc" }],
     take: limit + 1,
     skip: cursor ? 1 : 0,
     cursor: cursor ? { id: cursor } : undefined,

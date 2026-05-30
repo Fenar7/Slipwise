@@ -205,13 +205,13 @@ describe("Sprint 7.1 — listAllTasksForUser: scope filtering", () => {
     ]);
   });
 
-  it("scope=open filters to OPEN and IN_PROGRESS statuses", async () => {
+  it("scope=open filters to OPEN, IN_PROGRESS, and OVERDUE statuses", async () => {
     (db.messagingTask.findMany as any).mockResolvedValue([mockTask()]);
 
     await listAllTasksForUser({ orgId: "org-1", userId: "user-1", scope: "open" });
 
     const call = (db.messagingTask.findMany as any).mock.calls[0][0];
-    expect(call.where.status).toEqual({ in: ["OPEN", "IN_PROGRESS"] });
+    expect(call.where.status).toEqual({ in: ["OPEN", "IN_PROGRESS", "OVERDUE"] });
   });
 
   it("scope=done filters to DONE status only", async () => {
@@ -232,23 +232,23 @@ describe("Sprint 7.1 — listAllTasksForUser: scope filtering", () => {
     expect(call.where.status).toBe("CANCELLED");
   });
 
-  it("scope=overdue filters to OPEN/IN_PROGRESS with past dueDate", async () => {
+  it("scope=overdue filters to OPEN/IN_PROGRESS/OVERDUE with past dueDate", async () => {
     (db.messagingTask.findMany as any).mockResolvedValue([]);
 
     await listAllTasksForUser({ orgId: "org-1", userId: "user-1", scope: "overdue" });
 
     const call = (db.messagingTask.findMany as any).mock.calls[0][0];
-    expect(call.where.status).toEqual({ in: ["OPEN", "IN_PROGRESS"] });
+    expect(call.where.status).toEqual({ in: ["OPEN", "IN_PROGRESS", "OVERDUE"] });
     expect(call.where.dueDate).toHaveProperty("lt");
   });
 
-  it("scope=due_soon filters to OPEN/IN_PROGRESS with dueDate in next 7 days", async () => {
+  it("scope=due_soon filters to OPEN/IN_PROGRESS/OVERDUE with dueDate in next 7 days", async () => {
     (db.messagingTask.findMany as any).mockResolvedValue([]);
 
     await listAllTasksForUser({ orgId: "org-1", userId: "user-1", scope: "due_soon" });
 
     const call = (db.messagingTask.findMany as any).mock.calls[0][0];
-    expect(call.where.status).toEqual({ in: ["OPEN", "IN_PROGRESS"] });
+    expect(call.where.status).toEqual({ in: ["OPEN", "IN_PROGRESS", "OVERDUE"] });
     expect(call.where.dueDate).toHaveProperty("gte");
     expect(call.where.dueDate).toHaveProperty("lte");
   });
@@ -271,13 +271,13 @@ describe("Sprint 7.1 — listAllTasksForUser: scope filtering", () => {
     expect(call.where.createdBy).toBe("user-1");
   });
 
-  it("no scope returns all tasks across accessible conversations", async () => {
+  it("no scope defaults to open work (OPEN, IN_PROGRESS, OVERDUE)", async () => {
     (db.messagingTask.findMany as any).mockResolvedValue([mockTask()]);
 
     await listAllTasksForUser({ orgId: "org-1", userId: "user-1" });
 
     const call = (db.messagingTask.findMany as any).mock.calls[0][0];
-    expect(call.where.status).toBeUndefined();
+    expect(call.where.status).toEqual({ in: ["OPEN", "IN_PROGRESS", "OVERDUE"] });
     expect(call.where.dueDate).toBeUndefined();
     expect(call.where.assigneeId).toBeUndefined();
     expect(call.where.createdBy).toBeUndefined();
@@ -465,7 +465,7 @@ describe("Sprint 7.1 — getOrgTaskSummaries: filter passthrough", () => {
     await getOrgTaskSummaries("org-1", "user-1", { scope: "overdue" });
 
     const call = (db.messagingTask.findMany as any).mock.calls[0][0];
-    expect(call.where.status).toEqual({ in: ["OPEN", "IN_PROGRESS"] });
+    expect(call.where.status).toEqual({ in: ["OPEN", "IN_PROGRESS", "OVERDUE"] });
     expect(call.where.dueDate).toHaveProperty("lt");
   });
 
@@ -482,5 +482,279 @@ describe("Sprint 7.1 — getOrgTaskSummaries: filter passthrough", () => {
 
     const call = (db.messagingTask.findMany as any).mock.calls[0][0];
     expect(call.where.conversationId).toEqual({ in: ["conv-2"] });
+  });
+});
+
+// ─── Blocker 1: Default scope returns open work, not all tasks ────────────────
+
+describe("Sprint 7.1 — Blocker 1: Default global query returns open work only", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    (db.conversationParticipant.findMany as any).mockResolvedValue([
+      { conversationId: "conv-1" },
+    ]);
+  });
+
+  function mockTask(overrides: Record<string, unknown> = {}) {
+    return {
+      id: "task-1",
+      orgId: "org-1",
+      conversationId: "conv-1",
+      title: "Task",
+      description: null,
+      status: "OPEN",
+      priority: 0,
+      assigneeId: null,
+      dueDate: null,
+      createdBy: "user-1",
+      createdAt: new Date("2026-05-01"),
+      updatedAt: new Date("2026-05-01"),
+      completedAt: null,
+      completedBy: null,
+      ...overrides,
+    };
+  }
+
+  it("no-scope default applies open-family status filter (DONE/CANCELLED excluded)", async () => {
+    (db.messagingTask.findMany as any).mockResolvedValue([]);
+
+    await listAllTasksForUser({ orgId: "org-1", userId: "user-1" });
+
+    const call = (db.messagingTask.findMany as any).mock.calls[0][0];
+    expect(call.where.status).toEqual({ in: ["OPEN", "IN_PROGRESS", "OVERDUE"] });
+  });
+
+  it("explicit scope=done returns only DONE tasks", async () => {
+    (db.messagingTask.findMany as any).mockResolvedValue([mockTask({ status: "DONE" })]);
+
+    const result = await listAllTasksForUser({ orgId: "org-1", userId: "user-1", scope: "done" });
+
+    const call = (db.messagingTask.findMany as any).mock.calls[0][0];
+    expect(call.where.status).toBe("DONE");
+    expect(result.tasks).toHaveLength(1);
+    expect(result.tasks[0].status).toBe("DONE");
+  });
+
+  it("explicit scope=cancelled returns only CANCELLED tasks", async () => {
+    (db.messagingTask.findMany as any).mockResolvedValue([mockTask({ status: "CANCELLED" })]);
+
+    const result = await listAllTasksForUser({ orgId: "org-1", userId: "user-1", scope: "cancelled" });
+
+    const call = (db.messagingTask.findMany as any).mock.calls[0][0];
+    expect(call.where.status).toBe("CANCELLED");
+    expect(result.tasks).toHaveLength(1);
+    expect(result.tasks[0].status).toBe("CANCELLED");
+  });
+});
+
+// ─── Blocker 2: OVERDUE row compatibility in DB predicates ────────────────────
+
+describe("Sprint 7.1 — Blocker 2: OVERDUE rows included in open-family DB predicates", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    (db.conversationParticipant.findMany as any).mockResolvedValue([
+      { conversationId: "conv-1" },
+    ]);
+  });
+
+  it("stored OVERDUE rows appear in default open work", async () => {
+    (db.messagingTask.findMany as any).mockResolvedValue([]);
+
+    await listAllTasksForUser({ orgId: "org-1", userId: "user-1" });
+
+    const call = (db.messagingTask.findMany as any).mock.calls[0][0];
+    expect(call.where.status).toEqual({ in: ["OPEN", "IN_PROGRESS", "OVERDUE"] });
+  });
+
+  it("stored OVERDUE rows appear in scope=overdue", async () => {
+    (db.messagingTask.findMany as any).mockResolvedValue([]);
+
+    await listAllTasksForUser({ orgId: "org-1", userId: "user-1", scope: "overdue" });
+
+    const call = (db.messagingTask.findMany as any).mock.calls[0][0];
+    expect(call.where.status).toEqual({ in: ["OPEN", "IN_PROGRESS", "OVERDUE"] });
+    expect(call.where.dueDate).toHaveProperty("lt");
+  });
+
+  it("stored OVERDUE rows do NOT leak into scope=done", async () => {
+    (db.messagingTask.findMany as any).mockResolvedValue([]);
+
+    await listAllTasksForUser({ orgId: "org-1", userId: "user-1", scope: "done" });
+
+    const call = (db.messagingTask.findMany as any).mock.calls[0][0];
+    expect(call.where.status).toBe("DONE");
+  });
+
+  it("stored OVERDUE rows do NOT leak into scope=cancelled", async () => {
+    (db.messagingTask.findMany as any).mockResolvedValue([]);
+
+    await listAllTasksForUser({ orgId: "org-1", userId: "user-1", scope: "cancelled" });
+
+    const call = (db.messagingTask.findMany as any).mock.calls[0][0];
+    expect(call.where.status).toBe("CANCELLED");
+  });
+
+  it("domain taskIsOpen includes OVERDUE status", () => {
+    const task: MessagingTaskRecord = {
+      id: "task-1",
+      orgId: "org-1",
+      conversationId: "conv-1",
+      originatingMessageId: null,
+      title: "Overdue task",
+      description: null,
+      status: "OVERDUE",
+      priority: 0,
+      assigneeId: null,
+      dueDate: new Date("2026-01-01"),
+      reminderAt: null,
+      reminderSentAt: null,
+      completedAt: null,
+      completedBy: null,
+      createdBy: "user-1",
+      createdAt: new Date("2026-05-01"),
+      updatedAt: new Date("2026-05-01"),
+    };
+    expect(taskIsOpen(task)).toBe(true);
+  });
+
+  it("domain taskIsOverdue returns true for OVERDUE status with past dueDate", () => {
+    const task: MessagingTaskRecord = {
+      id: "task-1",
+      orgId: "org-1",
+      conversationId: "conv-1",
+      originatingMessageId: null,
+      title: "Overdue task",
+      description: null,
+      status: "OVERDUE",
+      priority: 0,
+      assigneeId: null,
+      dueDate: new Date("2026-01-01"),
+      reminderAt: null,
+      reminderSentAt: null,
+      completedAt: null,
+      completedBy: null,
+      createdBy: "user-1",
+      createdAt: new Date("2026-05-01"),
+      updatedAt: new Date("2026-05-01"),
+    };
+    expect(taskIsOverdue(task)).toBe(true);
+  });
+});
+
+// ─── Blocker 3: Stable cursor pagination ──────────────────────────────────────
+
+describe("Sprint 7.1 — Blocker 3: Stable cursor pagination", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    (db.conversationParticipant.findMany as any).mockResolvedValue([
+      { conversationId: "conv-1" },
+    ]);
+  });
+
+  function mockTask(id: string, overrides: Record<string, unknown> = {}) {
+    return {
+      id,
+      orgId: "org-1",
+      conversationId: "conv-1",
+      title: `Task ${id}`,
+      description: null,
+      status: "OPEN",
+      priority: 0,
+      assigneeId: null,
+      dueDate: null,
+      createdBy: "user-1",
+      createdAt: new Date("2026-05-01"),
+      updatedAt: new Date("2026-05-01"),
+      completedAt: null,
+      completedBy: null,
+      ...overrides,
+    };
+  }
+
+  it("ordering uses id as tiebreaker for deterministic results", async () => {
+    (db.messagingTask.findMany as any).mockResolvedValue([]);
+
+    await listAllTasksForUser({ orgId: "org-1", userId: "user-1" });
+
+    const call = (db.messagingTask.findMany as any).mock.calls[0][0];
+    expect(call.orderBy).toEqual([{ dueDate: "asc" }, { id: "asc" }]);
+  });
+
+  it("cursor pagination is stable: nextCursor is the id of the last returned task", async () => {
+    (db.messagingTask.findMany as any).mockResolvedValue([
+      mockTask("aaa"),
+      mockTask("bbb"),
+      mockTask("ccc"), // extra row beyond limit=2
+    ]);
+
+    const result = await listAllTasksForUser({
+      orgId: "org-1",
+      userId: "user-1",
+      limit: 2,
+    });
+
+    expect(result.hasMore).toBe(true);
+    expect(result.tasks).toHaveLength(2);
+    expect(result.tasks[0].id).toBe("aaa");
+    expect(result.tasks[1].id).toBe("bbb");
+    expect(result.nextCursor).toBe("bbb");
+  });
+
+  it("second page fetch uses cursor to skip previous results", async () => {
+    (db.messagingTask.findMany as any).mockResolvedValue([
+      mockTask("ccc"),
+      mockTask("ddd"),
+    ]);
+
+    await listAllTasksForUser({
+      orgId: "org-1",
+      userId: "user-1",
+      cursor: "bbb",
+      limit: 2,
+    });
+
+    const call = (db.messagingTask.findMany as any).mock.calls[0][0];
+    expect(call.skip).toBe(1);
+    expect(call.cursor).toEqual({ id: "bbb" });
+  });
+
+  it("tasks with same dueDate paginate without duplicates/skips", async () => {
+    const sharedDue = new Date("2026-06-01T00:00:00Z");
+
+    // Page 1: returns 3 tasks with same dueDate, limit=2
+    (db.messagingTask.findMany as any).mockResolvedValue([
+      mockTask("aaa", { dueDate: sharedDue }),
+      mockTask("bbb", { dueDate: sharedDue }),
+      mockTask("ccc", { dueDate: sharedDue }), // extra
+    ]);
+
+    const page1 = await listAllTasksForUser({
+      orgId: "org-1",
+      userId: "user-1",
+      limit: 2,
+    });
+
+    expect(page1.hasMore).toBe(true);
+    expect(page1.tasks.map((t) => t.id)).toEqual(["aaa", "bbb"]);
+    expect(page1.nextCursor).toBe("bbb");
+
+    // Page 2: continues from cursor bbb
+    (db.messagingTask.findMany as any).mockResolvedValue([
+      mockTask("ccc", { dueDate: sharedDue }),
+    ]);
+
+    const page2 = await listAllTasksForUser({
+      orgId: "org-1",
+      userId: "user-1",
+      cursor: "bbb",
+      limit: 2,
+    });
+
+    expect(page2.hasMore).toBe(false);
+    expect(page2.tasks.map((t) => t.id)).toEqual(["ccc"]);
+
+    // Combined: no duplicates, no skips
+    const allIds = [...page1.tasks.map((t) => t.id), ...page2.tasks.map((t) => t.id)];
+    expect(allIds).toEqual(["aaa", "bbb", "ccc"]);
   });
 });
