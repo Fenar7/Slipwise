@@ -15,6 +15,10 @@ vi.mock("@/lib/auth", () => ({
   requireOrgContext: vi.fn(),
 }));
 
+vi.mock("../autofill-resolver", () => ({
+  resolveQuoteAutofill: vi.fn(),
+}));
+
 vi.mock("@/lib/plans/enforcement", () => ({
   checkLimit: vi.fn(),
 }));
@@ -45,7 +49,8 @@ import { requireOrgContext } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { checkLimit } from "@/lib/plans/enforcement";
 import { createQuote, updateQuote } from "@/lib/quotes";
-import { createQuoteAction, updateQuoteAction } from "../actions";
+import { resolveQuoteAutofill } from "../autofill-resolver";
+import { createQuoteAction, updateQuoteAction, resolveQuoteAutofillAction } from "../actions";
 
 const ORG_ID = "org-1";
 const USER_ID = "user-1";
@@ -167,6 +172,45 @@ describe("quote actions security and validation", () => {
           title: "Updated Title",
         }),
       );
+    });
+  });
+
+  describe("resolveQuoteAutofillAction", () => {
+    it("calls resolver with the provided customerId", async () => {
+      const mockPayload = { customerId: "cust-1", clientName: "Test Customer" } as any;
+      vi.mocked(resolveQuoteAutofill).mockResolvedValue(mockPayload);
+
+      const result = await resolveQuoteAutofillAction({ customerId: "cust-1" });
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data).toBe(mockPayload);
+      }
+      expect(resolveQuoteAutofill).toHaveBeenCalledWith({ customerId: "cust-1" });
+    });
+
+    it("calls resolver with undefined customerId when cleared", async () => {
+      const mockPayload = { customerId: "", clientName: "" } as any;
+      vi.mocked(resolveQuoteAutofill).mockResolvedValue(mockPayload);
+
+      const result = await resolveQuoteAutofillAction({ customerId: undefined });
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data).toBe(mockPayload);
+      }
+      expect(resolveQuoteAutofill).toHaveBeenCalledWith({ customerId: undefined });
+    });
+
+    it("returns failed ActionResult when resolver throws", async () => {
+      vi.mocked(resolveQuoteAutofill).mockRejectedValue(new Error("Database error"));
+
+      const result = await resolveQuoteAutofillAction({ customerId: "cust-error" });
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error).toBe("Database error");
+      }
     });
   });
 });

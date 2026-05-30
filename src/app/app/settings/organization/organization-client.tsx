@@ -14,13 +14,11 @@ import {
 import { Palette, Building2, Landmark } from "lucide-react";
 
 type SaveBrandingAction = (data: {
-  organizationId: string;
   accentColor: string;
   fontFamily: string;
 }) => Promise<void>;
 
 type SaveFinancialsAction = (data: {
-  organizationId: string;
   bankName: string;
   bankAccount: string;
   bankIFSC: string;
@@ -85,7 +83,7 @@ export function OrganizationClient({
     e.preventDefault();
     setSaving("branding");
     setSuccess(null);
-    await saveBranding({ organizationId: orgId, accentColor, fontFamily });
+    await saveBranding({ accentColor, fontFamily });
     setSaving(null);
     setSuccess("branding");
     setTimeout(() => setSuccess(null), 3000);
@@ -96,7 +94,6 @@ export function OrganizationClient({
     setSaving("financials");
     setSuccess(null);
     await saveFinancials({
-      organizationId: orgId,
       bankName,
       bankAccount,
       bankIFSC,

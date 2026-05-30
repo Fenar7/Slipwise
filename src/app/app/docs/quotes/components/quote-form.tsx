@@ -98,12 +98,11 @@ export function QuoteForm({ customers, initialAutofill, existingQuote }: QuoteFo
 
   const handleCustomerChange = async (newCustomerId: string) => {
     setCustomerId(newCustomerId);
-    if (!newCustomerId) {
-      return;
-    }
 
     try {
-      const result = await resolveQuoteAutofillAction({ customerId: newCustomerId });
+      const result = await resolveQuoteAutofillAction({
+        customerId: newCustomerId || undefined,
+      });
       if (result.success && result.data) {
         const payload = result.data;
         setIssueDate(payload.issueDate);
@@ -112,7 +111,7 @@ export function QuoteForm({ customers, initialAutofill, existingQuote }: QuoteFo
         setTermsAndConditions(payload.termsAndConditions);
       }
     } catch (e) {
-      console.error("Failed to fetch quote autofill for customer:", e);
+      console.error("Failed to fetch quote autofill:", e);
     }
   };
 
