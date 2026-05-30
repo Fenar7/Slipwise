@@ -30,30 +30,14 @@ function parseSyncStats(stats: Record<string, unknown> | null): {
 }
 
 
-const GMAIL_PRESENTATION_COVERAGE_VERSION = 4;
-
-function hasStaleGmailCoverage(record: MailboxConnectionRecord): boolean {
-  if (record.provider !== "GMAIL") return false;
-  if (!record.watchMetadata || typeof record.watchMetadata !== "object" || Array.isArray(record.watchMetadata)) {
-    return true;
-  }
-  const meta = record.watchMetadata as Record<string, unknown>;
-  const version = meta.gmailCoverageVersion;
-  if (typeof version !== "number" || version < GMAIL_PRESENTATION_COVERAGE_VERSION) {
-    return true;
-  }
-  const coveredLabels = meta.gmailCoveredSystemLabels;
-  if (!Array.isArray(coveredLabels)) return true;
-  const coveredSet = new Set(
-    coveredLabels.filter((value): value is string => typeof value === "string"),
-  );
-  return !(
-    coveredSet.has("INBOX") &&
-    coveredSet.has("SENT") &&
-    coveredSet.has("SPAM") &&
-    coveredSet.has("DRAFT")
-  );
-}
+/**
+ * Build the sync presentation for a mailbox connection.
+ *
+ * staleGmailCoverage is always false here. The real coverage truth is
+ * derived from per-folder mailboxFolderCoverage rows and applied by the
+ * visibility service layer (listMailboxConnectionsForMember) before the
+ * presentation reaches the UI or auto-sync logic.
+ */
 export function buildMailboxSyncPresentation(
   record: MailboxConnectionRecord,
   syncRuns: Partial<MailboxSyncRunLookup> = {},
@@ -182,8 +166,6 @@ export function buildMailboxSyncPresentation(
   const hasStats =
     latestRunStats.threadCount !== null && latestRunStats.messageCount !== null;
 
-  const staleCoverage = hasStaleGmailCoverage(record);
-
   return {
     state: "completed",
     isSyncing: false,
@@ -197,12 +179,10 @@ export function buildMailboxSyncPresentation(
     lastErrorSummary: null,
     lastRunThreadCount: latestRunStats.threadCount,
     lastRunMessageCount: latestRunStats.messageCount,
-    stageLabel: staleCoverage ? "Sync recommended" : "Mailbox up to date",
-    detailLabel: staleCoverage
-      ? "Sent, spam, and drafts coverage needs to be refreshed. Start a sync to import all folders."
-      : hasStats
-        ? `Last sync imported ${latestRunStats.threadCount} threads and ${latestRunStats.messageCount} messages.`
-        : "Recent messages are available in this mailbox.",
-    staleGmailCoverage: staleCoverage,
+    stageLabel: "Mailbox up to date",
+    detailLabel: hasStats
+      ? `Last sync imported ${latestRunStats.threadCount} threads and ${latestRunStats.messageCount} messages.`
+      : "Recent messages are available in this mailbox.",
+    staleGmailCoverage: false,
   };
 }

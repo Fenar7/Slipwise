@@ -64,12 +64,7 @@ describe("buildMailboxSyncPresentation", () => {
 
   it("returns completed with latest completed run stats", () => {
     const sync = buildMailboxSyncPresentation(
-      makeConnection({
-          watchMetadata: {
-          gmailCoverageVersion: 4,
-          gmailCoveredSystemLabels: ["INBOX", "SENT", "SPAM", "DRAFT"],
-          },
-      }),
+      makeConnection(),
       {
         latestRun: {
           id: "run_2",
@@ -271,7 +266,7 @@ describe("buildMailboxSyncPresentation", () => {
   });
 
   describe("Gmail stale coverage detection", () => {
-    it("flags stale coverage when watchMetadata is null for Gmail", () => {
+    it("does not flag stale coverage from legacy metadata (visibility service owns this)", () => {
       const sync = buildMailboxSyncPresentation(
         makeConnection({
           watchMetadata: null,
@@ -288,32 +283,15 @@ describe("buildMailboxSyncPresentation", () => {
       );
 
       expect(sync.state).toBe("completed");
-      expect(sync.staleGmailCoverage).toBe(true);
-      expect(sync.stageLabel).toBe("Sync recommended");
-      expect(sync.detailLabel).toMatch(/coverage needs to be refreshed/);
+      expect(sync.staleGmailCoverage).toBe(false);
+      expect(sync.stageLabel).toBe("Mailbox up to date");
     });
 
-    it("flags stale coverage when gmailCoverageVersion is outdated", () => {
+    it("always returns false for completed state regardless of watchMetadata", () => {
       const sync = buildMailboxSyncPresentation(
         makeConnection({
           watchMetadata: {
             gmailCoverageVersion: 1,
-            gmailCoveredSystemLabels: ["INBOX", "SENT", "SPAM"],
-          },
-        }),
-        {},
-        NOW,
-      );
-
-      expect(sync.staleGmailCoverage).toBe(true);
-      expect(sync.stageLabel).toBe("Sync recommended");
-    });
-
-    it("flags stale coverage when covered labels are incomplete", () => {
-      const sync = buildMailboxSyncPresentation(
-        makeConnection({
-          watchMetadata: {
-            gmailCoverageVersion: 4,
             gmailCoveredSystemLabels: ["INBOX"],
           },
         }),
@@ -321,10 +299,11 @@ describe("buildMailboxSyncPresentation", () => {
         NOW,
       );
 
-      expect(sync.staleGmailCoverage).toBe(true);
+      expect(sync.staleGmailCoverage).toBe(false);
+      expect(sync.stageLabel).toBe("Mailbox up to date");
     });
 
-    it("does not flag stale coverage for Gmail with current version and full labels", () => {
+    it("always returns false for completed state with current metadata", () => {
       const sync = buildMailboxSyncPresentation(
         makeConnection({
           watchMetadata: {
@@ -360,7 +339,7 @@ describe("buildMailboxSyncPresentation", () => {
       expect(sync.staleGmailCoverage).toBe(false);
     });
 
-    it("completed_never_imported state never has stale flag (covered by that path)", () => {
+    it("completed_never_imported state never has stale flag", () => {
       const sync = buildMailboxSyncPresentation(
         makeConnection({
           lastSyncAt: null,
