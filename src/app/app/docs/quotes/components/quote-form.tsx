@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { createQuoteAction, updateQuoteAction, sendQuoteAction } from "../actions";
+import { createQuoteAction, updateQuoteAction, sendQuoteAction, resolveQuoteAutofillAction } from "../actions";
 
 interface Customer {
   id: string;
@@ -17,8 +17,21 @@ interface LineItem {
   taxRate: number;
 }
 
+interface QuoteAutofillPayload {
+  customerId: string;
+  clientName: string;
+  clientEmail: string;
+  clientPhone: string;
+  clientAddress: string;
+  issueDate: string;
+  validUntil: string;
+  notes: string;
+  termsAndConditions: string;
+}
+
 interface QuoteFormProps {
   customers: Customer[];
+  initialAutofill?: QuoteAutofillPayload;
   existingQuote?: {
     id: string;
     customerId: string;
@@ -53,27 +66,54 @@ function formatCurrency(amount: number) {
   }).format(amount);
 }
 
-export function QuoteForm({ customers, existingQuote }: QuoteFormProps) {
+export function QuoteForm({ customers, initialAutofill, existingQuote }: QuoteFormProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
-  const [customerId, setCustomerId] = useState(existingQuote?.customerId ?? "");
+  const [customerId, setCustomerId] = useState(
+    existingQuote?.customerId ?? initialAutofill?.customerId ?? ""
+  );
   const [title, setTitle] = useState(existingQuote?.title ?? "");
   const [issueDate, setIssueDate] = useState(
-    existingQuote ? existingQuote.issueDate.toISOString().split("T")[0] : new Date().toISOString().split("T")[0]
+    existingQuote
+      ? existingQuote.issueDate.toISOString().split("T")[0]
+      : initialAutofill?.issueDate ?? new Date().toISOString().split("T")[0]
   );
   const [validUntil, setValidUntil] = useState(
-    existingQuote ? existingQuote.validUntil.toISOString().split("T")[0] : ""
+    existingQuote
+      ? existingQuote.validUntil.toISOString().split("T")[0]
+      : initialAutofill?.validUntil ?? ""
   );
-  const [notes, setNotes] = useState(existingQuote?.notes ?? "");
-  const [termsAndConditions, setTermsAndConditions] = useState(existingQuote?.termsAndConditions ?? "");
+  const [notes, setNotes] = useState(existingQuote?.notes ?? initialAutofill?.notes ?? "");
+  const [termsAndConditions, setTermsAndConditions] = useState(
+    existingQuote?.termsAndConditions ?? initialAutofill?.termsAndConditions ?? ""
+  );
   const [discountAmount, setDiscountAmount] = useState(existingQuote?.discountAmount ?? 0);
   const [lineItems, setLineItems] = useState<LineItem[]>(
     existingQuote?.lineItems?.length
       ? existingQuote.lineItems
       : [{ ...emptyLineItem }]
   );
+
+  const handleCustomerChange = async (newCustomerId: string) => {
+    setCustomerId(newCustomerId);
+
+    try {
+      const result = await resolveQuoteAutofillAction({
+        customerId: newCustomerId || undefined,
+      });
+      if (result.success && result.data) {
+        const payload = result.data;
+        setIssueDate(payload.issueDate);
+        setValidUntil(payload.validUntil);
+        setNotes(payload.notes);
+        setTermsAndConditions(payload.termsAndConditions);
+      }
+    } catch (e) {
+      console.error("Failed to fetch quote autofill:", e);
+    }
+  };
 
   function addLineItem() {
     setLineItems([...lineItems, { ...emptyLineItem }]);
@@ -179,7 +219,7 @@ export function QuoteForm({ customers, existingQuote }: QuoteFormProps) {
             <label className="block text-sm font-medium text-slate-700 mb-1">Customer *</label>
             <select
               value={customerId}
-              onChange={(e) => setCustomerId(e.target.value)}
+              onChange={(e) => handleCustomerChange(e.target.value)}
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 focus:border-red-400 focus:outline-none focus:ring-1 focus:ring-red-400"
             >
               <option value="">Select a customer...</option>

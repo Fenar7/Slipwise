@@ -1,32 +1,34 @@
 "use server";
-import { db } from "@/lib/db";
 
-export async function getOrgSettings(organizationId: string) {
+import { db } from "@/lib/db";
+import { requireOrgContext, requireRole } from "@/lib/auth";
+
+export async function getOrgSettings() {
+  const { orgId } = await requireOrgContext();
   const [branding, defaults] = await Promise.all([
-    db.brandingProfile.findUnique({ where: { organizationId } }),
-    db.orgDefaults.findUnique({ where: { organizationId } }),
+    db.brandingProfile.findUnique({ where: { organizationId: orgId } }),
+    db.orgDefaults.findUnique({ where: { organizationId: orgId } }),
   ]);
   return { branding, defaults };
 }
 
 export async function saveOrgBranding({
-  organizationId,
   accentColor,
   fontFamily,
 }: {
-  organizationId: string;
   accentColor: string;
   fontFamily: string;
 }) {
+  const { orgId } = await requireRole("admin");
+
   await db.brandingProfile.upsert({
-    where: { organizationId },
-    create: { organizationId, accentColor, fontFamily },
+    where: { organizationId: orgId },
+    create: { organizationId: orgId, accentColor, fontFamily },
     update: { accentColor, fontFamily },
   });
 }
 
 export async function saveOrgFinancials({
-  organizationId,
   bankName,
   bankAccount,
   bankIFSC,
@@ -36,8 +38,9 @@ export async function saveOrgFinancials({
   defaultInvoiceNotes,
   defaultInvoiceTerms,
   defaultInvoiceAuthorizedBy,
+  defaultQuoteNotes,
+  defaultQuoteTerms,
 }: {
-  organizationId: string;
   bankName: string;
   bankAccount: string;
   bankIFSC: string;
@@ -47,11 +50,15 @@ export async function saveOrgFinancials({
   defaultInvoiceNotes: string;
   defaultInvoiceTerms: string;
   defaultInvoiceAuthorizedBy: string;
+  defaultQuoteNotes: string;
+  defaultQuoteTerms: string;
 }) {
+  const { orgId } = await requireRole("admin");
+
   await db.orgDefaults.upsert({
-    where: { organizationId },
+    where: { organizationId: orgId },
     create: {
-      organizationId,
+      organizationId: orgId,
       bankName,
       bankAccount,
       bankIFSC,
@@ -61,6 +68,8 @@ export async function saveOrgFinancials({
       defaultInvoiceNotes: defaultInvoiceNotes || null,
       defaultInvoiceTerms: defaultInvoiceTerms || null,
       defaultInvoiceAuthorizedBy: defaultInvoiceAuthorizedBy || null,
+      defaultQuoteNotes: defaultQuoteNotes || null,
+      defaultQuoteTerms: defaultQuoteTerms || null,
     },
     update: {
       bankName,
@@ -72,6 +81,8 @@ export async function saveOrgFinancials({
       defaultInvoiceNotes: defaultInvoiceNotes || null,
       defaultInvoiceTerms: defaultInvoiceTerms || null,
       defaultInvoiceAuthorizedBy: defaultInvoiceAuthorizedBy || null,
+      defaultQuoteNotes: defaultQuoteNotes || null,
+      defaultQuoteTerms: defaultQuoteTerms || null,
     },
   });
 }

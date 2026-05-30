@@ -336,6 +336,10 @@ model OrgDefaults {
   defaultInvoiceTerms        String?
   defaultInvoiceAuthorizedBy String?
 
+  // Sprint 4.2: Quote autofill defaults
+  defaultQuoteNotes          String?
+  defaultQuoteTerms          String?
+
   upiVpa       String?
   gstStateCode String?
   panNumber    String?

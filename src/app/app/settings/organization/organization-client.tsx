@@ -14,13 +14,11 @@ import {
 import { Palette, Building2, Landmark } from "lucide-react";
 
 type SaveBrandingAction = (data: {
-  organizationId: string;
   accentColor: string;
   fontFamily: string;
 }) => Promise<void>;
 
 type SaveFinancialsAction = (data: {
-  organizationId: string;
   bankName: string;
   bankAccount: string;
   bankIFSC: string;
@@ -30,6 +28,8 @@ type SaveFinancialsAction = (data: {
   defaultInvoiceNotes: string;
   defaultInvoiceTerms: string;
   defaultInvoiceAuthorizedBy: string;
+  defaultQuoteNotes: string;
+  defaultQuoteTerms: string;
 }) => Promise<void>;
 
 interface OrganizationClientProps {
@@ -47,6 +47,8 @@ interface OrganizationClientProps {
     defaultInvoiceNotes: string | null;
     defaultInvoiceTerms: string | null;
     defaultInvoiceAuthorizedBy: string | null;
+    defaultQuoteNotes: string | null;
+    defaultQuoteTerms: string | null;
   } | null;
   saveBranding: SaveBrandingAction;
   saveFinancials: SaveFinancialsAction;
@@ -72,6 +74,8 @@ export function OrganizationClient({
   const [defaultInvoiceNotes, setDefaultInvoiceNotes] = useState(initialDefaults?.defaultInvoiceNotes ?? "");
   const [defaultInvoiceTerms, setDefaultInvoiceTerms] = useState(initialDefaults?.defaultInvoiceTerms ?? "");
   const [defaultInvoiceAuthorizedBy, setDefaultInvoiceAuthorizedBy] = useState(initialDefaults?.defaultInvoiceAuthorizedBy ?? "");
+  const [defaultQuoteNotes, setDefaultQuoteNotes] = useState(initialDefaults?.defaultQuoteNotes ?? "");
+  const [defaultQuoteTerms, setDefaultQuoteTerms] = useState(initialDefaults?.defaultQuoteTerms ?? "");
   const [saving, setSaving] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
@@ -79,7 +83,7 @@ export function OrganizationClient({
     e.preventDefault();
     setSaving("branding");
     setSuccess(null);
-    await saveBranding({ organizationId: orgId, accentColor, fontFamily });
+    await saveBranding({ accentColor, fontFamily });
     setSaving(null);
     setSuccess("branding");
     setTimeout(() => setSuccess(null), 3000);
@@ -90,7 +94,6 @@ export function OrganizationClient({
     setSaving("financials");
     setSuccess(null);
     await saveFinancials({
-      organizationId: orgId,
       bankName,
       bankAccount,
       bankIFSC,
@@ -100,6 +103,8 @@ export function OrganizationClient({
       defaultInvoiceNotes,
       defaultInvoiceTerms,
       defaultInvoiceAuthorizedBy,
+      defaultQuoteNotes,
+      defaultQuoteTerms,
     });
     setSaving(null);
     setSuccess("financials");
@@ -287,6 +292,38 @@ export function OrganizationClient({
                 value={defaultInvoiceAuthorizedBy}
                 onChange={(e) => setDefaultInvoiceAuthorizedBy(e.target.value)}
                 placeholder="e.g. Jane Doe"
+              />
+            </SettingsFormField>
+
+            <div className="border-t border-[var(--border-soft)] pt-5 mt-5">
+              <p className="text-xs font-medium text-[var(--text-muted)] mb-4 uppercase tracking-wide">
+                Quote defaults
+              </p>
+            </div>
+
+            <SettingsFormField
+              label="Default quote notes"
+              hint="Pre-filled on new quotes. Operators can override per quote."
+            >
+              <textarea
+                value={defaultQuoteNotes}
+                onChange={(e) => setDefaultQuoteNotes(e.target.value)}
+                rows={2}
+                className="w-full rounded-lg border border-[var(--border-soft)] bg-white px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--focus-ring)] resize-none"
+                placeholder="e.g. Valid for 14 days."
+              />
+            </SettingsFormField>
+
+            <SettingsFormField
+              label="Default quote terms"
+              hint="Pre-filled on new quotes."
+            >
+              <textarea
+                value={defaultQuoteTerms}
+                onChange={(e) => setDefaultQuoteTerms(e.target.value)}
+                rows={2}
+                className="w-full rounded-lg border border-[var(--border-soft)] bg-white px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--focus-ring)] resize-none"
+                placeholder="e.g. 50% advance, 50% upon delivery."
               />
             </SettingsFormField>
 
