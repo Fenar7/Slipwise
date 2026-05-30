@@ -384,6 +384,15 @@ export type {
   MessagingRealtimeServer,
 } from "./realtime/server";
 
+// ─── Sprint 7.2: Task reminder dispatch ──────────────────────────────────────
+
+export {
+  dispatchDueTaskReminders,
+  sendTaskAssignmentNotification,
+  isReminderEligible,
+  type ReminderDispatchResult,
+} from "./task-reminders";
+
 // Errors
 export { ConversationAccessError, InvalidInputError, NotFoundError } from "./errors";
 

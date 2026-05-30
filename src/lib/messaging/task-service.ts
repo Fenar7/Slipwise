@@ -7,6 +7,7 @@ import { toTaskRecord } from "./mappers";
 import { ConversationAccessError, InvalidInputError, NotFoundError } from "./errors";
 import { requireConversationAccess } from "./authorization";
 import { toConversationRecord, toParticipantRecord } from "./mappers";
+import { sendTaskAssignmentNotification } from "./task-reminders";
 import type {
   CreateTaskInput,
   UpdateTaskStatusInput,
@@ -125,6 +126,22 @@ export async function createTask(input: CreateTaskInput): Promise<MessagingTaskR
       createdBy,
     },
   });
+
+  // Emit assignment notification when task is created with an initial assignee
+  if (assigneeId) {
+    sendTaskAssignmentNotification(
+      {
+        id: task.id,
+        orgId: task.orgId,
+        conversationId: task.conversationId,
+        title: task.title,
+        description: task.description,
+        originatingMessageId: task.originatingMessageId,
+      },
+      assigneeId,
+      createdBy,
+    ).catch(() => {});
+  }
 
   return toTaskRecord(task);
 }
@@ -248,6 +265,23 @@ export async function assignTask(input: AssignTaskInput): Promise<MessagingTaskR
     data: { assigneeId },
   });
 
+  // Emit assignment notification when a non-null assignee is set
+  if (assigneeId && assigneeId !== task.assigneeId) {
+    // Fire-and-forget: notification failure must not block the assignment
+    sendTaskAssignmentNotification(
+      {
+        id: task.id,
+        orgId: task.orgId,
+        conversationId: task.conversationId,
+        title: task.title,
+        description: task.description,
+        originatingMessageId: task.originatingMessageId,
+      },
+      assigneeId,
+      actorId,
+    ).catch(() => {});
+  }
+
   return toTaskRecord(updatedTask);
 }
 
@@ -341,6 +375,26 @@ export async function updateTask(input: UpdateTaskInput): Promise<MessagingTaskR
     where: { id: taskId },
     data: updateData,
   });
+
+  // Emit assignment notification when assignee changes to a new non-null value
+  if (
+    input.assigneeId !== undefined &&
+    input.assigneeId !== null &&
+    input.assigneeId !== task.assigneeId
+  ) {
+    sendTaskAssignmentNotification(
+      {
+        id: task.id,
+        orgId: task.orgId,
+        conversationId: task.conversationId,
+        title: input.title ?? task.title,
+        description: input.description !== undefined ? input.description : task.description,
+        originatingMessageId: task.originatingMessageId,
+      },
+      input.assigneeId,
+      actorId,
+    ).catch(() => {});
+  }
 
   return toTaskRecord(updatedTask);
 }
