@@ -14,6 +14,19 @@ vi.mock("server-only", () => ({}));
 
 vi.mock("@/lib/db", () => ({
   db: {
+    $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => {
+      // Provide a minimal transaction client that proxies to the same mocks.
+      return fn({
+        mailboxConnection: {
+          findFirst: vi.fn(),
+          create: vi.fn(),
+          update: vi.fn(),
+        },
+        mailboxAuditEvent: {
+          create: vi.fn(),
+        },
+      });
+    }),
     mailboxConnection: {
       findMany: vi.fn(),
       findFirst: vi.fn(),
@@ -32,6 +45,9 @@ vi.mock("@/lib/db", () => ({
     mailboxSyncRun: {
       findMany: vi.fn(),
       create: vi.fn(),
+      update: vi.fn(),
+    },
+    mailboxCredential: {
       update: vi.fn(),
     },
   },
@@ -302,5 +318,63 @@ describe("visibility-service schema-drift resilience", () => {
     );
     expect(result.accessible).toEqual([]);
     expect(result.restricted).toEqual([]);
+  });
+});
+
+// ─── gmail-oauth-service write-path drift ──────────────────────────────────
+
+describe("gmail-oauth-service schema-drift resilience on connect", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("handleGmailCallback returns internal_error with schema drift message on P2022 during connection create", async () => {
+    // Mock the gmail provider adapter to return a successful identity.
+    vi.mock("../gmail-provider", () => ({
+      buildGmailAuthUrl: vi.fn(),
+      gmailProviderAdapter: {
+        connect: vi.fn().mockResolvedValue({
+          providerAccountId: "gmail-uid-123",
+          emailAddress: "user@gmail.com",
+          displayName: "Test User",
+          tokenRef: "cred-ref-1",
+          tokenExpiry: new Date("2026-12-31"),
+        }),
+        disconnect: vi.fn().mockResolvedValue(undefined),
+      },
+    }));
+
+    // Mock $transaction to simulate P2022 inside the transaction body.
+    const p2022Error = makeP2022();
+    vi.mocked(db.$transaction).mockImplementation(
+      async (fn: (tx: unknown) => Promise<unknown>) => {
+        const tx = {
+          mailboxConnection: {
+            findFirst: vi.fn().mockResolvedValue(null),
+            create: vi.fn().mockRejectedValue(p2022Error),
+            update: vi.fn(),
+          },
+          mailboxAuditEvent: {
+            create: vi.fn(),
+          },
+        };
+        return fn(tx);
+      },
+    );
+
+    const { handleGmailCallback } = await import("../gmail-oauth-service");
+
+    const result = await handleGmailCallback({
+      orgId: "org-1",
+      actorId: "user-1",
+      authorizationCode: "auth-code-123",
+      redirectUri: "http://localhost:3000/api/mailbox/gmail/callback",
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toBe("internal_error");
+      expect(result.safeMessage).toContain("prisma migrate deploy");
+    }
   });
 });

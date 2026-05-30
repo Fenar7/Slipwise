@@ -33,6 +33,7 @@ import {
 } from "./connection-service";
 import { logMailboxAudit } from "./audit";
 import { isMailboxProviderError } from "./provider-contracts";
+import { isSchemaDriftError } from "@/lib/prisma-errors";
 import { db } from "@/lib/db";
 import type { MailboxConnectionRecord } from "./domain-types";
 
@@ -217,6 +218,19 @@ export async function handleGmailCallback(params: {
     } catch {
       // ignore cleanup error
     }
+
+    if (isSchemaDriftError(error)) {
+      console.warn(
+        "[gmail-oauth-service] Mailbox connection creation failed: database schema drift — run prisma migrate deploy",
+      );
+      return {
+        ok: false,
+        error: "internal_error",
+        safeMessage:
+          "The database schema is not up to date. An administrator must run `prisma migrate deploy` before Gmail can be connected.",
+      };
+    }
+
     console.error("[gmail-oauth-service] Failed to create mailbox connection:", error);
     return {
       ok: false,
