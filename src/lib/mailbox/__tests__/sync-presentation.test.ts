@@ -472,4 +472,123 @@ describe("buildMailboxSyncPresentation", () => {
     });
   });
 
+  describe("in-run progress visibility", () => {
+    it("shows live thread/message counts during running sync from heartbeat stats", () => {
+      const sync = buildMailboxSyncPresentation(
+        makeConnection({
+          lastSyncAt: null,
+          syncLeaseToken: "lease_1",
+          syncLeaseExpiresAt: new Date(NOW + 60_000),
+        }),
+        {
+          latestRun: {
+            id: "run_progress",
+            status: "RUNNING",
+            syncMode: "INITIAL",
+            triggerSource: "MANUAL",
+            startedAt: new Date(NOW - 10 * 60 * 1000),
+            completedAt: null,
+            stats: { threadCount: 42, messageCount: 128 },
+            errorCategory: null,
+            errorMessage: null,
+            lastHeartbeatAt: new Date(NOW - 2 * 60 * 1000),
+          },
+        },
+        NOW,
+      );
+
+      expect(sync.state).toBe("running");
+      expect(sync.lastRunThreadCount).toBe(42);
+      expect(sync.lastRunMessageCount).toBe(128);
+      expect(sync.detailLabel).toContain("42 threads");
+      expect(sync.detailLabel).toContain("128 messages");
+    });
+
+    it("shows coverage recovery phase in detail label", () => {
+      const sync = buildMailboxSyncPresentation(
+        makeConnection({
+          lastSyncAt: null,
+          syncLeaseToken: "lease_1",
+          syncLeaseExpiresAt: new Date(NOW + 60_000),
+        }),
+        {
+          latestRun: {
+            id: "run_recovery",
+            status: "RUNNING",
+            syncMode: "DELTA",
+            triggerSource: "MANUAL",
+            startedAt: new Date(NOW - 10 * 60 * 1000),
+            completedAt: null,
+            stats: { threadCount: 5, messageCount: 12, syncPhase: "coverage_recovery", currentFolder: "SENT" },
+            errorCategory: null,
+            errorMessage: null,
+            lastHeartbeatAt: new Date(NOW - 2 * 60 * 1000),
+          },
+        },
+        NOW,
+      );
+
+      expect(sync.state).toBe("running");
+      expect(sync.detailLabel).toContain("Recovering SENT");
+      expect(sync.detailLabel).toContain("5 threads");
+    });
+
+    it("shows draft sync phase in detail label", () => {
+      const sync = buildMailboxSyncPresentation(
+        makeConnection({
+          lastSyncAt: new Date("2026-05-21T12:00:00.000Z"),
+          syncLeaseToken: "lease_1",
+          syncLeaseExpiresAt: new Date(NOW + 60_000),
+        }),
+        {
+          latestRun: {
+            id: "run_drafts",
+            status: "RUNNING",
+            syncMode: "DELTA",
+            triggerSource: "MANUAL",
+            startedAt: new Date(NOW - 5 * 60 * 1000),
+            completedAt: null,
+            stats: { threadCount: 3, messageCount: 8, syncPhase: "draft_sync" },
+            errorCategory: null,
+            errorMessage: null,
+            lastHeartbeatAt: new Date(NOW - 1 * 60 * 1000),
+          },
+        },
+        NOW,
+      );
+
+      expect(sync.state).toBe("running");
+      expect(sync.detailLabel).toContain("Syncing drafts");
+      expect(sync.detailLabel).toContain("3 threads");
+    });
+
+    it("falls back to generic message when no progress stats yet", () => {
+      const sync = buildMailboxSyncPresentation(
+        makeConnection({
+          lastSyncAt: null,
+          syncLeaseToken: "lease_1",
+          syncLeaseExpiresAt: new Date(NOW + 60_000),
+        }),
+        {
+          latestRun: {
+            id: "run_early",
+            status: "RUNNING",
+            syncMode: "INITIAL",
+            triggerSource: "MANUAL",
+            startedAt: new Date(NOW - 30_000),
+            completedAt: null,
+            stats: null,
+            errorCategory: null,
+            errorMessage: null,
+            lastHeartbeatAt: new Date(NOW - 10_000),
+          },
+        },
+        NOW,
+      );
+
+      expect(sync.state).toBe("running");
+      expect(sync.detailLabel).toBe("Importing recent threads. Messages will appear automatically.");
+    });
+  });
+
 });

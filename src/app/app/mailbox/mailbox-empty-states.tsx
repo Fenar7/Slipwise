@@ -434,6 +434,11 @@ function SyncAwareInboxEmpty({
 
   const body = (() => {
     if (syncStatus.state === "running") {
+      const threadCount = syncStatus.lastRunThreadCount;
+      const messageCount = syncStatus.lastRunMessageCount;
+      if (threadCount && threadCount > 0) {
+        return `Importing messages (${threadCount} threads, ${messageCount ?? 0} messages so far). Threads will appear here automatically.`;
+      }
       return "We're importing recent messages. Threads will appear here automatically.";
     }
     if (syncStatus.state === "failed") {

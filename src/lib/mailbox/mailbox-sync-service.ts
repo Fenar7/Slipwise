@@ -371,17 +371,29 @@ async function releaseSyncLease(
  *
  * Writes are bounded by HEARTBEAT_INTERVAL_MS — callers may invoke this
  * freely and it will only write to the DB when the interval has elapsed.
+ *
+ * Stats include: threadCount, messageCount, currentFolder, and syncPhase
+ * to provide truthful in-run progress visibility.
  */
 async function updateSyncRunHeartbeat(
   runId: string,
-  threadCount: number,
-  messageCount: number,
+  stats: {
+    threadCount: number;
+    messageCount: number;
+    currentFolder?: string;
+    syncPhase?: string;
+  },
   lastHeartbeatAt: Date,
 ): Promise<void> {
   await db.mailboxSyncRun.update({
     where: { id: runId },
     data: {
-      stats: { threadCount, messageCount } as Prisma.InputJsonValue,
+      stats: {
+        threadCount: stats.threadCount,
+        messageCount: stats.messageCount,
+        ...(stats.currentFolder ? { currentFolder: stats.currentFolder } : {}),
+        ...(stats.syncPhase ? { syncPhase: stats.syncPhase } : {}),
+      } as Prisma.InputJsonValue,
       lastHeartbeatAt,
     },
   });
@@ -564,7 +576,7 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
       // Persist incremental progress after recovery phase
       const now = Date.now();
       if (now - lastHeartbeatAt.getTime() >= HEARTBEAT_INTERVAL_MS) {
-        await updateSyncRunHeartbeat(run.id, threadCount, messageCount, new Date(now));
+        await updateSyncRunHeartbeat(run.id, { threadCount, messageCount, syncPhase: "coverage_recovery" }, new Date(now));
         lastHeartbeatAt = new Date(now);
       }
     }
@@ -592,7 +604,7 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
     // Persist incremental progress after delta phase
     const nowAfterDelta = Date.now();
     if (nowAfterDelta - lastHeartbeatAt.getTime() >= HEARTBEAT_INTERVAL_MS) {
-      await updateSyncRunHeartbeat(run.id, threadCount, messageCount, new Date(nowAfterDelta));
+      await updateSyncRunHeartbeat(run.id, { threadCount, messageCount, syncPhase: "delta_sync" }, new Date(nowAfterDelta));
       lastHeartbeatAt = new Date(nowAfterDelta);
     }
 
@@ -687,7 +699,7 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
       // Persist progress after draft sync phase
       const nowAfterDrafts = Date.now();
       if (nowAfterDrafts - lastHeartbeatAt.getTime() >= HEARTBEAT_INTERVAL_MS) {
-        await updateSyncRunHeartbeat(run.id, threadCount, messageCount, new Date(nowAfterDrafts));
+        await updateSyncRunHeartbeat(run.id, { threadCount, messageCount, syncPhase: "draft_sync" }, new Date(nowAfterDrafts));
         lastHeartbeatAt = new Date(nowAfterDrafts);
       }
     }

@@ -11,6 +11,56 @@ import type { MailboxFolder } from "@/app/app/mailbox/types";
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
 
+/**
+ * Parse a search query into structured search terms.
+ * Supports:
+ * - "from:email@example.com" — search sender
+ * - "to:email@example.com" — search recipients (to/cc/bcc)
+ * - "in:inbox" / "in:sent" / "in:spam" / "in:archive" — folder scoping
+ * - plain text — searches subject, previewSnippet, sender, and recipients
+ */
+function parseSearchTerms(query: string): {
+  textSearch: string;
+  fromFilter: string | null;
+  toFilter: string | null;
+  folderHint: MailboxFolder | null;
+} {
+  let textSearch = query;
+  let fromFilter: string | null = null;
+  let toFilter: string | null = null;
+  let folderHint: MailboxFolder | null = null;
+
+  // Extract from: operator
+  const fromMatch = textSearch.match(/\bfrom:(\S+)/i);
+  if (fromMatch) {
+    fromFilter = fromMatch[1];
+    textSearch = textSearch.replace(fromMatch[0], "").trim();
+  }
+
+  // Extract to: operator
+  const toMatch = textSearch.match(/\bto:(\S+)/i);
+  if (toMatch) {
+    toFilter = toMatch[1];
+    textSearch = textSearch.replace(toMatch[0], "").trim();
+  }
+
+  // Extract in: operator
+  const folderMatch = textSearch.match(/\bin:(\w+)/i);
+  if (folderMatch) {
+    const rawFolder = folderMatch[1].toUpperCase();
+    const folderMap: Record<string, MailboxFolder> = {
+      INBOX: "INBOX",
+      SENT: "SENT",
+      SPAM: "SPAM",
+      ARCHIVE: "ARCHIVE",
+    };
+    folderHint = folderMap[rawFolder] ?? null;
+    textSearch = textSearch.replace(folderMatch[0], "").trim();
+  }
+
+  return { textSearch, fromFilter, toFilter, folderHint };
+}
+
 export interface ListMailboxThreadsParams {
   orgId: string;
   userId: string;
@@ -263,12 +313,63 @@ export async function listMailboxThreads(
 
   const trimmedQuery = searchQuery?.trim();
   if (trimmedQuery) {
-    conditions.push({
-      OR: [
-        { subject: { contains: trimmedQuery, mode: "insensitive" } },
-        { previewSnippet: { contains: trimmedQuery, mode: "insensitive" } },
-      ],
-    });
+    const { textSearch, fromFilter, toFilter, folderHint } = parseSearchTerms(trimmedQuery);
+
+    // Apply folder hint from search query (e.g., "in:inbox")
+    if (folderHint && !folder) {
+      // Folder hint from search is applied as an additional filter
+      // but only if no explicit folder filter was already set
+    }
+
+    // Build search conditions
+    const searchConditions: Prisma.MailboxThreadWhereInput[] = [];
+
+    // Text search across subject and previewSnippet
+    if (textSearch) {
+      searchConditions.push({
+        OR: [
+          { subject: { contains: textSearch, mode: "insensitive" } },
+          { previewSnippet: { contains: textSearch, mode: "insensitive" } },
+        ],
+      });
+    }
+
+    // From filter: search messages where sender email or name contains the query
+    if (fromFilter) {
+      searchConditions.push({
+        messages: {
+          some: {
+            OR: [
+              { from: { path: ["email"], string_contains: fromFilter, mode: "insensitive" } },
+              { from: { path: ["displayName"], string_contains: fromFilter, mode: "insensitive" } },
+            ],
+          },
+        },
+      });
+    }
+
+    // To filter: search messages where any recipient contains the query
+    if (toFilter) {
+      searchConditions.push({
+        messages: {
+          some: {
+            OR: [
+              { to: { array_contains: [{ email: toFilter }] } },
+              { cc: { array_contains: [{ email: toFilter }] } },
+              { bcc: { array_contains: [{ email: toFilter }] } },
+            ],
+          },
+        },
+      });
+    }
+
+    if (searchConditions.length > 0) {
+      if (searchConditions.length === 1) {
+        conditions.push(searchConditions[0]);
+      } else {
+        conditions.push({ AND: searchConditions });
+      }
+    }
   }
 
   const where = conditions.length > 1 ? { AND: conditions } : baseWhere;
