@@ -2,7 +2,7 @@ import "server-only";
 
 import { db } from "@/lib/db";
 import type { MailboxSyncRunRecord } from "./domain-types";
-import { isModelMissingTableError } from "@/lib/prisma-errors";
+import { isSchemaDriftError } from "@/lib/prisma-errors";
 
 function toSyncRunRecord(
   row: {
@@ -92,9 +92,9 @@ export async function getMailboxSyncRunsByConnectionIds(
       },
     });
   } catch (error) {
-    if (isModelMissingTableError(error, "MailboxSyncRun")) {
+    if (isSchemaDriftError(error)) {
       console.warn(
-        "[mailbox] getMailboxSyncRunsByConnectionIds skipped: mailbox_sync_run table missing during schema drift",
+        "[mailbox] getMailboxSyncRunsByConnectionIds skipped: mailbox_sync_run schema drift — run prisma migrate deploy",
       );
       return { latestRunByConnectionId, latestCompletedRunByConnectionId };
     }

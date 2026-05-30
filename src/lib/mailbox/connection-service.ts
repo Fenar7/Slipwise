@@ -5,7 +5,7 @@ import type { Prisma } from "@/generated/prisma/client";
 import type { MailboxConnectionRecord, MailboxConnectionStatus } from "./domain-types";
 import { logMailboxAuditTx } from "./audit";
 import type { MailboxAuditAction } from "./domain-types";
-import { isModelMissingTableError } from "@/lib/prisma-errors";
+import { isSchemaDriftError } from "@/lib/prisma-errors";
 
 // ─── Org-scoped connection queries ────────────────────────────────────────────
 
@@ -27,9 +27,9 @@ export async function listMailboxConnections(
     });
     return rows.map(toConnectionRecord);
   } catch (error) {
-    if (isModelMissingTableError(error, "MailboxConnection")) {
+    if (isSchemaDriftError(error)) {
       console.warn(
-        "[mailbox] listMailboxConnections skipped: mailbox_connection table missing during schema drift",
+        "[mailbox] listMailboxConnections skipped: mailbox_connection schema drift — run prisma migrate deploy",
       );
       return [];
     }
@@ -51,9 +51,9 @@ export async function getMailboxConnection(
     });
     return row ? toConnectionRecord(row) : null;
   } catch (error) {
-    if (isModelMissingTableError(error, "MailboxConnection")) {
+    if (isSchemaDriftError(error)) {
       console.warn(
-        "[mailbox] getMailboxConnection skipped: mailbox_connection table missing during schema drift",
+        "[mailbox] getMailboxConnection skipped: mailbox_connection schema drift — run prisma migrate deploy",
       );
       return null;
     }
@@ -76,9 +76,9 @@ export async function findMailboxConnectionByProviderAccount(
     });
     return row ? toConnectionRecord(row) : null;
   } catch (error) {
-    if (isModelMissingTableError(error, "MailboxConnection")) {
+    if (isSchemaDriftError(error)) {
       console.warn(
-        "[mailbox] findMailboxConnectionByProviderAccount skipped: mailbox_connection table missing during schema drift",
+        "[mailbox] findMailboxConnectionByProviderAccount skipped: mailbox_connection schema drift — run prisma migrate deploy",
       );
       return null;
     }
