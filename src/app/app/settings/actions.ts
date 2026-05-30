@@ -35,6 +35,10 @@ export async function saveOrgFinancials({
   taxId,
   gstin,
   businessAddress,
+  defaultVoucherNotes,
+  defaultVoucherApprovedBy,
+  defaultVoucherReceivedBy,
+  defaultVoucherPaymentMode,
   defaultInvoiceNotes,
   defaultInvoiceTerms,
   defaultInvoiceAuthorizedBy,
@@ -47,6 +51,10 @@ export async function saveOrgFinancials({
   taxId: string;
   gstin: string;
   businessAddress: string;
+  defaultVoucherNotes: string;
+  defaultVoucherApprovedBy: string;
+  defaultVoucherReceivedBy: string;
+  defaultVoucherPaymentMode: string;
   defaultInvoiceNotes: string;
   defaultInvoiceTerms: string;
   defaultInvoiceAuthorizedBy: string;
@@ -65,6 +73,10 @@ export async function saveOrgFinancials({
       taxId,
       gstin,
       businessAddress,
+      defaultVoucherNotes: defaultVoucherNotes || null,
+      defaultVoucherApprovedBy: defaultVoucherApprovedBy || null,
+      defaultVoucherReceivedBy: defaultVoucherReceivedBy || null,
+      defaultVoucherPaymentMode: defaultVoucherPaymentMode || null,
       defaultInvoiceNotes: defaultInvoiceNotes || null,
       defaultInvoiceTerms: defaultInvoiceTerms || null,
       defaultInvoiceAuthorizedBy: defaultInvoiceAuthorizedBy || null,
@@ -78,6 +90,10 @@ export async function saveOrgFinancials({
       taxId,
       gstin,
       businessAddress,
+      defaultVoucherNotes: defaultVoucherNotes || null,
+      defaultVoucherApprovedBy: defaultVoucherApprovedBy || null,
+      defaultVoucherReceivedBy: defaultVoucherReceivedBy || null,
+      defaultVoucherPaymentMode: defaultVoucherPaymentMode || null,
       defaultInvoiceNotes: defaultInvoiceNotes || null,
       defaultInvoiceTerms: defaultInvoiceTerms || null,
       defaultInvoiceAuthorizedBy: defaultInvoiceAuthorizedBy || null,

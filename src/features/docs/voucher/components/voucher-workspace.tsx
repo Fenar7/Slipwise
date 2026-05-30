@@ -54,6 +54,7 @@ import {
   updateVoucher,
   type VoucherInput,
 } from "@/app/app/docs/vouchers/actions";
+import { resolveVoucherAutofill, type VoucherAutofillPayload } from "@/app/app/docs/vouchers/autofill-resolver";
 
 interface Vendor {
   id: string;
@@ -95,10 +96,12 @@ function VoucherPanel({
   voucherId,
   vendors,
   initialTemplateId,
+  initialAutofill,
 }: {
   voucherId?: string;
   vendors: Vendor[];
   initialTemplateId?: string;
+  initialAutofill?: VoucherAutofillPayload | null;
 }) {
   const { control, getValues, setValue, trigger } = useFormContextSafe();
   const values = useWatch({ control }) as VoucherFormValues;
@@ -131,6 +134,56 @@ function VoucherPanel({
       setSuggestions(result.filter((s) => s.source !== "default"));
     } catch { setSuggestions([]); }
   };
+
+  // Hydrate managed fields from an autofill payload
+  const hydrateFromAutofill = useCallback((payload: VoucherAutofillPayload) => {
+    setValue("vendorId", payload.vendorId || undefined);
+    setValue("counterpartyName", payload.counterpartyName);
+    setValue("notes", payload.notes);
+    setValue("approvedBy", payload.approvedBy);
+    setValue("receivedBy", payload.receivedBy);
+    setValue("paymentMode", payload.paymentMode);
+    setValue("branding.companyName", payload.branding.companyName);
+    setValue("branding.address", payload.branding.address);
+    setValue("branding.email", payload.branding.email);
+    setValue("branding.phone", payload.branding.phone);
+    setValue("branding.accentColor", payload.branding.accentColor);
+    if (payload.templateId) {
+      setSelectedTemplateId(payload.templateId as VoucherFormValues["templateId"]);
+      setValue("templateId", payload.templateId as VoucherFormValues["templateId"]);
+    }
+  }, [setValue]);
+
+  // Re-run autofill when vendor changes
+  const handleVendorChange = useCallback(async (vendorId: string) => {
+    try {
+      const payload = await resolveVoucherAutofill({ vendorId });
+      hydrateFromAutofill(payload);
+    } catch {
+      // Silently fail — keep current state
+    }
+    loadSuggestions(vendorId);
+  }, [hydrateFromAutofill]);
+
+  // Reset managed fields to no-vendor/org defaults when vendor is cleared
+  const handleVendorClear = useCallback(async () => {
+    try {
+      const payload = await resolveVoucherAutofill({});
+      hydrateFromAutofill(payload);
+    } catch {
+      // Silently fail — keep current state
+    }
+    setSuggestions([]);
+  }, [hydrateFromAutofill]);
+
+  // Apply initial autofill on first render if provided
+  const didHydrateRef = useState(false);
+  useEffect(() => {
+    if (initialAutofill && !didHydrateRef[0]) {
+      didHydrateRef[0] = true;
+      hydrateFromAutofill(initialAutofill);
+    }
+  }, [initialAutofill, hydrateFromAutofill]);
 
   // Sync multi-line total → amount field so preview stays live
   useEffect(() => {
@@ -564,7 +617,8 @@ function VoucherPanel({
                       vendors={vendors}
                       label={isPayment ? "Select vendor" : "Select from"}
                       onTagPrefill={setTagIds}
-                      onVendorSelect={loadSuggestions}
+                      onVendorSelect={handleVendorChange}
+                      onClearVendor={handleVendorClear}
                     />
 
                     <TextField<VoucherFormValues>
@@ -797,12 +851,14 @@ export function VoucherWorkspace({
   vendors = [],
   initialTemplateId,
   initialAccentColor,
+  initialAutofill,
 }: {
   voucherId?: string;
   initialValues?: Partial<VoucherFormValues>;
   vendors?: Vendor[];
   initialTemplateId?: string;
   initialAccentColor?: string;
+  initialAutofill?: VoucherAutofillPayload | null;
 }) {
   const methods = useForm<VoucherFormValues>({
     resolver: zodResolver(voucherFormSchema),
@@ -814,7 +870,7 @@ export function VoucherWorkspace({
 
   return (
     <FormProvider {...methods}>
-      <VoucherPanel voucherId={voucherId} vendors={vendors} initialTemplateId={initialTemplateId} />
+      <VoucherPanel voucherId={voucherId} vendors={vendors} initialTemplateId={initialTemplateId} initialAutofill={initialAutofill} />
     </FormProvider>
   );
 }

@@ -25,6 +25,10 @@ type SaveFinancialsAction = (data: {
   taxId: string;
   gstin: string;
   businessAddress: string;
+  defaultVoucherNotes: string;
+  defaultVoucherApprovedBy: string;
+  defaultVoucherReceivedBy: string;
+  defaultVoucherPaymentMode: string;
   defaultInvoiceNotes: string;
   defaultInvoiceTerms: string;
   defaultInvoiceAuthorizedBy: string;
@@ -44,6 +48,10 @@ interface OrganizationClientProps {
     taxId: string | null;
     gstin: string | null;
     businessAddress: string | null;
+    defaultVoucherNotes: string | null;
+    defaultVoucherApprovedBy: string | null;
+    defaultVoucherReceivedBy: string | null;
+    defaultVoucherPaymentMode: string | null;
     defaultInvoiceNotes: string | null;
     defaultInvoiceTerms: string | null;
     defaultInvoiceAuthorizedBy: string | null;
@@ -76,6 +84,10 @@ export function OrganizationClient({
   const [defaultInvoiceAuthorizedBy, setDefaultInvoiceAuthorizedBy] = useState(initialDefaults?.defaultInvoiceAuthorizedBy ?? "");
   const [defaultQuoteNotes, setDefaultQuoteNotes] = useState(initialDefaults?.defaultQuoteNotes ?? "");
   const [defaultQuoteTerms, setDefaultQuoteTerms] = useState(initialDefaults?.defaultQuoteTerms ?? "");
+  const [defaultVoucherNotes, setDefaultVoucherNotes] = useState(initialDefaults?.defaultVoucherNotes ?? "");
+  const [defaultVoucherApprovedBy, setDefaultVoucherApprovedBy] = useState(initialDefaults?.defaultVoucherApprovedBy ?? "");
+  const [defaultVoucherReceivedBy, setDefaultVoucherReceivedBy] = useState(initialDefaults?.defaultVoucherReceivedBy ?? "");
+  const [defaultVoucherPaymentMode, setDefaultVoucherPaymentMode] = useState(initialDefaults?.defaultVoucherPaymentMode ?? "");
   const [saving, setSaving] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
@@ -100,6 +112,10 @@ export function OrganizationClient({
       taxId,
       gstin,
       businessAddress,
+      defaultVoucherNotes,
+      defaultVoucherApprovedBy,
+      defaultVoucherReceivedBy,
+      defaultVoucherPaymentMode,
       defaultInvoiceNotes,
       defaultInvoiceTerms,
       defaultInvoiceAuthorizedBy,
@@ -324,6 +340,60 @@ export function OrganizationClient({
                 rows={2}
                 className="w-full rounded-lg border border-[var(--border-soft)] bg-white px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--focus-ring)] resize-none"
                 placeholder="e.g. 50% advance, 50% upon delivery."
+              />
+            </SettingsFormField>
+
+            <div className="border-t border-[var(--border-soft)] pt-5 mt-5">
+              <p className="text-xs font-medium text-[var(--text-muted)] mb-4 uppercase tracking-wide">
+                Voucher defaults
+              </p>
+            </div>
+
+            <SettingsFormField
+              label="Default voucher notes"
+              hint="Pre-filled on new vouchers. Operators can override per voucher."
+            >
+              <textarea
+                value={defaultVoucherNotes}
+                onChange={(e) => setDefaultVoucherNotes(e.target.value)}
+                rows={2}
+                className="w-full rounded-lg border border-[var(--border-soft)] bg-white px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--focus-ring)] resize-none"
+                placeholder="e.g. Processed via accounts payable."
+              />
+            </SettingsFormField>
+
+            <div className="grid gap-5 sm:grid-cols-2">
+              <SettingsFormField
+                label="Default approved by"
+                hint="Name shown in the approval block of new vouchers."
+              >
+                <Input
+                  value={defaultVoucherApprovedBy}
+                  onChange={(e) => setDefaultVoucherApprovedBy(e.target.value)}
+                  placeholder="e.g. Jane Doe"
+                />
+              </SettingsFormField>
+
+              <SettingsFormField
+                label="Default received by"
+                hint="Name shown in the receipt block of new vouchers."
+              >
+                <Input
+                  value={defaultVoucherReceivedBy}
+                  onChange={(e) => setDefaultVoucherReceivedBy(e.target.value)}
+                  placeholder="e.g. John Smith"
+                />
+              </SettingsFormField>
+            </div>
+
+            <SettingsFormField
+              label="Default payment mode"
+              hint="Pre-filled on new vouchers."
+            >
+              <Input
+                value={defaultVoucherPaymentMode}
+                onChange={(e) => setDefaultVoucherPaymentMode(e.target.value)}
+                placeholder="e.g. Bank Transfer"
               />
             </SettingsFormField>
 
