@@ -127,6 +127,22 @@ export async function createTask(input: CreateTaskInput): Promise<MessagingTaskR
     },
   });
 
+  // Emit assignment notification when task is created with an initial assignee
+  if (assigneeId) {
+    sendTaskAssignmentNotification(
+      {
+        id: task.id,
+        orgId: task.orgId,
+        conversationId: task.conversationId,
+        title: task.title,
+        description: task.description,
+        originatingMessageId: task.originatingMessageId,
+      },
+      assigneeId,
+      createdBy,
+    ).catch(() => {});
+  }
+
   return toTaskRecord(task);
 }
 

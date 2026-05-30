@@ -4,10 +4,13 @@ import "server-only";
  * Task reminder dispatch service (Sprint 7.2).
  *
  * Idempotency model:
- * - `reminderSentAt` is the durable idempotency marker.
- * - The atomic claim pattern updates `reminderSentAt` WHERE it IS NULL and the
- *   task still matches open-family status. Only the winner of the race gets the
- *   row back from the update, preventing double-send under concurrent cron runs.
+ * - `reminderSentAt` is the durable success marker — written only after the
+ *   notification is confirmed created.
+ * - Concurrency safety uses an atomic compare-and-swap claim: we attempt to
+ *   write a non-null sentinel into `reminderSentAt` WHERE it IS NULL. Only
+ *   the winning concurrent run succeeds. On notification failure we release
+ *   the claim by resetting `reminderSentAt` back to NULL so the next sweep
+ *   can retry.
  *
  * Eligibility rules (all must hold at the moment of dispatch):
  * 1. Task status is open-family (OPEN, IN_PROGRESS, OVERDUE)
@@ -184,15 +187,34 @@ export async function sendTaskAssignmentNotification(
 }
 
 /**
+ * Release a claim on a task reminder so the next sweep can retry.
+ * Only clears `reminderSentAt` if it still holds our claim sentinel (the provided `claimedAt`).
+ */
+async function releaseReminderClaim(taskId: string, claimedAt: Date): Promise<void> {
+  await db.messagingTask.updateMany({
+    where: {
+      id: taskId,
+      reminderSentAt: claimedAt,
+    },
+    data: { reminderSentAt: null },
+  });
+}
+
+/**
  * Main entry point for the task reminder sweep.
  *
- * Atomic claim pattern:
+ * Claim-release pattern (Sprint 7.2 fix):
  * 1. Find eligible tasks (open-family, reminderAt <= now, reminderSentAt IS NULL, has assignee)
- * 2. For each task, atomically update reminderSentAt WHERE it IS NULL
- * 3. If the update returns the row, send the notification (we own the claim)
- * 4. If the update returns nothing, skip (another run already claimed it)
+ * 2. For each task, atomically write `reminderSentAt = now` WHERE `reminderSentAt IS NULL`
+ * 3. If the write affects 0 rows, another run already claimed it — skip.
+ * 4. Attempt to send the notification.
+ * 5. On success: leave `reminderSentAt` as-is (durable success marker).
+ * 6. On failure: release the claim (`reminderSentAt = NULL`) so the next sweep retries.
  *
- * This is safe under concurrent cron runs without distributed locks.
+ * This guarantees:
+ * - Concurrent sweeps never double-send (atomic claim blocks duplicates)
+ * - Transient notification failures are retried on the next sweep
+ * - Completed/cancelled tasks are excluded by the status filter
  */
 export async function dispatchDueTaskReminders(
   limit = DEFAULT_SWEEP_LIMIT,
@@ -224,7 +246,7 @@ export async function dispatchDueTaskReminders(
     return result;
   }
 
-  // Step 2: Validate assignee participation and atomically claim each task
+  // Step 2: Validate assignee participation, claim, send, and release-on-failure
   for (const candidate of candidates) {
     // Re-check assignee is still an active participant in the conversation
     const participant = await db.conversationParticipant.findFirst({
@@ -241,8 +263,7 @@ export async function dispatchDueTaskReminders(
       continue;
     }
 
-    // Atomic claim: update reminderSentAt WHERE it IS NULL
-    // If this returns the row, we own the dispatch. If not, another run claimed it.
+    // Atomic claim: write reminderSentAt WHERE it IS NULL
     const claimed = await db.messagingTask.updateMany({
       where: {
         id: candidate.id,
@@ -260,7 +281,8 @@ export async function dispatchDueTaskReminders(
     // Re-read the task to get the full record for notification
     const task = await db.messagingTask.findUnique({ where: { id: candidate.id } });
     if (!task) {
-      // Task was deleted between claim and read — extremely unlikely, skip
+      // Task was deleted between claim and read — release claim and skip
+      await releaseReminderClaim(candidate.id, now);
       continue;
     }
 
@@ -300,8 +322,11 @@ export async function dispatchDueTaskReminders(
     );
 
     if (sent) {
+      // reminderSentAt is already set — durable success marker
       result.dispatched++;
     } else {
+      // Notification failed — release claim so next sweep can retry
+      await releaseReminderClaim(candidate.id, now);
       result.failed++;
     }
   }

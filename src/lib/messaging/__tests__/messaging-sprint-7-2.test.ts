@@ -9,12 +9,16 @@ vi.mock("@/lib/db", () => {
       findUnique: vi.fn(),
       updateMany: vi.fn(),
       update: vi.fn(),
+      create: vi.fn(),
     },
     conversationParticipant: {
       findFirst: vi.fn(),
       findMany: vi.fn(),
     },
     conversation: {
+      findUnique: vi.fn(),
+    },
+    conversationMessage: {
       findUnique: vi.fn(),
     },
     member: {
@@ -46,7 +50,7 @@ import {
   sendTaskAssignmentNotification,
   isReminderEligible,
 } from "../task-reminders";
-import { assignTask, updateTask } from "../task-service";
+import { assignTask, updateTask, createTask } from "../task-service";
 import type { MessagingTaskRecord } from "../domain-types";
 
 // ─── Test helpers ─────────────────────────────────────────────────────────────
@@ -277,7 +281,7 @@ describe("Sprint 7.2 — Idempotency and Concurrency Safety", () => {
     (db.messagingTask.updateMany as any).mockResolvedValue({ count: 1 });
     (db.messagingTask.findUnique as any).mockResolvedValue({
       ...candidate,
-      reminderSentAt: new Date(),
+      reminderSentAt: null,
     });
     (db.member.findFirst as any).mockResolvedValue(null);
     (db.notification.create as any).mockResolvedValue({ id: "notif-1" });
@@ -285,6 +289,7 @@ describe("Sprint 7.2 — Idempotency and Concurrency Safety", () => {
     const result = await dispatchDueTaskReminders();
 
     expect(result.dispatched).toBe(1);
+    // Claim sets reminderSentAt to now
     expect(db.messagingTask.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
@@ -295,6 +300,9 @@ describe("Sprint 7.2 — Idempotency and Concurrency Safety", () => {
         data: { reminderSentAt: expect.any(Date) },
       })
     );
+    // After successful send, reminderSentAt stays set (no release call)
+    // The only updateMany calls are: 1 claim, 0 releases
+    expect(db.messagingTask.updateMany).toHaveBeenCalledTimes(1);
   });
 
   it("atomic claim fails gracefully when another run already claimed the task", async () => {
@@ -313,36 +321,6 @@ describe("Sprint 7.2 — Idempotency and Concurrency Safety", () => {
     expect(result.dispatched).toBe(0);
     // Should NOT attempt to send notification
     expect(db.notification.create).not.toHaveBeenCalled();
-  });
-
-  it("repeated sweep does not double-send", async () => {
-    const candidate = makeTask({
-      reminderAt: new Date("2026-01-01"),
-      assigneeId: "user-assignee",
-    });
-
-    // First sweep
-    (db.messagingTask.findMany as any).mockResolvedValue([candidate]);
-    (db.conversationParticipant.findFirst as any).mockResolvedValue(mockActiveParticipant());
-    (db.messagingTask.updateMany as any).mockResolvedValue({ count: 1 });
-    (db.messagingTask.findUnique as any).mockResolvedValue({
-      ...candidate,
-      reminderSentAt: new Date(),
-    });
-    (db.member.findFirst as any).mockResolvedValue(null);
-    (db.notification.create as any).mockResolvedValue({ id: "notif-1" });
-
-    const result1 = await dispatchDueTaskReminders();
-    expect(result1.dispatched).toBe(1);
-
-    vi.clearAllMocks();
-
-    // Second sweep — task now has reminderSentAt set, so DB query returns empty
-    (db.messagingTask.findMany as any).mockResolvedValue([]);
-
-    const result2 = await dispatchDueTaskReminders();
-    expect(result2.dispatched).toBe(0);
-    expect(result2.evaluated).toBe(0);
   });
 
   it("partial failure does not mark unrelated tasks as sent", async () => {
@@ -367,7 +345,7 @@ describe("Sprint 7.2 — Idempotency and Concurrency Safety", () => {
 
     (db.messagingTask.findUnique as any).mockResolvedValue({
       ...task1,
-      reminderSentAt: new Date(),
+      reminderSentAt: null,
     });
     (db.member.findFirst as any).mockResolvedValue(null);
     (db.notification.create as any).mockResolvedValue({ id: "notif-1" });
@@ -382,6 +360,81 @@ describe("Sprint 7.2 — Idempotency and Concurrency Safety", () => {
         sourceRef: "task-1",
       })
     );
+  });
+
+  it("notification failure releases the claim so next sweep retries", async () => {
+    const candidate = makeTask({
+      reminderAt: new Date("2026-01-01"),
+      assigneeId: "user-assignee",
+    });
+
+    // Sweep 1: claim succeeds, notification fails
+    (db.messagingTask.findMany as any).mockResolvedValue([candidate]);
+    (db.conversationParticipant.findFirst as any).mockResolvedValue(mockActiveParticipant());
+    (db.messagingTask.updateMany as any)
+      .mockResolvedValueOnce({ count: 1 })  // claim
+      .mockResolvedValueOnce({ count: 1 }); // release (sets reminderSentAt back to NULL)
+    (db.messagingTask.findUnique as any).mockResolvedValue({
+      ...candidate,
+      reminderSentAt: null,
+    });
+    (db.member.findFirst as any).mockResolvedValue(null);
+    (createNotification as any).mockRejectedValueOnce(new Error("Notification service down"));
+
+    const result1 = await dispatchDueTaskReminders();
+    expect(result1.dispatched).toBe(0);
+    expect(result1.failed).toBe(1);
+    // Claim + release = 2 updateMany calls
+    expect(db.messagingTask.updateMany).toHaveBeenCalledTimes(2);
+
+    vi.clearAllMocks();
+
+    // Sweep 2: task is eligible again (reminderSentAt released to NULL)
+    (db.messagingTask.findMany as any).mockResolvedValue([candidate]);
+    (db.conversationParticipant.findFirst as any).mockResolvedValue(mockActiveParticipant());
+    (db.messagingTask.updateMany as any)
+      .mockResolvedValueOnce({ count: 1 }); // claim again
+    (db.messagingTask.findUnique as any).mockResolvedValue({
+      ...candidate,
+      reminderSentAt: null,
+    });
+    (db.member.findFirst as any).mockResolvedValue(null);
+    (createNotification as any).mockResolvedValue({ id: "notif-2" });
+
+    const result2 = await dispatchDueTaskReminders();
+    expect(result2.dispatched).toBe(1);
+    expect(result2.failed).toBe(0);
+  });
+
+  it("repeated sweep after success does not double-send", async () => {
+    const candidate = makeTask({
+      reminderAt: new Date("2026-01-01"),
+      assigneeId: "user-assignee",
+    });
+
+    // First sweep
+    (db.messagingTask.findMany as any).mockResolvedValue([candidate]);
+    (db.conversationParticipant.findFirst as any).mockResolvedValue(mockActiveParticipant());
+    (db.messagingTask.updateMany as any).mockResolvedValue({ count: 1 });
+    (db.messagingTask.findUnique as any).mockResolvedValue({
+      ...candidate,
+      reminderSentAt: null,
+    });
+    (db.member.findFirst as any).mockResolvedValue(null);
+    (db.notification.create as any).mockResolvedValue({ id: "notif-1" });
+
+    const result1 = await dispatchDueTaskReminders();
+    expect(result1.dispatched).toBe(1);
+
+    vi.clearAllMocks();
+
+    // Second sweep — task now has reminderSentAt set (from successful first sweep)
+    // so DB query returns empty
+    (db.messagingTask.findMany as any).mockResolvedValue([]);
+
+    const result2 = await dispatchDueTaskReminders();
+    expect(result2.dispatched).toBe(0);
+    expect(result2.evaluated).toBe(0);
   });
 });
 
@@ -922,5 +975,166 @@ describe("Sprint 7.2 — Assignee Validation in Sweep", () => {
     expect(result.evaluated).toBe(2);
     expect(result.dispatched).toBe(1);
     expect(result.skippedIneligibleAssignee).toBe(1);
+  });
+});
+
+// ─── 9. createTask assignment notification ────────────────────────────────────
+
+describe("Sprint 7.2 — createTask Assignment Notification", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("createTask with initial assignee sends assignment notification", async () => {
+    const mockTask = {
+      id: "task-new",
+      orgId: "org-1",
+      conversationId: "conv-1",
+      title: "New Task",
+      description: "Desc",
+      status: "OPEN",
+      priority: 0,
+      createdBy: "user-creator",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      dueDate: null,
+      assigneeId: "user-assignee",
+      originatingMessageId: null,
+      reminderAt: null,
+      reminderSentAt: null,
+      completedAt: null,
+      completedBy: null,
+    };
+
+    (db.conversationParticipant.findFirst as any)
+      .mockResolvedValueOnce(mockActiveParticipant("user-creator"))  // Creator check
+      .mockResolvedValueOnce(mockActiveParticipant("user-assignee")); // Assignee check
+    (db.conversation.findUnique as any).mockResolvedValue(mockActiveConversation());
+    (db.messagingTask.create as any).mockResolvedValue(mockTask);
+    (db.member.findFirst as any).mockResolvedValue(null);
+    (db.notification.create as any).mockResolvedValue({ id: "notif-1" });
+
+    await createTask({
+      orgId: "org-1",
+      conversationId: "conv-1",
+      createdBy: "user-creator",
+      title: "New Task",
+      description: "Desc",
+      assigneeId: "user-assignee",
+    });
+
+    // Wait for fire-and-forget notification
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(createNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: "user-assignee",
+        orgId: "org-1",
+        type: "TASK_ASSIGNED",
+        title: "Task assigned: New Task",
+        sourceRef: "task-new",
+        sourceModule: "messaging",
+      })
+    );
+  });
+
+  it("createTask with null assignee does NOT send notification", async () => {
+    const mockTask = {
+      id: "task-new",
+      orgId: "org-1",
+      conversationId: "conv-1",
+      title: "New Task",
+      description: null,
+      status: "OPEN",
+      priority: 0,
+      createdBy: "user-creator",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      dueDate: null,
+      assigneeId: null,
+      originatingMessageId: null,
+      reminderAt: null,
+      reminderSentAt: null,
+      completedAt: null,
+      completedBy: null,
+    };
+
+    (db.conversationParticipant.findFirst as any).mockResolvedValue(mockActiveParticipant("user-creator"));
+    (db.conversation.findUnique as any).mockResolvedValue(mockActiveConversation());
+    (db.messagingTask.create as any).mockResolvedValue(mockTask);
+
+    await createTask({
+      orgId: "org-1",
+      conversationId: "conv-1",
+      createdBy: "user-creator",
+      title: "New Task",
+    });
+
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(createNotification).not.toHaveBeenCalled();
+  });
+
+  it("createTask rejects invalid assignee before any notification attempt", async () => {
+    (db.conversationParticipant.findFirst as any)
+      .mockResolvedValueOnce(mockActiveParticipant("user-creator"))
+      .mockResolvedValueOnce(null); // Assignee not a participant
+    (db.conversation.findUnique as any).mockResolvedValue(mockActiveConversation());
+
+    await expect(
+      createTask({
+        orgId: "org-1",
+        conversationId: "conv-1",
+        createdBy: "user-creator",
+        title: "Should fail",
+        assigneeId: "user-invalid",
+      })
+    ).rejects.toThrow("Assignee must be an active participant");
+
+    // Notification should never be attempted
+    await new Promise((r) => setTimeout(r, 10));
+    expect(createNotification).not.toHaveBeenCalled();
+  });
+
+  it("notification failure does not block task creation", async () => {
+    const mockTask = {
+      id: "task-new",
+      orgId: "org-1",
+      conversationId: "conv-1",
+      title: "New Task",
+      description: null,
+      status: "OPEN",
+      priority: 0,
+      createdBy: "user-creator",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      dueDate: null,
+      assigneeId: "user-assignee",
+      originatingMessageId: null,
+      reminderAt: null,
+      reminderSentAt: null,
+      completedAt: null,
+      completedBy: null,
+    };
+
+    (db.conversationParticipant.findFirst as any)
+      .mockResolvedValueOnce(mockActiveParticipant("user-creator"))
+      .mockResolvedValueOnce(mockActiveParticipant("user-assignee"));
+    (db.conversation.findUnique as any).mockResolvedValue(mockActiveConversation());
+    (db.messagingTask.create as any).mockResolvedValue(mockTask);
+    (db.member.findFirst as any).mockResolvedValue(null);
+    (createNotification as any).mockRejectedValue(new Error("Notification service down"));
+
+    // createTask should succeed even though notification fails
+    const result = await createTask({
+      orgId: "org-1",
+      conversationId: "conv-1",
+      createdBy: "user-creator",
+      title: "New Task",
+      assigneeId: "user-assignee",
+    });
+
+    expect(result.id).toBe("task-new");
+    expect(result.title).toBe("New Task");
   });
 });
