@@ -136,6 +136,9 @@ function VoucherPanel({
   };
 
   // Hydrate managed fields from an autofill payload
+  // Hydrate managed fields from an autofill payload.
+  // templateId is intentionally excluded — it is set on initial load only via initialTemplateId
+  // (which already has full precedence applied) and must not be overwritten during vendor rehydration.
   const hydrateFromAutofill = useCallback((payload: VoucherAutofillPayload) => {
     setValue("vendorId", payload.vendorId || undefined);
     setValue("counterpartyName", payload.counterpartyName);
@@ -148,10 +151,6 @@ function VoucherPanel({
     setValue("branding.email", payload.branding.email);
     setValue("branding.phone", payload.branding.phone);
     setValue("branding.accentColor", payload.branding.accentColor);
-    if (payload.templateId) {
-      setSelectedTemplateId(payload.templateId as VoucherFormValues["templateId"]);
-      setValue("templateId", payload.templateId as VoucherFormValues["templateId"]);
-    }
   }, [setValue]);
 
   // Re-run autofill when vendor changes

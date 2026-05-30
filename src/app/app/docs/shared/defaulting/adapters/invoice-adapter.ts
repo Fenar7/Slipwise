@@ -50,9 +50,8 @@ export async function resolveInvoiceDefaults(input: {
 
   const businessTaxId = od.gstin || od.taxId || "";
 
-  const templateId = input.templateParam?.trim()
-    || od.defaultInvoiceTemplate
-    || "professional";
+  // templateId comes from the shared resolver with full precedence applied
+  const templateId = resolution.templateId;
 
   const invoiceDate = todayIso();
 

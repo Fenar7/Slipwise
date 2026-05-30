@@ -65,6 +65,15 @@ function buildEntityInfo(record: EntityRecord): EntityInfo {
   };
 }
 
+function resolveTemplateKind(input: DefaultResolutionInput, od: OrgDefaultsSnapshot): string {
+  const queryOverride = input.queryParams?.template?.trim();
+  if (queryOverride) return queryOverride;
+
+  if (input.kind === "invoice") return od.defaultInvoiceTemplate || "professional";
+  if (input.kind === "voucher") return od.defaultVoucherTemplate || "minimal-office";
+  return od.defaultInvoiceTemplate || "professional";
+}
+
 export async function resolveDefaults(input: DefaultResolutionInput): Promise<DefaultResolution> {
   const orgDefaultsRecord = await db.orgDefaults.findUnique({
     where: { organizationId: input.orgId },
@@ -104,5 +113,7 @@ export async function resolveDefaults(input: DefaultResolutionInput): Promise<De
     }
   }
 
-  return { orgDefaults, entity };
+  const templateId = resolveTemplateKind(input, orgDefaults);
+
+  return { orgDefaults, entity, templateId };
 }

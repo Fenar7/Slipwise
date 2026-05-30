@@ -53,9 +53,8 @@ export async function resolveVoucherDefaults(input: {
   const od = resolution.orgDefaults;
   const entity = resolution.entity;
 
-  const templateId = input.templateParam?.trim()
-    || od.defaultVoucherTemplate
-    || "minimal-office";
+  // templateId comes from the shared resolver with full precedence applied
+  const templateId = resolution.templateId;
 
   const date = todayIso();
 

@@ -173,6 +173,121 @@ describe("Shared Defaulting Engine — resolveDefaults", () => {
       expect(result.orgDefaults.defaultVoucherTemplate).toBe("minimal-office");
       expect(result.orgDefaults.quoteValidityDays).toBe(14);
     });
+
+    // --- Centralized template precedence tests ---
+
+    it("resolver: query param overrides org default for invoice template", async () => {
+      vi.mocked(db.orgDefaults.findUnique).mockResolvedValue({
+        organizationId: ORG_ID,
+        defaultInvoiceTemplate: "professional",
+      } as any);
+
+      const result = await resolveDefaults({
+        kind: "invoice",
+        orgId: ORG_ID,
+        queryParams: { template: "minimal" },
+      });
+
+      expect(result.templateId).toBe("minimal");
+    });
+
+    it("resolver: query param overrides org default for voucher template", async () => {
+      vi.mocked(db.orgDefaults.findUnique).mockResolvedValue({
+        organizationId: ORG_ID,
+        defaultVoucherTemplate: "minimal-office",
+      } as any);
+
+      const result = await resolveDefaults({
+        kind: "voucher",
+        orgId: ORG_ID,
+        queryParams: { template: "modern-premium" },
+      });
+
+      expect(result.templateId).toBe("modern-premium");
+    });
+
+    it("resolver: org default template used when no query param for invoice", async () => {
+      vi.mocked(db.orgDefaults.findUnique).mockResolvedValue({
+        organizationId: ORG_ID,
+        defaultInvoiceTemplate: "professional",
+      } as any);
+
+      const result = await resolveDefaults({
+        kind: "invoice",
+        orgId: ORG_ID,
+      });
+
+      expect(result.templateId).toBe("professional");
+    });
+
+    it("resolver: org default template used when no query param for voucher", async () => {
+      vi.mocked(db.orgDefaults.findUnique).mockResolvedValue({
+        organizationId: ORG_ID,
+        defaultVoucherTemplate: "minimal-office",
+      } as any);
+
+      const result = await resolveDefaults({
+        kind: "voucher",
+        orgId: ORG_ID,
+      });
+
+      expect(result.templateId).toBe("minimal-office");
+    });
+
+    it("resolver: voucher kind resolves voucher-specific template", async () => {
+      vi.mocked(db.orgDefaults.findUnique).mockResolvedValue({
+        organizationId: ORG_ID,
+        defaultInvoiceTemplate: "professional",
+        defaultVoucherTemplate: "minimal-office",
+      } as any);
+
+      const invoiceResult = await resolveDefaults({ kind: "invoice", orgId: ORG_ID });
+      const voucherResult = await resolveDefaults({ kind: "voucher", orgId: ORG_ID });
+
+      expect(invoiceResult.templateId).toBe("professional");
+      expect(voucherResult.templateId).toBe("minimal-office");
+    });
+
+    it("resolver: structural fallback when org defaults null for invoice", async () => {
+      vi.mocked(db.orgDefaults.findUnique).mockResolvedValue(null);
+
+      const result = await resolveDefaults({
+        kind: "invoice",
+        orgId: ORG_ID,
+      });
+
+      expect(result.templateId).toBe("professional");
+    });
+
+    it("resolver: structural fallback when org defaults null for voucher", async () => {
+      vi.mocked(db.orgDefaults.findUnique).mockResolvedValue(null);
+
+      const result = await resolveDefaults({
+        kind: "voucher",
+        orgId: ORG_ID,
+      });
+
+      expect(result.templateId).toBe("minimal-office");
+    });
+
+    it("resolver: invoice templateId is present in DefaultResolution with entity", async () => {
+      vi.mocked(db.orgDefaults.findUnique).mockResolvedValue({
+        organizationId: ORG_ID,
+        defaultInvoiceTemplate: "professional",
+      } as any);
+      vi.mocked(db.customer.findFirst).mockResolvedValue({
+        id: "cust-1", organizationId: ORG_ID, name: "Co", email: null,
+        phone: null, address: null, gstin: null, taxId: null, paymentTermsDays: 30,
+      } as any);
+
+      const result = await resolveDefaults({
+        kind: "invoice",
+        orgId: ORG_ID,
+        entityId: "cust-1",
+      });
+
+      expect(result.templateId).toBe("professional");
+    });
   });
 });
 

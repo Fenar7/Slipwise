@@ -42,4 +42,5 @@ export type EntityInfo = {
 export type DefaultResolution = {
   orgDefaults: OrgDefaultsSnapshot;
   entity: EntityInfo | null;
+  templateId: string;
 };
