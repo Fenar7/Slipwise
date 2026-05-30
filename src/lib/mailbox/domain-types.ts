@@ -522,6 +522,8 @@ export interface MailboxFolderCoverageSummary {
   totalThreads: number;
   lastCompletedAt: string | null;
   errorSummary: string | null;
+  /** Last page token / cursor advanced to during bootstrap for this folder. */
+  lastAdvancedCursor: string | null;
 }
 
 /** Aggregate coverage state across all required folders. */

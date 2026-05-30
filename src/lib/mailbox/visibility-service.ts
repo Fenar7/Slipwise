@@ -108,10 +108,14 @@ export async function listMailboxConnectionsForMember(
         latestCompletedRun:
           syncRuns.latestCompletedRunByConnectionId.get(record.id) ?? null,
       });
-      // Attach folder coverage to the sync presentation on the list item
-      if (coverage && listItem.sync) {
+      // Attach folder coverage to the sync presentation on the list item.
+      // When real folder coverage exists, override staleGmailCoverage so the
+      // UI truthfully reflects actual completion instead of legacy metadata.
+      if (coverage && coverage.coverages.length > 0 && listItem.sync) {
+        const hasStale = coverage.overallState !== "COMPLETE";
         listItem.sync = {
           ...listItem.sync,
+          staleGmailCoverage: hasStale,
           folderCoverage: {
             overallState: coverage.overallState,
             coverages: coverage.coverages.map((c) => ({

@@ -18,6 +18,7 @@ vi.mock("@/lib/db", () => ({
       upsert: vi.fn(),
       findUnique: vi.fn(),
       findFirst: vi.fn(),
+      findMany: vi.fn().mockResolvedValue([]),
       count: vi.fn(),
     },
     mailboxAttachment: {
@@ -88,6 +89,14 @@ vi.mock("@/lib/mailbox/audit", () => ({
 
 vi.mock("@/lib/mailbox/provider-registry", () => ({
   getMailboxProviderAdapter: vi.fn(),
+}));
+
+vi.mock("@/lib/mailbox/folder-coverage-service", () => ({
+  markFolderCoverageComplete: vi.fn(),
+  updateFolderCoverageBootstrapping: vi.fn(),
+  initFolderCoverageForBootstrap: vi.fn(),
+  getIncompleteRequiredFolders: vi.fn().mockResolvedValue([]),
+  getFolderCoverage: vi.fn().mockResolvedValue(null),
 }));
 
 describe("Sprint 3.1 — Initial sync pipeline", () => {
@@ -258,6 +267,7 @@ describe("Sprint 3.1 — Initial sync pipeline", () => {
           }],
           nextCursor: { value: "cursor-1", expiresAt: null },
         }),
+        syncDrafts: vi.fn().mockResolvedValue({ drafts: [], activeDraftIds: [], failedDraftIds: [] }),
         fetchThreadDetail: vi.fn().mockResolvedValue({
           messages: [{
             providerMessageId: "gmail-msg-sync",
@@ -276,6 +286,10 @@ describe("Sprint 3.1 — Initial sync pipeline", () => {
             htmlBody: "<p>Sync body</p>",
             textBody: "Sync body",
           }],
+        }),
+        renewWatch: vi.fn().mockResolvedValue({
+          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+          metadata: { gmailHistoryId: "hist-bootstrap", gmailWatchExpiration: "4102444800000" },
         }),
       };
       vi.mocked(getMailboxProviderAdapter).mockReturnValue(mockAdapter as never);

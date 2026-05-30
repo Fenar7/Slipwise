@@ -263,6 +263,13 @@ export interface IMailboxProviderAdapter {
     orgId: string;
     tokenRef: string;
     cursor: MailboxSyncCursor | null;
+    /**
+     * Per-folder continuation cursors for resumable initial bootstrap.
+     * Only used when cursor is null (initial/recovery sync).
+     * Keys are provider-specific folder identifiers; values are opaque
+     * page tokens to resume pagination from.
+     */
+    folderCursors?: Record<string, string>;
   }): Promise<
     | {
         threads: MailboxThreadEnvelope[];

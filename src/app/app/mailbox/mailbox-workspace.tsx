@@ -467,22 +467,25 @@ export function MailboxWorkspace() {
   });
 
   /**
-   * Auto-trigger one guarded recovery sync per mailbox connection.
+   * Auto-trigger recovery syncs while folder coverage is incomplete.
    *
-   * This covers both first import and stale Gmail historical coverage without
-   * allowing repeated mount-triggered sync loops.
+   * Guard: only trigger once per `lastSyncAt` value so we do not loop
+   * endlessly, but we DO resume automatically after a prior sync completes
+   * and coverage is still partial.
    */
-  const autoSyncTriggeredRef = useRef<Record<string, boolean>>({});
+  const autoSyncLastStampRef = useRef<Record<string, string | null>>({});
   useEffect(() => {
     if (connectionsLoading || !activeConnection) return;
     if (activeConnection.status !== "connected") return;
     const sync = resolveMailboxSyncPresentation(activeConnection);
     const needsAutoSync = shouldAutoTriggerMailboxSync(sync);
     if (!needsAutoSync) return;
-    if (autoSyncTriggeredRef.current[activeConnection.id]) return;
     if (isSyncPending(activeConnection.id)) return;
 
-    autoSyncTriggeredRef.current[activeConnection.id] = true;
+    const stamp = activeConnection.lastSyncAt;
+    if (autoSyncLastStampRef.current[activeConnection.id] === stamp) return;
+
+    autoSyncLastStampRef.current[activeConnection.id] = stamp;
     void triggerSync(activeConnection.id);
   }, [
     connectionsLoading,

@@ -412,7 +412,7 @@ export const gmailProviderAdapter: IMailboxProviderAdapter = {
    *
    * Returns normalized thread envelopes and the next cursor to persist.
    */
-  async syncDelta({ orgId, tokenRef, cursor }) {
+  async syncDelta({ orgId, tokenRef, cursor, folderCursors }) {
     const credential = await readMailboxCredential(orgId, tokenRef);
     if (!credential) {
       return { category: "auth_expired", safeMessage: "Credential not found for tokenRef", retryable: false };
@@ -508,7 +508,8 @@ export const gmailProviderAdapter: IMailboxProviderAdapter = {
     }> = [];
 
     for (const slice of GMAIL_BOOTSTRAP_SLICES) {
-      const sliceResult = await fetchBoundedThreadRefsForQuery(accessToken, slice);
+      const startPageToken = folderCursors?.[slice.folder] ?? undefined;
+      const sliceResult = await fetchBoundedThreadRefsForQuery(accessToken, slice, startPageToken);
       if (isProviderError(sliceResult)) return sliceResult;
 
       const sliceLabel = slice.folder;
@@ -967,12 +968,13 @@ function parseGmailDate(internalDate: string | null | undefined): Date {
 async function fetchBoundedThreadRefsForQuery(
   accessToken: string,
   slice: GmailBootstrapSlice,
+  startPageToken?: string,
 ): Promise<{
   threadRefs: GmailThreadRef[];
   paginationExhausted: boolean;
 } | MailboxProviderError> {
   const threadRefs: GmailThreadRef[] = [];
-  let nextPageToken: string | undefined;
+  let nextPageToken: string | undefined = startPageToken;
   let pagesFetched = 0;
 
   do {
