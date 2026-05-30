@@ -68,6 +68,12 @@ export interface RunMailboxSyncResult {
 const MAILBOX_SYNC_MAX_RUNNING_AGE_MINUTES = 30;
 const MAILBOX_SYNC_LEASE_DURATION_MS = MAILBOX_SYNC_MAX_RUNNING_AGE_MINUTES * 60 * 1000;
 
+/**
+ * Minimum interval between heartbeat/progress DB writes during a running sync.
+ * Keeps writes bounded — we update at most once per this interval, not on every message.
+ */
+const HEARTBEAT_INTERVAL_MS = 60 * 1000; // 1 minute
+
 function toMetadataRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return null;
@@ -359,6 +365,29 @@ async function releaseSyncLease(
 }
 
 /**
+ * Persist incremental progress stats and heartbeat timestamp for a running sync run.
+ * Called periodically during long-running syncs so the UI can distinguish
+ * active progress from stalled/looping sync.
+ *
+ * Writes are bounded by HEARTBEAT_INTERVAL_MS — callers may invoke this
+ * freely and it will only write to the DB when the interval has elapsed.
+ */
+async function updateSyncRunHeartbeat(
+  runId: string,
+  threadCount: number,
+  messageCount: number,
+  lastHeartbeatAt: Date,
+): Promise<void> {
+  await db.mailboxSyncRun.update({
+    where: { id: runId },
+    data: {
+      stats: { threadCount, messageCount } as Prisma.InputJsonValue,
+      lastHeartbeatAt,
+    },
+  });
+}
+
+/**
  * Run a mailbox sync with concurrency protection, explicit sync mode
  * selection, and cursor advancement only after successful ingestion.
  *
@@ -497,6 +526,7 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
 
     let threadCount = 0;
     let messageCount = 0;
+    let lastHeartbeatAt = startedAt;
     let recoveryBootstrapResults: import("./provider-contracts").MailboxBootstrapSliceResult[] | undefined;
     if (needsGmailCoverageRecovery) {
       // Build resumption cursors from prior incomplete folder coverage so we
@@ -530,6 +560,13 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
       threadCount += recoveryStats.threadCount;
       messageCount += recoveryStats.messageCount;
       recoveryBootstrapResults = recovery.bootstrapSliceResults;
+
+      // Persist incremental progress after recovery phase
+      const now = Date.now();
+      if (now - lastHeartbeatAt.getTime() >= HEARTBEAT_INTERVAL_MS) {
+        await updateSyncRunHeartbeat(run.id, threadCount, messageCount, new Date(now));
+        lastHeartbeatAt = new Date(now);
+      }
     }
 
     const delta = await adapter.syncDelta({
@@ -551,6 +588,13 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
     });
     threadCount += deltaStats.threadCount;
     messageCount += deltaStats.messageCount;
+
+    // Persist incremental progress after delta phase
+    const nowAfterDelta = Date.now();
+    if (nowAfterDelta - lastHeartbeatAt.getTime() >= HEARTBEAT_INTERVAL_MS) {
+      await updateSyncRunHeartbeat(run.id, threadCount, messageCount, new Date(nowAfterDelta));
+      lastHeartbeatAt = new Date(nowAfterDelta);
+    }
 
     // ─── Reconcile remote message deletions ───────────────────────────────
     // Gmail messagesDeleted is message-level. Remove individual messages
@@ -639,6 +683,13 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
         failedDraftIds: draftSync.failedDraftIds,
       });
       syncedDrafts = true;
+
+      // Persist progress after draft sync phase
+      const nowAfterDrafts = Date.now();
+      if (nowAfterDrafts - lastHeartbeatAt.getTime() >= HEARTBEAT_INTERVAL_MS) {
+        await updateSyncRunHeartbeat(run.id, threadCount, messageCount, new Date(nowAfterDrafts));
+        lastHeartbeatAt = new Date(nowAfterDrafts);
+      }
     }
 
     // ─── Cursor advancement only after successful ingestion ─────────────────

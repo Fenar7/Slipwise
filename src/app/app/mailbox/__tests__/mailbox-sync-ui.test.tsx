@@ -71,4 +71,63 @@ describe("mailbox sync UI truthfulness", () => {
       ),
     ).toBe(true);
   });
+
+  it("does NOT auto-trigger when the last run failed (stalled or errored)", () => {
+    expect(
+      shouldAutoTriggerMailboxSync(
+        buildSyncPresentation({
+          state: "failed",
+          staleGmailCoverage: true,
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  it("does NOT auto-trigger when sync is currently running", () => {
+    expect(
+      shouldAutoTriggerMailboxSync(
+        buildSyncPresentation({
+          state: "running",
+          isSyncing: true,
+          staleGmailCoverage: true,
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  it("auto-triggers when completed with incomplete coverage and no failure", () => {
+    expect(
+      shouldAutoTriggerMailboxSync(
+        buildSyncPresentation({
+          state: "completed",
+          staleGmailCoverage: false,
+          folderCoverage: {
+            overallState: "PARTIAL",
+            coverages: [
+              { folder: "INBOX", state: "COMPLETE", totalThreads: 10 },
+              { folder: "SENT", state: "BOOTSTRAPPING", totalThreads: 0 },
+            ],
+          },
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  it("does NOT auto-trigger when coverage is complete", () => {
+    expect(
+      shouldAutoTriggerMailboxSync(
+        buildSyncPresentation({
+          state: "completed",
+          staleGmailCoverage: false,
+          folderCoverage: {
+            overallState: "COMPLETE",
+            coverages: [
+              { folder: "INBOX", state: "COMPLETE", totalThreads: 10 },
+              { folder: "SENT", state: "COMPLETE", totalThreads: 5 },
+            ],
+          },
+        }),
+      ),
+    ).toBe(false);
+  });
 });

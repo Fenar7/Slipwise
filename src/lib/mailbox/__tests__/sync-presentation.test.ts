@@ -265,6 +265,124 @@ describe("buildMailboxSyncPresentation", () => {
     expect(sync.stageLabel).toBe("Initial import in progress");
   });
 
+  describe("stalled sync detection", () => {
+    it("treats a running run with stale heartbeat as stalled (not healthy active)", () => {
+      const sync = buildMailboxSyncPresentation(
+        makeConnection({
+          lastSyncAt: null,
+          syncLeaseToken: "lease_1",
+          syncLeaseExpiresAt: new Date(NOW + 60_000),
+        }),
+        {
+          latestRun: {
+            id: "run_stalled",
+            status: "RUNNING",
+            syncMode: "INITIAL",
+            triggerSource: "MANUAL",
+            startedAt: new Date(NOW - 10 * 60 * 1000),
+            completedAt: null,
+            stats: null,
+            errorCategory: null,
+            errorMessage: null,
+            lastHeartbeatAt: new Date(NOW - 6 * 60 * 1000), // 6 min ago > 5 min threshold
+          },
+        },
+        NOW,
+      );
+
+      // Stalled run should NOT be treated as syncing
+      expect(sync.isSyncing).toBe(false);
+      expect(sync.state).toBe("failed");
+      expect(sync.stageLabel).toBe("Sync needs attention");
+      expect(sync.detailLabel).toContain("not made recent progress");
+    });
+
+    it("treats a running run with recent heartbeat as healthy active", () => {
+      const sync = buildMailboxSyncPresentation(
+        makeConnection({
+          lastSyncAt: null,
+          syncLeaseToken: "lease_1",
+          syncLeaseExpiresAt: new Date(NOW + 60_000),
+        }),
+        {
+          latestRun: {
+            id: "run_active",
+            status: "RUNNING",
+            syncMode: "INITIAL",
+            triggerSource: "MANUAL",
+            startedAt: new Date(NOW - 10 * 60 * 1000),
+            completedAt: null,
+            stats: null,
+            errorCategory: null,
+            errorMessage: null,
+            lastHeartbeatAt: new Date(NOW - 2 * 60 * 1000), // 2 min ago < 5 min threshold
+          },
+        },
+        NOW,
+      );
+
+      expect(sync.isSyncing).toBe(true);
+      expect(sync.state).toBe("running");
+      expect(sync.stageLabel).toBe("Initial import in progress");
+    });
+
+    it("treats a running run with no heartbeat as healthy (legacy runs)", () => {
+      const sync = buildMailboxSyncPresentation(
+        makeConnection({
+          lastSyncAt: null,
+          syncLeaseToken: "lease_1",
+          syncLeaseExpiresAt: new Date(NOW + 60_000),
+        }),
+        {
+          latestRun: {
+            id: "run_no_hb",
+            status: "RUNNING",
+            syncMode: "INITIAL",
+            triggerSource: "MANUAL",
+            startedAt: new Date(NOW - 2 * 60 * 1000),
+            completedAt: null,
+            stats: null,
+            errorCategory: null,
+            errorMessage: null,
+            lastHeartbeatAt: null, // No heartbeat — legacy run, treat as active
+          },
+        },
+        NOW,
+      );
+
+      expect(sync.isSyncing).toBe(true);
+      expect(sync.state).toBe("running");
+    });
+
+    it("stalled run is presented as failed even with an active lease", () => {
+      const sync = buildMailboxSyncPresentation(
+        makeConnection({
+          lastSyncAt: null,
+          syncLeaseToken: "lease_1",
+          syncLeaseExpiresAt: new Date(NOW + 60_000), // Active lease
+        }),
+        {
+          latestRun: {
+            id: "run_stalled_lease",
+            status: "RUNNING",
+            syncMode: "INITIAL",
+            triggerSource: "MANUAL",
+            startedAt: new Date(NOW - 10 * 60 * 1000),
+            completedAt: null,
+            stats: null,
+            errorCategory: null,
+            errorMessage: null,
+            lastHeartbeatAt: new Date(NOW - 6 * 60 * 1000), // Stalled
+          },
+        },
+        NOW,
+      );
+
+      expect(sync.isSyncing).toBe(false);
+      expect(sync.state).toBe("failed");
+    });
+  });
+
   describe("Gmail stale coverage detection", () => {
     it("does not flag stale coverage from legacy metadata (visibility service owns this)", () => {
       const sync = buildMailboxSyncPresentation(

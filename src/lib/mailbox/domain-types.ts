@@ -230,6 +230,8 @@ export interface MailboxSyncRunRecord {
   errorCategory: string | null;
   errorSummary: string | null;
   stats: Record<string, unknown> | null;
+  /** Timestamp of the last heartbeat/progress update during a running sync. */
+  lastHeartbeatAt: Date | null;
   createdBy: string;
   createdAt: Date;
   updatedAt: Date;
