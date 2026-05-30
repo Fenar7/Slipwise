@@ -646,7 +646,7 @@ describe("Sprint 4.1 — GET /api/mailbox/threads", () => {
     } as never);
 
     const { GET } = await import("@/app/api/mailbox/threads/route");
-    const req = new NextRequest("http://localhost/api/mailbox/threads?folder=DRAFTS");
+    const req = new NextRequest("http://localhost/api/mailbox/threads?folder=INVALID_FOLDER");
     const res = await GET(req);
     expect(res.status).toBe(400);
   });

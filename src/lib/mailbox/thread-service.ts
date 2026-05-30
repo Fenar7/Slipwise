@@ -53,6 +53,7 @@ function parseSearchTerms(query: string): {
       SENT: "SENT",
       SPAM: "SPAM",
       ARCHIVE: "ARCHIVE",
+      DRAFT: "DRAFT",
     };
     if (rawFolder in folderMap) {
       folderHint = folderMap[rawFolder];
@@ -225,6 +226,16 @@ export async function listMailboxThreads(
     if (parsed.folderHint && !folder) {
       folder = parsed.folderHint;
     }
+  }
+
+  if (folder === "DRAFT") {
+    // Truthful handling: drafts are excluded from thread search completely
+    // as they reside in a separate UX/route.
+    return {
+      threads: [],
+      nextCursor: null,
+      totalCount: 0,
+    };
   }
 
   const limit = Math.min(
