@@ -92,6 +92,9 @@ export function isReminderEligible(task: {
 /**
  * Send a reminder notification for a single task to its current assignee.
  * Returns true if the notification was created successfully.
+ *
+ * Audit logging is fire-and-forget after notification success — a transient
+ * audit failure must not cause a duplicate reminder send.
  */
 async function sendReminderNotification(
   task: MessagingTaskRecord,
@@ -115,7 +118,8 @@ async function sendReminderNotification(
       sourceRef: task.id,
     });
 
-    await logMessagingAudit({
+    // Audit is best-effort — must not turn a delivered reminder into a retryable failure
+    logMessagingAudit({
       orgId: task.orgId,
       actorId: task.assigneeId!,
       action: "TASK_UPDATED",
@@ -123,7 +127,7 @@ async function sendReminderNotification(
       conversationId: task.conversationId,
       taskId: task.id,
       metadata: { reminderType: "scheduled", assigneeId: task.assigneeId },
-    });
+    }).catch(() => {});
 
     return true;
   } catch (error) {

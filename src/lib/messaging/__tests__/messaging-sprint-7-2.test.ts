@@ -406,6 +406,35 @@ describe("Sprint 7.2 — Idempotency and Concurrency Safety", () => {
     expect(result2.failed).toBe(0);
   });
 
+  it("audit failure after successful notification does NOT release claim or cause duplicate", async () => {
+    const candidate = makeTask({
+      reminderAt: new Date("2026-01-01"),
+      assigneeId: "user-assignee",
+    });
+
+    (db.messagingTask.findMany as any).mockResolvedValue([candidate]);
+    (db.conversationParticipant.findFirst as any).mockResolvedValue(mockActiveParticipant());
+    (db.messagingTask.updateMany as any).mockResolvedValue({ count: 1 }); // claim
+    (db.messagingTask.findUnique as any).mockResolvedValue({
+      ...candidate,
+      reminderSentAt: null,
+    });
+    (db.member.findFirst as any).mockResolvedValue(null);
+    // Notification succeeds
+    (createNotification as any).mockResolvedValue({ id: "notif-1" });
+    // Audit fails
+    (logMessagingAudit as any).mockRejectedValue(new Error("Audit service unavailable"));
+
+    const result = await dispatchDueTaskReminders();
+
+    // Notification was sent successfully — treated as dispatched
+    expect(result.dispatched).toBe(1);
+    expect(result.failed).toBe(0);
+    // Only 1 updateMany call (the claim) — NO release call
+    expect(db.messagingTask.updateMany).toHaveBeenCalledTimes(1);
+    expect(createNotification).toHaveBeenCalledTimes(1);
+  });
+
   it("repeated sweep after success does not double-send", async () => {
     const candidate = makeTask({
       reminderAt: new Date("2026-01-01"),
