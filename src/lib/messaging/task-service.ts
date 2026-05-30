@@ -8,6 +8,7 @@ import { ConversationAccessError, InvalidInputError, NotFoundError } from "./err
 import { requireConversationAccess } from "./authorization";
 import { toConversationRecord, toParticipantRecord } from "./mappers";
 import { sendTaskAssignmentNotification } from "./task-reminders";
+import { logMessagingAudit } from "./audit";
 import type {
   CreateTaskInput,
   UpdateTaskStatusInput,
@@ -143,6 +144,16 @@ export async function createTask(input: CreateTaskInput): Promise<MessagingTaskR
     ).catch(() => {});
   }
 
+  // Audit task creation
+  logMessagingAudit({
+    orgId,
+    actorId: createdBy,
+    action: "TASK_CREATED",
+    summary: `Task created: ${task.title}`,
+    conversationId: task.conversationId,
+    taskId: task.id,
+    metadata: null,
+  }).catch(() => {});
   return toTaskRecord(task);
 }
 
@@ -203,6 +214,17 @@ export async function updateTaskStatus(input: UpdateTaskStatusInput): Promise<Me
     data: updateData,
   });
 
+  // Audit task status change
+  const auditAction = status === "DONE" ? "TASK_COMPLETED" : "TASK_UPDATED";
+  logMessagingAudit({
+    orgId,
+    actorId,
+    action: auditAction,
+    summary: `Task ${auditAction === "TASK_COMPLETED" ? "completed" : "updated"}: ${updatedTask.title}`,
+    conversationId: updatedTask.conversationId,
+    taskId: updatedTask.id,
+    metadata: { previousStatus: task.status, newStatus: status },
+  }).catch(() => {});
   return toTaskRecord(updatedTask);
 }
 
@@ -282,6 +304,16 @@ export async function assignTask(input: AssignTaskInput): Promise<MessagingTaskR
     ).catch(() => {});
   }
 
+  // Audit task assignee change
+  logMessagingAudit({
+    orgId,
+    actorId,
+    action: "TASK_UPDATED",
+    summary: `Task assignee updated: ${updatedTask.title}`,
+    conversationId: updatedTask.conversationId,
+    taskId: updatedTask.id,
+    metadata: { previousAssigneeId: task.assigneeId, newAssigneeId: assigneeId },
+  }).catch(() => {});
   return toTaskRecord(updatedTask);
 }
 
@@ -396,6 +428,16 @@ export async function updateTask(input: UpdateTaskInput): Promise<MessagingTaskR
     ).catch(() => {});
   }
 
+  // Audit task update
+  logMessagingAudit({
+    orgId,
+    actorId,
+    action: "TASK_UPDATED",
+    summary: `Task updated: ${updatedTask.title}`,
+    conversationId: updatedTask.conversationId,
+    taskId: updatedTask.id,
+    metadata: { updatedFields: Object.keys(updateData) },
+  }).catch(() => {});
   return toTaskRecord(updatedTask);
 }
 

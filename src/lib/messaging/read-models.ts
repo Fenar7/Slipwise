@@ -32,6 +32,7 @@ import {
   type MessageDetail,
   type TaskSummary,
 } from "./read-shapes";
+import { getMessagingAuditActionLabel } from "./audit";
 import {
   getConversationById,
   listConversationsForUser,
@@ -463,4 +464,76 @@ export async function getOrgTaskSummaries(
     hasMore: result.hasMore,
   };
 }
+
+// ─── Task activity timeline read model ───────────────────────────────────────
+export async function getTaskActivityTimeline(orgId: string, taskId: string) {
+  const events = await db.messagingAuditEvent.findMany({
+    where: { orgId, taskId },
+    orderBy: { createdAt: "asc" },
+    select: {
+      action: true,
+      summary: true,
+      actorId: true,
+      createdAt: true,
+      metadata: true,
+    },
+  });
+
+  return events.map((e) => ({
+    action: e.action,
+    label: getMessagingAuditActionLabel(e.action),
+    summary: e.summary,
+    actorId: e.actorId,
+    createdAt: e.createdAt,
+    metadata: e.metadata,
+  }));
+
+}
+
+// ─── Admin/support task diagnostics ────────────────────────────────────────
+export async function getTaskHealthDiagnostics(orgId: string) {
+  const [statusCounts, overdueCount, reminderDispatchedCount, reminderPendingCount] = await Promise.all([
+    // Count tasks by status
+    db.messagingTask.groupBy({
+      by: ["status"],
+      where: { orgId },
+      _count: { _all: true },
+    }),
+    // Overdue tasks count
+    db.messagingTask.count({
+      where: {
+        orgId,
+        status: { in: ["OPEN", "IN_PROGRESS", "OVERDUE"] },
+        dueDate: { lt: new Date() },
+      },
+    }),
+    // Reminder dispatched count
+    db.messagingTask.count({
+      where: { orgId, reminderSentAt: { not: null } },
+    }),
+    // Reminder pending count
+    db.messagingTask.count({
+      where: {
+        orgId,
+        reminderAt: { not: null },
+        reminderSentAt: null,
+        status: { in: ["OPEN", "IN_PROGRESS", "OVERDUE"] },
+      },
+    }),
+  ]);
+
+  const statusMap: Record<string, number> = {};
+  for (const row of statusCounts) {
+    // @ts-ignore dynamic key
+    statusMap[row.status] = row._count;
+  }
+
+  return {
+    statusCounts: statusMap,
+    overdueCount,
+    reminderDispatchedCount,
+    reminderPendingCount,
+  };
+}
+
 
