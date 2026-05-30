@@ -43,6 +43,7 @@ export async function getMailboxFolderCoverage(
     totalThreads: r.totalThreads,
     lastCompletedAt: r.lastCompletedAt?.toISOString() ?? null,
     errorSummary: r.errorSummary,
+    lastAdvancedCursor: r.lastAdvancedCursor,
   }));
 
   return {
@@ -74,6 +75,7 @@ export async function getFolderCoverage(
     totalThreads: row.totalThreads,
     lastCompletedAt: row.lastCompletedAt?.toISOString() ?? null,
     errorSummary: row.errorSummary,
+    lastAdvancedCursor: row.lastAdvancedCursor,
   };
 }
 
@@ -280,6 +282,7 @@ export async function getBatchMailboxFolderCoverage(
       totalThreads: r.totalThreads,
       lastCompletedAt: r.lastCompletedAt?.toISOString() ?? null,
       errorSummary: r.errorSummary,
+      lastAdvancedCursor: r.lastAdvancedCursor,
     }));
     result.set(connId, {
       coverages,

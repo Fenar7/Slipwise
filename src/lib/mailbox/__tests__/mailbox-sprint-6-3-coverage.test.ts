@@ -22,6 +22,7 @@ function makeCoverage(
     totalThreads,
     lastCompletedAt: null,
     errorSummary: null,
+    lastAdvancedCursor: null,
   };
 }
 

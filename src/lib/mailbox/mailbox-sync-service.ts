@@ -25,6 +25,8 @@ import {
   markFolderCoverageComplete,
   updateFolderCoverageBootstrapping,
   initFolderCoverageForBootstrap,
+  getIncompleteRequiredFolders,
+  getFolderCoverage,
 } from "./folder-coverage-service";
 import {
   classifyProviderError,
@@ -65,8 +67,6 @@ export interface RunMailboxSyncResult {
 
 const MAILBOX_SYNC_MAX_RUNNING_AGE_MINUTES = 30;
 const MAILBOX_SYNC_LEASE_DURATION_MS = MAILBOX_SYNC_MAX_RUNNING_AGE_MINUTES * 60 * 1000;
-const GMAIL_REQUIRED_FOLDER_COVERAGE = ["INBOX", "SENT", "SPAM", "DRAFT"] as const;
-const GMAIL_FOLDER_COVERAGE_VERSION = 4;
 
 function toMetadataRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -83,34 +83,6 @@ function mergeWatchMetadata(
     ...(toMetadataRecord(current) ?? {}),
     ...patch,
   };
-}
-
-function hasRequiredGmailCoverage(metadata: unknown): boolean {
-  const record = toMetadataRecord(metadata);
-  if (!record) return false;
-
-  const version = record.gmailCoverageVersion;
-  if (typeof version !== "number" || version < GMAIL_FOLDER_COVERAGE_VERSION) {
-    return false;
-  }
-
-  const coveredLabels = record.gmailCoveredSystemLabels;
-  if (!Array.isArray(coveredLabels)) {
-    return false;
-  }
-
-  const coveredSet = new Set(
-    coveredLabels.filter((value): value is string => typeof value === "string"),
-  );
-  return GMAIL_REQUIRED_FOLDER_COVERAGE.every((label) => coveredSet.has(label));
-}
-
-function withRequiredGmailCoverage(metadata: unknown): Record<string, unknown> {
-  return mergeWatchMetadata(metadata, {
-    gmailCoverageVersion: GMAIL_FOLDER_COVERAGE_VERSION,
-    gmailCoveredSystemLabels: [...GMAIL_REQUIRED_FOLDER_COVERAGE],
-    gmailCoverageRecoveredAt: new Date().toISOString(),
-  });
 }
 
 async function ingestSyncedThreads(params: {
@@ -515,20 +487,33 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
       }
     }
 
-    const needsGmailCoverageRecovery =
-      connection.provider === "GMAIL" &&
-      effectiveMode === "DELTA" &&
-      !!effectiveCursor &&
-      !hasRequiredGmailCoverage(effectiveWatchMetadata);
+    // ─── Determine whether recovery is required based on REAL folder coverage ──
+    const incompleteRequiredFolders =
+      connection.provider === "GMAIL" && effectiveMode === "DELTA" && !!effectiveCursor
+        ? await getIncompleteRequiredFolders(params.orgId, connection.id)
+        : [];
+
+    const needsGmailCoverageRecovery = incompleteRequiredFolders.length > 0;
 
     let threadCount = 0;
     let messageCount = 0;
-    let recoveredGmailCoverage = false;
+    let recoveryBootstrapResults: import("./provider-contracts").MailboxBootstrapSliceResult[] | undefined;
     if (needsGmailCoverageRecovery) {
+      // Build resumption cursors from prior incomplete folder coverage so we
+      // do not restart from scratch every recovery sync.
+      const folderCursors: Record<string, string> = {};
+      for (const folder of incompleteRequiredFolders) {
+        const coverage = await getFolderCoverage(params.orgId, connection.id, folder);
+        if (coverage?.lastAdvancedCursor) {
+          folderCursors[folder] = coverage.lastAdvancedCursor;
+        }
+      }
+
       const recovery = await adapter.syncDelta({
         orgId: params.orgId,
         tokenRef: connection.tokenRef,
         cursor: null,
+        folderCursors,
       });
       if (isMailboxProviderError(recovery)) {
         throw toProviderErrorException(recovery);
@@ -544,7 +529,7 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
       });
       threadCount += recoveryStats.threadCount;
       messageCount += recoveryStats.messageCount;
-      recoveredGmailCoverage = true;
+      recoveryBootstrapResults = recovery.bootstrapSliceResults;
     }
 
     const delta = await adapter.syncDelta({
@@ -668,15 +653,10 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
       });
     }
 
-    const shouldPersistGmailCoverage =
-      connection.provider === "GMAIL" &&
-      syncedDrafts &&
-      (effectiveMode === "INITIAL" ||
-        recoveredGmailCoverage ||
-        !hasRequiredGmailCoverage(effectiveWatchMetadata));
-    if (shouldPersistGmailCoverage) {
-      effectiveWatchMetadata = withRequiredGmailCoverage(effectiveWatchMetadata);
-    }
+    // ─── No fake "coverage recovered" metadata flags ──────────────────────────
+    // Completion truth comes from per-folder mailboxFolderCoverage rows.
+    // Do NOT persist gmailCoverageVersion / gmailCoveredSystemLabels merely
+    // because a sync ran. Only actual folder pagination exhaustion counts.
 
     let watchUpdateData:
       | {
@@ -723,10 +703,13 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
 
     // ── Update per-folder coverage after successful sync ─────────────────
     if (connection.provider === "GMAIL") {
-      const bootstrapResults = delta.bootstrapSliceResults;
-      if (effectiveMode === "INITIAL" && bootstrapResults && bootstrapResults.length > 0) {
-        // Use per-slice exhaust results for truthful folder completion.
-        // A folder is COMPLETE only if paginationExhausted is true.
+      // Use bootstrap results from the INITIAL delta or from the recovery sync.
+      const bootstrapResults =
+        effectiveMode === "INITIAL"
+          ? delta.bootstrapSliceResults
+          : recoveryBootstrapResults;
+
+      if (bootstrapResults && bootstrapResults.length > 0) {
         for (const slice of bootstrapResults) {
           const folder = slice.sliceLabel as "INBOX" | "SENT" | "SPAM" | "DRAFT" | "ARCHIVE";
           if (slice.paginationExhausted) {
@@ -747,7 +730,7 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
             );
           }
         }
-      } else if (effectiveMode === "INITIAL" && (!bootstrapResults || bootstrapResults.length === 0)) {
+      } else if (effectiveMode === "INITIAL" || recoveryBootstrapResults !== undefined) {
         // Fallback: no per-slice results — mark all as BOOTSTRAPPING (not COMPLETE)
         for (const folder of ["INBOX", "SENT", "SPAM", "DRAFT", "ARCHIVE"] as const) {
           await updateFolderCoverageBootstrapping(
@@ -757,40 +740,6 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
             threadCount,
             delta.nextCursor?.value ?? "",
           );
-        }
-      } else if (recoveredGmailCoverage) {
-        const recoveryResults = delta.bootstrapSliceResults;
-        if (recoveryResults && recoveryResults.length > 0) {
-          for (const slice of recoveryResults) {
-            const folder = slice.sliceLabel as "INBOX" | "SENT" | "SPAM" | "DRAFT" | "ARCHIVE";
-            if (slice.paginationExhausted) {
-              await markFolderCoverageComplete(
-                params.orgId,
-                connection.id,
-                folder,
-                slice.threadCount,
-                slice.lastAdvancedCursor,
-              );
-            } else {
-              await updateFolderCoverageBootstrapping(
-                params.orgId,
-                connection.id,
-                folder,
-                slice.threadCount,
-                slice.lastAdvancedCursor,
-              );
-            }
-          }
-        } else {
-          for (const folder of ["INBOX", "SENT", "SPAM", "DRAFT", "ARCHIVE"] as const) {
-            await updateFolderCoverageBootstrapping(
-              params.orgId,
-              connection.id,
-              folder,
-              threadCount,
-              delta.nextCursor?.value ?? "",
-            );
-          }
         }
       }
     }
@@ -803,11 +752,9 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
         lastSyncError: null,
         lastSyncErrorCategory: null,
         ...(watchUpdateData ?? {}),
-        ...(shouldPersistGmailCoverage
+        ...(watchUpdateData
           ? { watchMetadata: effectiveWatchMetadata as Prisma.InputJsonValue }
-          : watchUpdateData
-            ? { watchMetadata: effectiveWatchMetadata as Prisma.InputJsonValue }
-            : {}),
+          : {}),
       },
     });
     await db.mailboxSyncRun.update({
