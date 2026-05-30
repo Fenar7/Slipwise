@@ -766,7 +766,23 @@ async function listLiveGmailProviderDrafts(input: ListActiveDraftsInput): Promis
       continue;
     }
 
+    const searchQuery = input.searchQuery?.toLowerCase();
+
     for (const draft of syncResult.drafts) {
+      if (searchQuery) {
+        const subject = draft.message.subject.toLowerCase();
+        const snippet = draft.message.snippet.toLowerCase();
+        const textBody = draft.message.textBody?.toLowerCase() ?? "";
+
+        if (
+          !subject.includes(searchQuery) &&
+          !snippet.includes(searchQuery) &&
+          !textBody.includes(searchQuery)
+        ) {
+          continue;
+        }
+      }
+
       drafts.push(mapLiveProviderDraft(orgId, connection.id, draft));
     }
   }
