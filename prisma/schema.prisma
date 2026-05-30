@@ -331,6 +331,12 @@ model OrgDefaults {
   defaultVoucherTemplate String @default("minimal-office")
   defaultSlipTemplate    String @default("modern-premium")
 
+  // Sprint 4.3: Voucher autofill defaults
+  defaultVoucherNotes        String?
+  defaultVoucherApprovedBy   String?
+  defaultVoucherReceivedBy   String?
+  defaultVoucherPaymentMode  String?
+
   // Sprint 4.1: Invoice autofill defaults
   defaultInvoiceNotes        String?
   defaultInvoiceTerms        String?

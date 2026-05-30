@@ -12,6 +12,9 @@ vi.mock("@/lib/db", () => ({
       deleteMany: vi.fn(),
       createMany: vi.fn(),
     },
+    vendor: {
+      findFirst: vi.fn(),
+    },
   },
 }));
 
@@ -61,11 +64,21 @@ vi.mock("@/lib/flow/workflow-engine", () => ({
   fireWorkflowTrigger: vi.fn().mockResolvedValue(undefined),
 }));
 
+vi.mock("@/lib/tags/assignment-service", () => ({
+  setVoucherTags: vi.fn(),
+}));
+
+vi.mock("../autofill-resolver", () => ({
+  validateVoucherVendor: vi.fn().mockResolvedValue(undefined),
+  resolveVoucherAutofill: vi.fn(),
+}));
+
 import { requireOrgContext } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { nextDocumentNumberTx } from "@/lib/docs";
 import { postVoucherTx } from "@/lib/accounting";
 import { checkUsageLimit } from "@/lib/usage-metering";
+import { validateVoucherVendor } from "../autofill-resolver";
 import { saveVoucher, updateVoucher } from "../actions";
 
 const ORG_ID = "org-1";
@@ -209,5 +222,142 @@ describe("voucher save actions", () => {
         actorId: USER_ID,
       }),
     );
+  });
+});
+
+describe("voucher vendor validation", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(db.$transaction).mockImplementation(async (callback: any) => callback(db));
+    vi.mocked(requireOrgContext).mockResolvedValue({
+      orgId: ORG_ID,
+      userId: USER_ID,
+      role: "admin",
+    });
+    vi.mocked(checkUsageLimit).mockResolvedValue({
+      allowed: true,
+      current: 0,
+      limit: 999,
+    });
+    vi.mocked(validateVoucherVendor).mockResolvedValue(undefined);
+  });
+
+  it("saveVoucher rejects cross-org vendorId", async () => {
+    vi.mocked(validateVoucherVendor).mockRejectedValue(
+      new Error("Vendor not found or does not belong to this organisation.")
+    );
+
+    const result = await saveVoucher(
+      {
+        vendorId: "foreign-vendor",
+        voucherDate: "2026-04-23",
+        type: "payment",
+        formData: {},
+        lines: [{ description: "Test", amount: 100 }],
+      },
+      "draft",
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("Vendor not found");
+    expect(db.voucher.create).not.toHaveBeenCalled();
+    expect(validateVoucherVendor).toHaveBeenCalledWith("foreign-vendor", ORG_ID);
+  });
+
+  it("saveVoucher allows valid in-org vendorId", async () => {
+    vi.mocked(db.voucher.create).mockResolvedValue({
+      id: "voucher-1",
+      voucherNumber: null,
+      totalAmount: 100,
+    } as any);
+
+    const result = await saveVoucher(
+      {
+        vendorId: "vendor-1",
+        voucherDate: "2026-04-23",
+        type: "payment",
+        formData: {},
+        lines: [{ description: "Test", amount: 100 }],
+      },
+      "draft",
+    );
+
+    expect(result.success).toBe(true);
+    expect(validateVoucherVendor).toHaveBeenCalledWith("vendor-1", ORG_ID);
+  });
+
+  it("saveVoucher allows blank vendorId", async () => {
+    vi.mocked(db.voucher.create).mockResolvedValue({
+      id: "voucher-1",
+      voucherNumber: null,
+      totalAmount: 100,
+    } as any);
+
+    const result = await saveVoucher(
+      {
+        voucherDate: "2026-04-23",
+        type: "payment",
+        formData: {},
+        lines: [{ description: "Test", amount: 100 }],
+      },
+      "draft",
+    );
+
+    expect(result.success).toBe(true);
+    expect(validateVoucherVendor).toHaveBeenCalledWith(undefined, ORG_ID);
+  });
+
+  it("updateVoucher rejects cross-org vendorId", async () => {
+    vi.mocked(db.voucher.findFirst).mockResolvedValueOnce({
+      id: "voucher-1",
+      status: "draft",
+      accountingStatus: "PENDING",
+      totalAmount: 100,
+    } as any);
+    vi.mocked(validateVoucherVendor).mockRejectedValue(
+      new Error("Vendor not found or does not belong to this organisation.")
+    );
+
+    const result = await updateVoucher("voucher-1", {
+      vendorId: "foreign-vendor",
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("Vendor not found");
+    expect(validateVoucherVendor).toHaveBeenCalledWith("foreign-vendor", ORG_ID);
+  });
+
+  it("updateVoucher allows valid in-org vendorId", async () => {
+    vi.mocked(db.voucher.findFirst).mockResolvedValueOnce({
+      id: "voucher-1",
+      status: "draft",
+      accountingStatus: "PENDING",
+      totalAmount: 100,
+    } as any);
+    vi.mocked(db.voucher.update).mockResolvedValue({ id: "voucher-1" } as any);
+
+    const result = await updateVoucher("voucher-1", {
+      vendorId: "vendor-1",
+    });
+
+    expect(result.success).toBe(true);
+    expect(validateVoucherVendor).toHaveBeenCalledWith("vendor-1", ORG_ID);
+  });
+
+  it("updateVoucher skips vendor validation when vendorId is not provided", async () => {
+    vi.mocked(db.voucher.findFirst).mockResolvedValueOnce({
+      id: "voucher-1",
+      status: "draft",
+      accountingStatus: "PENDING",
+      totalAmount: 100,
+    } as any);
+    vi.mocked(db.voucher.update).mockResolvedValue({ id: "voucher-1" } as any);
+
+    const result = await updateVoucher("voucher-1", {
+      voucherDate: "2026-04-23",
+    });
+
+    expect(result.success).toBe(true);
+    expect(validateVoucherVendor).not.toHaveBeenCalled();
   });
 });
