@@ -637,6 +637,7 @@ export interface ListActiveDraftsInput {
   userId: string;
   role: "owner" | "admin" | "member";
   mailboxConnectionId?: string;
+  searchQuery?: string;
 }
 
 function hasDraftLabel(metadata: unknown): boolean {
@@ -799,6 +800,15 @@ async function listProviderDrafts(input: ListActiveDraftsInput): Promise<Mailbox
       thread: {
         mailboxConnectionId: { in: connectionIds },
       },
+      ...(input.searchQuery
+        ? {
+            OR: [
+              { subject: { contains: input.searchQuery, mode: "insensitive" } },
+              { snippet: { contains: input.searchQuery, mode: "insensitive" } },
+              { textBody: { contains: input.searchQuery, mode: "insensitive" } },
+            ],
+          }
+        : {}),
     },
     select: {
       id: true,
@@ -1037,6 +1047,14 @@ export async function listActiveDrafts(
       mailboxConnectionId: { in: connectionIds },
       createdBy: userId,
       status: "ACTIVE",
+      ...(input.searchQuery
+        ? {
+            OR: [
+              { subject: { contains: input.searchQuery, mode: "insensitive" } },
+              { textBody: { contains: input.searchQuery, mode: "insensitive" } },
+            ],
+          }
+        : {}),
     },
     include: { draftAttachments: true },
     orderBy: { updatedAt: "desc" },
