@@ -54,8 +54,10 @@ function parseSearchTerms(query: string): {
       SPAM: "SPAM",
       ARCHIVE: "ARCHIVE",
     };
-    folderHint = folderMap[rawFolder] ?? null;
-    textSearch = textSearch.replace(folderMatch[0], "").trim();
+    if (rawFolder in folderMap) {
+      folderHint = folderMap[rawFolder];
+      textSearch = textSearch.replace(folderMatch[0], "").trim();
+    }
   }
 
   return { textSearch, fromFilter, toFilter, folderHint };
@@ -199,7 +201,6 @@ export async function listMailboxThreads(
     userId,
     role,
     connectionId,
-    folder,
     status,
     unreadOnly,
     isFlagged,
@@ -208,6 +209,23 @@ export async function listMailboxThreads(
     cursor,
     limit: rawLimit,
   } = params;
+
+  let { folder } = params;
+
+  const trimmedQuery = searchQuery?.trim();
+  let textSearch = trimmedQuery || "";
+  let fromFilter: string | null = null;
+  let toFilter: string | null = null;
+
+  if (trimmedQuery) {
+    const parsed = parseSearchTerms(trimmedQuery);
+    textSearch = parsed.textSearch;
+    fromFilter = parsed.fromFilter;
+    toFilter = parsed.toFilter;
+    if (parsed.folderHint && !folder) {
+      folder = parsed.folderHint;
+    }
+  }
 
   const limit = Math.min(
     Math.max(1, rawLimit ?? DEFAULT_LIMIT),
@@ -311,25 +329,30 @@ export async function listMailboxThreads(
   // Combine filter where with search condition
   const conditions: Prisma.MailboxThreadWhereInput[] = [baseWhere];
 
-  const trimmedQuery = searchQuery?.trim();
   if (trimmedQuery) {
-    const { textSearch, fromFilter, toFilter, folderHint } = parseSearchTerms(trimmedQuery);
-
-    // Apply folder hint from search query (e.g., "in:inbox")
-    if (folderHint && !folder) {
-      // Folder hint from search is applied as an additional filter
-      // but only if no explicit folder filter was already set
-    }
-
     // Build search conditions
     const searchConditions: Prisma.MailboxThreadWhereInput[] = [];
 
-    // Text search across subject and previewSnippet
+    // Text search across subject, previewSnippet, body, sender, and recipients
     if (textSearch) {
       searchConditions.push({
         OR: [
           { subject: { contains: textSearch, mode: "insensitive" } },
           { previewSnippet: { contains: textSearch, mode: "insensitive" } },
+          {
+            messages: {
+              some: {
+                OR: [
+                  { textBody: { contains: textSearch, mode: "insensitive" } },
+                  { from: { path: ["email"], string_contains: textSearch, mode: "insensitive" } },
+                  { from: { path: ["displayName"], string_contains: textSearch, mode: "insensitive" } },
+                  { to: { array_contains: [{ email: textSearch }] } },
+                  { cc: { array_contains: [{ email: textSearch }] } },
+                  { bcc: { array_contains: [{ email: textSearch }] } },
+                ],
+              },
+            },
+          },
         ],
       });
     }

@@ -153,6 +153,7 @@ describe("Sprint 4.4 — listMailboxThreads search", () => {
               OR: [
                 { subject: { contains: "invoice", mode: "insensitive" } },
                 { previewSnippet: { contains: "invoice", mode: "insensitive" } },
+                { messages: { some: { OR: expect.any(Array) } } },
               ],
             }),
           ]),
@@ -178,10 +179,12 @@ describe("Sprint 4.4 — listMailboxThreads search", () => {
       (cond: Record<string, unknown>) => cond.OR,
     );
     expect(searchOr).toBeDefined();
-    expect(searchOr.OR).toEqual([
-      { subject: { contains: "attached", mode: "insensitive" } },
-      { previewSnippet: { contains: "attached", mode: "insensitive" } },
-    ]);
+    expect(searchOr.OR).toEqual(
+      expect.arrayContaining([
+        { subject: { contains: "attached", mode: "insensitive" } },
+        { previewSnippet: { contains: "attached", mode: "insensitive" } },
+      ])
+    );
   });
 
   it("combines search with existing filters", async () => {
@@ -205,6 +208,7 @@ describe("Sprint 4.4 — listMailboxThreads search", () => {
           OR: [
             { subject: { contains: "invoice", mode: "insensitive" } },
             { previewSnippet: { contains: "invoice", mode: "insensitive" } },
+            { messages: { some: { OR: expect.any(Array) } } },
           ],
         }),
       ]),
@@ -231,6 +235,7 @@ describe("Sprint 4.4 — listMailboxThreads search", () => {
             OR: [
               { subject: { contains: "invoice", mode: "insensitive" } },
               { previewSnippet: { contains: "invoice", mode: "insensitive" } },
+              { messages: { some: { OR: expect.any(Array) } } },
             ],
           }),
         ]),
@@ -269,10 +274,12 @@ describe("Sprint 4.4 — GET /api/mailbox/threads searchQuery", () => {
       (cond: Record<string, unknown>) => cond.OR,
     );
     expect(searchOr).toBeDefined();
-    expect(searchOr.OR).toEqual([
-      { subject: { contains: "invoice 123", mode: "insensitive" } },
-      { previewSnippet: { contains: "invoice 123", mode: "insensitive" } },
-    ]);
+    expect(searchOr.OR).toEqual(
+      expect.arrayContaining([
+        { subject: { contains: "invoice 123", mode: "insensitive" } },
+        { previewSnippet: { contains: "invoice 123", mode: "insensitive" } },
+      ])
+    );
   });
 
   it("trims whitespace from searchQuery", async () => {
@@ -326,6 +333,7 @@ describe("Sprint 4.4 — GET /api/mailbox/threads searchQuery", () => {
               OR: [
                 { subject: { contains: "urgent", mode: "insensitive" } },
                 { previewSnippet: { contains: "urgent", mode: "insensitive" } },
+                { messages: { some: { OR: expect.any(Array) } } },
               ],
             }),
           ]),
