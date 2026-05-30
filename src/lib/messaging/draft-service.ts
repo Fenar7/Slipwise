@@ -1,7 +1,6 @@
 import "server-only";
 
 import { db } from "@/lib/db";
-import { Prisma } from "@/generated/prisma/client";
 import type { ConversationDraftRecord } from "./domain-types";
 import { draftOrgSafeWhere } from "./org-safe-helpers";
 import { toDraftRecord } from "./mappers";
@@ -56,7 +55,6 @@ export async function saveDraft(
         where: { id: existing.id },
         data: {
           body: input.body,
-          contentMeta: (input.contentMeta ?? {}) as Prisma.InputJsonValue,
         },
       });
       return toDraftRecord(updated);
@@ -69,7 +67,6 @@ export async function saveDraft(
         threadId: input.threadId ?? null,
         userId: input.userId,
         body: input.body,
-        contentMeta: input.contentMeta ?? {},
       },
     });
     return toDraftRecord(created);

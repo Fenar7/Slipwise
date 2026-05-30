@@ -3,12 +3,6 @@
 import React from "react";
 import { cn } from "@/lib/utils";
 import {
-  Bold,
-  Italic,
-  Strikethrough,
-  Link2,
-  List,
-  Code2,
   Paperclip,
   AtSign,
   Smile,
@@ -26,6 +20,7 @@ import {
   AlertTriangle,
   Loader2,
 } from "lucide-react";
+import { FormattingToolbar, applyComposerFormat } from "./messaging-formatting-toolbar";
 import type {
   AttachedFile,
   MentionSuggestion,
@@ -112,45 +107,6 @@ function uploadedFileIcon(mimeCategory: string) {
     case "document": return FileText;
     default: return File;
   }
-}
-
-interface FormatButton {
-  label: string;
-  icon: React.ElementType;
-  testId: string;
-}
-
-const FORMAT_BUTTONS: FormatButton[] = [
-  { label: "Bold", icon: Bold, testId: "composer-fmt-bold" },
-  { label: "Italic", icon: Italic, testId: "composer-fmt-italic" },
-  { label: "Strikethrough", icon: Strikethrough, testId: "composer-fmt-strikethrough" },
-  { label: "Link", icon: Link2, testId: "composer-fmt-link" },
-  { label: "Bulleted list", icon: List, testId: "composer-fmt-list" },
-  { label: "Code block", icon: Code2, testId: "composer-fmt-code" },
-];
-
-function FormattingToolbar() {
-  return (
-    <div
-      className="flex items-center gap-0.5 border-b px-2 py-1.5"
-      style={{ borderColor: "#F0F0F0" }}
-      role="toolbar"
-      aria-label="Text formatting"
-      data-testid="composer-formatting-toolbar"
-    >
-      {FORMAT_BUTTONS.map(({ label, icon: Icon, testId }) => (
-        <button
-          key={label}
-          type="button"
-          className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#DC2626]"
-          aria-label={label}
-          data-testid={testId}
-        >
-          <Icon className="h-3.5 w-3.5" style={{ color: "#79747E" }} />
-        </button>
-      ))}
-    </div>
-  );
 }
 
 function formatSizeLabel(bytes: number): string {
@@ -497,6 +453,10 @@ export function MessagingComposer({
 
   const displayHasContent = simulatedState === "has-content" ? true : hasContent;
 
+  function applyFormat(type: string) {
+    applyComposerFormat(type, inputRef, setInputValue);
+  }
+
   if (restricted || !isAccessible) {
     return <RestrictedComposer reason={restrictedReason} />;
   }
@@ -552,7 +512,7 @@ export function MessagingComposer({
           style={{ borderColor: "#E0E0E0" }}
           data-testid="composer-shell"
         >
-          <FormattingToolbar />
+          <FormattingToolbar onFormat={applyFormat} />
 
           <AttachmentStaging files={stagedFiles} onRemove={handleRemoveFile} />
 

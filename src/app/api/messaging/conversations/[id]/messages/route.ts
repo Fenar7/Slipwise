@@ -136,10 +136,6 @@ export async function POST(
       threadId,
       authorId: userId,
       body: messageBody,
-      contentMeta:
-        typeof body.contentMeta === "object" && body.contentMeta !== null
-          ? (body.contentMeta as Record<string, unknown>)
-          : null,
       attachments,
       mentions,
     });

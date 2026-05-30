@@ -63,10 +63,6 @@ export async function POST(
       userId,
       threadId,
       body: draftBody,
-      contentMeta:
-        typeof body.contentMeta === "object" && body.contentMeta !== null
-          ? (body.contentMeta as Record<string, unknown>)
-          : null,
     });
 
     return messagingApiResponse(draft, 201);
