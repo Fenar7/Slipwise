@@ -2,6 +2,7 @@ import "server-only";
 
 import { db } from "@/lib/db";
 import type { MailboxSyncRunRecord } from "./domain-types";
+import { isModelMissingTableError } from "@/lib/prisma-errors";
 
 function toSyncRunRecord(
   row: {
@@ -64,30 +65,41 @@ export async function getMailboxSyncRunsByConnectionIds(
     return { latestRunByConnectionId, latestCompletedRunByConnectionId };
   }
 
-  const rows = await db.mailboxSyncRun.findMany({
-    where: {
-      orgId,
-      mailboxConnectionId: { in: connectionIds },
-    },
-    orderBy: { startedAt: "desc" },
-    select: {
-      id: true,
-      orgId: true,
-      mailboxConnectionId: true,
-      provider: true,
-      status: true,
-      triggerSource: true,
-      syncMode: true,
-      startedAt: true,
-      completedAt: true,
-      errorCategory: true,
-      errorSummary: true,
-      stats: true,
-      createdBy: true,
-      createdAt: true,
-      updatedAt: true,
-    },
-  });
+  let rows: Awaited<ReturnType<typeof db.mailboxSyncRun.findMany>> = [];
+  try {
+    rows = await db.mailboxSyncRun.findMany({
+      where: {
+        orgId,
+        mailboxConnectionId: { in: connectionIds },
+      },
+      orderBy: { startedAt: "desc" },
+      select: {
+        id: true,
+        orgId: true,
+        mailboxConnectionId: true,
+        provider: true,
+        status: true,
+        triggerSource: true,
+        syncMode: true,
+        startedAt: true,
+        completedAt: true,
+        errorCategory: true,
+        errorSummary: true,
+        stats: true,
+        createdBy: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+  } catch (error) {
+    if (isModelMissingTableError(error, "MailboxSyncRun")) {
+      console.warn(
+        "[mailbox] getMailboxSyncRunsByConnectionIds skipped: mailbox_sync_run table missing during schema drift",
+      );
+      return { latestRunByConnectionId, latestCompletedRunByConnectionId };
+    }
+    throw error;
+  }
 
   for (const row of rows) {
     const mapped = toSyncRunRecord(row);

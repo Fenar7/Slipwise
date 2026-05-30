@@ -2,6 +2,7 @@ import "server-only";
 
 import { db } from "@/lib/db";
 import type { ActiveFilter } from "@/app/app/mailbox/types";
+import { isModelMissingTableError } from "@/lib/prisma-errors";
 
 export interface MailboxSavedViewRecord {
   id: string;
@@ -36,11 +37,21 @@ export async function listMailboxSavedViews(
   orgId: string,
   createdBy: string,
 ): Promise<MailboxSavedViewRecord[]> {
-  const rows = await db.mailboxSavedView.findMany({
-    where: { orgId, createdBy },
-    orderBy: { createdAt: "asc" },
-  });
-  return rows.map(toRecord);
+  try {
+    const rows = await db.mailboxSavedView.findMany({
+      where: { orgId, createdBy },
+      orderBy: { createdAt: "asc" },
+    });
+    return rows.map(toRecord);
+  } catch (error) {
+    if (isModelMissingTableError(error, "MailboxSavedView")) {
+      console.warn(
+        "[mailbox] listMailboxSavedViews skipped: mailbox_saved_view table missing during schema drift",
+      );
+      return [];
+    }
+    throw error;
+  }
 }
 
 export interface CreateMailboxSavedViewParams {
