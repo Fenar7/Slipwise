@@ -55,24 +55,9 @@ export type {
   RetentionAction,
 } from "./domain-types";
 export {
-  conversationIsArchived,
-  conversationIsLocked,
-  conversationIsDM,
-  conversationIsChannel,
-  conversationIsGroup,
-  conversationIsAccessible,
-  participantIsActive,
-  participantIsMuted,
-  messageIsActive,
-  messageIsDeleted,
-  messageIsEdited,
-  threadIsResolved,
-  presenceIsExpired,
-  typingIsExpired,
-  attachmentIsScanned,
-  attachmentIsPendingScan,
   taskIsOpen,
   taskIsOverdue,
+  taskIsDueSoon,
   meetingIsUpcoming,
   meetingIsEnded,
   calendarConnectionIsActive,
@@ -129,6 +114,9 @@ export type {
   CreateTaskInput,
   UpdateTaskStatusInput,
   AssignTaskInput,
+  TaskListFilterInput,
+  TaskListResult,
+  TaskListScope,
   ScheduleMeetingInput,
   CancelMeetingInput,
   UpdateMeetingInput,
@@ -145,6 +133,7 @@ export {
   isValidCalendarConnectionStatus,
   isValidAttachmentScanStatus,
   isValidRetentionAction,
+  isValidTaskListScope,
 } from "./service-contracts";
 
 // Mappers
@@ -313,6 +302,7 @@ export {
   getOrgTaskSummaries,
   type ListConversationSummariesOptions,
   type GetConversationDetailOptions,
+  type GetOrgTaskSummariesOptions,
 } from "./read-models";
 
 // ─── Phase 4 Sprint 4.1: Realtime transport ───────────────────────────────────────

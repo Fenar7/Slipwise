@@ -50,19 +50,17 @@ describe("Sprint 6.4 Service layer — Global Tasks Workspace", () => {
   }
 
   it("listAllTasksForUser retrieves tasks for user's active conversations", async () => {
-    // 1. Mock active conversations
     (db.conversationParticipant.findMany as any).mockResolvedValue([
       { conversationId: "conv-1" },
       { conversationId: "conv-2" },
     ]);
 
-    // 2. Mock database tasks returned
     (db.messagingTask.findMany as any).mockResolvedValue([
       mockTaskRecord({ id: "task-1", conversationId: "conv-1" }),
       mockTaskRecord({ id: "task-2", conversationId: "conv-2" }),
     ]);
 
-    const tasks = await listAllTasksForUser("org-1", "user-1");
+    const result = await listAllTasksForUser({ orgId: "org-1", userId: "user-1" });
 
     expect(db.conversationParticipant.findMany).toHaveBeenCalledWith({
       where: {
@@ -81,20 +79,49 @@ describe("Sprint 6.4 Service layer — Global Tasks Workspace", () => {
         conversationId: { in: ["conv-1", "conv-2"] },
       },
       orderBy: [{ dueDate: "asc" }, { createdAt: "desc" }],
+      take: 21,
+      skip: 0,
+      cursor: undefined,
     });
 
-    expect(tasks).toHaveLength(2);
-    expect(tasks[0].id).toBe("task-1");
-    expect(tasks[1].id).toBe("task-2");
+    expect(result.tasks).toHaveLength(2);
+    expect(result.tasks[0].id).toBe("task-1");
+    expect(result.tasks[1].id).toBe("task-2");
+    expect(result.hasMore).toBe(false);
+    expect(result.nextCursor).toBeNull();
   });
 
   it("listAllTasksForUser returns empty list if user has no active conversations", async () => {
     (db.conversationParticipant.findMany as any).mockResolvedValue([]);
 
-    const tasks = await listAllTasksForUser("org-1", "user-1");
+    const result = await listAllTasksForUser({ orgId: "org-1", userId: "user-1" });
 
-    expect(tasks).toHaveLength(0);
+    expect(result.tasks).toHaveLength(0);
+    expect(result.hasMore).toBe(false);
+    expect(result.nextCursor).toBeNull();
     expect(db.messagingTask.findMany).not.toHaveBeenCalled();
+  });
+
+  it("listAllTasksForUser returns paginated results with hasMore", async () => {
+    (db.conversationParticipant.findMany as any).mockResolvedValue([
+      { conversationId: "conv-1" },
+    ]);
+
+    // Return 3 tasks when requesting limit=2
+    const tasks = Array.from({ length: 3 }, (_, i) =>
+      mockTaskRecord({ id: `task-${i + 1}` }),
+    );
+    (db.messagingTask.findMany as any).mockResolvedValue(tasks);
+
+    const result = await listAllTasksForUser({
+      orgId: "org-1",
+      userId: "user-1",
+      limit: 2,
+    });
+
+    expect(result.tasks).toHaveLength(2);
+    expect(result.hasMore).toBe(true);
+    expect(result.nextCursor).toBe("task-2");
   });
 
   it("getOrgTaskSummaries enriches tasks with profiles and conversation details", async () => {
@@ -115,15 +142,17 @@ describe("Sprint 6.4 Service layer — Global Tasks Workspace", () => {
       { id: "conv-1", type: "CHANNEL", name: "engineering" },
     ]);
 
-    const summaries = await getOrgTaskSummaries("org-1", "user-1");
+    const result = await getOrgTaskSummaries("org-1", "user-1");
 
-    expect(summaries).toHaveLength(1);
-    const s = summaries[0];
+    expect(result.tasks).toHaveLength(1);
+    const s = result.tasks[0];
     expect(s.id).toBe("task-1");
     expect(s.assigneeName).toBe("Alice Green");
     expect(s.assigneeAvatarInitials).toBe("AG");
     expect(s.createdByName).toBe("Bob Builder");
     expect(s.conversationName).toBe("engineering");
     expect(s.conversationType).toBe("CHANNEL");
+    expect(result.hasMore).toBe(false);
+    expect(result.nextCursor).toBeNull();
   });
 });

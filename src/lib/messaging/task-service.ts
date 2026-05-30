@@ -7,7 +7,14 @@ import { toTaskRecord } from "./mappers";
 import { ConversationAccessError, InvalidInputError, NotFoundError } from "./errors";
 import { requireConversationAccess } from "./authorization";
 import { toConversationRecord, toParticipantRecord } from "./mappers";
-import type { CreateTaskInput, UpdateTaskStatusInput, AssignTaskInput, UpdateTaskInput } from "./service-contracts";
+import type {
+  CreateTaskInput,
+  UpdateTaskStatusInput,
+  AssignTaskInput,
+  UpdateTaskInput,
+  TaskListFilterInput,
+  TaskListResult,
+} from "./service-contracts";
 
 function validateReminderAt(reminderAt: Date | null | undefined, dueDate: Date | null | undefined, now = new Date()): void {
   if (reminderAt === undefined || reminderAt === null) return;
@@ -338,10 +345,15 @@ export async function updateTask(input: UpdateTaskInput): Promise<MessagingTaskR
   return toTaskRecord(updatedTask);
 }
 
+const TASK_LIST_DEFAULT_LIMIT = 20;
+const TASK_LIST_MAX_LIMIT = 50;
+
 export async function listAllTasksForUser(
-  orgId: string,
-  userId: string,
-): Promise<MessagingTaskRecord[]> {
+  filter: TaskListFilterInput,
+): Promise<TaskListResult> {
+  const { orgId, userId, scope, conversationId, cursor, limit: rawLimit } = filter;
+  const limit = Math.min(TASK_LIST_MAX_LIMIT, Math.max(1, rawLimit ?? TASK_LIST_DEFAULT_LIMIT));
+
   const participantConversations = await db.conversationParticipant.findMany({
     where: {
       orgId,
@@ -353,20 +365,78 @@ export async function listAllTasksForUser(
     },
   });
 
-  const conversationIds = participantConversations.map((pc) => pc.conversationId);
+  const accessibleConversationIds = participantConversations.map((pc) => pc.conversationId);
 
-  if (conversationIds.length === 0) {
-    return [];
+  if (accessibleConversationIds.length === 0) {
+    return { tasks: [], nextCursor: null, hasMore: false };
   }
 
+  // If a specific conversation is requested, validate membership
+  if (conversationId) {
+    if (!accessibleConversationIds.includes(conversationId)) {
+      return { tasks: [], nextCursor: null, hasMore: false };
+    }
+  }
+
+  const targetConversationIds = conversationId
+    ? [conversationId]
+    : accessibleConversationIds;
+
+  // Build the base where clause scoped to accessible conversations
+  const where: Record<string, unknown> = {
+    orgId,
+    conversationId: { in: targetConversationIds },
+  };
+
+  // Apply scope-specific predicates at the DB level
+  const now = new Date();
+  switch (scope) {
+    case "open":
+      where.status = { in: ["OPEN", "IN_PROGRESS"] };
+      break;
+    case "done":
+      where.status = "DONE";
+      break;
+    case "cancelled":
+      where.status = "CANCELLED";
+      break;
+    case "overdue":
+      where.status = { in: ["OPEN", "IN_PROGRESS"] };
+      where.dueDate = { lt: now };
+      break;
+    case "due_soon": {
+      const upperBound = new Date();
+      upperBound.setDate(upperBound.getDate() + 7);
+      where.status = { in: ["OPEN", "IN_PROGRESS"] };
+      where.dueDate = { gte: now, lte: upperBound };
+      break;
+    }
+    case "assigned":
+      where.assigneeId = userId;
+      break;
+    case "created":
+      where.createdBy = userId;
+      break;
+    // No scope = all accessible tasks (default)
+  }
+
+  // Cursor-based pagination: fetch one extra to detect hasMore
   const rows = await db.messagingTask.findMany({
-    where: {
-      orgId,
-      conversationId: { in: conversationIds },
-    },
+    where,
     orderBy: [{ dueDate: "asc" }, { createdAt: "desc" }],
+    take: limit + 1,
+    skip: cursor ? 1 : 0,
+    cursor: cursor ? { id: cursor } : undefined,
   });
 
-  return rows.map(toTaskRecord);
+  const hasMore = rows.length > limit;
+  const sliced = hasMore ? rows.slice(0, limit) : rows;
+  const nextCursor = hasMore ? sliced[sliced.length - 1].id : null;
+
+  return {
+    tasks: sliced.map(toTaskRecord),
+    nextCursor,
+    hasMore,
+  };
 }
 

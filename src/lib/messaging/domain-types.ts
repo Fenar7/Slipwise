@@ -328,10 +328,23 @@ export function taskIsOpen(record: MessagingTaskRecord): boolean {
 }
 
 export function taskIsOverdue(record: MessagingTaskRecord): boolean {
-  if (record.status === "OVERDUE") return true;
+  if (record.status === "DONE" || record.status === "CANCELLED") return false;
   if (!record.dueDate) return false;
   if (!taskIsOpen(record)) return false;
   return record.dueDate < new Date();
+}
+
+/**
+ * Returns true if the task is open and due within the next `daysAhead` days (default 7).
+ * Used by the `due_soon` scope filter.
+ */
+export function taskIsDueSoon(record: MessagingTaskRecord, daysAhead = 7): boolean {
+  if (!taskIsOpen(record)) return false;
+  if (!record.dueDate) return false;
+  if (taskIsOverdue(record)) return false;
+  const upperBound = new Date();
+  upperBound.setDate(upperBound.getDate() + daysAhead);
+  return record.dueDate <= upperBound;
 }
 
 // ─── Meeting ──────────────────────────────────────────────────────────────────

@@ -4,14 +4,24 @@ import type { ApiTaskSummary } from "./mappers";
 
 export type TaskErrorType = "none" | "network" | "restricted" | "unknown";
 
-export function useConversationTasks(conversationId: string | null) {
+export interface UseConversationTasksOptions {
+  scope?: string;
+  conversationId?: string;
+}
+
+export function useConversationTasks(
+  conversationId: string | null,
+  options?: UseConversationTasksOptions,
+) {
   const [tasks, setTasks] = useState<ApiTaskSummary[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [errorType, setErrorType] = useState<TaskErrorType>("none");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [hasMore, setHasMore] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
 
-  const load = useCallback(async (id: string) => {
+  const load = useCallback(async (id: string, opts?: UseConversationTasksOptions) => {
     if (abortRef.current) abortRef.current.abort();
     const ctrl = new AbortController();
     abortRef.current = ctrl;
@@ -19,9 +29,21 @@ export function useConversationTasks(conversationId: string | null) {
     setLoading(true);
     setErrorType("none");
     setErrorMessage(null);
+    setNextCursor(null);
+    setHasMore(false);
 
     try {
-      const url = id === "global" ? "/api/messaging/tasks" : `/api/messaging/conversations/${id}/tasks`;
+      let url: string;
+      if (id === "global") {
+        const params = new URLSearchParams();
+        if (opts?.scope) params.set("scope", opts.scope);
+        if (opts?.conversationId) params.set("conversationId", opts.conversationId);
+        const qs = params.toString();
+        url = `/api/messaging/tasks${qs ? `?${qs}` : ""}`;
+      } else {
+        url = `/api/messaging/conversations/${id}/tasks`;
+      }
+
       const res = await fetch(url, {
         credentials: "same-origin",
         signal: ctrl.signal,
@@ -40,7 +62,18 @@ export function useConversationTasks(conversationId: string | null) {
         return;
       }
 
-      setTasks(payload.data as ApiTaskSummary[]);
+      // Global endpoint returns { tasks, nextCursor, hasMore }
+      // Scoped endpoint returns TaskSummary[] directly
+      const data = payload.data;
+      if (Array.isArray(data)) {
+        setTasks(data as ApiTaskSummary[]);
+      } else if (data && typeof data === "object" && "tasks" in data) {
+        setTasks(data.tasks as ApiTaskSummary[]);
+        setNextCursor(data.nextCursor as string | null);
+        setHasMore(data.hasMore as boolean);
+      } else {
+        setTasks([]);
+      }
     } catch (err) {
       if (ctrl.signal.aborted) return;
       setErrorType("network");
@@ -56,16 +89,18 @@ export function useConversationTasks(conversationId: string | null) {
       setLoading(false);
       setErrorType("none");
       setErrorMessage(null);
+      setNextCursor(null);
+      setHasMore(false);
       if (abortRef.current) abortRef.current.abort();
       return;
     }
-    load(conversationId);
+    load(conversationId, options);
     return () => { if (abortRef.current) abortRef.current.abort(); };
-  }, [conversationId, load]);
+  }, [conversationId, load, options?.scope, options?.conversationId]);
 
   const refresh = useCallback(() => {
-    if (conversationId) load(conversationId);
-  }, [conversationId, load]);
+    if (conversationId) load(conversationId, options);
+  }, [conversationId, load, options]);
 
-  return { tasks, loading, errorType, errorMessage, refresh };
+  return { tasks, loading, errorType, errorMessage, refresh, nextCursor, hasMore };
 }
