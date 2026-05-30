@@ -23,17 +23,23 @@ const STALL_DETECTION_THRESHOLD_MS = 5 * 60 * 1000;
 function parseSyncStats(stats: Record<string, unknown> | null): {
   threadCount: number | null;
   messageCount: number | null;
+  currentFolder: string | null;
+  syncPhase: string | null;
 } {
   if (!stats) {
-    return { threadCount: null, messageCount: null };
+    return { threadCount: null, messageCount: null, currentFolder: null, syncPhase: null };
   }
 
   const threadCount =
     typeof stats.threadCount === "number" ? stats.threadCount : null;
   const messageCount =
     typeof stats.messageCount === "number" ? stats.messageCount : null;
+  const currentFolder =
+    typeof stats.currentFolder === "string" ? stats.currentFolder : null;
+  const syncPhase =
+    typeof stats.syncPhase === "string" ? stats.syncPhase : null;
 
-  return { threadCount, messageCount };
+  return { threadCount, messageCount, currentFolder, syncPhase };
 }
 
 /**
@@ -90,6 +96,9 @@ export function buildMailboxSyncPresentation(
     null;
 
   const latestRunStats = parseSyncStats(latestCompletedRun?.stats ?? null);
+  // For a running run, use live heartbeat stats instead of last completed stats
+  const runningRunStats = (isSyncing && latestRun) ? parseSyncStats(latestRun.stats ?? null) : null;
+  const activeStats = isSyncing ? runningRunStats : latestRunStats;
   const failedSummary =
     latestRun?.status === "FAILED"
       ? latestRun.errorSummary
@@ -123,6 +132,31 @@ export function buildMailboxSyncPresentation(
 
   if (isSyncing) {
     const isInitial = latestRun?.syncMode !== "DELTA";
+    const liveThreadCount = activeStats?.threadCount ?? 0;
+    const liveMessageCount = activeStats?.messageCount ?? 0;
+    const currentFolder = activeStats?.currentFolder ?? null;
+    const syncPhase = activeStats?.syncPhase ?? null;
+
+    // Build a truthful in-run detail label that reflects actual progress
+    let runDetailLabel: string;
+    if (syncPhase === "coverage_recovery") {
+      runDetailLabel = currentFolder
+        ? `Recovering ${currentFolder} folder (${liveThreadCount} threads imported so far).`
+        : `Recovering incomplete folders (${liveThreadCount} threads imported so far).`;
+    } else if (syncPhase === "draft_sync") {
+      runDetailLabel = liveThreadCount > 0
+        ? `Syncing drafts (${liveThreadCount} threads imported so far).`
+        : "Syncing drafts from this mailbox.";
+    } else if (liveThreadCount > 0) {
+      runDetailLabel = isInitial
+        ? `Importing threads (${liveThreadCount} threads, ${liveMessageCount} messages so far).`
+        : `Checking for new mail (${liveThreadCount} threads, ${liveMessageCount} messages so far).`;
+    } else {
+      runDetailLabel = isInitial
+        ? "Importing recent threads. Messages will appear automatically."
+        : "Checking Gmail for new messages and updates.";
+    }
+
     return {
       state: "running",
       isSyncing: true,
@@ -134,12 +168,10 @@ export function buildMailboxSyncPresentation(
       lastRunStatus: latestRun?.status ?? "RUNNING",
       lastErrorCategory: null,
       lastErrorSummary: null,
-      lastRunThreadCount: latestRunStats.threadCount,
-      lastRunMessageCount: latestRunStats.messageCount,
+      lastRunThreadCount: liveThreadCount || latestRunStats.threadCount,
+      lastRunMessageCount: liveMessageCount || latestRunStats.messageCount,
       stageLabel: isInitial ? "Initial import in progress" : "Checking for new mail",
-      detailLabel: isInitial
-        ? "Importing recent threads. Messages will appear automatically."
-        : "Checking Gmail for new messages and updates.",
+      detailLabel: runDetailLabel,
       staleGmailCoverage: false,
     };
   }

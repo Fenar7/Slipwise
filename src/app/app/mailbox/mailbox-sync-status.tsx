@@ -135,6 +135,11 @@ export function MailboxSyncSummary({
     sync.state === "completed" &&
     sync.lastRunThreadCount !== null &&
     sync.lastRunMessageCount !== null;
+  // Show in-run progress stats when running and we have live counts
+  const showRunningStats =
+    sync.state === "running" &&
+    sync.lastRunThreadCount !== null &&
+    sync.lastRunThreadCount > 0;
 
   return (
     <div
@@ -162,6 +167,12 @@ export function MailboxSyncSummary({
           {showStats ? (
             <p className="mt-2 text-[11px] font-medium text-[#475569]">
               {sync.lastRunThreadCount} threads · {sync.lastRunMessageCount} messages
+            </p>
+          ) : null}
+          {showRunningStats && !showStats ? (
+            <p className="mt-2 text-[11px] font-medium text-[#475569]">
+              {sync.lastRunThreadCount} threads imported so far
+              {sync.lastRunMessageCount ? ` · ${sync.lastRunMessageCount} messages` : ""}
             </p>
           ) : null}
           {error ? <p className="mt-2 text-[11px] font-medium text-red-700">{error}</p> : null}
