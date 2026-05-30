@@ -17,6 +17,7 @@ function scopeForFilter(filter: TaskFilterStatus): string | undefined {
     case "created": return "created";
     case "due-soon": return "due_soon";
     case "open": return "open";
+    case "in-progress": return "in_progress";
     case "done": return "done";
     case "cancelled": return "cancelled";
     case "overdue": return "overdue";

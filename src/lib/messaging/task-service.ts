@@ -447,7 +447,9 @@ export async function listAllTasksForUser(
   const OPEN_FAMILY_STATUSES = ["OPEN", "IN_PROGRESS", "OVERDUE"] as const;
   const now = new Date();
 
-  if (scope === "done") {
+  if (scope === "in_progress") {
+    where.status = "IN_PROGRESS";
+  } else if (scope === "done") {
     where.status = "DONE";
   } else if (scope === "cancelled") {
     where.status = "CANCELLED";
