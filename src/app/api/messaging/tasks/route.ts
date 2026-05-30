@@ -13,6 +13,7 @@ export const runtime = "nodejs";
 
 const VALID_TASK_SCOPES = [
   "open",
+  "in_progress",
   "done",
   "cancelled",
   "overdue",

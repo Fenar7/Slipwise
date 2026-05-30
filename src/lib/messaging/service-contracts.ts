@@ -380,6 +380,7 @@ export interface UpdateTaskInput {
  */
 export type TaskListScope =
   | "open"
+  | "in_progress"
   | "done"
   | "cancelled"
   | "overdue"
@@ -591,6 +592,7 @@ export function isValidRetentionAction(value: unknown): value is RetentionAction
 export function isValidTaskListScope(value: unknown): value is TaskListScope {
   return (
     value === "open" ||
+    value === "in_progress" ||
     value === "done" ||
     value === "cancelled" ||
     value === "overdue" ||
