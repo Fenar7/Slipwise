@@ -2,7 +2,7 @@ import "server-only";
 
 import { db } from "@/lib/db";
 import type { ActiveFilter } from "@/app/app/mailbox/types";
-import { isModelMissingTableError } from "@/lib/prisma-errors";
+import { isSchemaDriftError } from "@/lib/prisma-errors";
 
 export interface MailboxSavedViewRecord {
   id: string;
@@ -44,9 +44,9 @@ export async function listMailboxSavedViews(
     });
     return rows.map(toRecord);
   } catch (error) {
-    if (isModelMissingTableError(error, "MailboxSavedView")) {
+    if (isSchemaDriftError(error)) {
       console.warn(
-        "[mailbox] listMailboxSavedViews skipped: mailbox_saved_view table missing during schema drift",
+        "[mailbox] listMailboxSavedViews skipped: mailbox_saved_view schema drift — run prisma migrate deploy",
       );
       return [];
     }
