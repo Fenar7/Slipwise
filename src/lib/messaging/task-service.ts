@@ -7,7 +7,14 @@ import { toTaskRecord } from "./mappers";
 import { ConversationAccessError, InvalidInputError, NotFoundError } from "./errors";
 import { requireConversationAccess } from "./authorization";
 import { toConversationRecord, toParticipantRecord } from "./mappers";
-import type { CreateTaskInput, UpdateTaskStatusInput, AssignTaskInput, UpdateTaskInput } from "./service-contracts";
+import type {
+  CreateTaskInput,
+  UpdateTaskStatusInput,
+  AssignTaskInput,
+  UpdateTaskInput,
+  TaskListFilterInput,
+  TaskListResult,
+} from "./service-contracts";
 
 function validateReminderAt(reminderAt: Date | null | undefined, dueDate: Date | null | undefined, now = new Date()): void {
   if (reminderAt === undefined || reminderAt === null) return;
@@ -40,7 +47,7 @@ export async function listTasksForConversation(
 
   const rows = await db.messagingTask.findMany({
     where: { orgId, conversationId },
-    orderBy: [{ dueDate: "asc" }, { createdAt: "desc" }],
+    orderBy: [{ dueDate: "asc" }, { id: "asc" }],
   });
 
   return rows.map(toTaskRecord);
@@ -338,10 +345,15 @@ export async function updateTask(input: UpdateTaskInput): Promise<MessagingTaskR
   return toTaskRecord(updatedTask);
 }
 
+const TASK_LIST_DEFAULT_LIMIT = 20;
+const TASK_LIST_MAX_LIMIT = 50;
+
 export async function listAllTasksForUser(
-  orgId: string,
-  userId: string,
-): Promise<MessagingTaskRecord[]> {
+  filter: TaskListFilterInput,
+): Promise<TaskListResult> {
+  const { orgId, userId, scope, conversationId, cursor, limit: rawLimit } = filter;
+  const limit = Math.min(TASK_LIST_MAX_LIMIT, Math.max(1, rawLimit ?? TASK_LIST_DEFAULT_LIMIT));
+
   const participantConversations = await db.conversationParticipant.findMany({
     where: {
       orgId,
@@ -353,20 +365,74 @@ export async function listAllTasksForUser(
     },
   });
 
-  const conversationIds = participantConversations.map((pc) => pc.conversationId);
+  const accessibleConversationIds = participantConversations.map((pc) => pc.conversationId);
 
-  if (conversationIds.length === 0) {
-    return [];
+  if (accessibleConversationIds.length === 0) {
+    return { tasks: [], nextCursor: null, hasMore: false };
   }
 
+  // If a specific conversation is requested, validate membership
+  if (conversationId) {
+    if (!accessibleConversationIds.includes(conversationId)) {
+      return { tasks: [], nextCursor: null, hasMore: false };
+    }
+  }
+
+  const targetConversationIds = conversationId
+    ? [conversationId]
+    : accessibleConversationIds;
+
+  // Build the base where clause scoped to accessible conversations
+  const where: Record<string, unknown> = {
+    orgId,
+    conversationId: { in: targetConversationIds },
+  };
+
+  // OVERDUE is included in the open-family set because taskIsOpen() treats it as
+  // open, and existing stored OVERDUE rows must remain visible in default views.
+  const OPEN_FAMILY_STATUSES = ["OPEN", "IN_PROGRESS", "OVERDUE"] as const;
+  const now = new Date();
+
+  if (scope === "done") {
+    where.status = "DONE";
+  } else if (scope === "cancelled") {
+    where.status = "CANCELLED";
+  } else if (scope === "overdue") {
+    where.status = { in: [...OPEN_FAMILY_STATUSES] };
+    where.dueDate = { lt: now };
+  } else if (scope === "due_soon") {
+    const upperBound = new Date();
+    upperBound.setDate(upperBound.getDate() + 7);
+    where.status = { in: [...OPEN_FAMILY_STATUSES] };
+    where.dueDate = { gte: now, lte: upperBound };
+  } else if (scope === "assigned") {
+    where.assigneeId = userId;
+  } else if (scope === "created") {
+    where.createdBy = userId;
+  } else {
+    // Default (no scope or scope=open): accessible open work only.
+    // DONE and CANCELLED are excluded from the default global view.
+    where.status = { in: [...OPEN_FAMILY_STATUSES] };
+  }
+
+  // Stable pagination: dueDate asc, then id as unique tiebreaker for deterministic
+  // cursor-based pagination. Tasks with equal dueDate will not reorder/skip across pages.
   const rows = await db.messagingTask.findMany({
-    where: {
-      orgId,
-      conversationId: { in: conversationIds },
-    },
-    orderBy: [{ dueDate: "asc" }, { createdAt: "desc" }],
+    where,
+    orderBy: [{ dueDate: "asc" }, { id: "asc" }],
+    take: limit + 1,
+    skip: cursor ? 1 : 0,
+    cursor: cursor ? { id: cursor } : undefined,
   });
 
-  return rows.map(toTaskRecord);
+  const hasMore = rows.length > limit;
+  const sliced = hasMore ? rows.slice(0, limit) : rows;
+  const nextCursor = hasMore ? sliced[sliced.length - 1].id : null;
+
+  return {
+    tasks: sliced.map(toTaskRecord),
+    nextCursor,
+    hasMore,
+  };
 }
 

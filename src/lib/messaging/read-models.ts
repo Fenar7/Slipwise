@@ -47,7 +47,9 @@ import {
 } from "./mention-readstate-service";
 import {
   listTasksForConversation,
+  listAllTasksForUser,
 } from "./task-service";
+import type { TaskListFilterInput } from "./service-contracts";
 
 // ─── Conversation list read model ───────────────────────────────────────────────
 
@@ -362,46 +364,39 @@ export async function getConversationTaskSummaries(
   });
 }
 
+export interface GetOrgTaskSummariesOptions {
+  scope?: TaskListFilterInput["scope"];
+  conversationId?: string;
+  cursor?: string | null;
+  limit?: number;
+}
+
 export async function getOrgTaskSummaries(
   orgId: string,
   userId: string,
-): Promise<TaskSummary[]> {
-  const participantConversations = await db.conversationParticipant.findMany({
-    where: {
-      orgId,
-      userId,
-      leftAt: null,
-    },
-    select: {
-      conversationId: true,
-    },
+  options?: GetOrgTaskSummariesOptions,
+): Promise<{ tasks: TaskSummary[]; nextCursor: string | null; hasMore: boolean }> {
+  const result = await listAllTasksForUser({
+    orgId,
+    userId,
+    scope: options?.scope,
+    conversationId: options?.conversationId,
+    cursor: options?.cursor,
+    limit: options?.limit,
   });
 
-  const conversationIds = participantConversations.map((pc) => pc.conversationId);
-
-  if (conversationIds.length === 0) {
-    return [];
-  }
-
-  const records = await db.messagingTask.findMany({
-    where: {
-      orgId,
-      conversationId: { in: conversationIds },
-    },
-    orderBy: [{ dueDate: "asc" }, { createdAt: "desc" }],
-  });
-
-  if (records.length === 0) {
-    return [];
+  if (result.tasks.length === 0) {
+    return { tasks: [], nextCursor: null, hasMore: false };
   }
 
   const assigneeIds = Array.from(
-    new Set(records.map((r) => r.assigneeId).filter((id): id is string => id !== null)),
+    new Set(result.tasks.map((r) => r.assigneeId).filter((id): id is string => id !== null)),
   );
   const creatorIds = Array.from(
-    new Set(records.map((r) => r.createdBy)),
+    new Set(result.tasks.map((r) => r.createdBy)),
   );
   const allUserIds = Array.from(new Set([...assigneeIds, ...creatorIds]));
+  const conversationIds = Array.from(new Set(result.tasks.map((r) => r.conversationId)));
 
   const [profiles, conversations] = await Promise.all([
     allUserIds.length > 0
@@ -443,7 +438,7 @@ export async function getOrgTaskSummaries(
     return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
   }
 
-  return records.map((record) => {
+  const tasks = result.tasks.map((record) => {
     const assignee = record.assigneeId ? profileById.get(record.assigneeId) ?? null : null;
     const creator = profileById.get(record.createdBy) ?? null;
     const conv = conversationById.get(record.conversationId) ?? null;
@@ -461,5 +456,11 @@ export async function getOrgTaskSummaries(
       conversationType: conv?.type ?? undefined,
     };
   });
+
+  return {
+    tasks,
+    nextCursor: result.nextCursor,
+    hasMore: result.hasMore,
+  };
 }
 
