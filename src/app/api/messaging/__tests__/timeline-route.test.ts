@@ -8,12 +8,22 @@ vi.mock("@/lib/db", () => ({
     conversation: {
       findFirst: vi.fn(),
     },
+    messagingTask: {
+      findUnique: vi.fn(),
+    },
   },
 }));
 
-vi.mock("@/lib/auth", () => ({
-  requireOrgContext: vi.fn(),
-  requireRole: vi.fn(),
+vi.mock("@/app/api/messaging/_utils", () => ({
+  requireMessagingApiContext: vi.fn(),
+  handleMessagingApiError: vi.fn((err: unknown) => {
+    if (err instanceof Error) {
+      if (err.message === "Unauthorized") {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { "content-type": "application/json" } });
+      }
+    }
+    return new Response(JSON.stringify({ error: "An unexpected error occurred." }), { status: 500, headers: { "content-type": "application/json" } });
+  }),
 }));
 
 vi.mock("@/lib/messaging/read-models", () => ({
@@ -22,28 +32,29 @@ vi.mock("@/lib/messaging/read-models", () => ({
 
 import { GET } from "../conversations/[id]/tasks/[taskId]/timeline/route";
 import { db } from "@/lib/db";
-import { requireOrgContext } from "@/lib/auth";
+import { requireMessagingApiContext } from "@/app/api/messaging/_utils";
 import { getTaskActivityTimeline } from "@/lib/messaging/read-models";
-
-const mockedRequireOrgContext = vi.mocked(requireOrgContext);
-const mockedFindFirst = vi.mocked(db.conversation.findFirst);
-const mockedGetTimeline = vi.mocked(getTaskActivityTimeline);
 
 function makeRequest(url: string): NextRequest {
   return new NextRequest(new URL(url));
 }
 
+function captureResponse(response: Response): { status: number; json: () => Promise<any> } {
+  return response;
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
-  mockedRequireOrgContext.mockResolvedValue({
+  (requireMessagingApiContext as any).mockResolvedValue({
     userId: "user-1",
     orgId: "org-1",
     role: "member",
-    representedId: null,
-    proxyGrantId: null,
-    proxyScope: [],
   });
-  mockedFindFirst.mockResolvedValue({ id: "conv-1" });
+  (db.conversation.findFirst as any).mockResolvedValue({ id: "conv-1" });
+  (db.messagingTask.findUnique as any).mockResolvedValue({
+    orgId: "org-1",
+    conversationId: "conv-1",
+  });
 });
 
 describe("GET /api/messaging/conversations/[id]/tasks/[taskId]/timeline", () => {
@@ -55,8 +66,8 @@ describe("GET /api/messaging/conversations/[id]/tasks/[taskId]/timeline", () => 
     return GET(makeRequest("http://localhost/api/messaging/conversations/conv-1/tasks/task-1/timeline"), { params } as any);
   }
 
-  it("returns timeline for an allowed participant", async () => {
-    mockedGetTimeline.mockResolvedValue([
+  it("returns timeline for an allowed participant with correct conversation/task pair", async () => {
+    (getTaskActivityTimeline as any).mockResolvedValue([
       {
         action: "TASK_CREATED",
         label: "Created task",
@@ -77,8 +88,33 @@ describe("GET /api/messaging/conversations/[id]/tasks/[taskId]/timeline", () => 
     expect(typeof body.timeline[0].createdAt).toBe("string");
   });
 
-  it("returns 404 for non-member", async () => {
-    mockedGetTimeline.mockResolvedValue(null);
+  it("returns 404 when task does not belong to the route conversation", async () => {
+    (db.messagingTask.findUnique as any).mockResolvedValue({
+      orgId: "org-1",
+      conversationId: "conv-other",
+    });
+
+    const response = await callGet();
+    const body = await response.json();
+
+    expect(response.status).toBe(404);
+    expect(body.error).toBe("Not found");
+    expect(getTaskActivityTimeline).not.toHaveBeenCalled();
+  });
+
+  it("returns 404 when task does not exist", async () => {
+    (db.messagingTask.findUnique as any).mockResolvedValue(null);
+
+    const response = await callGet();
+    const body = await response.json();
+
+    expect(response.status).toBe(404);
+    expect(body.error).toBe("Not found");
+    expect(getTaskActivityTimeline).not.toHaveBeenCalled();
+  });
+
+  it("returns 404 for non-member (no metadata leakage)", async () => {
+    (getTaskActivityTimeline as any).mockResolvedValue(null);
 
     const response = await callGet();
     const body = await response.json();
@@ -88,38 +124,43 @@ describe("GET /api/messaging/conversations/[id]/tasks/[taskId]/timeline", () => 
   });
 
   it("returns 404 for non-existent conversation in org", async () => {
-    mockedFindFirst.mockResolvedValue(null);
+    (db.conversation.findFirst as any).mockResolvedValue(null);
 
     const response = await callGet();
     const body = await response.json();
 
     expect(response.status).toBe(404);
     expect(body.error).toBe("Not found");
-    expect(mockedGetTimeline).not.toHaveBeenCalled();
-  });
-
-  it("returns 404 for wrong org conversation", async () => {
-    // Conversation exists but in different org — db.conversation.findFirst returns null due to org filter
-    mockedFindFirst.mockResolvedValue(null);
-
-    const response = await callGet({ conversationId: "conv-other" });
-
-    expect(response.status).toBe(404);
+    expect(getTaskActivityTimeline).not.toHaveBeenCalled();
   });
 
   it("returns 401 when not authenticated", async () => {
-    mockedRequireOrgContext.mockRejectedValue(new Error("Unauthorized"));
+    (requireMessagingApiContext as any).mockRejectedValue(new Error("Unauthorized"));
 
     const response = await callGet();
 
-    expect(response.status).toBe(500);
+    expect(response.status).toBe(401);
+  });
+
+  it("returns 404 for cross-org task (task.orgId does not match auth)", async () => {
+    (db.messagingTask.findUnique as any).mockResolvedValue({
+      orgId: "org-other",
+      conversationId: "conv-1",
+    });
+
+    const response = await callGet();
+    const body = await response.json();
+
+    expect(response.status).toBe(404);
+    expect(body.error).toBe("Not found");
+    expect(getTaskActivityTimeline).not.toHaveBeenCalled();
   });
 
   it("scopes to correct org from auth context", async () => {
-    mockedGetTimeline.mockResolvedValue([]);
+    (getTaskActivityTimeline as any).mockResolvedValue([]);
 
     await callGet();
 
-    expect(mockedGetTimeline).toHaveBeenCalledWith("org-1", "task-1", "user-1");
+    expect(getTaskActivityTimeline).toHaveBeenCalledWith("org-1", "task-1", "user-1");
   });
 });

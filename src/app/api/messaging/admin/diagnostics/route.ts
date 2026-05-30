@@ -1,10 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole } from "@/lib/auth";
+import { hasRole } from "@/lib/auth";
+import {
+  requireMessagingApiContext,
+  handleMessagingApiError,
+  MessagingApiError,
+  MessagingApiErrorCode,
+} from "@/app/api/messaging/_utils";
 import { getTaskHealthDiagnostics } from "@/lib/messaging/read-models";
 
 export async function GET(_request: NextRequest) {
   try {
-    const { orgId, userId } = await requireRole("admin");
+    const { orgId, userId, role } = await requireMessagingApiContext();
+
+    if (!hasRole(role, "admin")) {
+      throw new MessagingApiError(
+        MessagingApiErrorCode.FORBIDDEN,
+        "Forbidden",
+        403,
+      );
+    }
 
     const diagnostics = await getTaskHealthDiagnostics(orgId, userId);
 
@@ -14,7 +28,6 @@ export async function GET(_request: NextRequest) {
 
     return NextResponse.json({ diagnostics });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Internal server error";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return handleMessagingApiError(err);
   }
 }

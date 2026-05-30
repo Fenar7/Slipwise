@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { requireOrgContext } from "@/lib/auth";
+import { requireMessagingApiContext, handleMessagingApiError } from "@/app/api/messaging/_utils";
 import { getTaskActivityTimeline } from "@/lib/messaging/read-models";
 
 export async function GET(
@@ -9,9 +9,8 @@ export async function GET(
 ) {
   try {
     const { id: conversationId, taskId } = await params;
-    const { orgId, userId } = await requireOrgContext();
+    const { orgId, userId } = await requireMessagingApiContext();
 
-    // Validate the conversation exists in this org
     const conversation = await db.conversation.findFirst({
       where: { id: conversationId, orgId },
       select: { id: true },
@@ -21,13 +20,21 @@ export async function GET(
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
+    const task = await db.messagingTask.findUnique({
+      where: { id: taskId },
+      select: { orgId: true, conversationId: true },
+    });
+
+    if (!task || task.orgId !== orgId || task.conversationId !== conversationId) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
     const timeline = await getTaskActivityTimeline(orgId, taskId, userId);
 
     if (timeline === null) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    // Serialize dates to ISO strings for the API boundary
     const serialized = timeline.map((event) => ({
       ...event,
       createdAt: event.createdAt.toISOString(),
@@ -35,7 +42,6 @@ export async function GET(
 
     return NextResponse.json({ timeline: serialized });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Internal server error";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return handleMessagingApiError(err);
   }
 }
