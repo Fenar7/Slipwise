@@ -165,6 +165,16 @@ export async function saveVoucher(
   try {
     const { orgId, userId } = await requireOrgContext();
 
+    // Validate vendor belongs to organization if provided
+    if (input.vendorId) {
+      const vendor = await db.vendor.findFirst({
+        where: { id: input.vendorId, organizationId: orgId },
+      });
+      if (!vendor) {
+        return { success: false, error: 'Invalid vendor for this organization' };
+      }
+    }
+
     const limitCheck = await checkUsageLimit(orgId, "VOUCHER");
     if (!limitCheck.allowed) {
       return {

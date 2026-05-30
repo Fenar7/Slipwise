@@ -31,21 +31,23 @@ export function VoucherBrandingWrapper({
   existingVoucher,
   vendors = [],
   initialTemplateId,
+  initialValues,
 }: {
   existingVoucher?: ExistingVoucher;
   vendors?: Vendor[];
   initialTemplateId?: string;
+  initialValues?: Partial<VoucherFormValues>;
 }) {
   const branding = useOrgBranding();
 
-  const initialValues: Partial<VoucherFormValues> | undefined = existingVoucher
+  const initVals: Partial<VoucherFormValues> | undefined = existingVoucher
     ? {
         ...(existingVoucher.formData as Partial<VoucherFormValues>),
         voucherNumber: existingVoucher.voucherNumber ?? "",
         date: existingVoucher.voucherDate,
         voucherType: existingVoucher.type as "payment" | "receipt",
       }
-    : undefined;
+    : initialValues;
 
   return (
     <div
@@ -59,7 +61,7 @@ export function VoucherBrandingWrapper({
     >
       <VoucherWorkspace
         voucherId={existingVoucher?.id}
-        initialValues={initialValues}
+        initialValues={initVals}
         vendors={vendors}
         initialTemplateId={initialTemplateId}
         initialAccentColor={branding.accentColor}
