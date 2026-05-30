@@ -3,33 +3,25 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 vi.mock("server-only", () => ({}));
 
 vi.mock("@/lib/db", () => {
+  const mocks = {
+    messagingTask: { findMany: vi.fn(), findUnique: vi.fn(), updateMany: vi.fn(), update: vi.fn(), create: vi.fn(), groupBy: vi.fn(), count: vi.fn() },
+    conversationParticipant: { findFirst: vi.fn(), findMany: vi.fn() },
+    conversation: { findUnique: vi.fn() },
+    conversationMessage: { findUnique: vi.fn() },
+    member: { findFirst: vi.fn() },
+    notification: { create: vi.fn() },
+    jobLog: { create: vi.fn() },
+    messagingAuditEvent: { findMany: vi.fn(), create: vi.fn() },
+    profile: { findMany: vi.fn() },
+  };
   const db = {
-    messagingTask: {
-      findMany: vi.fn(),
-      findUnique: vi.fn(),
-      updateMany: vi.fn(),
-      update: vi.fn(),
-      create: vi.fn(),
-    },
-    conversationParticipant: {
-      findFirst: vi.fn(),
-      findMany: vi.fn(),
-    },
-    conversation: {
-      findUnique: vi.fn(),
-    },
-    conversationMessage: {
-      findUnique: vi.fn(),
-    },
-    member: {
-      findFirst: vi.fn(),
-    },
-    notification: {
-      create: vi.fn(),
-    },
-    jobLog: {
-      create: vi.fn(),
-    },
+    ...mocks,
+    $transaction: vi.fn((cb: unknown) => {
+      if (typeof cb === "function") {
+        return (cb as (tx: typeof mocks) => Promise<unknown>)(mocks);
+      }
+      return Promise.resolve();
+    }),
   };
   return { db };
 });
@@ -40,6 +32,7 @@ vi.mock("@/lib/notifications", () => ({
 
 vi.mock("@/lib/messaging/audit", () => ({
   logMessagingAudit: vi.fn().mockResolvedValue(undefined),
+  logMessagingAuditTx: vi.fn().mockResolvedValue(undefined),
 }));
 
 import { db } from "@/lib/db";

@@ -119,6 +119,7 @@ async function sendReminderNotification(
     });
 
     // Audit is best-effort — must not turn a delivered reminder into a retryable failure
+    // The timeline mapper uses reminderType: "scheduled" metadata to correctly label this event
     logMessagingAudit({
       orgId: task.orgId,
       actorId: task.assigneeId!,
@@ -232,6 +233,15 @@ export async function dispatchDueTaskReminders(
     evaluated: 0,
   };
 
+  // Structured operational signal: sweep started
+  logMessagingAudit({
+    orgId: "__system__",
+    actorId: "__sweep__",
+    action: "ADMIN_SUPPORT_ACTION",
+    summary: "Reminder sweep started",
+    metadata: { sweepType: "task_reminder", limit },
+  }).catch(() => {});
+
   // Step 1: Find candidate tasks — bounded scan with all eligibility pre-filtered at DB level
   const candidates = await db.messagingTask.findMany({
     where: {
@@ -247,6 +257,14 @@ export async function dispatchDueTaskReminders(
   result.evaluated = candidates.length;
 
   if (candidates.length === 0) {
+    // Sweep completed with no candidates
+    logMessagingAudit({
+      orgId: "__system__",
+      actorId: "__sweep__",
+      action: "ADMIN_SUPPORT_ACTION",
+      summary: "Reminder sweep completed — no candidates",
+      metadata: { sweepType: "task_reminder", evaluated: 0 },
+    }).catch(() => {});
     return result;
   }
 
@@ -334,6 +352,21 @@ export async function dispatchDueTaskReminders(
       result.failed++;
     }
   }
+
+  // Structured operational signal: sweep completed
+  logMessagingAudit({
+    orgId: "__system__",
+    actorId: "__sweep__",
+    action: "ADMIN_SUPPORT_ACTION",
+    summary: "Reminder sweep completed",
+    metadata: {
+      sweepType: "task_reminder",
+      evaluated: result.evaluated,
+      dispatched: result.dispatched,
+      failed: result.failed,
+      skippedIneligibleAssignee: result.skippedIneligibleAssignee,
+    },
+  }).catch(() => {});
 
   return result;
 }
