@@ -522,6 +522,44 @@ describe("Shared Defaulting Engine — Voucher Adapter", () => {
     expect(result.vendorId).toBe("");
     expect(result.counterpartyName).toBe("");
   });
+
+  it("seeds templateId from resolver through to autofill payload", async () => {
+    vi.mocked(db.orgDefaults.findUnique).mockResolvedValue({
+      organizationId: ORG_ID,
+      defaultVoucherTemplate: "traditional-ledger",
+      defaultVoucherNotes: "Org note",
+    } as any);
+    vi.mocked(db.organization.findUnique).mockResolvedValue({ name: "Org" } as any);
+    vi.mocked(db.brandingProfile.findUnique).mockResolvedValue(null);
+
+    const result = await resolveVoucherDefaults({
+      orgId: ORG_ID,
+    });
+
+    expect(result.templateId).toBe("traditional-ledger");
+  });
+
+  it("autofill rehydration payload preserves templateId when switching vendors", async () => {
+    vi.mocked(db.orgDefaults.findUnique).mockResolvedValue({
+      organizationId: ORG_ID,
+      defaultVoucherTemplate: "minimal-office",
+    } as any);
+    vi.mocked(db.vendor.findFirst).mockResolvedValue({
+      id: "vendor-2", organizationId: ORG_ID, name: "Another Vendor",
+      email: null, phone: null, address: null, gstin: null, taxId: null, paymentTermsDays: 0,
+    } as any);
+    vi.mocked(db.organization.findUnique).mockResolvedValue({ name: "Org" } as any);
+    vi.mocked(db.brandingProfile.findUnique).mockResolvedValue(null);
+
+    const result = await resolveVoucherDefaults({
+      orgId: ORG_ID,
+      vendorId: "vendor-2",
+    });
+
+    expect(result.templateId).toBe("minimal-office");
+    expect(result.counterpartyName).toBe("Another Vendor");
+    expect(result.vendorId).toBe("vendor-2");
+  });
 });
 
 describe("Cross-org entity security", () => {

@@ -862,8 +862,8 @@ export function VoucherWorkspace({
   const methods = useForm<VoucherFormValues>({
     resolver: zodResolver(voucherFormSchema),
     defaultValues: initialValues
-      ? { ...voucherDefaultValues, branding: { ...voucherDefaultValues.branding, accentColor: initialAccentColor ?? voucherDefaultValues.branding.accentColor }, ...initialValues }
-      : { ...voucherDefaultValues, branding: { ...voucherDefaultValues.branding, accentColor: initialAccentColor ?? voucherDefaultValues.branding.accentColor } },
+      ? { ...voucherDefaultValues, templateId: initialTemplateId ?? voucherDefaultValues.templateId, branding: { ...voucherDefaultValues.branding, accentColor: initialAccentColor ?? voucherDefaultValues.branding.accentColor }, ...initialValues }
+      : { ...voucherDefaultValues, templateId: initialTemplateId ?? voucherDefaultValues.templateId, branding: { ...voucherDefaultValues.branding, accentColor: initialAccentColor ?? voucherDefaultValues.branding.accentColor } },
     mode: "onChange",
   });
 
