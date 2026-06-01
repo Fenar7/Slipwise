@@ -278,6 +278,16 @@ export {
   listMeetingsForConversation,
 } from "./meeting-service";
 
+// ─── Sprint 8.2: Calendar connection service ─────────────────────────────────────
+export {
+  connectCalendar,
+  disconnectCalendar,
+  reconnectCalendar,
+  updateConnectionHealth,
+  getCalendarConnection,
+  listCalendarConnections,
+} from "./calendar-connection-service";
+
 // ─── Sprint 2.3: Read shapes and read models ──────────────────────────────────────
 
 // Read shapes (domain record → UI-facing shape)

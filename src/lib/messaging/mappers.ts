@@ -46,6 +46,7 @@ import type {
   MessagingTaskRecord,
   ConversationMeetingRecord,
   CalendarConnectionRecord,
+  CalendarConnectionSummary,
   RetentionPolicyRecord,
   MessagingAuditEventRecord,
 } from "./domain-types";
@@ -303,6 +304,26 @@ export function toCalendarConnectionRecord(row: CalendarConnection): CalendarCon
     connectedBy: row.connectedBy,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
+  };
+}
+
+/**
+ * Maps a CalendarConnectionRecord to a safe UI summary.
+ *
+ * Explicitly omits: tokenRef, tokenExpiry, providerAccountId, connectedBy, orgId, updatedAt.
+ * All Dates are serialized to ISO strings so the shape is JSON-safe.
+ */
+export function toCalendarConnectionSummary(record: CalendarConnectionRecord): CalendarConnectionSummary {
+  return {
+    id: record.id,
+    provider: record.provider,
+    emailAddress: record.emailAddress,
+    displayName: record.displayName,
+    status: record.status,
+    lastSyncAt: record.lastSyncAt ? record.lastSyncAt.toISOString() : null,
+    lastSyncError: record.lastSyncError,
+    disconnectedAt: record.disconnectedAt ? record.disconnectedAt.toISOString() : null,
+    createdAt: record.createdAt.toISOString(),
   };
 }
 
