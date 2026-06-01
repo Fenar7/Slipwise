@@ -3,29 +3,8 @@ import { db } from "@/lib/db";
 import { buildHubThemeStyle, ClientHubFooter, ClientHubHeader, DEFAULT_HUB_ACCENT, getHubNavItems } from "./components/views";
 import { safeValidateHubConfig } from "./components/config-resolver";
 import { getPortalSession } from "@/lib/portal-auth";
-
-type OrgLayoutData = {
-  id: string;
-  name: string;
-  logo: string | null;
-  branding: {
-    logoUrl: string | null;
-    accentColor: string;
-    fontFamily: string | null;
-    fontColor: string | null;
-  } | null;
-  whiteLabel: {
-    removeBranding: boolean;
-  } | null;
-  defaults: {
-    portalEnabled: boolean;
-    portalSupportEmail: string | null;
-    portalSupportPhone: string | null;
-  } | null;
-  clientHubOrgConfig: {
-    config: unknown;
-  } | null;
-};
+import { checkPortalEligibility } from "@/lib/portal-eligibility";
+import { PortalErrorState } from "@/components/portal/portal-error-states";
 
 export default async function ClientHubLayout({
   children,
@@ -36,71 +15,33 @@ export default async function ClientHubLayout({
 }) {
   const { orgSlug } = await params;
 
-  const orgData = await db.organization.findUnique({
-    where: { slug: orgSlug },
-    select: {
-      id: true,
-      name: true,
-      logo: true,
-      branding: {
-        select: { logoUrl: true, accentColor: true, fontFamily: true, fontColor: true },
-      },
-      whiteLabel: {
-        select: { removeBranding: true },
-      },
-      defaults: {
-        select: {
-          portalEnabled: true,
-          portalSupportEmail: true,
-          portalSupportPhone: true,
-        },
-      },
-      clientHubOrgConfig: {
-        select: { config: true },
-      },
-    },
-  });
+  const eligibility = await checkPortalEligibility(orgSlug);
 
-  let org: OrgLayoutData | null = orgData;
-
-  const isDevPreview = orgSlug === "acme" && process.env.NODE_ENV === "development";
-
-  if (isDevPreview && !org) {
-    org = {
-      id: "org_preview",
-      name: "Acme Corporation",
-      logo: null,
-      branding: { logoUrl: null, accentColor: DEFAULT_HUB_ACCENT, fontFamily: null, fontColor: null },
-      whiteLabel: { removeBranding: false },
-      defaults: {
-        portalEnabled: true,
-        portalSupportEmail: "support@acme.com",
-        portalSupportPhone: "+91 98765 43210",
-      },
-      clientHubOrgConfig: null,
-    };
+  if (eligibility.state === "NOT_FOUND") {
+    return <PortalErrorState type="NOT_FOUND" />;
   }
 
-  if (!org || !org.defaults?.portalEnabled) {
+  if (eligibility.state === "DISABLED") {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[var(--hub-surface-soft)] px-4" style={buildHubThemeStyle(DEFAULT_HUB_ACCENT)}>
-        <div className="w-full max-w-lg rounded-2xl border border-[var(--hub-border)] bg-white p-10 text-center shadow-[var(--hub-card-shadow)]">
-          <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-xl bg-[var(--hub-surface-soft)] ring-1 ring-[var(--hub-border)]">
-            <svg className="h-6 w-6 text-[var(--hub-text-muted)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
-            </svg>
-          </div>
-          <h1 className="text-2xl font-semibold tracking-[-0.03em] text-[var(--hub-text-strong)]">Client Hub Not Available</h1>
-          <p className="mt-3 text-sm leading-7 text-[var(--hub-text-soft)]">
-            The client hub for this organization is not currently available.
-          </p>
-        </div>
-      </div>
+      <PortalErrorState
+        type="DISABLED"
+        orgName={eligibility.org?.name}
+        showPoweredBy={!eligibility.org?.whiteLabel?.removeBranding}
+      />
     );
   }
 
-  // Load client hub organization configuration securely with validation
-  const config = safeValidateHubConfig(org.clientHubOrgConfig?.config);
+  if (eligibility.state === "ENABLED_BUT_NOT_READY") {
+    return (
+      <PortalErrorState
+        type="NOT_READY"
+        orgName={eligibility.org?.name}
+        showPoweredBy={!eligibility.org?.whiteLabel?.removeBranding}
+      />
+    );
+  }
+
+  const { org, config } = eligibility;
 
   const accentColor = config.branding?.accentColor ?? org.branding?.accentColor ?? DEFAULT_HUB_ACCENT;
   const logoUrl = config.branding?.logoUrl ?? org.branding?.logoUrl ?? org.logo;
