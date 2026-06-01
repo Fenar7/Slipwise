@@ -432,6 +432,31 @@ export async function revokePortalSession(customerId: string, orgId: string): Pr
   }
 }
 
+export async function revokeCurrentPortalSession(jti: string, customerId: string, orgId: string): Promise<void> {
+  try {
+    const now = new Date();
+
+    // Revoke ONLY the current session matching the active jti
+    await db.customerPortalSession.update({
+      where: { jti },
+      data: { revokedAt: now },
+    });
+
+    const cookieStore = await cookies();
+    cookieStore.delete(PORTAL_COOKIE);
+
+    logAudit({
+      orgId,
+      actorId: customerId,
+      action: "portal.session_revoked",
+      entityType: "Customer",
+      entityId: customerId,
+    }).catch(() => {});
+  } catch (error) {
+    console.error("[portal-auth] Error in revokeCurrentPortalSession:", error);
+  }
+}
+
 export function logPortalAccess(params: {
   orgId: string;
   customerId: string;
@@ -573,7 +598,7 @@ export async function requestPortalOtp(
     }
 
     const orgDefaults = customer.organization.defaults;
-    const otp = String(Math.floor(100000 + Math.random() * 900000));
+    const otp = String(crypto.randomInt(100000, 1000000));
     const tokenHash = sha256(otp);
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
 

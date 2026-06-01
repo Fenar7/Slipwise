@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getPortalSession, revokePortalSession } from "@/lib/portal-auth";
+import { getPortalSession, revokeCurrentPortalSession } from "@/lib/portal-auth";
 
 export async function GET(
   _request: NextRequest,
@@ -7,10 +7,10 @@ export async function GET(
 ) {
   const { orgSlug } = await params;
 
-  // Retrieve current session and perform server-side revocation in DB
+  // Retrieve current session and perform server-side revocation in DB for the current session only
   const session = await getPortalSession(orgSlug);
   if (session) {
-    await revokePortalSession(session.customerId, session.orgId);
+    await revokeCurrentPortalSession(session.jti, session.customerId, session.orgId);
   }
 
   // Determine redirection based on the explicit origin query parameter

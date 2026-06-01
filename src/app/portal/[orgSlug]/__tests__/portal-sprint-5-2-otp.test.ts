@@ -70,7 +70,6 @@ import {
   requestPortalOtp,
   verifyPortalOtp,
   getPortalSession,
-  requirePortalSession,
   revokePortalSession,
 } from "@/lib/portal-auth";
 import { cookies } from "next/headers";
@@ -447,5 +446,49 @@ describe("Sprint 5.2 - Blocker Remediations", () => {
     expect(response).toBeInstanceOf(NextResponse);
     expect(response.status).toBe(307);
     expect(response.headers.get("location")).toBe(`http://localhost/portal/${ORG_SLUG}/auth/login`);
+  });
+
+  it("OTP generation uses a cryptographically secure randomInt path", async () => {
+    const randomIntSpy = vi.spyOn(crypto, "randomInt").mockReturnValue(123456);
+    mockDb.customer.findFirst.mockResolvedValue(makeCustomer());
+
+    await requestPortalOtp("otp@example.com", ORG_SLUG);
+
+    expect(randomIntSpy).toHaveBeenCalledWith(100000, 1000000);
+    randomIntSpy.mockRestore();
+  });
+
+  it("logout revokes only the current session and does not touch other sessions", async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const sessionPayload = {
+      jti: "current_session_jti_123",
+      customerId: CUSTOMER_ID,
+      orgId: ORG_ID,
+      orgSlug: ORG_SLUG,
+      iat: now - 100,
+      exp: now + 86400,
+    };
+    const jwt = makeJwt(sessionPayload, process.env.PORTAL_JWT_SECRET!);
+    const cookieStore = { get: vi.fn().mockReturnValue({ value: jwt }), set: vi.fn(), delete: vi.fn() };
+    (cookies as ReturnType<typeof vi.fn>).mockResolvedValue(cookieStore);
+
+    mockDb.customerPortalSession.findUnique.mockResolvedValue({
+      revokedAt: null,
+      expiresAt: new Date(Date.now() + 86400000),
+    });
+
+    const request = new NextRequest(`http://localhost/portal/${ORG_SLUG}/auth/logout`);
+    const params = Promise.resolve({ orgSlug: ORG_SLUG });
+
+    await logoutGetHandler(request, { params });
+
+    expect(mockDb.customerPortalSession.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { jti: "current_session_jti_123" },
+        data: expect.objectContaining({ revokedAt: expect.any(Date) }),
+      })
+    );
+
+    expect(mockDb.customerPortalSession.updateMany).not.toHaveBeenCalled();
   });
 });

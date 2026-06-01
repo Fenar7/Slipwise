@@ -96,6 +96,18 @@ describe("Client Hub Invoices", () => {
     expect(html).toContain("Bank Transfer");
     expect(html).toContain("Amount Due");
   });
+
+  it("payment page requires a valid portal session and redirects unauthenticated access", async () => {
+    const { requirePortalSession } = await import("@/lib/portal-auth");
+    vi.mocked(requirePortalSession).mockClear();
+
+    await InvoicePaymentPage({ params: Promise.resolve({ orgSlug: ORG_SLUG, id: "inv-001" }) });
+
+    expect(requirePortalSession).toHaveBeenCalledWith(
+      ORG_SLUG,
+      `/portal/${ORG_SLUG}/client-hub/login`
+    );
+  });
 });
 
 describe("Client Hub Quotes", () => {
