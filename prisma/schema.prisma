@@ -351,11 +351,7 @@ model OrgDefaults {
   vendorBillCounter Int    @default(1)
 
   defaultInvoiceTemplate String @default("minimal")
-  defaultVoucherNotes String?
-  defaultVoucherApprovedBy String?
-  defaultVoucherReceivedBy String?
-  defaultVoucherPaymentMode String?
-
+  defaultVoucherTemplate String @default("minimal-office")
   defaultSlipTemplate    String @default("modern-premium")
 
   upiVpa       String?
