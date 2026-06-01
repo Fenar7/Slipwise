@@ -8,7 +8,9 @@ import { MOCK_PARTICIPANTS } from "./mock-data";
 import type { CalendarConnection } from "./types";
 
 interface MessagingMeetingScheduleProps {
+  conversationId?: string | null;
   onClose: () => void;
+  onSuccess?: (meeting: any) => void;
   calendarConnection: CalendarConnection;
 }
 
@@ -19,12 +21,19 @@ const DURATION_OPTIONS = [
   { value: "60", label: "60 min" },
 ];
 
-export function MessagingMeetingSchedule({ onClose, calendarConnection }: MessagingMeetingScheduleProps) {
+export function MessagingMeetingSchedule({
+  conversationId,
+  onClose,
+  onSuccess,
+  calendarConnection,
+}: MessagingMeetingScheduleProps) {
   const [title, setTitle] = useState("");
   const [date, setDate] = useState("");
   const [time, setTime] = useState("");
   const [duration, setDuration] = useState("30");
   const [participantId, setParticipantId] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -35,6 +44,62 @@ export function MessagingMeetingSchedule({ onClose, calendarConnection }: Messag
   }, [onClose]);
 
   const isConnected = calendarConnection.status === "connected";
+
+  const handleSubmit = async () => {
+    if (!title.trim()) return;
+
+    setError(null);
+    setSubmitting(true);
+
+    try {
+      if (!conversationId) {
+        // Fallback mock behavior for testing
+        const scheduledTime = date && time ? new Date(`${date}T${time}`) : new Date();
+        const mockNew = {
+          id: `meet-new-${Date.now()}`,
+          title: title.trim(),
+          scheduledAt: scheduledTime.toISOString(),
+          durationMinutes: parseInt(duration, 10) || 30,
+          status: "UPCOMING",
+          participantCount: participantId ? 2 : 1,
+        };
+        if (onSuccess) {
+          onSuccess(mockNew);
+        }
+        onClose();
+        return;
+      }
+
+      const dateStr = date || new Date().toISOString().split("T")[0];
+      const timeStr = time || "12:00";
+      const scheduledAt = new Date(`${dateStr}T${timeStr}`).toISOString();
+
+      const res = await fetch(`/api/messaging/conversations/${conversationId}/meetings`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: title.trim(),
+          description: `Meeting scheduled bound to participant ID: ${participantId || "None"}`,
+          scheduledAt,
+          durationMinutes: parseInt(duration, 10) || 30,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error?.message || "Failed to schedule meeting");
+      }
+
+      if (onSuccess) {
+        onSuccess(data.data);
+      }
+      onClose();
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <div
@@ -59,6 +124,12 @@ export function MessagingMeetingSchedule({ onClose, calendarConnection }: Messag
             <X className="h-4 w-4" style={{ color: "#79747E" }} />
           </button>
         </div>
+
+        {error && (
+          <div className="mb-4 rounded-lg bg-red-50 p-2.5 text-xs font-semibold text-red-700">
+            {error}
+          </div>
+        )}
 
         {!isConnected ? (
           /* Calendar not connected state */
@@ -184,15 +255,16 @@ export function MessagingMeetingSchedule({ onClose, calendarConnection }: Messag
               <button
                 type="button"
                 data-testid="meeting-schedule-submit"
-                disabled={!title.trim()}
+                onClick={handleSubmit}
+                disabled={!title.trim() || submitting}
                 className={cn(
                   "rounded-lg px-4 py-2 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]",
-                  title.trim()
+                  title.trim() && !submitting
                     ? "bg-[#DC2626] text-white hover:bg-red-700"
                     : "bg-gray-100 text-gray-400 cursor-not-allowed"
                 )}
               >
-                Schedule meeting
+                {submitting ? "Scheduling..." : "Schedule meeting"}
               </button>
             </div>
           </div>

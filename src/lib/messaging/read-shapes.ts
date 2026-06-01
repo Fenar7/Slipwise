@@ -29,6 +29,7 @@ import type {
   ConversationAttachmentRecord,
   MessagingTaskRecord,
   MessagingTaskStatus,
+  ConversationMeetingRecord,
 } from "./domain-types";
 
 import {
@@ -476,3 +477,26 @@ export function toTaskSummary(input: TaskSummaryInput): TaskSummary {
     createdAt: record.createdAt.toISOString(),
   };
 }
+
+// ─── Calendar Entry Read Shape ──────────────────────────────────────────────────
+
+export type CalendarEntryType = "meeting" | "task_due_date" | "task_reminder";
+
+export interface CalendarEntry {
+  id: string;
+  orgId: string;
+  conversationId: string;
+  conversationName: string | null;
+  type: CalendarEntryType;
+  title: string;
+  description: string | null;
+  startAt: string; // ISO string
+  endAt: string | null; // ISO string
+  status: string; // UPCOMING/CANCELLED/DONE etc.
+  assigneeId?: string | null;
+  assigneeName?: string | null;
+  scheduledBy?: string | null;
+  scheduledByName?: string | null;
+  priority?: string | null;
+}
+
