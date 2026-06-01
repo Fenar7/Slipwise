@@ -270,6 +270,14 @@ export {
   listTypingForConversation,
 } from "./presence-service";
 
+// ─── Sprint 8.1: Meeting service ───────────────────────────────────────────────
+export {
+  scheduleMeeting,
+  updateMeeting,
+  cancelMeeting,
+  listMeetingsForConversation,
+} from "./meeting-service";
+
 // ─── Sprint 2.3: Read shapes and read models ──────────────────────────────────────
 
 // Read shapes (domain record → UI-facing shape)
@@ -283,6 +291,7 @@ export type {
   MessageDetail,
   TaskSummary,
   TaskPriorityString,
+  CalendarEntry,
 } from "./read-shapes";
 export {
   toConversationSummary,
@@ -300,6 +309,8 @@ export {
   getMessageDetail,
   getConversationTaskSummaries,
   getOrgTaskSummaries,
+  getUnifiedCalendar,
+  getMeetingDetail,
   type ListConversationSummariesOptions,
   type GetConversationDetailOptions,
   type GetOrgTaskSummariesOptions,

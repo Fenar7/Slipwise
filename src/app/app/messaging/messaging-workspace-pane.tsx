@@ -313,7 +313,7 @@ export function MessagingWorkspacePane({ activeSection, conversationId, onNaviga
       {activeSection === "groups" && <GroupsPane />}
       {activeSection === "tasks" && <MessagingTaskPanel conversationId={conversationId} onNavigateToOrigin={onNavigateToOrigin} />}
       {activeSection === "meetings" && (
-        <MessagingMeetingPanel calendarConnection={MOCK_CALENDAR_CONNECTION} />
+        <MessagingMeetingPanel conversationId={conversationId} calendarConnection={MOCK_CALENDAR_CONNECTION} />
       )}
       {activeSection === "files" && <MessagingFilesPanel conversationId={conversationId} />}
       {activeSection === "admin" && <MessagingAdminPanel />}

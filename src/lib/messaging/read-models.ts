@@ -7,7 +7,7 @@ import type {
   MessageReactionRecord,
 } from "./domain-types";
 import { conversationOrgSafeWhere, participantOrgSafeWhere } from "./org-safe-helpers";
-import { toConversationRecord, toMessageRecord, toThreadRecord, toReadStateRecord, toParticipantRecord } from "./mappers";
+import { toConversationRecord, toMessageRecord, toThreadRecord, toReadStateRecord, toParticipantRecord, toMeetingRecord } from "./mappers";
 import {
   toConversationSummary,
   toConversationDetail,
@@ -17,6 +17,7 @@ import {
   type ConversationDetail,
   type MessageDetail,
   type TaskSummary,
+  type CalendarEntry,
 } from "./read-shapes";
 import { getMessagingAuditActionLabel } from "./audit";
 import {
@@ -660,5 +661,201 @@ export async function getTaskHealthDiagnostics(
     reminderPendingCount,
   };
 }
+
+/**
+ * Fetch unified calendar entries (meetings, task due dates, task reminders)
+ * for a user in an organization.
+ * Only returns entries from conversations where the user is an active participant.
+ */
+export async function getUnifiedCalendar(
+  orgId: string,
+  userId: string,
+  startAt?: Date,
+  endAt?: Date,
+): Promise<CalendarEntry[]> {
+  // 1. Get active conversations for the user
+  const activeParticipants = await db.conversationParticipant.findMany({
+    where: {
+      orgId,
+      userId,
+      leftAt: null,
+    },
+    select: {
+      conversationId: true,
+    },
+  });
+
+  const accessibleConversationIds = activeParticipants.map((ap) => ap.conversationId);
+  if (accessibleConversationIds.length === 0) {
+    return [];
+  }
+
+  // 2. Build where filters
+  const meetingWhere: any = {
+    orgId,
+    conversationId: { in: accessibleConversationIds },
+  };
+  if (startAt || endAt) {
+    meetingWhere.scheduledAt = {};
+    if (startAt) meetingWhere.scheduledAt.gte = startAt;
+    if (endAt) meetingWhere.scheduledAt.lte = endAt;
+  }
+
+  const taskWhere: any = {
+    orgId,
+    conversationId: { in: accessibleConversationIds },
+    dueDate: { not: null },
+    status: { in: ["OPEN", "IN_PROGRESS", "OVERDUE"] },
+  };
+  if (startAt || endAt) {
+    taskWhere.dueDate = {};
+    if (startAt) taskWhere.dueDate.gte = startAt;
+    if (endAt) taskWhere.dueDate.lte = endAt;
+  }
+
+  const taskReminderWhere: any = {
+    orgId,
+    conversationId: { in: accessibleConversationIds },
+    reminderAt: { not: null },
+    status: { in: ["OPEN", "IN_PROGRESS", "OVERDUE"] },
+  };
+  if (startAt || endAt) {
+    taskReminderWhere.reminderAt = {};
+    if (startAt) taskReminderWhere.reminderAt.gte = startAt;
+    if (endAt) taskReminderWhere.reminderAt.lte = endAt;
+  }
+
+  // 3. Query DB
+  const [meetings, tasks, tasksWithReminders, conversations] = await Promise.all([
+    db.conversationMeeting.findMany({ where: meetingWhere }),
+    db.messagingTask.findMany({ where: taskWhere }),
+    db.messagingTask.findMany({ where: taskReminderWhere }),
+    db.conversation.findMany({
+      where: { id: { in: accessibleConversationIds }, orgId },
+      select: { id: true, name: true },
+    }),
+  ]);
+
+  const conversationMap = new Map(conversations.map((c) => [c.id, c]));
+
+  // Get unique profiles needed
+  const scheduledByUserIds = Array.from(new Set(meetings.map((m) => m.scheduledBy)));
+  const assigneeUserIds = Array.from(
+    new Set([
+      ...tasks.map((t) => t.assigneeId).filter((id): id is string => id !== null),
+      ...tasksWithReminders.map((t) => t.assigneeId).filter((id): id is string => id !== null),
+    ]),
+  );
+  const allUserIds = Array.from(new Set([...scheduledByUserIds, ...assigneeUserIds]));
+
+  const profiles =
+    allUserIds.length > 0
+      ? await db.profile.findMany({
+          where: { id: { in: allUserIds } },
+          select: { id: true, name: true },
+        })
+      : [];
+
+  const profileMap = new Map(profiles.map((p) => [p.id, p]));
+
+  const entries: CalendarEntry[] = [];
+
+  // Map meetings
+  for (const m of meetings) {
+    const convName = conversationMap.get(m.conversationId)?.name ?? null;
+    const endAtTime = new Date(m.scheduledAt.getTime() + m.durationMinutes * 60 * 1000);
+    entries.push({
+      id: m.id,
+      orgId: m.orgId,
+      conversationId: m.conversationId,
+      conversationName: convName,
+      type: "meeting",
+      title: m.title,
+      description: m.description,
+      startAt: m.scheduledAt.toISOString(),
+      endAt: endAtTime.toISOString(),
+      status: m.status,
+      scheduledBy: m.scheduledBy,
+      scheduledByName: profileMap.get(m.scheduledBy)?.name ?? null,
+    });
+  }
+
+  // Map tasks
+  for (const t of tasks) {
+    const convName = conversationMap.get(t.conversationId)?.name ?? null;
+    entries.push({
+      id: t.id,
+      orgId: t.orgId,
+      conversationId: t.conversationId,
+      conversationName: convName,
+      type: "task_due_date",
+      title: `Due: ${t.title}`,
+      description: t.description,
+      startAt: t.dueDate!.toISOString(),
+      endAt: t.dueDate!.toISOString(),
+      status: t.status,
+      assigneeId: t.assigneeId,
+      assigneeName: t.assigneeId ? profileMap.get(t.assigneeId)?.name ?? null : null,
+      priority: t.priority === 3 ? "critical" : t.priority === 2 ? "high" : t.priority === 1 ? "medium" : "low",
+    });
+  }
+
+  // Map task reminders
+  for (const tr of tasksWithReminders) {
+    const convName = conversationMap.get(tr.conversationId)?.name ?? null;
+    entries.push({
+      id: `${tr.id}-reminder`,
+      orgId: tr.orgId,
+      conversationId: tr.conversationId,
+      conversationName: convName,
+      type: "task_reminder",
+      title: `Reminder: ${tr.title}`,
+      description: tr.description,
+      startAt: tr.reminderAt!.toISOString(),
+      endAt: tr.reminderAt!.toISOString(),
+      status: tr.status,
+      assigneeId: tr.assigneeId,
+      assigneeName: tr.assigneeId ? profileMap.get(tr.assigneeId)?.name ?? null : null,
+      priority: tr.priority === 3 ? "critical" : tr.priority === 2 ? "high" : tr.priority === 1 ? "medium" : "low",
+    });
+  }
+
+  // Sort chronologically
+  return entries.sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime());
+}
+
+/**
+ * Get detailed record for a single meeting.
+ * Ensures the requesting user is an active participant in the conversation.
+ */
+export async function getMeetingDetail(
+  orgId: string,
+  meetingId: string,
+  userId: string,
+): Promise<ConversationMeetingRecord | null> {
+  const meeting = await db.conversationMeeting.findFirst({
+    where: { id: meetingId, orgId },
+  });
+
+  if (!meeting) {
+    return null;
+  }
+
+  const membership = await db.conversationParticipant.findFirst({
+    where: {
+      orgId,
+      conversationId: meeting.conversationId,
+      userId,
+      leftAt: null,
+    },
+  });
+
+  if (!membership) {
+    return null;
+  }
+
+  return toMeetingRecord(meeting);
+}
+
 
 
