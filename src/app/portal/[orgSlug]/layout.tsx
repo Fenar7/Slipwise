@@ -18,7 +18,13 @@ export default async function PortalLayout({
   }
 
   if (eligibility.state === "DISABLED") {
-    return <PortalErrorState type="DISABLED" orgName={eligibility.org?.name} />;
+    return (
+      <PortalErrorState
+        type="DISABLED"
+        orgName={eligibility.org?.name}
+        showPoweredBy={!eligibility.org?.whiteLabel?.removeBranding}
+      />
+    );
   }
 
   const { org } = eligibility;

@@ -8,11 +8,39 @@ export type PortalEligibilityResult =
   | { state: "NOT_FOUND" };
 
 export async function checkPortalEligibility(orgSlug: string): Promise<PortalEligibilityResult> {
-  const isDevPreview = orgSlug === "acme" && process.env.NODE_ENV === "development";
+  // Always query the real DB first so a real org's state (disabled, not-ready) is
+  // reflected truthfully — even in development. The dev-preview stub is only used
+  // when the slug is "acme", the environment is development, and no real record exists.
+  let org: any = await db.organization.findUnique({
+    where: { slug: orgSlug },
+    select: {
+      id: true,
+      name: true,
+      slug: true,
+      logo: true,
+      branding: {
+        select: { logoUrl: true, accentColor: true, fontFamily: true, fontColor: true },
+      },
+      whiteLabel: {
+        select: { removeBranding: true },
+      },
+      defaults: {
+        select: {
+          portalEnabled: true,
+          portalSupportEmail: true,
+          portalSupportPhone: true,
+          portalHeaderMessage: true,
+          portalQuoteAcceptanceEnabled: true,
+        },
+      },
+      clientHubOrgConfig: {
+        select: { config: true },
+      },
+    },
+  });
 
-  let org: any = null;
-
-  if (isDevPreview) {
+  // Dev-preview fallback: only when no real org exists for "acme" in development.
+  if (!org && orgSlug === "acme" && process.env.NODE_ENV === "development") {
     org = {
       id: "org_preview",
       name: "Acme Corporation",
@@ -28,34 +56,6 @@ export async function checkPortalEligibility(orgSlug: string): Promise<PortalEli
       },
       clientHubOrgConfig: null,
     };
-  } else {
-    org = await db.organization.findUnique({
-      where: { slug: orgSlug },
-      select: {
-        id: true,
-        name: true,
-        slug: true,
-        logo: true,
-        branding: {
-          select: { logoUrl: true, accentColor: true, fontFamily: true, fontColor: true },
-        },
-        whiteLabel: {
-          select: { removeBranding: true },
-        },
-        defaults: {
-          select: {
-            portalEnabled: true,
-            portalSupportEmail: true,
-            portalSupportPhone: true,
-            portalHeaderMessage: true,
-            portalQuoteAcceptanceEnabled: true,
-          },
-        },
-        clientHubOrgConfig: {
-          select: { config: true },
-        },
-      },
-    });
   }
 
   if (!org) {

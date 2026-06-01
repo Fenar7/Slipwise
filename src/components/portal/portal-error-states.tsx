@@ -3,9 +3,15 @@ import { AlertCircle, Lock, Hammer } from "lucide-react";
 type PortalErrorStateProps = {
   type: "NOT_FOUND" | "DISABLED" | "NOT_READY";
   orgName?: string;
+  /**
+   * Whether to render the "Powered by Slipwise" footer badge.
+   * Defaults to true for NOT_FOUND (no org context available).
+   * Pass false when the org is configured with whiteLabel.removeBranding = true.
+   */
+  showPoweredBy?: boolean;
 };
 
-export function PortalErrorState({ type, orgName }: PortalErrorStateProps) {
+export function PortalErrorState({ type, orgName, showPoweredBy = true }: PortalErrorStateProps) {
   const content = {
     NOT_FOUND: {
       icon: <AlertCircle className="h-6 w-6 text-red-500" />,
@@ -49,15 +55,18 @@ export function PortalErrorState({ type, orgName }: PortalErrorStateProps) {
             {content.description}
           </p>
         </div>
-        <div className="pt-4 border-t border-slate-200">
-          <p className="text-xs text-slate-400">
-            Powered by{" "}
-            <a href="https://slipwise.in" target="_blank" rel="noopener noreferrer" className="font-semibold text-slate-600 hover:text-slate-900 transition-colors">
-              Slipwise
-            </a>
-          </p>
-        </div>
+        {showPoweredBy && (
+          <div className="pt-4 border-t border-slate-200">
+            <p className="text-xs text-slate-400">
+              Powered by{" "}
+              <a href="https://slipwise.in" target="_blank" rel="noopener noreferrer" className="font-semibold text-slate-600 hover:text-slate-900 transition-colors">
+                Slipwise
+              </a>
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );
 }
+

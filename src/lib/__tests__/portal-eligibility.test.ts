@@ -102,16 +102,43 @@ describe("checkPortalEligibility", () => {
     }
   });
 
-  it("supports dev preview for acme when process.env.NODE_ENV is development", async () => {
+  /**
+   * Dev-preview fallback: stub is used ONLY when DB returns null in development.
+   * The DB is always queried first — so a real acme org wins over the preview stub.
+   */
+  it("uses dev-preview stub when real acme org is absent in development", async () => {
     const originalEnv = process.env.NODE_ENV;
     process.env.NODE_ENV = "development";
+    mockDb.organization.findUnique.mockResolvedValue(null); // no real org
 
     try {
       const result = await checkPortalEligibility("acme");
       expect(result.state).toBe("ENABLED_AND_READY");
       if (result.state === "ENABLED_AND_READY") {
-        expect(result.org.name).toBe("Acme Corporation");
         expect(result.org.id).toBe("org_preview");
+        expect(result.org.name).toBe("Acme Corporation");
+      }
+    } finally {
+      process.env.NODE_ENV = originalEnv;
+    }
+  });
+
+  it("respects a real disabled acme org in development — does NOT apply dev-preview stub", async () => {
+    const originalEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = "development";
+    mockDb.organization.findUnique.mockResolvedValue({
+      ...baseOrg,
+      id: "org_real_acme",
+      slug: "acme",
+      defaults: { ...baseOrg.defaults, portalEnabled: false },
+    });
+
+    try {
+      const result = await checkPortalEligibility("acme");
+      // Real disabled acme org must return DISABLED, not the preview ENABLED_AND_READY
+      expect(result.state).toBe("DISABLED");
+      if (result.state === "DISABLED") {
+        expect(result.org.id).toBe("org_real_acme");
       }
     } finally {
       process.env.NODE_ENV = originalEnv;
@@ -126,4 +153,39 @@ describe("checkPortalEligibility", () => {
       expect(result.org.defaults.portalQuoteAcceptanceEnabled).toBe(true);
     }
   });
+
+  it("carries whiteLabel.removeBranding=true through DISABLED result so callers can suppress vendor branding", async () => {
+    mockDb.organization.findUnique.mockResolvedValue({
+      ...baseOrg,
+      whiteLabel: { removeBranding: true },
+      defaults: { ...baseOrg.defaults, portalEnabled: false },
+    });
+
+    const result = await checkPortalEligibility("wl-disabled-org");
+    expect(result.state).toBe("DISABLED");
+    if (result.state === "DISABLED") {
+      expect(result.org.whiteLabel?.removeBranding).toBe(true);
+    }
+  });
+
+  it("carries whiteLabel.removeBranding=true through ENABLED_BUT_NOT_READY result", async () => {
+    mockDb.organization.findUnique.mockResolvedValue({
+      ...baseOrg,
+      branding: null,
+      logo: null,
+      whiteLabel: { removeBranding: true },
+      defaults: {
+        ...baseOrg.defaults,
+        portalSupportEmail: null,
+        portalSupportPhone: null,
+      },
+    });
+
+    const result = await checkPortalEligibility("wl-not-ready-org");
+    expect(result.state).toBe("ENABLED_BUT_NOT_READY");
+    if (result.state === "ENABLED_BUT_NOT_READY") {
+      expect(result.org.whiteLabel?.removeBranding).toBe(true);
+    }
+  });
 });
+

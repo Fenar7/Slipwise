@@ -24,11 +24,23 @@ export default async function ClientHubLayout({
   }
 
   if (eligibility.state === "DISABLED") {
-    return <PortalErrorState type="DISABLED" orgName={eligibility.org?.name} />;
+    return (
+      <PortalErrorState
+        type="DISABLED"
+        orgName={eligibility.org?.name}
+        showPoweredBy={!eligibility.org?.whiteLabel?.removeBranding}
+      />
+    );
   }
 
   if (eligibility.state === "ENABLED_BUT_NOT_READY") {
-    return <PortalErrorState type="NOT_READY" orgName={eligibility.org?.name} />;
+    return (
+      <PortalErrorState
+        type="NOT_READY"
+        orgName={eligibility.org?.name}
+        showPoweredBy={!eligibility.org?.whiteLabel?.removeBranding}
+      />
+    );
   }
 
   const { org, config } = eligibility;
