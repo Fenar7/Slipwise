@@ -7,6 +7,8 @@ import {
   getPortalSession,
   requestMagicLink,
   logPortalAccess,
+  requestPortalOtp,
+  verifyPortalOtp,
 } from "@/lib/portal-auth";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -55,6 +57,41 @@ export async function requestPortalMagicLink(email: string, orgSlug: string) {
     message:
       "If an account exists with that email, we've sent a login link. Please check your inbox.",
   };
+}
+
+// ─── 1b. Request & Verify OTP (Sprint 5.2) ──────────────────────────────────────
+
+export async function requestPortalOtpAction(email: string, orgSlug: string) {
+  // Always return same shape to prevent email enumeration
+  try {
+    await requestPortalOtp(email, orgSlug);
+  } catch {
+    // Swallow errors — anti-enumeration
+  }
+  return {
+    success: true as const,
+    message: "If an account exists for this email, a verification code has been sent. Please check your inbox.",
+  };
+}
+
+export async function verifyPortalOtpAction(
+  email: string,
+  otp: string,
+  orgSlug: string,
+): Promise<{ success: true } | { success: false; error: string }> {
+  try {
+    const result = await verifyPortalOtp(email, otp, orgSlug);
+    if (result.success) {
+      return { success: true };
+    } else {
+      if (result.error === "rate_limit_exceeded") {
+        return { success: false, error: "Too many failed attempts. Please try again later." };
+      }
+      return { success: false, error: "Invalid or expired verification code." };
+    }
+  } catch {
+    return { success: false, error: "Something went wrong. Please try again." };
+  }
 }
 
 // ─── 2. Get Portal Invoices ────────────────────────────────────────────────────

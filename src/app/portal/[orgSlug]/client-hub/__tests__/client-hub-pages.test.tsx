@@ -9,11 +9,22 @@ import { describe, it, expect, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 
 const mockUseParams = vi.hoisted(() => vi.fn(() => ({ orgSlug: "acme" })));
+const mockUseSearchParams = vi.hoisted(() => vi.fn(() => ({ get: () => "test@example.com" })));
+const mockUseRouter = vi.hoisted(() => vi.fn(() => ({ push: vi.fn() })));
+
 vi.mock("next/navigation", () => ({
   useParams: mockUseParams,
+  useSearchParams: mockUseSearchParams,
+  useRouter: mockUseRouter,
+  redirect: vi.fn(),
   notFound: () => {
     throw new Error("404");
   },
+}));
+
+vi.mock("@/lib/portal-auth", () => ({
+  requirePortalSession: vi.fn().mockResolvedValue({ customerId: "cust_test_001", orgId: "org_001" }),
+  getPortalSession: vi.fn().mockResolvedValue({ customerId: "cust_test_001", orgId: "org_001" }),
 }));
 
 import DashboardPage from "../page";
@@ -84,6 +95,18 @@ describe("Client Hub Invoices", () => {
     expect(html).toContain("Payment Link");
     expect(html).toContain("Bank Transfer");
     expect(html).toContain("Amount Due");
+  });
+
+  it("payment page requires a valid portal session and redirects unauthenticated access", async () => {
+    const { requirePortalSession } = await import("@/lib/portal-auth");
+    vi.mocked(requirePortalSession).mockClear();
+
+    await InvoicePaymentPage({ params: Promise.resolve({ orgSlug: ORG_SLUG, id: "inv-001" }) });
+
+    expect(requirePortalSession).toHaveBeenCalledWith(
+      ORG_SLUG,
+      `/portal/${ORG_SLUG}/client-hub/login`
+    );
   });
 });
 
@@ -157,6 +180,9 @@ describe("Client Hub Login", () => {
     expect(html).toContain("Send verification code");
     expect(html).toContain("No password needed");
     expect(html).toContain("Code expires in 15 min");
+    // Assert absence of static copy
+    expect(html).not.toContain("Static Phase 1 shell");
+    expect(html).not.toContain("simulates delivery only");
   });
 });
 
@@ -168,5 +194,9 @@ describe("Client Hub Verify", () => {
     expect(html).toContain("Verify code");
     expect(html).toContain("Code expires in 15 minutes");
     expect(html).toContain("Resend code");
+    // Assert presence of truthful copy and absence of static copy
+    expect(html).toContain("access your client hub");
+    expect(html).not.toContain("complete the static sign-in preview");
+    expect(html).not.toContain("In the live product");
   });
 });

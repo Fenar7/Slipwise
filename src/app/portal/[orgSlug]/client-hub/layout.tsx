@@ -1,10 +1,8 @@
 import type { ReactNode } from "react";
 import { db } from "@/lib/db";
 import { buildHubThemeStyle, ClientHubFooter, ClientHubHeader, DEFAULT_HUB_ACCENT, getHubNavItems } from "./components/views";
-import { DEFAULT_CLIENT_HUB_CONFIG } from "@/app/app/settings/portal/client-hub/components/mock-config";
-import type { ClientHubConfig } from "./components/customization-contract";
 import { safeValidateHubConfig } from "./components/config-resolver";
-
+import { getPortalSession } from "@/lib/portal-auth";
 import { checkPortalEligibility } from "@/lib/portal-eligibility";
 import { PortalErrorState } from "@/components/portal/portal-error-states";
 
@@ -49,6 +47,18 @@ export default async function ClientHubLayout({
   const logoUrl = config.branding?.logoUrl ?? org.branding?.logoUrl ?? org.logo;
   const navItems = getHubNavItems(orgSlug, config);
 
+  const session = await getPortalSession(orgSlug);
+  let customerName: string | undefined;
+  if (session) {
+    const cust = await db.customer.findUnique({
+      where: { id: session.customerId },
+      select: { name: true },
+    });
+    if (cust) {
+      customerName = cust.name;
+    }
+  }
+
   return (
     <div
       data-client-hub-root
@@ -68,7 +78,7 @@ export default async function ClientHubLayout({
           padding: 0;
         }
       `}</style>
-      <ClientHubHeader orgName={org.name} logoUrl={logoUrl} navItems={navItems} />
+      <ClientHubHeader orgName={org.name} orgSlug={orgSlug} logoUrl={logoUrl} navItems={navItems} customerName={customerName} />
       <main className="mx-auto w-full max-w-[1480px] flex-1 px-5 py-6 sm:px-6 sm:py-8 lg:px-10">{children}</main>
       <ClientHubFooter
         orgName={org.name}
