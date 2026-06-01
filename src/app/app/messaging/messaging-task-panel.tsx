@@ -7,6 +7,7 @@ import { RadioPill } from "./messaging-ui-primitives";
 import { MessagingTaskCreate } from "./messaging-task-create";
 import type { TaskFilterStatus, TaskPriority, MessagingTaskDetail, MessagingTask, MessagingParticipant, TaskStatus } from "./types";
 import { useConversationTasks } from "./lib/use-conversation-tasks";
+import { dispatchTaskMutation } from "./lib/task-events";
 import { useConversationDetail } from "./lib/use-conversation-detail";
 import type { ApiTaskSummary, ApiConversationDetail } from "./lib/mappers";
 
@@ -726,6 +727,7 @@ export function MessagingTaskPanel({ conversationId, onNavigateToOrigin }: Messa
     });
     if (res.ok) {
       refreshTasks();
+      dispatchTaskMutation();
     }
   };
 
@@ -790,6 +792,7 @@ export function MessagingTaskPanel({ conversationId, onNavigateToOrigin }: Messa
     }
 
     refreshTasks();
+    dispatchTaskMutation();
   };
 
   // PATCH status handler
@@ -802,7 +805,7 @@ export function MessagingTaskPanel({ conversationId, onNavigateToOrigin }: Messa
     await handleUpdateTask({ assigneeId });
   };
 
-  if (tasksLoading) {
+  if (tasksLoading && apiTasks === null) {
     return (
       <div data-testid="messaging-pane-tasks" className="flex flex-col h-full items-center justify-center py-12">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#DC2626]"></div>
@@ -811,7 +814,7 @@ export function MessagingTaskPanel({ conversationId, onNavigateToOrigin }: Messa
     );
   }
 
-  if (tasksError !== "none") {
+  if (tasksError !== "none" && apiTasks === null) {
     return (
       <div data-testid="messaging-pane-tasks" className="flex flex-col h-full items-center justify-center py-12 text-center px-6">
         <AlertTriangle className="h-10 w-10 text-[#DC2626] mb-3" />
