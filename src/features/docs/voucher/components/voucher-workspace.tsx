@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Settings, Palette, FileText, CheckCircle, Eye, Tag } from "lucide-react";
 import {
@@ -54,10 +54,6 @@ import {
   updateVoucher,
   type VoucherInput,
 } from "@/app/app/docs/vouchers/actions";
-import { resolveVoucherAutofill, type VoucherAutofillPayload } from "@/app/app/docs/vouchers/autofill-resolver";
-import { StaleDataBanner } from "@/components/foundation/stale-data-banner";
-import { VOUCHER_MANAGED_FIELDS } from "@/app/app/docs/shared/defaulting/managed-fields";
-import type { StaleInfo } from "@/app/app/docs/shared/defaulting/types";
 
 interface Vendor {
   id: string;
@@ -99,12 +95,10 @@ function VoucherPanel({
   voucherId,
   vendors,
   initialTemplateId,
-  initialAutofill,
 }: {
   voucherId?: string;
   vendors: Vendor[];
   initialTemplateId?: string;
-  initialAutofill?: VoucherAutofillPayload | null;
 }) {
   const { control, getValues, setValue, trigger } = useFormContextSafe();
   const values = useWatch({ control }) as VoucherFormValues;
@@ -131,26 +125,6 @@ function VoucherPanel({
   const [tagIds, setTagIds] = useState<string[]>([]);
   const [suggestions, setSuggestions] = useState<SuggestedTag[]>([]);
 
-  const overriddenRef = useRef<Set<string>>(new Set());
-  const lastAutofillRef = useRef<Record<string, unknown>>({});
-  const [staleInfo, setStaleInfo] = useState<StaleInfo | null>(null);
-
-  const managedFieldWriters: Record<string, (p: VoucherAutofillPayload) => void> = useMemo(() => ({
-    counterpartyName: (p) => setValue("counterpartyName", p.counterpartyName),
-    notes: (p) => setValue("notes", p.notes),
-    approvedBy: (p) => setValue("approvedBy", p.approvedBy),
-    receivedBy: (p) => setValue("receivedBy", p.receivedBy),
-    paymentMode: (p) => setValue("paymentMode", p.paymentMode),
-    "branding.companyName": (p) => setValue("branding.companyName", p.branding.companyName),
-    "branding.address": (p) => setValue("branding.address", p.branding.address),
-    "branding.email": (p) => setValue("branding.email", p.branding.email),
-    "branding.phone": (p) => setValue("branding.phone", p.branding.phone),
-    "branding.accentColor": (p) => setValue("branding.accentColor", p.branding.accentColor),
-    templateId: (p) => { setSelectedTemplateId(p.templateId as VoucherFormValues["templateId"]); setValue("templateId", p.templateId as VoucherFormValues["templateId"]); },
-    date: (p) => setValue("date", p.date),
-    vendorId: (p) => setValue("vendorId", p.vendorId || undefined),
-  }), [setValue]);
-
   const loadSuggestions = async (vendorId: string) => {
     try {
       const result = await getSuggestedTags({ counterpartyId: vendorId, counterpartyType: "vendor", documentType: "voucher", limit: 8 });
@@ -158,98 +132,7 @@ function VoucherPanel({
     } catch { setSuggestions([]); }
   };
 
-  const hydrateFromAutofill = useCallback((payload: VoucherAutofillPayload, respectOverrides = true) => {
-    if (!respectOverrides) {
-      for (const key of VOUCHER_MANAGED_FIELDS) {
-        const writer = managedFieldWriters[key];
-        if (writer) writer(payload);
-      }
-    } else {
-      setValue("vendorId", payload.vendorId || undefined);
-      for (const key of VOUCHER_MANAGED_FIELDS) {
-        if (key === "vendorId") continue;
-        if (overriddenRef.current.has(key)) continue;
-        const writer = managedFieldWriters[key];
-        if (writer) writer(payload);
-      }
-    }
-    lastAutofillRef.current = {
-      counterpartyName: payload.counterpartyName,
-      notes: payload.notes,
-      approvedBy: payload.approvedBy,
-      receivedBy: payload.receivedBy,
-      paymentMode: payload.paymentMode,
-      date: payload.date,
-      templateId: payload.templateId,
-    };
-  }, [managedFieldWriters, setValue]);
-
-  const handleVendorChange = useCallback(async (vendorId: string) => {
-    try {
-      const payload = await resolveVoucherAutofill({ vendorId });
-      hydrateFromAutofill(payload, true);
-      setStaleInfo(null);
-    } catch {
-      // Silently fail — keep current state
-    }
-    loadSuggestions(vendorId);
-  }, [hydrateFromAutofill]);
-
-  const handleVendorClear = useCallback(async () => {
-    try {
-      const payload = await resolveVoucherAutofill({});
-      hydrateFromAutofill(payload, true);
-      setStaleInfo(null);
-    } catch {
-      // Silently fail — keep current state
-    }
-    setSuggestions([]);
-  }, [hydrateFromAutofill]);
-
-  const didHydrateRef = useRef(false);
-  useEffect(() => {
-    if (initialAutofill && !didHydrateRef.current) {
-      didHydrateRef.current = true;
-      hydrateFromAutofill(initialAutofill, false);
-    }
-  }, [initialAutofill, hydrateFromAutofill]);
-
-  useEffect(() => {
-    for (const key of VOUCHER_MANAGED_FIELDS) {
-      if (overriddenRef.current.has(key)) continue;
-      const lastVal = lastAutofillRef.current[key];
-      if (lastVal === undefined) continue;
-      if ((values as Record<string, unknown>)[key] !== lastVal) {
-        overriddenRef.current.add(key);
-      }
-    }
-  }, [values]);
-
-  const handleRefreshDefaults = useCallback(async () => {
-    const currentVendorId = getValues("vendorId");
-    try {
-      const payload = await resolveVoucherAutofill({ vendorId: currentVendorId || undefined });
-      hydrateFromAutofill(payload, true);
-      setStaleInfo(null);
-      toast.success("Defaults refreshed");
-    } catch {
-      toast.error("Could not refresh defaults");
-    }
-  }, [getValues, hydrateFromAutofill]);
-
-  const handleReapplyAll = useCallback(async () => {
-    const currentVendorId = getValues("vendorId");
-    try {
-      const payload = await resolveVoucherAutofill({ vendorId: currentVendorId || undefined });
-      overriddenRef.current = new Set();
-      hydrateFromAutofill(payload, false);
-      setStaleInfo(null);
-      toast.success("All defaults reapplied");
-    } catch {
-      toast.error("Could not reapply defaults");
-    }
-  }, [getValues, hydrateFromAutofill]);
-
+  // Sync multi-line total → amount field so preview stays live
   useEffect(() => {
     const lineItems = values.lineItems ?? [];
     if (isMultiLine && lineItems.length > 0) {
@@ -451,19 +334,13 @@ function VoucherPanel({
     }
   }
 
+  // Visual accent classes driven by voucher type
   const typeBannerClass = isPayment
     ? "bg-rose-50 border-rose-200 text-rose-700"
     : "bg-green-50 border-green-200 text-green-700";
 
   return (
     <>
-      <StaleDataBanner
-        visible={staleInfo !== null}
-        label={staleInfo?.label ?? ""}
-        onRefresh={handleRefreshDefaults}
-        onReapplyAll={handleReapplyAll}
-        className="mx-4 mt-2"
-      />
       <DocumentWorkspaceLayout
         actions={[
           { id: "home", label: "Back to vault", href: "/app/docs/vouchers", variant: "secondary" },
@@ -527,7 +404,7 @@ function VoucherPanel({
                       }
                     },
                 } satisfies WorkspaceExportDialog)
-                : undefined
+              : undefined
         }
         sections={voucherWorkspaceSections}
         builderContent={
@@ -539,6 +416,7 @@ function VoucherPanel({
                   title="Template and voucher mode"
                   description="Switch layouts or voucher type without losing the entered form state."
                 >
+                  {/* Type indicator banner */}
                   <div className={cn("rounded-md px-3 py-2 text-sm font-medium", typeBannerClass)}>
                     {isPayment
                       ? "Payment Voucher — money going out"
@@ -557,7 +435,6 @@ function VoucherPanel({
                             aria-pressed={active}
                             onClick={() => {
                               setSelectedTemplateId(template.id);
-                              overriddenRef.current.add("templateId");
                               setValue("templateId", template.id, {
                                 shouldDirty: true,
                                 shouldTouch: true,
@@ -645,6 +522,7 @@ function VoucherPanel({
                   title="Core voucher information"
                   description="These fields drive the document content and validation."
                 >
+                  {/* Enter key focus-next container */}
                   <div
                     onKeyDown={(e) => {
                       if (
@@ -681,12 +559,12 @@ function VoucherPanel({
                       />
                     </div>
 
+                    {/* Vendor picker — pre-fills counterpartyName */}
                     <VendorPicker
                       vendors={vendors}
                       label={isPayment ? "Select vendor" : "Select from"}
                       onTagPrefill={setTagIds}
-                      onVendorSelect={handleVendorChange}
-                      onClearVendor={handleVendorClear}
+                      onVendorSelect={loadSuggestions}
                     />
 
                     <TextField<VoucherFormValues>
@@ -696,6 +574,7 @@ function VoucherPanel({
                       placeholder={isPayment ? "Rahul Menon" : "Priya Nair"}
                     />
 
+                    {/* Entry mode toggle */}
                     <FieldShell label="Entry mode">
                       <div className="flex rounded-lg border border-[var(--border-soft)] bg-[var(--surface-soft)] p-1 gap-1">
                         <button
@@ -918,26 +797,24 @@ export function VoucherWorkspace({
   vendors = [],
   initialTemplateId,
   initialAccentColor,
-  initialAutofill,
 }: {
   voucherId?: string;
   initialValues?: Partial<VoucherFormValues>;
   vendors?: Vendor[];
   initialTemplateId?: string;
   initialAccentColor?: string;
-  initialAutofill?: VoucherAutofillPayload | null;
 }) {
   const methods = useForm<VoucherFormValues>({
     resolver: zodResolver(voucherFormSchema),
     defaultValues: initialValues
-      ? { ...voucherDefaultValues, templateId: initialTemplateId ?? voucherDefaultValues.templateId, branding: { ...voucherDefaultValues.branding, accentColor: initialAccentColor ?? voucherDefaultValues.branding.accentColor }, ...initialValues }
-      : { ...voucherDefaultValues, templateId: initialTemplateId ?? voucherDefaultValues.templateId, branding: { ...voucherDefaultValues.branding, accentColor: initialAccentColor ?? voucherDefaultValues.branding.accentColor } },
+      ? { ...voucherDefaultValues, branding: { ...voucherDefaultValues.branding, accentColor: initialAccentColor ?? voucherDefaultValues.branding.accentColor }, ...initialValues }
+      : { ...voucherDefaultValues, branding: { ...voucherDefaultValues.branding, accentColor: initialAccentColor ?? voucherDefaultValues.branding.accentColor } },
     mode: "onChange",
   });
 
   return (
     <FormProvider {...methods}>
-      <VoucherPanel voucherId={voucherId} vendors={vendors} initialTemplateId={initialTemplateId} initialAutofill={initialAutofill} />
+      <VoucherPanel voucherId={voucherId} vendors={vendors} initialTemplateId={initialTemplateId} />
     </FormProvider>
   );
 }
