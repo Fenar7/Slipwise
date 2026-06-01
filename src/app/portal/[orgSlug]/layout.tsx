@@ -21,10 +21,6 @@ export default async function PortalLayout({
     return <PortalErrorState type="DISABLED" orgName={eligibility.org?.name} />;
   }
 
-  if (eligibility.state === "ENABLED_BUT_NOT_READY") {
-    return <PortalErrorState type="NOT_READY" orgName={eligibility.org?.name} />;
-  }
-
   const { org } = eligibility;
   const { defaults, branding, whiteLabel } = org;
 

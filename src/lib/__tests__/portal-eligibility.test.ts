@@ -33,6 +33,7 @@ describe("checkPortalEligibility", () => {
       portalSupportEmail: "support@test.com",
       portalSupportPhone: null,
       portalHeaderMessage: "Welcome",
+      portalQuoteAcceptanceEnabled: true,
     },
     clientHubOrgConfig: null,
   };
@@ -114,6 +115,15 @@ describe("checkPortalEligibility", () => {
       }
     } finally {
       process.env.NODE_ENV = originalEnv;
+    }
+  });
+
+  it("truthfully loads and returns portalQuoteAcceptanceEnabled flag in defaults", async () => {
+    mockDb.organization.findUnique.mockResolvedValue(baseOrg);
+    const result = await checkPortalEligibility("test-org");
+    expect(result.state).toBe("ENABLED_AND_READY");
+    if (result.state === "ENABLED_AND_READY") {
+      expect(result.org.defaults.portalQuoteAcceptanceEnabled).toBe(true);
     }
   });
 });

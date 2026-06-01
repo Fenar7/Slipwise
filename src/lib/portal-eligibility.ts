@@ -24,6 +24,7 @@ export async function checkPortalEligibility(orgSlug: string): Promise<PortalEli
         portalSupportEmail: "support@acme.com",
         portalSupportPhone: "+91 98765 43210",
         portalHeaderMessage: "Welcome to Acme Client Hub",
+        portalQuoteAcceptanceEnabled: true,
       },
       clientHubOrgConfig: null,
     };
@@ -47,6 +48,7 @@ export async function checkPortalEligibility(orgSlug: string): Promise<PortalEli
             portalSupportEmail: true,
             portalSupportPhone: true,
             portalHeaderMessage: true,
+            portalQuoteAcceptanceEnabled: true,
           },
         },
         clientHubOrgConfig: {
