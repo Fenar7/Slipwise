@@ -86,11 +86,66 @@ describe("Calendar Connection API Routes", () => {
       orgId: "org-1",
       role: "member",
     });
+
+    vi.stubEnv("GOOGLE_CLIENT_ID", "mock-g-client-id");
+    vi.stubEnv("GOOGLE_CLIENT_SECRET", "mock-g-client-secret");
+    vi.stubEnv("OUTLOOK_CLIENT_ID", "mock-o-client-id");
+    vi.stubEnv("OUTLOOK_CLIENT_SECRET", "mock-o-client-secret");
+
+    const mockFetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes("oauth2.googleapis.com/token")) {
+        return Promise.resolve(new Response(JSON.stringify({
+          access_token: "google-access-token-123",
+          refresh_token: "google-refresh-token-123",
+          expires_in: 3600,
+        }), { status: 200 }));
+      }
+      if (url.includes("googleapis.com/oauth2/v3/userinfo")) {
+        return Promise.resolve(new Response(JSON.stringify({
+          sub: "google-sub-123",
+          email: "admin@google-workspace.com",
+          name: "Google Org Administrator",
+        }), { status: 200 }));
+      }
+      if (url.includes("login.microsoftonline.com")) {
+        return Promise.resolve(new Response(JSON.stringify({
+          access_token: "outlook-access-token-123",
+          refresh_token: "outlook-refresh-token-123",
+          expires_in: 3600,
+          id_token: "mock-id-token",
+        }), { status: 200 }));
+      }
+      if (url.includes("graph.microsoft.com/v1.0/me")) {
+        return Promise.resolve(new Response(JSON.stringify({
+          id: "outlook-id-123",
+          mail: "admin@outlook-office365.com",
+          displayName: "Outlook Org Administrator",
+        }), { status: 200 }));
+      }
+      return Promise.reject(new Error(`Unhandled mock fetch for ${url}`));
+    });
+    vi.stubGlobal("fetch", mockFetch);
   });
 
   describe("GET /api/messaging/calendar/connections", () => {
     it("successfully lists connections in the active organization", async () => {
-      const mockConns = [{ id: "conn-1", provider: "GOOGLE", status: "ACTIVE" }];
+      const mockConns = [{
+        id: "conn-1",
+        orgId: "org-1",
+        provider: "GOOGLE",
+        providerAccountId: "goog-acc-1",
+        emailAddress: "admin@example.com",
+        displayName: null,
+        tokenRef: "secret-ref",
+        tokenExpiry: null,
+        status: "ACTIVE",
+        lastSyncAt: null,
+        lastSyncError: null,
+        disconnectedAt: null,
+        connectedBy: "user-admin",
+        createdAt: new Date("2026-05-01T00:00:00Z"),
+        updatedAt: new Date("2026-06-01T00:00:00Z"),
+      }];
       vi.mocked(listCalendarConnections).mockResolvedValue(mockConns as any);
 
       const req = makeRequest("http://localhost/api/messaging/calendar/connections");
@@ -99,8 +154,54 @@ describe("Calendar Connection API Routes", () => {
 
       expect(response.status).toBe(200);
       expect(json.success).toBe(true);
-      expect(json.data).toEqual(mockConns);
+      expect(json.data.connections).toBeDefined();
+      expect(json.data.connections).toHaveLength(1);
+      expect(json.data.callerRole).toBe("member");
       expect(listCalendarConnections).toHaveBeenCalledWith("org-1");
+    });
+
+    it("does not leak tokenRef, tokenExpiry, providerAccountId, or connectedBy in UI payload", async () => {
+      // Simulate a full CalendarConnectionRecord coming back from the service
+      const fullRecord = {
+        id: "conn-safe-1",
+        orgId: "org-1",
+        provider: "GOOGLE",
+        providerAccountId: "goog-internal-id",
+        emailAddress: "admin@example.com",
+        displayName: "Org Admin",
+        tokenRef: "secret-encrypted-ref",
+        tokenExpiry: new Date("2026-12-31T00:00:00Z"),
+        status: "ACTIVE",
+        lastSyncAt: null,
+        lastSyncError: null,
+        disconnectedAt: null,
+        connectedBy: "user-admin-id",
+        createdAt: new Date("2026-05-01T00:00:00Z"),
+        updatedAt: new Date("2026-06-01T00:00:00Z"),
+      };
+      vi.mocked(listCalendarConnections).mockResolvedValue([fullRecord] as any);
+
+      const req = makeRequest("http://localhost/api/messaging/calendar/connections");
+      const response = await listConnections(req);
+      const json = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(json.success).toBe(true);
+      expect(json.data.connections).toHaveLength(1);
+
+      const conn = json.data.connections[0];
+      // Safe fields are present
+      expect(conn.id).toBe("conn-safe-1");
+      expect(conn.provider).toBe("GOOGLE");
+      expect(conn.emailAddress).toBe("admin@example.com");
+      expect(conn.status).toBe("ACTIVE");
+
+      // Sensitive fields must be absent
+      expect(conn.tokenRef).toBeUndefined();
+      expect(conn.tokenExpiry).toBeUndefined();
+      expect(conn.providerAccountId).toBeUndefined();
+      expect(conn.connectedBy).toBeUndefined();
+      expect(conn.orgId).toBeUndefined();
     });
   });
 
@@ -125,26 +226,23 @@ describe("Calendar Connection API Routes", () => {
   });
 
   describe("POST /api/messaging/calendar/connections/[id]/reconnect", () => {
-    it("successfully repairs connection", async () => {
-      const mockConn = { id: "conn-1", status: "ACTIVE" };
-      vi.mocked(reconnectCalendar).mockResolvedValue(mockConn as any);
+    it("securely initiates OAuth reconnect flow without trusting client tokenRef", async () => {
+      vi.mocked(db.member.findFirst).mockResolvedValue({ role: "admin" } as any);
+      vi.mocked(db.calendarConnection.findFirst).mockResolvedValue({
+        id: "conn-1",
+        provider: "GOOGLE",
+        orgId: "org-1",
+      } as any);
 
-      const req = makeRequest("http://localhost/api/messaging/calendar/connections/conn-1/reconnect", "POST", {
-        tokenRef: "new-opaque-ref",
-      });
+      const req = makeRequest("http://localhost/api/messaging/calendar/connections/conn-1/reconnect", "POST", {});
       const response = await reconnect(req, { params: Promise.resolve({ id: "conn-1" }) });
       const json = await response.json();
 
       expect(response.status).toBe(200);
       expect(json.success).toBe(true);
-      expect(json.data).toEqual(mockConn);
-      expect(reconnectCalendar).toHaveBeenCalledWith({
-        orgId: "org-1",
-        connectionId: "conn-1",
-        tokenRef: "new-opaque-ref",
-        tokenExpiry: null,
-        reconnectedBy: "user-1",
-      });
+      expect(json.url).toContain("accounts.google.com");
+      expect(json.url).toContain("response_type=code");
+      expect(response.cookies.get(getCalendarOAuthStateCookieName("GOOGLE"))).toBeDefined();
     });
   });
 

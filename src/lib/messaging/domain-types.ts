@@ -405,6 +405,30 @@ export interface CalendarConnectionRecord {
   updatedAt: Date;
 }
 
+/**
+ * Safe UI/read-model shape for calendar connection summaries.
+ *
+ * Deliberately omits all sensitive and provider-internal fields:
+ *   - tokenRef       — server-side encrypted token reference
+ *   - tokenExpiry    — token metadata, not needed client-side
+ *   - providerAccountId — provider internal ID, not needed client-side
+ *   - connectedBy    — user ID, not needed client-side
+ *   - orgId          — tenant-internal; not included in UI payloads
+ *
+ * Only fields required for banners, connection chips, and reconnect UX are kept.
+ */
+export interface CalendarConnectionSummary {
+  id: string;
+  provider: CalendarProvider;
+  emailAddress: string;
+  displayName: string | null;
+  status: CalendarConnectionStatus;
+  lastSyncAt: string | null;    // ISO string — safe for JSON serialization
+  lastSyncError: string | null;
+  disconnectedAt: string | null; // ISO string — safe for JSON serialization
+  createdAt: string;             // ISO string — safe for JSON serialization
+}
+
 export function calendarConnectionIsActive(
   record: CalendarConnectionRecord,
 ): boolean {

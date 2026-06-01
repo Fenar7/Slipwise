@@ -42,6 +42,7 @@ import {
 } from "../calendar-connection-service";
 import { getCalendarProviderAdapter } from "../calendar-providers";
 import { encryptIntegrationSecret, decryptIntegrationSecret } from "../../integrations/secrets";
+import { toCalendarConnectionSummary } from "../mappers";
 
 function mockAdminMember() {
   return {
@@ -80,6 +81,10 @@ describe("Sprint 8.2 — Calendar Connection Service Tests", () => {
 
   describe("Provider adapters", () => {
     it("returns correct adapter type and constructs authentic provider URLs", () => {
+      // Ensure env vars are present so getAuthUrl does not fail closed
+      vi.stubEnv("GOOGLE_CLIENT_ID", "mock-g-client-id");
+      vi.stubEnv("OUTLOOK_CLIENT_ID", "mock-o-client-id");
+
       const googleAdapter = getCalendarProviderAdapter("GOOGLE");
       const outlookAdapter = getCalendarProviderAdapter("OUTLOOK");
 
@@ -95,16 +100,88 @@ describe("Sprint 8.2 — Calendar Connection Service Tests", () => {
       expect(oUrl).toContain("state-123");
     });
 
-    it("simulates provider code exchanges deterministically", async () => {
+    it("getAuthUrl fails closed when GOOGLE_CLIENT_ID is missing", () => {
+      vi.stubEnv("GOOGLE_CLIENT_ID", "");
+      const googleAdapter = getCalendarProviderAdapter("GOOGLE");
+      expect(() =>
+        googleAdapter.getAuthUrl("state-abc", "http://localhost/callback")
+      ).toThrow("Google Calendar integration is not configured: missing GOOGLE_CLIENT_ID");
+    });
+
+    it("getAuthUrl fails closed when OUTLOOK_CLIENT_ID is missing", () => {
+      vi.stubEnv("OUTLOOK_CLIENT_ID", "");
+      const outlookAdapter = getCalendarProviderAdapter("OUTLOOK");
+      expect(() =>
+        outlookAdapter.getAuthUrl("state-abc", "http://localhost/callback")
+      ).toThrow("Outlook Calendar integration is not configured: missing OUTLOOK_CLIENT_ID");
+    });
+
+    it("handles real provider code exchanges with mock fetch responses", async () => {
+      // 1. Test missing environment variables
       const googleAdapter = getCalendarProviderAdapter("GOOGLE");
       const outlookAdapter = getCalendarProviderAdapter("OUTLOOK");
+
+      vi.stubEnv("GOOGLE_CLIENT_ID", "");
+      vi.stubEnv("GOOGLE_CLIENT_SECRET", "");
+      vi.stubEnv("OUTLOOK_CLIENT_ID", "");
+      vi.stubEnv("OUTLOOK_CLIENT_SECRET", "");
+
+      await expect(
+        googleAdapter.exchangeCode("google-code-123", "http://localhost/callback")
+      ).rejects.toThrow("Google Calendar integration is not configured");
+
+      await expect(
+        outlookAdapter.exchangeCode("outlook-code-123", "http://localhost/callback")
+      ).rejects.toThrow("Outlook Calendar integration is not configured");
+
+      // 2. Test successful exchanges with environment variables and mocked fetch calls
+      vi.stubEnv("GOOGLE_CLIENT_ID", "mock-g-client-id");
+      vi.stubEnv("GOOGLE_CLIENT_SECRET", "mock-g-client-secret");
+      vi.stubEnv("OUTLOOK_CLIENT_ID", "mock-o-client-id");
+      vi.stubEnv("OUTLOOK_CLIENT_SECRET", "mock-o-client-secret");
+
+      const mockFetch = vi.fn().mockImplementation((url: string) => {
+        if (url.includes("oauth2.googleapis.com/token")) {
+          return Promise.resolve(new Response(JSON.stringify({
+            access_token: "google-access-token-123",
+            refresh_token: "google-refresh-token-123",
+            expires_in: 3600,
+          }), { status: 200 }));
+        }
+        if (url.includes("googleapis.com/oauth2/v3/userinfo")) {
+          return Promise.resolve(new Response(JSON.stringify({
+            sub: "google-sub-123",
+            email: "admin@google-workspace.com",
+            name: "Google Org Administrator",
+          }), { status: 200 }));
+        }
+        if (url.includes("login.microsoftonline.com")) {
+          return Promise.resolve(new Response(JSON.stringify({
+            access_token: "outlook-access-token-123",
+            refresh_token: "outlook-refresh-token-123",
+            expires_in: 3600,
+          }), { status: 200 }));
+        }
+        if (url.includes("graph.microsoft.com/v1.0/me")) {
+          return Promise.resolve(new Response(JSON.stringify({
+            id: "outlook-id-123",
+            mail: "admin@outlook-office365.com",
+            displayName: "Outlook Org Administrator",
+          }), { status: 200 }));
+        }
+        return Promise.reject(new Error(`Unhandled mock fetch for ${url}`));
+      });
+      vi.stubGlobal("fetch", mockFetch);
 
       const gTokens = await googleAdapter.exchangeCode("google-code-123", "http://localhost/callback");
       const oTokens = await outlookAdapter.exchangeCode("outlook-code-123", "http://localhost/callback");
 
-      expect(gTokens.accessToken).toBe("google-access-google-code-123");
-      expect(oTokens.accessToken).toBe("outlook-access-outlook-code-123");
+      expect(gTokens.accessToken).toBe("google-access-token-123");
+      expect(gTokens.providerAccountId).toBe("google-sub-123");
       expect(gTokens.emailAddress).toBe("admin@google-workspace.com");
+
+      expect(oTokens.accessToken).toBe("outlook-access-token-123");
+      expect(oTokens.providerAccountId).toBe("outlook-id-123");
       expect(oTokens.emailAddress).toBe("admin@outlook-office365.com");
     });
   });
@@ -230,6 +307,48 @@ describe("Sprint 8.2 — Calendar Connection Service Tests", () => {
 
       expect(result.lastSyncError).toBe("Provider rate limits exceeded");
       expect(db.calendarConnection.update).toHaveBeenCalled();
+    });
+  });
+
+  describe("CalendarConnectionSummary — no-leak shape", () => {
+    it("toCalendarConnectionSummary omits tokenRef, tokenExpiry, providerAccountId, connectedBy, orgId, updatedAt", () => {
+      const record = {
+        id: "conn-safe",
+        orgId: "org-1",
+        provider: "GOOGLE" as const,
+        providerAccountId: "should-not-appear",
+        emailAddress: "admin@example.com",
+        displayName: "Org Admin",
+        tokenRef: "secret-token-ref",
+        tokenExpiry: new Date("2026-12-31T00:00:00Z"),
+        status: "ACTIVE" as const,
+        lastSyncAt: new Date("2026-06-01T10:00:00Z"),
+        lastSyncError: null,
+        disconnectedAt: null,
+        connectedBy: "user-admin-id",
+        createdAt: new Date("2026-05-01T00:00:00Z"),
+        updatedAt: new Date("2026-06-01T00:00:00Z"),
+      };
+
+      const summary = toCalendarConnectionSummary(record);
+
+      // Safe fields present
+      expect(summary.id).toBe("conn-safe");
+      expect(summary.provider).toBe("GOOGLE");
+      expect(summary.emailAddress).toBe("admin@example.com");
+      expect(summary.displayName).toBe("Org Admin");
+      expect(summary.status).toBe("ACTIVE");
+      expect(summary.lastSyncError).toBeNull();
+      expect(summary.disconnectedAt).toBeNull();
+      expect(summary.createdAt).toBe("2026-05-01T00:00:00.000Z");
+
+      // Sensitive fields must NOT appear
+      expect((summary as any).tokenRef).toBeUndefined();
+      expect((summary as any).tokenExpiry).toBeUndefined();
+      expect((summary as any).providerAccountId).toBeUndefined();
+      expect((summary as any).connectedBy).toBeUndefined();
+      expect((summary as any).orgId).toBeUndefined();
+      expect((summary as any).updatedAt).toBeUndefined();
     });
   });
 });
