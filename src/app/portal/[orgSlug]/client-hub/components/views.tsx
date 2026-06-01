@@ -210,13 +210,26 @@ function PageHeader({
 
 function TopNav({
   orgName,
+  orgSlug,
   logoUrl,
   navItems,
+  customerName,
 }: {
   orgName: string;
+  orgSlug: string;
   logoUrl: string | null;
   navItems: NavItem[];
+  customerName?: string;
 }) {
+  const initials = customerName
+    ? customerName
+        .split(" ")
+        .map((n) => n[0])
+        .join("")
+        .substring(0, 2)
+        .toUpperCase()
+    : "";
+
   return (
     <header className="sticky top-0 z-30 border-b border-[var(--hub-border)] bg-[var(--hub-surface)]/85 backdrop-blur-md">
       <div className="mx-auto flex w-full max-w-[1480px] items-center justify-between gap-6 px-6 py-3 lg:px-10">
@@ -248,15 +261,27 @@ function TopNav({
         </nav>
 
         <div className="flex items-center gap-3">
-          <div className="hidden items-center gap-2.5 rounded-lg border border-[var(--hub-border)] bg-[var(--hub-surface-soft)] px-2.5 py-1.5 md:flex">
-            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[var(--hub-accent-faint)] text-[11px] font-bold text-[var(--hub-accent)]">HA</span>
-            <span className="text-[13px] font-semibold text-[var(--hub-text-strong)]">Hadi Azeez</span>
-          </div>
-          <button type="button" className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#172036] text-white transition hover:bg-[#1e2a45]">
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
-            </svg>
-          </button>
+          {customerName ? (
+            <>
+              <div className="hidden items-center gap-2.5 rounded-lg border border-[var(--hub-border)] bg-[var(--hub-surface-soft)] px-2.5 py-1.5 md:flex">
+                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[var(--hub-accent-faint)] text-[11px] font-bold text-[var(--hub-accent)]">{initials}</span>
+                <span className="text-[13px] font-semibold text-[var(--hub-text-strong)]">{customerName}</span>
+              </div>
+              <Link
+                href={`/portal/${orgSlug}/auth/logout`}
+                className="rounded-lg bg-[var(--hub-accent)] px-3.5 py-1.5 text-xs font-semibold text-white transition hover:brightness-95 shadow-[var(--hub-card-shadow)]"
+              >
+                Logout
+              </Link>
+            </>
+          ) : (
+            <Link
+              href={`/portal/${orgSlug}/client-hub/login`}
+              className="rounded-lg bg-[var(--hub-accent)] px-3.5 py-1.5 text-xs font-semibold text-white transition hover:brightness-95 shadow-[var(--hub-card-shadow)]"
+            >
+              Sign In
+            </Link>
+          )}
         </div>
       </div>
     </header>
@@ -265,14 +290,18 @@ function TopNav({
 
 export function ClientHubHeader({
   orgName,
+  orgSlug,
   logoUrl,
   navItems,
+  customerName,
 }: {
   orgName: string;
+  orgSlug: string;
   logoUrl: string | null;
   navItems: NavItem[];
+  customerName?: string;
 }) {
-  return <TopNav orgName={orgName} logoUrl={logoUrl} navItems={navItems} />;
+  return <TopNav orgName={orgName} orgSlug={orgSlug} logoUrl={logoUrl} navItems={navItems} customerName={customerName} />;
 }
 
 function Sidebar({

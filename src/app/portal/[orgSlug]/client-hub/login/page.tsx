@@ -2,14 +2,15 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useState } from "react";
+import { useState, useTransition } from "react";
+import { requestPortalOtpAction } from "../../actions";
 
 export default function ClientHubLoginPage() {
   const { orgSlug } = useParams<{ orgSlug: string }>();
   const [email, setEmail] = useState("");
   const [sent, setSent] = useState(false);
   const [error, setError] = useState("");
-  const [isPending, setIsPending] = useState(false);
+  const [isPending, startTransition] = useTransition();
 
   function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -21,11 +22,18 @@ export default function ClientHubLoginPage() {
       return;
     }
 
-    setIsPending(true);
-    setTimeout(() => {
-      setSent(true);
-      setIsPending(false);
-    }, 1200);
+    startTransition(async () => {
+      try {
+        const res = await requestPortalOtpAction(trimmed, orgSlug);
+        if (res.success) {
+          setSent(true);
+        } else {
+          setError("Failed to request code. Please try again.");
+        }
+      } catch {
+        setError("Something went wrong. Please try again.");
+      }
+    });
   }
 
   return (
@@ -110,7 +118,7 @@ export default function ClientHubLoginPage() {
               Enter it on the next screen to continue.
             </p>
             <Link
-              href={`/portal/${orgSlug}/client-hub/verify`}
+              href={`/portal/${orgSlug}/client-hub/verify?email=${encodeURIComponent(email)}`}
               className="mt-6 inline-flex w-full items-center justify-center rounded-xl bg-[var(--hub-accent)] px-5 py-3 text-[13px] font-semibold text-white transition hover:brightness-[0.97]"
             >
               Continue to verification

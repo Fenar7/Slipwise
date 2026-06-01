@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useParams, useSearchParams } from "next/navigation";
+import { useMemo, useState, useTransition } from "react";
+import { verifyPortalOtpAction, requestPortalOtpAction } from "../../actions";
 
 function OtpSlots({ value }: { value: string }) {
   const slots = useMemo(() => Array.from({ length: 6 }, (_, index) => value[index] ?? ""), [value]);
@@ -23,14 +24,25 @@ function OtpSlots({ value }: { value: string }) {
 
 export default function ClientHubVerifyPage() {
   const { orgSlug } = useParams<{ orgSlug: string }>();
+  const searchParams = useSearchParams();
+  const email = searchParams?.get("email") || "";
+
   const [code, setCode] = useState("");
   const [verified, setVerified] = useState(false);
-  const [error, setError] = useState("");
-  const [isPending, setIsPending] = useState(false);
+  const [error, setError] = useState(email ? "" : "No matching login request was found. Please request a new verification code.");
+  const [resendStatus, setResendStatus] = useState("");
+  const [isPending, startTransition] = useTransition();
+  const [resending, startResend] = useTransition();
 
   function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
     setError("");
+    setResendStatus("");
+
+    if (!email) {
+      setError("Email context is missing. Please go back to the login page.");
+      return;
+    }
 
     const trimmed = code.trim();
     if (!/^\d{6}$/.test(trimmed)) {
@@ -38,11 +50,36 @@ export default function ClientHubVerifyPage() {
       return;
     }
 
-    setIsPending(true);
-    setTimeout(() => {
-      setVerified(true);
-      setIsPending(false);
-    }, 1200);
+    startTransition(async () => {
+      try {
+        const res = await verifyPortalOtpAction(email, trimmed, orgSlug);
+        if (res.success) {
+          setVerified(true);
+        } else {
+          setError(res.error || "Invalid or expired verification code.");
+        }
+      } catch {
+        setError("Something went wrong. Please try again.");
+      }
+    });
+  }
+
+  function handleResend() {
+    if (!email) return;
+    setError("");
+    setResendStatus("");
+    startResend(async () => {
+      try {
+        const res = await requestPortalOtpAction(email, orgSlug);
+        if (res.success) {
+          setResendStatus("A new verification code has been sent!");
+        } else {
+          setError("Failed to resend code. Please try again.");
+        }
+      } catch {
+        setError("Something went wrong. Please try again.");
+      }
+    });
   }
 
   if (verified) {
@@ -130,14 +167,21 @@ export default function ClientHubVerifyPage() {
           </button>
         </form>
 
+        {resendStatus && (
+          <p className="mt-4 text-center text-xs font-semibold text-emerald-600">
+            {resendStatus}
+          </p>
+        )}
+
         <div className="mt-6 flex items-center justify-between gap-4 border-t border-[var(--hub-border)] pt-5 text-[13px]">
           <span className="text-[var(--hub-text-muted)]">Code expires in 15 minutes</span>
           <button
             type="button"
-            onClick={() => setCode("")}
-            className="font-semibold text-[var(--hub-accent)] transition hover:underline"
+            disabled={resending || !email}
+            onClick={handleResend}
+            className="font-semibold text-[var(--hub-accent)] transition hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            Resend code
+            {resending ? "Resending..." : "Resend code"}
           </button>
         </div>
 
