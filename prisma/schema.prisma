@@ -6641,6 +6641,8 @@ model MessagingTask {
   createdBy      String              @db.Uuid
   createdAt      DateTime            @default(now())
   updatedAt      DateTime            @updatedAt
+  /// The calendar provider event ID (opaque).
+  providerEventId String?
 
   organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
   conversation Conversation @relation(fields: [conversationId, orgId], references: [id, orgId], onDelete: Cascade)
@@ -6671,6 +6673,8 @@ model ConversationMeeting {
   cancelReason   String?
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
+  /// Structured metadata for provider sync (e.g. attendee responses).
+  metadata       Json?
 
   organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
   conversation Conversation @relation(fields: [conversationId, orgId], references: [id, orgId], onDelete: Cascade)

@@ -24,6 +24,7 @@ import {
   getConversationById,
   listConversationsForUser,
 } from "./conversation-service";
+import { reconcileProviderChangesForMeeting, reconcileProviderChangesForTask } from "./provider-sync-service";
 import {
   getMessageById,
 } from "./message-service";
@@ -736,14 +737,59 @@ export async function getUnifiedCalendar(
     }),
   ]);
 
+  const reconciledMeetings = await Promise.all(
+    meetings.map(async (m) => {
+      if (m.providerEventId && m.status !== "CANCELLED") {
+        try {
+          await reconcileProviderChangesForMeeting(orgId, m.id, userId);
+          const fresh = await db.conversationMeeting.findUnique({ where: { id: m.id } });
+          return fresh || m;
+        } catch (err) {
+          console.error(`Failed to reconcile meeting ${m.id} during calendar read:`, err);
+        }
+      }
+      return m;
+    })
+  );
+
+  const taskReconciliationCache = new Map<string, any>();
+
+  async function getReconciledTask(t: any) {
+    if (t.providerEventId && taskReconciliationCache.has(t.id)) {
+      return taskReconciliationCache.get(t.id);
+    }
+
+    if (t.providerEventId && t.status !== "DONE" && t.status !== "CANCELLED") {
+      try {
+        await reconcileProviderChangesForTask(orgId, t.id, userId);
+        const fresh = await db.messagingTask.findUnique({ where: { id: t.id } });
+        const resolved = fresh || t;
+        taskReconciliationCache.set(t.id, resolved);
+        return resolved;
+      } catch (err) {
+        console.error(`Failed to reconcile task ${t.id} during calendar read:`, err);
+      }
+    }
+
+    return t;
+  }
+
+  const reconciledTasks = await Promise.all(
+    tasks.map((t) => getReconciledTask(t))
+  );
+
+  const reconciledTasksWithReminders = await Promise.all(
+    tasksWithReminders.map((t) => getReconciledTask(t))
+  );
+
   const conversationMap = new Map(conversations.map((c) => [c.id, c]));
 
   // Get unique profiles needed
-  const scheduledByUserIds = Array.from(new Set(meetings.map((m) => m.scheduledBy)));
+  const scheduledByUserIds = Array.from(new Set(reconciledMeetings.map((m) => m.scheduledBy)));
   const assigneeUserIds = Array.from(
     new Set([
-      ...tasks.map((t) => t.assigneeId).filter((id): id is string => id !== null),
-      ...tasksWithReminders.map((t) => t.assigneeId).filter((id): id is string => id !== null),
+      ...reconciledTasks.map((t) => t.assigneeId).filter((id): id is string => id !== null),
+      ...reconciledTasksWithReminders.map((t) => t.assigneeId).filter((id): id is string => id !== null),
     ]),
   );
   const allUserIds = Array.from(new Set([...scheduledByUserIds, ...assigneeUserIds]));
@@ -761,7 +807,7 @@ export async function getUnifiedCalendar(
   const entries: CalendarEntry[] = [];
 
   // Map meetings
-  for (const m of meetings) {
+  for (const m of reconciledMeetings) {
     const convName = conversationMap.get(m.conversationId)?.name ?? null;
     const endAtTime = new Date(m.scheduledAt.getTime() + m.durationMinutes * 60 * 1000);
     entries.push({
@@ -781,7 +827,7 @@ export async function getUnifiedCalendar(
   }
 
   // Map tasks
-  for (const t of tasks) {
+  for (const t of reconciledTasks) {
     const convName = conversationMap.get(t.conversationId)?.name ?? null;
     entries.push({
       id: t.id,
@@ -801,7 +847,7 @@ export async function getUnifiedCalendar(
   }
 
   // Map task reminders
-  for (const tr of tasksWithReminders) {
+  for (const tr of reconciledTasksWithReminders) {
     const convName = conversationMap.get(tr.conversationId)?.name ?? null;
     entries.push({
       id: `${tr.id}-reminder`,
@@ -852,6 +898,15 @@ export async function getMeetingDetail(
 
   if (!membership) {
     return null;
+  }
+
+  if (meeting.providerEventId && meeting.status !== "CANCELLED") {
+    try {
+      const reconciled = await reconcileProviderChangesForMeeting(orgId, meetingId, userId);
+      return reconciled;
+    } catch (err) {
+      console.error(`Failed to reconcile meeting ${meetingId} during detail read:`, err);
+    }
   }
 
   return toMeetingRecord(meeting);

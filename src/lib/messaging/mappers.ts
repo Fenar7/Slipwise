@@ -260,6 +260,7 @@ export function toTaskRecord(row: MessagingTask): MessagingTaskRecord {
     createdBy: row.createdBy,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
+    providerEventId: row.providerEventId ?? null,
   };
 }
 
@@ -282,6 +283,7 @@ export function toMeetingRecord(row: ConversationMeeting): ConversationMeetingRe
     cancelReason: row.cancelReason ?? null,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
+    metadata: row.metadata ?? null,
   };
 }
 
