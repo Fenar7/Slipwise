@@ -111,7 +111,7 @@ export function MessagingTaskRail({ conversationId, degraded }: MessagingTaskRai
   const hasTasks = tasks !== null && tasks.length > 0;
   const isEmpty = tasks !== null && tasks.length === 0;
   const showLoading = loading && tasks === null;
-  const isDegraded = degraded || (errorType === "network" && tasks !== null);
+  const isDegraded = degraded || ((errorType === "network" || errorType === "unknown") && tasks !== null);
 
   return (
     <aside

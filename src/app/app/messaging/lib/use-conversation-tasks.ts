@@ -67,7 +67,7 @@ export function useConversationTasks(
           setErrorType("restricted");
           setTasks(null); // safely clear data on revoked access
         } else {
-          setErrorType("network");
+          setErrorType("unknown");
           // do NOT clear tasks here to preserve safe state on transient failure
         }
         setErrorMessage(payload.error?.message ?? "Failed to load tasks");
