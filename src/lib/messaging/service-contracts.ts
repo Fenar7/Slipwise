@@ -372,6 +372,46 @@ export interface UpdateTaskInput {
   status?: MessagingTaskStatus;
 }
 
+/**
+ * Server-side filter scope for the global task listing.
+ *
+ * Each scope maps to a precise DB-level predicate. The default (no scope)
+ * returns all accessible open work across active conversations.
+ */
+export type TaskListScope =
+  | "open"
+  | "in_progress"
+  | "done"
+  | "cancelled"
+  | "overdue"
+  | "due_soon"
+  | "assigned"
+  | "created";
+
+/**
+ * Canonical filter input for server-side task listing.
+ * Every field is validated at the API boundary before reaching the service layer.
+ */
+export interface TaskListFilterInput {
+  orgId: string;
+  userId: string;
+  scope?: TaskListScope;
+  conversationId?: string;
+  /** Cursor-based pagination: opaque task id token from previous page. */
+  cursor?: string | null;
+  /** Page size cap — clamped to [1, 50] by the service layer. */
+  limit?: number;
+}
+
+/**
+ * Paginated task list result returned by the service layer.
+ */
+export interface TaskListResult {
+  tasks: import("./domain-types").MessagingTaskRecord[];
+  nextCursor: string | null;
+  hasMore: boolean;
+}
+
 // ─── Meeting service contracts ───────────────────────────────────────────────
 
 export interface ScheduleMeetingInput {
@@ -544,4 +584,20 @@ export function isValidAttachmentScanStatus(value: unknown): value is Attachment
  */
 export function isValidRetentionAction(value: unknown): value is RetentionAction {
   return value === "ARCHIVE" || value === "DELETE" || value === "FLAG";
+}
+
+/**
+ * Type guard: checks whether an input is a valid TaskListScope.
+ */
+export function isValidTaskListScope(value: unknown): value is TaskListScope {
+  return (
+    value === "open" ||
+    value === "in_progress" ||
+    value === "done" ||
+    value === "cancelled" ||
+    value === "overdue" ||
+    value === "due_soon" ||
+    value === "assigned" ||
+    value === "created"
+  );
 }

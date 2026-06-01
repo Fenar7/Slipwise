@@ -322,7 +322,7 @@ export interface CalendarConnection {
 }
 
 export type MeetingTab = "upcoming" | "past" | "calendar";
-export type TaskFilterStatus = "all" | "open" | "in-progress" | "done" | "overdue" | "cancelled";
+export type TaskFilterStatus = "all" | "open" | "in-progress" | "done" | "overdue" | "cancelled" | "assigned" | "created" | "due-soon";
 
 // ─── Sprint 1.6 — Search, Files, Notifications, and Final Polish ─────────────
 

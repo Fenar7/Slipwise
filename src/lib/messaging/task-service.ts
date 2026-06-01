@@ -7,7 +7,16 @@ import { toTaskRecord } from "./mappers";
 import { ConversationAccessError, InvalidInputError, NotFoundError } from "./errors";
 import { requireConversationAccess } from "./authorization";
 import { toConversationRecord, toParticipantRecord } from "./mappers";
-import type { CreateTaskInput, UpdateTaskStatusInput, AssignTaskInput, UpdateTaskInput } from "./service-contracts";
+import { sendTaskAssignmentNotification } from "./task-reminders";
+import { logMessagingAudit, logMessagingAuditTx } from "./audit";
+import type {
+  CreateTaskInput,
+  UpdateTaskStatusInput,
+  AssignTaskInput,
+  UpdateTaskInput,
+  TaskListFilterInput,
+  TaskListResult,
+} from "./service-contracts";
 
 function validateReminderAt(reminderAt: Date | null | undefined, dueDate: Date | null | undefined, now = new Date()): void {
   if (reminderAt === undefined || reminderAt === null) return;
@@ -40,7 +49,7 @@ export async function listTasksForConversation(
 
   const rows = await db.messagingTask.findMany({
     where: { orgId, conversationId },
-    orderBy: [{ dueDate: "asc" }, { createdAt: "desc" }],
+    orderBy: [{ dueDate: "asc" }, { id: "asc" }],
   });
 
   return rows.map(toTaskRecord);
@@ -104,20 +113,50 @@ export async function createTask(input: CreateTaskInput): Promise<MessagingTaskR
 
   validateReminderAt(input.reminderAt, input.dueDate);
 
-  const task = await db.messagingTask.create({
-    data: {
+  const task = await db.$transaction(async (tx) => {
+    const created = await tx.messagingTask.create({
+      data: {
+        orgId,
+        conversationId,
+        title: input.title,
+        description: input.description ?? null,
+        priority: input.priority ?? 0,
+        assigneeId: input.assigneeId ?? null,
+        dueDate: input.dueDate ?? null,
+        reminderAt: input.reminderAt ?? null,
+        originatingMessageId: input.originatingMessageId ?? null,
+        createdBy,
+      },
+    });
+
+    await logMessagingAuditTx(tx, {
       orgId,
-      conversationId,
-      title: input.title,
-      description: input.description ?? null,
-      priority: input.priority ?? 0,
-      assigneeId: input.assigneeId ?? null,
-      dueDate: input.dueDate ?? null,
-      reminderAt: input.reminderAt ?? null,
-      originatingMessageId: input.originatingMessageId ?? null,
-      createdBy,
-    },
+      actorId: createdBy,
+      action: "TASK_CREATED",
+      summary: `Task created: ${created.title}`,
+      conversationId: created.conversationId,
+      taskId: created.id,
+      metadata: null,
+    });
+
+    return created;
   });
+
+  // Emit assignment notification when task is created with an initial assignee (fire-and-forget)
+  if (assigneeId) {
+    sendTaskAssignmentNotification(
+      {
+        id: task.id,
+        orgId: task.orgId,
+        conversationId: task.conversationId,
+        title: task.title,
+        description: task.description,
+        originatingMessageId: task.originatingMessageId,
+      },
+      assigneeId,
+      createdBy,
+    ).catch(() => {});
+  }
 
   return toTaskRecord(task);
 }
@@ -174,9 +213,24 @@ export async function updateTaskStatus(input: UpdateTaskStatusInput): Promise<Me
     updateData.completedBy = null;
   }
 
-  const updatedTask = await db.messagingTask.update({
-    where: { id: taskId },
-    data: updateData,
+  const updatedTask = await db.$transaction(async (tx) => {
+    const updated = await tx.messagingTask.update({
+      where: { id: taskId },
+      data: updateData,
+    });
+
+    const auditAction = status === "DONE" ? "TASK_COMPLETED" : status === "CANCELLED" ? "TASK_UPDATED" : "TASK_UPDATED";
+    await logMessagingAuditTx(tx, {
+      orgId,
+      actorId,
+      action: auditAction,
+      summary: `Task ${status === "DONE" ? "completed" : status === "CANCELLED" ? "cancelled" : "updated"}: ${updated.title}`,
+      conversationId: updated.conversationId,
+      taskId: updated.id,
+      metadata: { previousStatus: task.status, newStatus: status },
+    });
+
+    return updated;
   });
 
   return toTaskRecord(updatedTask);
@@ -236,10 +290,40 @@ export async function assignTask(input: AssignTaskInput): Promise<MessagingTaskR
     }
   }
 
-  const updatedTask = await db.messagingTask.update({
-    where: { id: taskId },
-    data: { assigneeId },
+  const updatedTask = await db.$transaction(async (tx) => {
+    const updated = await tx.messagingTask.update({
+      where: { id: taskId },
+      data: { assigneeId },
+    });
+
+    await logMessagingAuditTx(tx, {
+      orgId,
+      actorId,
+      action: "TASK_UPDATED",
+      summary: `Task assignee ${assigneeId === null ? "cleared" : "updated"}: ${updated.title}`,
+      conversationId: updated.conversationId,
+      taskId: updated.id,
+      metadata: { previousAssigneeId: task.assigneeId, newAssigneeId: assigneeId },
+    });
+
+    return updated;
   });
+
+  // Emit assignment notification when a non-null assignee is set (fire-and-forget)
+  if (assigneeId && assigneeId !== task.assigneeId) {
+    sendTaskAssignmentNotification(
+      {
+        id: task.id,
+        orgId: task.orgId,
+        conversationId: task.conversationId,
+        title: task.title,
+        description: task.description,
+        originatingMessageId: task.originatingMessageId,
+      },
+      assigneeId,
+      actorId,
+    ).catch(() => {});
+  }
 
   return toTaskRecord(updatedTask);
 }
@@ -330,18 +414,57 @@ export async function updateTask(input: UpdateTaskInput): Promise<MessagingTaskR
     }
   }
 
-  const updatedTask = await db.messagingTask.update({
-    where: { id: taskId },
-    data: updateData,
+  const updatedTask = await db.$transaction(async (tx) => {
+    const updated = await tx.messagingTask.update({
+      where: { id: taskId },
+      data: updateData,
+    });
+
+    await logMessagingAuditTx(tx, {
+      orgId,
+      actorId,
+      action: "TASK_UPDATED",
+      summary: `Task updated: ${updated.title}`,
+      conversationId: updated.conversationId,
+      taskId: updated.id,
+      metadata: { updatedFields: Object.keys(updateData) },
+    });
+
+    return updated;
   });
+
+  // Emit assignment notification when assignee changes to a new non-null value (fire-and-forget)
+  if (
+    input.assigneeId !== undefined &&
+    input.assigneeId !== null &&
+    input.assigneeId !== task.assigneeId
+  ) {
+    sendTaskAssignmentNotification(
+      {
+        id: task.id,
+        orgId: task.orgId,
+        conversationId: task.conversationId,
+        title: input.title ?? task.title,
+        description: input.description !== undefined ? input.description : task.description,
+        originatingMessageId: task.originatingMessageId,
+      },
+      input.assigneeId,
+      actorId,
+    ).catch(() => {});
+  }
 
   return toTaskRecord(updatedTask);
 }
 
+const TASK_LIST_DEFAULT_LIMIT = 20;
+const TASK_LIST_MAX_LIMIT = 50;
+
 export async function listAllTasksForUser(
-  orgId: string,
-  userId: string,
-): Promise<MessagingTaskRecord[]> {
+  filter: TaskListFilterInput,
+): Promise<TaskListResult> {
+  const { orgId, userId, scope, conversationId, cursor, limit: rawLimit } = filter;
+  const limit = Math.min(TASK_LIST_MAX_LIMIT, Math.max(1, rawLimit ?? TASK_LIST_DEFAULT_LIMIT));
+
   const participantConversations = await db.conversationParticipant.findMany({
     where: {
       orgId,
@@ -353,20 +476,76 @@ export async function listAllTasksForUser(
     },
   });
 
-  const conversationIds = participantConversations.map((pc) => pc.conversationId);
+  const accessibleConversationIds = participantConversations.map((pc) => pc.conversationId);
 
-  if (conversationIds.length === 0) {
-    return [];
+  if (accessibleConversationIds.length === 0) {
+    return { tasks: [], nextCursor: null, hasMore: false };
   }
 
+  // If a specific conversation is requested, validate membership
+  if (conversationId) {
+    if (!accessibleConversationIds.includes(conversationId)) {
+      return { tasks: [], nextCursor: null, hasMore: false };
+    }
+  }
+
+  const targetConversationIds = conversationId
+    ? [conversationId]
+    : accessibleConversationIds;
+
+  // Build the base where clause scoped to accessible conversations
+  const where: Record<string, unknown> = {
+    orgId,
+    conversationId: { in: targetConversationIds },
+  };
+
+  // OVERDUE is included in the open-family set because taskIsOpen() treats it as
+  // open, and existing stored OVERDUE rows must remain visible in default views.
+  const OPEN_FAMILY_STATUSES = ["OPEN", "IN_PROGRESS", "OVERDUE"] as const;
+  const now = new Date();
+
+  if (scope === "in_progress") {
+    where.status = "IN_PROGRESS";
+  } else if (scope === "done") {
+    where.status = "DONE";
+  } else if (scope === "cancelled") {
+    where.status = "CANCELLED";
+  } else if (scope === "overdue") {
+    where.status = { in: [...OPEN_FAMILY_STATUSES] };
+    where.dueDate = { lt: now };
+  } else if (scope === "due_soon") {
+    const upperBound = new Date();
+    upperBound.setDate(upperBound.getDate() + 7);
+    where.status = { in: [...OPEN_FAMILY_STATUSES] };
+    where.dueDate = { gte: now, lte: upperBound };
+  } else if (scope === "assigned") {
+    where.assigneeId = userId;
+  } else if (scope === "created") {
+    where.createdBy = userId;
+  } else {
+    // Default (no scope or scope=open): accessible open work only.
+    // DONE and CANCELLED are excluded from the default global view.
+    where.status = { in: [...OPEN_FAMILY_STATUSES] };
+  }
+
+  // Stable pagination: dueDate asc, then id as unique tiebreaker for deterministic
+  // cursor-based pagination. Tasks with equal dueDate will not reorder/skip across pages.
   const rows = await db.messagingTask.findMany({
-    where: {
-      orgId,
-      conversationId: { in: conversationIds },
-    },
-    orderBy: [{ dueDate: "asc" }, { createdAt: "desc" }],
+    where,
+    orderBy: [{ dueDate: "asc" }, { id: "asc" }],
+    take: limit + 1,
+    skip: cursor ? 1 : 0,
+    cursor: cursor ? { id: cursor } : undefined,
   });
 
-  return rows.map(toTaskRecord);
+  const hasMore = rows.length > limit;
+  const sliced = hasMore ? rows.slice(0, limit) : rows;
+  const nextCursor = hasMore ? sliced[sliced.length - 1].id : null;
+
+  return {
+    tasks: sliced.map(toTaskRecord),
+    nextCursor,
+    hasMore,
+  };
 }
 

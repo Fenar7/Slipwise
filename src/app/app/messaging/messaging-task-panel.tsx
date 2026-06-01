@@ -1,21 +1,40 @@
 "use client";
 
 import React, { useState } from "react";
-import { AlertTriangle, Clock, Link, MoreHorizontal, ArrowLeft, Plus, CheckSquare, MessageSquare, Archive, Lock, Bell } from "lucide-react";
+import { AlertTriangle, Clock, Link, MoreHorizontal, ArrowLeft, Plus, CheckSquare, MessageSquare, Archive, Lock, Bell, RotateCcw, X, UserMinus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { RadioPill } from "./messaging-ui-primitives";
 import { MessagingTaskCreate } from "./messaging-task-create";
 import type { TaskFilterStatus, TaskPriority, MessagingTaskDetail, MessagingTask, MessagingParticipant, TaskStatus } from "./types";
 import { useConversationTasks } from "./lib/use-conversation-tasks";
+import { dispatchTaskMutation } from "./lib/task-events";
 import { useConversationDetail } from "./lib/use-conversation-detail";
 import type { ApiTaskSummary, ApiConversationDetail } from "./lib/mappers";
 
+/** Map UI filter values to server-side scope parameters. */
+function scopeForFilter(filter: TaskFilterStatus): string | undefined {
+  switch (filter) {
+    case "assigned": return "assigned";
+    case "created": return "created";
+    case "due-soon": return "due_soon";
+    case "open": return "open";
+    case "in-progress": return "in_progress";
+    case "done": return "done";
+    case "cancelled": return "cancelled";
+    case "overdue": return "overdue";
+    default: return undefined;
+  }
+}
+
 const FILTER_OPTIONS = [
   { value: "all", label: "All" },
+  { value: "assigned", label: "Assigned to Me" },
+  { value: "created", label: "Created by Me" },
   { value: "open", label: "Open" },
   { value: "in-progress", label: "In Progress" },
-  { value: "done", label: "Done" },
+  { value: "due-soon", label: "Due Soon" },
   { value: "overdue", label: "Overdue" },
+  { value: "done", label: "Done" },
   { value: "cancelled", label: "Cancelled" },
 ];
 
@@ -509,6 +528,9 @@ export function MessagingTaskPanel({ conversationId, onNavigateToOrigin }: Messa
   const [selectedTaskConvDetail, setSelectedTaskConvDetail] = useState<ApiConversationDetail | null>(null);
   const [selectedTaskConvError, setSelectedTaskConvError] = useState<"none" | "restricted" | "network" | "unknown">("none");
 
+  // Server-side scope for the current filter (only used in global mode)
+  const activeScope = scopeForFilter(filter);
+
   // Hook up data hooks first
   const targetId = conversationId || "global";
   const {
@@ -516,7 +538,7 @@ export function MessagingTaskPanel({ conversationId, onNavigateToOrigin }: Messa
     loading: tasksLoading,
     errorType: tasksError,
     refresh: refreshTasks,
-  } = useConversationTasks(targetId);
+  } = useConversationTasks(targetId, conversationId ? undefined : { scope: activeScope });
 
   const {
     detail: conversationDetail,
@@ -538,6 +560,14 @@ export function MessagingTaskPanel({ conversationId, onNavigateToOrigin }: Messa
     setSelectedTaskConvError("none");
     setShowCreate(false);
   }, [conversationId]);
+
+  // Clear selection when filter changes to avoid stale task references
+  React.useEffect(() => {
+    setSelectedTaskId(null);
+    setDynamicParticipants(null);
+    setSelectedTaskConvDetail(null);
+    setSelectedTaskConvError("none");
+  }, [filter]);
 
   React.useEffect(() => {
     if (detailErrorType === "restricted") {
@@ -675,6 +705,32 @@ export function MessagingTaskPanel({ conversationId, onNavigateToOrigin }: Messa
   const overdue = listTasks.filter((t) => t.status === "overdue").length;
   const selectedTask = listTasks.find((t) => t.id === selectedTaskId) ?? null;
 
+  // Fast action handler for list-row buttons (no navigation needed)
+  const handleUpdateTaskById = async (
+    taskId: string,
+    conversationRef: string | null | undefined,
+    updates: { status?: TaskStatus; assigneeId?: string },
+  ) => {
+    if (!conversationRef) return;
+    const payload: Record<string, string> = {};
+    if (updates.status !== undefined) {
+      payload.status = updates.status === "done" ? "DONE" : updates.status.toUpperCase().replace("-", "_");
+    }
+    if (updates.assigneeId !== undefined) {
+      payload.assigneeId = updates.assigneeId || "";
+    }
+    if (Object.keys(payload).length === 0) return;
+    const res = await fetch(`/api/messaging/conversations/${conversationRef}/tasks/${taskId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (res.ok) {
+      refreshTasks();
+      dispatchTaskMutation();
+    }
+  };
+
   // Unified PATCH handler
   const handleUpdateTask = async (updates: {
     title?: string;
@@ -736,6 +792,7 @@ export function MessagingTaskPanel({ conversationId, onNavigateToOrigin }: Messa
     }
 
     refreshTasks();
+    dispatchTaskMutation();
   };
 
   // PATCH status handler
@@ -748,7 +805,7 @@ export function MessagingTaskPanel({ conversationId, onNavigateToOrigin }: Messa
     await handleUpdateTask({ assigneeId });
   };
 
-  if (tasksLoading) {
+  if (tasksLoading && apiTasks === null) {
     return (
       <div data-testid="messaging-pane-tasks" className="flex flex-col h-full items-center justify-center py-12">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#DC2626]"></div>
@@ -757,7 +814,7 @@ export function MessagingTaskPanel({ conversationId, onNavigateToOrigin }: Messa
     );
   }
 
-  if (tasksError !== "none") {
+  if (tasksError !== "none" && apiTasks === null) {
     return (
       <div data-testid="messaging-pane-tasks" className="flex flex-col h-full items-center justify-center py-12 text-center px-6">
         <AlertTriangle className="h-10 w-10 text-[#DC2626] mb-3" />
@@ -878,11 +935,17 @@ export function MessagingTaskPanel({ conversationId, onNavigateToOrigin }: Messa
           {filtered.length === 0 ? (
             <div data-testid="task-list-empty" className="flex flex-col items-center justify-center py-12 text-center">
               <CheckSquare className="h-8 w-8 mb-2" style={{ color: "#E0E0E0" }} />
-              <p className="text-sm" style={{ color: "#79747E" }}>No tasks match this filter.</p>
+              <p className="text-sm font-semibold" style={{ color: "#49454F" }}>
+                {filter === "all" ? "No tasks yet" : filter === "assigned" ? "No tasks assigned to you" : filter === "created" ? "No tasks you created" : filter === "due-soon" ? "No tasks due soon" : `No ${filter} tasks`}
+              </p>
+              <p className="text-xs mt-1" style={{ color: "#79747E" }}>
+                {filter === "all" ? "Create a task to get started." : "Try a different filter."}
+              </p>
             </div>
           ) : (
             filtered.map((task) => {
               const { label, cls } = statusBadge(task.status);
+              const isActive = task.status !== "done" && task.status !== "cancelled";
               return (
                 <div
                   key={task.id}
@@ -939,17 +1002,84 @@ export function MessagingTaskPanel({ conversationId, onNavigateToOrigin }: Messa
                           {task.conversationType === "CHANNEL" ? `#${task.conversationName}` : task.conversationName}
                         </span>
                       )}
+                      {task.originatingMessageId && task.conversationRef && onNavigateToOrigin && (
+                        <button
+                          type="button"
+                          data-testid={`task-origin-${task.id}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onNavigateToOrigin(task.conversationRef!, task.originatingMessageId!);
+                          }}
+                          className="flex items-center gap-0.5 text-[10px] text-blue-600 hover:text-blue-800 hover:underline"
+                          title="Go to originating message"
+                        >
+                          <Link className="h-2.5 w-2.5" />
+                          origin
+                        </button>
+                      )}
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    data-testid={`task-actions-${task.id}`}
-                    aria-label="Task options"
-                    onClick={(e) => e.stopPropagation()}
-                    className="shrink-0 rounded-lg p-2 opacity-0 group-hover:opacity-100 hover:bg-gray-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626] self-center mr-2 transition-opacity"
-                  >
-                    <MoreHorizontal className="h-4 w-4" style={{ color: "#79747E" }} />
-                  </button>
+                  {/* Fast actions */}
+                  {!conversationReadOnly && (
+                    <div className="flex items-center gap-1 shrink-0 self-center mr-2 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+                      {task.status !== "done" && task.status !== "cancelled" && (
+                        <button
+                          type="button"
+                          data-testid={`task-action-done-${task.id}`}
+                          title="Mark as done"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleUpdateTaskById(task.id, task.conversationRef, { status: "done" });
+                          }}
+                          className="rounded p-1.5 hover:bg-emerald-50 text-emerald-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]"
+                        >
+                          <CheckSquare className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                      {task.status === "done" && (
+                        <button
+                          type="button"
+                          data-testid={`task-action-reopen-${task.id}`}
+                          title="Reopen"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleUpdateTaskById(task.id, task.conversationRef, { status: "open" });
+                          }}
+                          className="rounded p-1.5 hover:bg-blue-50 text-blue-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]"
+                        >
+                          <RotateCcw className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                      {task.status !== "cancelled" && task.status !== "done" && (
+                        <button
+                          type="button"
+                          data-testid={`task-action-cancel-${task.id}`}
+                          title="Cancel task"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleUpdateTaskById(task.id, task.conversationRef, { status: "cancelled" });
+                          }}
+                          className="rounded p-1.5 hover:bg-red-50 text-red-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                      {task.assignee && (
+                        <button
+                          type="button"
+                          data-testid={`task-action-unassign-${task.id}`}
+                          title="Clear assignee"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleUpdateTaskById(task.id, task.conversationRef, { assigneeId: "" });
+                          }}
+                          className="rounded p-1.5 hover:bg-gray-100 text-gray-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]"
+                        >
+                          <UserMinus className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
               );
             })
