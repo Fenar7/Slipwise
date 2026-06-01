@@ -130,7 +130,56 @@ export function MessagingMeetingPanel({ conversationId, calendarConnection, now 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const isConnected = calendarConnection.status === "connected";
+  const [connection, setConnection] = useState<any>(calendarConnection);
+  const isConnected = connection.status === "connected";
+
+  // Hydrate connection status dynamically in Sprint 8.2
+  useEffect(() => {
+    if (!conversationId) {
+      setConnection(calendarConnection);
+      return;
+    }
+    fetch("/api/messaging/calendar/connections")
+      .then((res) => {
+        if (!res.ok) throw new Error("Failed to load connection status");
+        return res.json();
+      })
+      .then((data) => {
+        if (data.success && data.data && data.data.length > 0) {
+          const activeConn = data.data.find(
+            (c: any) => c.status === "ACTIVE" || c.status === "RECONNECT_REQUIRED"
+          ) || data.data[0];
+
+          if (activeConn) {
+            let mappedStatus = "not_connected";
+            if (activeConn.status === "ACTIVE") {
+              mappedStatus = activeConn.lastSyncError ? "degraded" : "connected";
+            } else if (activeConn.status === "RECONNECT_REQUIRED") {
+              mappedStatus = "reconnect_required";
+            } else if (activeConn.status === "DISCONNECTED") {
+              mappedStatus = "not_connected";
+            }
+
+            setConnection({
+              id: activeConn.id,
+              provider: activeConn.provider.toLowerCase(),
+              status: mappedStatus,
+              connectedEmail: activeConn.emailAddress,
+              connectedAt: activeConn.createdAt,
+              lastSyncError: activeConn.lastSyncError,
+            });
+          } else {
+            setConnection(calendarConnection);
+          }
+        } else {
+          setConnection(calendarConnection);
+        }
+      })
+      .catch((err) => {
+        console.error("Failed to load calendar connection:", err);
+        setConnection(calendarConnection);
+      });
+  }, [conversationId, calendarConnection]);
 
   // Hydrate meetings dynamically if conversationId is provided
   useEffect(() => {
@@ -240,6 +289,33 @@ export function MessagingMeetingPanel({ conversationId, calendarConnection, now 
     }
   };
 
+  const handleDisconnect = async () => {
+    if (!connection.id) return;
+    if (!confirm("Are you sure you want to disconnect this calendar?")) return;
+    try {
+      const res = await fetch(`/api/messaging/calendar/connections/${connection.id}`, {
+        method: "DELETE",
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error?.message || "Failed to disconnect calendar");
+      }
+      setConnection({
+        provider: null,
+        status: "not_connected",
+        connectedEmail: null,
+        connectedAt: null,
+      });
+    } catch (err: any) {
+      alert(err.message);
+    }
+  };
+
+  const handleReconnect = () => {
+    if (!connection.provider) return;
+    window.location.href = `/api/messaging/calendar/connections/${connection.provider}/connect`;
+  };
+
   return (
     <div data-testid="messaging-pane-meetings" className="flex flex-col h-full">
       <div className="flex flex-col h-full" data-testid="meeting-panel">
@@ -276,40 +352,94 @@ export function MessagingMeetingPanel({ conversationId, calendarConnection, now 
 
         {/* Calendar connection banner */}
         <div className="px-6 pt-3">
-          {isConnected ? (
+          {connection.status === "connected" && (
             <div
               data-testid="meeting-calendar-connected-chip"
               className="flex items-center gap-2 rounded-lg bg-green-50 border border-green-100 px-3 py-2"
             >
-              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white border text-[10px] font-bold" style={{ color: "#4285F4", borderColor: "#E0E0E0" }}>G</span>
-              <span className="flex-1 text-xs font-semibold" style={{ color: "#49454F" }}>
-                Google Calendar · {calendarConnection.connectedEmail}
+              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white border text-[10px] font-bold shrink-0" style={{ color: "#4285F4", borderColor: "#E0E0E0" }}>
+                {connection.provider === "google" ? "G" : "O"}
+              </span>
+              <span className="flex-1 text-xs font-semibold truncate" style={{ color: "#49454F" }}>
+                {connection.provider === "google" ? "Google" : "Outlook"} Calendar · {connection.connectedEmail}
               </span>
               <button
                 type="button"
-                disabled
+                onClick={handleDisconnect}
                 data-testid="meeting-disconnect-calendar"
-                className="text-xs text-gray-400 cursor-not-allowed font-medium focus-visible:outline-none"
-                title="Disconnect is unavailable in this sprint"
+                className="text-xs text-[#DC2626] hover:underline focus-visible:outline-none font-medium shrink-0"
               >
-                Unavailable
+                Disconnect
               </button>
             </div>
-          ) : (
+          )}
+
+          {connection.status === "degraded" && (
+            <div
+              data-testid="meeting-calendar-connected-chip"
+              className="flex items-center gap-2 rounded-lg bg-amber-50 border border-amber-100 px-3 py-2 animate-pulse"
+            >
+              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white border text-[10px] font-bold shrink-0 text-amber-600" style={{ borderColor: "#E0E0E0" }}>
+                ⚠️
+              </span>
+              <span className="flex-1 text-xs font-semibold text-amber-800 truncate">
+                Sync Degraded · {connection.lastSyncError || "connectivity failed"}
+              </span>
+              <button
+                type="button"
+                onClick={handleReconnect}
+                className="text-xs text-amber-905 hover:underline font-semibold shrink-0"
+              >
+                Reconnect
+              </button>
+            </div>
+          )}
+
+          {connection.status === "reconnect_required" && (
+            <div
+              data-testid="meeting-calendar-connected-chip"
+              className="flex items-center gap-2 rounded-lg bg-red-50 border border-red-100 px-3 py-2"
+            >
+              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white border text-[10px] font-bold shrink-0 text-red-600" style={{ borderColor: "#E0E0E0" }}>
+                ❌
+              </span>
+              <span className="flex-1 text-xs font-semibold text-red-800 truncate">
+                Connection Expired · Reconnect Required
+              </span>
+              <button
+                type="button"
+                onClick={handleReconnect}
+                className="text-xs text-[#DC2626] hover:underline font-bold shrink-0"
+              >
+                Reconnect
+              </button>
+            </div>
+          )}
+
+          {connection.status === "not_connected" && (
             <div className="flex items-center gap-2 rounded-lg border border-dashed px-3 py-2.5 bg-gray-50/50" style={{ borderColor: "#E0E0E0" }}>
               <Calendar className="h-3.5 w-3.5 shrink-0" style={{ color: "#79747E" }} />
               <span className="flex-1 text-xs" style={{ color: "#79747E" }}>
-                Google Calendar integration is preview-only for Sprint 8.1.
+                Connect Google Calendar or Outlook to Slipwise.
               </span>
-              <button
-                type="button"
-                disabled
-                data-testid="meeting-connect-calendar-btn"
-                className="text-xs font-semibold text-gray-400 cursor-not-allowed focus-visible:outline-none"
-                title="Connect is unavailable in this sprint"
-              >
-                Unavailable
-              </button>
+              <div className="flex gap-2 shrink-0">
+                <button
+                  type="button"
+                  data-testid="meeting-connect-calendar-btn"
+                  onClick={() => window.location.href = "/api/messaging/calendar/connections/google/connect"}
+                  className="text-xs font-semibold text-[#DC2626] hover:underline focus-visible:outline-none"
+                >
+                  Connect Google
+                </button>
+                <span className="text-gray-300 text-xs">|</span>
+                <button
+                  type="button"
+                  onClick={() => window.location.href = "/api/messaging/calendar/connections/outlook/connect"}
+                  className="text-xs font-semibold text-[#DC2626] hover:underline focus-visible:outline-none"
+                >
+                  Connect Outlook
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -422,7 +552,7 @@ export function MessagingMeetingPanel({ conversationId, calendarConnection, now 
             conversationId={conversationId}
             onClose={() => setShowSchedule(false)}
             onSuccess={(newMeet) => setMeetings([newMeet, ...meetings])}
-            calendarConnection={calendarConnection}
+            calendarConnection={connection}
           />
         )}
       </div>
