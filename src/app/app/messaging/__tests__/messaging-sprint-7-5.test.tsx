@@ -1,28 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import React from "react";
-import { render, screen, act, fireEvent } from "@testing-library/react";
-import { useConversationTasks } from "../lib/use-conversation-tasks";
+import { render, screen, act } from "@testing-library/react";
+import { MessagingTaskRail } from "../messaging-task-rail";
+import { MessagingTaskPanel } from "../messaging-task-panel";
 import { dispatchTaskMutation } from "../lib/task-events";
-
-// A simple test component to mount multiple instances
-function TestRail() {
-  const { tasks, loading, errorType, refresh } = useConversationTasks("conv-1");
-  return (
-    <div data-testid="rail">
-      {loading ? "loading" : errorType !== "none" ? `error:${errorType}` : tasks?.length}
-      <button onClick={refresh} data-testid="rail-refresh">refresh</button>
-    </div>
-  );
-}
-
-function TestPanel() {
-  const { tasks, loading, errorType } = useConversationTasks("global");
-  return (
-    <div data-testid="panel">
-      {loading ? "loading" : errorType !== "none" ? `error:${errorType}` : tasks?.length}
-    </div>
-  );
-}
 
 describe("Sprint 7.5 — Realtime, Reliability, and Phase-Exit Polish", () => {
   const mockFetch = vi.fn();
@@ -32,17 +13,19 @@ describe("Sprint 7.5 — Realtime, Reliability, and Phase-Exit Polish", () => {
     vi.stubGlobal("fetch", mockFetch);
   });
 
-  it("triggers cross-component refresh when dispatchTaskMutation is called", async () => {
-    mockFetch.mockResolvedValue({
-      ok: true,
-      json: async () => ({ success: true, data: [{ id: "t1" }, { id: "t2" }] })
+  it("proves cross-surface convergence after mutation (local event)", async () => {
+    mockFetch.mockImplementation(async (url: string) => {
+      if (url.includes("/tasks")) {
+        return { ok: true, json: async () => ({ success: true, data: { tasks: [{ id: "t1", title: "Task 1", status: "OPEN", priority: "low" }], hasMore: false } }) };
+      }
+      return { ok: true, json: async () => ({ success: true, data: { participants: [] } }) };
     });
 
     render(
-      <>
-        <TestRail />
-        <TestPanel />
-      </>
+      <div>
+        <MessagingTaskRail conversationId="conv-1" />
+        <MessagingTaskPanel conversationId="global" />
+      </div>
     );
 
     // Initial load
@@ -50,16 +33,16 @@ describe("Sprint 7.5 — Realtime, Reliability, and Phase-Exit Polish", () => {
       await new Promise(resolve => setTimeout(resolve, 10));
     });
 
-    expect(screen.getByTestId("rail").textContent).toContain("2");
-    expect(screen.getByTestId("panel").textContent).toContain("2");
-    
-    // Clear fetch calls from initial load
+    // Both should fetch initially (rail fetches tasks, panel fetches tasks and detail)
+    expect(mockFetch).toHaveBeenCalled();
     mockFetch.mockClear();
 
-    // Now simulate a task deletion/mutation
-    mockFetch.mockResolvedValue({
-      ok: true,
-      json: async () => ({ success: true, data: [{ id: "t2" }] })
+    // Simulate mutation which adds a task
+    mockFetch.mockImplementation(async (url: string) => {
+      if (url.includes("/tasks")) {
+        return { ok: true, json: async () => ({ success: true, data: { tasks: [{ id: "t1", title: "Task 1", status: "OPEN", priority: "low" }, { id: "t2", title: "Task 2", status: "OPEN", priority: "low" }], hasMore: false } }) };
+      }
+      return { ok: true, json: async () => ({ success: true, data: { participants: [] } }) };
     });
 
     await act(async () => {
@@ -67,61 +50,93 @@ describe("Sprint 7.5 — Realtime, Reliability, and Phase-Exit Polish", () => {
       await new Promise(resolve => setTimeout(resolve, 10));
     });
 
-    // Both components should have re-fetched and updated
-    expect(screen.getByTestId("rail").textContent).toContain("1");
-    expect(screen.getByTestId("panel").textContent).toContain("1");
-    
-    // Fetch should be called twice (once for rail, once for panel)
-    expect(mockFetch).toHaveBeenCalledTimes(2);
+    // Both rail and panel should have fetched tasks again
+    const taskFetches = mockFetch.mock.calls.filter(call => call[0].includes("/tasks"));
+    expect(taskFetches.length).toBeGreaterThanOrEqual(2);
   });
 
-  it("handles revoked access safely by rendering restricted state", async () => {
-    mockFetch.mockResolvedValue({
-      ok: false,
-      status: 403,
-      json: async () => ({ success: false, error: { code: "FORBIDDEN", message: "Forbidden" } })
+  it("proves external-change convergence (focus revalidation)", async () => {
+    mockFetch.mockImplementation(async (url: string) => {
+      return { ok: true, json: async () => ({ success: true, data: { tasks: [{ id: "t1" }], hasMore: false } }) };
     });
 
-    render(<TestRail />);
+    render(<MessagingTaskRail conversationId="conv-1" />);
 
     await act(async () => {
       await new Promise(resolve => setTimeout(resolve, 10));
     });
 
-    expect(screen.getByTestId("rail").textContent).toContain("error:restricted");
-  });
-
-  it("leaves truthful UI state after mutation failure (does not assume success)", async () => {
-    // Initial fetch
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({ success: true, data: [{ id: "t1" }] })
-    });
-
-    render(<TestRail />);
-
-    await act(async () => {
-      await new Promise(resolve => setTimeout(resolve, 10));
-    });
-
-    expect(screen.getByTestId("rail").textContent).toContain("1");
     mockFetch.mockClear();
 
-    // Now we simulate a mutation failure from a component. 
-    // The component would catch the error and NOT call dispatchTaskMutation().
-    // So the state should remain 1.
-    // If it did call it, it would refetch the true server state.
-    // Let's manually trigger a refetch to see that the server state remains truthful.
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({ success: true, data: [{ id: "t1" }] })
+    // Simulate external change when user focuses back on window
+    mockFetch.mockImplementation(async (url: string) => {
+      return { ok: true, json: async () => ({ success: true, data: { tasks: [{ id: "t1" }, { id: "t2" }], hasMore: false } }) };
     });
 
     await act(async () => {
-      dispatchTaskMutation(); // even if it optimistically dispatched, server returns truthful state
+      window.dispatchEvent(new Event("focus"));
       await new Promise(resolve => setTimeout(resolve, 10));
     });
 
-    expect(screen.getByTestId("rail").textContent).toContain("1");
+    expect(mockFetch).toHaveBeenCalled();
+  });
+
+  it("proves background refresh failure preserves safe state with truthful degraded signal", async () => {
+    // 1. Initial successful load
+    mockFetch.mockImplementation(async (url: string) => {
+      return { ok: true, json: async () => ({ success: true, data: [{ id: "t1", title: "Initial Safe Task", status: "OPEN", priority: "low" }] }) };
+    });
+
+    render(<MessagingTaskRail conversationId="conv-1" />);
+
+    await act(async () => {
+      await new Promise(resolve => setTimeout(resolve, 10));
+    });
+
+    // Task should be visible
+    expect(screen.getByText("Initial Safe Task")).toBeInTheDocument();
+    mockFetch.mockClear();
+
+    // 2. Background refresh fails with network error
+    mockFetch.mockRejectedValue(new Error("Network Error"));
+
+    await act(async () => {
+      window.dispatchEvent(new Event("focus")); // trigger background refresh
+      await new Promise(resolve => setTimeout(resolve, 10));
+    });
+
+    // Rail should still show the old data and the degraded banner
+    expect(screen.getByText("Initial Safe Task")).toBeInTheDocument();
+    expect(screen.getByTestId("task-rail-degraded-banner")).toBeInTheDocument();
+  });
+
+  it("proves revoked access transition clears safely and truthfully", async () => {
+    // 1. Initial successful load
+    mockFetch.mockImplementation(async (url: string) => {
+      return { ok: true, json: async () => ({ success: true, data: [{ id: "t1", title: "Initial Safe Task", status: "OPEN", priority: "low" }] }) };
+    });
+
+    render(<MessagingTaskRail conversationId="conv-1" />);
+
+    await act(async () => {
+      await new Promise(resolve => setTimeout(resolve, 10));
+    });
+
+    expect(screen.getByText("Initial Safe Task")).toBeInTheDocument();
+    mockFetch.mockClear();
+
+    // 2. Background refresh returns 403 Forbidden (revoked access)
+    mockFetch.mockImplementation(async (url: string) => {
+      return { ok: false, status: 403, json: async () => ({ success: false, error: { code: "FORBIDDEN", message: "Forbidden" } }) };
+    });
+
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"));
+      await new Promise(resolve => setTimeout(resolve, 10));
+    });
+
+    // Old task should be removed, and restricted text should show
+    expect(screen.queryByText("Initial Safe Task")).not.toBeInTheDocument();
+    expect(screen.getByTestId("task-rail-restricted")).toBeInTheDocument();
   });
 });

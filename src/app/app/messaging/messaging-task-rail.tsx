@@ -108,8 +108,10 @@ function TaskSummaryCard({ task }: { task: ApiTaskSummary }) {
 export function MessagingTaskRail({ conversationId, degraded }: MessagingTaskRailProps) {
   const { tasks, loading, errorType, errorMessage, refresh } = useConversationTasks(conversationId);
   const isRestricted = errorType === "restricted";
-  const isEmpty = !loading && tasks !== null && tasks.length === 0 && errorType === "none";
-  const hasTasks = !loading && tasks !== null && tasks.length > 0 && errorType === "none";
+  const hasTasks = tasks !== null && tasks.length > 0;
+  const isEmpty = tasks !== null && tasks.length === 0;
+  const showLoading = loading && tasks === null;
+  const isDegraded = degraded || (errorType === "network" && tasks !== null);
 
   return (
     <aside
@@ -127,7 +129,7 @@ export function MessagingTaskRail({ conversationId, degraded }: MessagingTaskRai
         )}
       </div>
 
-      {degraded && hasTasks && (
+      {isDegraded && hasTasks && (
         <div
           className="flex items-center gap-2 border-b bg-amber-50 px-4 py-2 shrink-0"
           style={{ borderColor: "#FCD34D" }}
@@ -149,7 +151,7 @@ export function MessagingTaskRail({ conversationId, degraded }: MessagingTaskRai
           </div>
         )}
 
-        {conversationId && loading && (
+        {conversationId && showLoading && (
           <>
             <TaskSkeletonRow />
             <TaskSkeletonRow />
@@ -165,7 +167,7 @@ export function MessagingTaskRail({ conversationId, degraded }: MessagingTaskRai
           </div>
         )}
 
-        {conversationId && errorType === "network" && (
+        {conversationId && errorType === "network" && tasks === null && (
           <div className="flex flex-col items-center justify-center gap-3 px-4 py-10 text-center" data-testid="task-rail-network-error">
             <AlertTriangle className="h-8 w-8 text-amber-500" />
             <p className="text-xs font-semibold" style={{ color: "#49454F" }}>Network error</p>
@@ -180,7 +182,7 @@ export function MessagingTaskRail({ conversationId, degraded }: MessagingTaskRai
           </div>
         )}
 
-        {conversationId && errorType === "unknown" && (
+        {conversationId && errorType === "unknown" && tasks === null && (
           <div className="flex flex-col items-center justify-center gap-3 px-4 py-10 text-center" data-testid="task-rail-unknown-error">
             <AlertTriangle className="h-8 w-8 text-red-500" />
             <p className="text-xs font-semibold" style={{ color: "#49454F" }}>Something went wrong</p>
