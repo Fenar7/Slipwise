@@ -705,6 +705,7 @@ export async function getUnifiedCalendar(
     orgId,
     conversationId: { in: accessibleConversationIds },
     dueDate: { not: null },
+    status: { in: ["OPEN", "IN_PROGRESS", "OVERDUE"] },
   };
   if (startAt || endAt) {
     taskWhere.dueDate = {};

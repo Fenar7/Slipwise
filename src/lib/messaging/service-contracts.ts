@@ -426,6 +426,7 @@ export interface ScheduleMeetingInput {
 
 export interface CancelMeetingInput {
   orgId: string;
+  conversationId: string;
   meetingId: string;
   cancelledBy: string;
   cancelReason?: string | null;
@@ -433,6 +434,7 @@ export interface CancelMeetingInput {
 
 export interface UpdateMeetingInput {
   orgId: string;
+  conversationId: string;
   meetingId: string;
   title?: string;
   description?: string | null;

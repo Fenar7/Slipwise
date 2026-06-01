@@ -369,14 +369,20 @@ export interface ConversationMeetingRecord {
 
 export function meetingIsUpcoming(
   record: ConversationMeetingRecord,
+  now = new Date(),
 ): boolean {
-  return record.status === "UPCOMING";
+  if (record.status !== "UPCOMING") return false;
+  const endTime = new Date(record.scheduledAt.getTime() + record.durationMinutes * 60 * 1000);
+  return endTime >= now;
 }
 
 export function meetingIsEnded(
   record: ConversationMeetingRecord,
+  now = new Date(),
 ): boolean {
-  return record.status === "ENDED" || record.status === "CANCELLED";
+  if (record.status === "ENDED" || record.status === "CANCELLED") return true;
+  const endTime = new Date(record.scheduledAt.getTime() + record.durationMinutes * 60 * 1000);
+  return endTime < now;
 }
 
 // ─── Calendar Connection ──────────────────────────────────────────────────────

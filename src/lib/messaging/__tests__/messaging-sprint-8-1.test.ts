@@ -47,6 +47,7 @@ import {
   cancelMeeting,
   listMeetingsForConversation,
 } from "../meeting-service";
+import { meetingIsUpcoming, meetingIsEnded } from "../domain-types";
 import { getUnifiedCalendar, getMeetingDetail } from "../read-models";
 
 function mockParticipant(userId = "user-1", role = "MEMBER") {
@@ -244,6 +245,7 @@ describe("Sprint 8.1 — Meeting Service & Unified Calendar Tests", () => {
 
       const result = await updateMeeting({
         orgId: "org-1",
+        conversationId: "conv-1",
         meetingId: "meet-1",
         title: "Updated Project Sync",
         updatedBy: "user-1",
@@ -268,6 +270,7 @@ describe("Sprint 8.1 — Meeting Service & Unified Calendar Tests", () => {
 
       const result = await updateMeeting({
         orgId: "org-1",
+        conversationId: "conv-1",
         meetingId: "meet-1",
         title: "Admin Override Sync",
         updatedBy: "user-admin",
@@ -288,11 +291,27 @@ describe("Sprint 8.1 — Meeting Service & Unified Calendar Tests", () => {
       await expect(
         updateMeeting({
           orgId: "org-1",
+          conversationId: "conv-1",
           meetingId: "meet-1",
           title: "Unauthorized Edit",
           updatedBy: "user-other",
         })
       ).rejects.toThrow("organizer or conversation admin/owner role required");
+    });
+
+    it("rejects edit if there is a conversationId mismatch", async () => {
+      const meet = mockMeeting({ conversationId: "conv-1" });
+      vi.mocked(db.conversationMeeting.findFirst).mockResolvedValue(meet);
+
+      await expect(
+        updateMeeting({
+          orgId: "org-1",
+          conversationId: "conv-different",
+          meetingId: "meet-1",
+          title: "Mismatch Edit",
+          updatedBy: "user-1",
+        })
+      ).rejects.toThrow("Meeting not found");
     });
   });
 
@@ -315,6 +334,7 @@ describe("Sprint 8.1 — Meeting Service & Unified Calendar Tests", () => {
 
       const result = await cancelMeeting({
         orgId: "org-1",
+        conversationId: "conv-1",
         meetingId: "meet-1",
         cancelledBy: "user-1",
         cancelReason: "Emergency",
@@ -325,6 +345,21 @@ describe("Sprint 8.1 — Meeting Service & Unified Calendar Tests", () => {
       expect(result.cancelReason).toBe("Emergency");
       expect(db.conversationMeeting.update).toHaveBeenCalled();
       expect(db.messagingAuditEvent.create).toHaveBeenCalled();
+    });
+
+    it("rejects cancellation if there is a conversationId mismatch", async () => {
+      const meet = mockMeeting({ conversationId: "conv-1" });
+      vi.mocked(db.conversationMeeting.findFirst).mockResolvedValue(meet);
+
+      await expect(
+        cancelMeeting({
+          orgId: "org-1",
+          conversationId: "conv-different",
+          meetingId: "meet-1",
+          cancelledBy: "user-1",
+          cancelReason: "Mismatch Cancel",
+        })
+      ).rejects.toThrow("Meeting not found");
     });
   });
 
@@ -421,6 +456,15 @@ describe("Sprint 8.1 — Meeting Service & Unified Calendar Tests", () => {
 
       expect(calendar).toHaveLength(3); // 1 meeting, 1 due date, 1 reminder
 
+      // Verify that due-date tasks are filtered by open-family status
+      expect(db.messagingTask.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            status: { in: ["OPEN", "IN_PROGRESS", "OVERDUE"] },
+          }),
+        })
+      );
+
       // Verify Meeting Entry
       const meetingEntry = calendar.find((e) => e.type === "meeting");
       expect(meetingEntry).toBeDefined();
@@ -437,6 +481,48 @@ describe("Sprint 8.1 — Meeting Service & Unified Calendar Tests", () => {
       const reminderEntry = calendar.find((e) => e.type === "task_reminder");
       expect(reminderEntry).toBeDefined();
       expect(reminderEntry!.title).toBe("Reminder: Code Review");
+    });
+  });
+
+  describe("Meeting Bucketing and State helpers", () => {
+    it("truthfully segments upcoming and past meetings", () => {
+      const now = new Date("2026-06-01T12:00:00Z");
+
+      // An upcoming meeting scheduled in the future
+      const futureMeeting = mockMeeting({
+        scheduledAt: new Date("2026-06-01T13:00:00Z"),
+        durationMinutes: 60,
+        status: "UPCOMING",
+      });
+      expect(meetingIsUpcoming(futureMeeting as any, now)).toBe(true);
+      expect(meetingIsEnded(futureMeeting as any, now)).toBe(false);
+
+      // A past scheduled meeting (ended 30 mins ago)
+      const pastMeeting = mockMeeting({
+        scheduledAt: new Date("2026-06-01T10:00:00Z"),
+        durationMinutes: 60,
+        status: "UPCOMING",
+      });
+      expect(meetingIsUpcoming(pastMeeting as any, now)).toBe(false);
+      expect(meetingIsEnded(pastMeeting as any, now)).toBe(true);
+
+      // A cancelled meeting scheduled in the future
+      const cancelledFutureMeeting = mockMeeting({
+        scheduledAt: new Date("2026-06-01T13:00:00Z"),
+        durationMinutes: 60,
+        status: "CANCELLED",
+      });
+      expect(meetingIsUpcoming(cancelledFutureMeeting as any, now)).toBe(false);
+      expect(meetingIsEnded(cancelledFutureMeeting as any, now)).toBe(true);
+
+      // A meeting marked explicitly as ENDED in the future
+      const endedMeeting = mockMeeting({
+        scheduledAt: new Date("2026-06-01T13:00:00Z"),
+        durationMinutes: 60,
+        status: "ENDED",
+      });
+      expect(meetingIsUpcoming(endedMeeting as any, now)).toBe(false);
+      expect(meetingIsEnded(endedMeeting as any, now)).toBe(true);
     });
   });
 });

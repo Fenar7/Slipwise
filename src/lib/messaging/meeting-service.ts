@@ -101,7 +101,7 @@ export async function scheduleMeeting(input: ScheduleMeetingInput): Promise<Conv
  * Update meeting details.
  */
 export async function updateMeeting(input: UpdateMeetingInput): Promise<ConversationMeetingRecord> {
-  const { orgId, meetingId, title, description, scheduledAt, durationMinutes, updatedBy } = input;
+  const { orgId, conversationId, meetingId, title, description, scheduledAt, durationMinutes, updatedBy } = input;
 
   const meeting = await db.conversationMeeting.findFirst({
     where: { id: meetingId, orgId },
@@ -111,7 +111,9 @@ export async function updateMeeting(input: UpdateMeetingInput): Promise<Conversa
     throw new NotFoundError("Meeting not found");
   }
 
-  const conversationId = meeting.conversationId;
+  if (meeting.conversationId !== conversationId) {
+    throw new NotFoundError("Meeting not found");
+  }
 
   const membership = await db.conversationParticipant.findFirst({
     where: {
@@ -189,7 +191,7 @@ export async function updateMeeting(input: UpdateMeetingInput): Promise<Conversa
  * Cancel a meeting.
  */
 export async function cancelMeeting(input: CancelMeetingInput): Promise<ConversationMeetingRecord> {
-  const { orgId, meetingId, cancelledBy, cancelReason } = input;
+  const { orgId, conversationId, meetingId, cancelledBy, cancelReason } = input;
 
   const meeting = await db.conversationMeeting.findFirst({
     where: { id: meetingId, orgId },
@@ -199,7 +201,9 @@ export async function cancelMeeting(input: CancelMeetingInput): Promise<Conversa
     throw new NotFoundError("Meeting not found");
   }
 
-  const conversationId = meeting.conversationId;
+  if (meeting.conversationId !== conversationId) {
+    throw new NotFoundError("Meeting not found");
+  }
 
   const membership = await db.conversationParticipant.findFirst({
     where: {

@@ -19,7 +19,7 @@ export async function PATCH(
 ) {
   try {
     const { orgId, userId } = await requireMessagingApiContext();
-    const { meetingId } = await params;
+    const { id: conversationId, meetingId } = await params;
     const body = await request.json();
 
     if (
@@ -61,6 +61,7 @@ export async function PATCH(
 
     const updated = await updateMeeting({
       orgId,
+      conversationId,
       meetingId,
       title,
       description,
@@ -81,7 +82,7 @@ export async function DELETE(
 ) {
   try {
     const { orgId, userId } = await requireMessagingApiContext();
-    const { meetingId } = await params;
+    const { id: conversationId, meetingId } = await params;
     
     let cancelReason: string | null = null;
     try {
@@ -95,6 +96,7 @@ export async function DELETE(
 
     const cancelled = await cancelMeeting({
       orgId,
+      conversationId,
       meetingId,
       cancelledBy: userId,
       cancelReason,

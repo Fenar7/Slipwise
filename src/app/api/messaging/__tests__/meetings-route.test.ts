@@ -151,14 +151,32 @@ describe("Meetings API Routes", () => {
       expect(response.status).toBe(200);
       expect(json.success).toBe(true);
       expect(json.data).toEqual(mockUpdated);
-      expect(updateMeeting).toHaveBeenCalledWith(
-        expect.objectContaining({
-          orgId: "org-1",
-          meetingId: "meet-1",
-          title: "Updated Project Kickoff",
-          updatedBy: "user-1",
-        })
-      );
+      expect(updateMeeting).toHaveBeenCalledWith({
+        orgId: "org-1",
+        conversationId: "conv-1",
+        meetingId: "meet-1",
+        title: "Updated Project Kickoff",
+        updatedBy: "user-1",
+      });
+    });
+
+    it("returns 404 if conversationId mismatch is rejected by service", async () => {
+      const error = new Error("Meeting not found") as any;
+      error.status = 404;
+      vi.mocked(updateMeeting).mockRejectedValue(error);
+
+      const req = makeRequest("http://localhost/api/messaging/conversations/conv-wrong/meetings/meet-1", "PATCH", {
+        title: "Updated Project Kickoff",
+      });
+
+      const response = await patchMeeting(req, {
+        params: Promise.resolve({ id: "conv-wrong", meetingId: "meet-1" }),
+      });
+      const json = await response.json();
+
+      expect(response.status).toBe(404);
+      expect(json.success).toBe(false);
+      expect(json.error).toBe("Meeting not found");
     });
   });
 
@@ -181,10 +199,30 @@ describe("Meetings API Routes", () => {
       expect(json.data).toEqual(mockCancelled);
       expect(cancelMeeting).toHaveBeenCalledWith({
         orgId: "org-1",
+        conversationId: "conv-1",
         meetingId: "meet-1",
         cancelledBy: "user-1",
         cancelReason: "Emergency",
       });
+    });
+
+    it("returns 404 if conversationId mismatch is rejected by service", async () => {
+      const error = new Error("Meeting not found") as any;
+      error.status = 404;
+      vi.mocked(cancelMeeting).mockRejectedValue(error);
+
+      const req = makeRequest("http://localhost/api/messaging/conversations/conv-wrong/meetings/meet-1", "DELETE", {
+        cancelReason: "Emergency",
+      });
+
+      const response = await deleteMeeting(req, {
+        params: Promise.resolve({ id: "conv-wrong", meetingId: "meet-1" }),
+      });
+      const json = await response.json();
+
+      expect(response.status).toBe(404);
+      expect(json.success).toBe(false);
+      expect(json.error).toBe("Meeting not found");
     });
   });
 });

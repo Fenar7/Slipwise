@@ -193,13 +193,31 @@ export function MessagingMeetingPanel({ conversationId, calendarConnection, now 
       });
   }, [conversationId]);
 
+  const nowTime = now.getTime();
+
   const upcoming = conversationId
-    ? meetings.filter((m) => m.status.toLowerCase() === "upcoming")
-    : MOCK_MEETINGS.filter((m) => m.status.toLowerCase() === "upcoming");
+    ? meetings.filter((m) => {
+        const status = m.status.toUpperCase();
+        if (status === "CANCELLED") return false;
+        const endTime = new Date(m.scheduledAt).getTime() + (m.durationMinutes || 30) * 60 * 1000;
+        return status === "UPCOMING" && endTime >= nowTime;
+      })
+    : MOCK_MEETINGS.filter((m) => {
+        const status = m.status.toUpperCase();
+        return status === "UPCOMING";
+      });
 
   const past = conversationId
-    ? meetings.filter((m) => m.status.toLowerCase() === "ended" || m.status.toLowerCase() === "cancelled")
-    : MOCK_MEETINGS.filter((m) => m.status.toLowerCase() === "ended");
+    ? meetings.filter((m) => {
+        const status = m.status.toUpperCase();
+        if (status === "CANCELLED" || status === "ENDED") return true;
+        const endTime = new Date(m.scheduledAt).getTime() + (m.durationMinutes || 30) * 60 * 1000;
+        return status === "UPCOMING" && endTime < nowTime;
+      })
+    : MOCK_MEETINGS.filter((m) => {
+        const status = m.status.toUpperCase();
+        return status === "ENDED" || status === "CANCELLED";
+      });
 
   const gridMeetings = conversationId ? calendarEntries : MOCK_MEETINGS;
 
