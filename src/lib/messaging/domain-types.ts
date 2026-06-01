@@ -321,6 +321,7 @@ export interface MessagingTaskRecord {
   createdBy: string;
   createdAt: Date;
   updatedAt: Date;
+  providerEventId: string | null;
 }
 
 export function taskIsOpen(record: MessagingTaskRecord): boolean {
@@ -365,6 +366,7 @@ export interface ConversationMeetingRecord {
   cancelReason: string | null;
   createdAt: Date;
   updatedAt: Date;
+  metadata: any | null;
 }
 
 export function meetingIsUpcoming(

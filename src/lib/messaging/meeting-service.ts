@@ -12,6 +12,7 @@ import type {
   UpdateMeetingInput,
   CancelMeetingInput,
 } from "./service-contracts";
+import { syncMeetingToProvider } from "./provider-sync-service";
 
 /**
  * Validates a scheduled meeting date.
@@ -94,7 +95,23 @@ export async function scheduleMeeting(input: ScheduleMeetingInput): Promise<Conv
     return created;
   });
 
-  return toMeetingRecord(meeting);
+  let finalMeeting = toMeetingRecord(meeting);
+  if (db.calendarConnection) {
+    const activeConns = await db.calendarConnection.count({
+      where: { orgId, status: { in: ["ACTIVE", "RECONNECT_REQUIRED"] } },
+    }).catch(() => 0);
+
+    if (activeConns > 0) {
+      try {
+        const synced = await syncMeetingToProvider(orgId, meeting.id);
+        finalMeeting = synced;
+      } catch (err) {
+        console.error("[meeting-service] scheduleMeeting: provider sync failed:", err);
+      }
+    }
+  }
+
+  return finalMeeting;
 }
 
 /**
@@ -184,7 +201,23 @@ export async function updateMeeting(input: UpdateMeetingInput): Promise<Conversa
     return updated;
   });
 
-  return toMeetingRecord(updatedMeeting);
+  let finalMeeting = toMeetingRecord(updatedMeeting);
+  if (db.calendarConnection) {
+    const activeConns = await db.calendarConnection.count({
+      where: { orgId, status: { in: ["ACTIVE", "RECONNECT_REQUIRED"] } },
+    }).catch(() => 0);
+
+    if (activeConns > 0) {
+      try {
+        const synced = await syncMeetingToProvider(orgId, meetingId);
+        finalMeeting = synced;
+      } catch (err) {
+        console.error("[meeting-service] updateMeeting: provider sync failed:", err);
+      }
+    }
+  }
+
+  return finalMeeting;
 }
 
 /**
@@ -265,7 +298,23 @@ export async function cancelMeeting(input: CancelMeetingInput): Promise<Conversa
     return updated;
   });
 
-  return toMeetingRecord(cancelled);
+  let finalMeeting = toMeetingRecord(cancelled);
+  if (db.calendarConnection) {
+    const activeConns = await db.calendarConnection.count({
+      where: { orgId, status: { in: ["ACTIVE", "RECONNECT_REQUIRED"] } },
+    }).catch(() => 0);
+
+    if (activeConns > 0) {
+      try {
+        const synced = await syncMeetingToProvider(orgId, meetingId);
+        finalMeeting = synced;
+      } catch (err) {
+        console.error("[meeting-service] cancelMeeting: provider sync failed:", err);
+      }
+    }
+  }
+
+  return finalMeeting;
 }
 
 /**
