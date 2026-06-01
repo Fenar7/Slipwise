@@ -17,7 +17,7 @@ import type {
   TaskListFilterInput,
   TaskListResult,
 } from "./service-contracts";
-import { syncTaskToProvider } from "./provider-sync-service";
+import { syncTaskToProvider, reconcileProviderChangesForTask } from "./provider-sync-service";
 
 function validateReminderAt(reminderAt: Date | null | undefined, dueDate: Date | null | undefined, now = new Date()): void {
   if (reminderAt === undefined || reminderAt === null) return;
@@ -53,7 +53,20 @@ export async function listTasksForConversation(
     orderBy: [{ dueDate: "asc" }, { id: "asc" }],
   });
 
-  return rows.map(toTaskRecord);
+  const reconciledRows = await Promise.all(
+    rows.map(async (row) => {
+      if (row.providerEventId && row.status !== "DONE" && row.status !== "CANCELLED") {
+        try {
+          return await reconcileProviderChangesForTask(orgId, row.id, userId);
+        } catch (err) {
+          console.error(`Failed to reconcile task ${row.id} during list:`, err);
+        }
+      }
+      return toTaskRecord(row);
+    })
+  );
+
+  return reconciledRows;
 }
 
 export async function createTask(input: CreateTaskInput): Promise<MessagingTaskRecord> {

@@ -9,6 +9,7 @@ import {
   reconcileProviderChangesForMeeting,
   reconcileProviderChangesForTask,
 } from "@/lib/messaging/provider-sync-service";
+import { InvalidInputError, NotFoundError } from "@/lib/messaging";
 
 export const runtime = "nodejs";
 
@@ -30,7 +31,7 @@ export async function POST(request: NextRequest) {
     const { meetingId, taskId } = body;
 
     if (!meetingId && !taskId) {
-      throw new Error("InvalidInputError: Either meetingId or taskId must be provided");
+      throw new InvalidInputError("Either meetingId or taskId must be provided");
     }
 
     if (meetingId) {
@@ -39,7 +40,7 @@ export async function POST(request: NextRequest) {
       });
 
       if (!meeting) {
-        throw new Error("NotFoundError: Meeting not found");
+        throw new NotFoundError("Meeting not found");
       }
 
       // Check conversation membership to enforce security and prevent existence leakage
@@ -53,7 +54,7 @@ export async function POST(request: NextRequest) {
       });
 
       if (!membership) {
-        throw new Error("NotFoundError: Meeting not found");
+        throw new NotFoundError("Meeting not found");
       }
 
       const reconciled = await reconcileProviderChangesForMeeting(orgId, meetingId, userId);
@@ -66,7 +67,7 @@ export async function POST(request: NextRequest) {
       });
 
       if (!task) {
-        throw new Error("NotFoundError: Task not found");
+        throw new NotFoundError("Task not found");
       }
 
       // Check conversation membership to enforce security and prevent existence leakage
@@ -80,14 +81,14 @@ export async function POST(request: NextRequest) {
       });
 
       if (!membership) {
-        throw new Error("NotFoundError: Task not found");
+        throw new NotFoundError("Task not found");
       }
 
       const reconciled = await reconcileProviderChangesForTask(orgId, taskId, userId);
       return messagingApiResponse({ type: "task", reconciled });
     }
 
-    throw new Error("InvalidInputError: Invalid request parameters");
+    throw new InvalidInputError("Invalid request parameters");
   } catch (error) {
     console.error("[api/messaging/calendar/reconcile] POST failed:", error);
     return handleMessagingApiError(error);

@@ -15,12 +15,14 @@ vi.mock("@/lib/db", () => {
     conversation: {
       findFirst: vi.fn(),
       findUnique: vi.fn(),
+      findMany: vi.fn(),
     },
     conversationMeeting: {
       create: vi.fn(),
       update: vi.fn(),
       findFirst: vi.fn(),
       findUnique: vi.fn(),
+      findMany: vi.fn(),
     },
     messagingTask: {
       create: vi.fn(),
@@ -58,8 +60,8 @@ vi.mock("@/lib/db", () => {
 });
 
 import { db } from "@/lib/db";
-import { scheduleMeeting, updateMeeting, cancelMeeting } from "../meeting-service";
-import { createTask, updateTaskStatus, assignTask, updateTask } from "../task-service";
+import { scheduleMeeting, updateMeeting, cancelMeeting, listMeetingsForConversation } from "../meeting-service";
+import { createTask, updateTaskStatus, assignTask, updateTask, listTasksForConversation } from "../task-service";
 import {
   syncMeetingToProvider,
   syncTaskToProvider,
@@ -68,6 +70,7 @@ import {
   parseProviderEventIds,
   serializeProviderEventIds,
 } from "../provider-sync-service";
+import { getMeetingDetail, getUnifiedCalendar } from "../read-models";
 
 function mockAdminMember() {
   return {
@@ -573,6 +576,62 @@ describe("Sprint 8.3 — Provider Sync & Task Calendar Tests", () => {
       const oCall = mockFetch.mock.calls.find((call: any) => call[0].includes("graph.microsoft.com"));
       expect(gCall).toBeDefined();
       expect(oCall).toBeDefined();
+    });
+  });
+
+  describe("Live Read-Path Orchestrated Reconciliation", () => {
+    it("listMeetingsForConversation triggers reconciliation for active meetings", async () => {
+      const meet = mockMeeting({ providerEventId: '{"GOOGLE":"google-remote-event-id-999"}' });
+      vi.mocked(db.conversationMeeting.findMany).mockResolvedValue([meet] as any);
+      vi.mocked(db.conversationMeeting.findFirst).mockResolvedValue(meet as any);
+      vi.mocked(db.conversationMeeting.update).mockResolvedValue(meet as any);
+
+      const result = await listMeetingsForConversation("org-1", "conv-1", "user-admin");
+      expect(result).toBeDefined();
+      expect(db.conversationMeeting.findMany).toHaveBeenCalled();
+    });
+
+    it("listTasksForConversation triggers reconciliation for active tasks", async () => {
+      const task = mockTask({ providerEventId: '{"GOOGLE":"google-remote-event-id-999"}' });
+      vi.mocked(db.messagingTask.findMany).mockResolvedValue([task] as any);
+      vi.mocked(db.messagingTask.findUnique).mockResolvedValue(task as any);
+      vi.mocked(db.messagingTask.update).mockResolvedValue(task as any);
+
+      const result = await listTasksForConversation("org-1", "conv-1", "user-admin");
+      expect(result).toBeDefined();
+      expect(db.messagingTask.findMany).toHaveBeenCalled();
+    });
+
+    it("getMeetingDetail triggers reconciliation on read", async () => {
+      const meet = mockMeeting({ providerEventId: '{"GOOGLE":"google-remote-event-id-999"}' });
+      vi.mocked(db.conversationMeeting.findFirst).mockResolvedValue(meet as any);
+      vi.mocked(db.conversationMeeting.update).mockResolvedValue(meet as any);
+
+      const result = await getMeetingDetail("org-1", "meet-1", "user-admin");
+      expect(result).toBeDefined();
+      expect(db.conversationMeeting.findFirst).toHaveBeenCalled();
+    });
+
+    it("getUnifiedCalendar triggers reconciliation on calendar loading", async () => {
+      const meet = mockMeeting({ providerEventId: '{"GOOGLE":"google-remote-event-id-999"}' });
+      const task = mockTask({ providerEventId: '{"GOOGLE":"google-remote-event-id-999"}' });
+
+      vi.mocked(db.conversationMeeting.findMany).mockResolvedValue([meet] as any);
+      vi.mocked(db.messagingTask.findMany).mockImplementation(async (args: any) => {
+        if (args?.where?.reminderAt) {
+          return [];
+        }
+        return [task] as any;
+      });
+      vi.mocked(db.conversationMeeting.findUnique).mockResolvedValue(meet as any);
+      vi.mocked(db.messagingTask.findUnique).mockResolvedValue(task as any);
+      vi.mocked(db.conversation.findMany).mockResolvedValue([mockConversation()] as any);
+      vi.mocked(db.profile.findMany).mockResolvedValue([{ id: "user-admin", name: "Org Administrator" }] as any);
+
+      const result = await getUnifiedCalendar("org-1", "user-admin");
+      expect(result).toBeDefined();
+      expect(db.conversationMeeting.findMany).toHaveBeenCalled();
+      expect(db.messagingTask.findMany).toHaveBeenCalled();
     });
   });
 });

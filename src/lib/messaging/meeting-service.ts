@@ -12,7 +12,7 @@ import type {
   UpdateMeetingInput,
   CancelMeetingInput,
 } from "./service-contracts";
-import { syncMeetingToProvider } from "./provider-sync-service";
+import { syncMeetingToProvider, reconcileProviderChangesForMeeting } from "./provider-sync-service";
 
 /**
  * Validates a scheduled meeting date.
@@ -341,5 +341,18 @@ export async function listMeetingsForConversation(
     orderBy: { scheduledAt: "asc" },
   });
 
-  return rows.map(toMeetingRecord);
+  const reconciledRows = await Promise.all(
+    rows.map(async (row) => {
+      if (row.providerEventId && row.status !== "CANCELLED") {
+        try {
+          return await reconcileProviderChangesForMeeting(orgId, row.id, userId);
+        } catch (err) {
+          console.error(`Failed to reconcile meeting ${row.id} during list:`, err);
+        }
+      }
+      return toMeetingRecord(row);
+    })
+  );
+
+  return reconciledRows;
 }

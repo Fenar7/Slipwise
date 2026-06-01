@@ -12,7 +12,9 @@ vi.mock("@/app/api/messaging/_utils", () => {
     });
   });
   const handleMessagingApiError = vi.fn((err: any) => {
-    const status = err.status ?? 500;
+    let status = 500;
+    if (err.name === "InvalidInputError") status = 422;
+    if (err.name === "NotFoundError") status = 404;
     return new Response(
       JSON.stringify({ success: false, error: err.message ?? "Error" }),
       {
@@ -77,7 +79,7 @@ describe("Calendar Reconcile API Route", () => {
     const response = await reconcilePost(req);
     const json = await response.json();
 
-    expect(response.status).toBe(500);
+    expect(response.status).toBe(422);
     expect(json.success).toBe(false);
     expect(json.error).toContain("Either meetingId or taskId must be provided");
   });
@@ -117,7 +119,7 @@ describe("Calendar Reconcile API Route", () => {
     const response = await reconcilePost(req);
     const json = await response.json();
 
-    expect(response.status).toBe(500);
+    expect(response.status).toBe(404);
     expect(json.success).toBe(false);
     expect(json.error).toContain("Meeting not found");
     expect(reconcileProviderChangesForMeeting).not.toHaveBeenCalled();
@@ -158,7 +160,7 @@ describe("Calendar Reconcile API Route", () => {
     const response = await reconcilePost(req);
     const json = await response.json();
 
-    expect(response.status).toBe(500);
+    expect(response.status).toBe(404);
     expect(json.success).toBe(false);
     expect(json.error).toContain("Task not found");
     expect(reconcileProviderChangesForTask).not.toHaveBeenCalled();
