@@ -57,7 +57,8 @@ import {
 import { resolveVoucherAutofill, type VoucherAutofillPayload } from "@/app/app/docs/vouchers/autofill-resolver";
 import { StaleDataBanner } from "@/components/foundation/stale-data-banner";
 import { VOUCHER_MANAGED_FIELDS } from "@/app/app/docs/shared/defaulting/managed-fields";
-import type { StaleInfo } from "@/app/app/docs/shared/defaulting/types";
+import { checkStale, staleLabel } from "@/app/app/docs/shared/defaulting/stale-detection";
+import type { StaleInfo, BaselineMetadata } from "@/app/app/docs/shared/defaulting/types";
 
 interface Vendor {
   id: string;
@@ -134,6 +135,25 @@ function VoucherPanel({
   const overriddenRef = useRef<Set<string>>(new Set());
   const lastAutofillRef = useRef<Record<string, unknown>>({});
   const [staleInfo, setStaleInfo] = useState<StaleInfo | null>(null);
+  const baselineRef = useRef<BaselineMetadata | null>(null);
+
+  const checkStaleAgainst = useCallback((payload: VoucherAutofillPayload) => {
+    if (!baselineRef.current) return;
+    const b = baselineRef.current;
+    const entityChanged = b.entityFingerprint !== null && b.entityId === payload.baseline.entityId
+      ? b.entityFingerprint !== payload.baseline.entityFingerprint
+      : false;
+    const orgChanged = b.orgDefaultsFingerprint !== null
+      ? b.orgDefaultsFingerprint !== payload.baseline.orgDefaultsFingerprint
+      : false;
+    if (entityChanged && orgChanged) {
+      setStaleInfo({ stale: true, source: "both", label: staleLabel("both") });
+    } else if (entityChanged) {
+      setStaleInfo({ stale: true, source: "entity", label: staleLabel("entity") });
+    } else if (orgChanged) {
+      setStaleInfo({ stale: true, source: "orgDefaults", label: staleLabel("orgDefaults") });
+    }
+  }, []);
 
   const managedFieldWriters: Record<string, (p: VoucherAutofillPayload) => void> = useMemo(() => ({
     counterpartyName: (p) => setValue("counterpartyName", p.counterpartyName),
@@ -174,16 +194,17 @@ function VoucherPanel({
       }
     }
     lastAutofillRef.current = { counterpartyName: payload.counterpartyName, notes: payload.notes, approvedBy: payload.approvedBy, receivedBy: payload.receivedBy, paymentMode: payload.paymentMode, date: payload.date, templateId: payload.templateId };
+    if (payload.baseline) baselineRef.current = payload.baseline;
   }, [managedFieldWriters, setValue]);
 
   const handleVendorChange = useCallback(async (vendorId: string) => {
     try {
       const payload = await resolveVoucherAutofill({ vendorId });
+      checkStaleAgainst(payload);
       hydrateFromAutofill(payload, true);
-      setStaleInfo(null);
     } catch { /* keep current */ }
     loadSuggestions(vendorId);
-  }, [hydrateFromAutofill]);
+  }, [hydrateFromAutofill, checkStaleAgainst]);
 
   const handleVendorClear = useCallback(async () => {
     try {
@@ -217,6 +238,7 @@ function VoucherPanel({
     const vid = getValues("vendorId");
     try {
       const payload = await resolveVoucherAutofill({ vendorId: vid || undefined });
+      baselineRef.current = payload.baseline;
       hydrateFromAutofill(payload, true);
       setStaleInfo(null);
       toast.success("Defaults refreshed");
@@ -228,6 +250,7 @@ function VoucherPanel({
     try {
       const payload = await resolveVoucherAutofill({ vendorId: vid || undefined });
       overriddenRef.current = new Set();
+      baselineRef.current = payload.baseline;
       hydrateFromAutofill(payload, false);
       setStaleInfo(null);
       toast.success("All defaults reapplied");

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { FormProvider, useFieldArray, useForm, useFormContext, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -47,6 +47,10 @@ import {
   resolveInvoiceAutofillAction,
 } from "@/app/app/docs/invoices/actions";
 import type { InvoiceAutofillPayload } from "@/app/app/docs/invoices/autofill-resolver";
+import { StaleDataBanner } from "@/components/foundation/stale-data-banner";
+import { INVOICE_MANAGED_FIELDS } from "@/app/app/docs/shared/defaulting/managed-fields";
+import { staleLabel } from "@/app/app/docs/shared/defaulting/stale-detection";
+import type { StaleInfo } from "@/app/app/docs/shared/defaulting/types";
 
 type InvoiceActionState =
   | { status: "idle" }
@@ -878,6 +882,37 @@ export function InvoiceWorkspace({
   );
   const [suggestions, setSuggestions] = useState<SuggestedTag[]>([]);
 
+  const overriddenRef = useRef<Set<string>>(new Set());
+  const lastAutofillRef = useRef<Record<string, unknown>>({});
+  const [staleInfo, setStaleInfo] = useState<StaleInfo | null>(null);
+
+  const captureBaseline = useCallback((payload: InvoiceAutofillPayload) => {
+    lastAutofillRef.current = {
+      clientName: payload.clientName, clientAddress: payload.clientAddress, shippingAddress: payload.shippingAddress,
+      clientEmail: payload.clientEmail, clientPhone: payload.clientPhone, clientTaxId: payload.clientTaxId,
+      businessTaxId: payload.businessTaxId, invoiceDate: payload.invoiceDate, dueDate: payload.dueDate,
+      placeOfSupply: payload.placeOfSupply, notes: payload.notes, terms: payload.terms,
+      authorizedBy: payload.authorizedBy, bankName: payload.bankName, bankAccountNumber: payload.bankAccountNumber,
+      bankIfsc: payload.bankIfsc, amountPaid: payload.amountPaid, templateId: payload.templateId,
+    };
+  }, []);
+
+  useEffect(() => {
+    if (initialAutofill) captureBaseline(initialAutofill);
+  }, [initialAutofill, captureBaseline]);
+
+  const formValues = methods.watch();
+  useEffect(() => {
+    for (const key of INVOICE_MANAGED_FIELDS) {
+      if (overriddenRef.current.has(key)) continue;
+      const lastVal = lastAutofillRef.current[key];
+      if (lastVal === undefined) continue;
+      if ((formValues as Record<string, unknown>)[key] !== lastVal) {
+        overriddenRef.current.add(key);
+      }
+    }
+  });
+
   const loadSuggestions = async (customerId: string) => {
     try {
       const result = await getSuggestedTags({ counterpartyId: customerId, counterpartyType: "customer", documentType: "invoice", limit: 8 });
@@ -886,23 +921,44 @@ export function InvoiceWorkspace({
   };
 
   const handleCustomerChange = async (customer: { id: string } | null) => {
-    if (!customer) {
-      setCustomerId("");
-      return;
-    }
-
+    if (!customer) { setCustomerId(""); return; }
     setCustomerId(customer.id);
-
-    // Re-run autofill resolver for the newly selected customer
     try {
       const result = await resolveInvoiceAutofillAction({ customerId: customer.id });
       if (result.success) {
-        applyAutofillToForm(methods, result.data);
+        captureBaseline(result.data);
+        applyAutofillToForm(methods, result.data, overriddenRef.current);
+        setStaleInfo(null);
       }
-    } catch {
-      // Autofill is best-effort — operator can still fill fields manually
-    }
+    } catch { /* keep current */ }
   };
+
+  const handleRefreshDefaults = useCallback(async () => {
+    if (!customerId) return;
+    try {
+      const result = await resolveInvoiceAutofillAction({ customerId });
+      if (result.success) {
+        captureBaseline(result.data);
+        applyAutofillToForm(methods, result.data, overriddenRef.current);
+        setStaleInfo(null);
+        toast.success("Defaults refreshed");
+      }
+    } catch { toast.error("Could not refresh defaults"); }
+  }, [customerId, methods]);
+
+  const handleReapplyAll = useCallback(async () => {
+    if (!customerId) return;
+    try {
+      const result = await resolveInvoiceAutofillAction({ customerId });
+      if (result.success) {
+        overriddenRef.current = new Set();
+        captureBaseline(result.data);
+        applyAutofillToForm(methods, result.data, new Set());
+        setStaleInfo(null);
+        toast.success("All defaults reapplied");
+      }
+    } catch { toast.error("Could not reapply defaults"); }
+  }, [customerId, methods]);
 
   const handleSaveDraft = async (): Promise<string | undefined> => {
     setIsSaving(true);
@@ -991,6 +1047,13 @@ export function InvoiceWorkspace({
 
   return (
     <FormProvider {...methods}>
+      <StaleDataBanner
+        visible={staleInfo !== null}
+        label={staleInfo?.label ?? ""}
+        onRefresh={handleRefreshDefaults}
+        onReapplyAll={handleReapplyAll}
+        className="mx-4"
+      />
       <InvoicePanel customers={customers} inventoryItems={inventoryItems} tagIds={tagIds} setTagIds={setTagIds} suggestions={suggestions} loadSuggestions={loadSuggestions} onCustomerChange={handleCustomerChange} initialCustomerId={customerId || undefined} />
       <InvoiceSaveBar
         onSaveDraft={() => void handleSaveDraft()}
@@ -1074,30 +1137,39 @@ function applyAutofillToDefaults(
 function applyAutofillToForm(
   methods: ReturnType<typeof useForm<InvoiceFormValues>>,
   autofill: InvoiceAutofillPayload,
+  overrides: Set<string>,
 ): void {
   const set = methods.setValue;
   const opts = { shouldDirty: true, shouldTouch: true, shouldValidate: false };
 
-  set("clientName", autofill.clientName, opts);
-  set("clientAddress", autofill.clientAddress, opts);
-  set("shippingAddress", autofill.shippingAddress, opts);
-  set("clientEmail", autofill.clientEmail, opts);
-  set("clientPhone", autofill.clientPhone, opts);
-  set("clientTaxId", autofill.clientTaxId, opts);
-  set("businessTaxId", autofill.businessTaxId, opts);
-  set("invoiceDate", autofill.invoiceDate, opts);
-  set("dueDate", autofill.dueDate, opts);
-  set("placeOfSupply", autofill.placeOfSupply, opts);
-  set("notes", autofill.notes, opts);
-  set("terms", autofill.terms, opts);
-  set("bankName", autofill.bankName, opts);
-  set("bankAccountNumber", autofill.bankAccountNumber, opts);
-  set("bankIfsc", autofill.bankIfsc, opts);
-  set("authorizedBy", autofill.authorizedBy, opts);
-  set("amountPaid", autofill.amountPaid, opts);
-  set("branding.companyName", autofill.branding.companyName, opts);
-  set("branding.address", autofill.branding.address, opts);
-  set("branding.email", autofill.branding.email, opts);
-  set("branding.phone", autofill.branding.phone, opts);
+  const writers: Record<string, () => void> = {
+    clientName: () => set("clientName", autofill.clientName, opts),
+    clientAddress: () => set("clientAddress", autofill.clientAddress, opts),
+    shippingAddress: () => set("shippingAddress", autofill.shippingAddress, opts),
+    clientEmail: () => set("clientEmail", autofill.clientEmail, opts),
+    clientPhone: () => set("clientPhone", autofill.clientPhone, opts),
+    clientTaxId: () => set("clientTaxId", autofill.clientTaxId, opts),
+    businessTaxId: () => set("businessTaxId", autofill.businessTaxId, opts),
+    invoiceDate: () => set("invoiceDate", autofill.invoiceDate, opts),
+    dueDate: () => set("dueDate", autofill.dueDate, opts),
+    placeOfSupply: () => set("placeOfSupply", autofill.placeOfSupply, opts),
+    notes: () => set("notes", autofill.notes, opts),
+    terms: () => set("terms", autofill.terms, opts),
+    authorizedBy: () => set("authorizedBy", autofill.authorizedBy, opts),
+    bankName: () => set("bankName", autofill.bankName, opts),
+    bankAccountNumber: () => set("bankAccountNumber", autofill.bankAccountNumber, opts),
+    bankIfsc: () => set("bankIfsc", autofill.bankIfsc, opts),
+    amountPaid: () => set("amountPaid", autofill.amountPaid, opts),
+    "branding.companyName": () => set("branding.companyName", autofill.branding.companyName, opts),
+    "branding.address": () => set("branding.address", autofill.branding.address, opts),
+    "branding.email": () => set("branding.email", autofill.branding.email, opts),
+    "branding.phone": () => set("branding.phone", autofill.branding.phone, opts),
+  };
+
+  for (const key of INVOICE_MANAGED_FIELDS) {
+    if (overrides.has(key)) continue;
+    const writer = writers[key];
+    if (writer) writer();
+  }
 }
 // SPRINT 4.2 placeholder

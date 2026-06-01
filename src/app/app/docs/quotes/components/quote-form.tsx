@@ -1,8 +1,10 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useCallback, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { createQuoteAction, updateQuoteAction, sendQuoteAction, resolveQuoteAutofillAction } from "../actions";
+import { StaleDataBanner } from "@/components/foundation/stale-data-banner";
+import type { StaleInfo, BaselineMetadata } from "@/app/app/docs/shared/defaulting/types";
 
 interface Customer {
   id: string;
@@ -27,6 +29,7 @@ interface QuoteAutofillPayload {
   validUntil: string;
   notes: string;
   termsAndConditions: string;
+  baseline?: BaselineMetadata;
 }
 
 interface QuoteFormProps {
@@ -96,24 +99,54 @@ export function QuoteForm({ customers, initialAutofill, existingQuote }: QuoteFo
       : [{ ...emptyLineItem }]
   );
 
+  const overriddenRef = useRef<Set<string>>(new Set());
+  const [staleInfo, setStaleInfo] = useState<StaleInfo | null>(null);
+
   const handleCustomerChange = async (newCustomerId: string) => {
     setCustomerId(newCustomerId);
-
     try {
-      const result = await resolveQuoteAutofillAction({
-        customerId: newCustomerId || undefined,
-      });
+      const result = await resolveQuoteAutofillAction({ customerId: newCustomerId || undefined });
       if (result.success && result.data) {
-        const payload = result.data;
-        setIssueDate(payload.issueDate);
-        setValidUntil(payload.validUntil);
-        setNotes(payload.notes);
-        setTermsAndConditions(payload.termsAndConditions);
+        const p = result.data;
+        if (!overriddenRef.current.has("issueDate")) setIssueDate(p.issueDate);
+        if (!overriddenRef.current.has("validUntil")) setValidUntil(p.validUntil);
+        if (!overriddenRef.current.has("notes")) setNotes(p.notes);
+        if (!overriddenRef.current.has("termsAndConditions")) setTermsAndConditions(p.termsAndConditions);
+        setStaleInfo(null);
       }
-    } catch (e) {
-      console.error("Failed to fetch quote autofill:", e);
-    }
+    } catch (e) { console.error("Failed to fetch quote autofill:", e); }
   };
+
+  const handleRefreshDefaults = useCallback(async () => {
+    if (!customerId) return;
+    try {
+      const result = await resolveQuoteAutofillAction({ customerId });
+      if (result.success && result.data) {
+        const p = result.data;
+        if (!overriddenRef.current.has("issueDate")) setIssueDate(p.issueDate);
+        if (!overriddenRef.current.has("validUntil")) setValidUntil(p.validUntil);
+        if (!overriddenRef.current.has("notes")) setNotes(p.notes);
+        if (!overriddenRef.current.has("termsAndConditions")) setTermsAndConditions(p.termsAndConditions);
+        setStaleInfo(null);
+      }
+    } catch { /* keep current */ }
+  }, [customerId]);
+
+  const handleReapplyAll = useCallback(async () => {
+    if (!customerId) return;
+    try {
+      const result = await resolveQuoteAutofillAction({ customerId });
+      if (result.success && result.data) {
+        const p = result.data;
+        overriddenRef.current = new Set();
+        setIssueDate(p.issueDate);
+        setValidUntil(p.validUntil);
+        setNotes(p.notes);
+        setTermsAndConditions(p.termsAndConditions);
+        setStaleInfo(null);
+      }
+    } catch { /* keep current */ }
+  }, [customerId]);
 
   function addLineItem() {
     setLineItems([...lineItems, { ...emptyLineItem }]);
@@ -213,6 +246,13 @@ export function QuoteForm({ customers, initialAutofill, existingQuote }: QuoteFo
           </div>
         )}
 
+        <StaleDataBanner
+          visible={staleInfo !== null}
+          label={staleInfo?.label ?? ""}
+          onRefresh={handleRefreshDefaults}
+          onReapplyAll={handleReapplyAll}
+        />
+
         {/* Customer & Title */}
         <div className="grid grid-cols-2 gap-4">
           <div>
@@ -249,7 +289,7 @@ export function QuoteForm({ customers, initialAutofill, existingQuote }: QuoteFo
             <input
               type="date"
               value={issueDate}
-              onChange={(e) => setIssueDate(e.target.value)}
+              onChange={(e) => { overriddenRef.current.add("issueDate"); setIssueDate(e.target.value); }}
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 focus:border-red-400 focus:outline-none focus:ring-1 focus:ring-red-400"
             />
           </div>
@@ -258,7 +298,7 @@ export function QuoteForm({ customers, initialAutofill, existingQuote }: QuoteFo
             <input
               type="date"
               value={validUntil}
-              onChange={(e) => setValidUntil(e.target.value)}
+              onChange={(e) => { overriddenRef.current.add("validUntil"); setValidUntil(e.target.value); }}
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 focus:border-red-400 focus:outline-none focus:ring-1 focus:ring-red-400"
             />
             <p className="mt-1 text-xs text-slate-400">Leave empty to use org default validity days</p>
@@ -399,17 +439,15 @@ export function QuoteForm({ customers, initialAutofill, existingQuote }: QuoteFo
             <label className="block text-sm font-medium text-slate-700 mb-1">Notes</label>
             <textarea
               value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              rows={3}
-              placeholder="Additional notes for the customer..."
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 placeholder-slate-400 focus:border-red-400 focus:outline-none focus:ring-1 focus:ring-red-400"
+              onChange={(e) => { overriddenRef.current.add("notes"); setNotes(e.target.value); }}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 focus:border-red-400 focus:outline-none focus:ring-1 focus:ring-red-400"
             />
           </div>
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Terms & Conditions</label>
             <textarea
               value={termsAndConditions}
-              onChange={(e) => setTermsAndConditions(e.target.value)}
+              onChange={(e) => { overriddenRef.current.add("termsAndConditions"); setTermsAndConditions(e.target.value); }}
               rows={3}
               placeholder="Payment terms, conditions..."
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 placeholder-slate-400 focus:border-red-400 focus:outline-none focus:ring-1 focus:ring-red-400"
