@@ -13,9 +13,16 @@ const mockDb = vi.hoisted(() => ({
   organization: {
     findUnique: vi.fn(),
   },
+  customer: {
+    findUnique: vi.fn().mockResolvedValue({ name: "Hadi Azeez" }),
+  },
 }));
 
 vi.mock("@/lib/db", () => ({ db: mockDb }));
+
+vi.mock("@/lib/portal-auth", () => ({
+  getPortalSession: vi.fn().mockResolvedValue({ customerId: "cust_test_001", orgId: "org_001" }),
+}));
 
 // Layout is a server component that queries the DB
 import ClientHubLayout from "../layout";

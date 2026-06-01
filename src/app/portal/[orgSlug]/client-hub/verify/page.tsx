@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useParams, useSearchParams } from "next/navigation";
+import { useParams, useSearchParams, useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
 import { verifyPortalOtpAction, requestPortalOtpAction } from "../../actions";
 
@@ -26,6 +26,7 @@ export default function ClientHubVerifyPage() {
   const { orgSlug } = useParams<{ orgSlug: string }>();
   const searchParams = useSearchParams();
   const email = searchParams?.get("email") || "";
+  const router = useRouter();
 
   const [code, setCode] = useState("");
   const [verified, setVerified] = useState(false);
@@ -55,6 +56,7 @@ export default function ClientHubVerifyPage() {
         const res = await verifyPortalOtpAction(email, trimmed, orgSlug);
         if (res.success) {
           setVerified(true);
+          router.push(`/portal/${orgSlug}/client-hub`);
         } else {
           setError(res.error || "Invalid or expired verification code.");
         }
@@ -92,10 +94,10 @@ export default function ClientHubVerifyPage() {
             </svg>
           </span>
           <h1 className="mt-5 text-2xl font-semibold tracking-[-0.03em] text-[var(--hub-text-strong)] sm:text-[28px]">
-            You&apos;re ready to continue
+            You are successfully authenticated
           </h1>
           <p className="mx-auto mt-3 max-w-sm text-[13px] leading-6 text-[var(--hub-text-soft)]">
-            In the live product, this is where the authenticated client session would continue to the hub dashboard.
+            Redirecting you to your dashboard...
           </p>
           <Link
             href={`/portal/${orgSlug}/client-hub`}
@@ -124,7 +126,7 @@ export default function ClientHubVerifyPage() {
             Enter your verification code
           </h1>
           <p className="mx-auto mt-3 max-w-sm text-[13px] leading-6 text-[var(--hub-text-soft)]">
-            We sent a six-digit code to your email. Enter it below to complete the static sign-in preview.
+            We sent a six-digit code to your email. Enter it below to access your client hub.
           </p>
         </div>
 

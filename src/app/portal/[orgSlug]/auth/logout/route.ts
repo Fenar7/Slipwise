@@ -13,9 +13,9 @@ export async function GET(
     await revokePortalSession(session.customerId, session.orgId);
   }
 
-  // Determine redirection based on whether request initiated from client-hub
-  const referer = _request.headers.get("referer") || "";
-  const loginUrl = referer.includes("client-hub")
+  // Determine redirection based on the explicit origin query parameter
+  const origin = _request.nextUrl.searchParams.get("origin") || "";
+  const loginUrl = origin === "client-hub"
     ? `/portal/${orgSlug}/client-hub/login`
     : `/portal/${orgSlug}/auth/login`;
 

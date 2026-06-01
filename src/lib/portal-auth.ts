@@ -587,7 +587,7 @@ export async function requestPortalOtp(
       data: { orgId: customer.organizationId, customerId: customer.id, tokenHash, expiresAt },
     });
 
-    console.log(`[ClientHubPortal] OTP for ${email}: ${otp}`);
+    console.log(`[ClientHubPortal] OTP generated for ${email.toLowerCase()}`);
 
     const supportEmail = orgDefaults.portalSupportEmail;
     const orgName = customer.organization.name;

@@ -268,7 +268,7 @@ function TopNav({
                 <span className="text-[13px] font-semibold text-[var(--hub-text-strong)]">{customerName}</span>
               </div>
               <Link
-                href={`/portal/${orgSlug}/auth/logout`}
+                href={`/portal/${orgSlug}/auth/logout?origin=client-hub`}
                 className="rounded-lg bg-[var(--hub-accent)] px-3.5 py-1.5 text-xs font-semibold text-white transition hover:brightness-95 shadow-[var(--hub-card-shadow)]"
               >
                 Logout

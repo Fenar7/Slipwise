@@ -402,3 +402,50 @@ describe("logout server-side revocation", () => {
     expect(cookieStore.delete).toHaveBeenCalledWith("portal_session");
   });
 });
+
+// ─── Secret Leakage & Logout Routing Tests ────────────────────────────────────
+
+import { GET as logoutGetHandler } from "../auth/logout/route";
+import { NextRequest, NextResponse } from "next/server";
+
+describe("Sprint 5.2 - Blocker Remediations", () => {
+  it("requestPortalOtp path does not leak the plaintext OTP in server logs", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    mockDb.customer.findFirst.mockResolvedValue(makeCustomer());
+
+    await requestPortalOtp("otp@example.com", ORG_SLUG);
+
+    let leaked = false;
+    for (const call of logSpy.mock.calls) {
+      const msg = call.join(" ");
+      if (msg.includes("[ClientHubPortal]")) {
+        // If there's any 6-digit numeric OTP in the message, fail
+        if (/\b\d{6}\b/.test(msg)) {
+          leaked = true;
+        }
+      }
+    }
+    expect(leaked).toBe(false);
+    logSpy.mockRestore();
+  });
+
+  it("logout route deterministically redirects to client-hub login when origin is client-hub", async () => {
+    const request = new NextRequest(`http://localhost/portal/${ORG_SLUG}/auth/logout?origin=client-hub`);
+    const params = Promise.resolve({ orgSlug: ORG_SLUG });
+
+    const response = await logoutGetHandler(request, { params });
+    expect(response).toBeInstanceOf(NextResponse);
+    expect(response.status).toBe(307); // NextResponse.redirect uses 307 Temporary Redirect by default
+    expect(response.headers.get("location")).toBe(`http://localhost/portal/${ORG_SLUG}/client-hub/login`);
+  });
+
+  it("logout route redirects to generic portal login when origin is omitted", async () => {
+    const request = new NextRequest(`http://localhost/portal/${ORG_SLUG}/auth/logout`);
+    const params = Promise.resolve({ orgSlug: ORG_SLUG });
+
+    const response = await logoutGetHandler(request, { params });
+    expect(response).toBeInstanceOf(NextResponse);
+    expect(response.status).toBe(307);
+    expect(response.headers.get("location")).toBe(`http://localhost/portal/${ORG_SLUG}/auth/login`);
+  });
+});

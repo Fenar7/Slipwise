@@ -98,9 +98,6 @@ export default function ClientHubLoginPage() {
                   Code expires in 15 min
                 </span>
               </div>
-              <p className="mt-4 text-center text-[11px] text-[var(--hub-text-muted)]">
-                Static Phase 1 shell — this button simulates delivery only.
-              </p>
             </div>
           </>
         ) : (
