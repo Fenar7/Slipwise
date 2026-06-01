@@ -1,6 +1,7 @@
 import { resolveDefaults } from "@/app/app/docs/shared/defaulting/resolver";
-import type { DefaultResolutionInput } from "@/app/app/docs/shared/defaulting/types";
+import type { DefaultResolutionInput, BaselineMetadata } from "@/app/app/docs/shared/defaulting/types";
 import { todayIso, addDays } from "@/app/app/docs/shared/defaulting/date-utils";
+import { buildBaseline } from "@/app/app/docs/shared/defaulting/stale-detection";
 
 export type QuoteAutofillPayload = {
   customerId: string;
@@ -12,42 +13,26 @@ export type QuoteAutofillPayload = {
   validUntil: string;
   notes: string;
   termsAndConditions: string;
-  metadata?: {
-    resolvedAt: string;
-  };
+  baseline: BaselineMetadata;
 };
 
 export async function resolveQuoteDefaults(input: {
   orgId: string;
   customerId?: string;
 }): Promise<QuoteAutofillPayload> {
-  const resolutionInput: DefaultResolutionInput = {
-    kind: "quote",
-    orgId: input.orgId,
-    entityId: input.customerId,
-  };
-
+  const resolutionInput: DefaultResolutionInput = { kind: "quote", orgId: input.orgId, entityId: input.customerId };
   const resolution = await resolveDefaults(resolutionInput);
-
   const od = resolution.orgDefaults;
   const entity = resolution.entity;
-
   const issueDate = todayIso();
   const validityDays = od.quoteValidityDays || 14;
   const validUntil = addDays(issueDate, validityDays);
-
+  const baseline = buildBaseline(resolution, resolutionInput);
   return {
-    customerId: entity?.id || "",
-    clientName: entity?.name || "",
-    clientEmail: entity?.email || "",
-    clientPhone: entity?.phone || "",
-    clientAddress: entity?.address || "",
-    issueDate,
-    validUntil,
-    notes: od.defaultQuoteNotes || "",
-    termsAndConditions: od.defaultQuoteTerms || "",
-    metadata: {
-      resolvedAt: new Date().toISOString(),
-    },
+    customerId: entity?.id || "", clientName: entity?.name || "", clientEmail: entity?.email || "",
+    clientPhone: entity?.phone || "", clientAddress: entity?.address || "",
+    issueDate, validUntil,
+    notes: od.defaultQuoteNotes || "", termsAndConditions: od.defaultQuoteTerms || "",
+    baseline,
   };
 }

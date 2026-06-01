@@ -605,3 +605,154 @@ describe("Cross-org entity security", () => {
     ).rejects.toThrow("Vendor not found or does not belong to this organisation");
   });
 });
+
+import { deterministicFingerprint } from "../fingerprint-utils";
+import { entityFingerprint, checkStale } from "../stale-detection";
+import { INVOICE_MANAGED_FIELDS, QUOTE_MANAGED_FIELDS, VOUCHER_MANAGED_FIELDS } from "../managed-fields";
+
+describe("Sprint 4.5 — Fingerprint determinism", () => {
+  it("produces the same fingerprint for identical objects", () => {
+    const a = { name: "Acme", email: "a@a.com", phone: "123", address: "Addr", gstin: "GST1", taxId: null, paymentTermsDays: 30 };
+    const b = { name: "Acme", email: "a@a.com", phone: "123", address: "Addr", gstin: "GST1", taxId: null, paymentTermsDays: 30 };
+    expect(deterministicFingerprint(a)).toBe(deterministicFingerprint(b));
+  });
+
+  it("produces different fingerprints for different entity values", () => {
+    const a = { name: "Acme", email: "a@a.com" };
+    const b = { name: "Beta", email: "b@b.com" };
+    expect(deterministicFingerprint(a)).not.toBe(deterministicFingerprint(b));
+  });
+});
+
+describe("Sprint 4.5 — Stale detection", () => {
+  const allVoucherOrgKeys = { gstin: null, taxId: null, bankName: null, bankAccount: null, bankIFSC: null, businessAddress: null, defaultVoucherTemplate: "minimal-office", defaultVoucherNotes: "Old note", defaultVoucherApprovedBy: null, defaultVoucherReceivedBy: null, defaultVoucherPaymentMode: null };
+  const priorBaseline = {
+    resolvedAt: new Date().toISOString(),
+    kind: "voucher" as const,
+    entityType: "vendor" as const,
+    entityId: "vendor-1",
+    entityFingerprint: entityFingerprint({ name: "Old Vendor", email: "", phone: "", address: "", gstin: "", taxId: "", paymentTermsDays: 30 }),
+    orgDefaultsFingerprint: deterministicFingerprint(allVoucherOrgKeys as Record<string, unknown>),
+    templateId: "minimal-office",
+    managedFieldKeys: [],
+  };
+
+  const matchingOrgDefaults = { defaultVoucherNotes: "Old note", defaultVoucherTemplate: "minimal-office", defaultVoucherApprovedBy: null, defaultVoucherReceivedBy: null, defaultVoucherPaymentMode: null, gstin: null, taxId: null, bankName: null, bankAccount: null, bankIFSC: null, businessAddress: null };
+
+  it("detects entity change", () => {
+    const result = checkStale(priorBaseline, { name: "New Vendor", email: "", phone: "", address: "", gstin: "", taxId: "", paymentTermsDays: 30 }, matchingOrgDefaults, "voucher");
+    expect(result).toMatchObject({ stale: true, source: "entity" });
+  });
+
+  it("detects org defaults change", () => {
+    const result = checkStale(priorBaseline, { name: "Old Vendor", email: "", phone: "", address: "", gstin: "", taxId: "", paymentTermsDays: 30 }, { defaultVoucherNotes: "New note", defaultVoucherTemplate: "minimal-office" }, "voucher");
+    expect(result).toMatchObject({ stale: true, source: "orgDefaults" });
+  });
+
+  it("detects both changed", () => {
+    const result = checkStale(priorBaseline, { name: "New Vendor", email: "", phone: "", address: "", gstin: "", taxId: "", paymentTermsDays: 30 }, { defaultVoucherNotes: "New note", defaultVoucherTemplate: "minimal-office" }, "voucher");
+    expect(result).toMatchObject({ stale: true, source: "both" });
+  });
+
+  it("returns not stale when nothing changed", () => {
+    const result = checkStale(priorBaseline, { name: "Old Vendor", email: "", phone: "", address: "", gstin: "", taxId: "", paymentTermsDays: 30 }, matchingOrgDefaults, "voucher");
+    expect(result).toMatchObject({ stale: false });
+  });
+
+  it("gracefully handles null baseline (legacy data)", () => {
+    const result = checkStale(null, { name: "Vendor" }, {}, "voucher");
+    expect(result).toMatchObject({ stale: false });
+  });
+
+  it("returns not stale when entity fingerprint is null (no entity selected on baseline)", () => {
+    const noEntityBaseline = { ...priorBaseline, entityId: null, entityFingerprint: null };
+    const result = checkStale(noEntityBaseline, { name: "New Vendor", email: "", phone: "", address: "", gstin: "", taxId: "", paymentTermsDays: 30 }, matchingOrgDefaults, "voucher");
+    expect(result).toMatchObject({ stale: false });
+  });
+});
+
+describe("Sprint 4.5 — Managed field keys", () => {
+  it("INVOICE_MANAGED_FIELDS contains all expected invoice fields", () => {
+    expect(INVOICE_MANAGED_FIELDS).toContain("clientName");
+    expect(INVOICE_MANAGED_FIELDS).toContain("templateId");
+    expect(INVOICE_MANAGED_FIELDS).toContain("dueDate");
+    expect(INVOICE_MANAGED_FIELDS).toContain("notes");
+    expect(INVOICE_MANAGED_FIELDS).toContain("branding.companyName");
+  });
+
+  it("VOUCHER_MANAGED_FIELDS contains templateId", () => {
+    expect(VOUCHER_MANAGED_FIELDS).toContain("templateId");
+    expect(VOUCHER_MANAGED_FIELDS).toContain("counterpartyName");
+    expect(VOUCHER_MANAGED_FIELDS).toContain("branding.accentColor");
+  });
+
+  it("QUOTE_MANAGED_FIELDS contains expected fields", () => {
+    expect(QUOTE_MANAGED_FIELDS).toContain("notes");
+    expect(QUOTE_MANAGED_FIELDS).toContain("issueDate");
+    expect(QUOTE_MANAGED_FIELDS).toContain("validUntil");
+  });
+});
+
+describe("Sprint 4.5 — Adapter baseline metadata", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(db.orgDefaults.findUnique).mockResolvedValue({
+      organizationId: ORG_ID, defaultInvoiceTemplate: "professional",
+      defaultVoucherTemplate: "minimal-office", defaultVoucherNotes: "Note",
+      defaultVoucherApprovedBy: "", defaultVoucherReceivedBy: "",
+      defaultVoucherPaymentMode: "",
+    } as any);
+    vi.mocked(db.organization.findUnique).mockResolvedValue({ name: "Org" } as any);
+    vi.mocked(db.brandingProfile.findUnique).mockResolvedValue(null);
+    vi.mocked(db.customer.findFirst).mockResolvedValue({ id: "cust-1", organizationId: ORG_ID, name: "Acme", email: "a@a.com", phone: "123", address: "Addr", gstin: null, taxId: null, paymentTermsDays: 30 } as any);
+    vi.mocked(db.vendor.findFirst).mockResolvedValue({ id: "vendor-1", organizationId: ORG_ID, name: "Vendor Inc", email: null, phone: null, address: null, gstin: null, taxId: null, paymentTermsDays: 0 } as any);
+  });
+
+  it("invoice adapter returns baseline with entityFingerprint when customer preselected", async () => {
+    const result = await resolveInvoiceDefaults({ orgId: ORG_ID, customerId: "cust-1" });
+    expect(result.baseline).toBeDefined();
+    expect(result.baseline.entityId).toBe("cust-1");
+    expect(result.baseline.entityType).toBe("customer");
+    expect(result.baseline.entityFingerprint).toBeTruthy();
+    expect(result.baseline.kind).toBe("invoice");
+  });
+
+  it("invoice adapter returns baseline with null entityFingerprint when no customer", async () => {
+    const result = await resolveInvoiceDefaults({ orgId: ORG_ID });
+    expect(result.baseline).toBeDefined();
+    expect(result.baseline.entityId).toBeNull();
+    expect(result.baseline.entityFingerprint).toBeNull();
+    expect(result.baseline.entityType).toBe("customer");
+  });
+
+  it("quote adapter returns baseline with entityFingerprint when customer preselected", async () => {
+    const result = await resolveQuoteDefaults({ orgId: ORG_ID, customerId: "cust-1" });
+    expect(result.baseline).toBeDefined();
+    expect(result.baseline.entityId).toBe("cust-1");
+    expect(result.baseline.entityFingerprint).toBeTruthy();
+    expect(result.baseline.kind).toBe("quote");
+  });
+
+  it("voucher adapter returns baseline with entityFingerprint when vendor preselected", async () => {
+    const result = await resolveVoucherDefaults({ orgId: ORG_ID, vendorId: "vendor-1" });
+    expect(result.baseline).toBeDefined();
+    expect(result.baseline.entityId).toBe("vendor-1");
+    expect(result.baseline.entityType).toBe("vendor");
+    expect(result.baseline.entityFingerprint).toBeTruthy();
+    expect(result.baseline.kind).toBe("voucher");
+  });
+
+  it("voucher adapter returns baseline with null entityFingerprint when no vendor", async () => {
+    const result = await resolveVoucherDefaults({ orgId: ORG_ID });
+    expect(result.baseline).toBeDefined();
+    expect(result.baseline.entityId).toBeNull();
+    expect(result.baseline.entityFingerprint).toBeNull();
+  });
+
+  it("baseline orgDefaultsFingerprint is deterministic and present", async () => {
+    const result = await resolveVoucherDefaults({ orgId: ORG_ID });
+    expect(result.baseline.orgDefaultsFingerprint).toBeTruthy();
+    const result2 = await resolveVoucherDefaults({ orgId: ORG_ID });
+    expect(result2.baseline.orgDefaultsFingerprint).toBe(result.baseline.orgDefaultsFingerprint);
+  });
+});

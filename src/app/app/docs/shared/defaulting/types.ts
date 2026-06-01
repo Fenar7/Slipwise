@@ -44,3 +44,26 @@ export type DefaultResolution = {
   entity: EntityInfo | null;
   templateId: string;
 };
+
+export type BaselineMetadata = {
+  resolvedAt: string;
+  kind: DocumentKind;
+  entityType: "customer" | "vendor" | null;
+  entityId: string | null;
+  entityFingerprint: string | null;
+  orgDefaultsFingerprint: string | null;
+  templateId: string;
+  managedFieldKeys: readonly string[];
+};
+
+export type StaleState =
+  | { stale: false }
+  | { stale: true; source: "entity" }
+  | { stale: true; source: "orgDefaults" }
+  | { stale: true; source: "both" };
+
+export type StaleInfo = {
+  stale: true;
+  source: "entity" | "orgDefaults" | "both";
+  label: string;
+};

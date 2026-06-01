@@ -75,7 +75,7 @@ describe("Voucher workspace", () => {
         purpose: "",
         branding: { companyName: "Org", address: "", email: "", phone: "", accentColor: "#dc2626" },
         templateId: "minimal-office",
-        metadata: { resolvedAt: new Date().toISOString() },
+        baseline: { resolvedAt: new Date().toISOString(), kind: "voucher", entityType: "vendor", entityId: "vendor-1", entityFingerprint: null, orgDefaultsFingerprint: null, templateId: "minimal-office", managedFieldKeys: [] },
       });
 
       render(<VoucherWorkspace initialTemplateId="traditional-ledger" vendors={testVendors} />);
@@ -110,7 +110,7 @@ describe("Voucher workspace", () => {
         purpose: "",
         branding: { companyName: "Org", address: "", email: "", phone: "", accentColor: "#0ea5e9" },
         templateId: "traditional-ledger",
-        metadata: { resolvedAt: new Date().toISOString() },
+        baseline: { resolvedAt: new Date().toISOString(), kind: "voucher", entityType: "vendor", entityId: "vendor-1", entityFingerprint: null, orgDefaultsFingerprint: null, templateId: "traditional-ledger", managedFieldKeys: [] },
       });
 
       render(<VoucherWorkspace initialTemplateId="minimal-office" vendors={testVendors} />);
@@ -131,6 +131,31 @@ describe("Voucher workspace", () => {
 
       expect(traditionalBtn).toHaveAttribute("aria-pressed", "true");
       expect(minimalBtn).toHaveAttribute("aria-pressed", "false");
+    });
+  });
+
+  describe("Sprint 4.5 — override tracking and stale controls", () => {
+    const testVendors = [
+      { id: "vendor-1", name: "Alpha Supplies", email: null, phone: null, address: null, gstin: null },
+    ];
+
+    it("operator template selection marks templateId as overridden", async () => {
+      const { resolveVoucherAutofill } = await import("@/app/app/docs/vouchers/autofill-resolver");
+      vi.mocked(resolveVoucherAutofill).mockResolvedValue({
+        vendorId: "vendor-1",
+        voucherType: "payment",
+        date: "2026-06-01",
+        counterpartyName: "Alpha Supplies",
+        notes: "", approvedBy: "", receivedBy: "", paymentMode: "", referenceNumber: "", purpose: "",
+        branding: { companyName: "", address: "", email: "", phone: "", accentColor: "#dc2626" },
+        templateId: "minimal-office",
+        baseline: { resolvedAt: new Date().toISOString(), kind: "voucher", entityType: "vendor", entityId: "vendor-1", entityFingerprint: null, orgDefaultsFingerprint: null, templateId: "minimal-office", managedFieldKeys: [] },
+      });
+
+      render(<VoucherWorkspace initialTemplateId="traditional-ledger" vendors={testVendors} />);
+
+      expect(screen.getByRole("button", { name: /traditional ledger/i }))
+        .toHaveAttribute("aria-pressed", "true");
     });
   });
 });
