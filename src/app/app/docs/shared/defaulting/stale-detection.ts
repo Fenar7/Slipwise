@@ -1,4 +1,4 @@
-import type { BaselineMetadata, StaleState } from "./types";
+import type { DefaultResolution, BaselineMetadata, StaleState } from "./types";
 import { deterministicFingerprint } from "./fingerprint-utils";
 
 function managedOrgDefaultKeys(kind: "invoice" | "quote" | "voucher"): string[] {
@@ -21,17 +21,17 @@ export function entityFingerprint(entity: Record<string, unknown>): string {
 }
 
 export function buildBaseline(
-  resolution: { entity: Record<string, unknown> | null; orgDefaults: Record<string, unknown>; templateId: string },
+  resolution: DefaultResolution,
   input: { kind: "invoice" | "quote" | "voucher"; entityId?: string },
 ): BaselineMetadata {
   return {
     resolvedAt: new Date().toISOString(),
     kind: input.kind,
     entityType: input.kind === "voucher" ? "vendor" : "customer",
-    entityId: (resolution.entity?.id as string) ?? null,
-    entityFingerprint: resolution.entity ? entityFingerprint(resolution.entity) : null,
+    entityId: resolution.entity?.id ?? null,
+    entityFingerprint: resolution.entity ? entityFingerprint(resolution.entity as unknown as Record<string, unknown>) : null,
     orgDefaultsFingerprint: deterministicFingerprint(
-      Object.fromEntries(managedOrgDefaultKeys(input.kind).map((k) => [k, (resolution.orgDefaults as Record<string, unknown>)[k] ?? null])),
+      Object.fromEntries(managedOrgDefaultKeys(input.kind).map((k) => [k, (resolution.orgDefaults as unknown as Record<string, unknown>)[k] ?? null])),
     ),
     templateId: resolution.templateId,
     managedFieldKeys: [],

@@ -49,7 +49,6 @@ import {
 import type { InvoiceAutofillPayload } from "@/app/app/docs/invoices/autofill-resolver";
 import { StaleDataBanner } from "@/components/foundation/stale-data-banner";
 import { INVOICE_MANAGED_FIELDS } from "@/app/app/docs/shared/defaulting/managed-fields";
-import { staleLabel } from "@/app/app/docs/shared/defaulting/stale-detection";
 import type { StaleInfo } from "@/app/app/docs/shared/defaulting/types";
 
 type InvoiceActionState =

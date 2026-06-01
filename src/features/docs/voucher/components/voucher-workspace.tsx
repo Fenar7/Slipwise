@@ -57,7 +57,7 @@ import {
 import { resolveVoucherAutofill, type VoucherAutofillPayload } from "@/app/app/docs/vouchers/autofill-resolver";
 import { StaleDataBanner } from "@/components/foundation/stale-data-banner";
 import { VOUCHER_MANAGED_FIELDS } from "@/app/app/docs/shared/defaulting/managed-fields";
-import { checkStale, staleLabel } from "@/app/app/docs/shared/defaulting/stale-detection";
+import { staleLabel } from "@/app/app/docs/shared/defaulting/stale-detection";
 import type { StaleInfo, BaselineMetadata } from "@/app/app/docs/shared/defaulting/types";
 
 interface Vendor {
@@ -122,7 +122,7 @@ function VoucherPanel({
   const [actionState, setActionState] = useState<VoucherActionState>({
     status: "idle",
   });
-  const isEditing = Boolean(voucherId);
+
 
   const [isSaving, setIsSaving] = useState(false);
   const [savedId, setSavedId] = useState<string | undefined>(voucherId);

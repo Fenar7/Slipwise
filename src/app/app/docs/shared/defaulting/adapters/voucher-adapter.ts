@@ -38,7 +38,7 @@ export async function resolveVoucherDefaults(input: {
   const entity = resolution.entity;
   const templateId = resolution.templateId;
   const date = todayIso();
-  const baseline = buildBaseline(resolution as any, resolutionInput);
+  const baseline = buildBaseline(resolution, resolutionInput);
   return {
     vendorId: entity?.id || "", voucherType: "payment", date,
     counterpartyName: entity?.name || "", notes: od.defaultVoucherNotes || "",

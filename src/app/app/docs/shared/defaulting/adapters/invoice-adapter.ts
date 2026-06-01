@@ -48,7 +48,7 @@ export async function resolveInvoiceDefaults(input: {
   const dueDate = entity ? addDays(invoiceDate, entity.paymentTermsDays) : addDays(invoiceDate, 30);
   const placeOfSupply = entity?.gstin ? extractPlaceOfSupplyFromGstin(entity.gstin) : "";
   const clientTaxId = entity ? entity.gstin || entity.taxId || "" : "";
-  const baseline = buildBaseline(resolution as any, resolutionInput);
+  const baseline = buildBaseline(resolution, resolutionInput);
   return {
     customerId: entity?.id || "", clientName: entity?.name || "", clientAddress: entity?.address || "",
     shippingAddress: entity?.address || "", clientEmail: entity?.email || "", clientPhone: entity?.phone || "",

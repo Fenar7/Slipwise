@@ -27,7 +27,7 @@ export async function resolveQuoteDefaults(input: {
   const issueDate = todayIso();
   const validityDays = od.quoteValidityDays || 14;
   const validUntil = addDays(issueDate, validityDays);
-  const baseline = buildBaseline(resolution as any, resolutionInput);
+  const baseline = buildBaseline(resolution, resolutionInput);
   return {
     customerId: entity?.id || "", clientName: entity?.name || "", clientEmail: entity?.email || "",
     clientPhone: entity?.phone || "", clientAddress: entity?.address || "",
