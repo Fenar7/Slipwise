@@ -7,6 +7,7 @@ import { RadioPill } from "./messaging-ui-primitives";
 import { MessagingTaskCreate } from "./messaging-task-create";
 import type { TaskFilterStatus, TaskPriority, MessagingTaskDetail, MessagingTask, MessagingParticipant, TaskStatus } from "./types";
 import { useConversationTasks } from "./lib/use-conversation-tasks";
+import { dispatchTaskMutation } from "./lib/task-events";
 import { useConversationDetail } from "./lib/use-conversation-detail";
 import type { ApiTaskSummary, ApiConversationDetail } from "./lib/mappers";
 
@@ -726,6 +727,7 @@ export function MessagingTaskPanel({ conversationId, onNavigateToOrigin }: Messa
     });
     if (res.ok) {
       refreshTasks();
+      dispatchTaskMutation();
     }
   };
 
@@ -790,6 +792,7 @@ export function MessagingTaskPanel({ conversationId, onNavigateToOrigin }: Messa
     }
 
     refreshTasks();
+    dispatchTaskMutation();
   };
 
   // PATCH status handler

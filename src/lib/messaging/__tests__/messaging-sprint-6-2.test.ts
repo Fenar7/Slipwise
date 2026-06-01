@@ -15,7 +15,11 @@ vi.mock("@/lib/db", () => {
       findUnique: vi.fn(),
       update: vi.fn(),
     },
+    messagingAuditEvent: {
+      create: vi.fn(),
+    },
   };
+  (db as any).$transaction = vi.fn(async (cb: any) => cb(db));
   return { db };
 });
 

@@ -4,6 +4,8 @@ import React, { useEffect, useState } from "react";
 import { Link, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { RadioPill } from "./messaging-ui-primitives";
+import { MessagingMentionAutocomplete } from "./messaging-mention-autocomplete";
+import { dispatchTaskMutation } from "./lib/task-events";
 import type { TaskPriority, MessagingParticipant } from "./types";
 import { useConversationList } from "./lib/use-conversation-list";
 import type { ApiConversationDetail } from "./lib/mappers";
@@ -217,6 +219,7 @@ export function MessagingTaskCreate({
         throw new Error(payload.error?.message ?? "Failed to create task");
       }
 
+      dispatchTaskMutation();
       onSuccess?.();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create task");

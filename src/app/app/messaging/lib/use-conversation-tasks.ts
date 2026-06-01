@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useRef, useCallback } from "react";
 import type { ApiTaskSummary } from "./mappers";
+import { useTaskInvalidation } from "./task-events";
 
 export type TaskErrorType = "none" | "network" | "restricted" | "unknown";
 
@@ -101,6 +102,9 @@ export function useConversationTasks(
   const refresh = useCallback(() => {
     if (conversationId) load(conversationId, options);
   }, [conversationId, load, options]);
+
+  // Central invalidation hook for freshness
+  useTaskInvalidation(refresh);
 
   return { tasks, loading, errorType, errorMessage, refresh, nextCursor, hasMore };
 }
