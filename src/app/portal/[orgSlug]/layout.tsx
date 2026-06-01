@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { db } from "@/lib/db";
+import { checkPortalEligibility } from "@/lib/portal-eligibility";
+import { PortalErrorState } from "@/components/portal/portal-error-states";
 
 export default async function PortalLayout({
   children,
@@ -10,71 +11,23 @@ export default async function PortalLayout({
 }) {
   const { orgSlug } = await params;
 
-  let org = await db.organization.findUnique({
-    where: { slug: orgSlug },
-    select: {
-      id: true,
-      name: true,
-      logo: true,
-      branding: {
-        select: { logoUrl: true, accentColor: true, fontFamily: true, fontColor: true },
-      },
-      whiteLabel: {
-        select: { removeBranding: true },
-      },
-      defaults: {
-        select: {
-          portalEnabled: true,
-          portalHeaderMessage: true,
-          portalSupportEmail: true,
-          portalSupportPhone: true,
-          portalQuoteAcceptanceEnabled: true,
-        },
-      },
-    },
-  });
+  const eligibility = await checkPortalEligibility(orgSlug);
 
-  // Phase 1 Sprint 1.4: allow static preview for 'acme' in local dev
-  const isDevPreview = orgSlug === "acme" && process.env.NODE_ENV === "development";
-
-  if (isDevPreview && !org) {
-    org = {
-      id: "org_preview",
-      name: "Acme Corporation",
-      logo: null,
-      branding: { logoUrl: null, accentColor: "#2563eb", fontFamily: null, fontColor: null },
-      whiteLabel: { removeBranding: false },
-      defaults: {
-        portalEnabled: true,
-        portalHeaderMessage: null,
-        portalSupportEmail: "support@acme.com",
-        portalSupportPhone: "+91 98765 43210",
-        portalQuoteAcceptanceEnabled: true,
-      },
-    } as typeof org;
+  if (eligibility.state === "NOT_FOUND") {
+    return <PortalErrorState type="NOT_FOUND" />;
   }
 
-  if (!isDevPreview && (!org || !org.defaults?.portalEnabled)) {
+  if (eligibility.state === "DISABLED") {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
-        <div className="max-w-md w-full rounded-xl border border-slate-200 bg-white p-8 text-center shadow-sm">
-          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-slate-100">
-            <svg className="h-7 w-7 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
-            </svg>
-          </div>
-          <h1 className="text-xl font-semibold text-slate-900">
-            Portal Not Available
-          </h1>
-          <p className="mt-2 text-sm text-slate-500">
-            The customer portal for this organization is not currently available.
-            Please contact the organization directly for assistance.
-          </p>
-        </div>
-      </div>
+      <PortalErrorState
+        type="DISABLED"
+        orgName={eligibility.org?.name}
+        showPoweredBy={!eligibility.org?.whiteLabel?.removeBranding}
+      />
     );
   }
 
+  const { org } = eligibility;
   const { defaults, branding, whiteLabel } = org;
 
   // Build dynamic brand CSS variables — fall back to sensible defaults
