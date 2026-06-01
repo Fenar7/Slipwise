@@ -287,24 +287,28 @@ export function MessagingMeetingPanel({ conversationId, calendarConnection, now 
               </span>
               <button
                 type="button"
+                disabled
                 data-testid="meeting-disconnect-calendar"
-                className="text-xs text-[#DC2626] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]"
+                className="text-xs text-gray-400 cursor-not-allowed font-medium focus-visible:outline-none"
+                title="Disconnect is unavailable in this sprint"
               >
-                Disconnect
+                Unavailable
               </button>
             </div>
           ) : (
-            <div className="flex items-center gap-2 rounded-lg border border-dashed px-3 py-2.5" style={{ borderColor: "#E0E0E0" }}>
+            <div className="flex items-center gap-2 rounded-lg border border-dashed px-3 py-2.5 bg-gray-50/50" style={{ borderColor: "#E0E0E0" }}>
               <Calendar className="h-3.5 w-3.5 shrink-0" style={{ color: "#79747E" }} />
               <span className="flex-1 text-xs" style={{ color: "#79747E" }}>
-                Connect Google Calendar to sync meetings automatically.
+                Google Calendar integration is preview-only for Sprint 8.1.
               </span>
               <button
                 type="button"
+                disabled
                 data-testid="meeting-connect-calendar-btn"
-                className="text-xs font-semibold text-[#DC2626] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]"
+                className="text-xs font-semibold text-gray-400 cursor-not-allowed focus-visible:outline-none"
+                title="Connect is unavailable in this sprint"
               >
-                Connect
+                Unavailable
               </button>
             </div>
           )}

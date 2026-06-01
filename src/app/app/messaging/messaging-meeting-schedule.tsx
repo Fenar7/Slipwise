@@ -136,7 +136,7 @@ export function MessagingMeetingSchedule({
               data-testid="meeting-schedule-calendar-prompt"
               className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800"
             >
-              Note: Calendar integration is not active. The meeting will be saved as an in-app native meeting only.
+              Note: Calendar integration is not active. This meeting will be saved as an in-app conversation meeting.
             </div>
           )}
 
@@ -145,9 +145,9 @@ export function MessagingMeetingSchedule({
             <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white border text-[10px] font-bold" style={{ color: "#4285F4", borderColor: "#E0E0E0" }}>G</span>
             <span className="text-xs" style={{ color: "#49454F" }}>
               {isConnected ? (
-                <>Saving to Google Calendar via <span className="font-semibold">{calendarConnection.connectedEmail}</span></>
+                <>Calendar connection detected (<span className="font-semibold">{calendarConnection.connectedEmail}</span>). External sync begins in a later sprint.</>
               ) : (
-                <>Saving as a native in-app conversation meeting</>
+                <>This meeting will be saved as an in-app conversation meeting.</>
               )}
             </span>
           </div>
