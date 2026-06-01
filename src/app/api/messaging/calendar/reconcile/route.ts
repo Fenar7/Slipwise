@@ -34,6 +34,10 @@ export async function POST(request: NextRequest) {
       throw new InvalidInputError("Either meetingId or taskId must be provided");
     }
 
+    if (meetingId && taskId) {
+      throw new InvalidInputError("Ambiguous request: cannot provide both meetingId and taskId at once");
+    }
+
     if (meetingId) {
       const meeting = await db.conversationMeeting.findFirst({
         where: { id: meetingId, orgId },

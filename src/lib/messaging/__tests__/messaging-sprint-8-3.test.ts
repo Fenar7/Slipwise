@@ -612,26 +612,40 @@ describe("Sprint 8.3 — Provider Sync & Task Calendar Tests", () => {
       expect(db.conversationMeeting.findFirst).toHaveBeenCalled();
     });
 
-    it("getUnifiedCalendar triggers reconciliation on calendar loading", async () => {
-      const meet = mockMeeting({ providerEventId: '{"GOOGLE":"google-remote-event-id-999"}' });
-      const task = mockTask({ providerEventId: '{"GOOGLE":"google-remote-event-id-999"}' });
-
-      vi.mocked(db.conversationMeeting.findMany).mockResolvedValue([meet] as any);
-      vi.mocked(db.messagingTask.findMany).mockImplementation(async (args: any) => {
-        if (args?.where?.reminderAt) {
-          return [];
-        }
-        return [task] as any;
+    it("getUnifiedCalendar triggers reconciliation on calendar loading and deduplicates same-task reconciliations", async () => {
+      const taskWithBoth = mockTask({
+        id: "task-both",
+        providerEventId: '{"GOOGLE":"google-remote-event-id-999"}',
+        dueDate: new Date("2026-06-15T12:00:00Z"),
+        reminderAt: new Date("2026-06-14T12:00:00Z"),
       });
-      vi.mocked(db.conversationMeeting.findUnique).mockResolvedValue(meet as any);
-      vi.mocked(db.messagingTask.findUnique).mockResolvedValue(task as any);
+
+      const mockRemoteGet = vi.fn().mockImplementation((url: string, options: any = {}) => {
+        return Promise.resolve(new Response(JSON.stringify({
+          id: "google-remote-event-id-999",
+          status: "confirmed",
+          summary: "Due: Finish Sprint 8.3",
+          start: { dateTime: "2026-06-15T12:00:00Z" },
+          end: { dateTime: "2026-06-15T12:30:00Z" }
+        }), { status: 200 }));
+      });
+      vi.stubGlobal("fetch", mockRemoteGet);
+
+      vi.mocked(db.conversationMeeting.findMany).mockResolvedValue([]);
+      vi.mocked(db.messagingTask.findMany).mockImplementation(async (args: any) => {
+        return [taskWithBoth] as any;
+      });
+      vi.mocked(db.conversationMeeting.findUnique).mockResolvedValue(null);
+      vi.mocked(db.messagingTask.findUnique).mockResolvedValue(taskWithBoth as any);
+      vi.mocked(db.messagingTask.update).mockResolvedValue(taskWithBoth as any);
       vi.mocked(db.conversation.findMany).mockResolvedValue([mockConversation()] as any);
       vi.mocked(db.profile.findMany).mockResolvedValue([{ id: "user-admin", name: "Org Administrator" }] as any);
 
       const result = await getUnifiedCalendar("org-1", "user-admin");
       expect(result).toBeDefined();
-      expect(db.conversationMeeting.findMany).toHaveBeenCalled();
-      expect(db.messagingTask.findMany).toHaveBeenCalled();
+
+      const getEventCalls = mockRemoteGet.mock.calls.filter((call: any) => call[0].includes("googleapis.com/calendar/v3/calendars/primary/events/"));
+      expect(getEventCalls.length).toBe(1);
     });
   });
 });

@@ -752,34 +752,34 @@ export async function getUnifiedCalendar(
     })
   );
 
-  const reconciledTasks = await Promise.all(
-    tasks.map(async (t) => {
-      if (t.providerEventId && t.status !== "DONE" && t.status !== "CANCELLED") {
-        try {
-          await reconcileProviderChangesForTask(orgId, t.id, userId);
-          const fresh = await db.messagingTask.findUnique({ where: { id: t.id } });
-          return fresh || t;
-        } catch (err) {
-          console.error(`Failed to reconcile task ${t.id} during calendar read:`, err);
-        }
+  const taskReconciliationCache = new Map<string, any>();
+
+  async function getReconciledTask(t: any) {
+    if (t.providerEventId && taskReconciliationCache.has(t.id)) {
+      return taskReconciliationCache.get(t.id);
+    }
+
+    if (t.providerEventId && t.status !== "DONE" && t.status !== "CANCELLED") {
+      try {
+        await reconcileProviderChangesForTask(orgId, t.id, userId);
+        const fresh = await db.messagingTask.findUnique({ where: { id: t.id } });
+        const resolved = fresh || t;
+        taskReconciliationCache.set(t.id, resolved);
+        return resolved;
+      } catch (err) {
+        console.error(`Failed to reconcile task ${t.id} during calendar read:`, err);
       }
-      return t;
-    })
+    }
+
+    return t;
+  }
+
+  const reconciledTasks = await Promise.all(
+    tasks.map((t) => getReconciledTask(t))
   );
 
   const reconciledTasksWithReminders = await Promise.all(
-    tasksWithReminders.map(async (t) => {
-      if (t.providerEventId && t.status !== "DONE" && t.status !== "CANCELLED") {
-        try {
-          await reconcileProviderChangesForTask(orgId, t.id, userId);
-          const fresh = await db.messagingTask.findUnique({ where: { id: t.id } });
-          return fresh || t;
-        } catch (err) {
-          console.error(`Failed to reconcile task reminder ${t.id} during calendar read:`, err);
-        }
-      }
-      return t;
-    })
+    tasksWithReminders.map((t) => getReconciledTask(t))
   );
 
   const conversationMap = new Map(conversations.map((c) => [c.id, c]));

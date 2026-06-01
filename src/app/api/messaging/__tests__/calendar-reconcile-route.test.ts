@@ -84,6 +84,16 @@ describe("Calendar Reconcile API Route", () => {
     expect(json.error).toContain("Either meetingId or taskId must be provided");
   });
 
+  it("returns validation error if both meetingId and taskId are provided", async () => {
+    const req = makeRequest("http://localhost/api/messaging/calendar/reconcile", { meetingId: "meet-1", taskId: "task-1" });
+    const response = await reconcilePost(req);
+    const json = await response.json();
+
+    expect(response.status).toBe(422);
+    expect(json.success).toBe(false);
+    expect(json.error).toContain("Ambiguous request: cannot provide both meetingId and taskId at once");
+  });
+
   it("successfully reconciles meeting when authorized", async () => {
     const mockMeeting = { id: "meet-1", conversationId: "conv-1" };
     const mockMembership = { id: "membership-1" };
