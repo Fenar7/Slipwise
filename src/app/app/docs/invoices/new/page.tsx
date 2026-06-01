@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { InvoiceBrandingWrapper } from "./branding-wrapper";
 import { listCustomers } from "@/app/app/data/actions";
-import { getOrgDefaults } from "@/app/app/actions/org-defaults-actions";
 import { listInventoryItems } from "@/app/app/inventory/items/actions";
 import { resolveInvoiceAutofill } from "@/app/app/docs/invoices/autofill-resolver";
 
