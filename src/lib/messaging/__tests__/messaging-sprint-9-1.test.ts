@@ -6,21 +6,27 @@ vi.mock("@/lib/db", () => {
   const mocks = {
     conversationParticipant: {
       findMany: vi.fn(),
+      count: vi.fn(),
     },
     conversation: {
       findMany: vi.fn(),
+      count: vi.fn(),
     },
     conversationMessage: {
       findMany: vi.fn(),
+      count: vi.fn(),
     },
     messagingTask: {
       findMany: vi.fn(),
+      count: vi.fn(),
     },
     conversationMeeting: {
       findMany: vi.fn(),
+      count: vi.fn(),
     },
     profile: {
       findMany: vi.fn(),
+      count: vi.fn(),
     },
   };
   const db = {
@@ -36,6 +42,10 @@ import { searchMessaging } from "../search-service";
 describe("Sprint 9.1 — Search Foundation & Visibility-Safe Query Model", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(db.conversationMessage.count).mockResolvedValue(0);
+    vi.mocked(db.conversation.count).mockResolvedValue(0);
+    vi.mocked(db.messagingTask.count).mockResolvedValue(0);
+    vi.mocked(db.conversationMeeting.count).mockResolvedValue(0);
   });
 
   describe("searchMessaging Visibility and Authorization", () => {
@@ -45,6 +55,8 @@ describe("Sprint 9.1 — Search Foundation & Visibility-Safe Query Model", () =>
       vi.mocked(db.conversationParticipant.findMany).mockResolvedValue([
         { conversationId: "conversation-1", orgId: "org-1", userId: "user-1", leftAt: null, isPinned: false },
       ] as any);
+
+      vi.mocked(db.conversationMessage.count).mockResolvedValue(1);
 
       // Search term matches messages in both conversations
       vi.mocked(db.conversationMessage.findMany).mockResolvedValue([
@@ -102,6 +114,8 @@ describe("Sprint 9.1 — Search Foundation & Visibility-Safe Query Model", () =>
         { conversationId: "conversation-1", orgId: "org-1", userId: "user-1", leftAt: null },
       ] as any);
 
+      vi.mocked(db.conversation.count).mockResolvedValue(1);
+
       // DB returns public channels + user's joined conversations matching q
       vi.mocked(db.conversation.findMany).mockResolvedValue([
         {
@@ -139,6 +153,12 @@ describe("Sprint 9.1 — Search Foundation & Visibility-Safe Query Model", () =>
             },
           ],
         },
+        include: {
+          participants: {
+            where: { leftAt: null },
+            select: { id: true },
+          },
+        },
         orderBy: { createdAt: "desc" },
         take: 200,
       });
@@ -152,6 +172,8 @@ describe("Sprint 9.1 — Search Foundation & Visibility-Safe Query Model", () =>
       vi.mocked(db.conversationParticipant.findMany).mockResolvedValue([
         { conversationId: "conversation-1", orgId: "org-1", userId: "user-1", leftAt: null },
       ] as any);
+
+      vi.mocked(db.conversationMessage.count).mockResolvedValue(2);
 
       const now = new Date();
       vi.mocked(db.conversationMessage.findMany).mockResolvedValue([
@@ -195,6 +217,8 @@ describe("Sprint 9.1 — Search Foundation & Visibility-Safe Query Model", () =>
       vi.mocked(db.conversationParticipant.findMany).mockResolvedValue([
         { conversationId: "conversation-1", orgId: "org-1", userId: "user-1", leftAt: null },
       ] as any);
+
+      vi.mocked(db.conversationMessage.count).mockResolvedValue(1);
 
       const longBody = "This is a very long body prefix text ".repeat(10) + "target_word" + " suffix text ending here.".repeat(10);
       vi.mocked(db.conversationMessage.findMany).mockResolvedValue([
@@ -263,6 +287,8 @@ describe("Sprint 9.1 — Search Foundation & Visibility-Safe Query Model", () =>
         { conversationId: "conversation-1", orgId: "org-1", userId: "user-1", leftAt: null },
       ] as any);
 
+      vi.mocked(db.conversationMessage.count).mockResolvedValue(1);
+
       vi.mocked(db.conversationMessage.findMany).mockResolvedValue([
         {
           id: "msg-1",
@@ -320,6 +346,55 @@ describe("Sprint 9.1 — Search Foundation & Visibility-Safe Query Model", () =>
       expect(db.conversationMeeting.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ take: 200 })
       );
+    });
+  });
+
+  describe("searchMessaging Bounded Candidate Limits and Truthful Facets", () => {
+    it("facet/count/paging truth remains correct under high-volume result sets", async () => {
+      // Mock conversation membership
+      vi.mocked(db.conversationParticipant.findMany).mockResolvedValue([
+        { conversationId: "conversation-1", orgId: "org-1", userId: "user-1", leftAt: null },
+      ] as any);
+
+      // Suppose we have 600 messages matching in the DB (exceeding cap of 200)
+      vi.mocked(db.conversationMessage.count).mockResolvedValue(600);
+      vi.mocked(db.conversationMessage.findMany).mockResolvedValue(
+        Array(200).fill({
+          id: "msg-id",
+          conversationId: "conversation-1",
+          orgId: "org-1",
+          authorId: "author-1",
+          body: "high volume query matches",
+          createdAt: new Date(),
+          status: "ACTIVE",
+          conversation: { name: "finance-ops" },
+        }) as any
+      );
+
+      vi.mocked(db.profile.findMany).mockResolvedValue([
+        { id: "author-1", name: "Priya Sharma" },
+      ] as any);
+
+      const result = await searchMessaging("org-1", "user-1", {
+        q: "high volume query matches",
+        kinds: ["message"],
+        limit: 20,
+        offset: 0,
+      });
+
+      // Truthful facet count reports 600
+      expect(result.facets.message).toBe(600);
+      // Because 600 total > 200 retrieved, hasMore is truthful (true) even if offset+limit (20) <= 200
+      expect(result.hasMore).toBe(true);
+
+      // If we page past the retrieved array but total in DB is higher, hasMore is still true
+      const endPageResult = await searchMessaging("org-1", "user-1", {
+        q: "high volume query matches",
+        kinds: ["message"],
+        limit: 20,
+        offset: 190,
+      });
+      expect(endPageResult.hasMore).toBe(true);
     });
   });
 });

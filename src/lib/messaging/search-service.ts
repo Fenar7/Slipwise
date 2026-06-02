@@ -323,6 +323,12 @@ export async function searchMessaging(
           },
         ],
       },
+      include: {
+        participants: {
+          where: { leftAt: null },
+          select: { id: true },
+        },
+      },
       orderBy: { createdAt: "desc" },
       take: MAX_CANDIDATES_PER_KIND,
     });
@@ -346,7 +352,7 @@ export async function searchMessaging(
         score,
         conversationType: c.type,
         isPrivate: c.visibility === "PRIVATE" || c.type === "DM",
-        memberCount: 0,
+        memberCount: c.participants?.length ?? 0,
       };
     });
   }
@@ -478,17 +484,88 @@ export async function searchMessaging(
     return a.id.localeCompare(b.id);
   });
 
+  // Compute truthful per-kind database counts for facets and paging
+  const [
+    messageCount,
+    conversationCount,
+    taskCount,
+    meetingCount
+  ] = await Promise.all([
+    requestedKinds.includes("message") && memberConvIds.length > 0
+      ? db.conversationMessage.count({
+          where: {
+            orgId,
+            conversationId: { in: memberConvIds },
+            status: { not: "DELETED" },
+            deletedAt: null,
+            body: { contains: q, mode: "insensitive" },
+          },
+        })
+      : Promise.resolve(0),
+    requestedKinds.includes("conversation")
+      ? db.conversation.count({
+          where: {
+            orgId,
+            archivedAt: null,
+            AND: [
+              {
+                OR: [
+                  { id: { in: memberConvIds } },
+                  { type: "CHANNEL", visibility: "PUBLIC" },
+                ],
+              },
+              {
+                OR: [
+                  { name: { contains: q, mode: "insensitive" } },
+                  { description: { contains: q, mode: "insensitive" } },
+                ],
+              },
+            ],
+          },
+        })
+      : Promise.resolve(0),
+    requestedKinds.includes("task") && memberConvIds.length > 0
+      ? db.messagingTask.count({
+          where: {
+            orgId,
+            conversationId: { in: memberConvIds },
+            OR: [
+              { title: { contains: q, mode: "insensitive" } },
+              { description: { contains: q, mode: "insensitive" } },
+            ],
+          },
+        })
+      : Promise.resolve(0),
+    requestedKinds.includes("meeting") && memberConvIds.length > 0
+      ? db.conversationMeeting.count({
+          where: {
+            orgId,
+            conversationId: { in: memberConvIds },
+            OR: [
+              { title: { contains: q, mode: "insensitive" } },
+              { description: { contains: q, mode: "insensitive" } },
+            ],
+          },
+        })
+      : Promise.resolve(0),
+  ]);
+
   // Calculate facets across all authorized query kinds in the organization
   const facets = {
-    message: matchingMessages.length,
-    conversation: matchingConversations.length,
-    task: matchingTasks.length,
-    meeting: matchingMeetings.length,
+    message: messageCount,
+    conversation: conversationCount,
+    task: taskCount,
+    meeting: meetingCount,
     file: 0, // unindexed in this sprint
   };
 
   const paginatedResults = allResults.slice(offset, offset + limit);
-  const hasMore = allResults.length > offset + limit;
+  const hasMore =
+    allResults.length > offset + limit ||
+    (requestedKinds.includes("message") && messageCount > matchingMessages.length && offset + limit >= allResults.length) ||
+    (requestedKinds.includes("conversation") && conversationCount > matchingConversations.length && offset + limit >= allResults.length) ||
+    (requestedKinds.includes("task") && taskCount > matchingTasks.length && offset + limit >= allResults.length) ||
+    (requestedKinds.includes("meeting") && meetingCount > matchingMeetings.length && offset + limit >= allResults.length);
 
   return {
     results: paginatedResults,

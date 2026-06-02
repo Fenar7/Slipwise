@@ -86,6 +86,7 @@ export function MessagingSearchPanel({ query, onClose }: MessagingSearchPanelPro
   const [results, setResults] = React.useState<MessagingSearchResult[]>([]);
   const [facets, setFacets] = React.useState<Record<string, number>>({ message: 0, conversation: 0, task: 0, meeting: 0, file: 0 });
   const [searchState, setSearchState] = React.useState<"active" | "degraded" | "unindexed">("active");
+  const [unindexedKinds, setUnindexedKinds] = React.useState<string[]>([]);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
@@ -104,6 +105,7 @@ export function MessagingSearchPanel({ query, onClose }: MessagingSearchPanelPro
       setResults([]);
       setFacets({ message: 0, conversation: 0, task: 0, meeting: 0, file: 0 });
       setSearchState("active");
+      setUnindexedKinds([]);
       setLoading(false);
       setError(null);
       return;
@@ -137,6 +139,7 @@ export function MessagingSearchPanel({ query, onClose }: MessagingSearchPanelPro
           setResults(json.data.results || []);
           setFacets(json.data.facets || { message: 0, conversation: 0, task: 0, meeting: 0, file: 0 });
           setSearchState(json.data.state || "active");
+          setUnindexedKinds(json.data.unindexedKinds || []);
         } else {
           throw new Error(json.error?.message || "Failed to load search results.");
         }
@@ -206,6 +209,12 @@ export function MessagingSearchPanel({ query, onClose }: MessagingSearchPanelPro
           </div>
         )}
 
+        {unindexedKinds.length > 0 && searchState !== "unindexed" && (
+          <div className="mb-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-800 flex items-center gap-2" data-testid="search-unindexed-warning">
+            ⚠️ Some requested search types ({unindexedKinds.join(", ")}) are not yet available in this sprint.
+          </div>
+        )}
+
         {loading ? (
           <div className="py-8 text-center text-sm text-[#79747E]" data-testid="search-loading">
             <span className="inline-block animate-spin mr-2">⏳</span> Loading results...
@@ -232,18 +241,28 @@ export function MessagingSearchPanel({ query, onClose }: MessagingSearchPanelPro
               ))}
             </div>
           </div>
-        ) : filter === "files" && searchState === "unindexed" ? (
+        ) : (filter === "files" || searchState === "unindexed") ? (
           <div className="py-8 text-center text-sm text-[#79747E]" data-testid="search-unindexed">
             File search is not yet available in this sprint.
           </div>
         ) : results.length === 0 ? (
-          <div
-            className="py-6 text-center text-sm"
-            style={{ color: "#79747E" }}
-            data-testid="search-no-results"
-          >
-            No results for &ldquo;{query}&rdquo;.
-          </div>
+          unindexedKinds.length > 0 ? (
+            <div
+              className="py-6 text-center text-sm"
+              style={{ color: "#79747E" }}
+              data-testid="search-no-results-unindexed"
+            >
+              No results for &ldquo;{query}&rdquo; (some requested types like {unindexedKinds.join(", ")} are not yet available).
+            </div>
+          ) : (
+            <div
+              className="py-6 text-center text-sm"
+              style={{ color: "#79747E" }}
+              data-testid="search-no-results"
+            >
+              No results for &ldquo;{query}&rdquo;.
+            </div>
+          )
         ) : (
           <div className="space-y-3 pt-1">
             {grouped.map((group) => (

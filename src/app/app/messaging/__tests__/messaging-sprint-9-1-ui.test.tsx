@@ -123,4 +123,67 @@ describe("MessagingSearchPanel UI Integration", () => {
     expect(screen.getByTestId("search-unindexed")).toBeInTheDocument();
     expect(screen.getByText("File search is not yet available in this sprint.")).toBeInTheDocument();
   });
+
+  it("displays warning banner for mixed search containing unindexed files with live results", async () => {
+    const mockSearchResults = {
+      success: true,
+      data: {
+        results: [
+          {
+            id: "msg-1",
+            kind: "message",
+            title: "Priya Sharma",
+            subtitle: "#finance-ops",
+            timestamp: new Date().toISOString(),
+            score: 100,
+            snippet: "payroll updates",
+          },
+        ],
+        facets: { message: 1, conversation: 0, task: 0, meeting: 0, file: 0 },
+        state: "active",
+        unindexedKinds: ["file"],
+      },
+    };
+
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => mockSearchResults,
+    } as any);
+
+    renderPanel("payroll");
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("search-loading")).not.toBeInTheDocument();
+    });
+
+    expect(screen.getByTestId("search-unindexed-warning")).toBeInTheDocument();
+    expect(screen.getByText(/Some requested search types \(file\) are not yet available/i)).toBeInTheDocument();
+    expect(screen.getByTestId("search-result-msg-1")).toBeInTheDocument();
+  });
+
+  it("displays truthful empty state for mixed search with zero live results but unindexed kinds", async () => {
+    const mockSearchResults = {
+      success: true,
+      data: {
+        results: [],
+        facets: { message: 0, conversation: 0, task: 0, meeting: 0, file: 0 },
+        state: "active",
+        unindexedKinds: ["file"],
+      },
+    };
+
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => mockSearchResults,
+    } as any);
+
+    renderPanel("unmatched-payroll");
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("search-loading")).not.toBeInTheDocument();
+    });
+
+    expect(screen.getByTestId("search-no-results-unindexed")).toBeInTheDocument();
+    expect(screen.getByText(/some requested types like file are not yet available/i)).toBeInTheDocument();
+  });
 });
