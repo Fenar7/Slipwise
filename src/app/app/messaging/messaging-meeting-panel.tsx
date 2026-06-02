@@ -7,6 +7,7 @@ import { RadioPill } from "./messaging-ui-primitives";
 import { MessagingMeetingSchedule } from "./messaging-meeting-schedule";
 import { MOCK_MEETINGS } from "./mock-data";
 import type { CalendarConnection, MeetingTab } from "./types";
+import { MeetingRsvpControls } from "./messaging-rsvp-controls";
 
 interface CalendarGridProps {
   meetings: any[];
@@ -122,6 +123,44 @@ function CalendarGrid({ meetings, now = new Date() }: CalendarGridProps) {
   );
 }
 
+function OrganizerAttendeeView({ meetingId }: { meetingId: string }) {
+  const [attendees, setAttendees] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch(`/api/messaging/meetings/${meetingId}/attendees`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.attendees) {
+          setAttendees(data.attendees);
+        }
+      })
+      .catch((err) => console.error("Failed to load attendees:", err))
+      .finally(() => setLoading(false));
+  }, [meetingId]);
+
+  if (loading) {
+    return <span className="text-[10px] text-gray-400">Loading attendee responses...</span>;
+  }
+
+  const accepted = attendees.filter((a) => a.rsvpStatus === "ACCEPTED").length;
+  const tentative = attendees.filter((a) => a.rsvpStatus === "TENTATIVE").length;
+  const declined = attendees.filter((a) => a.rsvpStatus === "DECLINED").length;
+  const pending = attendees.filter((a) => a.rsvpStatus === "PENDING").length;
+
+  return (
+    <div className="mt-2 rounded bg-gray-50 p-2 text-xs text-gray-600 border border-gray-150" data-testid={`organizer-rsvp-summary-${meetingId}`}>
+      <span className="font-semibold block mb-0.5">Attendee Responses:</span>
+      <div className="flex gap-3">
+        <span>✅ Accepted: {accepted}</span>
+        <span>❔ Maybe: {tentative}</span>
+        <span>❌ Declined: {declined}</span>
+        {pending > 0 && <span>⏳ Pending: {pending}</span>}
+      </div>
+    </div>
+  );
+}
+
 export function MessagingMeetingPanel({ conversationId, calendarConnection, now = new Date() }: MessagingMeetingPanelProps) {
   const [tab, setTab] = useState<MeetingTab>("upcoming");
   const [showSchedule, setShowSchedule] = useState(false);
@@ -129,6 +168,31 @@ export function MessagingMeetingPanel({ conversationId, calendarConnection, now 
   const [calendarEntries, setCalendarEntries] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [conversation, setConversation] = useState<any>(null);
+
+  // Hydrate conversation details dynamically
+  useEffect(() => {
+    if (!conversationId) {
+      setConversation(null);
+      return;
+    }
+    fetch(`/api/messaging/conversations/${conversationId}`)
+      .then((res) => {
+        if (!res.ok) throw new Error("Failed to load conversation details");
+        return res.json();
+      })
+      .then((data) => {
+        if (data.success && data.data) {
+          setConversation(data.data);
+        }
+      })
+      .catch((err) => {
+        console.error("Failed to load conversation details:", err);
+      });
+  }, [conversationId]);
+
+  const currentUserId = conversation?.currentUserId;
+  const isConversationBlocked = !!conversation?.archivedAt || !!conversation?.lockedAt;
 
   const [connection, setConnection] = useState<any>(calendarConnection);
   const isConnected = connection.status === "connected";
@@ -464,45 +528,78 @@ export function MessagingMeetingPanel({ conversationId, calendarConnection, now 
                       No upcoming meetings. Schedule one to get started.
                     </p>
                   ) : (
-                    upcoming.map((m) => (
-                      <div
-                        key={m.id}
-                        data-testid={`meeting-row-${m.id}`}
-                        className="flex items-start gap-3 rounded-xl border p-4"
-                        style={{ borderColor: "#F0F0F0" }}
-                      >
-                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-50">
-                          <Calendar className="h-4 w-4 text-blue-600" />
+                    upcoming.map((m) => {
+                      const isOrganizer = m.scheduledBy === currentUserId;
+                      return (
+                        <div
+                          key={m.id}
+                          data-testid={`meeting-row-${m.id}`}
+                          className="flex items-start gap-3 rounded-xl border p-4"
+                          style={{ borderColor: "#F0F0F0" }}
+                        >
+                          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-50">
+                            <Calendar className="h-4 w-4 text-blue-600" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold" style={{ color: "#1C1B1F" }}>{m.title}</p>
+                            <p className="text-xs mt-0.5" style={{ color: "#79747E" }}>
+                              {m.participantCount || 6} participants · {m.durationMinutes} min
+                            </p>
+                            <p className="text-xs mt-0.5" style={{ color: "#79747E" }}>
+                              {new Date(m.scheduledAt).toLocaleDateString()}
+                            </p>
+                            {m.scheduledBy && (
+                              <p className="text-[10px] text-gray-500 mt-1" data-testid={`meeting-organizer-${m.id}`}>
+                                Organized by: {isOrganizer ? "You" : (m.scheduledByName || m.scheduledBy.slice(0, 8))}
+                              </p>
+                            )}
+                            <div className="mt-2">
+                              <MeetingRsvpControls
+                                meetingId={m.id}
+                                currentStatus={m.rsvpStatus ?? "PENDING"}
+                                isMutationBlocked={isConversationBlocked}
+                                onStatusChange={(newStatus) => {
+                                  setMeetings(
+                                    meetings.map((meet) =>
+                                      meet.id === m.id ? { ...meet, rsvpStatus: newStatus } : meet
+                                    )
+                                  );
+                                }}
+                              />
+                            </div>
+                            {isOrganizer && (
+                              <OrganizerAttendeeView meetingId={m.id} />
+                            )}
+                          </div>
+                          <div className="flex gap-1">
+                            {m.joinUrl ? (
+                              <a
+                                href={m.joinUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                data-testid={`meeting-join-${m.id}`}
+                                className="shrink-0 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]"
+                              >
+                                Join
+                              </a>
+                            ) : (
+                              <span data-testid={`meeting-no-join-${m.id}`} className="text-xs text-gray-400 italic shrink-0 py-1.5">
+                                No link
+                              </span>
+                            )}
+                            {conversationId && (
+                              <button
+                                type="button"
+                                onClick={() => handleCancelMeeting(m.id)}
+                                className="shrink-0 rounded-lg border border-red-200 px-2 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
+                              >
+                                Cancel
+                              </button>
+                            )}
+                          </div>
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold" style={{ color: "#1C1B1F" }}>{m.title}</p>
-                          <p className="text-xs mt-0.5" style={{ color: "#79747E" }}>
-                            {m.participantCount || 6} participants · {m.durationMinutes} min
-                          </p>
-                          <p className="text-xs mt-0.5" style={{ color: "#79747E" }}>
-                            {new Date(m.scheduledAt).toLocaleDateString()}
-                          </p>
-                        </div>
-                        <div className="flex gap-1">
-                          <button
-                            type="button"
-                            data-testid={`meeting-join-${m.id}`}
-                            className="shrink-0 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]"
-                          >
-                            Join
-                          </button>
-                          {conversationId && (
-                            <button
-                              type="button"
-                              onClick={() => handleCancelMeeting(m.id)}
-                              className="shrink-0 rounded-lg border border-red-200 px-2 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
-                            >
-                              Cancel
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    ))
+                      );
+                    })
                   )}
                 </div>
               )}

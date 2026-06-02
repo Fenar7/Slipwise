@@ -83,7 +83,8 @@ export interface MessagingTask {
 
 // ─── Meetings ────────────────────────────────────────────────────────────────
 
-export type MeetingStatus = "upcoming" | "live" | "ended";
+export type MeetingStatus = "upcoming" | "live" | "ended" | "cancelled";
+export type MeetingRsvpStatus = "PENDING" | "ACCEPTED" | "TENTATIVE" | "DECLINED";
 
 export interface MessagingMeeting {
   id: string;
@@ -92,7 +93,13 @@ export interface MessagingMeeting {
   durationMinutes: number;
   status: MeetingStatus;
   participantCount: number;
-  calendarProvider: "google" | null; // provider-safe; null = not yet connected
+  calendarProvider: "google" | "outlook" | null;
+  /** Provider-issued join URL. Null when not available or user has declined. */
+  joinUrl: string | null;
+  /** Current user's RSVP status. PENDING = not yet responded. */
+  rsvpStatus: MeetingRsvpStatus;
+  /** userId of meeting organizer. */
+  scheduledBy: string;
 }
 
 // ─── Files ───────────────────────────────────────────────────────────────────
