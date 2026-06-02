@@ -33,6 +33,8 @@ export function buildFallbackSyncPresentation(
         connection.lastSyncError ??
         "Reconnect this mailbox to resume syncing and importing new messages.",
       staleGmailCoverage: false,
+      draftErrorCategory: null,
+      draftErrorSummary: null,
     };
   }
 
@@ -53,6 +55,8 @@ export function buildFallbackSyncPresentation(
       stageLabel: "Sync needs attention",
       detailLabel: connection.lastSyncError,
       staleGmailCoverage: false,
+      draftErrorCategory: null,
+      draftErrorSummary: null,
     };
   }
 
@@ -74,6 +78,8 @@ export function buildFallbackSyncPresentation(
       detailLabel:
         "This mailbox is connected. The first sync has not completed yet.",
       staleGmailCoverage: false,
+      draftErrorCategory: null,
+      draftErrorSummary: null,
     };
   }
 
@@ -87,13 +93,15 @@ export function buildFallbackSyncPresentation(
     lastCompletedAt: connection.lastSyncAt,
     lastRunStatus: null,
     lastErrorCategory: null,
-    lastErrorSummary: null,
-    lastRunThreadCount: null,
-    lastRunMessageCount: null,
-    stageLabel: "Mailbox up to date",
-    detailLabel: "Recent messages are available in this mailbox.",
-    staleGmailCoverage: false,
-  };
+      lastErrorSummary: null,
+      lastRunThreadCount: null,
+      lastRunMessageCount: null,
+      stageLabel: "Mailbox up to date",
+      detailLabel: "Recent messages are available in this mailbox.",
+      staleGmailCoverage: false,
+      draftErrorCategory: null,
+      draftErrorSummary: null,
+    };
 }
 
 export function resolveMailboxSyncPresentation(

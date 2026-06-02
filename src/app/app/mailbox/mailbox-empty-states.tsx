@@ -256,14 +256,56 @@ export function EmptySentState({
 export function EmptyDraftsState({
   mailboxLabel,
   syncStatus,
+  fetchError,
   onSyncNow,
   isSyncPending = false,
 }: {
   mailboxLabel: string;
   syncStatus?: MailboxSyncPresentation;
+  fetchError?: string | null;
   onSyncNow?: () => void;
   isSyncPending?: boolean;
 }) {
+  // Draft-specific degraded state: overall sync completed but draft sync failed
+  if (syncStatus?.state === "completed" && syncStatus.draftErrorSummary) {
+    const isActivelyRunning = syncStatus.isSyncing || isSyncPending;
+    return (
+      <EmptyStateShell
+        icon={AlertTriangle}
+        iconBg="rgba(245,158,11,0.08)"
+        iconColor="#F59E0B"
+        heading={`${mailboxLabel} drafts are currently unavailable`}
+        body={syncStatus.draftErrorSummary}
+        action={
+          onSyncNow && !isActivelyRunning ? (
+            <button
+              type="button"
+              onClick={onSyncNow}
+              className="flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-semibold text-white transition-colors hover:opacity-90"
+              style={{ background: "#16294D" }}
+              aria-label="Sync now to retry draft sync"
+            >
+              Sync now to retry
+            </button>
+          ) : undefined
+        }
+      />
+    );
+  }
+
+  // Fetch-time error: the API call to /api/mailbox/drafts failed
+  if (fetchError && !syncStatus?.draftErrorSummary) {
+    return (
+      <EmptyStateShell
+        icon={AlertTriangle}
+        iconBg="rgba(245,158,11,0.08)"
+        iconColor="#F59E0B"
+        heading={`${mailboxLabel} drafts could not be loaded`}
+        body={fetchError}
+      />
+    );
+  }
+
   if (syncStatus?.state === "running" || syncStatus?.state === "completed_never_imported" || syncStatus?.state === "failed") {
     return (
       <SyncAwareFolderEmpty

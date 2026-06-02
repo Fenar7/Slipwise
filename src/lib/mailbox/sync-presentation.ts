@@ -25,9 +25,11 @@ function parseSyncStats(stats: Record<string, unknown> | null): {
   messageCount: number | null;
   currentFolder: string | null;
   syncPhase: string | null;
+  draftErrorCategory: string | null;
+  draftErrorSummary: string | null;
 } {
   if (!stats) {
-    return { threadCount: null, messageCount: null, currentFolder: null, syncPhase: null };
+    return { threadCount: null, messageCount: null, currentFolder: null, syncPhase: null, draftErrorCategory: null, draftErrorSummary: null };
   }
 
   const threadCount =
@@ -38,8 +40,12 @@ function parseSyncStats(stats: Record<string, unknown> | null): {
     typeof stats.currentFolder === "string" ? stats.currentFolder : null;
   const syncPhase =
     typeof stats.syncPhase === "string" ? stats.syncPhase : null;
+  const draftErrorCategory =
+    typeof stats.draftErrorCategory === "string" ? stats.draftErrorCategory : null;
+  const draftErrorSummary =
+    typeof stats.draftErrorSummary === "string" ? stats.draftErrorSummary : null;
 
-  return { threadCount, messageCount, currentFolder, syncPhase };
+  return { threadCount, messageCount, currentFolder, syncPhase, draftErrorCategory, draftErrorSummary };
 }
 
 /**
@@ -127,6 +133,8 @@ export function buildMailboxSyncPresentation(
         failedSummary ??
         "Reconnect this mailbox to resume syncing and importing new messages.",
       staleGmailCoverage: false,
+      draftErrorCategory: latestRunStats.draftErrorCategory,
+      draftErrorSummary: latestRunStats.draftErrorSummary,
     };
   }
 
@@ -144,9 +152,13 @@ export function buildMailboxSyncPresentation(
         ? `Recovering ${currentFolder} folder (${liveThreadCount} threads imported so far).`
         : `Recovering incomplete folders (${liveThreadCount} threads imported so far).`;
     } else if (syncPhase === "draft_sync") {
-      runDetailLabel = liveThreadCount > 0
-        ? `Syncing drafts (${liveThreadCount} threads imported so far).`
-        : "Syncing drafts from this mailbox.";
+      if (activeStats?.draftErrorSummary) {
+        runDetailLabel = `Draft sync had an issue: ${activeStats.draftErrorSummary}`;
+      } else if (liveThreadCount > 0) {
+        runDetailLabel = `Syncing drafts (${liveThreadCount} threads imported so far).`;
+      } else {
+        runDetailLabel = "Syncing drafts from this mailbox.";
+      }
     } else if (liveThreadCount > 0) {
       runDetailLabel = isInitial
         ? `Importing threads (${liveThreadCount} threads, ${liveMessageCount} messages so far).`
@@ -173,6 +185,8 @@ export function buildMailboxSyncPresentation(
       stageLabel: isInitial ? "Initial import in progress" : "Checking for new mail",
       detailLabel: runDetailLabel,
       staleGmailCoverage: false,
+      draftErrorCategory: activeStats?.draftErrorCategory ?? null,
+      draftErrorSummary: activeStats?.draftErrorSummary ?? null,
     };
   }
 
@@ -205,6 +219,8 @@ export function buildMailboxSyncPresentation(
       stageLabel: "Sync needs attention",
       detailLabel: failedSummary ?? "Mailbox sync failed.",
       staleGmailCoverage: false,
+      draftErrorCategory: latestRunStats.draftErrorCategory,
+      draftErrorSummary: latestRunStats.draftErrorSummary,
     };
   }
 
@@ -226,11 +242,23 @@ export function buildMailboxSyncPresentation(
       detailLabel:
         "This mailbox is connected. The first sync has not completed yet.",
       staleGmailCoverage: false,
+      draftErrorCategory: latestRunStats.draftErrorCategory,
+      draftErrorSummary: latestRunStats.draftErrorSummary,
     };
   }
 
   const hasStats =
     latestRunStats.threadCount !== null && latestRunStats.messageCount !== null;
+
+  const completedDetailLabel = (() => {
+    const baseDetail = hasStats
+      ? `Last sync imported ${latestRunStats.threadCount} threads and ${latestRunStats.messageCount} messages.`
+      : "Recent messages are available in this mailbox.";
+    if (latestRunStats.draftErrorSummary) {
+      return `${baseDetail} Drafts could not be synced: ${latestRunStats.draftErrorSummary}`;
+    }
+    return baseDetail;
+  })();
 
   return {
     state: "completed",
@@ -246,9 +274,9 @@ export function buildMailboxSyncPresentation(
     lastRunThreadCount: latestRunStats.threadCount,
     lastRunMessageCount: latestRunStats.messageCount,
     stageLabel: "Mailbox up to date",
-    detailLabel: hasStats
-      ? `Last sync imported ${latestRunStats.threadCount} threads and ${latestRunStats.messageCount} messages.`
-      : "Recent messages are available in this mailbox.",
+    detailLabel: completedDetailLabel,
     staleGmailCoverage: false,
+    draftErrorCategory: latestRunStats.draftErrorCategory,
+    draftErrorSummary: latestRunStats.draftErrorSummary,
   };
 }

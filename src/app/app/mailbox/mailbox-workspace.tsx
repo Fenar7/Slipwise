@@ -381,6 +381,7 @@ export function MailboxWorkspace() {
   const {
     drafts: rawDrafts,
     isLoading: draftsLoading,
+    error: draftsFetchError,
     refetch: refetchDrafts,
   } = useMailboxDrafts(activeConnection?.id, inDraftsMode);
 
@@ -924,10 +925,12 @@ export function MailboxWorkspace() {
             effectiveActiveSync &&
             (effectiveActiveSync.state === "running" ||
               effectiveActiveSync.state === "completed_never_imported" ||
-              effectiveActiveSync.state === "failed")
+              effectiveActiveSync.state === "failed" ||
+              effectiveActiveSync.draftErrorSummary != null)
               ? effectiveActiveSync
               : undefined
           }
+          fetchError={draftsFetchError}
           onSyncNow={
             activeConnection && canSyncActiveMailbox
               ? () => { void triggerSync(activeConnection.id); }
