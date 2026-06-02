@@ -6236,6 +6236,26 @@ enum MeetingStatus {
   @@map("meeting_status")
 }
 
+/// Attendee RSVP response to a meeting invitation.
+enum MeetingRsvpStatus {
+  PENDING   // Not yet responded
+  ACCEPTED
+  TENTATIVE
+  DECLINED
+
+  @@map("meeting_rsvp_status")
+}
+
+/// Which urgency window a meeting reminder covers.
+/// SIXTY_MINUTES = meeting is within 60 minutes.
+/// FIFTEEN_MINUTES = meeting is within 15 minutes (elevated urgency).
+enum MeetingReminderWindow {
+  SIXTY_MINUTES
+  FIFTEEN_MINUTES
+
+  @@map("meeting_reminder_window")
+}
+
 enum CalendarProvider {
   GOOGLE
   OUTLOOK
@@ -6280,6 +6300,9 @@ enum MessagingAuditAction {
   MEETING_SCHEDULED
   MEETING_UPDATED
   MEETING_CANCELLED
+  MEETING_RESCHEDULED
+  MEETING_ATTENDEE_RSVP
+  MEETING_REMINDER_DISPATCHED
   ATTACHMENT_UPLOADED
   ATTACHMENT_DELETED
   RETENTION_POLICY_CREATED
@@ -6641,6 +6664,8 @@ model MessagingTask {
   createdBy      String              @db.Uuid
   createdAt      DateTime            @default(now())
   updatedAt      DateTime            @updatedAt
+  /// The calendar provider event ID (opaque).
+  providerEventId String?
 
   organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
   conversation Conversation @relation(fields: [conversationId, orgId], references: [id, orgId], onDelete: Cascade)
@@ -6654,30 +6679,88 @@ model MessagingTask {
 
 /// A meeting scheduled inside a conversation.
 model ConversationMeeting {
-  id             String          @id @default(cuid())
-  orgId          String
-  conversationId String
-  title          String
-  description    String?
-  scheduledAt    DateTime
-  durationMinutes Int            @default(30)
-  status         MeetingStatus   @default(UPCOMING)
-  /// The calendar provider event ID (opaque).
+  id              String        @id @default(cuid())
+  orgId           String
+  conversationId  String
+  title           String
+  description     String?
+  scheduledAt     DateTime
+  durationMinutes Int           @default(30)
+  status          MeetingStatus @default(UPCOMING)
+  /// Opaque provider event identifier. Populated by provider sync.
   providerEventId String?
+  /// Provider-issued join URL (Meet or Teams link). Null when not available or not yet synced.
+  /// Only surfaced to authorized attendees via read model — never raw in logs.
+  joinUrl         String?
   /// The user who scheduled the meeting.
-  scheduledBy    String          @db.Uuid
-  cancelledAt    DateTime?
-  cancelledBy    String?         @db.Uuid
-  cancelReason   String?
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
+  scheduledBy     String        @db.Uuid
+  cancelledAt     DateTime?
+  cancelledBy     String?       @db.Uuid
+  cancelReason    String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  /// Structured metadata for provider sync (e.g. attendee responses from provider).
+  metadata        Json?
 
-  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  conversation Conversation @relation(fields: [conversationId, orgId], references: [id, orgId], onDelete: Cascade)
+  organization Organization       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  conversation Conversation       @relation(fields: [conversationId, orgId], references: [id, orgId], onDelete: Cascade)
+  attendees    MeetingAttendee[]
+  reminders    MeetingReminder[]
 
   @@index([orgId, conversationId, scheduledAt])
   @@index([orgId, status, scheduledAt])
   @@map("conversation_meeting")
+}
+
+/// RSVP attendance record for a meeting attendee.
+/// Server-authoritative: mutations only through the RSVP service.
+/// Provider-reconciled: provider attendee state is folded in on sync.
+model MeetingAttendee {
+  id          String              @id @default(cuid())
+  orgId       String
+  meetingId   String
+  userId      String              @db.Uuid
+  /// Current RSVP response. PENDING = not yet responded.
+  rsvpStatus  MeetingRsvpStatus   @default(PENDING)
+  /// When the user last explicitly responded (null if never).
+  respondedAt DateTime?
+  /// Opaque provider attendee ID for reconciliation (e.g. provider email or attendee token).
+  providerAttendeeId String?
+  /// Last provider-side status string (stored for reconciliation auditing, not surfaced to UI).
+  providerStatus     String?
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  meeting      ConversationMeeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+
+  @@unique([meetingId, userId])
+  @@index([orgId, meetingId])
+  @@index([orgId, userId, rsvpStatus])
+  @@map("meeting_attendee")
+}
+
+/// Idempotent bounded reminder record for a meeting.
+/// Each window (60min, 15min) has at most one dispatched record.
+/// Prevents duplicate reminder dispatch on replay.
+model MeetingReminder {
+  id         String              @id @default(cuid())
+  orgId      String
+  meetingId  String
+  /// Which urgency window this reminder covers.
+  window     MeetingReminderWindow
+  /// When the reminder was dispatched. Null = pending dispatch.
+  sentAt     DateTime?
+  /// Whether the meeting was already cancelled/ended when dispatch was attempted.
+  skipped    Boolean             @default(false)
+  createdAt  DateTime            @default(now())
+  updatedAt  DateTime            @updatedAt
+
+  meeting    ConversationMeeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+
+  @@unique([meetingId, window])
+  @@index([orgId, meetingId])
+  @@index([sentAt, skipped])
+  @@map("meeting_reminder")
 }
 
 /// A connected calendar account for an org (provider-safe).

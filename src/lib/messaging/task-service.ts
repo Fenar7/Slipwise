@@ -17,6 +17,7 @@ import type {
   TaskListFilterInput,
   TaskListResult,
 } from "./service-contracts";
+import { syncTaskToProvider, reconcileProviderChangesForTask } from "./provider-sync-service";
 
 function validateReminderAt(reminderAt: Date | null | undefined, dueDate: Date | null | undefined, now = new Date()): void {
   if (reminderAt === undefined || reminderAt === null) return;
@@ -52,7 +53,20 @@ export async function listTasksForConversation(
     orderBy: [{ dueDate: "asc" }, { id: "asc" }],
   });
 
-  return rows.map(toTaskRecord);
+  const reconciledRows = await Promise.all(
+    rows.map(async (row) => {
+      if (row.providerEventId && row.status !== "DONE" && row.status !== "CANCELLED") {
+        try {
+          return await reconcileProviderChangesForTask(orgId, row.id, userId);
+        } catch (err) {
+          console.error(`Failed to reconcile task ${row.id} during list:`, err);
+        }
+      }
+      return toTaskRecord(row);
+    })
+  );
+
+  return reconciledRows;
 }
 
 export async function createTask(input: CreateTaskInput): Promise<MessagingTaskRecord> {
@@ -158,7 +172,23 @@ export async function createTask(input: CreateTaskInput): Promise<MessagingTaskR
     ).catch(() => {});
   }
 
-  return toTaskRecord(task);
+  let finalTask = toTaskRecord(task);
+  if (db.calendarConnection) {
+    const activeConns = await db.calendarConnection.count({
+      where: { orgId, status: { in: ["ACTIVE", "RECONNECT_REQUIRED"] } },
+    }).catch(() => 0);
+
+    if (activeConns > 0) {
+      try {
+        const synced = await syncTaskToProvider(orgId, task.id);
+        finalTask = synced;
+      } catch (err) {
+        console.error("[task-service] createTask: provider sync failed:", err);
+      }
+    }
+  }
+
+  return finalTask;
 }
 
 export async function updateTaskStatus(input: UpdateTaskStatusInput): Promise<MessagingTaskRecord> {
@@ -233,7 +263,23 @@ export async function updateTaskStatus(input: UpdateTaskStatusInput): Promise<Me
     return updated;
   });
 
-  return toTaskRecord(updatedTask);
+  let finalTask = toTaskRecord(updatedTask);
+  if (db.calendarConnection) {
+    const activeConns = await db.calendarConnection.count({
+      where: { orgId, status: { in: ["ACTIVE", "RECONNECT_REQUIRED"] } },
+    }).catch(() => 0);
+
+    if (activeConns > 0) {
+      try {
+        const synced = await syncTaskToProvider(orgId, taskId);
+        finalTask = synced;
+      } catch (err) {
+        console.error("[task-service] updateTaskStatus: provider sync failed:", err);
+      }
+    }
+  }
+
+  return finalTask;
 }
 
 export async function assignTask(input: AssignTaskInput): Promise<MessagingTaskRecord> {
@@ -325,7 +371,23 @@ export async function assignTask(input: AssignTaskInput): Promise<MessagingTaskR
     ).catch(() => {});
   }
 
-  return toTaskRecord(updatedTask);
+  let finalTask = toTaskRecord(updatedTask);
+  if (db.calendarConnection) {
+    const activeConns = await db.calendarConnection.count({
+      where: { orgId, status: { in: ["ACTIVE", "RECONNECT_REQUIRED"] } },
+    }).catch(() => 0);
+
+    if (activeConns > 0) {
+      try {
+        const synced = await syncTaskToProvider(orgId, taskId);
+        finalTask = synced;
+      } catch (err) {
+        console.error("[task-service] assignTask: provider sync failed:", err);
+      }
+    }
+  }
+
+  return finalTask;
 }
 
 export async function updateTask(input: UpdateTaskInput): Promise<MessagingTaskRecord> {
@@ -453,7 +515,23 @@ export async function updateTask(input: UpdateTaskInput): Promise<MessagingTaskR
     ).catch(() => {});
   }
 
-  return toTaskRecord(updatedTask);
+  let finalTask = toTaskRecord(updatedTask);
+  if (db.calendarConnection) {
+    const activeConns = await db.calendarConnection.count({
+      where: { orgId, status: { in: ["ACTIVE", "RECONNECT_REQUIRED"] } },
+    }).catch(() => 0);
+
+    if (activeConns > 0) {
+      try {
+        const synced = await syncTaskToProvider(orgId, taskId);
+        finalTask = synced;
+      } catch (err) {
+        console.error("[task-service] updateTask: provider sync failed:", err);
+      }
+    }
+  }
+
+  return finalTask;
 }
 
 const TASK_LIST_DEFAULT_LIMIT = 20;

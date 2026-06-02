@@ -46,6 +46,7 @@ import type {
   MessagingTaskRecord,
   ConversationMeetingRecord,
   CalendarConnectionRecord,
+  CalendarConnectionSummary,
   RetentionPolicyRecord,
   MessagingAuditEventRecord,
 } from "./domain-types";
@@ -259,6 +260,7 @@ export function toTaskRecord(row: MessagingTask): MessagingTaskRecord {
     createdBy: row.createdBy,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
+    providerEventId: row.providerEventId ?? null,
   };
 }
 
@@ -275,14 +277,45 @@ export function toMeetingRecord(row: ConversationMeeting): ConversationMeetingRe
     durationMinutes: row.durationMinutes,
     status: row.status,
     providerEventId: row.providerEventId ?? null,
+    joinUrl: row.joinUrl ?? null,
     scheduledBy: row.scheduledBy,
     cancelledAt: row.cancelledAt ?? null,
     cancelledBy: row.cancelledBy ?? null,
     cancelReason: row.cancelReason ?? null,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
+    metadata: (row.metadata as Record<string, unknown> | null) ?? null,
   };
 }
+
+export function toMeetingAttendeeRecord(row: import("@/generated/prisma/client").MeetingAttendee): import("./domain-types").MeetingAttendeeRecord {
+  return {
+    id: row.id,
+    orgId: row.orgId,
+    meetingId: row.meetingId,
+    userId: row.userId,
+    rsvpStatus: row.rsvpStatus,
+    respondedAt: row.respondedAt ?? null,
+    providerAttendeeId: row.providerAttendeeId ?? null,
+    providerStatus: row.providerStatus ?? null,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
+export function toMeetingReminderRecord(row: import("@/generated/prisma/client").MeetingReminder): import("./domain-types").MeetingReminderRecord {
+  return {
+    id: row.id,
+    orgId: row.orgId,
+    meetingId: row.meetingId,
+    window: row.window,
+    sentAt: row.sentAt ?? null,
+    skipped: row.skipped,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
 
 // ─── Calendar Connection ──────────────────────────────────────────────────────
 
@@ -303,6 +336,26 @@ export function toCalendarConnectionRecord(row: CalendarConnection): CalendarCon
     connectedBy: row.connectedBy,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
+  };
+}
+
+/**
+ * Maps a CalendarConnectionRecord to a safe UI summary.
+ *
+ * Explicitly omits: tokenRef, tokenExpiry, providerAccountId, connectedBy, orgId, updatedAt.
+ * All Dates are serialized to ISO strings so the shape is JSON-safe.
+ */
+export function toCalendarConnectionSummary(record: CalendarConnectionRecord): CalendarConnectionSummary {
+  return {
+    id: record.id,
+    provider: record.provider,
+    emailAddress: record.emailAddress,
+    displayName: record.displayName,
+    status: record.status,
+    lastSyncAt: record.lastSyncAt ? record.lastSyncAt.toISOString() : null,
+    lastSyncError: record.lastSyncError,
+    disconnectedAt: record.disconnectedAt ? record.disconnectedAt.toISOString() : null,
+    createdAt: record.createdAt.toISOString(),
   };
 }
 

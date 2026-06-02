@@ -330,4 +330,111 @@ describe("MessagingMeetingPanel", () => {
     fireEvent.click(screen.getByTestId("meeting-tab-calendar"));
     expect(screen.getByTestId("meeting-calendar-grid")).toHaveTextContent("May 2026");
   });
+
+  it("Sprint 8.2: hides connection-management controls from non-admin users but renders safe status", async () => {
+    // Helper: creates a fresh Response per URL so body stream is never re-used
+    function makeFetch(connectionsPayload: any[], callerRole: string) {
+      return vi.fn().mockImplementation((url: string) => {
+        if (url.includes("/api/messaging/calendar/connections")) {
+          return Promise.resolve(new Response(JSON.stringify({
+            success: true,
+            data: { connections: connectionsPayload, callerRole },
+          }), { status: 200 }));
+        }
+        // Any other call (meetings, calendar, etc.) returns empty success
+        return Promise.resolve(new Response(JSON.stringify({ success: true, data: [] }), { status: 200 }));
+      });
+    }
+
+    // --- Part 1: ACTIVE connection, member role → no Disconnect button ---
+    const activeConn = [{ id: "conn-1", provider: "GOOGLE", emailAddress: "admin@google.com", status: "ACTIVE", createdAt: new Date().toISOString() }];
+    vi.stubGlobal("fetch", makeFetch(activeConn, "member"));
+
+    const { unmount: unmount1 } = render(
+      <MessagingMeetingPanel conversationId="conv-1" calendarConnection={MOCK_CALENDAR_CONNECTION_ACTIVE} />
+    );
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(screen.getByTestId("meeting-calendar-connected-chip")).toBeInTheDocument();
+    expect(screen.queryByTestId("meeting-disconnect-calendar")).not.toBeInTheDocument();
+    unmount1();
+
+    // --- Part 2: DEGRADED connection (ACTIVE + lastSyncError), member role → no Reconnect button ---
+    const degradedConn = [{ id: "conn-1", provider: "GOOGLE", emailAddress: "admin@google.com", status: "ACTIVE", lastSyncError: "API limit", createdAt: new Date().toISOString() }];
+    vi.stubGlobal("fetch", makeFetch(degradedConn, "member"));
+
+    const { unmount: unmount2 } = render(
+      <MessagingMeetingPanel conversationId="conv-2" calendarConnection={MOCK_CALENDAR_CONNECTION_ACTIVE} />
+    );
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(screen.getByTestId("meeting-calendar-connected-chip")).toBeInTheDocument();
+    expect(screen.getByTestId("meeting-calendar-connected-chip")).toHaveTextContent("Sync Degraded");
+    expect(screen.queryByText("Reconnect")).not.toBeInTheDocument();
+    unmount2();
+
+    // --- Part 3: No connections, member role → no Connect buttons ---
+    vi.stubGlobal("fetch", makeFetch([], "member"));
+
+    const { unmount: unmount3 } = render(
+      <MessagingMeetingPanel conversationId="conv-3" calendarConnection={MOCK_CALENDAR_CONNECTION} />
+    );
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(screen.getByText("No calendar connected.")).toBeInTheDocument();
+    expect(screen.queryByTestId("meeting-connect-calendar-btn")).not.toBeInTheDocument();
+    unmount3();
+  });
+
+  it("Sprint 8.2: exposes connection-management controls to admin users", async () => {
+    function makeFetch(connectionsPayload: any[], callerRole: string) {
+      return vi.fn().mockImplementation((url: string) => {
+        if (url.includes("/api/messaging/calendar/connections")) {
+          return Promise.resolve(new Response(JSON.stringify({
+            success: true,
+            data: { connections: connectionsPayload, callerRole },
+          }), { status: 200 }));
+        }
+        return Promise.resolve(new Response(JSON.stringify({ success: true, data: [] }), { status: 200 }));
+      });
+    }
+
+    // --- Part 1: ACTIVE connection, admin role → Disconnect button visible ---
+    const activeConn = [{ id: "conn-1", provider: "GOOGLE", emailAddress: "admin@google.com", status: "ACTIVE", createdAt: new Date().toISOString() }];
+    vi.stubGlobal("fetch", makeFetch(activeConn, "admin"));
+
+    const { unmount: unmount1 } = render(
+      <MessagingMeetingPanel conversationId="conv-1" calendarConnection={MOCK_CALENDAR_CONNECTION_ACTIVE} />
+    );
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(screen.getByTestId("meeting-calendar-connected-chip")).toBeInTheDocument();
+    expect(screen.getByTestId("meeting-disconnect-calendar")).toBeInTheDocument();
+    unmount1();
+
+    // --- Part 2: DEGRADED connection, admin role → Reconnect button visible ---
+    const degradedConn = [{ id: "conn-1", provider: "GOOGLE", emailAddress: "admin@google.com", status: "ACTIVE", lastSyncError: "API limit", createdAt: new Date().toISOString() }];
+    vi.stubGlobal("fetch", makeFetch(degradedConn, "admin"));
+
+    const { unmount: unmount2 } = render(
+      <MessagingMeetingPanel conversationId="conv-2" calendarConnection={MOCK_CALENDAR_CONNECTION_ACTIVE} />
+    );
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(screen.getByTestId("meeting-calendar-connected-chip")).toBeInTheDocument();
+    expect(screen.getByText("Reconnect")).toBeInTheDocument();
+    unmount2();
+
+    // --- Part 3: No connections, admin role → Connect buttons visible ---
+    vi.stubGlobal("fetch", makeFetch([], "admin"));
+
+    const { unmount: unmount3 } = render(
+      <MessagingMeetingPanel conversationId="conv-3" calendarConnection={MOCK_CALENDAR_CONNECTION} />
+    );
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(screen.getByText("Connect Google Calendar or Outlook to Slipwise.")).toBeInTheDocument();
+    expect(screen.getByTestId("meeting-connect-calendar-btn")).toBeInTheDocument();
+    unmount3();
+  });
 });
