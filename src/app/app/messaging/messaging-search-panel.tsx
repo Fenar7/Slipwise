@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { cn } from "@/lib/utils";
+
 import {
   X,
   MessageSquare,
@@ -149,10 +149,11 @@ export function MessagingSearchPanel({ query, onClose }: MessagingSearchPanelPro
         } else {
           throw new Error(json.error?.message || "Failed to load search results.");
         }
-      } catch (err: any) {
-        if (err.name !== "AbortError") {
+      } catch (err) {
+        const errorObject = err as { name?: string; message?: string };
+        if (errorObject.name !== "AbortError") {
           console.error("Search fetch failed:", err);
-          setError(err.message || "An unexpected error occurred.");
+          setError(errorObject.message || "An unexpected error occurred.");
           setSearchState("degraded");
         }
       } finally {
