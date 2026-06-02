@@ -157,7 +157,18 @@ export async function getPortalInvoiceDetail(
           paymentMethodDisplay: true,
         },
       },
-      organization: { select: { name: true } },
+      organization: {
+        select: {
+          name: true,
+          defaults: {
+            select: {
+              bankName: true,
+              bankAccount: true,
+              bankIFSC: true,
+            },
+          },
+        },
+      },
       customer: {
         select: { name: true, email: true, phone: true },
       },
@@ -173,7 +184,34 @@ export async function getPortalInvoiceDetail(
     action: "view_invoice",
   });
 
-  return invoice;
+  return {
+    id: invoice.id,
+    invoiceNumber: invoice.invoiceNumber ?? "—",
+    invoiceDate: formatIsoDate(invoice.invoiceDate),
+    dueDate: invoice.dueDate ? formatIsoDate(invoice.dueDate) : null,
+    totalAmount: toAccountingNumber(invoice.totalAmount),
+    amountPaid: toAccountingNumber(invoice.amountPaid),
+    remainingAmount: toAccountingNumber(invoice.remainingAmount),
+    status: invoice.status,
+    fromName: invoice.organization.name,
+    clientName: invoice.customer.name,
+    organization: invoice.organization,
+    lineItems: invoice.lineItems.map((item) => ({
+      id: item.id,
+      name: item.description,
+      quantity: item.quantity,
+      price: toAccountingNumber(item.unitPrice),
+      total: toAccountingNumber(item.amount),
+    })),
+    payments: invoice.payments.map((pmt) => ({
+      id: pmt.id,
+      amount: toAccountingNumber(pmt.amount),
+      paidAt: formatIsoDate(pmt.paidAt),
+      method: pmt.method ?? "—",
+      note: pmt.note ?? "—",
+      paymentMethodDisplay: pmt.paymentMethodDisplay ?? "—",
+    })),
+  };
 }
 
 // ─── 4. Generate Statement ─────────────────────────────────────────────────────
@@ -775,6 +813,86 @@ export async function getPortalDashboardData(orgSlug: string) {
       validUntil: formatIsoDate(q.validUntil),
       totalAmount: toAccountingNumber(q.totalAmount),
       status: q.status,
+    })),
+  };
+}
+
+export async function getPortalPaymentsData(orgSlug: string) {
+  const session = await requireSession();
+  await resolveOrgId(orgSlug, session.orgId);
+
+  const outstandingBalanceSum = await db.invoice.aggregate({
+    where: {
+      organizationId: session.orgId,
+      customerId: session.customerId,
+      status: { notIn: ["DRAFT", "CANCELLED", "PAID"] },
+    },
+    _sum: {
+      remainingAmount: true,
+    },
+  });
+  const outstandingBalance = toAccountingNumber(outstandingBalanceSum._sum.remainingAmount ?? 0);
+
+  const totalPaidSum = await db.invoice.aggregate({
+    where: {
+      organizationId: session.orgId,
+      customerId: session.customerId,
+      status: { notIn: ["DRAFT", "CANCELLED"] },
+    },
+    _sum: {
+      amountPaid: true,
+    },
+  });
+  const totalPaid = toAccountingNumber(totalPaidSum._sum.amountPaid ?? 0);
+
+  const payments = await db.invoicePayment.findMany({
+    where: {
+      orgId: session.orgId,
+      invoice: {
+        customerId: session.customerId,
+      },
+    },
+    orderBy: { paidAt: "desc" },
+    include: {
+      invoice: {
+        select: {
+          invoiceNumber: true,
+        },
+      },
+    },
+  });
+
+  const outstandingInvoices = await db.invoice.findMany({
+    where: {
+      organizationId: session.orgId,
+      customerId: session.customerId,
+      status: { notIn: ["DRAFT", "CANCELLED", "PAID"] },
+    },
+    orderBy: { dueDate: "asc" },
+    select: {
+      id: true,
+      invoiceNumber: true,
+      dueDate: true,
+      remainingAmount: true,
+    },
+  });
+
+  return {
+    outstandingBalance,
+    totalPaid,
+    payments: payments.map((pmt) => ({
+      id: pmt.id,
+      invoiceNumber: pmt.invoice.invoiceNumber ?? "—",
+      amount: toAccountingNumber(pmt.amount),
+      paidAt: formatIsoDate(pmt.paidAt),
+      method: pmt.paymentMethodDisplay || pmt.method || "—",
+      status: pmt.status,
+    })),
+    outstandingInvoices: outstandingInvoices.map((inv) => ({
+      id: inv.id,
+      invoiceNumber: inv.invoiceNumber ?? "—",
+      dueDate: inv.dueDate ? formatIsoDate(inv.dueDate) : null,
+      remainingAmount: toAccountingNumber(inv.remainingAmount),
     })),
   };
 }

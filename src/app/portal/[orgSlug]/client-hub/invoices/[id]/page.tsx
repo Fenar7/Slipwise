@@ -1,7 +1,8 @@
 import { notFound } from "next/navigation";
-import { getMockInvoice } from "../../components/mock-data";
 import { ClientHubInvoiceDetailView } from "../../components/views";
 import { requirePortalSession } from "@/lib/portal-auth";
+import { getPortalInvoiceDetail } from "../../../actions";
+import { getPersistedHubConfig } from "../../components/config-resolver";
 
 export default async function ClientHubInvoiceDetailPage({
   params,
@@ -11,9 +12,22 @@ export default async function ClientHubInvoiceDetailPage({
   const { orgSlug, id } = await params;
   await requirePortalSession(orgSlug, `/portal/${orgSlug}/client-hub/login`);
 
-  if (!getMockInvoice(id)) {
+  const config = await getPersistedHubConfig(orgSlug);
+
+  if (!config.navigation.showInvoices) {
     notFound();
   }
 
-  return <ClientHubInvoiceDetailView orgSlug={orgSlug} invoiceId={id} />;
+  const invoice = await getPortalInvoiceDetail(orgSlug, id);
+  if (!invoice) {
+    notFound();
+  }
+
+  return (
+    <ClientHubInvoiceDetailView
+      orgSlug={orgSlug}
+      invoice={invoice}
+      config={config}
+    />
+  );
 }

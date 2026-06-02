@@ -2,6 +2,7 @@ import { ClientHubPaymentsView } from "../components/views";
 import { getPersistedHubConfig } from "../components/config-resolver";
 import { notFound } from "next/navigation";
 import { requirePortalSession } from "@/lib/portal-auth";
+import { getPortalPaymentsData } from "../../actions";
 
 export default async function ClientHubPaymentsPage({
   params,
@@ -17,5 +18,16 @@ export default async function ClientHubPaymentsPage({
     notFound();
   }
 
-  return <ClientHubPaymentsView orgSlug={orgSlug} config={config} />;
+  const data = await getPortalPaymentsData(orgSlug);
+
+  return (
+    <ClientHubPaymentsView
+      orgSlug={orgSlug}
+      config={config}
+      outstandingBalance={data.outstandingBalance}
+      totalPaid={data.totalPaid}
+      payments={data.payments}
+      outstandingInvoices={data.outstandingInvoices}
+    />
+  );
 }

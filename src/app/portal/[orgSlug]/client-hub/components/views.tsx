@@ -857,13 +857,29 @@ export function ClientHubDashboardView({
 export function ClientHubInvoicesView({
   orgSlug,
   config,
+  invoices = [],
+  outstandingBalance = 0,
 }: {
   orgSlug: string;
   config?: ClientHubConfig;
+  invoices?: Array<{
+    id: string;
+    invoiceNumber: string | null;
+    invoiceDate: string;
+    dueDate: string | null;
+    totalAmount: number;
+    amountPaid: number;
+    remainingAmount: number;
+    status: string;
+  }>;
+  outstandingBalance?: number;
 }) {
   const hubConfig = getHubConfig(config);
   const basePath = `/portal/${orgSlug}/client-hub/invoices`;
-  const dueSoon = MOCK_INVOICES.filter((invoice) => invoice.remainingAmount > 0).length;
+  const dueSoon = invoices.filter((invoice) => invoice.remainingAmount > 0).length;
+  const acceptedMethods = hubConfig.payments.acceptedMethods || [];
+  const methodsText = `${acceptedMethods.length} method${acceptedMethods.length !== 1 ? "s" : ""}`;
+  const methodsHint = acceptedMethods.join(", ");
 
   return (
     <div className="grid gap-5 xl:grid-cols-[220px_minmax(0,1fr)_280px]">
@@ -888,9 +904,9 @@ export function ClientHubInvoicesView({
           </div>
 
           <div className="grid gap-4 px-6 py-6 sm:px-8 lg:grid-cols-3">
-            <SummaryMetric label="Outstanding" value={formatCurrency(OUTSTANDING_BALANCE)} hint="Across open invoices" />
+            <SummaryMetric label="Outstanding" value={formatCurrency(outstandingBalance)} hint="Across open invoices" />
             <SummaryMetric label="Invoices Open" value={`${dueSoon}`} hint="Ready for review or payment" />
-            <SummaryMetric label="Payment Options" value="3 methods" hint="Payment link, bank transfer, UPI" />
+            <SummaryMetric label="Payment Options" value={methodsText} hint={methodsHint} />
           </div>
         </ShellCard>
 
@@ -901,7 +917,7 @@ export function ClientHubInvoicesView({
               <p className="mt-0.5 text-[13px] text-[var(--hub-text-soft)]">Track payment status, due dates, and what still needs action.</p>
             </div>
             <div className="rounded-md border border-[var(--hub-border)] bg-[var(--hub-surface-soft)] px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--hub-text-muted)]">
-              {MOCK_INVOICES.length} records
+              {invoices.length} records
             </div>
           </div>
           <div className="overflow-x-auto">
@@ -918,19 +934,27 @@ export function ClientHubInvoicesView({
                 </tr>
               </thead>
               <tbody>
-                {MOCK_INVOICES.map((invoice) => (
-                  <tr key={invoice.id} className="border-b border-[var(--hub-border)] last:border-b-0 transition hover:bg-[var(--hub-surface-soft)]/40">
-                    <td className="px-6 py-4 text-sm font-semibold text-[var(--hub-accent)]">#{invoice.invoiceNumber}</td>
-                    <td className="px-6 py-4 text-sm text-[var(--hub-text-soft)]">{invoice.invoiceDate}</td>
-                    <td className="px-6 py-4 text-sm text-[var(--hub-text-soft)]">{invoice.dueDate ?? "—"}</td>
-                    <td className="px-6 py-4 text-sm font-medium text-[var(--hub-text-strong)]">{formatCurrency(invoice.totalAmount)}</td>
-                    <td className="px-6 py-4"><StatusPill className={getStatusStyles(invoice.status)}>{invoice.status.replace(/_/g, " ")}</StatusPill></td>
-                    <td className="px-6 py-4 text-sm text-[var(--hub-text-strong)]">{invoice.remainingAmount > 0 ? formatCurrency(invoice.remainingAmount) : "—"}</td>
-                    <td className="px-6 py-4 text-right">
-                      <Link href={`/portal/${orgSlug}/client-hub/invoices/${invoice.id}`} className="text-[13px] font-semibold text-[var(--hub-accent)] hover:underline">View</Link>
+                {invoices.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="px-6 py-12 text-center text-sm text-[var(--hub-text-soft)]">
+                      No invoices found.
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  invoices.map((invoice) => (
+                    <tr key={invoice.id} className="border-b border-[var(--hub-border)] last:border-b-0 transition hover:bg-[var(--hub-surface-soft)]/40">
+                      <td className="px-6 py-4 text-sm font-semibold text-[var(--hub-accent)]">#{invoice.invoiceNumber ?? "—"}</td>
+                      <td className="px-6 py-4 text-sm text-[var(--hub-text-soft)]">{invoice.invoiceDate}</td>
+                      <td className="px-6 py-4 text-sm text-[var(--hub-text-soft)]">{invoice.dueDate ?? "—"}</td>
+                      <td className="px-6 py-4 text-sm font-medium text-[var(--hub-text-strong)]">{formatCurrency(invoice.totalAmount)}</td>
+                      <td className="px-6 py-4"><StatusPill className={getStatusStyles(invoice.status)}>{invoice.status.replace(/_/g, " ")}</StatusPill></td>
+                      <td className="px-6 py-4 text-sm text-[var(--hub-text-strong)]">{invoice.remainingAmount > 0 ? formatCurrency(invoice.remainingAmount) : "—"}</td>
+                      <td className="px-6 py-4 text-right">
+                        <Link href={`/portal/${orgSlug}/client-hub/invoices/${invoice.id}`} className="text-[13px] font-semibold text-[var(--hub-accent)] hover:underline">View</Link>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
@@ -949,16 +973,42 @@ export function ClientHubInvoicesView({
 
 export function ClientHubInvoiceDetailView({
   orgSlug,
-  invoiceId,
+  invoice,
+  config,
 }: {
   orgSlug: string;
-  invoiceId: string;
+  invoice: {
+    id: string;
+    invoiceNumber: string;
+    invoiceDate: string;
+    dueDate: string | null;
+    totalAmount: number;
+    amountPaid: number;
+    remainingAmount: number;
+    status: string;
+    fromName: string;
+    clientName: string;
+    lineItems: Array<{
+      id: string;
+      name: string;
+      quantity: number;
+      price: number;
+      total: number;
+    }>;
+    payments?: Array<{
+      id: string;
+      amount: number;
+      paidAt: string;
+      method: string;
+      note: string;
+      paymentMethodDisplay: string;
+    }>;
+  };
   config?: ClientHubConfig;
 }) {
-  const invoice = getMockInvoice(invoiceId);
-  if (!invoice) return null;
-
-  const amountDue = invoice.remainingAmount || invoice.totalAmount;
+  const hubConfig = getHubConfig(config);
+  const amountDue = invoice.remainingAmount;
+  const isPayable = invoice.status !== "PAID" && invoice.status !== "CANCELLED" && invoice.remainingAmount > 0;
 
   return (
     <div className="space-y-6">
@@ -970,11 +1020,15 @@ export function ClientHubInvoiceDetailView({
 
       <section className="overflow-hidden rounded-2xl border border-[var(--hub-border)] bg-[var(--hub-surface-soft)] px-6 py-10 text-center sm:px-10 sm:py-14" style={{ background: "var(--hub-hero-gradient)" }}>
         <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-white shadow-sm ring-1 ring-[var(--hub-border)]">
-          <span className="text-base font-bold text-[var(--hub-accent)]">{invoice.fromName.charAt(0)}</span>
+          <span className="text-base font-bold text-[var(--hub-accent)]">{invoice.fromName ? invoice.fromName.charAt(0) : "—"}</span>
         </div>
-        <p className="mt-4 text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--hub-text-muted)]">{invoice.fromName}</p>
-        <h1 className="mt-5 text-[28px] font-semibold tracking-[-0.03em] text-[var(--hub-text-strong)] sm:text-[34px]">Hi {invoice.clientName},</h1>
-        <p className="mx-auto mt-3 max-w-xl text-[15px] leading-7 text-[var(--hub-text-soft)]">Your payment of {formatCurrency(amountDue)} is due on {invoice.dueDate}.</p>
+        <p className="mt-4 text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--hub-text-muted)]">{invoice.fromName ?? "—"}</p>
+        <h1 className="mt-5 text-[28px] font-semibold tracking-[-0.03em] text-[var(--hub-text-strong)] sm:text-[34px]">Hi {invoice.clientName ?? "Guest"},</h1>
+        <p className="mx-auto mt-3 max-w-xl text-[15px] leading-7 text-[var(--hub-text-soft)]">
+          {invoice.status === "PAID"
+            ? "This invoice is fully paid. Thank you!"
+            : `Your payment of ${formatCurrency(amountDue)} is due on ${invoice.dueDate ?? "—"}.`}
+        </p>
       </section>
 
       <div className="-mt-12 px-2 sm:px-4">
@@ -984,20 +1038,16 @@ export function ClientHubInvoiceDetailView({
               <h2 className="text-xl font-semibold tracking-[-0.02em] text-[var(--hub-text-strong)] sm:text-2xl">Invoice #{invoice.invoiceNumber}</h2>
               <StatusPill className={getStatusStyles(invoice.status)}>{invoice.status.replace(/_/g, " ")}</StatusPill>
             </div>
-            <div className="flex items-center gap-2 text-[var(--hub-text-muted)]">
-              <button type="button" className="flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--hub-border)] bg-white text-[var(--hub-text-soft)] transition hover:bg-[var(--hub-surface-soft)]" aria-label="Print invoice"><Glyph name="print" className="h-4 w-4" /></button>
-              <button type="button" className="flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--hub-border)] bg-white text-[var(--hub-text-soft)] transition hover:bg-[var(--hub-surface-soft)]" aria-label="Download invoice"><Glyph name="download" className="h-4 w-4" /></button>
-            </div>
           </div>
 
           <div className="grid gap-6 px-6 py-5 sm:px-8 sm:py-6 md:grid-cols-3">
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--hub-text-muted)]">From</p>
-              <p className="mt-1.5 text-base font-semibold text-[var(--hub-text-strong)]">{invoice.fromName}</p>
+              <p className="mt-1.5 text-base font-semibold text-[var(--hub-text-strong)]">{invoice.fromName ?? "—"}</p>
             </div>
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--hub-text-muted)]">To</p>
-              <p className="mt-1.5 text-base font-semibold text-[var(--hub-text-strong)]">{invoice.clientName}</p>
+              <p className="mt-1.5 text-base font-semibold text-[var(--hub-text-strong)]">{invoice.clientName ?? "—"}</p>
             </div>
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--hub-text-muted)]">Issue Date</p>
@@ -1005,7 +1055,7 @@ export function ClientHubInvoiceDetailView({
             </div>
           </div>
 
-          {invoice.remainingAmount > 0 && (
+          {isPayable && (
             <div className="px-6 pb-5 sm:px-8 sm:pb-6">
               <Link href={`/portal/${orgSlug}/client-hub/invoices/${invoice.id}/payment`} className="inline-flex w-full items-center justify-center rounded-xl bg-[var(--hub-accent)] px-6 py-3.5 text-[13px] font-semibold text-white transition hover:brightness-[0.97]">
                 PAY NOW
@@ -1037,7 +1087,7 @@ export function ClientHubInvoiceDetailView({
                   <td className="px-6 py-3.5 text-sm font-semibold text-[var(--hub-text-strong)]">{item.name}</td>
                   <td className="px-6 py-3.5 text-sm text-[var(--hub-text-soft)]">{item.quantity}</td>
                   <td className="px-6 py-3.5 text-sm text-[var(--hub-text-soft)]">{formatCurrency(item.price)}</td>
-                  <td className="px-6 py-3.5 text-sm font-semibold text-[var(--hub-text-strong)]">{formatCurrency(item.quantity * item.price)}</td>
+                  <td className="px-6 py-3.5 text-sm font-semibold text-[var(--hub-text-strong)]">{formatCurrency(item.total)}</td>
                 </tr>
               ))}
             </tbody>
@@ -1056,22 +1106,50 @@ export function ClientHubInvoiceDetailView({
           </div>
         </div>
       </ShellCard>
+
+      {invoice.payments && invoice.payments.length > 0 && (
+        <ShellCard className="mx-auto max-w-[880px] overflow-hidden">
+          <div className="border-b border-[var(--hub-border)] px-6 py-4 sm:px-8">
+            <h3 className="text-base font-semibold tracking-[-0.01em] text-[var(--hub-text-strong)]">Payment History</h3>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-[var(--hub-surface-soft)] text-left">
+                <tr>
+                  <th className="px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--hub-text-muted)]">Date</th>
+                  <th className="px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--hub-text-muted)]">Method</th>
+                  <th className="px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--hub-text-muted)]">Note</th>
+                  <th className="px-6 py-3 text-right text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--hub-text-muted)]">Amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                {invoice.payments.map((pmt) => (
+                  <tr key={pmt.id} className="border-b border-[var(--hub-border)] last:border-b-0 transition hover:bg-[var(--hub-surface-soft)]/40">
+                    <td className="px-6 py-3.5 text-sm text-[var(--hub-text-soft)]">{pmt.paidAt}</td>
+                    <td className="px-6 py-3.5 text-sm font-semibold text-[var(--hub-text-strong)]">{pmt.paymentMethodDisplay || pmt.method || "—"}</td>
+                    <td className="px-6 py-3.5 text-sm text-[var(--hub-text-soft)]">{pmt.note || "—"}</td>
+                    <td className="px-6 py-3.5 text-sm text-right font-semibold text-[var(--hub-text-strong)]">{formatCurrency(pmt.amount)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </ShellCard>
+      )}
     </div>
   );
 }
 
 export function ClientHubPaymentSelectionView({
   orgSlug,
-  invoiceId,
+  invoice,
   config,
 }: {
   orgSlug: string;
-  invoiceId: string;
+  invoice: any;
   config?: ClientHubConfig;
 }) {
   const hubConfig = getHubConfig(config);
-  const invoice = getMockInvoice(invoiceId);
-  if (!invoice) return null;
 
   return (
     <div className="mx-auto max-w-[720px] space-y-6">
@@ -1087,7 +1165,7 @@ export function ClientHubPaymentSelectionView({
         ← Invoice #{invoice.invoiceNumber}
       </Link>
 
-      <PaymentMethodSelector invoice={invoice} acceptedMethods={hubConfig.payments.acceptedMethods} />
+      <PaymentMethodSelector orgSlug={orgSlug} invoice={invoice} acceptedMethods={hubConfig.payments.acceptedMethods} />
     </div>
   );
 }
@@ -1283,9 +1361,29 @@ export function ClientHubQuoteDetailView({
 export function ClientHubPaymentsView({
   orgSlug = "acme",
   config,
+  outstandingBalance = 0,
+  totalPaid = 0,
+  payments = [],
+  outstandingInvoices = [],
 }: {
   orgSlug?: string;
   config?: ClientHubConfig;
+  outstandingBalance?: number;
+  totalPaid?: number;
+  payments?: Array<{
+    id: string;
+    invoiceNumber: string;
+    amount: number;
+    paidAt: string;
+    method: string;
+    status: string;
+  }>;
+  outstandingInvoices?: Array<{
+    id: string;
+    invoiceNumber: string;
+    dueDate: string | null;
+    remainingAmount: number;
+  }>;
 }) {
   const hubConfig = getHubConfig(config);
   const basePath = `/portal/${orgSlug}/client-hub/payments`;
@@ -1299,11 +1397,11 @@ export function ClientHubPaymentsView({
         <div className="grid gap-4 sm:grid-cols-2">
           <ShellCard className="p-6">
             <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--hub-text-muted)]">Total Paid</p>
-            <p className="mt-3 text-3xl font-semibold tracking-[-0.03em] text-[var(--hub-text-strong)]">{formatCurrency(TOTAL_PAID)}</p>
+            <p className="mt-3 text-3xl font-semibold tracking-[-0.03em] text-[var(--hub-text-strong)]">{formatCurrency(totalPaid)}</p>
           </ShellCard>
           <ShellCard className="p-6">
             <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--hub-text-muted)]">Outstanding</p>
-            <p className="mt-3 text-3xl font-semibold tracking-[-0.03em] text-[var(--hub-text-strong)]">{formatCurrency(OUTSTANDING_BALANCE)}</p>
+            <p className="mt-3 text-3xl font-semibold tracking-[-0.03em] text-[var(--hub-text-strong)]">{formatCurrency(outstandingBalance)}</p>
           </ShellCard>
         </div>
 
@@ -1319,20 +1417,63 @@ export function ClientHubPaymentsView({
           </div>
         </ShellCard>
 
+        {outstandingInvoices.length > 0 && (
+          <ShellCard className="overflow-hidden">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--hub-border)] px-6 py-4">
+              <div>
+                <h2 className="text-base font-semibold tracking-[-0.01em] text-[var(--hub-text-strong)]">Unpaid Invoices</h2>
+                <p className="mt-0.5 text-[13px] text-[var(--hub-text-soft)]">Select an invoice to settle your open balance.</p>
+              </div>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-[var(--hub-border)] text-left">
+                    <th className="px-6 py-3.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--hub-text-muted)]">Invoice #</th>
+                    <th className="px-6 py-3.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--hub-text-muted)]">Due Date</th>
+                    <th className="px-6 py-3.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--hub-text-muted)]">Remaining Amount</th>
+                    <th className="px-6 py-3.5 text-right text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--hub-text-muted)]">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {outstandingInvoices.map((invoice) => (
+                    <tr key={invoice.id} className="border-b border-[var(--hub-border)] last:border-b-0 transition hover:bg-[var(--hub-surface-soft)]/40">
+                      <td className="px-6 py-4 text-sm font-semibold text-[var(--hub-text-strong)]">#{invoice.invoiceNumber}</td>
+                      <td className="px-6 py-4 text-sm text-[var(--hub-text-soft)]">{invoice.dueDate ?? "—"}</td>
+                      <td className="px-6 py-4 text-sm font-semibold text-[var(--hub-text-strong)]">{formatCurrency(invoice.remainingAmount)}</td>
+                      <td className="px-6 py-4 text-right">
+                        <Link href={`/portal/${orgSlug}/client-hub/invoices/${invoice.id}/payment`} className="inline-flex items-center rounded-lg bg-[var(--hub-accent)] px-3 py-1.5 text-[12px] font-bold text-white transition hover:brightness-[0.97]">
+                          Pay Now
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </ShellCard>
+        )}
+
         <ShellCard className="overflow-hidden">
           <div className="border-b border-[var(--hub-border)] px-6 py-4">
             <h2 className="text-base font-semibold tracking-[-0.01em] text-[var(--hub-text-strong)]">Payment History</h2>
           </div>
           <div className="divide-y divide-[var(--hub-border)]">
-            {MOCK_PAYMENTS.map((payment) => (
-              <div key={payment.id} className="flex flex-wrap items-center justify-between gap-4 px-6 py-3.5 transition hover:bg-[var(--hub-surface-soft)]/40">
-                <div>
-                  <p className="text-sm font-semibold text-[var(--hub-text-strong)]">Invoice #{payment.invoiceNumber}</p>
-                  <p className="text-[12px] text-[var(--hub-text-soft)]">{payment.paidAt} · {payment.method}</p>
-                </div>
-                <StatusPill className={getStatusStyles(payment.status)}>{payment.status}</StatusPill>
+            {payments.length === 0 ? (
+              <div className="px-6 py-8 text-center text-sm text-[var(--hub-text-muted)]">
+                No payment history available.
               </div>
-            ))}
+            ) : (
+              payments.map((payment) => (
+                <div key={payment.id} className="flex flex-wrap items-center justify-between gap-4 px-6 py-3.5 transition hover:bg-[var(--hub-surface-soft)]/40">
+                  <div>
+                    <p className="text-sm font-semibold text-[var(--hub-text-strong)]">Invoice #{payment.invoiceNumber}</p>
+                    <p className="text-[12px] text-[var(--hub-text-soft)]">{payment.paidAt} · {payment.method}</p>
+                  </div>
+                  <StatusPill className={getStatusStyles(payment.status)}>{payment.status}</StatusPill>
+                </div>
+              ))
+            )}
           </div>
         </ShellCard>
       </div>
