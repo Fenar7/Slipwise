@@ -27,6 +27,20 @@ vi.mock("@/lib/portal-auth", () => ({
   getPortalSession: vi.fn().mockResolvedValue({ customerId: "cust_test_001", orgId: "org_001" }),
 }));
 
+vi.mock("../../actions", () => ({
+  getPortalDashboardData: vi.fn().mockResolvedValue({
+    customer: { id: "cust_test_001", name: "Hadi Azeez", email: "hadi@example.com", phone: null },
+    outstandingBalance: 3000,
+    totalPaid: 5800,
+    pendingInvoices: [
+      { id: "inv-001", invoiceNumber: "INV-000131", dueDate: "2025-10-24", remainingAmount: 1200, totalAmount: 1200, status: "UNPAID" }
+    ],
+    pendingQuotes: [
+      { id: "qt-001", quoteNumber: "QT-000084", title: "Outbound lead generation package", validUntil: "2025-11-12", totalAmount: 2800, status: "SENT" }
+    ],
+  }),
+}));
+
 import DashboardPage from "../page";
 import InvoicesPage from "../invoices/page";
 import InvoiceDetailPage from "../invoices/[id]/page";

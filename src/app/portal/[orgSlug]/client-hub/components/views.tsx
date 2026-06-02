@@ -18,6 +18,46 @@ import { PaymentMethodSelector } from "./payment-method-selector";
 
 export const DEFAULT_HUB_ACCENT = "#e8401e";
 
+export interface ClientHubDashboardData {
+  customer: {
+    id: string;
+    name: string;
+    email: string | null;
+    phone: string | null;
+  };
+  outstandingBalance: number;
+  totalPaid: number;
+  pendingInvoices: Array<{
+    id: string;
+    invoiceNumber: string;
+    dueDate: string | null;
+    remainingAmount: number;
+    totalAmount: number;
+    status: string;
+  }>;
+  pendingQuotes: Array<{
+    id: string;
+    quoteNumber: string;
+    title: string;
+    validUntil: string;
+    totalAmount: number;
+    status: string;
+  }>;
+}
+
+export const fallbackPreviewData: ClientHubDashboardData = {
+  customer: { id: "preview", name: "Valued Customer", email: "client@example.com", phone: null },
+  outstandingBalance: 3000,
+  totalPaid: 5800,
+  pendingInvoices: [
+    { id: "inv-001", invoiceNumber: "INV-000131", dueDate: "2025-10-24", remainingAmount: 1200, totalAmount: 1200, status: "UNPAID" },
+    { id: "inv-003", invoiceNumber: "INV-000124", dueDate: "2025-10-20", remainingAmount: 1800, totalAmount: 4400, status: "PARTIALLY_PAID" }
+  ],
+  pendingQuotes: [
+    { id: "qt-001", quoteNumber: "QT-000084", title: "Outbound lead generation package", validUntil: "2025-11-12", totalAmount: 2800, status: "SENT" }
+  ],
+};
+
 type NavItem = {
   href: string;
   label: string;
@@ -350,12 +390,33 @@ function Sidebar({
   );
 }
 
-function DashboardHero({ orgSlug, config }: { orgSlug: string; config: ClientHubConfig }) {
-  const actions = [
-    { href: `/portal/${orgSlug}/client-hub/invoices`, label: "View Invoices", glyph: "invoice" as const },
-    { href: `/portal/${orgSlug}/client-hub/quotes`, label: "Review Quotes", glyph: "quote" as const },
-    { href: `/portal/${orgSlug}/client-hub/products`, label: "Browse Services", glyph: "products" as const },
-  ];
+function DashboardHero({
+  orgSlug,
+  config,
+  data,
+}: {
+  orgSlug: string;
+  config: ClientHubConfig;
+  data: ClientHubDashboardData;
+}) {
+  const actions: Array<{ href: string; label: string; glyph: "invoice" | "quote" | "products" | "payment" | "home" | "download" | "print" | "arrow" }> = [];
+
+  if (config.navigation.showInvoices) {
+    actions.push({ href: `/portal/${orgSlug}/client-hub/invoices`, label: "View Invoices", glyph: "invoice" });
+  }
+  if (config.navigation.showQuotes) {
+    actions.push({ href: `/portal/${orgSlug}/client-hub/quotes`, label: "Review Quotes", glyph: "quote" });
+  }
+  if (config.navigation.showPayments && data.outstandingBalance > 0) {
+    actions.push({ href: `/portal/${orgSlug}/client-hub/payments`, label: "Make a Payment", glyph: "payment" });
+  }
+  if (config.navigation.showProducts) {
+    actions.push({ href: `/portal/${orgSlug}/client-hub/products`, label: "Browse Services", glyph: "products" });
+  }
+  const hasSupportContact = !!(config.contact.supportEmail || config.contact.supportPhone);
+  if (config.navigation.showContact && hasSupportContact) {
+    actions.push({ href: `/portal/${orgSlug}/client-hub/contact`, label: "Contact Support", glyph: "arrow" });
+  }
 
   return (
     <section className="relative overflow-hidden rounded-2xl border border-[var(--hub-border)] bg-[var(--hub-surface)] px-6 py-10 sm:px-10 sm:py-14 lg:px-12" style={{ background: "var(--hub-hero-gradient)" }}>
@@ -390,17 +451,32 @@ function DashboardHero({ orgSlug, config }: { orgSlug: string; config: ClientHub
   );
 }
 
-function DashboardActionBoard({ orgSlug }: { orgSlug: string }) {
-  const pendingInvoice = MOCK_INVOICES.find((inv) => inv.remainingAmount > 0);
-  const pendingQuote = MOCK_QUOTES.find((qt) => qt.canRespond);
+function DashboardActionBoard({
+  orgSlug,
+  config,
+  data,
+}: {
+  orgSlug: string;
+  config: ClientHubConfig;
+  data: ClientHubDashboardData;
+}) {
+  const showInvs = config.navigation.showInvoices && config.homeDashboard.showPendingInvoices;
+  const showQts = config.navigation.showQuotes && config.homeDashboard.showPendingQuotes;
+
+  const pendingInvoice = showInvs ? data.pendingInvoices[0] : undefined;
+  const pendingQuote = showQts ? data.pendingQuotes[0] : undefined;
+  
+  const totalActions = (showInvs ? data.pendingInvoices.length : 0) + (showQts ? data.pendingQuotes.length : 0);
 
   return (
     <ShellCard className="p-6 sm:p-7">
       <div className="flex items-center justify-between">
         <h2 className="text-base font-semibold tracking-[-0.01em] text-[var(--hub-text-strong)]">Take Actions</h2>
-        <span className="flex h-5 min-w-5 items-center justify-center rounded-md bg-[var(--hub-accent)] px-1.5 text-[11px] font-bold text-white">
-          {PENDING_INVOICES_COUNT + PENDING_QUOTES_COUNT}
-        </span>
+        {totalActions > 0 && (
+          <span className="flex h-5 min-w-5 items-center justify-center rounded-md bg-[var(--hub-accent)] px-1.5 text-[11px] font-bold text-white">
+            {totalActions}
+          </span>
+        )}
       </div>
 
       <div className="mt-5 space-y-3">
@@ -410,8 +486,8 @@ function DashboardActionBoard({ orgSlug }: { orgSlug: string }) {
               <Glyph name="invoice" className="h-[18px] w-[18px]" />
             </span>
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold text-[var(--hub-text-strong)]">Pay {PENDING_INVOICES_COUNT} invoices</p>
-              <p className="mt-0.5 text-[13px] text-[var(--hub-text-soft)]">{formatCurrency(pendingInvoice.remainingAmount)} pending</p>
+              <p className="text-sm font-semibold text-[var(--hub-text-strong)]">Pay {data.pendingInvoices.length} invoice{data.pendingInvoices.length !== 1 ? "s" : ""}</p>
+              <p className="mt-0.5 text-[13px] text-[var(--hub-text-soft)]">{formatCurrency(data.outstandingBalance)} pending</p>
             </div>
             <Link href={`/portal/${orgSlug}/client-hub/invoices/${pendingInvoice.id}`} className="shrink-0 rounded-lg border border-[var(--hub-border)] bg-white px-4 py-2 text-[13px] font-semibold text-[var(--hub-text-strong)] transition hover:bg-[var(--hub-surface-soft)]">
               View Invoice
@@ -425,7 +501,7 @@ function DashboardActionBoard({ orgSlug }: { orgSlug: string }) {
               <Glyph name="quote" className="h-[18px] w-[18px]" />
             </span>
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold text-[var(--hub-text-strong)]">Respond to {PENDING_QUOTES_COUNT} quote</p>
+              <p className="text-sm font-semibold text-[var(--hub-text-strong)]">Respond to {data.pendingQuotes.length} quote{data.pendingQuotes.length !== 1 ? "s" : ""}</p>
               <p className="mt-0.5 text-[13px] text-[var(--hub-text-soft)]">Awaiting your response</p>
             </div>
             <Link href={`/portal/${orgSlug}/client-hub/quotes/${pendingQuote.id}`} className="shrink-0 rounded-lg border border-[var(--hub-border)] bg-white px-4 py-2 text-[13px] font-semibold text-[var(--hub-text-strong)] transition hover:bg-[var(--hub-surface-soft)]">
@@ -434,7 +510,7 @@ function DashboardActionBoard({ orgSlug }: { orgSlug: string }) {
           </div>
         )}
 
-        {!pendingInvoice && !pendingQuote && (
+        {totalActions === 0 && (
           <div className="flex min-h-[120px] items-center justify-center rounded-xl border border-dashed border-[var(--hub-border)] text-sm text-[var(--hub-text-muted)]">
             No actions required right now
           </div>
@@ -466,8 +542,8 @@ function SupportCard({ orgSlug, config }: { orgSlug: string; config: ClientHubCo
   );
 }
 
-function PendingInvoicesCard({ orgSlug }: { orgSlug: string }) {
-  const pending = MOCK_INVOICES.filter((invoice) => invoice.remainingAmount > 0);
+function PendingInvoicesCard({ orgSlug, data }: { orgSlug: string; data: ClientHubDashboardData }) {
+  const pending = data.pendingInvoices;
 
   return (
     <ShellCard className="p-5 sm:p-6">
@@ -475,17 +551,23 @@ function PendingInvoicesCard({ orgSlug }: { orgSlug: string }) {
         <h3 className="text-base font-semibold tracking-[-0.01em] text-[var(--hub-text-strong)]">Pending Invoices</h3>
         <span className="flex h-5 min-w-5 items-center justify-center rounded-md bg-[var(--hub-accent)] px-1.5 text-[11px] font-bold text-white">{pending.length}</span>
       </div>
-      <div className="mt-4 space-y-2">
-        {pending.map((invoice) => (
-          <div key={invoice.id} className="flex items-center justify-between gap-4 rounded-xl border border-[var(--hub-border)] bg-[var(--hub-surface-soft)]/40 px-4 py-3.5 transition hover:border-[var(--hub-border-strong)]">
-            <div className="min-w-0">
-              <p className="text-sm font-semibold text-[var(--hub-text-strong)]">#{invoice.invoiceNumber}</p>
-              <p className="text-[12px] text-[var(--hub-text-muted)]">Due {invoice.dueDate}</p>
+      {pending.length > 0 ? (
+        <div className="mt-4 space-y-2">
+          {pending.map((invoice) => (
+            <div key={invoice.id} className="flex items-center justify-between gap-4 rounded-xl border border-[var(--hub-border)] bg-[var(--hub-surface-soft)]/40 px-4 py-3.5 transition hover:border-[var(--hub-border-strong)]">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-[var(--hub-text-strong)]">#{invoice.invoiceNumber}</p>
+                <p className="text-[12px] text-[var(--hub-text-muted)]">Due {invoice.dueDate ?? "—"}</p>
+              </div>
+              <p className="shrink-0 text-sm font-semibold text-[var(--hub-text-strong)]">{formatCurrency(invoice.remainingAmount)}</p>
             </div>
-            <p className="shrink-0 text-sm font-semibold text-[var(--hub-text-strong)]">{formatCurrency(invoice.remainingAmount)}</p>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      ) : (
+        <div className="mt-4 flex min-h-[120px] items-center justify-center rounded-xl border border-dashed border-[var(--hub-border)] text-sm text-[var(--hub-text-muted)]">
+          No pending invoices
+        </div>
+      )}
       <Link href={`/portal/${orgSlug}/client-hub/invoices`} className="mt-4 inline-flex w-full items-center justify-center rounded-lg border border-[var(--hub-border)] bg-white px-4 py-2.5 text-[13px] font-semibold text-[var(--hub-text-strong)] transition hover:bg-[var(--hub-surface-soft)]">
         View All
       </Link>
@@ -493,8 +575,8 @@ function PendingInvoicesCard({ orgSlug }: { orgSlug: string }) {
   );
 }
 
-function PendingQuotesCard({ orgSlug }: { orgSlug: string }) {
-  const pending = MOCK_QUOTES.filter((quote) => quote.canRespond);
+function PendingQuotesCard({ orgSlug, data }: { orgSlug: string; data: ClientHubDashboardData }) {
+  const pending = data.pendingQuotes;
 
   return (
     <ShellCard className="p-5 sm:p-6">
@@ -696,24 +778,69 @@ export function ClientHubPreviewShell({
 export function ClientHubDashboardView({
   orgSlug,
   config,
+  data = fallbackPreviewData,
 }: {
   orgSlug: string;
   config?: ClientHubConfig;
+  data?: ClientHubDashboardData;
 }) {
   const hubConfig = getHubConfig(config);
   const basePath = `/portal/${orgSlug}/client-hub`;
 
+  const unpaidInvoices = data.pendingInvoices;
+  const pendingQuotes = data.pendingQuotes;
+
+  const showOutstanding = hubConfig.homeDashboard.showOutstandingBalance && hubConfig.navigation.showInvoices;
+  const showPendingInvs = hubConfig.homeDashboard.showPendingInvoices && hubConfig.navigation.showInvoices;
+  const showPendingQts = hubConfig.homeDashboard.showPendingQuotes && hubConfig.navigation.showQuotes;
+  const showTotalPaid = hubConfig.navigation.showPayments;
+
   return (
     <div className="space-y-6">
-      <DashboardHero orgSlug={orgSlug} config={hubConfig} />
+      <DashboardHero orgSlug={orgSlug} config={hubConfig} data={data} />
+
+      {/* Summary Cards */}
+      {(showOutstanding || showPendingInvs || showPendingQts || showTotalPaid) && (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {showOutstanding && (
+            <SummaryMetric
+              label="Outstanding Balance"
+              value={formatCurrency(data.outstandingBalance)}
+              hint={data.outstandingBalance > 0 ? "Awaiting your payment" : "No outstanding balance"}
+            />
+          )}
+          {showPendingInvs && (
+            <SummaryMetric
+              label="Pending Invoices"
+              value={`${unpaidInvoices.length}`}
+              hint={unpaidInvoices.length > 0 ? "Action required" : "All invoices settled"}
+            />
+          )}
+          {showPendingQts && (
+            <SummaryMetric
+              label="Pending Quotes"
+              value={`${pendingQuotes.length}`}
+              hint={pendingQuotes.length > 0 ? "Awaiting response" : "No open quotes"}
+            />
+          )}
+          {showTotalPaid && (
+            <SummaryMetric
+              label="Total Paid"
+              value={formatCurrency(data.totalPaid)}
+              hint="Lifetime transaction volume"
+            />
+          )}
+        </div>
+      )}
+
       <div className="grid gap-5 xl:grid-cols-[220px_1fr_280px]">
         <Sidebar orgSlug={orgSlug} config={hubConfig} activePath={basePath} />
-        <DashboardActionBoard orgSlug={orgSlug} />
+        <DashboardActionBoard orgSlug={orgSlug} config={hubConfig} data={data} />
         <SupportCard orgSlug={orgSlug} config={hubConfig} />
       </div>
       <div className="grid gap-5 md:grid-cols-[7fr_5fr]">
-        <PendingInvoicesCard orgSlug={orgSlug} />
-        <PendingQuotesCard orgSlug={orgSlug} />
+        {showPendingInvs && <PendingInvoicesCard orgSlug={orgSlug} data={data} />}
+        {showPendingQts && <PendingQuotesCard orgSlug={orgSlug} data={data} />}
       </div>
     </div>
   );

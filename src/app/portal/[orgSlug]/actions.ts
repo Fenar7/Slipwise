@@ -623,3 +623,120 @@ export async function declinePortalQuote(
     return { success: false, error: err instanceof Error ? err.message : "Failed to decline quote" };
   }
 }
+
+// ─── 11. Get Portal Client Hub Dashboard Data (Sprint 6.1) ──────────────────────
+
+export async function getPortalDashboardData(orgSlug: string) {
+  const session = await requireSession();
+  await resolveOrgId(orgSlug, session.orgId);
+
+  const customer = await db.customer.findFirst({
+    where: {
+      id: session.customerId,
+      organizationId: session.orgId,
+    },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      phone: true,
+    },
+  });
+
+  if (!customer) {
+    throw new Error("Customer not found");
+  }
+
+  const invoices = await db.invoice.findMany({
+    where: {
+      organizationId: session.orgId,
+      customerId: session.customerId,
+      status: { not: "DRAFT" },
+    },
+    orderBy: { invoiceDate: "desc" },
+    select: {
+      id: true,
+      invoiceNumber: true,
+      invoiceDate: true,
+      dueDate: true,
+      totalAmount: true,
+      amountPaid: true,
+      remainingAmount: true,
+      status: true,
+    },
+  });
+
+  const quotes = await db.quote.findMany({
+    where: {
+      orgId: session.orgId,
+      customerId: session.customerId,
+      status: { not: "DRAFT" },
+    },
+    orderBy: { createdAt: "desc" },
+    select: {
+      id: true,
+      quoteNumber: true,
+      title: true,
+      status: true,
+      issueDate: true,
+      validUntil: true,
+      totalAmount: true,
+      acceptedAt: true,
+      declinedAt: true,
+    },
+  });
+
+  // Calculate outstanding balance
+  // Filter for open invoices that are unpaid or partially paid
+  const unpaidInvoices = invoices.filter(
+    (inv) => inv.status !== "PAID" && inv.status !== "CANCELLED"
+  );
+  const outstandingBalance = unpaidInvoices.reduce(
+    (sum, inv) => sum + toAccountingNumber(inv.remainingAmount),
+    0
+  );
+
+  // Calculate total paid across all non-draft, non-cancelled invoices
+  const validInvoices = invoices.filter((inv) => inv.status !== "CANCELLED");
+  const totalPaid = validInvoices.reduce(
+    (sum, inv) => sum + toAccountingNumber(inv.amountPaid),
+    0
+  );
+
+  logPortalAccess({
+    orgId: session.orgId,
+    customerId: session.customerId,
+    path: `/portal/${orgSlug}/client-hub`,
+    action: "view_dashboard",
+  });
+
+  return {
+    customer: {
+      id: customer.id,
+      name: customer.name,
+      email: customer.email,
+      phone: customer.phone,
+    },
+    outstandingBalance,
+    totalPaid,
+    pendingInvoices: unpaidInvoices.map((inv) => ({
+      id: inv.id,
+      invoiceNumber: inv.invoiceNumber ?? "—",
+      dueDate: inv.dueDate ? formatIsoDate(inv.dueDate) : null,
+      remainingAmount: toAccountingNumber(inv.remainingAmount),
+      totalAmount: toAccountingNumber(inv.totalAmount),
+      status: inv.status,
+    })),
+    pendingQuotes: quotes
+      .filter((q) => q.status === "SENT" && q.validUntil >= new Date())
+      .map((q) => ({
+        id: q.id,
+        quoteNumber: q.quoteNumber,
+        title: q.title,
+        validUntil: formatIsoDate(q.validUntil),
+        totalAmount: toAccountingNumber(q.totalAmount),
+        status: q.status,
+      })),
+  };
+}
+
