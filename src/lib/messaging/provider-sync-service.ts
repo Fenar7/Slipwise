@@ -15,16 +15,16 @@ import { toMeetingRecord, toTaskRecord } from "./mappers";
 import { ConversationAccessError, NotFoundError } from "./errors";
 
 // Helper to parse and serialize multiple provider event IDs in a single text column
-export function parseProviderEventIds(raw: string | null): Record<CalendarProvider, string> {
-  if (!raw) return {} as Record<CalendarProvider, string>;
+export function parseProviderEventIds(raw: string | null): Record<string, string> {
+  if (!raw) return {} as Record<string, string>;
   try {
     const parsed = JSON.parse(raw);
     if (parsed && typeof parsed === "object") {
-      return parsed as Record<CalendarProvider, string>;
+      return parsed as Record<string, string>;
     }
   } catch {}
   // Fallback / legacy support (flat string assumed as GOOGLE event ID)
-  return { GOOGLE: raw } as Record<CalendarProvider, string>;
+  return { GOOGLE: raw } as Record<string, string>;
 }
 
 export function serializeProviderEventIds(ids: Record<string, string>): string {
@@ -181,12 +181,29 @@ export async function syncMeetingToProvider(orgId: string, meetingId: string): P
       });
 
       const adapter = getCalendarProviderAdapter(provider);
-      const remoteEventId = currentEventIds[provider];
+      
+      // Connection-keyed mapping lookup with legacy provider-keyed fallback & migration
+      const key = conn.id;
+      let remoteEventId = updatedEventIds[key];
+      if (!remoteEventId && updatedEventIds[provider]) {
+        remoteEventId = updatedEventIds[provider];
+        updatedEventIds[key] = remoteEventId;
+        delete updatedEventIds[provider];
+      }
 
       if (meeting.status === "CANCELLED") {
         if (remoteEventId) {
-          await adapter.deleteEvent(activeAccessToken, remoteEventId);
-          delete updatedEventIds[provider];
+          try {
+            await adapter.deleteEvent(activeAccessToken, remoteEventId);
+          } catch (err: any) {
+            const errMsg = err.message || "";
+            const isNotFound = errMsg.includes("404") || errMsg.toLowerCase().includes("not found") || errMsg.includes("notFound");
+            if (!isNotFound) {
+              throw err;
+            }
+          }
+          delete updatedEventIds[key];
+          delete updatedEventIds[provider]; // also clean up legacy if any
         }
       } else {
         const startAt = meeting.scheduledAt;
@@ -202,7 +219,7 @@ export async function syncMeetingToProvider(orgId: string, meetingId: string): P
             attendeeEmails,
           });
 
-          updatedEventIds[provider] = result.providerEventId;
+          updatedEventIds[key] = result.providerEventId;
           if (result.joinUrl) {
             metadataPatch.joinUrl = result.joinUrl;
           }
@@ -214,22 +231,48 @@ export async function syncMeetingToProvider(orgId: string, meetingId: string): P
           }
         } else {
           // UPDATE
-          const result = await adapter.updateEvent(activeAccessToken, remoteEventId, {
-            title: meeting.title,
-            description: meeting.description,
-            startAt,
-            endAt,
-            attendeeEmails,
-          });
+          try {
+            const result = await adapter.updateEvent(activeAccessToken, remoteEventId, {
+              title: meeting.title,
+              description: meeting.description,
+              startAt,
+              endAt,
+              attendeeEmails,
+            });
 
-          if (result.joinUrl) {
-            metadataPatch.joinUrl = result.joinUrl;
-          }
-          if (result.attendeeResponses) {
-            metadataPatch.attendeeResponses = {
-              ...metadataPatch.attendeeResponses,
-              ...result.attendeeResponses,
-            };
+            if (result.joinUrl) {
+              metadataPatch.joinUrl = result.joinUrl;
+            }
+            if (result.attendeeResponses) {
+              metadataPatch.attendeeResponses = {
+                ...metadataPatch.attendeeResponses,
+                ...result.attendeeResponses,
+              };
+            }
+          } catch (err: any) {
+            const errMsg = err.message || "";
+            if (errMsg.includes("404") || errMsg.toLowerCase().includes("not found") || errMsg.includes("notFound")) {
+              // Remote event has been deleted. Re-create it!
+              const result = await adapter.createEvent(activeAccessToken, {
+                title: meeting.title,
+                description: meeting.description,
+                startAt,
+                endAt,
+                attendeeEmails,
+              });
+              updatedEventIds[key] = result.providerEventId;
+              if (result.joinUrl) {
+                metadataPatch.joinUrl = result.joinUrl;
+              }
+              if (result.attendeeResponses) {
+                metadataPatch.attendeeResponses = {
+                  ...metadataPatch.attendeeResponses,
+                  ...result.attendeeResponses,
+                };
+              }
+            } else {
+              throw err;
+            }
           }
         }
       }
@@ -349,13 +392,30 @@ export async function syncTaskToProvider(orgId: string, taskId: string): Promise
       });
 
       const adapter = getCalendarProviderAdapter(provider);
-      const remoteEventId = currentEventIds[provider];
+      
+      // Connection-keyed mapping lookup with legacy provider-keyed fallback & migration
+      const key = conn.id;
+      let remoteEventId = updatedEventIds[key];
+      if (!remoteEventId && updatedEventIds[provider]) {
+        remoteEventId = updatedEventIds[provider];
+        updatedEventIds[key] = remoteEventId;
+        delete updatedEventIds[provider];
+      }
 
       if (!isEligible) {
         // DELETE event if previously published but no longer eligible
         if (remoteEventId) {
-          await adapter.deleteEvent(activeAccessToken, remoteEventId);
-          delete updatedEventIds[provider];
+          try {
+            await adapter.deleteEvent(activeAccessToken, remoteEventId);
+          } catch (err: any) {
+            const errMsg = err.message || "";
+            const isNotFound = errMsg.includes("404") || errMsg.toLowerCase().includes("not found") || errMsg.includes("notFound");
+            if (!isNotFound) {
+              throw err;
+            }
+          }
+          delete updatedEventIds[key];
+          delete updatedEventIds[provider]; // also clean up legacy if any
         }
       } else {
         const startAt = task.dueDate!;
@@ -372,10 +432,21 @@ export async function syncTaskToProvider(orgId: string, taskId: string): Promise
         if (!remoteEventId) {
           // CREATE
           const result = await adapter.createEvent(activeAccessToken, eventInput);
-          updatedEventIds[provider] = result.providerEventId;
+          updatedEventIds[key] = result.providerEventId;
         } else {
           // UPDATE
-          await adapter.updateEvent(activeAccessToken, remoteEventId, eventInput);
+          try {
+            await adapter.updateEvent(activeAccessToken, remoteEventId, eventInput);
+          } catch (err: any) {
+            const errMsg = err.message || "";
+            if (errMsg.includes("404") || errMsg.toLowerCase().includes("not found") || errMsg.includes("notFound")) {
+              // Remote event has been deleted. Re-create it!
+              const result = await adapter.createEvent(activeAccessToken, eventInput);
+              updatedEventIds[key] = result.providerEventId;
+            } else {
+              throw err;
+            }
+          }
         }
       }
 
@@ -464,7 +535,7 @@ export async function reconcileProviderChangesForMeeting(orgId: string, meetingI
 
   for (const conn of connections) {
     const provider = conn.provider;
-    const remoteEventId = currentEventIds[provider];
+    const remoteEventId = currentEventIds[conn.id] || currentEventIds[provider];
     if (!remoteEventId) continue;
 
     try {
@@ -492,6 +563,8 @@ export async function reconcileProviderChangesForMeeting(orgId: string, meetingI
       if (!remoteEvent || remoteEvent.status === "CANCELLED") {
         // Inbound remote cancellation reconciled
         statusUpdate = "CANCELLED";
+        delete currentEventIds[conn.id];
+        delete currentEventIds[provider];
         hasDrift = true;
       } else {
         // Title or scheduledTime drift checked
@@ -604,7 +677,7 @@ export async function reconcileProviderChangesForTask(orgId: string, taskId: str
 
   for (const conn of connections) {
     const provider = conn.provider;
-    const remoteEventId = currentEventIds[provider];
+    const remoteEventId = currentEventIds[conn.id] || currentEventIds[provider];
     if (!remoteEventId) continue;
 
     try {
@@ -631,6 +704,7 @@ export async function reconcileProviderChangesForTask(orgId: string, taskId: str
 
       if (!remoteEvent) {
         // Remote deletion reconciled (remove mapping event ID)
+        delete currentEventIds[conn.id];
         delete currentEventIds[provider];
         hasDrift = true;
       } else {
