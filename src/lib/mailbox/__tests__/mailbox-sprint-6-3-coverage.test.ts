@@ -8,7 +8,6 @@ import {
 import type {
   MailboxFolderCoverageSummary,
   MailboxOverallCoverage,
-  MailboxCoverageFolder,
 } from "../domain-types";
 
 function makeCoverage(
@@ -90,7 +89,7 @@ describe("computeOverallCoverage", () => {
     expect(computeOverallCoverage(coverages)).toBe("PARTIAL");
   });
 
-  it("ignores non-required ALL_MAIL folder for overall computation", () => {
+  it("ignores non-required folders for overall computation", () => {
     const coverages = [
       makeComplete("INBOX"),
       makeComplete("SENT"),
@@ -98,13 +97,13 @@ describe("computeOverallCoverage", () => {
       makeComplete("DRAFT"),
       makeComplete("ARCHIVE"),
       makeComplete("TRASH"),
-      makeCoverage("ALL_MAIL", "BOOTSTRAPPING"),
+      makeCoverage("CUSTOM_LABEL", "BOOTSTRAPPING"),
     ];
     expect(computeOverallCoverage(coverages)).toBe("COMPLETE");
   });
 
-  it("returns PARTIAL when only non-required folders exist alongside missing required ones", () => {
-    const coverages = [makeCoverage("ALL_MAIL", "COMPLETE")];
+  it("returns PENDING when only non-required folders exist alongside missing required ones", () => {
+    const coverages = [makeCoverage("CUSTOM_LABEL", "COMPLETE")];
     expect(computeOverallCoverage(coverages)).toBe("PENDING");
   });
 });
@@ -158,7 +157,7 @@ describe("folderMayHaveMoreData", () => {
 });
 
 describe("GMAIL_REQUIRED_COVERAGE_FOLDERS", () => {
-  it("includes INBOX, SENT, SPAM, DRAFT, ARCHIVE, TRASH", () => {
+  it("contains only the six tracked Gmail folders (no ALL_MAIL)", () => {
     expect(GMAIL_REQUIRED_COVERAGE_FOLDERS).toEqual([
       "INBOX",
       "SENT",
@@ -167,10 +166,6 @@ describe("GMAIL_REQUIRED_COVERAGE_FOLDERS", () => {
       "ARCHIVE",
       "TRASH",
     ]);
-  });
-
-  it("does NOT include ALL_MAIL", () => {
-    expect(GMAIL_REQUIRED_COVERAGE_FOLDERS).not.toContain("ALL_MAIL");
   });
 });
 
