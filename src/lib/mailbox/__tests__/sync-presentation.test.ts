@@ -729,6 +729,104 @@ describe("buildMailboxSyncPresentation", () => {
       expect(sync.lastErrorSummary).toBe("OAuth token revoked");
     });
 
+    it("abandoned FAILED run (stale cleanup) with prior COMPLETED run shows completed", () => {
+      const sync = buildMailboxSyncPresentation(
+        MAKE_CONNECTION(),
+        {
+          latestRun: {
+            id: "run_abandoned",
+            status: "FAILED",
+            syncMode: "INITIAL",
+            triggerSource: "MANUAL",
+            startedAt: new Date(NOW - 35 * 60 * 1000),
+            completedAt: new Date(NOW - 34 * 60 * 1000),
+            stats: null,
+            errorCategory: "unknown",
+            errorSummary: "Sync run abandoned — did not complete within expected time",
+          },
+          latestCompletedRun: {
+            id: "run_prior",
+            status: "COMPLETED",
+            syncMode: "DELTA",
+            triggerSource: "SCHEDULED",
+            startedAt: new Date(NOW - 120 * 60 * 1000),
+            completedAt: new Date(NOW - 118 * 60 * 1000),
+            stats: { threadCount: 42, messageCount: 180 },
+            errorCategory: null,
+            errorMessage: null,
+          },
+        },
+        NOW,
+      );
+
+      expect(sync.state).toBe("completed");
+      expect(sync.lastRunStatus).toBe("FAILED");
+      expect(sync.lastErrorCategory).toBeNull();
+      expect(sync.lastErrorSummary).toBeNull();
+      expect(sync.stageLabel).toBe("Mailbox up to date");
+      expect(sync.detailLabel).toContain("42 threads");
+      expect(sync.detailLabel).toContain("180 messages");
+    });
+
+    it("abandoned FAILED run with NO prior COMPLETED run still shows failed", () => {
+      const sync = buildMailboxSyncPresentation(
+        MAKE_CONNECTION({ lastSyncAt: null }),
+        {
+          latestRun: {
+            id: "run_abandoned_no_prior",
+            status: "FAILED",
+            syncMode: "INITIAL",
+            triggerSource: "MANUAL",
+            startedAt: new Date(NOW - 35 * 60 * 1000),
+            completedAt: new Date(NOW - 34 * 60 * 1000),
+            stats: null,
+            errorCategory: "unknown",
+            errorSummary: "Sync run abandoned — did not complete within expected time",
+          },
+        },
+        NOW,
+      );
+
+      expect(sync.state).toBe("failed");
+      expect(sync.lastRunStatus).toBe("FAILED");
+      expect(sync.lastErrorSummary).toBe("Sync run abandoned — did not complete within expected time");
+    });
+
+    it("genuine FAILED run with prior COMPLETED run still shows failed (not abandoned)", () => {
+      const sync = buildMailboxSyncPresentation(
+        MAKE_CONNECTION(),
+        {
+          latestRun: {
+            id: "run_genuine_fail",
+            status: "FAILED",
+            syncMode: "DELTA",
+            triggerSource: "MANUAL",
+            startedAt: new Date(NOW - 60_000),
+            completedAt: new Date(NOW - 30_000),
+            stats: null,
+            errorCategory: "rate_limited",
+            errorSummary: "Gmail API rate limit exceeded",
+          },
+          latestCompletedRun: {
+            id: "run_prior",
+            status: "COMPLETED",
+            syncMode: "DELTA",
+            triggerSource: "SCHEDULED",
+            startedAt: new Date(NOW - 120 * 60 * 1000),
+            completedAt: new Date(NOW - 118 * 60 * 1000),
+            stats: { threadCount: 42, messageCount: 180 },
+            errorCategory: null,
+            errorMessage: null,
+          },
+        },
+        NOW,
+      );
+
+      expect(sync.state).toBe("failed");
+      expect(sync.lastErrorCategory).toBe("rate_limited");
+      expect(sync.lastErrorSummary).toBe("Gmail API rate limit exceeded");
+    });
+
     it("draft-only degradation in COMPLETED state does not show full-sync failure", () => {
       const sync = buildMailboxSyncPresentation(
         MAKE_CONNECTION(),

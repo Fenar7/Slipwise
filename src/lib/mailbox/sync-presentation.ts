@@ -193,7 +193,14 @@ export function buildMailboxSyncPresentation(
   // Precedence: a completed run supersedes older failure state.
   // If latestRun is COMPLETED (most recent by startedAt), the mailbox
   // is healthy regardless of prior failures or stale connection-level fields.
-  const isSupersededByCompletedRun = latestRun?.status === "COMPLETED";
+  // An abandoned FAILED run (from stale cleanup) is also superseded when a
+  // prior completed run exists — the mailbox auto-recovers via folder coverage.
+  const ABANDONED_SUMMARY = "Sync run abandoned — did not complete within expected time";
+  const isSupersededByCompletedRun =
+    latestRun?.status === "COMPLETED" ||
+    (latestRun?.status === "FAILED" &&
+      latestRun.errorSummary === ABANDONED_SUMMARY &&
+      latestCompletedRun !== null);
 
   const hasFailedRun = !isSupersededByCompletedRun && (
     latestRun?.status === "FAILED" ||
