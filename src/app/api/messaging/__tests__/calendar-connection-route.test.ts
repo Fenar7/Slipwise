@@ -91,6 +91,7 @@ describe("Calendar Connection API Routes", () => {
     vi.stubEnv("GOOGLE_CLIENT_SECRET", "mock-g-client-secret");
     vi.stubEnv("OUTLOOK_CLIENT_ID", "mock-o-client-id");
     vi.stubEnv("OUTLOOK_CLIENT_SECRET", "mock-o-client-secret");
+    vi.stubEnv("RAZORPAY_ENCRYPTION_KEY", "abcd1234abcd1234abcd1234abcd1234");
 
     const mockFetch = vi.fn().mockImplementation((url: string) => {
       if (url.includes("oauth2.googleapis.com/token")) {

@@ -185,7 +185,15 @@ export async function syncMeetingToProvider(orgId: string, meetingId: string): P
 
       if (meeting.status === "CANCELLED") {
         if (remoteEventId) {
-          await adapter.deleteEvent(activeAccessToken, remoteEventId);
+          try {
+            await adapter.deleteEvent(activeAccessToken, remoteEventId);
+          } catch (err: any) {
+            const errMsg = err.message || "";
+            const isNotFound = errMsg.includes("404") || errMsg.toLowerCase().includes("not found") || errMsg.includes("notFound");
+            if (!isNotFound) {
+              throw err;
+            }
+          }
           delete updatedEventIds[provider];
         }
       } else {
@@ -380,7 +388,15 @@ export async function syncTaskToProvider(orgId: string, taskId: string): Promise
       if (!isEligible) {
         // DELETE event if previously published but no longer eligible
         if (remoteEventId) {
-          await adapter.deleteEvent(activeAccessToken, remoteEventId);
+          try {
+            await adapter.deleteEvent(activeAccessToken, remoteEventId);
+          } catch (err: any) {
+            const errMsg = err.message || "";
+            const isNotFound = errMsg.includes("404") || errMsg.toLowerCase().includes("not found") || errMsg.includes("notFound");
+            if (!isNotFound) {
+              throw err;
+            }
+          }
           delete updatedEventIds[provider];
         }
       } else {

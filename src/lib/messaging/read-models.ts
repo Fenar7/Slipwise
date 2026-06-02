@@ -24,7 +24,8 @@ import {
   getConversationById,
   listConversationsForUser,
 } from "./conversation-service";
-import { reconcileProviderChangesForMeeting, reconcileProviderChangesForTask, parseProviderEventIds } from "./provider-sync-service";
+import { reconcileProviderChangesForMeeting, reconcileProviderChangesForTask, parseProviderEventIds, getDecryptedTokens } from "./provider-sync-service";
+import { getCalendarProviderAdapter } from "./calendar-providers";
 import {
   getMessageById,
 } from "./message-service";
@@ -1023,7 +1024,7 @@ export async function getCalendarDiagnostics(
     };
   });
 
-  // 2. Scan Meetings for sync failures
+  // 2. Scan Meetings for sync failures & drift
   const meetings = await db.conversationMeeting.findMany({
     where: { orgId },
   });
@@ -1034,6 +1035,7 @@ export async function getCalendarDiagnostics(
     for (const m of meetings) {
       if (m.status === "UPCOMING") {
         const eventIds = parseProviderEventIds(m.providerEventId);
+        
         // Check if there are active connections whose provider isn't in eventIds
         const missingProviders = activeConnections.filter(
           (conn) => !eventIds[conn.provider]
@@ -1048,11 +1050,54 @@ export async function getCalendarDiagnostics(
             failureClass: "MISSING_PROVIDER_EVENT",
           });
         } else {
-          // If connection has error, label meeting as degraded
-          const degradedConns = activeConnections.filter(
-            (conn) => conn.lastSyncError && eventIds[conn.provider]
-          );
-          if (degradedConns.length > 0) {
+          // Check for reconcile drift against actual remote provider events
+          let hasDrift = false;
+          let fetchFailed = false;
+
+          for (const conn of activeConnections) {
+            const provider = conn.provider;
+            const remoteEventId = eventIds[provider];
+            if (!remoteEventId) continue;
+
+            try {
+              const { accessToken } = getDecryptedTokens(conn);
+              const adapter = getCalendarProviderAdapter(provider);
+              const remoteEvent = await adapter.getEvent(accessToken, remoteEventId);
+
+              if (!remoteEvent || remoteEvent.status === "CANCELLED") {
+                hasDrift = true;
+              } else {
+                // Check title drift
+                if (remoteEvent.title && remoteEvent.title.trim() !== m.title) {
+                  hasDrift = true;
+                }
+                // Check scheduledTime drift
+                const remoteStartMs = remoteEvent.startAt.getTime();
+                const localStartMs = m.scheduledAt.getTime();
+                if (Math.abs(remoteStartMs - localStartMs) > 1000) {
+                  hasDrift = true;
+                }
+                // Check duration drift
+                const duration = Math.round((remoteEvent.endAt.getTime() - remoteStartMs) / (60 * 1000));
+                if (duration !== m.durationMinutes) {
+                  hasDrift = true;
+                }
+              }
+            } catch (err) {
+              console.error(`[diagnostics] getEvent failed for meeting ${m.id}:`, err);
+              fetchFailed = true;
+            }
+          }
+
+          if (hasDrift) {
+            meetingSyncFailures.push({
+              id: m.id,
+              title: m.title,
+              conversationId: m.conversationId,
+              scheduledAt: m.scheduledAt.toISOString(),
+              failureClass: "RECONCILE_DRIFT",
+            });
+          } else if (fetchFailed) {
             meetingSyncFailures.push({
               id: m.id,
               title: m.title,
@@ -1066,7 +1111,7 @@ export async function getCalendarDiagnostics(
     }
   }
 
-  // 3. Scan Tasks for sync failures
+  // 3. Scan Tasks for sync failures & drift
   const tasks = await db.messagingTask.findMany({
     where: { orgId },
   });
@@ -1078,6 +1123,7 @@ export async function getCalendarDiagnostics(
       const isOpen = t.status === "OPEN" || t.status === "IN_PROGRESS" || t.status === "OVERDUE";
       if (t.dueDate && isOpen) {
         const eventIds = parseProviderEventIds(t.providerEventId);
+        
         const missingProviders = activeConnections.filter(
           (conn) => !eventIds[conn.provider]
         );
@@ -1091,10 +1137,45 @@ export async function getCalendarDiagnostics(
             failureClass: "MISSING_PROVIDER_EVENT",
           });
         } else {
-          const degradedConns = activeConnections.filter(
-            (conn) => conn.lastSyncError && eventIds[conn.provider]
-          );
-          if (degradedConns.length > 0) {
+          // Check for reconcile drift against actual remote provider events
+          let hasDrift = false;
+          let fetchFailed = false;
+
+          for (const conn of activeConnections) {
+            const provider = conn.provider;
+            const remoteEventId = eventIds[provider];
+            if (!remoteEventId) continue;
+
+            try {
+              const { accessToken } = getDecryptedTokens(conn);
+              const adapter = getCalendarProviderAdapter(provider);
+              const remoteEvent = await adapter.getEvent(accessToken, remoteEventId);
+
+              if (!remoteEvent) {
+                hasDrift = true;
+              } else {
+                // Check due-date drift
+                const remoteDueMs = remoteEvent.startAt.getTime();
+                const localDueMs = t.dueDate ? t.dueDate.getTime() : 0;
+                if (Math.abs(remoteDueMs - localDueMs) > 1000) {
+                  hasDrift = true;
+                }
+              }
+            } catch (err) {
+              console.error(`[diagnostics] getEvent failed for task ${t.id}:`, err);
+              fetchFailed = true;
+            }
+          }
+
+          if (hasDrift) {
+            taskSyncFailures.push({
+              id: t.id,
+              title: t.title,
+              conversationId: t.conversationId,
+              dueDate: t.dueDate.toISOString(),
+              failureClass: "RECONCILE_DRIFT",
+            });
+          } else if (fetchFailed) {
             taskSyncFailures.push({
               id: t.id,
               title: t.title,
