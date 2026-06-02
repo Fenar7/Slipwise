@@ -502,6 +502,8 @@ export const GMAIL_REQUIRED_COVERAGE_FOLDERS: MailboxCoverageFolder[] = [
   "SENT",
   "SPAM",
   "DRAFT",
+  "ARCHIVE",
+  "TRASH",
 ];
 
 export interface MailboxFolderCoverageRecord {
@@ -540,18 +542,26 @@ export type MailboxOverallCoverage =
 
 /**
  * Compute the overall coverage state from a set of folder coverages.
- * Required folders are INBOX, SENT, SPAM, DRAFT.
+ * Required folders are INBOX, SENT, SPAM, DRAFT, ARCHIVE, TRASH.
+ * Any required folder without a coverage record is treated as PENDING.
  */
 export function computeOverallCoverage(
   coverages: MailboxFolderCoverageSummary[],
 ): MailboxOverallCoverage {
-  if (coverages.length === 0) return "PENDING";
-
-  const required = coverages.filter((c) =>
-    GMAIL_REQUIRED_COVERAGE_FOLDERS.includes(c.folder as MailboxCoverageFolder),
+  const coverageMap = new Map(coverages.map((c) => [c.folder, c]));
+  const required: MailboxFolderCoverageSummary[] = GMAIL_REQUIRED_COVERAGE_FOLDERS.map(
+    (folder) => {
+      return coverageMap.get(folder) ?? {
+        folder,
+        state: "PENDING" as const,
+        totalThreads: 0,
+        lastCompletedAt: null,
+        errorSummary: null,
+        lastAdvancedCursor: null,
+      };
+    },
   );
 
-  if (required.length === 0) return "PENDING";
   if (required.every((c) => c.state === "PENDING")) return "PENDING";
 
   if (required.some((c) => c.state === "ERRORED")) return "ERRORED";

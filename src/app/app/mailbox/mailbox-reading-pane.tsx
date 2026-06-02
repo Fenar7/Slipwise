@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
 import {
   Reply,
@@ -41,9 +41,6 @@ function isPreviewableMimeType(mimeType: string): boolean {
     "image/webp",
     "image/svg+xml",
     "application/pdf",
-    "text/plain",
-    "text/csv",
-    "text/html",
   ];
   return previewable.includes(mimeType);
 }
@@ -162,6 +159,57 @@ function AttachmentPreviewModal({
   const isPreviewUnsupported = !isImage && !isPdf;
   const isBlockedMime = attachment.mimeType.startsWith("application/x-")
     || attachment.mimeType.startsWith("text/x-");
+
+  const objectUrlRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadPreview() {
+      setLoading(true);
+      setError(null);
+      setPreviewUrl(null);
+      try {
+        const res = await fetch(`/api/mailbox/attachments/message/${attachment.id}/download`);
+        if (!res.ok) {
+          if (!cancelled) setError(`Preview failed (${res.status})`);
+          return;
+        }
+        const contentType = res.headers.get("content-type") ?? "";
+        if (contentType.includes("application/json")) {
+          const json = (await res.json()) as { signedUrl?: string; error?: string };
+          if (!cancelled) {
+            if (json.signedUrl) {
+              setPreviewUrl(json.signedUrl);
+            } else {
+              setError(json.error ?? "Preview unavailable");
+            }
+          }
+        } else {
+          const blob = await res.blob();
+          if (!cancelled) {
+            const url = URL.createObjectURL(blob);
+            objectUrlRef.current = url;
+            setPreviewUrl(url);
+          }
+        }
+      } catch {
+        if (!cancelled) setError("Failed to load preview");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    loadPreview();
+
+    return () => {
+      cancelled = true;
+      if (objectUrlRef.current) {
+        URL.revokeObjectURL(objectUrlRef.current);
+        objectUrlRef.current = null;
+      }
+    };
+  }, [attachment.id]);
 
   return (
     <div
