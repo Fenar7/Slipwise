@@ -34,6 +34,7 @@ const {
         findUnique: vi.fn(),
         upsert: vi.fn(),
         update: vi.fn(),
+        deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
       },
     },
     mockSendEmail: vi.fn(),
@@ -114,6 +115,7 @@ describe("portal-auth", () => {
     mockDb.portalRateLimit.findUnique.mockResolvedValue(null);
     mockDb.portalRateLimit.upsert.mockResolvedValue({ count: 1 });
     mockDb.portalRateLimit.update.mockResolvedValue({});
+    mockDb.portalRateLimit.deleteMany.mockResolvedValue({ count: 0 });
     // Session: default to success
     mockDb.customerPortalSession.create.mockResolvedValue({ id: "sess-1" });
     mockDb.customerPortalSession.findUnique.mockResolvedValue(null);

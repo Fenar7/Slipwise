@@ -11,7 +11,7 @@ type RateLimitResult = {
 
 const FAIL_OPEN: RateLimitResult = { success: true, remaining: 999 };
 
-async function rateLimit(
+export async function rateLimit(
   identifier: string,
   options?: { maxRequests?: number; window?: string }
 ): Promise<RateLimitResult> {

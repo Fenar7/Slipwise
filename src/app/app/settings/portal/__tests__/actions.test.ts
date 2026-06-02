@@ -30,6 +30,10 @@ const mockDb = vi.hoisted(() => ({
   customerPortalToken: {
     updateMany: vi.fn().mockResolvedValue({ count: 0 }),
   },
+  customerPortalAccessLog: {
+    findMany: vi.fn().mockResolvedValue([]),
+    count: vi.fn().mockResolvedValue(0),
+  },
 }));
 
 vi.mock("server-only", () => ({}));
@@ -40,7 +44,14 @@ vi.mock("@/lib/auth", () => ({
   requireRole: mockRequireRole,
 }));
 
-import { updatePortalSettings, updatePortalPolicies, getPortalCustomersWithAccessState } from "../actions";
+import {
+  updatePortalSettings,
+  updatePortalPolicies,
+  getPortalCustomersWithAccessState,
+  getPortalAccessLogs,
+  getPortalSettings,
+  getPortalPolicies,
+} from "../actions";
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -177,3 +188,162 @@ describe("getPortalCustomersWithAccessState", () => {
     expect(mockRequireRole).toHaveBeenCalledWith("admin");
   });
 });
+
+describe("getPortalSettings", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    setupAuth();
+  });
+
+  it("requires admin role — delegates to requireRole('admin')", async () => {
+    await getPortalSettings(ORG_ID);
+    expect(mockRequireRole).toHaveBeenCalledWith("admin");
+  });
+
+  it("throws Unauthorized on org mismatch", async () => {
+    setupAuth("org-wrong");
+    await expect(getPortalSettings(ORG_ID)).rejects.toThrow("Unauthorized");
+  });
+
+  it("retrieves defaults if authorized", async () => {
+    mockDb.orgDefaults.findUnique.mockResolvedValue({ portalEnabled: true });
+    const res = await getPortalSettings(ORG_ID);
+    expect(res).toEqual({ portalEnabled: true });
+  });
+});
+
+describe("getPortalPolicies", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    setupAuth();
+  });
+
+  it("requires admin role — delegates to requireRole('admin')", async () => {
+    await getPortalPolicies(ORG_ID);
+    expect(mockRequireRole).toHaveBeenCalledWith("admin");
+  });
+
+  it("throws Unauthorized on org mismatch", async () => {
+    setupAuth("org-wrong");
+    await expect(getPortalPolicies(ORG_ID)).rejects.toThrow("Unauthorized");
+  });
+});
+
+describe("getPortalAccessLogs", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    setupAuth();
+  });
+
+  it("requires admin role — delegates to requireRole('admin')", async () => {
+    await getPortalAccessLogs(ORG_ID);
+    expect(mockRequireRole).toHaveBeenCalledWith("admin");
+  });
+
+  it("throws error when user is not admin", async () => {
+    mockRequireRole.mockRejectedValueOnce(new Error("Forbidden"));
+    await expect(getPortalAccessLogs(ORG_ID)).rejects.toThrow("Forbidden");
+  });
+
+  it("throws Unauthorized on org mismatch", async () => {
+    setupAuth("org-wrong");
+    await expect(getPortalAccessLogs(ORG_ID)).rejects.toThrow("Unauthorized");
+  });
+
+  it("filters by path and status code", async () => {
+    mockDb.customerPortalAccessLog.findMany.mockResolvedValue([
+      { id: "log-1", path: "/portal/test-org/settings", statusCode: 200 },
+    ]);
+    mockDb.customerPortalAccessLog.count.mockResolvedValue(1);
+
+    const result = await getPortalAccessLogs(ORG_ID, {
+      path: "/portal",
+      statusCode: 200,
+    });
+
+    expect(mockDb.customerPortalAccessLog.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          path: { contains: "/portal", mode: "insensitive" },
+          statusCode: 200,
+        }),
+      })
+    );
+    expect(result.logs).toHaveLength(1);
+    expect(result.logs[0].id).toBe("log-1");
+  });
+
+  it("filters by inclusive toDate covering the entire selected day", async () => {
+    mockDb.customerPortalAccessLog.findMany.mockResolvedValue([]);
+    mockDb.customerPortalAccessLog.count.mockResolvedValue(0);
+
+    await getPortalAccessLogs(ORG_ID, {
+      toDate: "2026-06-02",
+    });
+
+    expect(mockDb.customerPortalAccessLog.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          accessedAt: expect.objectContaining({
+            lte: expect.any(Date),
+          }),
+        }),
+      })
+    );
+
+    const call = mockDb.customerPortalAccessLog.findMany.mock.calls[0][0];
+    const lteDate = call.where.accessedAt.lte;
+    expect(lteDate.getUTCHours()).toBe(23);
+    expect(lteDate.getUTCMinutes()).toBe(59);
+    expect(lteDate.getUTCSeconds()).toBe(59);
+    expect(lteDate.getUTCMilliseconds()).toBe(999);
+  });
+
+  it("filters by fromDate only", async () => {
+    mockDb.customerPortalAccessLog.findMany.mockResolvedValue([]);
+    mockDb.customerPortalAccessLog.count.mockResolvedValue(0);
+
+    await getPortalAccessLogs(ORG_ID, {
+      fromDate: "2026-06-01",
+    });
+
+    expect(mockDb.customerPortalAccessLog.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          accessedAt: {
+            gte: new Date("2026-06-01"),
+          },
+        }),
+      })
+    );
+  });
+
+  it("filters by both fromDate and toDate together", async () => {
+    mockDb.customerPortalAccessLog.findMany.mockResolvedValue([]);
+    mockDb.customerPortalAccessLog.count.mockResolvedValue(0);
+
+    await getPortalAccessLogs(ORG_ID, {
+      fromDate: "2026-06-01",
+      toDate: "2026-06-02",
+    });
+
+    expect(mockDb.customerPortalAccessLog.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          accessedAt: {
+            gte: new Date("2026-06-01"),
+            lte: expect.any(Date),
+          },
+        }),
+      })
+    );
+
+    const call = mockDb.customerPortalAccessLog.findMany.mock.calls[0][0];
+    const lteDate = call.where.accessedAt.lte;
+    expect(lteDate.getUTCHours()).toBe(23);
+    expect(lteDate.getUTCMinutes()).toBe(59);
+    expect(lteDate.getUTCSeconds()).toBe(59);
+    expect(lteDate.getUTCMilliseconds()).toBe(999);
+  });
+});
+

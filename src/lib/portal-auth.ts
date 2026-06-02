@@ -7,6 +7,7 @@ import { cookies } from "next/headers";
 import { sendEmail } from "@/lib/email";
 import { logAudit } from "@/lib/audit";
 import { redirect } from "next/navigation";
+import { rateLimit } from "@/lib/rate-limit";
 
 // ─── Rate limiting (Redis-preferred, DB fallback, safe for serverless) ───────
 
@@ -22,45 +23,33 @@ const MAGIC_LINK_WINDOW_MS = MAGIC_LINK_WINDOW_SECONDS * 1000;
 async function checkPortalRateLimit(email: string, orgId: string): Promise<boolean> {
   const key = `ml:${orgId}:${sha256(email.toLowerCase())}`;
 
-  // ── Redis path ───────────────────────────────────────────────────────────
+  // Redis path (Atomic Sliding Window via Upstash)
   try {
-    const raw = await redis.get(key);
-    if (raw !== null) {
-      const count = parseInt(raw, 10);
-      if (count >= MAGIC_LINK_MAX_REQUESTS) return false;
-      await redis.set(key, String(count + 1), MAGIC_LINK_WINDOW_SECONDS);
-      return true;
+    const rl = await rateLimit(key, { maxRequests: MAGIC_LINK_MAX_REQUESTS, window: `${MAGIC_LINK_WINDOW_SECONDS} s` });
+    const url = process.env.UPSTASH_REDIS_REST_URL;
+    const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+    if (url && token) {
+      return rl.success;
     }
-    // First request in this window
-    await redis.set(key, "1", MAGIC_LINK_WINDOW_SECONDS);
-    return true;
   } catch {
-    // Redis unavailable — fall through to DB path
+    // Fall through to DB fallback
   }
 
-  // ── DB fallback ──────────────────────────────────────────────────────────
+  // DB path (Atomic Concurrency-Safe Fallback)
   const now = new Date();
   try {
-    const existing = await db.portalRateLimit.findUnique({ where: { key } });
-
-    if (!existing || existing.windowEnd < now) {
-      await db.portalRateLimit.upsert({
-        where: { key },
-        create: { key, count: 1, windowEnd: new Date(Date.now() + MAGIC_LINK_WINDOW_MS) },
-        update: { count: 1, windowEnd: new Date(Date.now() + MAGIC_LINK_WINDOW_MS) },
-      });
-      return true;
-    }
-
-    if (existing.count >= MAGIC_LINK_MAX_REQUESTS) {
-      return false;
-    }
-
-    await db.portalRateLimit.update({
-      where: { key },
-      data: { count: { increment: 1 } },
+    // Atomically delete expired rate limits
+    await db.portalRateLimit.deleteMany({
+      where: { key, windowEnd: { lt: now } },
     });
-    return true;
+
+    const record = await db.portalRateLimit.upsert({
+      where: { key },
+      create: { key, count: 1, windowEnd: new Date(Date.now() + MAGIC_LINK_WINDOW_MS) },
+      update: { count: { increment: 1 } },
+    });
+
+    return record.count <= MAGIC_LINK_MAX_REQUESTS;
   } catch {
     // Fail open on all errors to avoid blocking legitimate users
     return true;
@@ -158,6 +147,57 @@ const REFRESH_THRESHOLD_SECONDS = 4 * 60 * 60;
 const GENERIC_SUCCESS_MESSAGE =
   "If an account exists for this email, a login link has been sent.";
 
+export async function checkPortalResendCooldown(
+  email: string,
+  orgId: string,
+  type: "otp" | "invite" | "magic_link",
+): Promise<{ allowed: boolean; remainingSeconds: number }> {
+  const key = `cooldown:${type}:${orgId}:${sha256(email.toLowerCase())}`;
+  const now = new Date();
+  const cooldownSeconds = 60;
+
+  // Redis path
+  try {
+    const rl = await rateLimit(key, { maxRequests: 1, window: `${cooldownSeconds} s` });
+    const url = process.env.UPSTASH_REDIS_REST_URL;
+    const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+    if (url && token) {
+      if (!rl.success) {
+        const reset = rl.reset ?? (Date.now() + cooldownSeconds * 1000);
+        const remaining = Math.ceil((reset - Date.now()) / 1000);
+        return { allowed: false, remainingSeconds: remaining > 0 ? remaining : cooldownSeconds };
+      }
+      return { allowed: true, remainingSeconds: 0 };
+    }
+  } catch {
+    // Fall through to DB fallback
+  }
+
+  // DB path
+  try {
+    // Atomically delete expired cooldowns
+    await db.portalRateLimit.deleteMany({
+      where: { key, windowEnd: { lt: now } },
+    });
+
+    const record = await db.portalRateLimit.upsert({
+      where: { key },
+      create: { key, count: 1, windowEnd: new Date(Date.now() + cooldownSeconds * 1000) },
+      update: { count: { increment: 1 } },
+    });
+
+    if (record.count > 1) {
+      const remaining = Math.ceil((record.windowEnd.getTime() - Date.now()) / 1000);
+      return { allowed: false, remainingSeconds: remaining > 0 ? remaining : 0 };
+    }
+  } catch (error) {
+    // Fail open on DB error to avoid blocking legitimate users
+    console.error("[portal-auth] Cooldown DB check failed, failing open:", error);
+  }
+
+  return { allowed: true, remainingSeconds: 0 };
+}
+
 export async function requestMagicLink(
   email: string,
   orgSlug: string,
@@ -178,7 +218,7 @@ export async function requestMagicLink(
       },
     });
 
-    if (!customer || !customer.organization.defaults?.portalEnabled) {
+    if (!customer || !customer.organization.defaults?.portalEnabled || customer.lifecycleStage === "CHURNED") {
       return successResponse;
     }
 
@@ -187,6 +227,12 @@ export async function requestMagicLink(
     }
 
     if (!(await checkPortalRateLimit(email, customer.organizationId))) {
+      return successResponse;
+    }
+
+    // Cooldown check for magic link resend
+    const cooldown = await checkPortalResendCooldown(email, customer.organizationId, "magic_link");
+    if (!cooldown.allowed) {
       return successResponse;
     }
 
@@ -225,6 +271,13 @@ export async function requestMagicLink(
       }),
     });
 
+    logPortalAccess({
+      orgId: customer.organizationId,
+      customerId: customer.id,
+      path: `/portal/${orgSlug}/auth/login`,
+      action: "magic_link_requested",
+    });
+
     logAudit({
       orgId: customer.organizationId,
       actorId: customer.id,
@@ -250,8 +303,8 @@ export async function verifyMagicLink(
   | { success: false; error: "invalid_or_expired_link" }
 > {
   try {
+    // Look for active token first (includes customer and defaults)
     const tokenHash = sha256(rawToken);
-
     const portalToken = await db.customerPortalToken.findFirst({
       where: {
         tokenHash,
@@ -269,23 +322,61 @@ export async function verifyMagicLink(
       },
     });
 
-    if (!portalToken || portalToken.customer.organization.slug !== orgSlug) {
+    let customer = portalToken?.customer;
+    if (!customer) {
+      // Fallback: load customer to check rate limit and log access
+      customer = (await db.customer.findFirst({
+        where: {
+          id: customerId,
+          organization: { slug: orgSlug },
+        },
+        include: {
+          organization: {
+            include: { defaults: true },
+          },
+          clientHubLifecycle: true,
+        },
+      })) || undefined;
+    }
+
+    if (!customer || !customer.organization.defaults?.portalEnabled || customer.lifecycleStage === "CHURNED" || customer.organization.slug !== orgSlug) {
       return { success: false, error: "invalid_or_expired_link" };
     }
 
-    // Double-check portal is still enabled and customer is enabled
-    if (
-      !portalToken.customer.organization.defaults?.portalEnabled ||
-      !portalToken.customer.clientHubLifecycle ||
-      !portalToken.customer.clientHubLifecycle.enabled
-    ) {
+    if (!customer.clientHubLifecycle || !customer.clientHubLifecycle.enabled) {
       return { success: false, error: "invalid_or_expired_link" };
     }
 
-    const orgId = portalToken.orgId;
-    const orgDefaults = portalToken.customer.organization.defaults;
-    const sessionExpirySeconds =
-      (orgDefaults?.portalSessionExpiryHours ?? 24) * 60 * 60;
+    // Verify rate limit
+    if (customer.email && !(await checkPortalVerifyRateLimit(customer.email, customer.organizationId))) {
+      logPortalAccess({
+        orgId: customer.organizationId,
+        customerId: customer.id,
+        path: `/portal/${orgSlug}/auth/verify`,
+        action: "magic_link_verify_failed",
+        ip: requestMeta?.ip,
+        userAgent: requestMeta?.userAgent,
+        statusCode: 429,
+      });
+      return { success: false, error: "invalid_or_expired_link" };
+    }
+
+    if (!portalToken) {
+      logPortalAccess({
+        orgId: customer.organizationId,
+        customerId: customer.id,
+        path: `/portal/${orgSlug}/auth/verify`,
+        action: "magic_link_verify_failed",
+        ip: requestMeta?.ip,
+        userAgent: requestMeta?.userAgent,
+        statusCode: 400,
+      });
+      return { success: false, error: "invalid_or_expired_link" };
+    }
+
+    const orgId = portalToken?.orgId || customer.organizationId || customer.organization?.id;
+    const orgDefaults = customer.organization.defaults;
+    const sessionExpirySeconds = (orgDefaults?.portalSessionExpiryHours ?? 24) * 60 * 60;
 
     // Consume the magic-link token (one-time use)
     await db.customerPortalToken.update({
@@ -316,6 +407,26 @@ export async function verifyMagicLink(
       sameSite: "lax",
       path: "/",
       maxAge: sessionExpirySeconds,
+    });
+
+    logPortalAccess({
+      orgId,
+      customerId,
+      path: `/portal/${orgSlug}/auth/verify`,
+      action: "magic_link_verified",
+      ip: requestMeta?.ip,
+      userAgent: requestMeta?.userAgent,
+      statusCode: 200,
+    });
+
+    logPortalAccess({
+      orgId,
+      customerId,
+      path: `/portal/${orgSlug}`,
+      action: "session_created",
+      ip: requestMeta?.ip,
+      userAgent: requestMeta?.userAgent,
+      statusCode: 200,
     });
 
     logAudit({
@@ -354,15 +465,56 @@ export async function getPortalSession(currentOrgSlug?: string): Promise<PortalS
       return null;
     }
 
-    // Check DB session revocation on every request (enforces instant revocation)
+    // Check DB session revocation, customer state, portal state, and lifecycle state on every request
     const session = await db.customerPortalSession.findUnique({
       where: { jti: payload.jti },
-      select: { revokedAt: true, expiresAt: true },
+      select: {
+        revokedAt: true,
+        expiresAt: true,
+        customer: {
+          select: {
+            id: true,
+            lifecycleStage: true,
+            organization: {
+              select: {
+                defaults: {
+                  select: {
+                    portalEnabled: true,
+                  },
+                },
+              },
+            },
+            clientHubLifecycle: {
+              select: {
+                enabled: true,
+              },
+            },
+          },
+        },
+      },
     });
 
     // Session record missing, revoked, or expired in DB → fail closed
     if (!session || session.revokedAt !== null || session.expiresAt < new Date()) {
       return null;
+    }
+
+    // Check customer/portal state (if customer is selected/returned)
+    if (session.customer) {
+      if (
+        session.customer.lifecycleStage === "CHURNED" ||
+        !session.customer.organization.defaults?.portalEnabled ||
+        !session.customer.clientHubLifecycle ||
+        !session.customer.clientHubLifecycle.enabled
+      ) {
+        logPortalAccess({
+          orgId: payload.orgId,
+          customerId: payload.customerId,
+          path: currentOrgSlug ? `/portal/${currentOrgSlug}` : "/portal",
+          action: "access_blocked",
+        });
+        return null;
+      }
     }
 
     // Update lastSeenAt (fire-and-forget)
@@ -432,6 +584,13 @@ export async function revokePortalSession(customerId: string, orgId: string): Pr
     const cookieStore = await cookies();
     cookieStore.delete(PORTAL_COOKIE);
 
+    logPortalAccess({
+      orgId,
+      customerId,
+      path: "/portal",
+      action: "access_revoked",
+    });
+
     logAudit({
       orgId,
       actorId: customerId,
@@ -457,6 +616,13 @@ export async function revokeCurrentPortalSession(jti: string, customerId: string
     const cookieStore = await cookies();
     cookieStore.delete(PORTAL_COOKIE);
 
+    logPortalAccess({
+      orgId,
+      customerId,
+      path: "/portal",
+      action: "logout",
+    });
+
     logAudit({
       orgId,
       actorId: customerId,
@@ -478,8 +644,8 @@ export function logPortalAccess(params: {
   userAgent?: string;
   statusCode?: number;
 }): void {
-  db.customerPortalAccessLog
-    .create({
+  try {
+    const promise = db.customerPortalAccessLog.create({
       data: {
         orgId: params.orgId,
         customerId: params.customerId,
@@ -489,10 +655,15 @@ export function logPortalAccess(params: {
         userAgent: params.userAgent ?? null,
         statusCode: params.statusCode ?? null,
       },
-    })
-    .catch((error) => {
-      console.error("[portal-auth] Failed to log access:", error);
     });
+    if (promise && typeof promise.catch === "function") {
+      promise.catch((error) => {
+        console.error("[portal-auth] Failed to log access:", error);
+      });
+    }
+  } catch (error) {
+    console.error("[portal-auth] Failed to log access:", error);
+  }
 }
 
 // ─── Email template ──────────────────────────────────────────────────────────
@@ -534,43 +705,33 @@ const PORTAL_VERIFY_WINDOW_MS = PORTAL_VERIFY_WINDOW_SECONDS * 1000;
 async function checkPortalVerifyRateLimit(email: string, orgId: string): Promise<boolean> {
   const key = `vfy:${orgId}:${sha256(email.toLowerCase())}`;
 
-  // Redis path
+  // Redis path (Atomic Sliding Window via Upstash)
   try {
-    const raw = await redis.get(key);
-    if (raw !== null) {
-      const count = parseInt(raw, 10);
-      if (count >= PORTAL_VERIFY_MAX_REQUESTS) return false;
-      await redis.set(key, String(count + 1), PORTAL_VERIFY_WINDOW_SECONDS);
-      return true;
+    const rl = await rateLimit(key, { maxRequests: PORTAL_VERIFY_MAX_REQUESTS, window: `${PORTAL_VERIFY_WINDOW_SECONDS} s` });
+    const url = process.env.UPSTASH_REDIS_REST_URL;
+    const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+    if (url && token) {
+      return rl.success;
     }
-    await redis.set(key, "1", PORTAL_VERIFY_WINDOW_SECONDS);
-    return true;
   } catch {
-    // Fall through to DB
+    // Fall through to DB fallback
   }
 
-  // DB path
+  // DB path (Atomic Concurrency-Safe Fallback)
   const now = new Date();
   try {
-    const existing = await db.portalRateLimit.findUnique({ where: { key } });
-    if (!existing || existing.windowEnd < now) {
-      await db.portalRateLimit.upsert({
-        where: { key },
-        create: { key, count: 1, windowEnd: new Date(Date.now() + PORTAL_VERIFY_WINDOW_MS) },
-        update: { count: 1, windowEnd: new Date(Date.now() + PORTAL_VERIFY_WINDOW_MS) },
-      });
-      return true;
-    }
-
-    if (existing.count >= PORTAL_VERIFY_MAX_REQUESTS) {
-      return false;
-    }
-
-    await db.portalRateLimit.update({
-      where: { key },
-      data: { count: { increment: 1 } },
+    // Atomically delete expired rate limits
+    await db.portalRateLimit.deleteMany({
+      where: { key, windowEnd: { lt: now } },
     });
-    return true;
+
+    const record = await db.portalRateLimit.upsert({
+      where: { key },
+      create: { key, count: 1, windowEnd: new Date(Date.now() + PORTAL_VERIFY_WINDOW_MS) },
+      update: { count: { increment: 1 } },
+    });
+
+    return record.count <= PORTAL_VERIFY_MAX_REQUESTS;
   } catch {
     return true;
   }
@@ -609,6 +770,12 @@ export async function requestPortalOtp(
       return successResponse;
     }
 
+    // Cooldown check for OTP resend
+    const cooldown = await checkPortalResendCooldown(email, customer.organizationId, "otp");
+    if (!cooldown.allowed) {
+      return successResponse;
+    }
+
     const orgDefaults = customer.organization.defaults;
     const otp = String(crypto.randomInt(100000, 1000000));
     const tokenHash = sha256(otp);
@@ -639,6 +806,13 @@ export async function requestPortalOtp(
         expiryMinutes: 15,
         supportEmail: supportEmail ?? undefined,
       }),
+    });
+
+    logPortalAccess({
+      orgId: customer.organizationId,
+      customerId: customer.id,
+      path: `/portal/${orgSlug}/auth/login`,
+      action: "otp_requested",
     });
 
     logAudit({
@@ -679,16 +853,45 @@ export async function verifyPortalOtp(
       },
     });
 
-    if (!customer || !customer.organization.defaults?.portalEnabled || customer.lifecycleStage === "CHURNED") {
+    let orgId: string | null = null;
+    let portalEnabled = false;
+
+    if (customer) {
+      orgId = customer.organizationId;
+      portalEnabled = customer.organization.defaults?.portalEnabled ?? false;
+    } else {
+      const org = await db.organization.findFirst({
+        where: { slug: orgSlug },
+        include: { defaults: true },
+      });
+      if (org) {
+        orgId = org.id;
+        portalEnabled = org.defaults?.portalEnabled ?? false;
+      }
+    }
+
+    if (!orgId || !portalEnabled) {
       return { success: false, error: "invalid_or_expired_code" };
     }
 
-    if (!customer.clientHubLifecycle || !customer.clientHubLifecycle.enabled) {
-      return { success: false, error: "invalid_or_expired_code" };
-    }
-
-    if (!(await checkPortalVerifyRateLimit(email, customer.organizationId))) {
+    const isRateLimited = !(await checkPortalVerifyRateLimit(email, orgId));
+    if (isRateLimited) {
+      if (customer) {
+        logPortalAccess({
+          orgId: customer.organizationId,
+          customerId: customer.id,
+          path: `/portal/${orgSlug}/auth/login`,
+          action: "otp_verify_failed",
+          ip: requestMeta?.ip,
+          userAgent: requestMeta?.userAgent,
+          statusCode: 429,
+        });
+      }
       return { success: false, error: "rate_limit_exceeded" };
+    }
+
+    if (!customer || customer.lifecycleStage === "CHURNED" || !customer.clientHubLifecycle?.enabled) {
+      return { success: false, error: "invalid_or_expired_code" };
     }
 
     const tokenHash = sha256(otp);
@@ -702,10 +905,18 @@ export async function verifyPortalOtp(
     });
 
     if (!portalToken) {
+      logPortalAccess({
+        orgId: customer.organizationId,
+        customerId: customer.id,
+        path: `/portal/${orgSlug}/auth/login`,
+        action: "otp_verify_failed",
+        ip: requestMeta?.ip,
+        userAgent: requestMeta?.userAgent,
+        statusCode: 400,
+      });
       return { success: false, error: "invalid_or_expired_code" };
     }
 
-    const orgId = customer.organizationId;
     const sessionExpirySeconds = (customer.organization.defaults?.portalSessionExpiryHours ?? 24) * 60 * 60;
 
     // Consume the OTP token (one-time use)
@@ -737,6 +948,26 @@ export async function verifyPortalOtp(
       sameSite: "lax",
       path: "/",
       maxAge: sessionExpirySeconds,
+    });
+
+    logPortalAccess({
+      orgId,
+      customerId: customer.id,
+      path: `/portal/${orgSlug}/auth/login`,
+      action: "otp_verified",
+      ip: requestMeta?.ip,
+      userAgent: requestMeta?.userAgent,
+      statusCode: 200,
+    });
+
+    logPortalAccess({
+      orgId,
+      customerId: customer.id,
+      path: `/portal/${orgSlug}`,
+      action: "session_created",
+      ip: requestMeta?.ip,
+      userAgent: requestMeta?.userAgent,
+      statusCode: 200,
     });
 
     logAudit({

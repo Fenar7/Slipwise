@@ -19,7 +19,7 @@ import {
   resolveEffectiveConfig,
 } from "@/app/portal/[orgSlug]/client-hub/components/config-resolver";
 import { sendEmail, clientHubInviteEmailHtml } from "@/lib/email";
-import { revokePortalSession } from "@/lib/portal-auth";
+import { revokePortalSession, checkPortalResendCooldown, logPortalAccess } from "@/lib/portal-auth";
 
 export type ClientHubReadinessStatus = "disabled" | "enabled_not_ready" | "enabled_ready";
 
@@ -709,6 +709,13 @@ export async function enableClientHubForCustomer(
         metadata: { customerName: customer.name },
         ...auditHeaders,
       });
+
+      logPortalAccess({
+        orgId,
+        customerId,
+        path: "/app/settings/portal/client-hub",
+        action: "access_enabled",
+      });
     });
 
     // Attempt initial invite delivery outside the transaction so email failures
@@ -747,6 +754,13 @@ export async function enableClientHubForCustomer(
               entityId: customerId,
               metadata: { customerName: customer.name, email: customer.email, type: "initial" },
               ...auditHeaders,
+            });
+
+            logPortalAccess({
+              orgId,
+              customerId,
+              path: `/portal/${org.slug}/client-hub`,
+              action: "invite_sent",
             });
           });
         } catch (emailError) {
@@ -819,6 +833,13 @@ export async function disableClientHubForCustomer(customerId: string) {
         entityId: customerId,
         metadata: { customerName: customer.name },
         ...auditHeaders,
+      });
+
+      logPortalAccess({
+        orgId,
+        customerId,
+        path: "/app/settings/portal/client-hub",
+        action: "access_disabled",
       });
     });
 
@@ -972,6 +993,15 @@ export async function resendClientHubInvite(customerId: string) {
 
     const customer = eligibility.customer!;
 
+    // Cooldown check for invite resend
+    const cooldownResult = await checkPortalResendCooldown(customer.email!, orgId, "invite");
+    if (!cooldownResult.allowed) {
+      return {
+        success: false,
+        error: `Please wait ${cooldownResult.remainingSeconds} seconds before resending another invite.`,
+      };
+    }
+
     const lifecycle = await db.clientHubCustomerLifecycle.findUnique({
       where: { customerId },
     });
@@ -1053,6 +1083,13 @@ export async function resendClientHubInvite(customerId: string) {
           previousEmail: lifecycle.latestInviteEmail ?? null,
         },
         ...auditHeaders,
+      });
+
+      logPortalAccess({
+        orgId,
+        customerId,
+        path: `/portal/${org.slug}/client-hub`,
+        action: lifecycle.latestInviteSentAt ? "invite_resent" : "invite_sent",
       });
     });
 

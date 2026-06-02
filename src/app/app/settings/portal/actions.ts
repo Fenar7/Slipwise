@@ -3,13 +3,14 @@
 import { db } from "@/lib/db";
 import { requireOrgContext, requireRole } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
-import { getPortalAccessState } from "@/lib/portal-auth";
+import { getPortalAccessState, logPortalAccess } from "@/lib/portal-auth";
 
 
 // ─── Portal settings (read/write) ────────────────────────────────────────────
 
 export async function getPortalSettings(organizationId: string) {
   const { orgId } = await requireOrgContext();
+  await requireRole("admin");
   if (orgId !== organizationId) throw new Error("Unauthorized");
 
   return db.orgDefaults.findUnique({
@@ -75,6 +76,7 @@ export async function updatePortalSettings({
 
 export async function getPortalPolicies(organizationId: string) {
   const { orgId } = await requireOrgContext();
+  await requireRole("admin");
   if (orgId !== organizationId) throw new Error("Unauthorized");
 
   return db.orgDefaults.findUnique({
@@ -147,9 +149,12 @@ export async function getPortalAccessLogs(
     toDate?: string;
     page?: number;
     pageSize?: number;
+    path?: string;
+    statusCode?: number;
   },
 ) {
   const { orgId } = await requireOrgContext();
+  await requireRole("admin");
   if (orgId !== organizationId) throw new Error("Unauthorized");
 
   const page = filters?.page ?? 1;
@@ -159,10 +164,18 @@ export async function getPortalAccessLogs(
     orgId: organizationId,
     ...(filters?.customerId && { customerId: filters.customerId }),
     ...(filters?.action && { action: filters.action }),
+    ...(filters?.path && { path: { contains: filters.path, mode: "insensitive" as const } }),
+    ...(filters?.statusCode !== undefined && { statusCode: filters.statusCode }),
     ...((filters?.fromDate || filters?.toDate) && {
       accessedAt: {
         ...(filters.fromDate && { gte: new Date(filters.fromDate) }),
-        ...(filters.toDate && { lte: new Date(filters.toDate) }),
+        ...(filters.toDate && {
+          lte: (() => {
+            const date = new Date(filters.toDate);
+            date.setUTCHours(23, 59, 59, 999);
+            return date;
+          })(),
+        }),
       },
     }),
   };
@@ -232,6 +245,13 @@ export async function revokeCustomerPortalAccess(
       data: { revokedAt: now },
     }),
   ]);
+
+  logPortalAccess({
+    orgId: organizationId,
+    customerId,
+    path: "/app/settings/portal",
+    action: "access_revoked",
+  });
 
   logAudit({
     orgId,
