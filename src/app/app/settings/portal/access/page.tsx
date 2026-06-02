@@ -54,6 +54,8 @@ type CustomerAccess = {
     inviteSentCount: number;
     publicAccessHandle: string | null;
   } | null;
+  inviteEligible: boolean;
+  blockers: string[];
 };
 
 export default function PortalAccessPage() {
@@ -125,7 +127,7 @@ export default function PortalAccessPage() {
     if (!activeOrg?.id) return;
     setActionInProgress(customerId);
     try {
-      const res = await enableClientHubForCustomer(customerId);
+      const res = await enableClientHubForCustomer(customerId, { sendInvite: true });
       if (res.success) {
         toast.success(res.inviteSent ? "Client Hub enabled and welcome invite sent." : "Client Hub enabled successfully.");
         await loadCustomers();
@@ -191,7 +193,7 @@ export default function PortalAccessPage() {
           toast.error(res.error || "Failed to disable Client Hub.");
         }
       } else {
-        res = await enableClientHubForCustomer(customerId);
+        res = await enableClientHubForCustomer(customerId, { sendInvite: false });
         if (res.success) {
           toast.success("Client Hub re-enabled successfully.");
         } else {
@@ -449,6 +451,11 @@ export default function PortalAccessPage() {
                               <span>Invites: {c.clientHubLifecycle.inviteSentCount}</span>
                             </div>
                           )}
+                          {!c.inviteEligible && c.blockers && c.blockers.length > 0 && (
+                            <div className="mt-1.5 text-[11px] text-rose-500 font-medium flex items-center gap-1">
+                              <span>⚠️ Cannot invite: {c.blockers.join(", ")}</span>
+                            </div>
+                          )}
                         </div>
 
                         {/* Inline Actions block */}
@@ -458,7 +465,7 @@ export default function PortalAccessPage() {
                             <Button
                               type="button"
                               variant="primary"
-                              disabled={!hasEmail || inProgress}
+                              disabled={!c.inviteEligible || inProgress}
                               onClick={() => handleSendInvite(c.id)}
                               className="text-xs py-1.5 flex items-center gap-1.5"
                             >
@@ -468,7 +475,7 @@ export default function PortalAccessPage() {
                             <Button
                               type="button"
                               variant="primary"
-                              disabled={!hasEmail || inProgress}
+                              disabled={!c.inviteEligible || inProgress}
                               onClick={() => handleResendInvite(c.id)}
                               className="text-xs py-1.5 flex items-center gap-1.5"
                             >
@@ -478,7 +485,7 @@ export default function PortalAccessPage() {
                             <Button
                               type="button"
                               variant="secondary"
-                              disabled={!hasEmail || inProgress}
+                              disabled={!c.inviteEligible || inProgress}
                               onClick={() => handleResendInvite(c.id)}
                               className="text-xs py-1.5 flex items-center gap-1.5"
                             >

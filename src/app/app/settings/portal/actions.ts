@@ -348,6 +348,27 @@ export async function getPortalCustomersWithAccessState(organizationId: string) 
       sessions: c.portalSessions,
     });
 
+    const blockers: string[] = [];
+    if (!portalEnabled) {
+      blockers.push("Portal is disabled for organization");
+    }
+    if (!c.name || c.name.trim().length === 0) {
+      blockers.push("Customer name is required");
+    }
+    if (!c.email || c.email.trim().length === 0) {
+      blockers.push("Customer email is required");
+    }
+    if (!c.phone || c.phone.trim().length === 0) {
+      blockers.push("Customer phone is required");
+    }
+    if (!c.address || c.address.trim().length === 0) {
+      blockers.push("Customer address is required");
+    }
+    if ((!c.taxId || c.taxId.trim().length === 0) && (!c.gstin || c.gstin.trim().length === 0)) {
+      blockers.push("Customer tax/GSTIN identifier is required");
+    }
+    const inviteEligible = portalEnabled && blockers.length === 0;
+
     return {
       id: c.id,
       name: c.name,
@@ -355,6 +376,8 @@ export async function getPortalCustomersWithAccessState(organizationId: string) 
       phone: c.phone,
       accessState,
       clientHubLifecycle: c.clientHubLifecycle,
+      inviteEligible,
+      blockers,
     };
   });
 }
