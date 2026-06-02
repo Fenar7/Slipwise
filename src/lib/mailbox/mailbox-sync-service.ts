@@ -540,6 +540,7 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
     let threadCount = 0;
     let messageCount = 0;
     let lastHeartbeatAt = startedAt;
+    let draftSyncError: MailboxProviderError | null = null;
     let recoveryBootstrapResults: import("./provider-contracts").MailboxBootstrapSliceResult[] | undefined;
     if (needsGmailCoverageRecovery) {
       // Build resumption cursors from prior incomplete folder coverage so we
@@ -668,40 +669,46 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
       }
     }
 
-    let syncedDrafts = false;
     if (connection.provider === "GMAIL") {
       const draftSync = await adapter.syncDrafts({
         orgId: params.orgId,
         tokenRef: connection.tokenRef,
       });
       if (isMailboxProviderError(draftSync)) {
-        throw toProviderErrorException(draftSync);
-      }
+        draftSyncError = draftSync;
+        await logMailboxAudit({
+          orgId: params.orgId,
+          actorId: params.actorId,
+          action: "DRAFT_SYNC_FAILED",
+          summary: `Draft sync degraded: ${draftSync.safeMessage}`,
+          mailboxConnectionId: connection.id,
+          metadata: { errorCategory: draftSync.category, runId: run.id },
+        });
+      } else {
+        if (draftSync.drafts.length > 0) {
+          const draftStats = await ingestSyncedDrafts({
+            orgId: params.orgId,
+            connectionId: connection.id,
+            mailboxEmail: connection.emailAddress,
+            drafts: draftSync.drafts,
+          });
+          threadCount += draftStats.threadCount;
+          messageCount += draftStats.messageCount;
+        }
 
-      if (draftSync.drafts.length > 0) {
-        const draftStats = await ingestSyncedDrafts({
+        await reconcileProviderDraftMarkers({
           orgId: params.orgId,
           connectionId: connection.id,
-          mailboxEmail: connection.emailAddress,
-          drafts: draftSync.drafts,
+          activeDraftIds: draftSync.activeDraftIds,
+          failedDraftIds: draftSync.failedDraftIds,
         });
-        threadCount += draftStats.threadCount;
-        messageCount += draftStats.messageCount;
-      }
 
-      await reconcileProviderDraftMarkers({
-        orgId: params.orgId,
-        connectionId: connection.id,
-        activeDraftIds: draftSync.activeDraftIds,
-        failedDraftIds: draftSync.failedDraftIds,
-      });
-      syncedDrafts = true;
-
-      // Persist progress after draft sync phase
-      const nowAfterDrafts = Date.now();
-      if (nowAfterDrafts - lastHeartbeatAt.getTime() >= HEARTBEAT_INTERVAL_MS) {
-        await updateSyncRunHeartbeat(run.id, { threadCount, messageCount, syncPhase: "draft_sync" }, new Date(nowAfterDrafts));
-        lastHeartbeatAt = new Date(nowAfterDrafts);
+        // Persist progress after draft sync phase
+        const nowAfterDrafts = Date.now();
+        if (nowAfterDrafts - lastHeartbeatAt.getTime() >= HEARTBEAT_INTERVAL_MS) {
+          await updateSyncRunHeartbeat(run.id, { threadCount, messageCount, syncPhase: "draft_sync" }, new Date(nowAfterDrafts));
+          lastHeartbeatAt = new Date(nowAfterDrafts);
+        }
       }
     }
 
@@ -762,7 +769,11 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
       }
     }
 
-    const stats = { threadCount, messageCount };
+    const stats: Record<string, unknown> = { threadCount, messageCount };
+    if (draftSyncError) {
+      stats.draftErrorCategory = draftSyncError.category;
+      stats.draftErrorSummary = draftSyncError.safeMessage;
+    }
     const nextStatus = resolveStatusAfterSuccess(connection.status);
 
     // ── Update per-folder coverage after successful sync ─────────────────

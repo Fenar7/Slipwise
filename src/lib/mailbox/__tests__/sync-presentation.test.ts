@@ -98,6 +98,111 @@ describe("buildMailboxSyncPresentation", () => {
     expect(sync.detailLabel).toContain("12 threads");
   });
 
+  it("returns completed with draftErrorSummary when stats include draft error", () => {
+    const sync = buildMailboxSyncPresentation(
+      makeConnection(),
+      {
+        latestRun: {
+          id: "run_draft_err",
+          status: "COMPLETED",
+          syncMode: "DELTA",
+          triggerSource: "MANUAL",
+          startedAt: new Date("2026-05-22T11:55:00.000Z"),
+          completedAt: new Date("2026-05-22T11:57:00.000Z"),
+          stats: { threadCount: 12, messageCount: 58, draftErrorCategory: "gmail_api_error", draftErrorSummary: "Drafts API returned 403" },
+          errorCategory: null,
+          errorMessage: null,
+        },
+        latestCompletedRun: {
+          id: "run_draft_err",
+          status: "COMPLETED",
+          syncMode: "DELTA",
+          triggerSource: "MANUAL",
+          startedAt: new Date("2026-05-22T11:55:00.000Z"),
+          completedAt: new Date("2026-05-22T11:57:00.000Z"),
+          stats: { threadCount: 12, messageCount: 58, draftErrorCategory: "gmail_api_error", draftErrorSummary: "Drafts API returned 403" },
+          errorCategory: null,
+          errorMessage: null,
+        },
+      },
+      NOW,
+    );
+
+    expect(sync.state).toBe("completed");
+    expect(sync.draftErrorCategory).toBe("gmail_api_error");
+    expect(sync.draftErrorSummary).toBe("Drafts API returned 403");
+    expect(sync.detailLabel).toContain("Drafts could not be synced");
+    expect(sync.lastErrorCategory).toBeNull();
+    expect(sync.lastErrorSummary).toBeNull();
+  });
+
+  it("clears draftErrorSummary when subsequent sync has no draft error", () => {
+    const sync = buildMailboxSyncPresentation(
+      makeConnection(),
+      {
+        latestRun: {
+          id: "run_clean",
+          status: "COMPLETED",
+          syncMode: "DELTA",
+          triggerSource: "MANUAL",
+          startedAt: new Date("2026-05-22T12:55:00.000Z"),
+          completedAt: new Date("2026-05-22T12:57:00.000Z"),
+          stats: { threadCount: 5, messageCount: 20 },
+          errorCategory: null,
+          errorMessage: null,
+        },
+        latestCompletedRun: {
+          id: "run_clean",
+          status: "COMPLETED",
+          syncMode: "DELTA",
+          triggerSource: "MANUAL",
+          startedAt: new Date("2026-05-22T12:55:00.000Z"),
+          completedAt: new Date("2026-05-22T12:57:00.000Z"),
+          stats: { threadCount: 5, messageCount: 20 },
+          errorCategory: null,
+          errorMessage: null,
+        },
+      },
+      NOW,
+    );
+
+    expect(sync.state).toBe("completed");
+    expect(sync.draftErrorCategory).toBeNull();
+    expect(sync.draftErrorSummary).toBeNull();
+    expect(sync.detailLabel).not.toContain("Drafts could not be synced");
+  });
+
+  it("shows draft error in running sync detail label when syncPhase is draft_sync", () => {
+    const sync = buildMailboxSyncPresentation(
+      makeConnection({
+        lastSyncAt: null,
+        syncLeaseToken: "lease_draft_err",
+        syncLeaseExpiresAt: new Date(NOW + 60_000),
+      }),
+      {
+        latestRun: {
+          id: "run_draft_err_running",
+          status: "RUNNING",
+          syncMode: "INITIAL",
+          triggerSource: "MANUAL",
+          startedAt: new Date(NOW - 30_000),
+          completedAt: null,
+          stats: { threadCount: 0, messageCount: 0, syncPhase: "draft_sync", draftErrorCategory: "forbidden", draftErrorSummary: "Insufficient Gmail permissions to read drafts" },
+          errorCategory: null,
+          errorMessage: null,
+          lastHeartbeatAt: new Date(NOW - 10_000),
+        },
+      },
+      NOW,
+    );
+
+    expect(sync.state).toBe("running");
+    expect(sync.draftErrorCategory).toBe("forbidden");
+    expect(sync.draftErrorSummary).toBe("Insufficient Gmail permissions to read drafts");
+    expect(sync.detailLabel).toContain("Draft sync had an issue");
+    expect(sync.detailLabel).toContain("Insufficient Gmail permissions");
+  });
+
   it("returns failed when latest run failed", () => {
     const sync = buildMailboxSyncPresentation(
       makeConnection({

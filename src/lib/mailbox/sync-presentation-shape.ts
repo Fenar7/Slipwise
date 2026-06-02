@@ -24,4 +24,14 @@ export interface MailboxSyncPresentation {
       totalThreads: number;
     }>;
   };
+  /**
+   * Draft-specific error category. Set when thread/message sync succeeded
+   * but draft sync failed. The overall sync is COMPLETED; only drafts are degraded.
+   */
+  draftErrorCategory: string | null;
+  /**
+   * Draft-specific error summary. Human-readable explanation of why
+   * drafts could not be synced. Clears on next successful draft sync.
+   */
+  draftErrorSummary: string | null;
 }
