@@ -142,13 +142,24 @@ async function ingestSyncedThreads(params: {
     );
     const previewSnippet = deriveThreadPreviewSnippet(threadMessages);
     const attachmentCount = computeThreadAttachmentCount(threadMessages);
-    await updateMailboxThreadSummary({
-      orgId: params.orgId,
-      threadId: thread.id,
-      participantsSummary: participantsSummary as unknown as Prisma.InputJsonValue,
-      lastMessageAt,
-      previewSnippet,
-      attachmentCount,
+
+    // Derive isFlagged from Gmail STARRED label: thread is flagged if any
+    // message carries the STARRED label in its provider metadata.
+    const isStarred = threadMessages.some((msg) => {
+      if (!msg.providerMetadata) return false;
+      const labelIds = (msg.providerMetadata as Record<string, unknown>).labelIds;
+      return Array.isArray(labelIds) && (labelIds as string[]).includes("STARRED");
+    });
+
+    await db.mailboxThread.updateMany({
+      where: { id: thread.id, orgId: params.orgId },
+      data: {
+        participantsSummary: participantsSummary as unknown as Prisma.InputJsonValue,
+        lastMessageAt,
+        previewSnippet,
+        attachmentCount,
+        isFlagged: isStarred,
+      },
     });
   }
 
@@ -786,7 +797,7 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
 
       if (bootstrapResults && bootstrapResults.length > 0) {
         for (const slice of bootstrapResults) {
-          const folder = slice.sliceLabel as "INBOX" | "SENT" | "SPAM" | "DRAFT" | "TRASH" | "ARCHIVE";
+          const folder = slice.sliceLabel as "INBOX" | "SENT" | "SPAM" | "DRAFT" | "TRASH" | "STARRED";
           if (slice.paginationExhausted) {
             await markFolderCoverageComplete(
               params.orgId,
@@ -807,7 +818,7 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
         }
       } else if (effectiveMode === "INITIAL" || recoveryBootstrapResults !== undefined) {
         // Fallback: no per-slice results — mark all as BOOTSTRAPPING (not COMPLETE)
-        for (const folder of ["INBOX", "SENT", "SPAM", "DRAFT", "TRASH", "ARCHIVE"] as const) {
+        for (const folder of ["INBOX", "SENT", "SPAM", "DRAFT", "TRASH", "STARRED"] as const) {
           await updateFolderCoverageBootstrapping(
             params.orgId,
             connection.id,

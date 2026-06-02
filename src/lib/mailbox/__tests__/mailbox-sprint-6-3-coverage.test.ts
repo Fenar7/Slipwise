@@ -54,7 +54,7 @@ describe("computeOverallCoverage", () => {
       makeComplete("SENT"),
       makeCoverage("SPAM", "BOOTSTRAPPING"),
       makeComplete("DRAFT"),
-      makeComplete("ARCHIVE"),
+      makeComplete("STARRED"),
     ];
     expect(computeOverallCoverage(coverages)).toBe("BOOTSTRAPPING");
   });
@@ -95,7 +95,7 @@ describe("computeOverallCoverage", () => {
       makeComplete("SENT"),
       makeComplete("SPAM"),
       makeComplete("DRAFT"),
-      makeComplete("ARCHIVE"),
+      makeComplete("STARRED"),
       makeComplete("TRASH"),
       makeCoverage("CUSTOM_LABEL", "BOOTSTRAPPING"),
     ];
@@ -163,7 +163,7 @@ describe("GMAIL_REQUIRED_COVERAGE_FOLDERS", () => {
       "SENT",
       "SPAM",
       "DRAFT",
-      "ARCHIVE",
+      "STARRED",
       "TRASH",
     ]);
   });
@@ -176,7 +176,7 @@ describe("coverage state lifecycle", () => {
       makeCoverage("SENT", "PENDING"),
       makeCoverage("SPAM", "PENDING"),
       makeCoverage("DRAFT", "PENDING"),
-      makeCoverage("ARCHIVE", "PENDING"),
+      makeCoverage("STARRED", "PENDING"),
       makeCoverage("TRASH", "PENDING"),
     ];
     expect(computeOverallCoverage(coverages)).toBe("PENDING");
@@ -190,7 +190,7 @@ describe("coverage state lifecycle", () => {
     coverages[1] = makeComplete("SENT");
     coverages[2] = makeComplete("SPAM");
     coverages[3] = makeComplete("DRAFT");
-    coverages[4] = makeComplete("ARCHIVE");
+    coverages[4] = makeComplete("STARRED");
     coverages[5] = makeComplete("TRASH");
     expect(computeOverallCoverage(coverages)).toBe("COMPLETE");
 
@@ -247,7 +247,7 @@ describe("truthful bootstrap completion", () => {
       makeComplete("SENT", 50),
       makeComplete("SPAM", 0),
       makeComplete("DRAFT", 12),
-      makeComplete("ARCHIVE", 5),
+      makeComplete("STARRED", 5),
       makeComplete("TRASH", 1),
     ];
     expect(computeOverallCoverage(coverages)).toBe("COMPLETE");
@@ -273,7 +273,7 @@ describe("bootstrap slice exhaustion vs bounded cap", () => {
       makeComplete("SENT", 50),
       makeComplete("SPAM", 25),
       makeComplete("DRAFT", 3),
-      makeComplete("ARCHIVE", 0),
+      makeComplete("STARRED", 0),
       makeComplete("TRASH", 0),
     ];
     expect(computeOverallCoverage(coverages)).toBe("COMPLETE");

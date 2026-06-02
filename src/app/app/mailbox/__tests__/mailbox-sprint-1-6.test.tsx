@@ -75,8 +75,8 @@ vi.mock("../use-mailbox-threads", () => ({
     if (params?.folder === "SPAM") {
       threads = [];
     }
-    if (params?.folder === "ARCHIVE") {
-      threads = threads.filter((t) => t.status === "ARCHIVED");
+    if (params?.folder === "STARRED") {
+      threads = threads.filter((t) => t.isFlagged === true);
     }
     if (params?.status) {
       const rawStatuses = Array.isArray(params.status)

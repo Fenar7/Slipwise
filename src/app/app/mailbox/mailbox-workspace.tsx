@@ -209,8 +209,8 @@ export function resolveThreadQueryParams(
     if (folder === "drafts") {
       return { connectionId: activeConnection.id };
     }
-    if (folder === "archive") {
-      return { connectionId: activeConnection.id, folder: "ARCHIVE" };
+    if (folder === "starred") {
+      return { connectionId: activeConnection.id, folder: "STARRED" };
     }
     if (folder === "spam") {
       return { connectionId: activeConnection.id, folder: "SPAM" };

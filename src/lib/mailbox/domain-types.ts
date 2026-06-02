@@ -473,25 +473,20 @@ export interface MailboxSyncAttemptResult {
 
 // ── Folder Coverage Types (Sprint 6.3+ Gmail-grade completeness) ──
 //
-// The six tracked folders (INBOX, SENT, SPAM, DRAFT, TRASH, ARCHIVE)
-// collectively cover the entire Gmail corpus:
-//   - INBOX, SENT, SPAM, DRAFT, TRASH use their respective Gmail search
-//     operators (in:inbox, in:sent, etc.)
-//   - ARCHIVE is bootstrapped via
-//     `-in:inbox -in:sent -in:spam -in:trash -in:draft`, which captures
-//     every message that does not belong to any other tracked folder.
+// The six tracked folders (INBOX, SENT, SPAM, DRAFT, TRASH, STARRED)
+// collectively cover the Gmail corpus tracked by this sprint:
+//   - INBOX, SENT, SPAM, DRAFT, TRASH, STARRED use their respective Gmail
+//     search operators (in:inbox, in:sent, is:starred, etc.)
 //
-// ALL_MAIL (Gmail's virtual aggregate of everything except SPAM and TRASH)
-// is NOT tracked here because it has no corresponding bootstrap slice:
-// the six individual folders already exhaust the full corpus, so an
-// ALL_MAIL slice would be redundant.
+// Note: ARCHIVE coverage is NOT tracked in this sprint. The STARRED folder
+// replaces the ARCHIVE slot in the left-rail and coverage model.
 
 export const MAILBOX_FOLDER_COVERAGE_FOLDERS = [
   "INBOX",
   "SENT",
   "SPAM",
   "DRAFT",
-  "ARCHIVE",
+  "STARRED",
   "TRASH",
 ] as const;
 
@@ -514,7 +509,7 @@ export const GMAIL_REQUIRED_COVERAGE_FOLDERS: MailboxCoverageFolder[] = [
   "SENT",
   "SPAM",
   "DRAFT",
-  "ARCHIVE",
+  "STARRED",
   "TRASH",
 ];
 
@@ -554,7 +549,7 @@ export type MailboxOverallCoverage =
 
 /**
  * Compute the overall coverage state from a set of folder coverages.
- * Required folders are INBOX, SENT, SPAM, DRAFT, ARCHIVE, TRASH.
+ * Required folders are INBOX, SENT, SPAM, DRAFT, STARRED, TRASH.
  * Any required folder without a coverage record is treated as PENDING.
  */
 export function computeOverallCoverage(
