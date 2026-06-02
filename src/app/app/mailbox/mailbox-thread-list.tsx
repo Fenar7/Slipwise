@@ -1,12 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
 import {
   Paperclip,
   Flag,
   UserCircle2,
-  Reply,
   Archive,
   Trash2,
   MailOpen,
@@ -353,6 +352,11 @@ interface MailboxThreadListProps {
   reconnectBanner?: React.ReactNode;
   /** Shown when threads array is empty */
   emptyState?: React.ReactNode;
+  totalCount?: number;
+  loadedCount?: number;
+  hasMore?: boolean;
+  isLoadingMore?: boolean;
+  onLoadMore?: () => void;
   isActionLoading?: boolean;
   onThreadAction?: (threadId: string, action: ThreadAction) => void;
 }
@@ -363,10 +367,68 @@ export function MailboxThreadList({
   onSelectThread,
   reconnectBanner,
   emptyState,
+  totalCount,
+  loadedCount,
+  hasMore = false,
   isLoading = false,
+  isLoadingMore = false,
+  onLoadMore,
   isActionLoading = false,
   onThreadAction,
 }: MailboxThreadListProps & { isLoading?: boolean }) {
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const pendingAutoLoadRef = useRef(false);
+  const resolvedLoadedCount = loadedCount ?? threads.length;
+  const resolvedTotalCount = totalCount ?? threads.length;
+  const showFooter =
+    threads.length > 0 || isLoadingMore || resolvedTotalCount > 0;
+
+  useEffect(() => {
+    if (!hasMore || !isLoadingMore) {
+      pendingAutoLoadRef.current = false;
+    }
+  }, [hasMore, isLoadingMore]);
+
+  useEffect(() => {
+    if (
+      typeof IntersectionObserver === "undefined" ||
+      !hasMore ||
+      !onLoadMore ||
+      isLoading ||
+      threads.length === 0
+    ) {
+      return;
+    }
+
+    const root = scrollContainerRef.current;
+    const sentinel = sentinelRef.current;
+
+    if (!root || !sentinel) {
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const shouldLoad = entries.some((entry) => entry.isIntersecting);
+        if (!shouldLoad || pendingAutoLoadRef.current) {
+          return;
+        }
+
+        pendingAutoLoadRef.current = true;
+        onLoadMore();
+      },
+      {
+        root,
+        rootMargin: "0px 0px 160px 0px",
+        threshold: 0.1,
+      },
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [hasMore, isLoading, onLoadMore, threads.length]);
+
   return (
     <div
       className="flex h-full flex-col overflow-hidden border-r bg-white"
@@ -376,7 +438,11 @@ export function MailboxThreadList({
       aria-multiselectable="false"
     >
       {reconnectBanner}
-      <div className="flex-1 overflow-y-auto">
+      <div
+        ref={scrollContainerRef}
+        className="flex-1 overflow-y-auto"
+        data-testid="mailbox-thread-list-scroll-container"
+      >
         {isLoading && threads.length === 0 ? (
           <div className="flex h-full items-center justify-center">
             <Loader2 className="h-5 w-5 animate-spin text-[#94A3B8]" />
@@ -395,7 +461,52 @@ export function MailboxThreadList({
             />
           ))
         )}
+        {threads.length > 0 ? (
+          <div
+            ref={sentinelRef}
+            className="h-px w-full"
+            data-testid="mailbox-thread-list-sentinel"
+            aria-hidden="true"
+          />
+        ) : null}
       </div>
+      {showFooter ? (
+        <div
+          className="border-t bg-[#FAFBFC] px-4 py-3 text-xs text-[#64748B]"
+          style={{ borderColor: "#E2E5EA" }}
+          aria-live="polite"
+          data-testid="mailbox-thread-list-footer"
+        >
+          <div className="flex items-center justify-between gap-3">
+            <span data-testid="mailbox-thread-list-footer-count">
+              Loaded {Math.min(resolvedLoadedCount, resolvedTotalCount)} of{" "}
+              {resolvedTotalCount}
+            </span>
+            {isLoadingMore ? (
+              <span className="inline-flex items-center gap-1.5 font-medium text-[#334155]">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                Loading more
+              </span>
+            ) : hasMore && onLoadMore ? (
+              <button
+                type="button"
+                className="rounded-md border border-[#CBD5E1] bg-white px-2.5 py-1 font-medium text-[#16294D] transition-colors hover:bg-[#F8FAFC] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(22,41,77,0.25)]"
+                onClick={onLoadMore}
+                data-testid="mailbox-thread-list-load-more"
+              >
+                Load more
+              </button>
+            ) : (
+              <span
+                className="font-medium text-[#334155]"
+                data-testid="mailbox-thread-list-end-of-results"
+              >
+                End of results
+              </span>
+            )}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

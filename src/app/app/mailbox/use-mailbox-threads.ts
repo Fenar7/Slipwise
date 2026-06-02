@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import type { MailboxThreadReadShape } from "@/lib/mailbox/read-shapes";
 import type { MailboxFolder } from "./types";
 
@@ -29,9 +29,29 @@ export interface UseMailboxThreadsResult {
   totalCount: number;
   nextCursor: string | null;
   isLoading: boolean;
+  isLoadingMore: boolean;
+  hasMore: boolean;
   error: string | null;
   refetch: () => void;
   loadMore: () => void;
+}
+
+function mergeUniqueThreads(
+  previousThreads: MailboxThreadReadShape[],
+  nextThreads: MailboxThreadReadShape[],
+): MailboxThreadReadShape[] {
+  const mergedThreads = [...previousThreads];
+  const seenThreadIds = new Set(previousThreads.map((thread) => thread.id));
+
+  for (const thread of nextThreads) {
+    if (seenThreadIds.has(thread.id)) {
+      continue;
+    }
+    seenThreadIds.add(thread.id);
+    mergedThreads.push(thread);
+  }
+
+  return mergedThreads;
 }
 
 export function useMailboxThreads(
@@ -41,6 +61,7 @@ export function useMailboxThreads(
   const [totalCount, setTotalCount] = useState(0);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Debounce search query to avoid hammering the API on every keystroke
@@ -54,8 +75,13 @@ export function useMailboxThreads(
     return () => clearTimeout(timer);
   }, [params.searchQuery]);
 
-  const abortControllerRef = useRef<AbortController | null>(null);
-  const requestIdRef = useRef(0);
+  const initialAbortControllerRef = useRef<AbortController | null>(null);
+  const appendAbortControllerRef = useRef<AbortController | null>(null);
+  const activeQueryVersionRef = useRef(0);
+  const inFlightAppendCursorRef = useRef<string | null>(null);
+  const nextCursorRef = useRef<string | null>(null);
+  const isLoadingRef = useRef(false);
+  const isLoadingMoreRef = useRef(false);
 
   const buildUrl = useCallback(
     (cursor?: string) => {
@@ -102,18 +128,68 @@ export function useMailboxThreads(
     ],
   );
 
+  const queryKey = useMemo(
+    () =>
+      JSON.stringify({
+        connectionId: params.connectionId ?? null,
+        folder: params.folder ?? null,
+        status: params.status ?? null,
+        unreadOnly: params.unreadOnly ?? null,
+        isFlagged: params.isFlagged ?? null,
+        assignee: params.assignee ?? null,
+        searchQuery: debouncedSearchQuery?.trim() ?? "",
+        limit: params.limit ?? null,
+        enabled: params.enabled ?? true,
+      }),
+    [
+      params.connectionId,
+      params.folder,
+      params.status,
+      params.unreadOnly,
+      params.isFlagged,
+      params.assignee,
+      params.limit,
+      params.enabled,
+      debouncedSearchQuery,
+    ],
+  );
+
+  useEffect(() => {
+    nextCursorRef.current = nextCursor;
+  }, [nextCursor]);
+
+  useEffect(() => {
+    isLoadingRef.current = isLoading;
+  }, [isLoading]);
+
+  useEffect(() => {
+    isLoadingMoreRef.current = isLoadingMore;
+  }, [isLoadingMore]);
+
   const fetchThreads = useCallback(
-    async (append = false, cursor?: string) => {
-      // Cancel any in-flight request to prevent out-of-order UI updates
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
+    async ({
+      append = false,
+      cursor,
+      queryVersion,
+    }: {
+      append?: boolean;
+      cursor?: string;
+      queryVersion: number;
+    }) => {
       const controller = new AbortController();
-      abortControllerRef.current = controller;
 
-      const thisRequestId = ++requestIdRef.current;
+      if (append) {
+        if (!cursor || isLoadingRef.current || isLoadingMoreRef.current) {
+          return;
+        }
+        appendAbortControllerRef.current = controller;
+        inFlightAppendCursorRef.current = cursor;
+        setIsLoadingMore(true);
+      } else {
+        initialAbortControllerRef.current = controller;
+        setIsLoading(true);
+      }
 
-      setIsLoading(true);
       setError(null);
       try {
         const res = await fetch(buildUrl(cursor), {
@@ -123,25 +199,41 @@ export function useMailboxThreads(
           throw new Error(`Failed to fetch threads: ${res.status}`);
         }
         const data: MailboxThreadListResponse = await res.json();
-        // Only update state if this is still the latest request
-        if (thisRequestId === requestIdRef.current) {
-          setThreads((prev) =>
-            append ? [...prev, ...data.threads] : data.threads,
-          );
-          setTotalCount(data.totalCount);
-          setNextCursor(data.nextCursor);
+
+        if (queryVersion !== activeQueryVersionRef.current) {
+          return;
         }
+
+        setThreads((prev) =>
+          append ? mergeUniqueThreads(prev, data.threads) : data.threads,
+        );
+        setTotalCount(data.totalCount);
+        setNextCursor(data.nextCursor);
       } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") {
           // Silently ignore aborted requests
           return;
         }
-        if (thisRequestId === requestIdRef.current) {
+
+        if (queryVersion === activeQueryVersionRef.current) {
           setError(err instanceof Error ? err.message : "Unknown error");
         }
       } finally {
-        if (thisRequestId === requestIdRef.current) {
-          setIsLoading(false);
+        if (append) {
+          if (appendAbortControllerRef.current === controller) {
+            appendAbortControllerRef.current = null;
+            inFlightAppendCursorRef.current = null;
+          }
+          if (queryVersion === activeQueryVersionRef.current) {
+            setIsLoadingMore(false);
+          }
+        } else {
+          if (initialAbortControllerRef.current === controller) {
+            initialAbortControllerRef.current = null;
+          }
+          if (queryVersion === activeQueryVersionRef.current) {
+            setIsLoading(false);
+          }
         }
       }
     },
@@ -149,32 +241,85 @@ export function useMailboxThreads(
   );
 
   useEffect(() => {
+    return () => {
+      initialAbortControllerRef.current?.abort();
+      appendAbortControllerRef.current?.abort();
+    };
+  }, []);
+
+  useEffect(() => {
+    initialAbortControllerRef.current?.abort();
+    appendAbortControllerRef.current?.abort();
+    inFlightAppendCursorRef.current = null;
+
     if (params.enabled === false) {
+      activeQueryVersionRef.current += 1;
       setThreads([]);
       setTotalCount(0);
       setNextCursor(null);
       setIsLoading(false);
+      setIsLoadingMore(false);
       setError(null);
       return;
     }
-    fetchThreads(false);
-  }, [fetchThreads, params.enabled]);
+
+    const queryVersion = activeQueryVersionRef.current + 1;
+    activeQueryVersionRef.current = queryVersion;
+
+    setThreads([]);
+    setTotalCount(0);
+    setNextCursor(null);
+    setIsLoading(false);
+    setIsLoadingMore(false);
+    setError(null);
+
+    void fetchThreads({ queryVersion });
+  }, [fetchThreads, params.enabled, queryKey]);
 
   const refetch = useCallback(() => {
-    fetchThreads(false);
-  }, [fetchThreads]);
+    if (params.enabled === false) {
+      return;
+    }
+
+    initialAbortControllerRef.current?.abort();
+    appendAbortControllerRef.current?.abort();
+    inFlightAppendCursorRef.current = null;
+
+    const queryVersion = activeQueryVersionRef.current + 1;
+    activeQueryVersionRef.current = queryVersion;
+
+    void fetchThreads({ queryVersion });
+  }, [fetchThreads, params.enabled]);
 
   const loadMore = useCallback(() => {
-    if (nextCursor) {
-      fetchThreads(true, nextCursor);
+    if (params.enabled === false) {
+      return;
     }
-  }, [fetchThreads, nextCursor]);
+
+    const cursor = nextCursorRef.current;
+    if (
+      !cursor ||
+      isLoadingRef.current ||
+      isLoadingMoreRef.current ||
+      inFlightAppendCursorRef.current === cursor
+    ) {
+      return;
+    }
+
+    void fetchThreads({
+      append: true,
+      cursor,
+      queryVersion: activeQueryVersionRef.current,
+    });
+  }, [fetchThreads, params.enabled]);
 
   return {
     threads,
     totalCount,
     nextCursor,
     isLoading,
+    isLoadingMore,
+    hasMore: nextCursor !== null,
     error,
     refetch,
     loadMore,
