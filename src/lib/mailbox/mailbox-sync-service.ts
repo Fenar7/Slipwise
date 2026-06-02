@@ -27,6 +27,7 @@ import {
   initFolderCoverageForBootstrap,
   getIncompleteRequiredFolders,
   getFolderCoverage,
+  resetFolderCoverageCursor,
 } from "./folder-coverage-service";
 import {
   classifyProviderError,
@@ -774,7 +775,7 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
 
       if (bootstrapResults && bootstrapResults.length > 0) {
         for (const slice of bootstrapResults) {
-          const folder = slice.sliceLabel as "INBOX" | "SENT" | "SPAM" | "DRAFT" | "ARCHIVE";
+          const folder = slice.sliceLabel as "INBOX" | "SENT" | "SPAM" | "DRAFT" | "TRASH" | "ARCHIVE";
           if (slice.paginationExhausted) {
             await markFolderCoverageComplete(
               params.orgId,
@@ -795,7 +796,7 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
         }
       } else if (effectiveMode === "INITIAL" || recoveryBootstrapResults !== undefined) {
         // Fallback: no per-slice results — mark all as BOOTSTRAPPING (not COMPLETE)
-        for (const folder of ["INBOX", "SENT", "SPAM", "DRAFT", "ARCHIVE"] as const) {
+        for (const folder of ["INBOX", "SENT", "SPAM", "DRAFT", "TRASH", "ARCHIVE"] as const) {
           await updateFolderCoverageBootstrapping(
             params.orgId,
             connection.id,
@@ -854,9 +855,16 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
     const nextStatus = resolveStatusAfterFailure(connection.status, failureClass);
 
     // For cursor-invalid failures, clear the cursor so the next sync is INITIAL.
+    // Also reset per-folder coverage cursors so stale/invalid recovery tokens
+    // (e.g. a historyId stored as a page token in lastAdvancedCursor) do not
+    // cause repeated recovery failures.
     if (isReplayRequired(failureClass)) {
       await deleteMailboxCursors(params.orgId, connection.id);
       effectiveMode = "INITIAL";
+      const staleFolders = await getIncompleteRequiredFolders(params.orgId, connection.id);
+      for (const folder of staleFolders) {
+        await resetFolderCoverageCursor(params.orgId, connection.id, folder);
+      }
     }
 
     await db.mailboxSyncRun.update({
