@@ -52,13 +52,13 @@ const GMAIL_HISTORY_URL = "https://gmail.googleapis.com/gmail/v1/users/me/histor
 const GMAIL_WATCH_URL = "https://gmail.googleapis.com/gmail/v1/users/me/watch";
 const GMAIL_DRAFTS_URL = "https://gmail.googleapis.com/gmail/v1/users/me/drafts";
 const GMAIL_SEND_URL = "https://www.googleapis.com/gmail/v1/users/me/messages/send";
-const GMAIL_INITIAL_SYNC_MAX_PAGES = 10;
 const GMAIL_INITIAL_SYNC_MAX_RESULTS = 100;
 const GMAIL_BOOTSTRAP_SLICES = [
   { query: "in:inbox", folder: "INBOX" as const, includeSpamTrash: false },
   { query: "in:sent",  folder: "SENT"  as const, includeSpamTrash: false },
   { query: "in:spam",  folder: "SPAM"  as const, includeSpamTrash: true  },
   { query: "in:draft", folder: "DRAFT" as const, includeSpamTrash: false },
+  { query: "in:trash", folder: "TRASH" as const, includeSpamTrash: true  },
   {
     query: "-in:inbox -in:sent -in:spam -in:trash -in:draft",
     folder: "ARCHIVE" as const,
@@ -495,9 +495,9 @@ export const gmailProviderAdapter: IMailboxProviderAdapter = {
 
     // ─── Initial path: use threads.list ─────────────────────────────────────
     // Gmail-grade bootstrap: fetch all mailbox history across INBOX, SENT, SPAM,
-    // DRAFT, and ARCHIVE slices using multi-pass pagination (max 10 pages per
-    // slice, 100 threads per page). Returns per-slice exhaustion status so the
-    // sync service can decide folder completeness truthfully.
+    // DRAFT, and ARCHIVE slices using exhaustive multi-pass pagination
+    // (100 threads per page, until exhaustion). Returns per-slice exhaustion
+    // status so the sync service can decide folder completeness truthfully.
     const threadIds = new Set<string>();
     let highestHistoryId = "0";
     const bootstrapSliceResults: Array<{
@@ -976,9 +976,13 @@ async function fetchBoundedThreadRefsForQuery(
   const threadRefs: GmailThreadRef[] = [];
   let nextPageToken: string | undefined = startPageToken;
   let pagesFetched = 0;
+  // Safety cap: 10,000 pages = ~1M threads max per folder
+  const SAFETY_MAX_PAGES = 10_000;
 
   do {
     pagesFetched += 1;
+    if (pagesFetched > SAFETY_MAX_PAGES) break;
+
     const params = new URLSearchParams({
       maxResults: String(GMAIL_INITIAL_SYNC_MAX_RESULTS),
       includeSpamTrash: String(slice.includeSpamTrash),
@@ -999,7 +1003,7 @@ async function fetchBoundedThreadRefsForQuery(
     const data = await res.json() as GmailThreadsListResponse;
     threadRefs.push(...(data.threads ?? []));
     nextPageToken = data.nextPageToken;
-  } while (nextPageToken && pagesFetched < GMAIL_INITIAL_SYNC_MAX_PAGES);
+  } while (nextPageToken);
 
   // paginationExhausted is true when there are no more pages on the provider
   return { threadRefs, paginationExhausted: !nextPageToken };

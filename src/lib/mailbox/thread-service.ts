@@ -3,6 +3,9 @@ import "server-only";
 import { db } from "@/lib/db";
 import type { Prisma } from "@/generated/prisma/client";
 import { listMailboxConnectionsForMember } from "./visibility-service";
+import { getMailboxProviderAdapter } from "./provider-registry";
+import { isMailboxProviderError } from "./provider-contracts";
+import { readMailboxCredential } from "./credential-store";
 import { toMailboxThreadReadShape, toMailboxThreadDetailReadShape } from "./read-shapes";
 import type { MailboxThreadReadShape, MailboxThreadDetailReadShape } from "./read-shapes";
 import type { MailboxThreadStatus } from "./domain-types";
@@ -54,6 +57,7 @@ function parseSearchTerms(query: string): {
       SPAM: "SPAM",
       ARCHIVE: "ARCHIVE",
       DRAFT: "DRAFT",
+      TRASH: "TRASH",
     };
     if (rawFolder in folderMap) {
       folderHint = folderMap[rawFolder];
@@ -313,6 +317,21 @@ export async function listMailboxThreads(
       return { threads: [], nextCursor: null, totalCount: 0 };
     }
     baseWhere.id = { in: spamThreadIds };
+  } else if (folder === "TRASH") {
+    const trashRows = await db.mailboxMessage.findMany({
+      where: {
+        orgId,
+        thread: { mailboxConnectionId: { in: connectionIdsToQuery } },
+      },
+      select: { threadId: true, providerMetadata: true },
+    });
+    const trashThreadIds = [...new Set(trashRows
+      .filter((row) => hasTrashLabel(row.providerMetadata))
+      .map((row) => row.threadId))];
+    if (trashThreadIds.length === 0) {
+      return { threads: [], nextCursor: null, totalCount: 0 };
+    }
+    baseWhere.id = { in: trashThreadIds };
   }
 
   if (status) {
@@ -496,6 +515,64 @@ export async function getMailboxThread(
  * Verifies the caller has access to the thread's mailbox.
  * Messages are returned in chronological order (sentAt ASC).
  */
+async function repairMessageBodies(
+  orgId: string,
+  connectionId: string,
+  providerThreadId: string,
+  messageIdsToRepair: Array<{ id: string; providerMessageId: string }>,
+): Promise<void> {
+  if (messageIdsToRepair.length === 0) return;
+
+  const connection = await db.mailboxConnection.findFirst({
+    where: { id: connectionId, orgId },
+    select: { provider: true, tokenRef: true },
+  });
+  if (!connection || !connection.tokenRef) return;
+
+  const credential = await readMailboxCredential(orgId, connection.tokenRef);
+  if (!credential) return;
+
+  const adapter = getMailboxProviderAdapter(connection.provider);
+  const fetchResult = await adapter.fetchThreadDetail({
+    orgId,
+    tokenRef: connection.tokenRef,
+    providerThreadId,
+  });
+
+  if (isMailboxProviderError(fetchResult)) return;
+
+  const providerMessages = fetchResult.messages ?? [];
+  for (const msg of messageIdsToRepair) {
+    const match = providerMessages.find((pm) => pm.providerMessageId === msg.providerMessageId);
+    if (!match) continue;
+
+    const recoveredHtml = match.htmlBody || "";
+    const recoveredText = match.textBody ?? null;
+    if (!recoveredHtml && !recoveredText) continue;
+
+    try {
+      await db.mailboxMessage.update({
+        where: { id: msg.id, orgId },
+        data: {
+          ...(recoveredHtml ? { htmlBody: recoveredHtml } : {}),
+          ...(recoveredText ? { textBody: recoveredText } : {}),
+        },
+      });
+    } catch {
+      // Best-effort repair
+    }
+  }
+}
+
+/**
+ * Get a single thread detail by ID, including messages and attachments.
+ * Verifies the caller has access to the thread's mailbox.
+ * Messages are returned in chronological order (sentAt ASC).
+ *
+ * Includes bounded body repair: if any messages have empty htmlBody/textBody,
+ * a single provider re-fetch is attempted to recover the content.
+ * This is idempotent and will not thrash the provider on every open.
+ */
 export async function getMailboxThreadDetail(
   orgId: string,
   userId: string,
@@ -529,12 +606,32 @@ export async function getMailboxThreadDetail(
 
   if (!threadRow) return null;
 
-  const messages = threadRow.messages ?? [];
+  // Bounded body repair: attempt one provider re-fetch for messages with empty bodies
+  const messagesBeforeRepair = threadRow.messages ?? [];
+  const messageIdsToRepair = messagesBeforeRepair
+    .filter((msg) => !msg.htmlBody && (!msg.textBody || msg.textBody.trim().length === 0))
+    .map((msg) => ({ id: msg.id, providerMessageId: msg.providerMessageId }));
+  await repairMessageBodies(orgId, threadRow.mailboxConnectionId, threadRow.providerThreadId, messageIdsToRepair);
+
+  // Re-read messages after potential repair
+  const refreshedThread = await db.mailboxThread.findFirst({
+    where: { id: threadId, orgId },
+    include: {
+      messages: {
+        orderBy: { sentAt: "asc" as const },
+        include: { attachments: true },
+      },
+    },
+  });
+
+  if (!refreshedThread) return null;
+
+  const messages = refreshedThread.messages ?? [];
   const attachmentMap = new Map<string, typeof messages[0]["attachments"]>();
   for (const msg of messages) {
     attachmentMap.set(msg.id, msg.attachments ?? []);
   }
 
-  const detail = toMailboxThreadDetailReadShape(threadRow, messages, attachmentMap);
+  const detail = toMailboxThreadDetailReadShape(refreshedThread, messages, attachmentMap);
   return enrichDetailWithAssigneeName(detail);
 }

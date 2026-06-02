@@ -15,6 +15,7 @@ import {
   FileEdit,
   Archive,
   ShieldAlert,
+  Trash2,
   ChevronDown,
   ChevronRight,
   Settings,
@@ -41,6 +42,7 @@ const ICON_MAP: Record<string, React.ElementType> = {
   FileEdit,
   Archive,
   ShieldAlert,
+  Trash2,
 };
 
 function UnreadBadge({ count }: { count: number }) {
@@ -174,6 +176,13 @@ function mailboxFolders(connectionId: string, prefix: string): MailboxTreeItem[]
       label: "Spam",
       href: `/app/mailbox/${prefix}/spam`,
       icon: "ShieldAlert",
+      mailboxConnectionId: connectionId,
+    },
+    {
+      id: `${connectionId}-trash`,
+      label: "Trash",
+      href: `/app/mailbox/${prefix}/trash`,
+      icon: "Trash2",
       mailboxConnectionId: connectionId,
     },
   ];
