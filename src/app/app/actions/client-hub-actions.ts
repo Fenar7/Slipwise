@@ -19,6 +19,7 @@ import {
   resolveEffectiveConfig,
 } from "@/app/portal/[orgSlug]/client-hub/components/config-resolver";
 import { sendEmail, clientHubInviteEmailHtml } from "@/lib/email";
+import { revokePortalSession } from "@/lib/portal-auth";
 
 export type ClientHubReadinessStatus = "disabled" | "enabled_not_ready" | "enabled_ready";
 
@@ -821,6 +822,9 @@ export async function disableClientHubForCustomer(customerId: string) {
       });
     });
 
+    // Revoke all active sessions and magic link/OTP tokens immediately so the customer is locked out instantly
+    await revokePortalSession(customerId, orgId);
+
     revalidatePath("/app/settings/portal/client-hub");
     return { success: true };
   } catch (error) {
@@ -1021,6 +1025,12 @@ export async function resendClientHubInvite(customerId: string) {
 
     // Delivery succeeded — atomically update invite state and audit
     await db.$transaction(async (tx) => {
+      // Revoke any prior magic link / OTP tokens for this customer (newest-invite-wins)
+      await tx.customerPortalToken.updateMany({
+        where: { customerId, orgId, isRevoked: false },
+        data: { isRevoked: true },
+      });
+
       await tx.clientHubCustomerLifecycle.update({
         where: { customerId },
         data: {

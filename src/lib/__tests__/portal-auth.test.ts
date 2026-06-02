@@ -94,6 +94,7 @@ function makeCustomerResult(overrides: Record<string, unknown> = {}) {
         portalSupportEmail: "support@slipwise.com",
       },
     },
+    clientHubLifecycle: { enabled: true },
     ...overrides,
   };
 }
@@ -190,6 +191,7 @@ describe("portal-auth", () => {
             slug: "slipwise",
             defaults: { portalEnabled: true, portalSessionExpiryHours: 24 },
           },
+          clientHubLifecycle: { enabled: true },
         },
       });
       mockDb.customerPortalToken.update.mockResolvedValue({});
@@ -390,6 +392,7 @@ describe("portal-auth", () => {
             slug: "slipwise",
             defaults: { portalEnabled: true, portalSessionExpiryHours: 24 },
           },
+          clientHubLifecycle: { enabled: true },
         },
       });
       mockDb.customerPortalToken.update.mockResolvedValue({});

@@ -112,6 +112,7 @@ function makeCustomer(overrides?: Partial<Record<string, unknown>>) {
       slug: ORG_SLUG,
       defaults: makeOrgDefaults(),
     },
+    clientHubLifecycle: { enabled: true },
     ...overrides,
   };
 }

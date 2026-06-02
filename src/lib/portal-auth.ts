@@ -174,10 +174,15 @@ export async function requestMagicLink(
         organization: {
           include: { defaults: true },
         },
+        clientHubLifecycle: true,
       },
     });
 
     if (!customer || !customer.organization.defaults?.portalEnabled) {
+      return successResponse;
+    }
+
+    if (!customer.clientHubLifecycle || !customer.clientHubLifecycle.enabled) {
       return successResponse;
     }
 
@@ -256,7 +261,10 @@ export async function verifyMagicLink(
       },
       include: {
         customer: {
-          include: { organization: { include: { defaults: true } } },
+          include: {
+            organization: { include: { defaults: true } },
+            clientHubLifecycle: true,
+          },
         },
       },
     });
@@ -265,8 +273,12 @@ export async function verifyMagicLink(
       return { success: false, error: "invalid_or_expired_link" };
     }
 
-    // Double-check portal is still enabled
-    if (!portalToken.customer.organization.defaults?.portalEnabled) {
+    // Double-check portal is still enabled and customer is enabled
+    if (
+      !portalToken.customer.organization.defaults?.portalEnabled ||
+      !portalToken.customer.clientHubLifecycle ||
+      !portalToken.customer.clientHubLifecycle.enabled
+    ) {
       return { success: false, error: "invalid_or_expired_link" };
     }
 
@@ -588,8 +600,8 @@ export async function requestPortalOtp(
       return successResponse;
     }
 
-    // Check clientHubLifecycle enablement if the record exists
-    if (customer.clientHubLifecycle && !customer.clientHubLifecycle.enabled) {
+    // Check clientHubLifecycle enablement
+    if (!customer.clientHubLifecycle || !customer.clientHubLifecycle.enabled) {
       return successResponse;
     }
 
@@ -671,7 +683,7 @@ export async function verifyPortalOtp(
       return { success: false, error: "invalid_or_expired_code" };
     }
 
-    if (customer.clientHubLifecycle && !customer.clientHubLifecycle.enabled) {
+    if (!customer.clientHubLifecycle || !customer.clientHubLifecycle.enabled) {
       return { success: false, error: "invalid_or_expired_code" };
     }
 

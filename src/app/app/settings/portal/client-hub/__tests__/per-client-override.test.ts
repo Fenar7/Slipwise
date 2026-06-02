@@ -38,6 +38,12 @@ const mockDb = vi.hoisted(() => {
     orgDefaults: {
       findUnique: vi.fn(),
     },
+    customerPortalToken: {
+      updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+    },
+    customerPortalSession: {
+      updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+    },
     $transaction: vi.fn(),
   };
 
@@ -47,6 +53,7 @@ const mockDb = vi.hoisted(() => {
     clientHubCustomerLifecycle: db.clientHubCustomerLifecycle,
     auditLog: db.auditLog,
     proxyGrant: db.proxyGrant,
+    customerPortalToken: db.customerPortalToken,
   };
 
   db.$transaction = vi.fn(async (cb: any) => cb(tx));

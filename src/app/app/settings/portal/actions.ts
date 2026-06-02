@@ -57,6 +57,10 @@ export async function updatePortalSettings({
     },
   });
 
+  if (!portalEnabled) {
+    await revokeAllPortalTokens(orgId);
+  }
+
   logAudit({
     orgId,
     actorId: userId,

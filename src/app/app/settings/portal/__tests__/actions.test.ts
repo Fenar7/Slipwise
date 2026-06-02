@@ -27,6 +27,9 @@ const mockDb = vi.hoisted(() => ({
   customerPortalSession: {
     updateMany: vi.fn().mockResolvedValue({ count: 0 }),
   },
+  customerPortalToken: {
+    updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+  },
 }));
 
 vi.mock("server-only", () => ({}));
