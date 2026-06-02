@@ -13,6 +13,7 @@ import type {
   CancelMeetingInput,
 } from "./service-contracts";
 import { syncMeetingToProvider, reconcileProviderChangesForMeeting } from "./provider-sync-service";
+import { seedMeetingAttendees } from "./rsvp-service";
 
 /**
  * Validates a scheduled meeting date.
@@ -93,6 +94,11 @@ export async function scheduleMeeting(input: ScheduleMeetingInput): Promise<Conv
     });
 
     return created;
+  });
+
+  // Seed attendee records for the conversation participants
+  seedMeetingAttendees(orgId, meeting.id).catch((err) => {
+    console.error("[meeting-service] scheduleMeeting: seedMeetingAttendees failed:", err);
   });
 
   let finalMeeting = toMeetingRecord(meeting);
@@ -188,11 +194,14 @@ export async function updateMeeting(input: UpdateMeetingInput): Promise<Conversa
       data: updatedData,
     });
 
+    const isRescheduled = "scheduledAt" in updatedData;
     await logMessagingAuditTx(tx, {
       orgId,
       actorId: updatedBy,
-      action: "MEETING_UPDATED",
-      summary: `Meeting updated: ${updated.title}`,
+      action: isRescheduled ? "MEETING_RESCHEDULED" : "MEETING_UPDATED",
+      summary: isRescheduled
+        ? `Meeting rescheduled: ${updated.title}`
+        : `Meeting updated: ${updated.title}`,
       conversationId: updated.conversationId,
       meetingId: updated.id,
       metadata: { updatedFields: Object.keys(updatedData) },
