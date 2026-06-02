@@ -46,6 +46,7 @@ vi.mock("@/lib/db", () => ({
       findMany: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
+      updateMany: vi.fn(),
     },
     mailboxCredential: {
       update: vi.fn(),

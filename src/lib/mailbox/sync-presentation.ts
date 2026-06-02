@@ -190,7 +190,12 @@ export function buildMailboxSyncPresentation(
     };
   }
 
-  const hasFailedRun =
+  // Precedence: a completed run supersedes older failure state.
+  // If latestRun is COMPLETED (most recent by startedAt), the mailbox
+  // is healthy regardless of prior failures or stale connection-level fields.
+  const isSupersededByCompletedRun = latestRun?.status === "COMPLETED";
+
+  const hasFailedRun = !isSupersededByCompletedRun && (
     latestRun?.status === "FAILED" ||
     // A stale RUNNING run (crashed / timed-out) is presented as failed so the
     // UI does not show "Syncing" forever and the user can retry.
@@ -200,7 +205,8 @@ export function buildMailboxSyncPresentation(
     isStalledRun ||
     (!!record.lastSyncError &&
       record.status !== "RECONNECT_REQUIRED" &&
-      record.status !== "DISCONNECTED");
+      record.status !== "DISCONNECTED")
+  );
 
   if (hasFailedRun) {
     return {

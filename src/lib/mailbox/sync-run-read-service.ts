@@ -4,6 +4,35 @@ import { db } from "@/lib/db";
 import type { MailboxSyncRunRecord } from "./domain-types";
 import { isSchemaDriftError } from "@/lib/prisma-errors";
 
+const MAILBOX_SYNC_MAX_RUNNING_AGE_MINUTES = 30;
+
+async function cleanStaleSyncRunsForConnections(
+  orgId: string,
+  connectionIds: string[],
+): Promise<void> {
+  if (!db.mailboxSyncRun || connectionIds.length === 0) return;
+  const cutoff = new Date(Date.now() - MAILBOX_SYNC_MAX_RUNNING_AGE_MINUTES * 60 * 1000);
+  try {
+    await db.mailboxSyncRun.updateMany({
+      where: {
+        orgId,
+        mailboxConnectionId: { in: connectionIds },
+        status: "RUNNING",
+        startedAt: { lt: cutoff },
+      },
+      data: {
+        status: "FAILED",
+        completedAt: new Date(),
+        errorCategory: "unknown",
+        errorSummary: "Sync run abandoned — did not complete within expected time",
+      },
+    });
+  } catch (error) {
+    if (isSchemaDriftError(error)) return;
+    throw error;
+  }
+}
+
 function toSyncRunRecord(
   row: {
     id: string;
@@ -64,6 +93,8 @@ export async function getMailboxSyncRunsByConnectionIds(
   if (!db.mailboxSyncRun) {
     return { latestRunByConnectionId, latestCompletedRunByConnectionId };
   }
+
+  await cleanStaleSyncRunsForConnections(orgId, connectionIds);
 
   let rows: Awaited<ReturnType<typeof db.mailboxSyncRun.findMany>> = [];
   try {
