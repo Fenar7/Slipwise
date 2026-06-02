@@ -5,6 +5,7 @@ import { AppSidebar } from "./app-sidebar";
 import { AppTopbar } from "./app-topbar";
 import { WorkspaceTopBarProvider } from "./workspace-topbar-context";
 import { SidebarProvider, useSidebar } from "./sidebar-context";
+import { ImminentMeetingBanner } from "./imminent-meeting-banner";
 
 interface AppShellProps {
   children: React.ReactNode;
@@ -20,6 +21,9 @@ function ShellInner({ children, orgName, initialUser }: AppShellProps) {
   const { collapsed } = useSidebar();
   return (
     <div className="flex h-screen overflow-hidden" style={{ background: "#f8f9fc" }}>
+      {/* Global imminent-meeting alert — visible from all authenticated surfaces */}
+      <ImminentMeetingBanner />
+
       {/* Sidebar */}
       <motion.div
         className="hidden lg:flex lg:flex-shrink-0 overflow-hidden"
@@ -49,3 +53,4 @@ export function AppShell(props: AppShellProps) {
     </SidebarProvider>
   );
 }
+

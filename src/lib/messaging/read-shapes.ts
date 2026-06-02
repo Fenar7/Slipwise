@@ -498,5 +498,7 @@ export interface CalendarEntry {
   scheduledBy?: string | null;
   scheduledByName?: string | null;
   priority?: string | null;
+  joinUrl?: string | null;
+  rsvpStatus?: string | null;
 }
 

@@ -257,6 +257,7 @@ export async function syncMeetingToProvider(orgId: string, meetingId: string): P
       data: {
         providerEventId: serializedEventIds,
         metadata: metadataPatch,
+        joinUrl: metadataPatch.joinUrl ?? null,
       },
     });
 
@@ -520,6 +521,12 @@ export async function reconcileProviderChangesForMeeting(orgId: string, meetingI
           };
           hasDrift = true;
         }
+
+        // Reconcile joinUrl drift
+        if (remoteEvent.joinUrl && remoteEvent.joinUrl !== resolvedMeeting.joinUrl) {
+          resolvedMeeting.joinUrl = remoteEvent.joinUrl;
+          hasDrift = true;
+        }
       }
     } catch (err) {
       console.error(`[provider-reconciliation] Failed reconciliation check for provider ${provider}:`, err);
@@ -542,6 +549,7 @@ export async function reconcileProviderChangesForMeeting(orgId: string, meetingI
         cancelledBy: statusUpdate === "CANCELLED" ? actorId : resolvedMeeting.cancelledBy,
         cancelReason: statusUpdate === "CANCELLED" ? "Remote calendar cancellation reconciled" : resolvedMeeting.cancelReason,
         metadata: metadataPatch,
+        joinUrl: resolvedMeeting.joinUrl,
       },
     });
 

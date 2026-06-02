@@ -806,10 +806,23 @@ export async function getUnifiedCalendar(
 
   const entries: CalendarEntry[] = [];
 
+  // Load RSVP statuses for the current user for all resolved meetings
+  const meetingIds = reconciledMeetings.map((m) => m.id);
+  const attendees = meetingIds.length > 0
+    ? await db.meetingAttendee.findMany({
+        where: { meetingId: { in: meetingIds }, userId },
+        select: { meetingId: true, rsvpStatus: true },
+      })
+    : [];
+  const rsvpMap = new Map(attendees.map((a) => [a.meetingId, a.rsvpStatus]));
+
   // Map meetings
   for (const m of reconciledMeetings) {
     const convName = conversationMap.get(m.conversationId)?.name ?? null;
     const endAtTime = new Date(m.scheduledAt.getTime() + m.durationMinutes * 60 * 1000);
+    const rsvpStatus = rsvpMap.get(m.id) ?? "PENDING";
+    const canSeeJoin = rsvpStatus !== "DECLINED";
+    const joinUrl = m.joinUrl && canSeeJoin ? m.joinUrl : null;
     entries.push({
       id: m.id,
       orgId: m.orgId,
@@ -823,6 +836,8 @@ export async function getUnifiedCalendar(
       status: m.status,
       scheduledBy: m.scheduledBy,
       scheduledByName: profileMap.get(m.scheduledBy)?.name ?? null,
+      joinUrl,
+      rsvpStatus,
     });
   }
 

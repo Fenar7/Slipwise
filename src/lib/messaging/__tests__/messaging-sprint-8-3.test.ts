@@ -42,6 +42,10 @@ vi.mock("@/lib/db", () => {
     messagingAuditEvent: {
       create: vi.fn(),
     },
+    meetingAttendee: {
+      findMany: vi.fn(),
+      createMany: vi.fn(),
+    },
     profile: {
       findFirst: vi.fn(),
       findMany: vi.fn(),
@@ -205,6 +209,8 @@ describe("Sprint 8.3 — Provider Sync & Task Calendar Tests", () => {
     vi.mocked(db.calendarConnection.findMany).mockResolvedValue([mockConnectionRow()] as any);
     vi.mocked(db.calendarConnection.count).mockResolvedValue(1);
     vi.mocked(db.profile.findFirst).mockResolvedValue({ id: "user-assignee", name: "Assignee Name" } as any);
+    vi.mocked(db.meetingAttendee.findMany).mockResolvedValue([]);
+    vi.mocked(db.meetingAttendee.createMany).mockResolvedValue({ count: 0 });
 
     mockFetch = vi.fn().mockImplementation((url: string, options: any = {}) => {
       // 1. Google OAuth Token Refresh Mock
