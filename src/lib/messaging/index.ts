@@ -326,6 +326,15 @@ export {
   type GetOrgTaskSummariesOptions,
 } from "./read-models";
 
+// ─── Sprint 9.1: Search service ──────────────────────────────────────────────────
+export {
+  searchMessaging,
+  type MessagingSearchQuery,
+  type MessagingSearchResponse,
+  type MessagingSearchResult,
+  type SearchResultKind,
+} from "./search-service";
+
 // ─── Phase 4 Sprint 4.1: Realtime transport ───────────────────────────────────────
 
 export {

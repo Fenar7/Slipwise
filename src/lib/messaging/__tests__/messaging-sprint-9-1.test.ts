@@ -1,0 +1,416 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+
+vi.mock("server-only", () => ({}));
+
+vi.mock("@/lib/db", () => {
+  const mocks = {
+    conversationParticipant: {
+      findMany: vi.fn(),
+      count: vi.fn(),
+    },
+    conversation: {
+      findMany: vi.fn(),
+      count: vi.fn(),
+    },
+    conversationMessage: {
+      findMany: vi.fn(),
+      count: vi.fn(),
+    },
+    messagingTask: {
+      findMany: vi.fn(),
+      count: vi.fn(),
+    },
+    conversationMeeting: {
+      findMany: vi.fn(),
+      count: vi.fn(),
+    },
+    profile: {
+      findMany: vi.fn(),
+      count: vi.fn(),
+    },
+  };
+  const db = {
+    ...mocks,
+    $transaction: vi.fn((cb: any) => cb(db)),
+  };
+  return { db };
+});
+
+import { db } from "@/lib/db";
+import { searchMessaging } from "../search-service";
+
+describe("Sprint 9.1 — Search Foundation & Visibility-Safe Query Model", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(db.conversationMessage.count).mockResolvedValue(0);
+    vi.mocked(db.conversation.count).mockResolvedValue(0);
+    vi.mocked(db.messagingTask.count).mockResolvedValue(0);
+    vi.mocked(db.conversationMeeting.count).mockResolvedValue(0);
+  });
+
+  describe("searchMessaging Visibility and Authorization", () => {
+    it("users only see results from conversations they are authorized to access", async () => {
+      // Setup mock data
+      // User is active participant in conversation-1, but not conversation-2
+      vi.mocked(db.conversationParticipant.findMany).mockResolvedValue([
+        { conversationId: "conversation-1", orgId: "org-1", userId: "user-1", leftAt: null, isPinned: false },
+      ] as any);
+
+      vi.mocked(db.conversationMessage.count).mockResolvedValue(1);
+
+      // Search term matches messages in both conversations
+      vi.mocked(db.conversationMessage.findMany).mockResolvedValue([
+        {
+          id: "msg-1",
+          conversationId: "conversation-1",
+          orgId: "org-1",
+          authorId: "author-1",
+          body: "This matches the query term",
+          createdAt: new Date(),
+          status: "ACTIVE",
+          conversation: { name: "finance-ops" },
+        },
+      ] as any);
+
+      // Mock author profile
+      vi.mocked(db.profile.findMany).mockResolvedValue([
+        { id: "author-1", name: "Priya Sharma" },
+      ] as any);
+
+      const result = await searchMessaging("org-1", "user-1", {
+        q: "matches",
+        kinds: ["message"],
+      });
+
+      // Verify that conversationParticipant was queried with active user membership
+      expect(db.conversationParticipant.findMany).toHaveBeenCalledWith({
+        where: { orgId: "org-1", userId: "user-1", leftAt: null },
+        select: { conversationId: true, isPinned: true },
+      });
+
+      // Verify message query is restricted to conversation-1 (member Conv IDs)
+      expect(db.conversationMessage.findMany).toHaveBeenCalledWith({
+        where: {
+          orgId: "org-1",
+          conversationId: { in: ["conversation-1"] },
+          status: { not: "DELETED" },
+          deletedAt: null,
+          body: { contains: "matches", mode: "insensitive" },
+        },
+        include: { conversation: { select: { name: true } } },
+        orderBy: { createdAt: "desc" },
+        take: 200,
+      });
+
+      // Verify result lists msg-1 and no trace of msg-2 in results or facets
+      expect(result.results.length).toBe(1);
+      expect(result.results[0].id).toBe("msg-1");
+      expect(result.facets.message).toBe(1);
+    });
+
+    it("prevents unauthorized discovery of private/restricted conversations", async () => {
+      // User is only in conversation-1
+      vi.mocked(db.conversationParticipant.findMany).mockResolvedValue([
+        { conversationId: "conversation-1", orgId: "org-1", userId: "user-1", leftAt: null },
+      ] as any);
+
+      vi.mocked(db.conversation.count).mockResolvedValue(1);
+
+      // DB returns public channels + user's joined conversations matching q
+      vi.mocked(db.conversation.findMany).mockResolvedValue([
+        {
+          id: "conversation-1",
+          orgId: "org-1",
+          type: "CHANNEL",
+          name: "general",
+          description: "General channel",
+          visibility: "PUBLIC",
+          createdAt: new Date(),
+        },
+      ] as any);
+
+      const result = await searchMessaging("org-1", "user-1", {
+        q: "general",
+        kinds: ["conversation"],
+      });
+
+      expect(db.conversation.findMany).toHaveBeenCalledWith({
+        where: {
+          orgId: "org-1",
+          archivedAt: null,
+          AND: [
+            {
+              OR: [
+                { id: { in: ["conversation-1"] } },
+                { type: "CHANNEL", visibility: "PUBLIC" },
+              ],
+            },
+            {
+              OR: [
+                { name: { contains: "general", mode: "insensitive" } },
+                { description: { contains: "general", mode: "insensitive" } },
+              ],
+            },
+          ],
+        },
+        include: {
+          participants: {
+            where: { leftAt: null },
+            select: { id: true },
+          },
+        },
+        orderBy: { createdAt: "desc" },
+        take: 200,
+      });
+
+      expect(result.results[0].id).toBe("conversation-1");
+    });
+  });
+
+  describe("searchMessaging Ranking and Snippets", () => {
+    it("prefers exact matches over partial match scoring", async () => {
+      vi.mocked(db.conversationParticipant.findMany).mockResolvedValue([
+        { conversationId: "conversation-1", orgId: "org-1", userId: "user-1", leftAt: null },
+      ] as any);
+
+      vi.mocked(db.conversationMessage.count).mockResolvedValue(2);
+
+      const now = new Date();
+      vi.mocked(db.conversationMessage.findMany).mockResolvedValue([
+        {
+          id: "msg-partial",
+          conversationId: "conversation-1",
+          orgId: "org-1",
+          authorId: "author-1",
+          body: "Matches partially here",
+          createdAt: now,
+          status: "ACTIVE",
+          conversation: { name: "channel-1" },
+        },
+        {
+          id: "msg-exact",
+          conversationId: "conversation-1",
+          orgId: "org-1",
+          authorId: "author-1",
+          body: "matches",
+          createdAt: now,
+          status: "ACTIVE",
+          conversation: { name: "channel-1" },
+        },
+      ] as any);
+
+      vi.mocked(db.profile.findMany).mockResolvedValue([
+        { id: "author-1", name: "User" },
+      ] as any);
+
+      const result = await searchMessaging("org-1", "user-1", {
+        q: "matches",
+        kinds: ["message"],
+      });
+
+      // exact matches rank higher
+      expect(result.results[0].id).toBe("msg-exact");
+      expect(result.results[1].id).toBe("msg-partial");
+    });
+
+    it("generates a safe, truncated snippet for long message contents", async () => {
+      vi.mocked(db.conversationParticipant.findMany).mockResolvedValue([
+        { conversationId: "conversation-1", orgId: "org-1", userId: "user-1", leftAt: null },
+      ] as any);
+
+      vi.mocked(db.conversationMessage.count).mockResolvedValue(1);
+
+      const longBody = "This is a very long body prefix text ".repeat(10) + "target_word" + " suffix text ending here.".repeat(10);
+      vi.mocked(db.conversationMessage.findMany).mockResolvedValue([
+        {
+          id: "msg-long",
+          conversationId: "conversation-1",
+          orgId: "org-1",
+          authorId: "author-1",
+          body: longBody,
+          createdAt: new Date(),
+          status: "ACTIVE",
+          conversation: { name: "channel-1" },
+        },
+      ] as any);
+
+      vi.mocked(db.profile.findMany).mockResolvedValue([{ id: "author-1", name: "User" }] as any);
+
+      const result = await searchMessaging("org-1", "user-1", {
+        q: "target_word",
+        kinds: ["message"],
+      });
+
+      const messageResult = result.results[0] as any;
+      expect(messageResult.snippet.includes("target_word")).toBe(true);
+      expect(messageResult.snippet.startsWith("...")).toBe(true);
+      expect(messageResult.snippet.length).toBeLessThan(150);
+    });
+  });
+
+  describe("searchMessaging Truthful States", () => {
+    it("handles empty/whitespace queries safely without querying DB", async () => {
+      const result = await searchMessaging("org-1", "user-1", {
+        q: "   ",
+      });
+
+      expect(result.results).toEqual([]);
+      expect(db.conversationParticipant.findMany).not.toHaveBeenCalled();
+    });
+
+    it("returns degraded state when parameter or force query is present", async () => {
+      const result = await searchMessaging("org-1", "user-1", {
+        q: "force-degraded",
+      });
+
+      expect(result.state).toBe("degraded");
+      expect(result.results).toEqual([]);
+    });
+
+    it("identifies kinds not yet indexed correctly as unindexed", async () => {
+      vi.mocked(db.conversationParticipant.findMany).mockResolvedValue([
+        { conversationId: "conversation-1", orgId: "org-1", userId: "user-1", leftAt: null },
+      ] as any);
+
+      const result = await searchMessaging("org-1", "user-1", {
+        q: "payroll",
+        kinds: ["file"],
+      });
+
+      expect(result.state).toBe("unindexed");
+      expect(result.unindexedKinds).toContain("file");
+      expect(result.results).toEqual([]);
+    });
+
+    it("mixed search with file returns active state and reports unindexedKinds: ['file']", async () => {
+      vi.mocked(db.conversationParticipant.findMany).mockResolvedValue([
+        { conversationId: "conversation-1", orgId: "org-1", userId: "user-1", leftAt: null },
+      ] as any);
+
+      vi.mocked(db.conversationMessage.count).mockResolvedValue(1);
+
+      vi.mocked(db.conversationMessage.findMany).mockResolvedValue([
+        {
+          id: "msg-1",
+          conversationId: "conversation-1",
+          orgId: "org-1",
+          authorId: "author-1",
+          body: "payroll updates",
+          createdAt: new Date(),
+          status: "ACTIVE",
+          conversation: { name: "finance-ops" },
+        },
+      ] as any);
+
+      vi.mocked(db.profile.findMany).mockResolvedValue([
+        { id: "author-1", name: "Priya Sharma" },
+      ] as any);
+
+      const result = await searchMessaging("org-1", "user-1", {
+        q: "payroll",
+        kinds: ["message", "file"],
+      });
+
+      expect(result.state).toBe("active");
+      expect(result.unindexedKinds).toEqual(["file"]);
+      expect(result.results.length).toBe(1);
+      expect(result.results[0].id).toBe("msg-1");
+    });
+  });
+
+  describe("searchMessaging Bounded Candidate Limits", () => {
+    it("enforces MAX_CANDIDATES_PER_KIND (take: 200) across all DB queries", async () => {
+      vi.mocked(db.conversationParticipant.findMany).mockResolvedValue([
+        { conversationId: "conversation-1", orgId: "org-1", userId: "user-1", leftAt: null },
+      ] as any);
+
+      vi.mocked(db.conversationMessage.findMany).mockResolvedValue([]);
+      vi.mocked(db.conversation.findMany).mockResolvedValue([]);
+      vi.mocked(db.messagingTask.findMany).mockResolvedValue([]);
+      vi.mocked(db.conversationMeeting.findMany).mockResolvedValue([]);
+
+      await searchMessaging("org-1", "user-1", {
+        q: "limit-check",
+        kinds: ["message", "conversation", "task", "meeting"],
+      });
+
+      expect(db.conversationMessage.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ take: 200 })
+      );
+      expect(db.conversation.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ take: 200 })
+      );
+      expect(db.messagingTask.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ take: 200 })
+      );
+      expect(db.conversationMeeting.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ take: 200 })
+      );
+    });
+  });
+
+  describe("searchMessaging Bounded Candidate Limits and Truthful Facets", () => {
+    it("facet/count/paging truth remains correct under high-volume result sets", async () => {
+      // Mock conversation membership
+      vi.mocked(db.conversationParticipant.findMany).mockResolvedValue([
+        { conversationId: "conversation-1", orgId: "org-1", userId: "user-1", leftAt: null },
+      ] as any);
+
+      // Suppose we have 600 messages matching in the DB (exceeding cap of 200)
+      vi.mocked(db.conversationMessage.count).mockResolvedValue(600);
+      vi.mocked(db.conversationMessage.findMany).mockResolvedValue(
+        Array(200).fill({
+          id: "msg-id",
+          conversationId: "conversation-1",
+          orgId: "org-1",
+          authorId: "author-1",
+          body: "high volume query matches",
+          createdAt: new Date(),
+          status: "ACTIVE",
+          conversation: { name: "finance-ops" },
+        }) as any
+      );
+
+      vi.mocked(db.profile.findMany).mockResolvedValue([
+        { id: "author-1", name: "Priya Sharma" },
+      ] as any);
+
+      const result = await searchMessaging("org-1", "user-1", {
+        q: "high volume query matches",
+        kinds: ["message"],
+        limit: 20,
+        offset: 0,
+      });
+
+      // Truthful facet count reports 600
+      expect(result.facets.message).toBe(600);
+      // Because we loaded 200 candidates and offset+limit (20) <= 200, hasMore is true
+      expect(result.hasMore).toBe(true);
+      expect(result.isCapped).toBe(true);
+      expect(result.windowExceeded).toBe(false);
+
+      // If we page near the limit of retrieved candidate pool (190 + 20 = 210 > 200), hasMore is false
+      const endPageResult = await searchMessaging("org-1", "user-1", {
+        q: "high volume query matches",
+        kinds: ["message"],
+        limit: 20,
+        offset: 190,
+      });
+      expect(endPageResult.hasMore).toBe(false);
+      expect(endPageResult.isCapped).toBe(true);
+      expect(endPageResult.windowExceeded).toBe(false);
+
+      // If we request past the retrieved pool (offset: 220), we get empty results and windowExceeded: true
+      const exceededResult = await searchMessaging("org-1", "user-1", {
+        q: "high volume query matches",
+        kinds: ["message"],
+        limit: 20,
+        offset: 220,
+      });
+      expect(exceededResult.results).toEqual([]);
+      expect(exceededResult.hasMore).toBe(false);
+      expect(exceededResult.isCapped).toBe(true);
+      expect(exceededResult.windowExceeded).toBe(true);
+    });
+  });
+});
