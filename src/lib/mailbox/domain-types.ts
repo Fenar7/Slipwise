@@ -472,6 +472,19 @@ export interface MailboxSyncAttemptResult {
 }
 
 // ── Folder Coverage Types (Sprint 6.3+ Gmail-grade completeness) ──
+//
+// The six tracked folders (INBOX, SENT, SPAM, DRAFT, TRASH, ARCHIVE)
+// collectively cover the entire Gmail corpus:
+//   - INBOX, SENT, SPAM, DRAFT, TRASH use their respective Gmail search
+//     operators (in:inbox, in:sent, etc.)
+//   - ARCHIVE is bootstrapped via
+//     `-in:inbox -in:sent -in:spam -in:trash -in:draft`, which captures
+//     every message that does not belong to any other tracked folder.
+//
+// ALL_MAIL (Gmail's virtual aggregate of everything except SPAM and TRASH)
+// is NOT tracked here because it has no corresponding bootstrap slice:
+// the six individual folders already exhaust the full corpus, so an
+// ALL_MAIL slice would be redundant.
 
 export const MAILBOX_FOLDER_COVERAGE_FOLDERS = [
   "INBOX",
@@ -480,7 +493,6 @@ export const MAILBOX_FOLDER_COVERAGE_FOLDERS = [
   "DRAFT",
   "ARCHIVE",
   "TRASH",
-  "ALL_MAIL",
 ] as const;
 
 export type MailboxCoverageFolder = (typeof MAILBOX_FOLDER_COVERAGE_FOLDERS)[number];
