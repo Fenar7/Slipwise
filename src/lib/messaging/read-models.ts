@@ -24,7 +24,7 @@ import {
   getConversationById,
   listConversationsForUser,
 } from "./conversation-service";
-import { reconcileProviderChangesForMeeting, reconcileProviderChangesForTask } from "./provider-sync-service";
+import { reconcileProviderChangesForMeeting, reconcileProviderChangesForTask, parseProviderEventIds } from "./provider-sync-service";
 import {
   getMessageById,
 } from "./message-service";
@@ -925,6 +925,254 @@ export async function getMeetingDetail(
   }
 
   return toMeetingRecord(meeting);
+}
+
+// ─── Calendar Diagnostics types and query ──────────────────────────────────
+
+export interface CalendarDiagnostics {
+  connections: Array<{
+    id: string;
+    provider: string;
+    emailAddress: string;
+    status: string;
+    health: "healthy" | "degraded" | "reconnect_required" | "disconnected";
+    lastSyncAt: string | null;
+    lastSyncErrorClass: "NONE" | "AUTH_EXPIRED" | "NOT_FOUND" | "RATE_LIMIT" | "PROVIDER_UNAVAILABLE" | "SYNC_FAILURE";
+  }>;
+  meetingSyncFailures: Array<{
+    id: string;
+    title: string;
+    conversationId: string;
+    scheduledAt: string;
+    failureClass: "MISSING_PROVIDER_EVENT" | "RECONCILE_DRIFT" | "DEGRADED_STATE";
+  }>;
+  taskSyncFailures: Array<{
+    id: string;
+    title: string;
+    conversationId: string;
+    dueDate: string;
+    failureClass: "MISSING_PROVIDER_EVENT" | "RECONCILE_DRIFT" | "DEGRADED_STATE";
+  }>;
+  conflictIndicators: Array<{
+    type: "meeting" | "task";
+    id: string;
+    title: string;
+    details: string;
+  }>;
+}
+
+function categorizeSyncError(errorMsg: string | null): "NONE" | "AUTH_EXPIRED" | "NOT_FOUND" | "RATE_LIMIT" | "PROVIDER_UNAVAILABLE" | "SYNC_FAILURE" {
+  if (!errorMsg) return "NONE";
+  const msg = errorMsg.toLowerCase();
+  if (msg.includes("auth") || msg.includes("token") || msg.includes("401") || msg.includes("revoked") || msg.includes("expired") || msg.includes("permission")) {
+    return "AUTH_EXPIRED";
+  }
+  if (msg.includes("404") || msg.includes("not found") || msg.includes("missing")) {
+    return "NOT_FOUND";
+  }
+  if (msg.includes("429") || msg.includes("rate limit") || msg.includes("quota")) {
+    return "RATE_LIMIT";
+  }
+  if (msg.includes("500") || msg.includes("502") || msg.includes("503") || msg.includes("unavailable") || msg.includes("timeout")) {
+    return "PROVIDER_UNAVAILABLE";
+  }
+  return "SYNC_FAILURE";
+}
+
+export async function getCalendarDiagnostics(
+  orgId: string,
+  userId: string,
+): Promise<CalendarDiagnostics | null> {
+  const member = await db.member.findFirst({
+    where: { organizationId: orgId, userId },
+    select: { role: true },
+  });
+
+  if (!member) return null;
+  const orgRole = member.role?.toLowerCase() ?? "";
+  const isAdmin = orgRole === "owner" || orgRole === "admin";
+  if (!isAdmin) return null;
+
+  // 1. Fetch connections
+  const connections = await db.calendarConnection.findMany({
+    where: { orgId },
+  });
+
+  const activeConnections = connections.filter(
+    (c) => c.status === "ACTIVE" || c.status === "RECONNECT_REQUIRED"
+  );
+
+  const connectionDiagnostics = connections.map((c) => {
+    let health: "healthy" | "degraded" | "reconnect_required" | "disconnected" = "healthy";
+    if (c.status === "DISCONNECTED") {
+      health = "disconnected";
+    } else if (c.status === "RECONNECT_REQUIRED") {
+      health = "reconnect_required";
+    } else if (c.lastSyncError) {
+      health = "degraded";
+    }
+
+    return {
+      id: c.id,
+      provider: c.provider,
+      emailAddress: c.emailAddress,
+      status: c.status,
+      health,
+      lastSyncAt: c.lastSyncAt ? c.lastSyncAt.toISOString() : null,
+      lastSyncErrorClass: categorizeSyncError(c.lastSyncError),
+    };
+  });
+
+  // 2. Scan Meetings for sync failures
+  const meetings = await db.conversationMeeting.findMany({
+    where: { orgId },
+  });
+
+  const meetingSyncFailures: CalendarDiagnostics["meetingSyncFailures"] = [];
+  
+  if (activeConnections.length > 0) {
+    for (const m of meetings) {
+      if (m.status === "UPCOMING") {
+        const eventIds = parseProviderEventIds(m.providerEventId);
+        // Check if there are active connections whose provider isn't in eventIds
+        const missingProviders = activeConnections.filter(
+          (conn) => !eventIds[conn.provider]
+        );
+
+        if (missingProviders.length > 0) {
+          meetingSyncFailures.push({
+            id: m.id,
+            title: m.title,
+            conversationId: m.conversationId,
+            scheduledAt: m.scheduledAt.toISOString(),
+            failureClass: "MISSING_PROVIDER_EVENT",
+          });
+        } else {
+          // If connection has error, label meeting as degraded
+          const degradedConns = activeConnections.filter(
+            (conn) => conn.lastSyncError && eventIds[conn.provider]
+          );
+          if (degradedConns.length > 0) {
+            meetingSyncFailures.push({
+              id: m.id,
+              title: m.title,
+              conversationId: m.conversationId,
+              scheduledAt: m.scheduledAt.toISOString(),
+              failureClass: "DEGRADED_STATE",
+            });
+          }
+        }
+      }
+    }
+  }
+
+  // 3. Scan Tasks for sync failures
+  const tasks = await db.messagingTask.findMany({
+    where: { orgId },
+  });
+
+  const taskSyncFailures: CalendarDiagnostics["taskSyncFailures"] = [];
+
+  if (activeConnections.length > 0) {
+    for (const t of tasks) {
+      const isOpen = t.status === "OPEN" || t.status === "IN_PROGRESS" || t.status === "OVERDUE";
+      if (t.dueDate && isOpen) {
+        const eventIds = parseProviderEventIds(t.providerEventId);
+        const missingProviders = activeConnections.filter(
+          (conn) => !eventIds[conn.provider]
+        );
+
+        if (missingProviders.length > 0) {
+          taskSyncFailures.push({
+            id: t.id,
+            title: t.title,
+            conversationId: t.conversationId,
+            dueDate: t.dueDate.toISOString(),
+            failureClass: "MISSING_PROVIDER_EVENT",
+          });
+        } else {
+          const degradedConns = activeConnections.filter(
+            (conn) => conn.lastSyncError && eventIds[conn.provider]
+          );
+          if (degradedConns.length > 0) {
+            taskSyncFailures.push({
+              id: t.id,
+              title: t.title,
+              conversationId: t.conversationId,
+              dueDate: t.dueDate.toISOString(),
+              failureClass: "DEGRADED_STATE",
+            });
+          }
+        }
+      }
+    }
+  }
+
+  // 4. Scan Conflict Indicators (Duplicates/Mismatches)
+  const conflictIndicators: CalendarDiagnostics["conflictIndicators"] = [];
+
+  // Find duplicate mappings where different meetings share same provider event ID
+  const meetingProviderIds = new Map<string, string[]>();
+  for (const m of meetings) {
+    if (m.providerEventId) {
+      const ids = parseProviderEventIds(m.providerEventId);
+      for (const [prov, extId] of Object.entries(ids)) {
+        if (extId) {
+          const key = `${prov}:${extId}`;
+          const list = meetingProviderIds.get(key) ?? [];
+          list.push(m.id);
+          meetingProviderIds.set(key, list);
+        }
+      }
+    }
+  }
+
+  for (const [key, mIds] of meetingProviderIds.entries()) {
+    if (mIds.length > 1) {
+      const conflictingMeetings = meetings.filter((m) => mIds.includes(m.id));
+      conflictIndicators.push({
+        type: "meeting",
+        id: conflictingMeetings[0].id,
+        title: conflictingMeetings[0].title,
+        details: `Duplicate external calendar mapping detected: ${key} is mapped to multiple local meetings (${mIds.join(", ")}).`,
+      });
+    }
+  }
+
+  // Same duplicate check for tasks
+  const taskProviderIds = new Map<string, string[]>();
+  for (const t of tasks) {
+    if (t.providerEventId) {
+      const ids = parseProviderEventIds(t.providerEventId);
+      for (const [prov, extId] of Object.entries(ids)) {
+        if (extId) {
+          const key = `${prov}:${extId}`;
+          const list = taskProviderIds.get(key) ?? [];
+          list.push(t.id);
+          taskProviderIds.set(key, list);
+        }
+      }
+    }
+  }
+
+  for (const [key, tIds] of taskProviderIds.entries()) {
+    if (tIds.length > 1) {
+      const conflictingTasks = tasks.filter((t) => tIds.includes(t.id));
+      conflictIndicators.push({
+        type: "task",
+        id: conflictingTasks[0].id,
+        title: conflictingTasks[0].title,
+        details: `Duplicate external calendar mapping detected: ${key} is mapped to multiple local tasks (${tIds.join(", ")}).`,
+      });
+    }
+  }
+
+  return {
+    connections: connectionDiagnostics,
+    meetingSyncFailures,
+    taskSyncFailures,
+    conflictIndicators,
+  };
 }
 
 

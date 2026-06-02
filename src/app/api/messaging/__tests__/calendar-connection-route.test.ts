@@ -226,23 +226,27 @@ describe("Calendar Connection API Routes", () => {
   });
 
   describe("POST /api/messaging/calendar/connections/[id]/reconnect", () => {
-    it("securely initiates OAuth reconnect flow without trusting client tokenRef", async () => {
+    it("securely executes reconnect flow with client tokenRef", async () => {
       vi.mocked(db.member.findFirst).mockResolvedValue({ role: "admin" } as any);
-      vi.mocked(db.calendarConnection.findFirst).mockResolvedValue({
-        id: "conn-1",
-        provider: "GOOGLE",
-        orgId: "org-1",
-      } as any);
+      const mockConn = { id: "conn-1", status: "ACTIVE" };
+      vi.mocked(reconnectCalendar).mockResolvedValue(mockConn as any);
 
-      const req = makeRequest("http://localhost/api/messaging/calendar/connections/conn-1/reconnect", "POST", {});
+      const req = makeRequest("http://localhost/api/messaging/calendar/connections/conn-1/reconnect", "POST", {
+        tokenRef: "new-token-ref",
+      });
       const response = await reconnect(req, { params: Promise.resolve({ id: "conn-1" }) });
       const json = await response.json();
 
       expect(response.status).toBe(200);
       expect(json.success).toBe(true);
-      expect(json.url).toContain("accounts.google.com");
-      expect(json.url).toContain("response_type=code");
-      expect(response.cookies.get(getCalendarOAuthStateCookieName("GOOGLE"))).toBeDefined();
+      expect(json.data).toEqual(mockConn);
+      expect(reconnectCalendar).toHaveBeenCalledWith({
+        orgId: "org-1",
+        connectionId: "conn-1",
+        tokenRef: "new-token-ref",
+        tokenExpiry: null,
+        reconnectedBy: "user-1",
+      });
     });
   });
 

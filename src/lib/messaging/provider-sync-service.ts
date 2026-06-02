@@ -214,22 +214,48 @@ export async function syncMeetingToProvider(orgId: string, meetingId: string): P
           }
         } else {
           // UPDATE
-          const result = await adapter.updateEvent(activeAccessToken, remoteEventId, {
-            title: meeting.title,
-            description: meeting.description,
-            startAt,
-            endAt,
-            attendeeEmails,
-          });
+          try {
+            const result = await adapter.updateEvent(activeAccessToken, remoteEventId, {
+              title: meeting.title,
+              description: meeting.description,
+              startAt,
+              endAt,
+              attendeeEmails,
+            });
 
-          if (result.joinUrl) {
-            metadataPatch.joinUrl = result.joinUrl;
-          }
-          if (result.attendeeResponses) {
-            metadataPatch.attendeeResponses = {
-              ...metadataPatch.attendeeResponses,
-              ...result.attendeeResponses,
-            };
+            if (result.joinUrl) {
+              metadataPatch.joinUrl = result.joinUrl;
+            }
+            if (result.attendeeResponses) {
+              metadataPatch.attendeeResponses = {
+                ...metadataPatch.attendeeResponses,
+                ...result.attendeeResponses,
+              };
+            }
+          } catch (err: any) {
+            const errMsg = err.message || "";
+            if (errMsg.includes("404") || errMsg.toLowerCase().includes("not found") || errMsg.includes("notFound")) {
+              // Remote event has been deleted. Re-create it!
+              const result = await adapter.createEvent(activeAccessToken, {
+                title: meeting.title,
+                description: meeting.description,
+                startAt,
+                endAt,
+                attendeeEmails,
+              });
+              updatedEventIds[provider] = result.providerEventId;
+              if (result.joinUrl) {
+                metadataPatch.joinUrl = result.joinUrl;
+              }
+              if (result.attendeeResponses) {
+                metadataPatch.attendeeResponses = {
+                  ...metadataPatch.attendeeResponses,
+                  ...result.attendeeResponses,
+                };
+              }
+            } else {
+              throw err;
+            }
           }
         }
       }
@@ -375,7 +401,18 @@ export async function syncTaskToProvider(orgId: string, taskId: string): Promise
           updatedEventIds[provider] = result.providerEventId;
         } else {
           // UPDATE
-          await adapter.updateEvent(activeAccessToken, remoteEventId, eventInput);
+          try {
+            await adapter.updateEvent(activeAccessToken, remoteEventId, eventInput);
+          } catch (err: any) {
+            const errMsg = err.message || "";
+            if (errMsg.includes("404") || errMsg.toLowerCase().includes("not found") || errMsg.includes("notFound")) {
+              // Remote event has been deleted. Re-create it!
+              const result = await adapter.createEvent(activeAccessToken, eventInput);
+              updatedEventIds[provider] = result.providerEventId;
+            } else {
+              throw err;
+            }
+          }
         }
       }
 
