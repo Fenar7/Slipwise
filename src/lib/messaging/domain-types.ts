@@ -23,6 +23,8 @@ import type {
   AttachmentScanStatus,
   MessagingTaskStatus,
   MeetingStatus,
+  MeetingRsvpStatus,
+  MeetingReminderWindow,
   CalendarProvider,
   CalendarConnectionStatus,
   MessagingAuditAction,
@@ -42,6 +44,8 @@ export type {
   AttachmentScanStatus,
   MessagingTaskStatus,
   MeetingStatus,
+  MeetingRsvpStatus,
+  MeetingReminderWindow,
   CalendarProvider,
   CalendarConnectionStatus,
   MessagingAuditAction,
@@ -360,13 +364,16 @@ export interface ConversationMeetingRecord {
   durationMinutes: number;
   status: MeetingStatus;
   providerEventId: string | null;
+  /// Provider-issued join URL. Null when unavailable or not yet synced.
+  /// Exposed only to authorized attendees via read model — never raw to UI.
+  joinUrl: string | null;
   scheduledBy: string;
   cancelledAt: Date | null;
   cancelledBy: string | null;
   cancelReason: string | null;
   createdAt: Date;
   updatedAt: Date;
-  metadata: any | null;
+  metadata: Record<string, unknown> | null;
 }
 
 export function meetingIsUpcoming(
@@ -385,6 +392,62 @@ export function meetingIsEnded(
   if (record.status === "ENDED" || record.status === "CANCELLED") return true;
   const endTime = new Date(record.scheduledAt.getTime() + record.durationMinutes * 60 * 1000);
   return endTime < now;
+}
+
+/**
+ * Returns true when a meeting starts within 60 minutes from now and has not ended.
+ * Used to determine global alert eligibility (moderate urgency).
+ */
+export function meetingIsWithinOneHour(
+  record: ConversationMeetingRecord,
+  now = new Date(),
+): boolean {
+  if (!meetingIsUpcoming(record, now)) return false;
+  const msUntilStart = record.scheduledAt.getTime() - now.getTime();
+  // Within 60 minutes but not yet started (or started but meeting window is still active)
+  return msUntilStart <= 60 * 60 * 1000;
+}
+
+/**
+ * Returns true when a meeting starts within 15 minutes from now and has not ended.
+ * Used for elevated urgency state in global alert.
+ */
+export function meetingIsWithinFifteenMinutes(
+  record: ConversationMeetingRecord,
+  now = new Date(),
+): boolean {
+  if (!meetingIsUpcoming(record, now)) return false;
+  const msUntilStart = record.scheduledAt.getTime() - now.getTime();
+  return msUntilStart <= 15 * 60 * 1000;
+}
+
+// ─── Meeting Attendee ────────────────────────────────────────────────────────
+
+export interface MeetingAttendeeRecord {
+  id: string;
+  orgId: string;
+  meetingId: string;
+  userId: string;
+  rsvpStatus: MeetingRsvpStatus;
+  respondedAt: Date | null;
+  providerAttendeeId: string | null;
+  /** providerStatus is internal — not exposed to UI read shapes */
+  providerStatus: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// ─── Meeting Reminder ────────────────────────────────────────────────────────
+
+export interface MeetingReminderRecord {
+  id: string;
+  orgId: string;
+  meetingId: string;
+  window: MeetingReminderWindow;
+  sentAt: Date | null;
+  skipped: boolean;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 // ─── Calendar Connection ──────────────────────────────────────────────────────
