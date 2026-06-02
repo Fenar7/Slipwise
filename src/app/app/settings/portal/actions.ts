@@ -3,7 +3,7 @@
 import { db } from "@/lib/db";
 import { requireOrgContext, requireRole } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
-import { getPortalAccessState } from "@/lib/portal-auth";
+import { getPortalAccessState, logPortalAccess } from "@/lib/portal-auth";
 
 
 // ─── Portal settings (read/write) ────────────────────────────────────────────
@@ -232,6 +232,13 @@ export async function revokeCustomerPortalAccess(
       data: { revokedAt: now },
     }),
   ]);
+
+  logPortalAccess({
+    orgId: organizationId,
+    customerId,
+    path: "/app/settings/portal",
+    action: "access_revoked",
+  });
 
   logAudit({
     orgId,
