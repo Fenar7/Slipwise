@@ -298,5 +298,52 @@ describe("getPortalAccessLogs", () => {
     expect(lteDate.getUTCSeconds()).toBe(59);
     expect(lteDate.getUTCMilliseconds()).toBe(999);
   });
+
+  it("filters by fromDate only", async () => {
+    mockDb.customerPortalAccessLog.findMany.mockResolvedValue([]);
+    mockDb.customerPortalAccessLog.count.mockResolvedValue(0);
+
+    await getPortalAccessLogs(ORG_ID, {
+      fromDate: "2026-06-01",
+    });
+
+    expect(mockDb.customerPortalAccessLog.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          accessedAt: {
+            gte: new Date("2026-06-01"),
+          },
+        }),
+      })
+    );
+  });
+
+  it("filters by both fromDate and toDate together", async () => {
+    mockDb.customerPortalAccessLog.findMany.mockResolvedValue([]);
+    mockDb.customerPortalAccessLog.count.mockResolvedValue(0);
+
+    await getPortalAccessLogs(ORG_ID, {
+      fromDate: "2026-06-01",
+      toDate: "2026-06-02",
+    });
+
+    expect(mockDb.customerPortalAccessLog.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          accessedAt: {
+            gte: new Date("2026-06-01"),
+            lte: expect.any(Date),
+          },
+        }),
+      })
+    );
+
+    const call = mockDb.customerPortalAccessLog.findMany.mock.calls[0][0];
+    const lteDate = call.where.accessedAt.lte;
+    expect(lteDate.getUTCHours()).toBe(23);
+    expect(lteDate.getUTCMinutes()).toBe(59);
+    expect(lteDate.getUTCSeconds()).toBe(59);
+    expect(lteDate.getUTCMilliseconds()).toBe(999);
+  });
 });
 

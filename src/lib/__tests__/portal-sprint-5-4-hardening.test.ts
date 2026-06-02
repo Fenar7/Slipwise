@@ -503,6 +503,82 @@ describe("Sprint 5.4 Hardening Suite", () => {
       delete process.env.UPSTASH_REDIS_REST_URL;
       delete process.env.UPSTASH_REDIS_REST_TOKEN;
     });
+
+    it("verifyPortalOtp returns rate_limit_exceeded for disabled customer when rate-limited", async () => {
+      const customer = makeCustomer({ clientHubLifecycle: { enabled: false } });
+      mockDb.customer.findFirst.mockResolvedValue(customer);
+      // Simulate rate limit hit
+      process.env.UPSTASH_REDIS_REST_URL = "https://mock-redis.upstash.io";
+      process.env.UPSTASH_REDIS_REST_TOKEN = "mock-token";
+      mockRateLimit.mockResolvedValue({ success: false });
+
+      const result = await verifyPortalOtp("john@example.com", "123456", "test-org");
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error).toBe("rate_limit_exceeded");
+      }
+
+      // Cleanup env
+      delete process.env.UPSTASH_REDIS_REST_URL;
+      delete process.env.UPSTASH_REDIS_REST_TOKEN;
+    });
+
+    it("verifyPortalOtp returns invalid_or_expired_code for disabled customer when NOT rate-limited", async () => {
+      const customer = makeCustomer({ clientHubLifecycle: { enabled: false } });
+      mockDb.customer.findFirst.mockResolvedValue(customer);
+      // Simulate rate limit OK
+      process.env.UPSTASH_REDIS_REST_URL = "https://mock-redis.upstash.io";
+      process.env.UPSTASH_REDIS_REST_TOKEN = "mock-token";
+      mockRateLimit.mockResolvedValue({ success: true });
+
+      const result = await verifyPortalOtp("john@example.com", "123456", "test-org");
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error).toBe("invalid_or_expired_code");
+      }
+
+      // Cleanup env
+      delete process.env.UPSTASH_REDIS_REST_URL;
+      delete process.env.UPSTASH_REDIS_REST_TOKEN;
+    });
+
+    it("verifyPortalOtp returns rate_limit_exceeded for churned customer when rate-limited", async () => {
+      const customer = makeCustomer({ lifecycleStage: "CHURNED" });
+      mockDb.customer.findFirst.mockResolvedValue(customer);
+      // Simulate rate limit hit
+      process.env.UPSTASH_REDIS_REST_URL = "https://mock-redis.upstash.io";
+      process.env.UPSTASH_REDIS_REST_TOKEN = "mock-token";
+      mockRateLimit.mockResolvedValue({ success: false });
+
+      const result = await verifyPortalOtp("john@example.com", "123456", "test-org");
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error).toBe("rate_limit_exceeded");
+      }
+
+      // Cleanup env
+      delete process.env.UPSTASH_REDIS_REST_URL;
+      delete process.env.UPSTASH_REDIS_REST_TOKEN;
+    });
+
+    it("verifyPortalOtp returns invalid_or_expired_code for churned customer when NOT rate-limited", async () => {
+      const customer = makeCustomer({ lifecycleStage: "CHURNED" });
+      mockDb.customer.findFirst.mockResolvedValue(customer);
+      // Simulate rate limit OK
+      process.env.UPSTASH_REDIS_REST_URL = "https://mock-redis.upstash.io";
+      process.env.UPSTASH_REDIS_REST_TOKEN = "mock-token";
+      mockRateLimit.mockResolvedValue({ success: true });
+
+      const result = await verifyPortalOtp("john@example.com", "123456", "test-org");
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error).toBe("invalid_or_expired_code");
+      }
+
+      // Cleanup env
+      delete process.env.UPSTASH_REDIS_REST_URL;
+      delete process.env.UPSTASH_REDIS_REST_TOKEN;
+    });
   });
 });
 
