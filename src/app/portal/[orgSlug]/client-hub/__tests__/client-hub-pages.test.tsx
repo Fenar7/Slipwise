@@ -5,12 +5,106 @@
  * payments, about, contact, products, login, and verify pages render without error.
  */
 
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 
 const mockUseParams = vi.hoisted(() => vi.fn(() => ({ orgSlug: "acme" })));
 const mockUseSearchParams = vi.hoisted(() => vi.fn(() => ({ get: () => "test@example.com" })));
 const mockUseRouter = vi.hoisted(() => vi.fn(() => ({ push: vi.fn() })));
+
+const mockConfig = vi.hoisted(() => {
+  const defaultMockConfig = {
+    branding: {
+      accentColor: "#e8401e",
+      logoUrl: null,
+      removePoweredBy: false,
+    },
+    homeDashboard: {
+      heroTitle: "Your Business Hub",
+      heroSubtitle: "Welcome to your personalized client portal. Access your projects, invoices, and communicate with our team all in one place.",
+      showOutstandingBalance: true,
+      showPendingInvoices: true,
+      showPendingQuotes: true,
+      showQuickActions: true,
+      welcomeMessage: "Client Portal",
+    },
+    invoices: {
+      pageTitle: "Invoices",
+      pageDescription: "Review balances, due dates, and payment options in one place.",
+      showDownloadAction: true,
+      showPayAction: true,
+    },
+    quotes: {
+      pageTitle: "Quotes",
+      pageDescription: "Review proposals, timelines, and next steps before you respond.",
+      showAcceptReject: true,
+      showDownloadAction: true,
+    },
+    payments: {
+      pageTitle: "Payments",
+      pageDescription: "See completed payments and choose how you want to settle open balances.",
+      showPaymentMethods: true,
+      acceptedMethods: ["Payment Link", "Bank Transfer", "UPI"],
+    },
+    about: {
+      pageTitle: "About",
+      heading: "Built to make client collaboration feel effortless",
+      body: "We combine clear communication, dependable delivery, and thoughtful design so every invoice, quote, and client interaction feels simple and trustworthy.",
+      showFoundedYear: false,
+      foundedYear: "",
+    },
+    contact: {
+      pageTitle: "Contact Us",
+      heading: "Get in touch with our team - we're here to help",
+      supportEmail: "support@company.com",
+      supportPhone: "+971 XX XXX XXXX",
+      businessHours: "Monday - Friday: 9:00 AM - 6:00 PM GST",
+      showMapPlaceholder: true,
+    },
+    products: {
+      pageTitle: "Products & Services",
+      heading: "Products and services tailored to your growth",
+      description: "Explore the retained services, implementation packages, and strategic support we offer.",
+      showPricing: true,
+      showUnit: true,
+    },
+    navigation: {
+      showDashboard: true,
+      showInvoices: true,
+      showQuotes: true,
+      showPayments: true,
+      showAbout: true,
+      showContact: true,
+      showProducts: true,
+      footerText: "A calmer, clearer place to work with us.",
+    },
+  };
+  return {
+    value: JSON.parse(JSON.stringify(defaultMockConfig)),
+    defaults: defaultMockConfig,
+  };
+});
+
+const mockDashboardData = vi.hoisted(() => {
+  const defaultMockDashboardData = {
+    customer: { id: "cust_test_001", name: "Hadi Azeez", email: "hadi@example.com", phone: null },
+    outstandingBalance: 3000,
+    totalPaid: 5800,
+    pendingInvoicesCount: 2,
+    pendingQuotesCount: 1,
+    pendingInvoices: [
+      { id: "inv-001", invoiceNumber: "INV-000131", dueDate: "2025-10-24", remainingAmount: 1200, totalAmount: 1200, status: "UNPAID" },
+      { id: "inv-003", invoiceNumber: "INV-000124", dueDate: "2025-10-20", remainingAmount: 1800, totalAmount: 4400, status: "PARTIALLY_PAID" }
+    ],
+    pendingQuotes: [
+      { id: "qt-001", quoteNumber: "QT-000084", title: "Outbound lead generation package", validUntil: "2025-11-12", totalAmount: 2800, status: "SENT" }
+    ],
+  };
+  return {
+    value: JSON.parse(JSON.stringify(defaultMockDashboardData)),
+    defaults: defaultMockDashboardData,
+  };
+});
 
 vi.mock("next/navigation", () => ({
   useParams: mockUseParams,
@@ -25,6 +119,15 @@ vi.mock("next/navigation", () => ({
 vi.mock("@/lib/portal-auth", () => ({
   requirePortalSession: vi.fn().mockResolvedValue({ customerId: "cust_test_001", orgId: "org_001" }),
   getPortalSession: vi.fn().mockResolvedValue({ customerId: "cust_test_001", orgId: "org_001" }),
+}));
+
+vi.mock("../components/config-resolver", () => ({
+  getEffectiveClientHubConfig: vi.fn().mockImplementation(() => Promise.resolve(mockConfig.value)),
+  getPersistedHubConfig: vi.fn().mockImplementation(() => Promise.resolve(mockConfig.value)),
+}));
+
+vi.mock("../../actions", () => ({
+  getPortalDashboardData: vi.fn().mockImplementation(() => Promise.resolve(mockDashboardData.value)),
 }));
 
 import DashboardPage from "../page";
@@ -42,6 +145,11 @@ import VerifyPage from "../verify/page";
 
 const ORG_SLUG = "acme";
 
+beforeEach(() => {
+  mockConfig.value = JSON.parse(JSON.stringify(mockConfig.defaults));
+  mockDashboardData.value = JSON.parse(JSON.stringify(mockDashboardData.defaults));
+});
+
 async function renderAsyncPage(Page: (props: { params: Promise<{ orgSlug: string }> }) => Promise<React.ReactElement>) {
   const jsx = await Page({ params: Promise.resolve({ orgSlug: ORG_SLUG }) });
   return renderToStaticMarkup(jsx);
@@ -56,6 +164,7 @@ async function renderAsyncDetailPage(
 }
 
 describe("Client Hub Dashboard", () => {
+
   it("renders with summary cards and recent invoices", async () => {
     const html = await renderAsyncPage(DashboardPage);
     expect(html).toContain("Your Business Hub");
@@ -64,6 +173,63 @@ describe("Client Hub Dashboard", () => {
     expect(html).toContain("Pending Invoices");
     expect(html).toContain("Pending Quotes");
     expect(html).toContain("Browse Services");
+  });
+
+  it("hides quick actions completely when showQuickActions is false", async () => {
+    mockConfig.value.homeDashboard.showQuickActions = false;
+    const html = await renderAsyncPage(DashboardPage);
+    expect(html).not.toContain("View Invoices");
+    expect(html).not.toContain("Review Quotes");
+    expect(html).not.toContain("Make a Payment");
+    expect(html).not.toContain("Browse Services");
+    expect(html).not.toContain("Contact Support");
+  });
+
+  it("only renders Make a Payment quick action when outstandingBalance > 0", async () => {
+    // Case 1: outstandingBalance > 0
+    mockConfig.value.homeDashboard.showQuickActions = true;
+    mockDashboardData.value.outstandingBalance = 1500;
+    let html = await renderAsyncPage(DashboardPage);
+    expect(html).toContain("Make a Payment");
+
+    // Case 2: outstandingBalance == 0
+    mockDashboardData.value.outstandingBalance = 0;
+    html = await renderAsyncPage(DashboardPage);
+    expect(html).not.toContain("Make a Payment");
+  });
+
+  it("renders Contact Support quick action only when showContact navigation route is enabled and support details exist", async () => {
+    mockConfig.value.homeDashboard.showQuickActions = true;
+
+    // Case 1: Enabled and both support details exist
+    mockConfig.value.navigation.showContact = true;
+    mockConfig.value.contact.supportEmail = "support@company.com";
+    mockConfig.value.contact.supportPhone = "+971 XX XXX XXXX";
+    let html = await renderAsyncPage(DashboardPage);
+    expect(html).toContain("Contact Support");
+
+    // Case 2: Enabled but both support details are empty strings
+    mockConfig.value.contact.supportEmail = "";
+    mockConfig.value.contact.supportPhone = "";
+    html = await renderAsyncPage(DashboardPage);
+    expect(html).not.toContain("Contact Support");
+
+    // Case 3: Only supportEmail exists
+    mockConfig.value.contact.supportEmail = "support@company.com";
+    html = await renderAsyncPage(DashboardPage);
+    expect(html).toContain("Contact Support");
+
+    // Case 4: Only supportPhone exists
+    mockConfig.value.contact.supportEmail = "";
+    mockConfig.value.contact.supportPhone = "+971 XX XXX XXXX";
+    html = await renderAsyncPage(DashboardPage);
+    expect(html).toContain("Contact Support");
+
+    // Case 5: Support details exist, but navigation showContact is false
+    mockConfig.value.navigation.showContact = false;
+    mockConfig.value.contact.supportEmail = "support@company.com";
+    html = await renderAsyncPage(DashboardPage);
+    expect(html).not.toContain("Contact Support");
   });
 });
 
