@@ -87,6 +87,7 @@ describe("Sprint 9.1 — Search Foundation & Visibility-Safe Query Model", () =>
         },
         include: { conversation: { select: { name: true } } },
         orderBy: { createdAt: "desc" },
+        take: 200,
       });
 
       // Verify result lists msg-1 and no trace of msg-2 in results or facets
@@ -123,16 +124,23 @@ describe("Sprint 9.1 — Search Foundation & Visibility-Safe Query Model", () =>
         where: {
           orgId: "org-1",
           archivedAt: null,
-          OR: [
-            { id: { in: ["conversation-1"] } },
-            { type: "CHANNEL", visibility: "PUBLIC" },
-          ],
-          OR: [
-            { name: { contains: "general", mode: "insensitive" } },
-            { description: { contains: "general", mode: "insensitive" } },
+          AND: [
+            {
+              OR: [
+                { id: { in: ["conversation-1"] } },
+                { type: "CHANNEL", visibility: "PUBLIC" },
+              ],
+            },
+            {
+              OR: [
+                { name: { contains: "general", mode: "insensitive" } },
+                { description: { contains: "general", mode: "insensitive" } },
+              ],
+            },
           ],
         },
         orderBy: { createdAt: "desc" },
+        take: 200,
       });
 
       expect(result.results[0].id).toBe("conversation-1");
@@ -248,6 +256,70 @@ describe("Sprint 9.1 — Search Foundation & Visibility-Safe Query Model", () =>
       expect(result.state).toBe("unindexed");
       expect(result.unindexedKinds).toContain("file");
       expect(result.results).toEqual([]);
+    });
+
+    it("mixed search with file returns active state and reports unindexedKinds: ['file']", async () => {
+      vi.mocked(db.conversationParticipant.findMany).mockResolvedValue([
+        { conversationId: "conversation-1", orgId: "org-1", userId: "user-1", leftAt: null },
+      ] as any);
+
+      vi.mocked(db.conversationMessage.findMany).mockResolvedValue([
+        {
+          id: "msg-1",
+          conversationId: "conversation-1",
+          orgId: "org-1",
+          authorId: "author-1",
+          body: "payroll updates",
+          createdAt: new Date(),
+          status: "ACTIVE",
+          conversation: { name: "finance-ops" },
+        },
+      ] as any);
+
+      vi.mocked(db.profile.findMany).mockResolvedValue([
+        { id: "author-1", name: "Priya Sharma" },
+      ] as any);
+
+      const result = await searchMessaging("org-1", "user-1", {
+        q: "payroll",
+        kinds: ["message", "file"],
+      });
+
+      expect(result.state).toBe("active");
+      expect(result.unindexedKinds).toEqual(["file"]);
+      expect(result.results.length).toBe(1);
+      expect(result.results[0].id).toBe("msg-1");
+    });
+  });
+
+  describe("searchMessaging Bounded Candidate Limits", () => {
+    it("enforces MAX_CANDIDATES_PER_KIND (take: 200) across all DB queries", async () => {
+      vi.mocked(db.conversationParticipant.findMany).mockResolvedValue([
+        { conversationId: "conversation-1", orgId: "org-1", userId: "user-1", leftAt: null },
+      ] as any);
+
+      vi.mocked(db.conversationMessage.findMany).mockResolvedValue([]);
+      vi.mocked(db.conversation.findMany).mockResolvedValue([]);
+      vi.mocked(db.messagingTask.findMany).mockResolvedValue([]);
+      vi.mocked(db.conversationMeeting.findMany).mockResolvedValue([]);
+
+      await searchMessaging("org-1", "user-1", {
+        q: "limit-check",
+        kinds: ["message", "conversation", "task", "meeting"],
+      });
+
+      expect(db.conversationMessage.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ take: 200 })
+      );
+      expect(db.conversation.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ take: 200 })
+      );
+      expect(db.messagingTask.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ take: 200 })
+      );
+      expect(db.conversationMeeting.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ take: 200 })
+      );
     });
   });
 });

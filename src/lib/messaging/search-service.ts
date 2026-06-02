@@ -3,6 +3,9 @@ import "server-only";
 import { db } from "@/lib/db";
 import type { Prisma } from "@/generated/prisma/client";
 
+// ─── Search config limits ────────────────────────────────────────────────────
+export const MAX_CANDIDATES_PER_KIND = 200;
+
 // ─── Search input shape ───────────────────────────────────────────────────────
 export interface MessagingSearchQuery {
   q: string;
@@ -13,7 +16,14 @@ export interface MessagingSearchQuery {
 }
 
 // ─── Search result contracts ──────────────────────────────────────────────────
-export type SearchResultKind = "message" | "conversation" | "task" | "meeting" | "file";
+export type SearchResultKind =
+  | "message"
+  | "conversation"
+  | "task"
+  | "meeting"
+  | "file"
+  | "channel"
+  | "person"; // Keep legacy support for mock compatibility
 
 export interface SearchResultBase {
   id: string;
@@ -62,12 +72,25 @@ export interface FileSearchResult extends SearchResultBase {
   kind: "file";
 }
 
+// Legacy shapes for backward compatibility
+export interface LegacyChannelSearchResult extends SearchResultBase {
+  kind: "channel";
+  conversationRef?: string;
+}
+
+export interface LegacyPersonSearchResult extends SearchResultBase {
+  kind: "person";
+  avatarInitials?: string;
+}
+
 export type MessagingSearchResult =
   | MessageSearchResult
   | ConversationSearchResult
   | TaskSearchResult
   | MeetingSearchResult
-  | FileSearchResult;
+  | FileSearchResult
+  | LegacyChannelSearchResult
+  | LegacyPersonSearchResult;
 
 export interface MessagingSearchResponse {
   results: MessagingSearchResult[];
@@ -171,12 +194,15 @@ export async function searchMessaging(
   const requestedKinds = query.kinds ?? ["message", "conversation", "task", "meeting", "file"];
   const searchState = query.degraded || q.toLowerCase() === "force-degraded" ? "degraded" : "active";
 
+  const isOnlyUnindexed = requestedKinds.length === 1 && requestedKinds.includes("file");
+  const isUnindexedRequested = requestedKinds.includes("file");
+
   const emptyResponse: MessagingSearchResponse = {
     results: [],
     facets: { message: 0, conversation: 0, task: 0, meeting: 0, file: 0 },
     hasMore: false,
-    state: searchState === "degraded" ? "degraded" : (requestedKinds.includes("file") ? "unindexed" : "active"),
-    unindexedKinds: requestedKinds.includes("file") ? ["file"] : [],
+    state: searchState === "degraded" ? "degraded" : (isOnlyUnindexed ? "unindexed" : "active"),
+    unindexedKinds: isUnindexedRequested ? ["file"] : [],
   };
 
   // Safe blank/whitespace queries behavior
@@ -191,7 +217,7 @@ export async function searchMessaging(
       facets: { message: 0, conversation: 0, task: 0, meeting: 0, file: 0 },
       hasMore: false,
       state: "degraded",
-      unindexedKinds: requestedKinds.includes("file") ? ["file"] : [],
+      unindexedKinds: isUnindexedRequested ? ["file"] : [],
     };
   }
 
@@ -233,6 +259,7 @@ export async function searchMessaging(
         },
       },
       orderBy: { createdAt: "desc" },
+      take: MAX_CANDIDATES_PER_KIND,
     });
 
     // Fetch author profiles
@@ -281,16 +308,23 @@ export async function searchMessaging(
       where: {
         orgId,
         archivedAt: null,
-        OR: [
-          { id: { in: memberConvIds } },
-          { type: "CHANNEL", visibility: "PUBLIC" },
-        ],
-        OR: [
-          { name: { contains: q, mode: "insensitive" } },
-          { description: { contains: q, mode: "insensitive" } },
+        AND: [
+          {
+            OR: [
+              { id: { in: memberConvIds } },
+              { type: "CHANNEL", visibility: "PUBLIC" },
+            ],
+          },
+          {
+            OR: [
+              { name: { contains: q, mode: "insensitive" } },
+              { description: { contains: q, mode: "insensitive" } },
+            ],
+          },
         ],
       },
       orderBy: { createdAt: "desc" },
+      take: MAX_CANDIDATES_PER_KIND,
     });
 
     matchingConversations = conversations.map((c) => {
@@ -312,7 +346,7 @@ export async function searchMessaging(
         score,
         conversationType: c.type,
         isPrivate: c.visibility === "PRIVATE" || c.type === "DM",
-        memberCount: 0, // In later sprints, hydrate accurately or set default
+        memberCount: 0,
       };
     });
   }
@@ -335,6 +369,7 @@ export async function searchMessaging(
         },
       },
       orderBy: { createdAt: "desc" },
+      take: MAX_CANDIDATES_PER_KIND,
     });
 
     // Hydrate assignees
@@ -394,6 +429,7 @@ export async function searchMessaging(
         },
       },
       orderBy: { createdAt: "desc" },
+      take: MAX_CANDIDATES_PER_KIND,
     });
 
     matchingMeetings = meetings.map((m) => {
@@ -454,13 +490,11 @@ export async function searchMessaging(
   const paginatedResults = allResults.slice(offset, offset + limit);
   const hasMore = allResults.length > offset + limit;
 
-  const isUnindexed = requestedKinds.includes("file");
-
   return {
     results: paginatedResults,
     facets,
     hasMore,
-    state: isUnindexed ? "unindexed" : "active",
-    unindexedKinds: isUnindexed ? ["file"] : [],
+    state: searchState === "degraded" ? "degraded" : (isOnlyUnindexed ? "unindexed" : "active"),
+    unindexedKinds: isUnindexedRequested ? ["file"] : [],
   };
 }

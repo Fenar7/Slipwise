@@ -10,7 +10,7 @@ import {
   CheckSquare,
   Video,
 } from "lucide-react";
-import type { MessagingSearchResult, SearchResultKind } from "./types";
+import type { MessagingSearchResult, SearchResultKind, MessageSearchResult } from "./types";
 import { RadioPill } from "./messaging-ui-primitives";
 
 interface MessagingSearchPanelProps {
@@ -27,7 +27,7 @@ const FILTER_OPTIONS = [
   { value: "files", label: "Files" },
 ];
 
-const KIND_ORDER: SearchResultKind[] = ["message", "conversation", "task", "meeting", "file"] as any[];
+const KIND_ORDER: SearchResultKind[] = ["message", "conversation", "task", "meeting", "file"];
 
 const KIND_LABEL: Record<string, string> = {
   message: "Messages",
@@ -37,7 +37,7 @@ const KIND_LABEL: Record<string, string> = {
   file: "Files",
 };
 
-function SearchResultRow({ result }: { result: any }) {
+function SearchResultRow({ result }: { result: MessagingSearchResult }) {
   const icon =
     result.kind === "message" ? (
       <MessageSquare className="h-4 w-4 text-[#79747E]" />
@@ -51,8 +51,8 @@ function SearchResultRow({ result }: { result: any }) {
       <FileText className="h-4 w-4 text-[#79747E]" />
     );
 
-  const subtitle = result.kind === "message" && result.snippet
-    ? result.snippet
+  const subtitle = result.kind === "message"
+    ? (result as MessageSearchResult).snippet
     : result.subtitle;
 
   return (
@@ -83,7 +83,7 @@ function SearchResultRow({ result }: { result: any }) {
 
 export function MessagingSearchPanel({ query, onClose }: MessagingSearchPanelProps) {
   const [filter, setFilter] = React.useState("all");
-  const [results, setResults] = React.useState<any[]>([]);
+  const [results, setResults] = React.useState<MessagingSearchResult[]>([]);
   const [facets, setFacets] = React.useState<Record<string, number>>({ message: 0, conversation: 0, task: 0, meeting: 0, file: 0 });
   const [searchState, setSearchState] = React.useState<"active" | "degraded" | "unindexed">("active");
   const [loading, setLoading] = React.useState(false);
@@ -159,7 +159,7 @@ export function MessagingSearchPanel({ query, onClose }: MessagingSearchPanelPro
   }, [query, filter]);
 
   const grouped = React.useMemo(() => {
-    const map = new Map<string, any[]>();
+    const map = new Map<SearchResultKind, MessagingSearchResult[]>();
     for (const r of results) {
       const arr = map.get(r.kind) ?? [];
       arr.push(r);
