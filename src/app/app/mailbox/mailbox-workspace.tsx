@@ -368,8 +368,11 @@ export function MailboxWorkspace() {
   const {
     threads: rawThreads,
     totalCount: apiTotalCount,
+    hasMore: threadsHasMore,
     isLoading: threadsLoading,
+    isLoadingMore: threadsLoadingMore,
     refetch: refetchThreads,
+    loadMore: loadMoreThreads,
   } = useMailboxThreads({ ...liveQueryParams, enabled: !inDraftsMode });
 
   const {
@@ -1158,7 +1161,12 @@ export function MailboxWorkspace() {
                 onSelectThread={handleSelectThread}
                 reconnectBanner={reconnectBanner}
                 emptyState={threadListEmptyState ?? undefined}
+                totalCount={apiTotalCount}
+                loadedCount={visibleThreads.length}
+                hasMore={threadsHasMore}
                 isLoading={threadsLoading}
+                isLoadingMore={threadsLoadingMore}
+                onLoadMore={loadMoreThreads}
                 isActionLoading={isActionLoading}
                 onThreadAction={handleThreadAction}
               />
