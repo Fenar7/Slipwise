@@ -174,10 +174,15 @@ export async function requestMagicLink(
         organization: {
           include: { defaults: true },
         },
+        clientHubLifecycle: true,
       },
     });
 
     if (!customer || !customer.organization.defaults?.portalEnabled) {
+      return successResponse;
+    }
+
+    if (!customer.clientHubLifecycle || !customer.clientHubLifecycle.enabled) {
       return successResponse;
     }
 
@@ -256,7 +261,10 @@ export async function verifyMagicLink(
       },
       include: {
         customer: {
-          include: { organization: { include: { defaults: true } } },
+          include: {
+            organization: { include: { defaults: true } },
+            clientHubLifecycle: true,
+          },
         },
       },
     });
@@ -265,8 +273,12 @@ export async function verifyMagicLink(
       return { success: false, error: "invalid_or_expired_link" };
     }
 
-    // Double-check portal is still enabled
-    if (!portalToken.customer.organization.defaults?.portalEnabled) {
+    // Double-check portal is still enabled and customer is enabled
+    if (
+      !portalToken.customer.organization.defaults?.portalEnabled ||
+      !portalToken.customer.clientHubLifecycle ||
+      !portalToken.customer.clientHubLifecycle.enabled
+    ) {
       return { success: false, error: "invalid_or_expired_link" };
     }
 
@@ -588,8 +600,8 @@ export async function requestPortalOtp(
       return successResponse;
     }
 
-    // Check clientHubLifecycle enablement if the record exists
-    if (customer.clientHubLifecycle && !customer.clientHubLifecycle.enabled) {
+    // Check clientHubLifecycle enablement
+    if (!customer.clientHubLifecycle || !customer.clientHubLifecycle.enabled) {
       return successResponse;
     }
 
@@ -671,7 +683,7 @@ export async function verifyPortalOtp(
       return { success: false, error: "invalid_or_expired_code" };
     }
 
-    if (customer.clientHubLifecycle && !customer.clientHubLifecycle.enabled) {
+    if (!customer.clientHubLifecycle || !customer.clientHubLifecycle.enabled) {
       return { success: false, error: "invalid_or_expired_code" };
     }
 
@@ -768,3 +780,78 @@ function otpEmailHtml(params: {
     </div>
   `;
 }
+
+// ─── Unified Portal Access / Onboarding Lifecycle Resolver ──────────────────
+
+export type PortalAccessState =
+  | "LOCKED"
+  | "NEVER_INVITED"
+  | "ISSUED"
+  | "VERIFIED"
+  | "ACTIVE"
+  | "EXPIRED"
+  | "REVOKED";
+
+export interface PortalAccessStateInput {
+  portalEnabled: boolean;
+  lifecycleEnabled: boolean;
+  latestInviteSentAt: Date | null;
+  inviteSentCount: number;
+  tokens: { createdAt: Date; expiresAt: Date; isRevoked: boolean; lastUsedAt: Date | null }[];
+  sessions: { revokedAt: Date | null; expiresAt: Date }[];
+}
+
+export function getPortalAccessState(params: PortalAccessStateInput): PortalAccessState {
+  if (!params.portalEnabled || !params.lifecycleEnabled) {
+    return "LOCKED";
+  }
+
+  const hasActiveSession = params.sessions.some(
+    (s) => s.revokedAt === null && s.expiresAt > new Date()
+  );
+
+  const hasVerified = params.sessions.length > 0 || params.tokens.some((t) => t.lastUsedAt !== null);
+
+  const latestToken = params.tokens.length > 0
+    ? params.tokens.reduce((latest, current) => current.createdAt > latest.createdAt ? current : latest)
+    : null;
+
+  if (hasActiveSession) {
+    return "ACTIVE";
+  }
+
+  // If all sessions and tokens are explicitly revoked, state is REVOKED
+  const allSessionsRevoked = params.sessions.length > 0 && params.sessions.every((s) => s.revokedAt !== null);
+  const allTokensRevoked = params.tokens.length > 0 && params.tokens.every((t) => t.isRevoked);
+
+  if (allSessionsRevoked && allTokensRevoked) {
+    return "REVOKED";
+  }
+
+  if (hasVerified) {
+    return "VERIFIED";
+  }
+
+  if (params.inviteSentCount === 0 || !params.latestInviteSentAt) {
+    return "NEVER_INVITED";
+  }
+
+  if (latestToken) {
+    if (latestToken.isRevoked) {
+      return "REVOKED";
+    }
+    if (latestToken.expiresAt < new Date()) {
+      return "EXPIRED";
+    }
+    return "ISSUED";
+  }
+
+  // Fallback if no tokens are loaded but invite was sent: estimate by latestInviteSentAt
+  const inviteExpiryMs = 24 * 60 * 60 * 1000; // default 24h
+  if (Date.now() - params.latestInviteSentAt.getTime() > inviteExpiryMs) {
+    return "EXPIRED";
+  }
+
+  return "ISSUED";
+}
+

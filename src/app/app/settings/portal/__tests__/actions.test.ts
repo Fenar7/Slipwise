@@ -21,7 +21,13 @@ const mockDb = vi.hoisted(() => ({
     update: vi.fn().mockResolvedValue({}),
     findUnique: vi.fn().mockResolvedValue(null),
   },
+  customer: {
+    findMany: vi.fn().mockResolvedValue([]),
+  },
   customerPortalSession: {
+    updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+  },
+  customerPortalToken: {
     updateMany: vi.fn().mockResolvedValue({ count: 0 }),
   },
 }));
@@ -34,7 +40,7 @@ vi.mock("@/lib/auth", () => ({
   requireRole: mockRequireRole,
 }));
 
-import { updatePortalSettings, updatePortalPolicies } from "../actions";
+import { updatePortalSettings, updatePortalPolicies, getPortalCustomersWithAccessState } from "../actions";
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -121,5 +127,53 @@ describe("updatePortalPolicies", () => {
     await expect(
       updatePortalPolicies(ORG_ID, { portalStatementEnabled: false }),
     ).rejects.toThrow("Unauthorized");
+  });
+});
+
+describe("getPortalCustomersWithAccessState", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    setupAuth();
+  });
+
+  it("returns customer list mapped with their resolved accessState", async () => {
+    mockDb.orgDefaults.findUnique.mockResolvedValue({ portalEnabled: true });
+    mockDb.customer.findMany.mockResolvedValue([
+      {
+        id: "cust-1",
+        name: "Acme",
+        email: "acme@test.com",
+        phone: "+91 9999999999",
+        clientHubLifecycle: {
+          enabled: true,
+          latestInviteSentAt: new Date(),
+          latestInviteEmail: "acme@test.com",
+          inviteSentCount: 1,
+          publicAccessHandle: "handle1",
+        },
+        portalTokens: [],
+        portalSessions: [
+          {
+            revokedAt: null,
+            expiresAt: new Date(Date.now() + 86400000),
+          },
+        ],
+      },
+    ]);
+
+    const result = await getPortalCustomersWithAccessState(ORG_ID);
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe("cust-1");
+    expect(result[0].accessState).toBe("ACTIVE");
+  });
+
+  it("throws Unauthorized when organizationId does not match caller org", async () => {
+    setupAuth("org-wrong");
+    await expect(getPortalCustomersWithAccessState(ORG_ID)).rejects.toThrow("Unauthorized");
+  });
+
+  it("requires admin role — delegates to requireRole('admin')", async () => {
+    await getPortalCustomersWithAccessState(ORG_ID);
+    expect(mockRequireRole).toHaveBeenCalledWith("admin");
   });
 });
