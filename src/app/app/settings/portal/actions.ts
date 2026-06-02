@@ -169,7 +169,13 @@ export async function getPortalAccessLogs(
     ...((filters?.fromDate || filters?.toDate) && {
       accessedAt: {
         ...(filters.fromDate && { gte: new Date(filters.fromDate) }),
-        ...(filters.toDate && { lte: new Date(filters.toDate) }),
+        ...(filters.toDate && {
+          lte: (() => {
+            const date = new Date(filters.toDate);
+            date.setUTCHours(23, 59, 59, 999);
+            return date;
+          })(),
+        }),
       },
     }),
   };

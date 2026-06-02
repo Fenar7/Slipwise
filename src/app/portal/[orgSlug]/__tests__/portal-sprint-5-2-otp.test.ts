@@ -12,6 +12,10 @@ const mockDb = vi.hoisted(() => ({
     findFirst: vi.fn(),
     findUnique: vi.fn(),
   },
+  organization: {
+    findFirst: vi.fn(),
+    findUnique: vi.fn(),
+  },
   customerPortalToken: {
     findFirst: vi.fn(),
     create: vi.fn(),

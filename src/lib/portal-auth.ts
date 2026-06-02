@@ -853,25 +853,45 @@ export async function verifyPortalOtp(
       },
     });
 
-    if (!customer || !customer.organization.defaults?.portalEnabled || customer.lifecycleStage === "CHURNED") {
-      return { success: false, error: "invalid_or_expired_code" };
-    }
+    let orgId: string | null = null;
+    let portalEnabled = false;
 
-    if (!customer.clientHubLifecycle || !customer.clientHubLifecycle.enabled) {
-      return { success: false, error: "invalid_or_expired_code" };
-    }
-
-    if (!(await checkPortalVerifyRateLimit(email, customer.organizationId))) {
-      logPortalAccess({
-        orgId: customer.organizationId,
-        customerId: customer.id,
-        path: `/portal/${orgSlug}/auth/login`,
-        action: "otp_verify_failed",
-        ip: requestMeta?.ip,
-        userAgent: requestMeta?.userAgent,
-        statusCode: 429,
+    if (customer) {
+      orgId = customer.organizationId;
+      portalEnabled = customer.organization.defaults?.portalEnabled ?? false;
+    } else {
+      const org = await db.organization.findFirst({
+        where: { slug: orgSlug },
+        include: { defaults: true },
       });
+      if (org) {
+        orgId = org.id;
+        portalEnabled = org.defaults?.portalEnabled ?? false;
+      }
+    }
+
+    if (!orgId || !portalEnabled) {
+      return { success: false, error: "invalid_or_expired_code" };
+    }
+
+    const isRateLimited = !(await checkPortalVerifyRateLimit(email, orgId));
+    if (isRateLimited) {
+      if (customer) {
+        logPortalAccess({
+          orgId: customer.organizationId,
+          customerId: customer.id,
+          path: `/portal/${orgSlug}/auth/login`,
+          action: "otp_verify_failed",
+          ip: requestMeta?.ip,
+          userAgent: requestMeta?.userAgent,
+          statusCode: 429,
+        });
+      }
       return { success: false, error: "rate_limit_exceeded" };
+    }
+
+    if (!customer || customer.lifecycleStage === "CHURNED" || !customer.clientHubLifecycle?.enabled) {
+      return { success: false, error: "invalid_or_expired_code" };
     }
 
     const tokenHash = sha256(otp);
@@ -897,7 +917,6 @@ export async function verifyPortalOtp(
       return { success: false, error: "invalid_or_expired_code" };
     }
 
-    const orgId = customer.organizationId;
     const sessionExpirySeconds = (customer.organization.defaults?.portalSessionExpiryHours ?? 24) * 60 * 60;
 
     // Consume the OTP token (one-time use)

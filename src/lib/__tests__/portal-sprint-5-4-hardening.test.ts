@@ -19,6 +19,7 @@ const {
   return {
     mockDb: {
       customer: { findFirst: vi.fn(), findUnique: vi.fn() },
+      organization: { findFirst: vi.fn(), findUnique: vi.fn() },
       customerPortalToken: {
         findFirst: vi.fn(),
         create: vi.fn(),
@@ -400,6 +401,107 @@ describe("Sprint 5.4 Hardening Suite", () => {
       // Requesting with wrong slug
       const session = await getPortalSession("another-org");
       expect(session).toBeNull();
+    });
+
+    it("verifyPortalOtp returns rate_limit_exceeded for nonexistent customer when rate-limited", async () => {
+      mockDb.customer.findFirst.mockResolvedValue(null);
+      mockDb.organization.findFirst.mockResolvedValue({
+        id: "org-1",
+        defaults: { portalEnabled: true }
+      });
+      // Simulate rate limit hit
+      process.env.UPSTASH_REDIS_REST_URL = "https://mock-redis.upstash.io";
+      process.env.UPSTASH_REDIS_REST_TOKEN = "mock-token";
+      mockRateLimit.mockResolvedValue({ success: false });
+
+      const result = await verifyPortalOtp("unknown@example.com", "123456", "test-org");
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error).toBe("rate_limit_exceeded");
+      }
+
+      // Cleanup env
+      delete process.env.UPSTASH_REDIS_REST_URL;
+      delete process.env.UPSTASH_REDIS_REST_TOKEN;
+    });
+
+    it("verifyPortalOtp returns invalid_or_expired_code for nonexistent customer when NOT rate-limited", async () => {
+      mockDb.customer.findFirst.mockResolvedValue(null);
+      mockDb.organization.findFirst.mockResolvedValue({
+        id: "org-1",
+        defaults: { portalEnabled: true }
+      });
+      // Simulate rate limit OK
+      process.env.UPSTASH_REDIS_REST_URL = "https://mock-redis.upstash.io";
+      process.env.UPSTASH_REDIS_REST_TOKEN = "mock-token";
+      mockRateLimit.mockResolvedValue({ success: true });
+
+      const result = await verifyPortalOtp("unknown@example.com", "123456", "test-org");
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error).toBe("invalid_or_expired_code");
+      }
+
+      // Cleanup env
+      delete process.env.UPSTASH_REDIS_REST_URL;
+      delete process.env.UPSTASH_REDIS_REST_TOKEN;
+    });
+
+    it("verifyPortalOtp preserves logging/auditing access-log truthfulness on rate limits for real customer", async () => {
+      const customer = makeCustomer();
+      mockDb.customer.findFirst.mockResolvedValue(customer);
+      // Simulate rate limit hit
+      process.env.UPSTASH_REDIS_REST_URL = "https://mock-redis.upstash.io";
+      process.env.UPSTASH_REDIS_REST_TOKEN = "mock-token";
+      mockRateLimit.mockResolvedValue({ success: false });
+
+      const result = await verifyPortalOtp("john@example.com", "123456", "test-org", { ip: "2.2.2.2", userAgent: "bad-agent" });
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error).toBe("rate_limit_exceeded");
+      }
+
+      expect(mockDb.customerPortalAccessLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            orgId: "org-1",
+            customerId: "cust-1",
+            path: "/portal/test-org/auth/login",
+            action: "otp_verify_failed",
+            ip: "2.2.2.2",
+            userAgent: "bad-agent",
+            statusCode: 429,
+          }),
+        })
+      );
+
+      // Cleanup env
+      delete process.env.UPSTASH_REDIS_REST_URL;
+      delete process.env.UPSTASH_REDIS_REST_TOKEN;
+    });
+
+    it("verifyPortalOtp does NOT write access log for nonexistent customer on rate limit", async () => {
+      mockDb.customer.findFirst.mockResolvedValue(null);
+      mockDb.organization.findFirst.mockResolvedValue({
+        id: "org-1",
+        defaults: { portalEnabled: true }
+      });
+      // Simulate rate limit hit
+      process.env.UPSTASH_REDIS_REST_URL = "https://mock-redis.upstash.io";
+      process.env.UPSTASH_REDIS_REST_TOKEN = "mock-token";
+      mockRateLimit.mockResolvedValue({ success: false });
+
+      const result = await verifyPortalOtp("unknown@example.com", "123456", "test-org");
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error).toBe("rate_limit_exceeded");
+      }
+
+      expect(mockDb.customerPortalAccessLog.create).not.toHaveBeenCalled();
+
+      // Cleanup env
+      delete process.env.UPSTASH_REDIS_REST_URL;
+      delete process.env.UPSTASH_REDIS_REST_TOKEN;
     });
   });
 });

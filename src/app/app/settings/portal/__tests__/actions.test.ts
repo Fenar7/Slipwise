@@ -272,5 +272,31 @@ describe("getPortalAccessLogs", () => {
     expect(result.logs).toHaveLength(1);
     expect(result.logs[0].id).toBe("log-1");
   });
+
+  it("filters by inclusive toDate covering the entire selected day", async () => {
+    mockDb.customerPortalAccessLog.findMany.mockResolvedValue([]);
+    mockDb.customerPortalAccessLog.count.mockResolvedValue(0);
+
+    await getPortalAccessLogs(ORG_ID, {
+      toDate: "2026-06-02",
+    });
+
+    expect(mockDb.customerPortalAccessLog.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          accessedAt: expect.objectContaining({
+            lte: expect.any(Date),
+          }),
+        }),
+      })
+    );
+
+    const call = mockDb.customerPortalAccessLog.findMany.mock.calls[0][0];
+    const lteDate = call.where.accessedAt.lte;
+    expect(lteDate.getUTCHours()).toBe(23);
+    expect(lteDate.getUTCMinutes()).toBe(59);
+    expect(lteDate.getUTCSeconds()).toBe(59);
+    expect(lteDate.getUTCMilliseconds()).toBe(999);
+  });
 });
 
