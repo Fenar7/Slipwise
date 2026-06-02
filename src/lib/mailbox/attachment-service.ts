@@ -391,13 +391,28 @@ export async function getMailboxAttachmentDownload(
 
   // If the attachment is cached locally, serve a signed URL directly.
   if (record.storageRef) {
-    const signedUrl = await getSignedUrlServer(
-      ATTACHMENT_BUCKET,
-      record.storageRef,
-      300,
-      { download: filename },
-    );
-    return { kind: "signed-url", signedUrl, filename, mimeType };
+    try {
+      const signedUrl = await getSignedUrlServer(
+        ATTACHMENT_BUCKET,
+        record.storageRef,
+        300,
+        { download: filename },
+      );
+      return { kind: "signed-url", signedUrl, filename, mimeType };
+    } catch {
+      console.warn(
+        `Stale cache ref for attachment ${attachmentId} (org ${orgId}): ` +
+        `storage object missing. Clearing ref and falling back to provider fetch.`,
+      );
+      try {
+        await db.mailboxAttachment.update({
+          where: { id: attachmentId },
+          data: { storageRef: null },
+        });
+      } catch {
+        // Non-critical; fallback will still proceed.
+      }
+    }
   }
 
   // If not cached, fall back to provider fetch.
