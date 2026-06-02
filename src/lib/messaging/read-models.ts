@@ -1038,7 +1038,7 @@ export async function getCalendarDiagnostics(
         
         // Check if there are active connections whose provider isn't in eventIds
         const missingProviders = activeConnections.filter(
-          (conn) => !eventIds[conn.provider]
+          (conn) => !eventIds[conn.id] && !eventIds[conn.provider]
         );
 
         if (missingProviders.length > 0) {
@@ -1056,7 +1056,7 @@ export async function getCalendarDiagnostics(
 
           for (const conn of activeConnections) {
             const provider = conn.provider;
-            const remoteEventId = eventIds[provider];
+            const remoteEventId = eventIds[conn.id] || eventIds[conn.provider];
             if (!remoteEventId) continue;
 
             try {
@@ -1125,7 +1125,7 @@ export async function getCalendarDiagnostics(
         const eventIds = parseProviderEventIds(t.providerEventId);
         
         const missingProviders = activeConnections.filter(
-          (conn) => !eventIds[conn.provider]
+          (conn) => !eventIds[conn.id] && !eventIds[conn.provider]
         );
 
         if (missingProviders.length > 0) {
@@ -1143,7 +1143,7 @@ export async function getCalendarDiagnostics(
 
           for (const conn of activeConnections) {
             const provider = conn.provider;
-            const remoteEventId = eventIds[provider];
+            const remoteEventId = eventIds[conn.id] || eventIds[conn.provider];
             if (!remoteEventId) continue;
 
             try {

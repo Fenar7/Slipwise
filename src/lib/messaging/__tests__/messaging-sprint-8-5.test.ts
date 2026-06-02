@@ -81,7 +81,7 @@ vi.mock("@/lib/db", () => {
 import { db } from "@/lib/db";
 import { getCalendarDiagnostics } from "../read-models";
 import { GoogleCalendarAdapter, OutlookCalendarAdapter } from "../calendar-providers";
-import { syncMeetingToProvider, syncTaskToProvider } from "../provider-sync-service";
+import { syncMeetingToProvider, syncTaskToProvider, parseProviderEventIds } from "../provider-sync-service";
 
 describe("Sprint 8.5 — Reliability, Diagnostics & Provider Parity", () => {
   beforeEach(() => {
@@ -367,6 +367,102 @@ describe("Sprint 8.5 — Reliability, Diagnostics & Provider Parity", () => {
       expect(oResult.attendeeResponses?.["att2@example.com"]).toBe("declined");
 
       vi.unstubAllGlobals();
+    });
+  });
+
+  describe("Duplicate Prevention under Multiple Same-Provider Connections", () => {
+    it("ensures two active Google connections create distinct remote events and store both mappings without overwriting", async () => {
+      const mockMeeting = {
+        id: "meet-1",
+        orgId: "org-1",
+        conversationId: "conv-1",
+        title: "Distinct Meet",
+        status: "UPCOMING",
+        scheduledAt: new Date("2026-06-02T13:00:00Z"),
+        durationMinutes: 30,
+        providerEventId: JSON.stringify({}), // empty initial mapping
+        scheduledBy: "user-1",
+      };
+
+      vi.mocked(db.conversationMeeting.findFirst).mockResolvedValueOnce(mockMeeting as any);
+      vi.mocked(db.conversation.findFirst).mockResolvedValueOnce({ id: "conv-1" } as any);
+      
+      // Two active GOOGLE connections
+      vi.mocked(db.calendarConnection.findMany).mockResolvedValueOnce([
+        {
+          id: "conn-google-1",
+          provider: "GOOGLE",
+          status: "ACTIVE",
+          tokenRef: JSON.stringify({ accessToken: "enc-acc1", refreshToken: "enc-ref1" }),
+        },
+        {
+          id: "conn-google-2",
+          provider: "GOOGLE",
+          status: "ACTIVE",
+          tokenRef: JSON.stringify({ accessToken: "enc-acc2", refreshToken: "enc-ref2" }),
+        },
+      ] as any);
+
+      // Mock createEvent to return distinct event IDs
+      mockGoogleAdapter.createEvent
+        .mockResolvedValueOnce({ providerEventId: "google-event-id-1", joinUrl: "https://meet1" })
+        .mockResolvedValueOnce({ providerEventId: "google-event-id-2", joinUrl: "https://meet2" });
+
+      // Mock update
+      vi.mocked(db.conversationMeeting.update).mockImplementationOnce((args: any) => {
+        return Promise.resolve({
+          ...mockMeeting,
+          providerEventId: args.data.providerEventId,
+        } as any);
+      });
+
+      const result = await syncMeetingToProvider("org-1", "meet-1");
+
+      const parsedIds = parseProviderEventIds(result.providerEventId);
+      // Both connection IDs must have their own distinct mapping
+      expect(parsedIds["conn-google-1"]).toBe("google-event-id-1");
+      expect(parsedIds["conn-google-2"]).toBe("google-event-id-2");
+      // Mappings must not be overwritten or lost
+      expect(Object.keys(parsedIds)).toHaveLength(2);
+    });
+
+    it("verifies that diagnostics remain truthful and detect no missing provider event when connection-keyed mapping exists", async () => {
+      vi.mocked(db.member.findFirst).mockResolvedValueOnce({ role: "ADMIN" } as any);
+      
+      vi.mocked(db.calendarConnection.findMany).mockResolvedValueOnce([
+        {
+          id: "conn-google-1",
+          provider: "GOOGLE",
+          status: "ACTIVE",
+          tokenRef: JSON.stringify({ accessToken: "enc-acc", refreshToken: "enc-ref" }),
+        },
+      ] as any);
+
+      // Local meeting has connection-keyed mapping
+      vi.mocked(db.conversationMeeting.findMany).mockResolvedValueOnce([
+        {
+          id: "meet-1",
+          title: "Local Title",
+          conversationId: "conv-1",
+          scheduledAt: new Date("2026-06-02T13:00:00Z"),
+          durationMinutes: 30,
+          status: "UPCOMING",
+          providerEventId: JSON.stringify({ "conn-google-1": "remote-event-1" }),
+        },
+      ] as any);
+
+      vi.mocked(db.messagingTask.findMany).mockResolvedValueOnce([]);
+
+      mockGoogleAdapter.getEvent.mockResolvedValueOnce({
+        title: "Local Title",
+        startAt: new Date("2026-06-02T13:00:00Z"),
+        endAt: new Date("2026-06-02T13:30:00Z"),
+        status: "ACTIVE",
+      });
+
+      const result = await getCalendarDiagnostics("org-1", "user-admin");
+      // Connection-keyed mapping must be recognized, meaning 0 missing event failures and 0 drift failures
+      expect(result?.meetingSyncFailures).toHaveLength(0);
     });
   });
 });
