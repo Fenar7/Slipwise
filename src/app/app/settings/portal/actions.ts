@@ -10,6 +10,7 @@ import { getPortalAccessState, logPortalAccess } from "@/lib/portal-auth";
 
 export async function getPortalSettings(organizationId: string) {
   const { orgId } = await requireOrgContext();
+  await requireRole("admin");
   if (orgId !== organizationId) throw new Error("Unauthorized");
 
   return db.orgDefaults.findUnique({
@@ -75,6 +76,7 @@ export async function updatePortalSettings({
 
 export async function getPortalPolicies(organizationId: string) {
   const { orgId } = await requireOrgContext();
+  await requireRole("admin");
   if (orgId !== organizationId) throw new Error("Unauthorized");
 
   return db.orgDefaults.findUnique({
@@ -147,9 +149,12 @@ export async function getPortalAccessLogs(
     toDate?: string;
     page?: number;
     pageSize?: number;
+    path?: string;
+    statusCode?: number;
   },
 ) {
   const { orgId } = await requireOrgContext();
+  await requireRole("admin");
   if (orgId !== organizationId) throw new Error("Unauthorized");
 
   const page = filters?.page ?? 1;
@@ -159,6 +164,8 @@ export async function getPortalAccessLogs(
     orgId: organizationId,
     ...(filters?.customerId && { customerId: filters.customerId }),
     ...(filters?.action && { action: filters.action }),
+    ...(filters?.path && { path: { contains: filters.path, mode: "insensitive" as const } }),
+    ...(filters?.statusCode !== undefined && { statusCode: filters.statusCode }),
     ...((filters?.fromDate || filters?.toDate) && {
       accessedAt: {
         ...(filters.fromDate && { gte: new Date(filters.fromDate) }),

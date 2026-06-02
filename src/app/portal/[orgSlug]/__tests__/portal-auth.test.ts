@@ -38,6 +38,7 @@ const mockDb = vi.hoisted(() => ({
     findUnique: vi.fn(),
     upsert: vi.fn(),
     update: vi.fn(),
+    deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
   },
   orgDefaults: {
     findUnique: vi.fn(),
@@ -54,11 +55,14 @@ const mockRedis = vi.hoisted(() => ({
   ping: vi.fn(),
 }));
 
+const mockRateLimit = vi.hoisted(() => vi.fn());
+
 vi.mock("@/lib/db", () => ({ db: mockDb }));
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/email", () => ({ sendEmail: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("@/lib/audit", () => ({ logAudit: vi.fn().mockReturnValue(Promise.resolve()) }));
 vi.mock("@/lib/redis-client", () => ({ redis: mockRedis }));
+vi.mock("@/lib/rate-limit", () => ({ rateLimit: mockRateLimit }));
 vi.mock("next/navigation", () => ({ redirect: vi.fn() }));
 vi.mock("next/headers", () => ({
   cookies: vi.fn().mockResolvedValue({
@@ -148,15 +152,30 @@ function makeJwt(payload: Record<string, unknown>, secret = process.env.PORTAL_J
 beforeEach(() => {
   vi.clearAllMocks();
   process.env.PORTAL_JWT_SECRET = "test-portal-jwt-secret-that-is-long-enough";
+  process.env.UPSTASH_REDIS_REST_URL = "https://mock-redis.upstash.io";
+  process.env.UPSTASH_REDIS_REST_TOKEN = "mock-token";
+
   mockRedis.get.mockResolvedValue(null);
   mockRedis.set.mockResolvedValue(undefined);
   mockRedis.del.mockResolvedValue(undefined);
   mockRedis.exists.mockResolvedValue(false);
   mockRedis.ping.mockResolvedValue(false);
+
+  mockRateLimit.mockImplementation(async (key, options) => {
+    const val = await mockRedis.get(key);
+    if (val !== null && val !== undefined) {
+      const limit = options?.maxRequests ?? 5;
+      const count = parseInt(String(val), 10);
+      return { success: count < limit, remaining: Math.max(0, limit - count) };
+    }
+    return { success: true, remaining: 999 };
+  });
+
   // Default: rate limit allows through
   mockDb.portalRateLimit.findUnique.mockResolvedValue(null);
   mockDb.portalRateLimit.upsert.mockResolvedValue({ key: "ml:test", count: 1, windowEnd: new Date() });
   mockDb.portalRateLimit.update.mockResolvedValue({ count: 2 });
+  mockDb.portalRateLimit.deleteMany.mockResolvedValue({ count: 0 });
   mockDb.customerPortalToken.updateMany.mockResolvedValue({ count: 0 });
   mockDb.customerPortalToken.create.mockResolvedValue({ id: "tok_new" });
   mockDb.customerPortalSession.create.mockResolvedValue({ id: "sess_001" });

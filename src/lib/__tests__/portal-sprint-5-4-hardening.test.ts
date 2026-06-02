@@ -9,6 +9,7 @@ const {
   mockLogAudit,
   mockCookies,
   mockRedis,
+  mockRateLimit,
 } = vi.hoisted(() => {
   const cookieStore = {
     get: vi.fn(),
@@ -35,6 +36,7 @@ const {
         findUnique: vi.fn(),
         upsert: vi.fn(),
         update: vi.fn(),
+        deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
       },
       clientHubCustomerLifecycle: {
         findUnique: vi.fn(),
@@ -52,6 +54,7 @@ const {
       exists: vi.fn(),
       ping: vi.fn(),
     },
+    mockRateLimit: vi.fn(),
   };
 });
 
@@ -60,6 +63,7 @@ vi.mock("@/lib/db", () => ({ db: mockDb }));
 vi.mock("@/lib/email", () => ({ sendEmail: mockSendEmail }));
 vi.mock("@/lib/audit", () => ({ logAudit: mockLogAudit }));
 vi.mock("@/lib/redis-client", () => ({ redis: mockRedis }));
+vi.mock("@/lib/rate-limit", () => ({ rateLimit: mockRateLimit }));
 vi.mock("next/headers", () => ({ cookies: mockCookies }));
 vi.mock("next/navigation", () => ({ redirect: vi.fn() }));
 
@@ -106,9 +110,11 @@ describe("Sprint 5.4 Hardening Suite", () => {
     mockLogAudit.mockResolvedValue(undefined);
     mockRedis.get.mockResolvedValue(null);
     mockRedis.set.mockResolvedValue(undefined);
+    mockRateLimit.mockResolvedValue({ success: true, remaining: 999 });
     mockDb.portalRateLimit.findUnique.mockResolvedValue(null);
-    mockDb.portalRateLimit.upsert.mockResolvedValue({});
+    mockDb.portalRateLimit.upsert.mockResolvedValue({ count: 1, windowEnd: new Date(Date.now() + 60000) });
     mockDb.portalRateLimit.update.mockResolvedValue({});
+    mockDb.portalRateLimit.deleteMany.mockResolvedValue({ count: 0 });
     mockDb.customerPortalToken.updateMany.mockResolvedValue({ count: 0 });
     mockDb.customerPortalToken.create.mockResolvedValue({ id: "tok-1" });
     mockDb.customerPortalAccessLog.create.mockResolvedValue({});
@@ -118,14 +124,21 @@ describe("Sprint 5.4 Hardening Suite", () => {
 
   describe("Resend invite & resend OTP cooldown throttling", () => {
     it("allows request when no active cooldown exists", async () => {
+      // By default mockRateLimit resolves to success: true, and DB upsert resolves to count: 1
       const result = await checkPortalResendCooldown("john@example.com", "org-1", "otp");
       expect(result.allowed).toBe(true);
       expect(result.remainingSeconds).toBe(0);
     });
 
     it("blocks request when cooldown exists in Redis", async () => {
-      const futureTime = Date.now() + 45 * 1000;
-      mockRedis.get.mockResolvedValue(String(futureTime));
+      process.env.UPSTASH_REDIS_REST_URL = "https://mock-redis.upstash.io";
+      process.env.UPSTASH_REDIS_REST_TOKEN = "mock-token";
+
+      mockRateLimit.mockResolvedValue({
+        success: false,
+        remaining: 0,
+        reset: Date.now() + 45 * 1000,
+      });
 
       const result = await checkPortalResendCooldown("john@example.com", "org-1", "otp");
       expect(result.allowed).toBe(false);
@@ -134,10 +147,14 @@ describe("Sprint 5.4 Hardening Suite", () => {
     });
 
     it("blocks request when cooldown exists in DB (fallback)", async () => {
-      mockRedis.get.mockRejectedValue(new Error("Redis down"));
+      // Disable Upstash Redis config so it falls through to DB path
+      delete process.env.UPSTASH_REDIS_REST_URL;
+      delete process.env.UPSTASH_REDIS_REST_TOKEN;
+
       const futureTime = new Date(Date.now() + 30 * 1000);
-      mockDb.portalRateLimit.findUnique.mockResolvedValue({
+      mockDb.portalRateLimit.upsert.mockResolvedValue({
         key: "cooldown:otp:org-1:" + sha256("john@example.com"),
+        count: 2, // count > 1 represents subsequent request in active cooldown window
         windowEnd: futureTime,
       });
 

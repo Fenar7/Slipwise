@@ -7,6 +7,7 @@ import { cookies } from "next/headers";
 import { sendEmail } from "@/lib/email";
 import { logAudit } from "@/lib/audit";
 import { redirect } from "next/navigation";
+import { rateLimit } from "@/lib/rate-limit";
 
 // ─── Rate limiting (Redis-preferred, DB fallback, safe for serverless) ───────
 
@@ -22,45 +23,33 @@ const MAGIC_LINK_WINDOW_MS = MAGIC_LINK_WINDOW_SECONDS * 1000;
 async function checkPortalRateLimit(email: string, orgId: string): Promise<boolean> {
   const key = `ml:${orgId}:${sha256(email.toLowerCase())}`;
 
-  // ── Redis path ───────────────────────────────────────────────────────────
+  // Redis path (Atomic Sliding Window via Upstash)
   try {
-    const raw = await redis.get(key);
-    if (raw !== null) {
-      const count = parseInt(raw, 10);
-      if (count >= MAGIC_LINK_MAX_REQUESTS) return false;
-      await redis.set(key, String(count + 1), MAGIC_LINK_WINDOW_SECONDS);
-      return true;
+    const rl = await rateLimit(key, { maxRequests: MAGIC_LINK_MAX_REQUESTS, window: `${MAGIC_LINK_WINDOW_SECONDS} s` });
+    const url = process.env.UPSTASH_REDIS_REST_URL;
+    const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+    if (url && token) {
+      return rl.success;
     }
-    // First request in this window
-    await redis.set(key, "1", MAGIC_LINK_WINDOW_SECONDS);
-    return true;
   } catch {
-    // Redis unavailable — fall through to DB path
+    // Fall through to DB fallback
   }
 
-  // ── DB fallback ──────────────────────────────────────────────────────────
+  // DB path (Atomic Concurrency-Safe Fallback)
   const now = new Date();
   try {
-    const existing = await db.portalRateLimit.findUnique({ where: { key } });
-
-    if (!existing || existing.windowEnd < now) {
-      await db.portalRateLimit.upsert({
-        where: { key },
-        create: { key, count: 1, windowEnd: new Date(Date.now() + MAGIC_LINK_WINDOW_MS) },
-        update: { count: 1, windowEnd: new Date(Date.now() + MAGIC_LINK_WINDOW_MS) },
-      });
-      return true;
-    }
-
-    if (existing.count >= MAGIC_LINK_MAX_REQUESTS) {
-      return false;
-    }
-
-    await db.portalRateLimit.update({
-      where: { key },
-      data: { count: { increment: 1 } },
+    // Atomically delete expired rate limits
+    await db.portalRateLimit.deleteMany({
+      where: { key, windowEnd: { lt: now } },
     });
-    return true;
+
+    const record = await db.portalRateLimit.upsert({
+      where: { key },
+      create: { key, count: 1, windowEnd: new Date(Date.now() + MAGIC_LINK_WINDOW_MS) },
+      update: { count: { increment: 1 } },
+    });
+
+    return record.count <= MAGIC_LINK_MAX_REQUESTS;
   } catch {
     // Fail open on all errors to avoid blocking legitimate users
     return true;
@@ -169,35 +158,38 @@ export async function checkPortalResendCooldown(
 
   // Redis path
   try {
-    const raw = await redis.get(key);
-    if (raw !== null) {
-      const expiresAt = parseInt(raw, 10);
-      const remaining = Math.ceil((expiresAt - Date.now()) / 1000);
-      if (remaining > 0) {
-        return { allowed: false, remainingSeconds: remaining };
+    const rl = await rateLimit(key, { maxRequests: 1, window: `${cooldownSeconds} s` });
+    const url = process.env.UPSTASH_REDIS_REST_URL;
+    const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+    if (url && token) {
+      if (!rl.success) {
+        const reset = rl.reset ?? (Date.now() + cooldownSeconds * 1000);
+        const remaining = Math.ceil((reset - Date.now()) / 1000);
+        return { allowed: false, remainingSeconds: remaining > 0 ? remaining : cooldownSeconds };
       }
+      return { allowed: true, remainingSeconds: 0 };
     }
-    // Set cooldown in Redis
-    const expiresAt = Date.now() + cooldownSeconds * 1000;
-    await redis.set(key, String(expiresAt), cooldownSeconds);
   } catch {
     // Fall through to DB fallback
   }
 
   // DB path
   try {
-    const existing = await db.portalRateLimit.findUnique({ where: { key } });
-    if (existing && existing.windowEnd > now) {
-      const remaining = Math.ceil((existing.windowEnd.getTime() - now.getTime()) / 1000);
+    // Atomically delete expired cooldowns
+    await db.portalRateLimit.deleteMany({
+      where: { key, windowEnd: { lt: now } },
+    });
+
+    const record = await db.portalRateLimit.upsert({
+      where: { key },
+      create: { key, count: 1, windowEnd: new Date(Date.now() + cooldownSeconds * 1000) },
+      update: { count: { increment: 1 } },
+    });
+
+    if (record.count > 1) {
+      const remaining = Math.ceil((record.windowEnd.getTime() - Date.now()) / 1000);
       return { allowed: false, remainingSeconds: remaining > 0 ? remaining : 0 };
     }
-
-    const windowEnd = new Date(Date.now() + cooldownSeconds * 1000);
-    await db.portalRateLimit.upsert({
-      where: { key },
-      create: { key, count: 1, windowEnd },
-      update: { count: 1, windowEnd },
-    });
   } catch (error) {
     // Fail open on DB error to avoid blocking legitimate users
     console.error("[portal-auth] Cooldown DB check failed, failing open:", error);
@@ -713,43 +705,33 @@ const PORTAL_VERIFY_WINDOW_MS = PORTAL_VERIFY_WINDOW_SECONDS * 1000;
 async function checkPortalVerifyRateLimit(email: string, orgId: string): Promise<boolean> {
   const key = `vfy:${orgId}:${sha256(email.toLowerCase())}`;
 
-  // Redis path
+  // Redis path (Atomic Sliding Window via Upstash)
   try {
-    const raw = await redis.get(key);
-    if (raw !== null) {
-      const count = parseInt(raw, 10);
-      if (count >= PORTAL_VERIFY_MAX_REQUESTS) return false;
-      await redis.set(key, String(count + 1), PORTAL_VERIFY_WINDOW_SECONDS);
-      return true;
+    const rl = await rateLimit(key, { maxRequests: PORTAL_VERIFY_MAX_REQUESTS, window: `${PORTAL_VERIFY_WINDOW_SECONDS} s` });
+    const url = process.env.UPSTASH_REDIS_REST_URL;
+    const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+    if (url && token) {
+      return rl.success;
     }
-    await redis.set(key, "1", PORTAL_VERIFY_WINDOW_SECONDS);
-    return true;
   } catch {
-    // Fall through to DB
+    // Fall through to DB fallback
   }
 
-  // DB path
+  // DB path (Atomic Concurrency-Safe Fallback)
   const now = new Date();
   try {
-    const existing = await db.portalRateLimit.findUnique({ where: { key } });
-    if (!existing || existing.windowEnd < now) {
-      await db.portalRateLimit.upsert({
-        where: { key },
-        create: { key, count: 1, windowEnd: new Date(Date.now() + PORTAL_VERIFY_WINDOW_MS) },
-        update: { count: 1, windowEnd: new Date(Date.now() + PORTAL_VERIFY_WINDOW_MS) },
-      });
-      return true;
-    }
-
-    if (existing.count >= PORTAL_VERIFY_MAX_REQUESTS) {
-      return false;
-    }
-
-    await db.portalRateLimit.update({
-      where: { key },
-      data: { count: { increment: 1 } },
+    // Atomically delete expired rate limits
+    await db.portalRateLimit.deleteMany({
+      where: { key, windowEnd: { lt: now } },
     });
-    return true;
+
+    const record = await db.portalRateLimit.upsert({
+      where: { key },
+      create: { key, count: 1, windowEnd: new Date(Date.now() + PORTAL_VERIFY_WINDOW_MS) },
+      update: { count: { increment: 1 } },
+    });
+
+    return record.count <= PORTAL_VERIFY_MAX_REQUESTS;
   } catch {
     return true;
   }
