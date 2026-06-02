@@ -3,6 +3,8 @@
 import { db } from "@/lib/db";
 import { requireOrgContext, requireRole } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
+import { getPortalAccessState } from "@/lib/portal-auth";
+
 
 // ─── Portal settings (read/write) ────────────────────────────────────────────
 
@@ -282,3 +284,78 @@ export async function revokeAllPortalTokens(organizationId: string) {
     revokedSessions: revokedSessions.count,
   };
 }
+
+// ─── Customer Portal Access / Onboarding Lifecycle Status Action ─────────────
+
+export async function getPortalCustomersWithAccessState(organizationId: string) {
+  const { orgId } = await requireOrgContext();
+  await requireRole("admin");
+  if (orgId !== organizationId) throw new Error("Unauthorized");
+
+  // Retrieve organization default settings
+  const orgDefaults = await db.orgDefaults.findUnique({
+    where: { organizationId },
+    select: { portalEnabled: true },
+  });
+  const portalEnabled = orgDefaults?.portalEnabled ?? false;
+
+  const customers = await db.customer.findMany({
+    where: { organizationId },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      phone: true,
+      address: true,
+      taxId: true,
+      gstin: true,
+      lifecycleStage: true,
+      clientHubLifecycle: {
+        select: {
+          enabled: true,
+          latestInviteSentAt: true,
+          latestInviteEmail: true,
+          inviteSentCount: true,
+          publicAccessHandle: true,
+        },
+      },
+      portalTokens: {
+        select: {
+          createdAt: true,
+          expiresAt: true,
+          isRevoked: true,
+          lastUsedAt: true,
+        },
+      },
+      portalSessions: {
+        select: {
+          revokedAt: true,
+          expiresAt: true,
+        },
+      },
+    },
+    orderBy: { name: "asc" },
+  });
+
+  return customers.map((c) => {
+    // compute access state
+    const accessState = getPortalAccessState({
+      portalEnabled,
+      lifecycleEnabled: c.clientHubLifecycle?.enabled ?? false,
+      latestInviteSentAt: c.clientHubLifecycle?.latestInviteSentAt ?? null,
+      inviteSentCount: c.clientHubLifecycle?.inviteSentCount ?? 0,
+      tokens: c.portalTokens,
+      sessions: c.portalSessions,
+    });
+
+    return {
+      id: c.id,
+      name: c.name,
+      email: c.email,
+      phone: c.phone,
+      accessState,
+      clientHubLifecycle: c.clientHubLifecycle,
+    };
+  });
+}
+
