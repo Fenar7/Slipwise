@@ -2,14 +2,17 @@ import { NextRequest } from "next/server";
 import { requireIntegrationMemberRoute } from "@/app/api/integrations/_auth";
 import { rateLimitByOrg } from "@/lib/rate-limit";
 import {
-  getMailboxAttachmentDownloadUrl,
+  getMailboxAttachmentDownload,
   AttachmentServiceError,
 } from "@/lib/mailbox/attachment-service";
 
 /**
  * GET /api/mailbox/attachments/message/{id}/download
  *
- * Returns a short-lived signed URL for downloading a real mailbox message attachment.
+ * Returns either:
+ * - A signed URL (JSON with signedUrl) when the attachment is cached
+ * - A direct binary stream (application/octet-stream) when fetched from provider
+ *
  * The caller must have access to the parent thread/mailbox connection.
  */
 export async function GET(
@@ -28,17 +31,29 @@ export async function GET(
   }
 
   try {
-    const result = await getMailboxAttachmentDownloadUrl({
+    const result = await getMailboxAttachmentDownload({
       orgId,
       userId,
       role,
       attachmentId: id,
     });
 
-    return Response.json({
-      signedUrl: result.signedUrl,
-      filename: result.filename,
-      mimeType: result.mimeType,
+    if (result.kind === "signed-url") {
+      return Response.json({
+        signedUrl: result.signedUrl,
+        filename: result.filename,
+        mimeType: result.mimeType,
+      });
+    }
+
+    // Direct byte stream fallback when cache unavailable
+    return new Response(result.bytes, {
+      status: 200,
+      headers: {
+        "Content-Type": result.mimeType,
+        "Content-Disposition": `attachment; filename="${result.filename}"`,
+        "Content-Length": String(result.bytes.byteLength),
+      },
     });
   } catch (err) {
     if (err instanceof AttachmentServiceError) {

@@ -479,6 +479,7 @@ export const MAILBOX_FOLDER_COVERAGE_FOLDERS = [
   "SPAM",
   "DRAFT",
   "ARCHIVE",
+  "TRASH",
   "ALL_MAIL",
 ] as const;
 
@@ -495,7 +496,7 @@ export const MAILBOX_FOLDER_COVERAGE_STATES = [
 export type MailboxFolderCoverageState =
   (typeof MAILBOX_FOLDER_COVERAGE_STATES)[number];
 
-/** The four Gmail system labels that MUST reach COMPLETE before claiming "Up to date". */
+/** The Gmail system labels that MUST reach COMPLETE before claiming "Up to date". */
 export const GMAIL_REQUIRED_COVERAGE_FOLDERS: MailboxCoverageFolder[] = [
   "INBOX",
   "SENT",

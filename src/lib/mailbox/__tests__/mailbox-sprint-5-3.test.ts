@@ -172,7 +172,7 @@ import {
   resolveAttachmentsForSend,
   cleanupDraftAttachments,
   getAttachmentDownloadUrl,
-  getMailboxAttachmentDownloadUrl,
+  getMailboxAttachmentDownload,
   AttachmentServiceError,
 } from "@/lib/mailbox/attachment-service";
 
@@ -719,7 +719,7 @@ describe("draft read shape with attachments", () => {
 
 // ─── Mailbox attachment download ─────────────────────────────────────────────
 
-describe("getMailboxAttachmentDownloadUrl", () => {
+describe("getMailboxAttachmentDownload", () => {
   it("returns a signed URL for a cached mailbox attachment", async () => {
     mockDb.mailboxAttachment.findFirst.mockResolvedValue({
       id: ATTACHMENT_ID,
@@ -738,22 +738,25 @@ describe("getMailboxAttachmentDownloadUrl", () => {
     });
     mockGetSignedUrl.mockResolvedValue("https://signed.url/invoice");
 
-    const result = await getMailboxAttachmentDownloadUrl({
+    const result = await getMailboxAttachmentDownload({
       orgId: ORG_ID,
       userId: USER_ID,
       role: "owner",
       attachmentId: ATTACHMENT_ID,
     });
 
-    expect(result.signedUrl).toBe("https://signed.url/invoice");
-    expect(result.filename).toBe("invoice.pdf");
+    expect(result.kind).toBe("signed-url");
+    if (result.kind === "signed-url") {
+      expect(result.signedUrl).toBe("https://signed.url/invoice");
+      expect(result.filename).toBe("invoice.pdf");
+    }
   });
 
   it("throws 404 when mailbox attachment is not found", async () => {
     mockDb.mailboxAttachment.findFirst.mockResolvedValue(null);
 
     await expect(
-      getMailboxAttachmentDownloadUrl({
+      getMailboxAttachmentDownload({
         orgId: ORG_ID,
         userId: USER_ID,
         role: "owner",
@@ -776,7 +779,7 @@ describe("getMailboxAttachmentDownloadUrl", () => {
     });
 
     await expect(
-      getMailboxAttachmentDownloadUrl({
+      getMailboxAttachmentDownload({
         orgId: ORG_ID,
         userId: USER_ID,
         role: "owner",

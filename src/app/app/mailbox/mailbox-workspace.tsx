@@ -218,6 +218,9 @@ export function resolveThreadQueryParams(
     if (folder === "sent") {
       return { connectionId: activeConnection.id, folder: "SENT" };
     }
+    if (folder === "trash") {
+      return { connectionId: activeConnection.id, folder: "TRASH" };
+    }
     return {
       connectionId: activeConnection.id,
       folder: "INBOX",
