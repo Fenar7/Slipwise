@@ -577,6 +577,197 @@ describe("buildMailboxSyncPresentation", () => {
     });
   });
 
+  describe("sync-state recovery — successful run supersedes prior failure", () => {
+    const MAKE_CONNECTION = (
+      overrides: Partial<Parameters<typeof buildMailboxSyncPresentation>[0]> = {},
+    ) => makeConnection(overrides);
+
+    it("new COMPLETED run after stale RUNNING run shows completed, not failed", () => {
+      const sync = buildMailboxSyncPresentation(
+        MAKE_CONNECTION(),
+        {
+          latestRun: {
+            id: "run_new_completed",
+            status: "COMPLETED",
+            syncMode: "DELTA",
+            triggerSource: "MANUAL",
+            startedAt: new Date(NOW - 60_000),
+            completedAt: new Date(NOW - 30_000),
+            stats: { threadCount: 10, messageCount: 42 },
+            errorCategory: null,
+            errorMessage: null,
+          },
+          latestCompletedRun: {
+            id: "run_new_completed",
+            status: "COMPLETED",
+            syncMode: "DELTA",
+            triggerSource: "MANUAL",
+            startedAt: new Date(NOW - 60_000),
+            completedAt: new Date(NOW - 30_000),
+            stats: { threadCount: 10, messageCount: 42 },
+            errorCategory: null,
+            errorMessage: null,
+          },
+        },
+        NOW,
+      );
+
+      expect(sync.state).toBe("completed");
+      expect(sync.lastRunThreadCount).toBe(10);
+      expect(sync.lastErrorSummary).toBeNull();
+    });
+
+    it("new COMPLETED run supersedes stale connection-lastSyncError", () => {
+      const sync = buildMailboxSyncPresentation(
+        MAKE_CONNECTION({
+          lastSyncError: "Gmail rate limit exceeded",
+          lastSyncErrorCategory: "rate_limited",
+        }),
+        {
+          latestRun: {
+            id: "run_recovered",
+            status: "COMPLETED",
+            syncMode: "DELTA",
+            triggerSource: "MANUAL",
+            startedAt: new Date(NOW - 60_000),
+            completedAt: new Date(NOW - 30_000),
+            stats: { threadCount: 5, messageCount: 20 },
+            errorCategory: null,
+            errorMessage: null,
+          },
+          latestCompletedRun: {
+            id: "run_recovered",
+            status: "COMPLETED",
+            syncMode: "DELTA",
+            triggerSource: "MANUAL",
+            startedAt: new Date(NOW - 60_000),
+            completedAt: new Date(NOW - 30_000),
+            stats: { threadCount: 5, messageCount: 20 },
+            errorCategory: null,
+            errorMessage: null,
+          },
+        },
+        NOW,
+      );
+
+      expect(sync.state).toBe("completed");
+      expect(sync.lastErrorSummary).toBeNull();
+      expect(sync.detailLabel).not.toContain("rate limit");
+    });
+
+    it("new COMPLETED run supersedes prior FAILED run that was cleaned up", () => {
+      const sync = buildMailboxSyncPresentation(
+        MAKE_CONNECTION({
+          lastSyncError: null,
+          lastSyncErrorCategory: null,
+        }),
+        {
+          latestRun: {
+            id: "run_recovered",
+            status: "COMPLETED",
+            syncMode: "DELTA",
+            triggerSource: "MANUAL",
+            startedAt: new Date(NOW - 60_000),
+            completedAt: new Date(NOW - 30_000),
+            stats: { threadCount: 8, messageCount: 35 },
+            errorCategory: null,
+            errorMessage: null,
+          },
+          latestCompletedRun: {
+            id: "run_recovered",
+            status: "COMPLETED",
+            syncMode: "DELTA",
+            triggerSource: "MANUAL",
+            startedAt: new Date(NOW - 60_000),
+            completedAt: new Date(NOW - 30_000),
+            stats: { threadCount: 8, messageCount: 35 },
+            errorCategory: null,
+            errorMessage: null,
+          },
+        },
+        NOW,
+      );
+
+      expect(sync.state).toBe("completed");
+      expect(sync.lastRunStatus).toBe("COMPLETED");
+    });
+
+    it("FAILED run with no newer COMPLETED run shows failed state", () => {
+      const sync = buildMailboxSyncPresentation(
+        MAKE_CONNECTION(),
+        {
+          latestRun: {
+            id: "run_failed",
+            status: "FAILED",
+            syncMode: "DELTA",
+            triggerSource: "MANUAL",
+            startedAt: new Date(NOW - 60_000),
+            completedAt: new Date(NOW - 30_000),
+            stats: null,
+            errorCategory: "rate_limited",
+            errorSummary: "Gmail API rate limit",
+          },
+        },
+        NOW,
+      );
+
+      expect(sync.state).toBe("failed");
+      expect(sync.lastErrorSummary).toBe("Gmail API rate limit");
+    });
+
+    it("connection lastSyncError with no COMPLETED run shows failed state", () => {
+      const sync = buildMailboxSyncPresentation(
+        MAKE_CONNECTION({
+          lastSyncError: "OAuth token revoked",
+          lastSyncErrorCategory: "auth_error",
+        }),
+        {},
+        NOW,
+      );
+
+      expect(sync.state).toBe("failed");
+      expect(sync.lastErrorSummary).toBe("OAuth token revoked");
+    });
+
+    it("draft-only degradation in COMPLETED state does not show full-sync failure", () => {
+      const sync = buildMailboxSyncPresentation(
+        MAKE_CONNECTION(),
+        {
+          latestRun: {
+            id: "run_draft_degraded",
+            status: "COMPLETED",
+            syncMode: "DELTA",
+            triggerSource: "MANUAL",
+            startedAt: new Date(NOW - 60_000),
+            completedAt: new Date(NOW - 30_000),
+            stats: { threadCount: 5, messageCount: 20, draftErrorCategory: "gmail_api_error", draftErrorSummary: "Drafts API returned 403" },
+            errorCategory: null,
+            errorMessage: null,
+          },
+          latestCompletedRun: {
+            id: "run_draft_degraded",
+            status: "COMPLETED",
+            syncMode: "DELTA",
+            triggerSource: "MANUAL",
+            startedAt: new Date(NOW - 60_000),
+            completedAt: new Date(NOW - 30_000),
+            stats: { threadCount: 5, messageCount: 20, draftErrorCategory: "gmail_api_error", draftErrorSummary: "Drafts API returned 403" },
+            errorCategory: null,
+            errorMessage: null,
+          },
+        },
+        NOW,
+      );
+
+      expect(sync.state).toBe("completed");
+      expect(sync.lastErrorCategory).toBeNull();
+      expect(sync.lastErrorSummary).toBeNull();
+      expect(sync.draftErrorCategory).toBe("gmail_api_error");
+      expect(sync.draftErrorSummary).toBe("Drafts API returned 403");
+      expect(sync.detailLabel).toContain("Drafts could not be synced");
+    });
+  });
+
   describe("in-run progress visibility", () => {
     it("shows live thread/message counts during running sync from heartbeat stats", () => {
       const sync = buildMailboxSyncPresentation(
