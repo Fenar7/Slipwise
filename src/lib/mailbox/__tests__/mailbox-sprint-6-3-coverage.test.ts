@@ -90,19 +90,21 @@ describe("computeOverallCoverage", () => {
     expect(computeOverallCoverage(coverages)).toBe("PARTIAL");
   });
 
-  it("ignores non-required ARCHIVE folder for overall computation", () => {
+  it("ignores non-required ALL_MAIL folder for overall computation", () => {
     const coverages = [
       makeComplete("INBOX"),
       makeComplete("SENT"),
       makeComplete("SPAM"),
       makeComplete("DRAFT"),
-      makeCoverage("ARCHIVE", "BOOTSTRAPPING"),
+      makeComplete("ARCHIVE"),
+      makeComplete("TRASH"),
+      makeCoverage("ALL_MAIL", "BOOTSTRAPPING"),
     ];
     expect(computeOverallCoverage(coverages)).toBe("COMPLETE");
   });
 
-  it("returns PARTIAL when only non-required folders exist", () => {
-    const coverages = [makeCoverage("ARCHIVE", "COMPLETE")];
+  it("returns PARTIAL when only non-required folders exist alongside missing required ones", () => {
+    const coverages = [makeCoverage("ALL_MAIL", "COMPLETE")];
     expect(computeOverallCoverage(coverages)).toBe("PENDING");
   });
 });
@@ -156,17 +158,18 @@ describe("folderMayHaveMoreData", () => {
 });
 
 describe("GMAIL_REQUIRED_COVERAGE_FOLDERS", () => {
-  it("includes INBOX, SENT, SPAM, DRAFT", () => {
+  it("includes INBOX, SENT, SPAM, DRAFT, ARCHIVE, TRASH", () => {
     expect(GMAIL_REQUIRED_COVERAGE_FOLDERS).toEqual([
       "INBOX",
       "SENT",
       "SPAM",
       "DRAFT",
+      "ARCHIVE",
+      "TRASH",
     ]);
   });
 
-  it("does NOT include ARCHIVE or ALL_MAIL", () => {
-    expect(GMAIL_REQUIRED_COVERAGE_FOLDERS).not.toContain("ARCHIVE");
+  it("does NOT include ALL_MAIL", () => {
     expect(GMAIL_REQUIRED_COVERAGE_FOLDERS).not.toContain("ALL_MAIL");
   });
 });
@@ -178,6 +181,8 @@ describe("coverage state lifecycle", () => {
       makeCoverage("SENT", "PENDING"),
       makeCoverage("SPAM", "PENDING"),
       makeCoverage("DRAFT", "PENDING"),
+      makeCoverage("ARCHIVE", "PENDING"),
+      makeCoverage("TRASH", "PENDING"),
     ];
     expect(computeOverallCoverage(coverages)).toBe("PENDING");
 
@@ -190,6 +195,8 @@ describe("coverage state lifecycle", () => {
     coverages[1] = makeComplete("SENT");
     coverages[2] = makeComplete("SPAM");
     coverages[3] = makeComplete("DRAFT");
+    coverages[4] = makeComplete("ARCHIVE");
+    coverages[5] = makeComplete("TRASH");
     expect(computeOverallCoverage(coverages)).toBe("COMPLETE");
 
     // SPAM needs recovery
@@ -245,6 +252,8 @@ describe("truthful bootstrap completion", () => {
       makeComplete("SENT", 50),
       makeComplete("SPAM", 0),
       makeComplete("DRAFT", 12),
+      makeComplete("ARCHIVE", 5),
+      makeComplete("TRASH", 1),
     ];
     expect(computeOverallCoverage(coverages)).toBe("COMPLETE");
   });
@@ -269,6 +278,8 @@ describe("bootstrap slice exhaustion vs bounded cap", () => {
       makeComplete("SENT", 50),
       makeComplete("SPAM", 25),
       makeComplete("DRAFT", 3),
+      makeComplete("ARCHIVE", 0),
+      makeComplete("TRASH", 0),
     ];
     expect(computeOverallCoverage(coverages)).toBe("COMPLETE");
   });
