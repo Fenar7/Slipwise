@@ -197,7 +197,7 @@ function buildMailboxGroups(connections: MailboxConnection[]): MailboxGroup[] {
 
 function MailboxAccountGroup({ group }: { group: MailboxGroup }) {
   const { connection, items } = group;
-  const [expanded, setExpanded] = useState(connection.status === "connected");
+  const [expanded, setExpanded] = useState(true);
   const pathname = usePathname();
   const sync = resolveMailboxSyncPresentation(connection);
   const isAnyChildActive = items.some(
@@ -260,7 +260,7 @@ function MailboxAccountGroup({ group }: { group: MailboxGroup }) {
         </div>
       )}
 
-      {expanded && connection.status === "connected" && (
+      {expanded && (
         <ul className="mt-0.5 space-y-0.5 pl-2">
           {items.map((item) => (
             <NavItem key={item.id} item={item} depth={1} />

@@ -236,6 +236,67 @@ describe("MailboxLeftRail", () => {
     const allInboxesLink = screen.getByRole("link", { name: /all inboxes/i });
     expect(allInboxesLink).toHaveClass("bg-red-50");
   });
+
+  // ─── System folder visibility ──────────────────────────────────────────
+
+  it("renders all six system folder labels for connected accounts", () => {
+    render(<MailboxLeftRail connections={MOCK_CONNECTIONS} />);
+    // Each folder label appears once per account (3 connected × 6 folders = 18 links)
+    const folderLabels = ["Inbox", "Sent", "Drafts", "Archive", "Spam", "Trash"];
+    for (const label of folderLabels) {
+      const links = screen.getAllByRole("link").filter((l) => l.textContent === label);
+      // One per account: Billing, Support, Accounts
+      expect(links.length).toBe(3);
+    }
+  });
+
+  it("system folders render for reconnect_required accounts", () => {
+    render(<MailboxLeftRail connections={MOCK_CONNECTIONS} />);
+    // Accounts inbox (conn_accounts) must be present despite reconnect_required status
+    const accountsInbox = screen.getAllByRole("link").find(
+      (l) => l.getAttribute("href") === "/app/mailbox/conn_accounts/inbox"
+    );
+    expect(accountsInbox).toBeInTheDocument();
+  });
+
+  it("folder links navigate to /app/mailbox/{connId}/{folder}", () => {
+    render(<MailboxLeftRail connections={MOCK_CONNECTIONS} />);
+    // Billing inbox
+    const billingInbox = screen.getAllByRole("link").find(
+      (l) => l.getAttribute("href") === "/app/mailbox/conn_billing/inbox"
+    );
+    expect(billingInbox).toBeInTheDocument();
+
+    // Support sent
+    const supportSent = screen.getAllByRole("link").find(
+      (l) => l.getAttribute("href") === "/app/mailbox/conn_support/sent"
+    );
+    expect(supportSent).toBeInTheDocument();
+  });
+
+  it("shows reconnect notice and folder links for reconnect_required account", () => {
+    render(<MailboxLeftRail connections={MOCK_CONNECTIONS} />);
+    // Reconnect notice renders because expanded defaults to true
+    expect(screen.getByText(/reconnect required/i)).toBeInTheDocument();
+    expect(screen.getByText(/token expired/i)).toBeInTheDocument();
+    // Folder links still render for reconnect_required account
+    const accountsDrafts = screen.getAllByRole("link").find(
+      (l) => l.getAttribute("href") === "/app/mailbox/conn_accounts/drafts"
+    );
+    expect(accountsDrafts).toBeInTheDocument();
+  });
+
+  it("renders 18 folder links across all accounts (3 × 6)", () => {
+    render(<MailboxLeftRail connections={MOCK_CONNECTIONS} />);
+    const allLinks = screen.getAllByRole("link");
+    const folderHrefs = allLinks.filter(
+      (l) =>
+        l.getAttribute("href")?.startsWith("/app/mailbox/conn_") &&
+        !l.getAttribute("href")?.endsWith("/settings")
+    );
+    // 3 connections × 6 folders each
+    expect(folderHrefs.length).toBe(18);
+  });
 });
 
 // ─── MailboxCommandBar ──────────────────────────────────────────────────────

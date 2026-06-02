@@ -669,7 +669,7 @@ describe("MailboxLeftRail — settings link updated", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /accounts/i }));
+    // Account group is expanded by default, so reconnect link is immediately visible
     const reconnectLink = screen.getByRole("link", { name: /reconnect/i });
     expect(reconnectLink).toHaveAttribute(
       "href",
