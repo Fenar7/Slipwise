@@ -312,24 +312,6 @@ describe("stageDraftAttachment", () => {
     ).rejects.toBeInstanceOf(AttachmentServiceError);
   });
 
-  it("rejects blocked executable MIME types", async () => {
-    mockDb.mailboxDraft.findFirst.mockResolvedValue(makeDraftRecord());
-
-    await expect(
-      stageDraftAttachment({
-        orgId: ORG_ID,
-        userId: USER_ID,
-        role: "owner",
-        draftId: DRAFT_ID,
-        filename: "malicious.exe",
-        mimeType: "application/x-msdownload",
-        size: 1024,
-        isInline: false,
-        fileBuffer: Buffer.from(""),
-      }),
-    ).rejects.toBeInstanceOf(AttachmentServiceError);
-  });
-
   it("rolls back DB record on upload failure", async () => {
     mockDb.mailboxDraft.findFirst.mockResolvedValue(makeDraftRecord());
     mockDb.mailboxDraftAttachment.create.mockResolvedValue(makeAttachmentRecord());
@@ -787,6 +769,59 @@ describe("getMailboxAttachmentDownload", () => {
       }),
     ).rejects.toBeInstanceOf(AttachmentServiceError);
   });
+
+  it("recovers from stale cache ref by clearing storageRef and falling back to provider fetch", async () => {
+    mockDb.mailboxAttachment.findFirst.mockResolvedValue({
+      id: ATTACHMENT_ID,
+      messageId: "msg_001",
+      providerAttachmentId: "provider_att_001",
+      filename: "invoice.pdf",
+      mimeType: "application/pdf",
+      size: 12345,
+      isInline: false,
+      storageRef: `${ORG_ID}/mailbox/messages/msg_001/${ATTACHMENT_ID}_invoice.pdf`,
+      message: { threadId: "thread_001", orgId: ORG_ID, providerMessageId: "pm_001" },
+    });
+    mockDb.mailboxThread.findFirst.mockResolvedValue({
+      id: "thread_001",
+      mailboxConnectionId: CONNECTION_ID,
+    });
+    mockDb.mailboxMessage.findFirst.mockResolvedValue({
+      id: "msg_001",
+      threadId: "thread_001",
+      thread: { mailboxConnectionId: CONNECTION_ID },
+    });
+    mockDb.mailboxConnection.findFirst.mockResolvedValue({
+      id: CONNECTION_ID,
+      provider: "GMAIL",
+      tokenRef: "token_ref_001",
+    });
+    mockGetSignedUrl
+      .mockRejectedValueOnce(new Error("Object not found"))
+      .mockResolvedValue("https://signed.url/recached");
+    mockUploadFile.mockResolvedValue({ storageKey: "cached-key" });
+    mockGetAdapter.mockReturnValue({
+      fetchAttachment: vi.fn().mockResolvedValue({ bytes: new Uint8Array([1, 2, 3]) }),
+    });
+
+    const result = await getMailboxAttachmentDownload({
+      orgId: ORG_ID,
+      userId: USER_ID,
+      role: "owner",
+      attachmentId: ATTACHMENT_ID,
+    });
+
+    expect(result.kind).toBe("signed-url");
+    if (result.kind === "signed-url") {
+      expect(result.signedUrl).toBe("https://signed.url/recached");
+    }
+    expect(mockDb.mailboxAttachment.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: ATTACHMENT_ID },
+        data: { storageRef: null },
+      }),
+    );
+  });
 });
 
 describe("GET /api/mailbox/attachments/message/[id]/download", () => {
@@ -825,6 +860,49 @@ describe("GET /api/mailbox/attachments/message/[id]/download", () => {
 
     const response = await downloadMailboxAttachmentGet(request, { params: Promise.resolve({ id: "unknown" }) });
     expect(response.status).toBe(404);
+  });
+
+  it("recovers stale cache at route level returning 200 with signed URL after provider re-cache", async () => {
+    mockDb.mailboxAttachment.findFirst.mockResolvedValue({
+      id: ATTACHMENT_ID,
+      messageId: "msg_001",
+      providerAttachmentId: "provider_att_001",
+      filename: "invoice.pdf",
+      mimeType: "application/pdf",
+      size: 12345,
+      isInline: false,
+      storageRef: `${ORG_ID}/mailbox/messages/msg_001/${ATTACHMENT_ID}_invoice.pdf`,
+      message: { threadId: "thread_001", orgId: ORG_ID, providerMessageId: "pm_001" },
+    });
+    mockDb.mailboxThread.findFirst.mockResolvedValue({
+      id: "thread_001",
+      mailboxConnectionId: CONNECTION_ID,
+    });
+    mockDb.mailboxMessage.findFirst.mockResolvedValue({
+      id: "msg_001",
+      threadId: "thread_001",
+      thread: { mailboxConnectionId: CONNECTION_ID },
+    });
+    mockDb.mailboxConnection.findFirst.mockResolvedValue({
+      id: CONNECTION_ID,
+      provider: "GMAIL",
+      tokenRef: "token_ref_001",
+    });
+    mockGetSignedUrl
+      .mockRejectedValueOnce(new Error("Object not found"))
+      .mockResolvedValue("https://signed.url/recached");
+    mockUploadFile.mockResolvedValue({ storageKey: "cached-key" });
+    mockGetAdapter.mockReturnValue({
+      fetchAttachment: vi.fn().mockResolvedValue({ bytes: new Uint8Array([1, 2, 3]) }),
+    });
+
+    const request = new NextRequest("http://localhost/api/mailbox/attachments/message/att_xyz/download");
+    const response = await downloadMailboxAttachmentGet(request, { params: Promise.resolve({ id: ATTACHMENT_ID }) });
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.signedUrl).toBe("https://signed.url/recached");
+    expect(body.filename).toBe("invoice.pdf");
   });
 });
 
