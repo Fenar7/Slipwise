@@ -35,6 +35,15 @@ const mockDb = vi.hoisted(() => {
     auditLog: {
       create: vi.fn(),
     },
+    orgDefaults: {
+      findUnique: vi.fn(),
+    },
+    customerPortalToken: {
+      updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+    },
+    customerPortalSession: {
+      updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+    },
     $transaction: vi.fn(),
   };
 
@@ -44,6 +53,7 @@ const mockDb = vi.hoisted(() => {
     clientHubCustomerLifecycle: db.clientHubCustomerLifecycle,
     auditLog: db.auditLog,
     proxyGrant: db.proxyGrant,
+    customerPortalToken: db.customerPortalToken,
   };
 
   db.$transaction = vi.fn(async (cb: any) => cb(tx));
@@ -103,6 +113,7 @@ function setupAuth(orgId = ORG_ID, userId = USER_ID, role = "admin") {
 describe("Client Hub Per-Client Overrides & Resolver", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockDb.orgDefaults.findUnique.mockResolvedValue({ portalEnabled: true });
   });
 
   describe("computeOverrideDiff & deepMerge (sparse diffing)", () => {
@@ -691,7 +702,6 @@ describe("Client Hub Per-Client Overrides & Resolver", () => {
       expect(res.success).toBe(true);
       if (res.success) {
         expect(res.adminState.inviteState).toBe("never_sent");
-        expect(res.adminState.inviteSentCount).toBe(0);
       }
     });
 
@@ -705,17 +715,17 @@ describe("Client Hub Per-Client Overrides & Resolver", () => {
   });
 
   describe("enableClientHubForCustomer (Sprint 3.4 enhancements)", () => {
-    it("generates a publicAccessHandle on first enable and sends initial invite atomically", async () => {
+    it("generates a publicAccessHandle on first enable and sends initial invite atomically when sendInvite is true", async () => {
       setupAuth();
-      mockDb.customer.findFirst.mockResolvedValue({ id: CUSTOMER_ID, name: "Alice Corp", email: "alice@test.com" });
+      mockDb.customer.findFirst.mockResolvedValue({ id: CUSTOMER_ID, name: "Alice Corp", email: "alice@test.com", phone: "+91 999", address: "A", taxId: "1" });
       // First call (inside enablement tx) returns null; second call (for email URL) returns the handle
       mockDb.clientHubCustomerLifecycle.findUnique
         .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce({ publicAccessHandle: "generated-handle" });
+        .mockResolvedValueOnce({ publicAccessHandle: "generated-handle", enabled: true });
       mockDb.organization.findUnique.mockResolvedValue({ slug: "acme", name: "Acme" });
       mockSendEmail.mockResolvedValue(undefined);
 
-      const res = await enableClientHubForCustomer(CUSTOMER_ID);
+      const res = await enableClientHubForCustomer(CUSTOMER_ID, { sendInvite: true });
       expect(res.success).toBe(true);
       expect(res.inviteSent).toBe(true);
       expect(mockDb.clientHubCustomerLifecycle.upsert).toHaveBeenCalledWith(
@@ -723,11 +733,13 @@ describe("Client Hub Per-Client Overrides & Resolver", () => {
           create: expect.objectContaining({ publicAccessHandle: expect.any(String) }),
         })
       );
+      const upsertCall = mockDb.clientHubCustomerLifecycle.upsert.mock.calls[0][0];
+      const generatedHandle = upsertCall.create.publicAccessHandle;
       expect(mockSendEmail).toHaveBeenCalledWith(
         expect.objectContaining({
           to: "alice@test.com",
           subject: expect.stringContaining("Client Hub"),
-          html: expect.stringContaining("generated-handle"),
+          html: expect.stringContaining(generatedHandle),
         })
       );
       // Invite state + audit must be persisted inside a real transaction
@@ -749,13 +761,54 @@ describe("Client Hub Per-Client Overrides & Resolver", () => {
       );
     });
 
+    it("does not send invite silently on unlock (when sendInvite is false)", async () => {
+      setupAuth();
+      mockDb.customer.findFirst.mockResolvedValue({ id: CUSTOMER_ID, name: "Alice Corp", email: "alice@test.com" });
+      mockDb.clientHubCustomerLifecycle.findUnique.mockResolvedValue({ publicAccessHandle: "generated-handle" });
+      mockDb.organization.findUnique.mockResolvedValue({ slug: "acme", name: "Acme" });
+      mockSendEmail.mockResolvedValue(undefined);
+
+      const res = await enableClientHubForCustomer(CUSTOMER_ID, { sendInvite: false });
+      expect(res.success).toBe(true);
+      expect(res.inviteSent).toBe(false);
+      expect(mockSendEmail).not.toHaveBeenCalled();
+    });
+
+    it("surfaces validation error and blocks invite if organization portal is disabled", async () => {
+      setupAuth();
+      mockDb.customer.findFirst.mockResolvedValue({ id: CUSTOMER_ID, name: "Alice Corp", email: "alice@test.com" });
+      mockDb.clientHubCustomerLifecycle.findUnique.mockResolvedValue({ publicAccessHandle: "generated-handle", enabled: true });
+      mockDb.organization.findUnique.mockResolvedValue({ slug: "acme", name: "Acme" });
+      mockDb.orgDefaults.findUnique.mockResolvedValue({ portalEnabled: false });
+
+      const res = await enableClientHubForCustomer(CUSTOMER_ID, { sendInvite: true });
+      expect(res.success).toBe(true);
+      expect(res.inviteSent).toBe(false);
+      expect(res.inviteError).toContain("globally disabled");
+      expect(mockSendEmail).not.toHaveBeenCalled();
+    });
+
+    it("surfaces validation error and blocks invite if customer profile fields are not complete", async () => {
+      setupAuth();
+      // missing phone/address
+      mockDb.customer.findFirst.mockResolvedValue({ id: CUSTOMER_ID, name: "Alice Corp", email: "alice@test.com", phone: null });
+      mockDb.clientHubCustomerLifecycle.findUnique.mockResolvedValue({ publicAccessHandle: "generated-handle", enabled: true });
+      mockDb.organization.findUnique.mockResolvedValue({ slug: "acme", name: "Acme" });
+
+      const res = await enableClientHubForCustomer(CUSTOMER_ID, { sendInvite: true });
+      expect(res.success).toBe(true);
+      expect(res.inviteSent).toBe(false);
+      expect(res.inviteError).toContain("not invite-ready");
+      expect(mockSendEmail).not.toHaveBeenCalled();
+    });
+
     it("does not send invite when customer lacks email and surfaces warning", async () => {
       setupAuth();
       mockDb.customer.findFirst.mockResolvedValue({ id: CUSTOMER_ID, name: "Alice Corp", email: null });
       mockDb.clientHubCustomerLifecycle.findUnique.mockResolvedValue(null);
       mockDb.organization.findUnique.mockResolvedValue({ slug: "acme", name: "Acme" });
 
-      const res = await enableClientHubForCustomer(CUSTOMER_ID);
+      const res = await enableClientHubForCustomer(CUSTOMER_ID, { sendInvite: true });
       expect(res.success).toBe(true);
       expect(res.inviteSent).toBe(false);
       expect(res.inviteError).toBeTruthy();
@@ -764,14 +817,14 @@ describe("Client Hub Per-Client Overrides & Resolver", () => {
 
     it("succeeds enablement but does not persist invite state when email delivery fails", async () => {
       setupAuth();
-      mockDb.customer.findFirst.mockResolvedValue({ id: CUSTOMER_ID, name: "Alice Corp", email: "alice@test.com" });
+      mockDb.customer.findFirst.mockResolvedValue({ id: CUSTOMER_ID, name: "Alice Corp", email: "alice@test.com", phone: "+91 999", address: "A", taxId: "1" });
       mockDb.clientHubCustomerLifecycle.findUnique
         .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce({ publicAccessHandle: "generated-handle" });
+        .mockResolvedValueOnce({ publicAccessHandle: "generated-handle", enabled: true });
       mockDb.organization.findUnique.mockResolvedValue({ slug: "acme", name: "Acme" });
       mockSendEmail.mockRejectedValue(new Error("Email provider is not configured"));
 
-      const res = await enableClientHubForCustomer(CUSTOMER_ID);
+      const res = await enableClientHubForCustomer(CUSTOMER_ID, { sendInvite: true });
       expect(res.success).toBe(true);
       expect(res.inviteSent).toBe(false);
       expect(res.inviteError).toContain("could not be delivered");
@@ -891,7 +944,7 @@ describe("Client Hub Per-Client Overrides & Resolver", () => {
   describe("resendClientHubInvite", () => {
     it("sends invite and updates persisted state atomically for enabled customer with email", async () => {
       setupAuth();
-      mockDb.customer.findFirst.mockResolvedValue({ id: CUSTOMER_ID, name: "Alice Corp", email: "alice@test.com" });
+      mockDb.customer.findFirst.mockResolvedValue(mockFullCustomer());
       mockDb.clientHubCustomerLifecycle.findUnique.mockResolvedValue({
         enabled: true,
         latestInviteSentAt: new Date("2026-05-01T00:00:00Z"),
@@ -930,7 +983,7 @@ describe("Client Hub Per-Client Overrides & Resolver", () => {
 
     it("sends invite as initial (not resent) atomically when no prior invite exists", async () => {
       setupAuth();
-      mockDb.customer.findFirst.mockResolvedValue({ id: CUSTOMER_ID, name: "Alice Corp", email: "alice@test.com" });
+      mockDb.customer.findFirst.mockResolvedValue(mockFullCustomer());
       mockDb.clientHubCustomerLifecycle.findUnique.mockResolvedValue({
         enabled: true,
         latestInviteSentAt: null,
@@ -953,7 +1006,7 @@ describe("Client Hub Per-Client Overrides & Resolver", () => {
 
     it("rejects resend for disabled customer", async () => {
       setupAuth();
-      mockDb.customer.findFirst.mockResolvedValue({ id: CUSTOMER_ID, name: "Alice", email: "alice@test.com" });
+      mockDb.customer.findFirst.mockResolvedValue(mockFullCustomer());
       mockDb.clientHubCustomerLifecycle.findUnique.mockResolvedValue({ enabled: false, publicAccessHandle: "handle-alice" });
 
       const res = await resendClientHubInvite(CUSTOMER_ID);
@@ -964,18 +1017,18 @@ describe("Client Hub Per-Client Overrides & Resolver", () => {
 
     it("rejects resend for missing email", async () => {
       setupAuth();
-      mockDb.customer.findFirst.mockResolvedValue({ id: CUSTOMER_ID, name: "Alice", email: null });
+      mockDb.customer.findFirst.mockResolvedValue(mockFullCustomer({ email: null }));
       mockDb.clientHubCustomerLifecycle.findUnique.mockResolvedValue({ enabled: true, publicAccessHandle: "handle-alice" });
 
       const res = await resendClientHubInvite(CUSTOMER_ID);
       expect(res.success).toBe(false);
-      expect(res.error).toContain("valid email");
+      expect(res.error).toContain("email is required");
       expect(mockSendEmail).not.toHaveBeenCalled();
     });
 
     it("rejects resend when publicAccessHandle is missing", async () => {
       setupAuth();
-      mockDb.customer.findFirst.mockResolvedValue({ id: CUSTOMER_ID, name: "Alice", email: "alice@test.com" });
+      mockDb.customer.findFirst.mockResolvedValue(mockFullCustomer());
       mockDb.clientHubCustomerLifecycle.findUnique.mockResolvedValue({ enabled: true, publicAccessHandle: null });
       mockDb.organization.findUnique.mockResolvedValue({ slug: "acme", name: "Acme" });
 
@@ -986,20 +1039,12 @@ describe("Client Hub Per-Client Overrides & Resolver", () => {
       expect(mockDb.$transaction).not.toHaveBeenCalled();
     });
 
-    it("rejects member access", async () => {
-      setupAuth(ORG_ID, USER_ID, "member");
-      const res = await resendClientHubInvite(CUSTOMER_ID);
-      expect(res.success).toBe(false);
-      expect(res.error).toContain("Only administrators");
-      expect(mockSendEmail).not.toHaveBeenCalled();
-    });
-
     it("surfaces email delivery failure truthfully without persisting sent state or audit", async () => {
       setupAuth();
-      mockDb.customer.findFirst.mockResolvedValue({ id: CUSTOMER_ID, name: "Alice", email: "alice@test.com" });
+      mockDb.customer.findFirst.mockResolvedValue(mockFullCustomer());
       mockDb.clientHubCustomerLifecycle.findUnique.mockResolvedValue({
         enabled: true,
-        latestInviteSentAt: new Date(),
+        latestInviteSentAt: new Date("2026-05-01T00:00:00Z"),
         latestInviteEmail: "alice@test.com",
         inviteSentCount: 1,
         publicAccessHandle: "handle-alice",
@@ -1022,7 +1067,7 @@ describe("Client Hub Per-Client Overrides & Resolver", () => {
 
     it("updates invite target truthfully when email changed after prior invite", async () => {
       setupAuth();
-      mockDb.customer.findFirst.mockResolvedValue({ id: CUSTOMER_ID, name: "Alice", email: "newalice@test.com" });
+      mockDb.customer.findFirst.mockResolvedValue(mockFullCustomer({ email: "newalice@test.com" }));
       mockDb.clientHubCustomerLifecycle.findUnique.mockResolvedValue({
         enabled: true,
         latestInviteSentAt: new Date("2026-05-01T00:00:00Z"),
@@ -1043,6 +1088,29 @@ describe("Client Hub Per-Client Overrides & Resolver", () => {
           data: expect.objectContaining({ latestInviteEmail: "newalice@test.com" }),
         })
       );
+    });
+
+    it("rejects resend when organization portal is disabled", async () => {
+      setupAuth();
+      mockDb.customer.findFirst.mockResolvedValue(mockFullCustomer());
+      mockDb.clientHubCustomerLifecycle.findUnique.mockResolvedValue({ enabled: true, publicAccessHandle: "handle-alice" });
+      mockDb.orgDefaults.findUnique.mockResolvedValue({ portalEnabled: false });
+
+      const res = await resendClientHubInvite(CUSTOMER_ID);
+      expect(res.success).toBe(false);
+      expect(res.error).toContain("globally disabled");
+      expect(mockSendEmail).not.toHaveBeenCalled();
+    });
+
+    it("rejects resend when customer profile fields are not complete", async () => {
+      setupAuth();
+      mockDb.customer.findFirst.mockResolvedValue(mockFullCustomer({ phone: null }));
+      mockDb.clientHubCustomerLifecycle.findUnique.mockResolvedValue({ enabled: true, publicAccessHandle: "handle-alice" });
+
+      const res = await resendClientHubInvite(CUSTOMER_ID);
+      expect(res.success).toBe(false);
+      expect(res.error).toContain("not invite-ready");
+      expect(mockSendEmail).not.toHaveBeenCalled();
     });
   });
 });

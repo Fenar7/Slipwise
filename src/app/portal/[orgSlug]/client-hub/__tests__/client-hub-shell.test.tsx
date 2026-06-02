@@ -13,9 +13,16 @@ const mockDb = vi.hoisted(() => ({
   organization: {
     findUnique: vi.fn(),
   },
+  customer: {
+    findUnique: vi.fn().mockResolvedValue({ name: "Hadi Azeez" }),
+  },
 }));
 
 vi.mock("@/lib/db", () => ({ db: mockDb }));
+
+vi.mock("@/lib/portal-auth", () => ({
+  getPortalSession: vi.fn().mockResolvedValue({ customerId: "cust_test_001", orgId: "org_001" }),
+}));
 
 // Layout is a server component that queries the DB
 import ClientHubLayout from "../layout";
@@ -43,14 +50,41 @@ describe("ClientHubLayout", () => {
     mockDb.organization.findUnique.mockResolvedValue(null);
     const jsx = await ClientHubLayout({ children: <div />, params: Promise.resolve({ orgSlug: ORG_SLUG }) });
     const html = renderToString(jsx);
-    expect(html).toContain("Client Hub Not Available");
+    expect(html).toContain("Page Not Found");
   });
 
   it("renders portal-not-available when portal is disabled", async () => {
     mockDb.organization.findUnique.mockResolvedValue(makeOrg({ defaults: { portalEnabled: false } }));
     const jsx = await ClientHubLayout({ children: <div />, params: Promise.resolve({ orgSlug: ORG_SLUG }) });
     const html = renderToString(jsx);
-    expect(html).toContain("Client Hub Not Available");
+    expect(html).toContain("Portal Access Disabled");
+  });
+
+  it("renders portal-under-configuration when portal is enabled but not ready", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    mockDb.organization.findUnique.mockResolvedValue(makeOrg({
+      branding: null,
+      logo: null,
+      defaults: {
+        portalEnabled: true,
+        portalSupportEmail: null,
+        portalSupportPhone: null,
+      },
+      clientHubOrgConfig: {
+        config: {
+          branding: { accentColor: null, logoUrl: null },
+          contact: { supportEmail: null, supportPhone: null },
+        }
+      }
+    }));
+    const jsx = await ClientHubLayout({ children: <div />, params: Promise.resolve({ orgSlug: ORG_SLUG }) });
+    const html = renderToString(jsx);
+    expect(html).toContain("Portal Under Configuration");
+
+    warnSpy.mockRestore();
+    errorSpy.mockRestore();
   });
 
   it("renders branded layout with navigation when portal is enabled", async () => {

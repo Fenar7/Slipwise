@@ -19,6 +19,7 @@ import {
   resolveEffectiveConfig,
 } from "@/app/portal/[orgSlug]/client-hub/components/config-resolver";
 import { sendEmail, clientHubInviteEmailHtml } from "@/lib/email";
+import { revokePortalSession, checkPortalResendCooldown, logPortalAccess } from "@/lib/portal-auth";
 
 export type ClientHubReadinessStatus = "disabled" | "enabled_not_ready" | "enabled_ready";
 
@@ -99,9 +100,10 @@ function computeClientHubAdminState(
     taxId: string | null;
     gstin: string | null;
   },
-  orgSlug: string
+  orgSlug: string,
+  portalEnabled: boolean
 ): ClientHubCustomerAdminState {
-  const readiness = computeClientHubReadiness(lifecycle, customer);
+  const readiness = computeClientHubReadiness(lifecycle, customer, portalEnabled);
   const inviteState = computeInviteState(lifecycle, customer.email);
 
   return {
@@ -426,10 +428,15 @@ function computeClientHubReadiness(
     address: string | null;
     taxId: string | null;
     gstin: string | null;
-  }
+  },
+  portalEnabled: boolean
 ): ClientHubCustomerReadiness {
   const enabled = lifecycle?.enabled ?? false;
   const blockers: string[] = [];
+
+  if (!portalEnabled) {
+    blockers.push("Portal is disabled for this organization");
+  }
 
   if (!enabled) {
     blockers.push("Client Hub is not enabled for this customer");
@@ -467,10 +474,10 @@ function computeClientHubReadiness(
 
   return {
     enabled: true,
-    readinessStatus: hasBlockers ? "enabled_not_ready" : "enabled_ready",
-    previewEligible: true,
-    inviteEligible: !(!customer.email || customer.email.trim().length === 0),
-    portalReady: !hasBlockers,
+    readinessStatus: !portalEnabled ? "disabled" : (hasBlockers ? "enabled_not_ready" : "enabled_ready"),
+    previewEligible: portalEnabled,
+    inviteEligible: portalEnabled && !(!customer.email || customer.email.trim().length === 0),
+    portalReady: portalEnabled && !hasBlockers,
     blockers,
   };
 }
@@ -514,7 +521,13 @@ export async function getClientHubCustomerAdminState(customerId: string) {
       where: { customerId },
     });
 
-    const adminState = computeClientHubAdminState(lifecycle, customer, org?.slug ?? "");
+    const orgDefaults = await db.orgDefaults.findUnique({
+      where: { organizationId: orgId },
+      select: { portalEnabled: true },
+    });
+    const portalEnabled = orgDefaults?.portalEnabled ?? false;
+
+    const adminState = computeClientHubAdminState(lifecycle, customer, org?.slug ?? "", portalEnabled);
 
     return {
       success: true,
@@ -552,13 +565,83 @@ export async function getClientHubCustomerLifecycle(customerId: string) {
 }
 
 /**
+ * Helper to check if a customer is eligible for receiving Client Hub invites.
+ * Includes org portal enabled state, customer lifecycle enabled state, and customer profile field completeness.
+ */
+export async function getClientHubInviteEligibility(customerId: string, orgId: string) {
+  const customer = await db.customer.findFirst({
+    where: { id: customerId, organizationId: orgId },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      phone: true,
+      address: true,
+      taxId: true,
+      gstin: true,
+    },
+  });
+
+  if (!customer) {
+    return { eligible: false, error: "Customer not found or access denied." };
+  }
+
+  const orgDefaults = await db.orgDefaults.findUnique({
+    where: { organizationId: orgId },
+    select: { portalEnabled: true },
+  });
+
+  if (!orgDefaults?.portalEnabled) {
+    return { eligible: false, error: "Portal is globally disabled for this organization." };
+  }
+
+  const lifecycle = await db.clientHubCustomerLifecycle.findUnique({
+    where: { customerId },
+    select: { enabled: true },
+  });
+
+  if (!lifecycle?.enabled) {
+    return { eligible: false, error: "Client Hub is not enabled for this customer." };
+  }
+
+  const blockers: string[] = [];
+  if (!customer.name || customer.name.trim().length === 0) {
+    blockers.push("Customer name is required for portal identity");
+  }
+  if (!customer.email || customer.email.trim().length === 0) {
+    blockers.push("Customer email is required for portal invite");
+  }
+  if (!customer.phone || customer.phone.trim().length === 0) {
+    blockers.push("Customer phone is required for portal contact");
+  }
+  if (!customer.address || customer.address.trim().length === 0) {
+    blockers.push("Customer billing address is required for portal documents");
+  }
+  if (
+    (!customer.taxId || customer.taxId.trim().length === 0) &&
+    (!customer.gstin || customer.gstin.trim().length === 0)
+  ) {
+    blockers.push("Customer tax identifier (GSTIN or Tax ID) is required for portal compliance");
+  }
+
+  if (blockers.length > 0) {
+    return { eligible: false, error: `Customer is not invite-ready: ${blockers.join(", ")}` };
+  }
+
+  return { eligible: true, customer };
+}
+
+/**
  * Enable Client Hub for a specific customer.
  * Creates a lifecycle record if none exists, or updates the existing one.
  * Generates a stable public access handle on first enable.
  * Sends an initial invite email if the customer has a valid email and is invite-eligible.
  * Admin/owner restricted with org/customer scoping.
  */
-export async function enableClientHubForCustomer(customerId: string) {
+export async function enableClientHubForCustomer(
+  customerId: string,
+  options?: { sendInvite?: boolean }
+) {
   try {
     const { orgId, role, userId } = await requireOrgContext();
 
@@ -588,6 +671,7 @@ export async function enableClientHubForCustomer(customerId: string) {
 
     let inviteSent = false;
     let inviteError: string | null = null;
+    let publicAccessHandle: string | null = null;
 
     await db.$transaction(async (tx) => {
       const existing = await tx.clientHubCustomerLifecycle.findUnique({
@@ -595,7 +679,7 @@ export async function enableClientHubForCustomer(customerId: string) {
         select: { publicAccessHandle: true },
       });
 
-      const publicAccessHandle = existing?.publicAccessHandle ?? generatePublicAccessHandle();
+      publicAccessHandle = existing?.publicAccessHandle ?? generatePublicAccessHandle();
 
       await tx.clientHubCustomerLifecycle.upsert({
         where: { customerId },
@@ -625,55 +709,67 @@ export async function enableClientHubForCustomer(customerId: string) {
         metadata: { customerName: customer.name },
         ...auditHeaders,
       });
+
+      logPortalAccess({
+        orgId,
+        customerId,
+        path: "/app/settings/portal/client-hub",
+        action: "access_enabled",
+      });
     });
 
     // Attempt initial invite delivery outside the transaction so email failures
-    // do not roll back the enablement itself.
-    const hasEmail = !!(customer.email && customer.email.trim().length > 0);
-    if (hasEmail && org) {
-      try {
-        const lifecycleRecord = await db.clientHubCustomerLifecycle.findUnique({
-          where: { customerId },
-          select: { publicAccessHandle: true },
-        });
-        const url = buildCanonicalHubUrl(org.slug, lifecycleRecord?.publicAccessHandle);
-        await sendEmail({
-          to: customer.email,
-          subject: `Welcome to ${org.name} Client Hub`,
-          html: clientHubInviteEmailHtml({
-            url,
-            orgName: org.name,
-            customerName: customer.name || "Valued Client",
-          }),
-        });
-        inviteSent = true;
-
-        await db.$transaction(async (tx) => {
-          await tx.clientHubCustomerLifecycle.update({
-            where: { customerId },
-            data: {
-              latestInviteSentAt: new Date(),
-              latestInviteEmail: customer.email,
-              inviteSentCount: { increment: 1 },
-            },
+    // do not roll back the enablement itself. Only when options.sendInvite is true.
+    if (options?.sendInvite && org) {
+      const eligibility = await getClientHubInviteEligibility(customerId, orgId);
+      if (eligibility.eligible) {
+        try {
+          const url = buildCanonicalHubUrl(org.slug, publicAccessHandle);
+          await sendEmail({
+            to: customer.email!,
+            subject: `Welcome to ${org.name} Client Hub`,
+            html: clientHubInviteEmailHtml({
+              url,
+              orgName: org.name,
+              customerName: customer.name || "Valued Client",
+            }),
           });
+          inviteSent = true;
 
-          await logAuditTx(tx, {
-            orgId,
-            actorId: userId,
-            action: "client_hub.invite_sent",
-            entityType: "ClientHubCustomerLifecycle",
-            entityId: customerId,
-            metadata: { customerName: customer.name, email: customer.email, type: "initial" },
-            ...auditHeaders,
+          await db.$transaction(async (tx) => {
+            await tx.clientHubCustomerLifecycle.update({
+              where: { customerId },
+              data: {
+                latestInviteSentAt: new Date(),
+                latestInviteEmail: customer.email,
+                inviteSentCount: { increment: 1 },
+              },
+            });
+
+            await logAuditTx(tx, {
+              orgId,
+              actorId: userId,
+              action: "client_hub.invite_sent",
+              entityType: "ClientHubCustomerLifecycle",
+              entityId: customerId,
+              metadata: { customerName: customer.name, email: customer.email, type: "initial" },
+              ...auditHeaders,
+            });
+
+            logPortalAccess({
+              orgId,
+              customerId,
+              path: `/portal/${org.slug}/client-hub`,
+              action: "invite_sent",
+            });
           });
-        });
-      } catch (emailError) {
-        console.error("enableClientHubForCustomer: initial invite delivery failed:", emailError);
-        inviteError = "Invite email could not be delivered. The client hub is enabled, but you may need to resend the invite manually.";
+        } catch (emailError) {
+          console.error("enableClientHubForCustomer: initial invite delivery failed:", emailError);
+          inviteError = "Invite email could not be delivered. The client hub is enabled, but you may need to resend the invite manually.";
+        }
+      } else {
+        inviteError = eligibility.error;
       }
-    } else if (!hasEmail) {
-      inviteError = "Customer does not have a valid email address. Invite was not sent.";
     }
 
     revalidatePath("/app/settings/portal/client-hub");
@@ -738,7 +834,17 @@ export async function disableClientHubForCustomer(customerId: string) {
         metadata: { customerName: customer.name },
         ...auditHeaders,
       });
+
+      logPortalAccess({
+        orgId,
+        customerId,
+        path: "/app/settings/portal/client-hub",
+        action: "access_disabled",
+      });
     });
+
+    // Revoke all active sessions and magic link/OTP tokens immediately so the customer is locked out instantly
+    await revokePortalSession(customerId, orgId);
 
     revalidatePath("/app/settings/portal/client-hub");
     return { success: true };
@@ -774,7 +880,13 @@ export async function previewClientHubForCustomer(customerId: string) {
       where: { customerId },
     });
 
-    const readiness = computeClientHubReadiness(lifecycle, customer);
+    const orgDefaults = await db.orgDefaults.findUnique({
+      where: { organizationId: orgId },
+      select: { portalEnabled: true },
+    });
+    const portalEnabled = orgDefaults?.portalEnabled ?? false;
+
+    const readiness = computeClientHubReadiness(lifecycle, customer, portalEnabled);
     if (!readiness.enabled) {
       return { success: false, error: "Client Hub is not enabled for this customer. Enable it before previewing." };
     }
@@ -874,25 +986,28 @@ export async function resendClientHubInvite(customerId: string) {
       return { success: false, error: "Only administrators can resend Client Hub invites." };
     }
 
-    const customer = await db.customer.findFirst({
-      where: { id: customerId, organizationId: orgId },
-      select: { id: true, name: true, email: true },
-    });
+    const eligibility = await getClientHubInviteEligibility(customerId, orgId);
+    if (!eligibility.eligible) {
+      return { success: false, error: eligibility.error };
+    }
 
-    if (!customer) {
-      return { success: false, error: "Customer not found or access denied." };
+    const customer = eligibility.customer!;
+
+    // Cooldown check for invite resend
+    const cooldownResult = await checkPortalResendCooldown(customer.email!, orgId, "invite");
+    if (!cooldownResult.allowed) {
+      return {
+        success: false,
+        error: `Please wait ${cooldownResult.remainingSeconds} seconds before resending another invite.`,
+      };
     }
 
     const lifecycle = await db.clientHubCustomerLifecycle.findUnique({
       where: { customerId },
     });
 
-    if (!lifecycle?.enabled) {
-      return { success: false, error: "Client Hub is not enabled for this customer." };
-    }
-
-    if (!customer.email || customer.email.trim().length === 0) {
-      return { success: false, error: "Customer does not have a valid email address." };
+    if (!lifecycle) {
+      return { success: false, error: "Client Hub lifecycle record not found." };
     }
 
     const org = await db.organization.findUnique({
@@ -922,7 +1037,7 @@ export async function resendClientHubInvite(customerId: string) {
     // Attempt delivery before persisting sent-success state
     try {
       await sendEmail({
-        to: customer.email,
+        to: customer.email!,
         subject: `Your ${org.name} Client Hub Access`,
         html: clientHubInviteEmailHtml({
           url,
@@ -940,6 +1055,12 @@ export async function resendClientHubInvite(customerId: string) {
 
     // Delivery succeeded — atomically update invite state and audit
     await db.$transaction(async (tx) => {
+      // Revoke any prior magic link / OTP tokens for this customer (newest-invite-wins)
+      await tx.customerPortalToken.updateMany({
+        where: { customerId, orgId, isRevoked: false },
+        data: { isRevoked: true },
+      });
+
       await tx.clientHubCustomerLifecycle.update({
         where: { customerId },
         data: {
@@ -962,6 +1083,13 @@ export async function resendClientHubInvite(customerId: string) {
           previousEmail: lifecycle.latestInviteEmail ?? null,
         },
         ...auditHeaders,
+      });
+
+      logPortalAccess({
+        orgId,
+        customerId,
+        path: `/portal/${org.slug}/client-hub`,
+        action: lifecycle.latestInviteSentAt ? "invite_resent" : "invite_sent",
       });
     });
 
