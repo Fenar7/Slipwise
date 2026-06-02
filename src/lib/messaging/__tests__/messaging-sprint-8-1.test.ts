@@ -27,6 +27,10 @@ vi.mock("@/lib/db", () => {
     messagingAuditEvent: {
       create: vi.fn(),
     },
+    meetingAttendee: {
+      findMany: vi.fn(),
+      createMany: vi.fn(),
+    },
   };
   const db = {
     ...mocks,
@@ -111,6 +115,8 @@ function mockMeeting(overrides = {}) {
 describe("Sprint 8.1 — Meeting Service & Unified Calendar Tests", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(db.meetingAttendee.findMany).mockResolvedValue([]);
+    vi.mocked(db.meetingAttendee.createMany).mockResolvedValue({ count: 0 });
   });
 
   describe("scheduleMeeting", () => {

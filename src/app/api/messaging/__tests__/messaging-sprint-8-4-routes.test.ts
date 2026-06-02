@@ -146,6 +146,22 @@ describe("Sprint 8.4 API Routes Tests", () => {
       expect(json.attendees[0].rsvpStatus).toBe("ACCEPTED");
       expect(json.attendees[0].providerStatus).toBeUndefined(); // Should be omitted!
     });
+
+    it("returns 403 when user is not authorized (not organizer or admin)", async () => {
+      vi.mocked(getAuthContext).mockResolvedValueOnce({
+        isAuthenticated: true,
+        orgId: "org-1",
+        userId: "user-unauthorized",
+      } as any);
+      vi.mocked(listMeetingAttendees).mockRejectedValueOnce(
+        new ConversationAccessError("listMeetingAttendees: organizer or conversation admin/owner role required")
+      );
+
+      const req = makeRequest("http://localhost/api/messaging/meetings/meet-1/attendees");
+      const response = await getAttendees(req, { params: Promise.resolve({ meetingId: "meet-1" }) });
+
+      expect(response.status).toBe(403);
+    });
   });
 
   describe("GET /api/messaging/meetings/imminent-alert", () => {
@@ -174,7 +190,7 @@ describe("Sprint 8.4 API Routes Tests", () => {
       expect(json.alert).toEqual(mockAlert);
     });
 
-    it("triggers reminder processing when ?process=true is passed", async () => {
+    it("does NOT trigger reminder processing when ?process=true is passed (removed client-triggered dispatch)", async () => {
       vi.mocked(getAuthContext).mockResolvedValueOnce({
         isAuthenticated: true,
         orgId: "org-1",
@@ -186,7 +202,7 @@ describe("Sprint 8.4 API Routes Tests", () => {
       const req = makeRequest("http://localhost/api/messaging/meetings/imminent-alert?process=true");
       await getImminentAlert(req);
 
-      expect(processPendingReminders).toHaveBeenCalledWith("org-1", expect.any(Date));
+      expect(processPendingReminders).not.toHaveBeenCalled();
     });
 
     it("returns null alert without 403 for non-org members", async () => {

@@ -6,7 +6,6 @@ import {
   assertOrgMembership,
 } from "@/lib/messaging/imminent-meeting-service";
 import { ConversationAccessError } from "@/lib/messaging/errors";
-import { processPendingReminders } from "@/lib/messaging/meeting-reminder-service";
 
 /**
  * GET /api/messaging/meetings/imminent-alert
@@ -40,19 +39,8 @@ export async function GET(req: NextRequest) {
 
   const url = new URL(req.url);
   const returnList = url.searchParams.get("list") === "true";
-  const triggerReminders = url.searchParams.get("process") === "true";
 
   const now = new Date();
-
-  // Optionally trigger bounded idempotent reminder dispatch.
-  if (triggerReminders) {
-    try {
-      await processPendingReminders(auth.orgId, now);
-    } catch (err) {
-      // Reminder dispatch errors must not break the alert response.
-      console.error("[imminent-alert] reminder dispatch error", err);
-    }
-  }
 
   try {
     if (returnList) {

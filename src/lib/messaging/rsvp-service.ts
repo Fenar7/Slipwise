@@ -191,6 +191,13 @@ export async function listMeetingAttendees(
     throw new ConversationAccessError("listMeetingAttendees: active participant access required");
   }
 
+  const isOrganizer = meeting.scheduledBy === userId;
+  const isElevated = membership.role === "ADMIN" || membership.role === "OWNER";
+
+  if (!isOrganizer && !isElevated) {
+    throw new ConversationAccessError("listMeetingAttendees: organizer or conversation admin/owner role required");
+  }
+
   const rows = await db.meetingAttendee.findMany({
     where: { meetingId, orgId },
     orderBy: { createdAt: "asc" },

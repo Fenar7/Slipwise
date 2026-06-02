@@ -36,7 +36,7 @@ export function ImminentMeetingBanner({ pollIntervalMs = 60_000 }: ImminentMeeti
 
   const fetchAlert = useCallback(async () => {
     try {
-      const res = await fetch("/api/messaging/meetings/imminent-alert?process=true", {
+      const res = await fetch("/api/messaging/meetings/imminent-alert", {
         cache: "no-store",
       });
       if (!res.ok) return;
