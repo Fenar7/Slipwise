@@ -10,9 +10,12 @@ const mockDb = vi.hoisted(() => ({
   },
   invoice: {
     findMany: vi.fn(),
+    count: vi.fn(),
+    aggregate: vi.fn(),
   },
   quote: {
     findMany: vi.fn(),
+    count: vi.fn(),
   },
 }));
 
@@ -56,7 +59,10 @@ describe("Client Hub Dashboard - getPortalDashboardData server action", () => {
       email: "hadi@example.com",
       phone: null,
     });
+    mockDb.invoice.count.mockResolvedValue(0);
+    mockDb.invoice.aggregate.mockResolvedValue({ _sum: { remainingAmount: null, amountPaid: null } });
     mockDb.invoice.findMany.mockResolvedValue([]);
+    mockDb.quote.count.mockResolvedValue(0);
     mockDb.quote.findMany.mockResolvedValue([]);
 
     const result = await getPortalDashboardData("test-org");
@@ -79,23 +85,49 @@ describe("Client Hub Dashboard - getPortalDashboardData server action", () => {
       },
     });
 
+    expect(mockDb.invoice.count).toHaveBeenCalledWith({
+      where: {
+        organizationId: "org_123",
+        customerId: "cust_123",
+        status: { notIn: ["DRAFT", "CANCELLED", "PAID"] },
+      },
+    });
+
     expect(mockDb.invoice.findMany).toHaveBeenCalledWith({
       where: {
         organizationId: "org_123",
         customerId: "cust_123",
-        status: { not: "DRAFT" },
+        status: { notIn: ["DRAFT", "CANCELLED", "PAID"] },
       },
-      orderBy: { invoiceDate: "desc" },
+      orderBy: [
+        { invoiceDate: "desc" },
+        { createdAt: "desc" },
+      ],
+      take: 5,
       select: expect.any(Object),
+    });
+
+    expect(mockDb.quote.count).toHaveBeenCalledWith({
+      where: {
+        orgId: "org_123",
+        customerId: "cust_123",
+        status: "SENT",
+        validUntil: { gte: expect.any(Date) },
+      },
     });
 
     expect(mockDb.quote.findMany).toHaveBeenCalledWith({
       where: {
         orgId: "org_123",
         customerId: "cust_123",
-        status: { not: "DRAFT" },
+        status: "SENT",
+        validUntil: { gte: expect.any(Date) },
       },
-      orderBy: { createdAt: "desc" },
+      orderBy: [
+        { validUntil: "asc" },
+        { createdAt: "desc" },
+      ],
+      take: 5,
       select: expect.any(Object),
     });
 
@@ -108,7 +140,7 @@ describe("Client Hub Dashboard - getPortalDashboardData server action", () => {
     });
   });
 
-  it("truthfully computes outstanding balance and total paid from real database records", async () => {
+  it("truthfully computes outstanding balance and total paid using aggregate count/sum calls", async () => {
     mockGetPortalSession.mockResolvedValue({
       customerId: "cust_123",
       orgId: "org_123",
@@ -117,18 +149,18 @@ describe("Client Hub Dashboard - getPortalDashboardData server action", () => {
     mockDb.organization.findUnique.mockResolvedValue({ id: "org_123" });
     mockDb.customer.findFirst.mockResolvedValue({ id: "cust_123", name: "Hadi" });
 
-    // Mock invoices: 1 paid, 1 unpaid, 1 partially paid, 1 cancelled
+    // Mock aggregates
+    mockDb.invoice.count.mockResolvedValue(2);
+    mockDb.invoice.aggregate.mockImplementation(async (args: any) => {
+      // Outstanding balance query filters out PAID/CANCELLED
+      if (args.where.status.notIn.includes("PAID")) {
+        return { _sum: { remainingAmount: 3800 } };
+      }
+      // Total paid query filters out CANCELLED but keeps PAID
+      return { _sum: { amountPaid: 2200 } };
+    });
+
     mockDb.invoice.findMany.mockResolvedValue([
-      {
-        id: "inv_1",
-        invoiceNumber: "INV-001",
-        invoiceDate: new Date("2025-10-01"),
-        dueDate: new Date("2025-10-15"),
-        totalAmount: 1000,
-        amountPaid: 1000,
-        remainingAmount: 0,
-        status: "PAID",
-      },
       {
         id: "inv_2",
         invoiceNumber: "INV-002",
@@ -149,31 +181,65 @@ describe("Client Hub Dashboard - getPortalDashboardData server action", () => {
         remainingAmount: 1800,
         status: "PARTIALLY_PAID",
       },
-      {
-        id: "inv_4",
-        invoiceNumber: "INV-004",
-        invoiceDate: new Date("2025-10-12"),
-        dueDate: new Date("2025-10-27"),
-        totalAmount: 1500,
-        amountPaid: 0,
-        remainingAmount: 1500,
-        status: "CANCELLED",
-      },
     ]);
+
+    mockDb.quote.count.mockResolvedValue(0);
     mockDb.quote.findMany.mockResolvedValue([]);
 
     const result = await getPortalDashboardData("test-org");
 
-    // Outstanding balance should sum remainingAmount of non-paid, non-cancelled: INV-002 (2000) + INV-003 (1800) = 3800
     expect(result.outstandingBalance).toBe(3800);
-
-    // Total paid should sum amountPaid of non-cancelled: INV-001 (1000) + INV-002 (0) + INV-003 (1200) = 2200
     expect(result.totalPaid).toBe(2200);
-
-    // Pending invoices list should exclude PAID and CANCELLED
+    expect(result.pendingInvoicesCount).toBe(2);
     expect(result.pendingInvoices.length).toBe(2);
-    expect(result.pendingInvoices[0].id).toBe("inv_2");
-    expect(result.pendingInvoices[1].id).toBe("inv_3");
+  });
+
+  it("limits dashboard pending display lists to exactly 5 items (bounded dashboard slice)", async () => {
+    mockGetPortalSession.mockResolvedValue({
+      customerId: "cust_123",
+      orgId: "org_123",
+      orgSlug: "test-org",
+    });
+    mockDb.organization.findUnique.mockResolvedValue({ id: "org_123" });
+    mockDb.customer.findFirst.mockResolvedValue({ id: "cust_123", name: "Hadi" });
+
+    // Mock count is 10, but DB findMany will only return 5 due to take: 5 constraint
+    mockDb.invoice.count.mockResolvedValue(10);
+    mockDb.invoice.aggregate.mockResolvedValue({ _sum: { remainingAmount: 15000, amountPaid: 5000 } });
+    
+    const fiveMockInvoices = Array.from({ length: 5 }, (_, i) => ({
+      id: `inv_${i}`,
+      invoiceNumber: `INV-00${i}`,
+      invoiceDate: new Date(),
+      dueDate: new Date(),
+      totalAmount: 3000,
+      amountPaid: 1000,
+      remainingAmount: 2000,
+      status: "DUE",
+    }));
+    mockDb.invoice.findMany.mockResolvedValue(fiveMockInvoices);
+
+    mockDb.quote.count.mockResolvedValue(12);
+    const fiveMockQuotes = Array.from({ length: 5 }, (_, i) => ({
+      id: `q_${i}`,
+      quoteNumber: `QT-00${i}`,
+      title: `Quote ${i}`,
+      status: "SENT",
+      issueDate: new Date(),
+      validUntil: new Date(),
+      totalAmount: 1000,
+    }));
+    mockDb.quote.findMany.mockResolvedValue(fiveMockQuotes);
+
+    const result = await getPortalDashboardData("test-org");
+
+    // The display slices must contain exactly 5 elements (bounded/take: 5)
+    expect(result.pendingInvoices.length).toBe(5);
+    expect(result.pendingQuotes.length).toBe(5);
+
+    // But the summary counts must return the full scope count truthfully (10 and 12)
+    expect(result.pendingInvoicesCount).toBe(10);
+    expect(result.pendingQuotesCount).toBe(12);
   });
 
   it("handles zero/empty states truthfully when there are no records", async () => {
@@ -184,75 +250,19 @@ describe("Client Hub Dashboard - getPortalDashboardData server action", () => {
     });
     mockDb.organization.findUnique.mockResolvedValue({ id: "org_123" });
     mockDb.customer.findFirst.mockResolvedValue({ id: "cust_123", name: "Hadi" });
+    mockDb.invoice.count.mockResolvedValue(0);
+    mockDb.invoice.aggregate.mockResolvedValue({ _sum: { remainingAmount: null, amountPaid: null } });
     mockDb.invoice.findMany.mockResolvedValue([]);
+    mockDb.quote.count.mockResolvedValue(0);
     mockDb.quote.findMany.mockResolvedValue([]);
 
     const result = await getPortalDashboardData("test-org");
 
     expect(result.outstandingBalance).toBe(0);
     expect(result.totalPaid).toBe(0);
+    expect(result.pendingInvoicesCount).toBe(0);
+    expect(result.pendingQuotesCount).toBe(0);
     expect(result.pendingInvoices).toEqual([]);
     expect(result.pendingQuotes).toEqual([]);
-  });
-
-  it("filters quotes to only SENT and unexpired proposals (truthful pending quotes)", async () => {
-    mockGetPortalSession.mockResolvedValue({
-      customerId: "cust_123",
-      orgId: "org_123",
-      orgSlug: "test-org",
-    });
-    mockDb.organization.findUnique.mockResolvedValue({ id: "org_123" });
-    mockDb.customer.findFirst.mockResolvedValue({ id: "cust_123", name: "Hadi" });
-    mockDb.invoice.findMany.mockResolvedValue([]);
-
-    const farFuture = new Date();
-    farFuture.setDate(farFuture.getDate() + 30);
-
-    const pastDate = new Date();
-    pastDate.setDate(pastDate.getDate() - 5);
-
-    mockDb.quote.findMany.mockResolvedValue([
-      {
-        id: "q_1",
-        quoteNumber: "QT-001",
-        title: "Sent & Active",
-        status: "SENT",
-        issueDate: new Date(),
-        validUntil: farFuture,
-        totalAmount: 1500,
-      },
-      {
-        id: "q_2",
-        quoteNumber: "QT-002",
-        title: "Sent & Expired",
-        status: "SENT",
-        issueDate: new Date(),
-        validUntil: pastDate,
-        totalAmount: 2000,
-      },
-      {
-        id: "q_3",
-        quoteNumber: "QT-003",
-        title: "Draft quote (internal)",
-        status: "DRAFT",
-        issueDate: new Date(),
-        validUntil: farFuture,
-        totalAmount: 1000,
-      },
-      {
-        id: "q_4",
-        quoteNumber: "QT-004",
-        title: "Accepted Proposal",
-        status: "ACCEPTED",
-        issueDate: new Date(),
-        validUntil: farFuture,
-        totalAmount: 3000,
-      },
-    ]);
-
-    const result = await getPortalDashboardData("test-org");
-
-    expect(result.pendingQuotes.length).toBe(1);
-    expect(result.pendingQuotes[0].id).toBe("q_1");
   });
 });

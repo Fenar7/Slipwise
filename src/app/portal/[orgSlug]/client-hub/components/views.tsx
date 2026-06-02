@@ -27,6 +27,8 @@ export interface ClientHubDashboardData {
   };
   outstandingBalance: number;
   totalPaid: number;
+  pendingInvoicesCount: number;
+  pendingQuotesCount: number;
   pendingInvoices: Array<{
     id: string;
     invoiceNumber: string;
@@ -49,6 +51,8 @@ export const fallbackPreviewData: ClientHubDashboardData = {
   customer: { id: "preview", name: "Valued Customer", email: "client@example.com", phone: null },
   outstandingBalance: 3000,
   totalPaid: 5800,
+  pendingInvoicesCount: 2,
+  pendingQuotesCount: 1,
   pendingInvoices: [
     { id: "inv-001", invoiceNumber: "INV-000131", dueDate: "2025-10-24", remainingAmount: 1200, totalAmount: 1200, status: "UNPAID" },
     { id: "inv-003", invoiceNumber: "INV-000124", dueDate: "2025-10-20", remainingAmount: 1800, totalAmount: 4400, status: "PARTIALLY_PAID" }
@@ -401,21 +405,23 @@ function DashboardHero({
 }) {
   const actions: Array<{ href: string; label: string; glyph: "invoice" | "quote" | "products" | "payment" | "home" | "download" | "print" | "arrow" }> = [];
 
-  if (config.navigation.showInvoices) {
-    actions.push({ href: `/portal/${orgSlug}/client-hub/invoices`, label: "View Invoices", glyph: "invoice" });
-  }
-  if (config.navigation.showQuotes) {
-    actions.push({ href: `/portal/${orgSlug}/client-hub/quotes`, label: "Review Quotes", glyph: "quote" });
-  }
-  if (config.navigation.showPayments && data.outstandingBalance > 0) {
-    actions.push({ href: `/portal/${orgSlug}/client-hub/payments`, label: "Make a Payment", glyph: "payment" });
-  }
-  if (config.navigation.showProducts) {
-    actions.push({ href: `/portal/${orgSlug}/client-hub/products`, label: "Browse Services", glyph: "products" });
-  }
-  const hasSupportContact = !!(config.contact.supportEmail || config.contact.supportPhone);
-  if (config.navigation.showContact && hasSupportContact) {
-    actions.push({ href: `/portal/${orgSlug}/client-hub/contact`, label: "Contact Support", glyph: "arrow" });
+  if (config.homeDashboard.showQuickActions) {
+    if (config.navigation.showInvoices) {
+      actions.push({ href: `/portal/${orgSlug}/client-hub/invoices`, label: "View Invoices", glyph: "invoice" });
+    }
+    if (config.navigation.showQuotes) {
+      actions.push({ href: `/portal/${orgSlug}/client-hub/quotes`, label: "Review Quotes", glyph: "quote" });
+    }
+    if (config.navigation.showPayments && data.outstandingBalance > 0) {
+      actions.push({ href: `/portal/${orgSlug}/client-hub/payments`, label: "Make a Payment", glyph: "payment" });
+    }
+    if (config.navigation.showProducts) {
+      actions.push({ href: `/portal/${orgSlug}/client-hub/products`, label: "Browse Services", glyph: "products" });
+    }
+    const hasSupportContact = !!(config.contact.supportEmail || config.contact.supportPhone);
+    if (config.navigation.showContact && hasSupportContact) {
+      actions.push({ href: `/portal/${orgSlug}/client-hub/contact`, label: "Contact Support", glyph: "arrow" });
+    }
   }
 
   return (
@@ -430,22 +436,24 @@ function DashboardHero({
         <p className="mt-3 max-w-xl text-[15px] leading-7 text-[var(--hub-text-soft)] sm:text-base sm:leading-8">
           {config.homeDashboard.heroSubtitle}
         </p>
-        <div className="mt-7 flex flex-wrap items-center gap-3">
-          {actions.map((action, index) => (
-            <Link
-              key={action.href}
-              href={action.href}
-              className={`inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-[13px] font-semibold transition ${
-                index === 0
-                  ? "bg-[var(--hub-accent)] text-white shadow-sm hover:brightness-[0.97]"
-                  : "border border-[var(--hub-border-strong)] bg-white text-[var(--hub-text-strong)] hover:bg-[var(--hub-surface-soft)]"
-              }`}
-            >
-              <Glyph name={action.glyph} className="h-4 w-4" />
-              {action.label}
-            </Link>
-          ))}
-        </div>
+        {actions.length > 0 && (
+          <div className="mt-7 flex flex-wrap items-center gap-3">
+            {actions.map((action, index) => (
+              <Link
+                key={action.href}
+                href={action.href}
+                className={`inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-[13px] font-semibold transition ${
+                  index === 0
+                    ? "bg-[var(--hub-accent)] text-white shadow-sm hover:brightness-[0.97]"
+                    : "border border-[var(--hub-border-strong)] bg-white text-[var(--hub-text-strong)] hover:bg-[var(--hub-surface-soft)]"
+                }`}
+              >
+                <Glyph name={action.glyph} className="h-4 w-4" />
+                {action.label}
+              </Link>
+            ))}
+          </div>
+        )}
       </div>
     </section>
   );
@@ -466,7 +474,7 @@ function DashboardActionBoard({
   const pendingInvoice = showInvs ? data.pendingInvoices[0] : undefined;
   const pendingQuote = showQts ? data.pendingQuotes[0] : undefined;
   
-  const totalActions = (showInvs ? data.pendingInvoices.length : 0) + (showQts ? data.pendingQuotes.length : 0);
+  const totalActions = (showInvs ? data.pendingInvoicesCount : 0) + (showQts ? data.pendingQuotesCount : 0);
 
   return (
     <ShellCard className="p-6 sm:p-7">
@@ -486,7 +494,7 @@ function DashboardActionBoard({
               <Glyph name="invoice" className="h-[18px] w-[18px]" />
             </span>
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold text-[var(--hub-text-strong)]">Pay {data.pendingInvoices.length} invoice{data.pendingInvoices.length !== 1 ? "s" : ""}</p>
+              <p className="text-sm font-semibold text-[var(--hub-text-strong)]">Pay {data.pendingInvoicesCount} invoice{data.pendingInvoicesCount !== 1 ? "s" : ""}</p>
               <p className="mt-0.5 text-[13px] text-[var(--hub-text-soft)]">{formatCurrency(data.outstandingBalance)} pending</p>
             </div>
             <Link href={`/portal/${orgSlug}/client-hub/invoices/${pendingInvoice.id}`} className="shrink-0 rounded-lg border border-[var(--hub-border)] bg-white px-4 py-2 text-[13px] font-semibold text-[var(--hub-text-strong)] transition hover:bg-[var(--hub-surface-soft)]">
@@ -501,7 +509,7 @@ function DashboardActionBoard({
               <Glyph name="quote" className="h-[18px] w-[18px]" />
             </span>
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold text-[var(--hub-text-strong)]">Respond to {data.pendingQuotes.length} quote{data.pendingQuotes.length !== 1 ? "s" : ""}</p>
+              <p className="text-sm font-semibold text-[var(--hub-text-strong)]">Respond to {data.pendingQuotesCount} quote{data.pendingQuotesCount !== 1 ? "s" : ""}</p>
               <p className="mt-0.5 text-[13px] text-[var(--hub-text-soft)]">Awaiting your response</p>
             </div>
             <Link href={`/portal/${orgSlug}/client-hub/quotes/${pendingQuote.id}`} className="shrink-0 rounded-lg border border-[var(--hub-border)] bg-white px-4 py-2 text-[13px] font-semibold text-[var(--hub-text-strong)] transition hover:bg-[var(--hub-surface-soft)]">
@@ -549,7 +557,7 @@ function PendingInvoicesCard({ orgSlug, data }: { orgSlug: string; data: ClientH
     <ShellCard className="p-5 sm:p-6">
       <div className="flex items-center justify-between">
         <h3 className="text-base font-semibold tracking-[-0.01em] text-[var(--hub-text-strong)]">Pending Invoices</h3>
-        <span className="flex h-5 min-w-5 items-center justify-center rounded-md bg-[var(--hub-accent)] px-1.5 text-[11px] font-bold text-white">{pending.length}</span>
+        <span className="flex h-5 min-w-5 items-center justify-center rounded-md bg-[var(--hub-accent)] px-1.5 text-[11px] font-bold text-white">{data.pendingInvoicesCount}</span>
       </div>
       {pending.length > 0 ? (
         <div className="mt-4 space-y-2">
@@ -582,7 +590,7 @@ function PendingQuotesCard({ orgSlug, data }: { orgSlug: string; data: ClientHub
     <ShellCard className="p-5 sm:p-6">
       <div className="flex items-center justify-between">
         <h3 className="text-base font-semibold tracking-[-0.01em] text-[var(--hub-text-strong)]">Pending Quotes</h3>
-        <span className="flex h-5 min-w-5 items-center justify-center rounded-md bg-[var(--hub-accent)] px-1.5 text-[11px] font-bold text-white">{pending.length}</span>
+        <span className="flex h-5 min-w-5 items-center justify-center rounded-md bg-[var(--hub-accent)] px-1.5 text-[11px] font-bold text-white">{data.pendingQuotesCount}</span>
       </div>
       {pending.length > 0 ? (
         <div className="mt-4 space-y-2">

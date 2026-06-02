@@ -647,13 +647,53 @@ export async function getPortalDashboardData(orgSlug: string) {
     throw new Error("Customer not found");
   }
 
-  const invoices = await db.invoice.findMany({
+  // 1. Fetch total count of unpaid invoices
+  const unpaidInvoicesCount = await db.invoice.count({
     where: {
       organizationId: session.orgId,
       customerId: session.customerId,
-      status: { not: "DRAFT" },
+      status: { notIn: ["DRAFT", "CANCELLED", "PAID"] },
     },
-    orderBy: { invoiceDate: "desc" },
+  });
+
+  // 2. Fetch outstanding balance (sum of remainingAmount of unpaid invoices)
+  const outstandingBalanceSum = await db.invoice.aggregate({
+    where: {
+      organizationId: session.orgId,
+      customerId: session.customerId,
+      status: { notIn: ["DRAFT", "CANCELLED", "PAID"] },
+    },
+    _sum: {
+      remainingAmount: true,
+    },
+  });
+  const outstandingBalance = toAccountingNumber(outstandingBalanceSum._sum.remainingAmount ?? 0);
+
+  // 3. Fetch total paid (sum of amountPaid of valid invoices)
+  const totalPaidSum = await db.invoice.aggregate({
+    where: {
+      organizationId: session.orgId,
+      customerId: session.customerId,
+      status: { notIn: ["DRAFT", "CANCELLED"] },
+    },
+    _sum: {
+      amountPaid: true,
+    },
+  });
+  const totalPaid = toAccountingNumber(totalPaidSum._sum.amountPaid ?? 0);
+
+  // 4. Fetch bounded recent pending invoices (limit to 5)
+  const recentInvoices = await db.invoice.findMany({
+    where: {
+      organizationId: session.orgId,
+      customerId: session.customerId,
+      status: { notIn: ["DRAFT", "CANCELLED", "PAID"] },
+    },
+    orderBy: [
+      { invoiceDate: "desc" },
+      { createdAt: "desc" },
+    ],
+    take: 5,
     select: {
       id: true,
       invoiceNumber: true,
@@ -666,13 +706,29 @@ export async function getPortalDashboardData(orgSlug: string) {
     },
   });
 
-  const quotes = await db.quote.findMany({
+  // 5. Fetch count of pending quotes
+  const pendingQuotesCount = await db.quote.count({
     where: {
       orgId: session.orgId,
       customerId: session.customerId,
-      status: { not: "DRAFT" },
+      status: "SENT",
+      validUntil: { gte: new Date() },
     },
-    orderBy: { createdAt: "desc" },
+  });
+
+  // 6. Fetch bounded recent pending quotes (limit to 5)
+  const recentQuotes = await db.quote.findMany({
+    where: {
+      orgId: session.orgId,
+      customerId: session.customerId,
+      status: "SENT",
+      validUntil: { gte: new Date() },
+    },
+    orderBy: [
+      { validUntil: "asc" }, // nearest deadline first
+      { createdAt: "desc" },
+    ],
+    take: 5,
     select: {
       id: true,
       quoteNumber: true,
@@ -685,23 +741,6 @@ export async function getPortalDashboardData(orgSlug: string) {
       declinedAt: true,
     },
   });
-
-  // Calculate outstanding balance
-  // Filter for open invoices that are unpaid or partially paid
-  const unpaidInvoices = invoices.filter(
-    (inv) => inv.status !== "PAID" && inv.status !== "CANCELLED"
-  );
-  const outstandingBalance = unpaidInvoices.reduce(
-    (sum, inv) => sum + toAccountingNumber(inv.remainingAmount),
-    0
-  );
-
-  // Calculate total paid across all non-draft, non-cancelled invoices
-  const validInvoices = invoices.filter((inv) => inv.status !== "CANCELLED");
-  const totalPaid = validInvoices.reduce(
-    (sum, inv) => sum + toAccountingNumber(inv.amountPaid),
-    0
-  );
 
   logPortalAccess({
     orgId: session.orgId,
@@ -719,7 +758,9 @@ export async function getPortalDashboardData(orgSlug: string) {
     },
     outstandingBalance,
     totalPaid,
-    pendingInvoices: unpaidInvoices.map((inv) => ({
+    pendingInvoicesCount: unpaidInvoicesCount,
+    pendingQuotesCount: pendingQuotesCount,
+    pendingInvoices: recentInvoices.map((inv) => ({
       id: inv.id,
       invoiceNumber: inv.invoiceNumber ?? "—",
       dueDate: inv.dueDate ? formatIsoDate(inv.dueDate) : null,
@@ -727,16 +768,14 @@ export async function getPortalDashboardData(orgSlug: string) {
       totalAmount: toAccountingNumber(inv.totalAmount),
       status: inv.status,
     })),
-    pendingQuotes: quotes
-      .filter((q) => q.status === "SENT" && q.validUntil >= new Date())
-      .map((q) => ({
-        id: q.id,
-        quoteNumber: q.quoteNumber,
-        title: q.title,
-        validUntil: formatIsoDate(q.validUntil),
-        totalAmount: toAccountingNumber(q.totalAmount),
-        status: q.status,
-      })),
+    pendingQuotes: recentQuotes.map((q) => ({
+      id: q.id,
+      quoteNumber: q.quoteNumber,
+      title: q.title,
+      validUntil: formatIsoDate(q.validUntil),
+      totalAmount: toAccountingNumber(q.totalAmount),
+      status: q.status,
+    })),
   };
 }
 
