@@ -87,6 +87,8 @@ export function MessagingSearchPanel({ query, onClose }: MessagingSearchPanelPro
   const [facets, setFacets] = React.useState<Record<string, number>>({ message: 0, conversation: 0, task: 0, meeting: 0, file: 0 });
   const [searchState, setSearchState] = React.useState<"active" | "degraded" | "unindexed">("active");
   const [unindexedKinds, setUnindexedKinds] = React.useState<string[]>([]);
+  const [isCapped, setIsCapped] = React.useState(false);
+  const [windowExceeded, setWindowExceeded] = React.useState(false);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
@@ -106,6 +108,8 @@ export function MessagingSearchPanel({ query, onClose }: MessagingSearchPanelPro
       setFacets({ message: 0, conversation: 0, task: 0, meeting: 0, file: 0 });
       setSearchState("active");
       setUnindexedKinds([]);
+      setIsCapped(false);
+      setWindowExceeded(false);
       setLoading(false);
       setError(null);
       return;
@@ -140,6 +144,8 @@ export function MessagingSearchPanel({ query, onClose }: MessagingSearchPanelPro
           setFacets(json.data.facets || { message: 0, conversation: 0, task: 0, meeting: 0, file: 0 });
           setSearchState(json.data.state || "active");
           setUnindexedKinds(json.data.unindexedKinds || []);
+          setIsCapped(!!json.data.isCapped);
+          setWindowExceeded(!!json.data.windowExceeded);
         } else {
           throw new Error(json.error?.message || "Failed to load search results.");
         }
@@ -215,6 +221,12 @@ export function MessagingSearchPanel({ query, onClose }: MessagingSearchPanelPro
           </div>
         )}
 
+        {isCapped && searchState !== "unindexed" && (
+          <div className="mb-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-xs text-blue-800 flex items-center gap-2" data-testid="search-capped-banner">
+            ℹ️ Results are ranked from the 200 most recent items of each type.
+          </div>
+        )}
+
         {loading ? (
           <div className="py-8 text-center text-sm text-[#79747E]" data-testid="search-loading">
             <span className="inline-block animate-spin mr-2">⏳</span> Loading results...
@@ -244,6 +256,10 @@ export function MessagingSearchPanel({ query, onClose }: MessagingSearchPanelPro
         ) : (filter === "files" || searchState === "unindexed") ? (
           <div className="py-8 text-center text-sm text-[#79747E]" data-testid="search-unindexed">
             File search is not yet available in this sprint.
+          </div>
+        ) : windowExceeded ? (
+          <div className="py-8 text-center text-sm text-[#79747E]" data-testid="search-window-exceeded">
+            You have paged past the maximum retrievable results (limited to 200 recent matches per category).
           </div>
         ) : results.length === 0 ? (
           unindexedKinds.length > 0 ? (

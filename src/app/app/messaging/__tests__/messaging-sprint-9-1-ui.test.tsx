@@ -186,4 +186,70 @@ describe("MessagingSearchPanel UI Integration", () => {
     expect(screen.getByTestId("search-no-results-unindexed")).toBeInTheDocument();
     expect(screen.getByText(/some requested types like file are not yet available/i)).toBeInTheDocument();
   });
+
+  it("displays warning banner when search results are capped", async () => {
+    const mockSearchResults = {
+      success: true,
+      data: {
+        results: [
+          {
+            id: "msg-1",
+            kind: "message",
+            title: "Priya Sharma",
+            subtitle: "#finance-ops",
+            timestamp: new Date().toISOString(),
+            score: 100,
+            snippet: "payroll updates",
+          },
+        ],
+        facets: { message: 201, conversation: 0, task: 0, meeting: 0, file: 0 },
+        state: "active",
+        unindexedKinds: [],
+        isCapped: true,
+        windowExceeded: false,
+      },
+    };
+
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => mockSearchResults,
+    } as any);
+
+    renderPanel("capped-test");
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("search-loading")).not.toBeInTheDocument();
+    });
+
+    expect(screen.getByTestId("search-capped-banner")).toBeInTheDocument();
+    expect(screen.getByText(/Results are ranked from the 200 most recent items/i)).toBeInTheDocument();
+  });
+
+  it("displays page window exceeded note when requesting past candidate limit", async () => {
+    const mockSearchResults = {
+      success: true,
+      data: {
+        results: [],
+        facets: { message: 250, conversation: 0, task: 0, meeting: 0, file: 0 },
+        state: "active",
+        unindexedKinds: [],
+        isCapped: true,
+        windowExceeded: true,
+      },
+    };
+
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => mockSearchResults,
+    } as any);
+
+    renderPanel("exceeded-test");
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("search-loading")).not.toBeInTheDocument();
+    });
+
+    expect(screen.getByTestId("search-window-exceeded")).toBeInTheDocument();
+    expect(screen.getByText(/You have paged past the maximum retrievable results/i)).toBeInTheDocument();
+  });
 });

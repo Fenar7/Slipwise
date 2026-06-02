@@ -1,7 +1,6 @@
 import "server-only";
 
 import { db } from "@/lib/db";
-import type { Prisma } from "@/generated/prisma/client";
 
 // ─── Search config limits ────────────────────────────────────────────────────
 export const MAX_CANDIDATES_PER_KIND = 200;
@@ -104,6 +103,8 @@ export interface MessagingSearchResponse {
   hasMore: boolean;
   state: "active" | "degraded" | "unindexed";
   unindexedKinds: string[];
+  isCapped: boolean;
+  windowExceeded: boolean;
 }
 
 // ─── Helper functions ────────────────────────────────────────────────────────
@@ -203,6 +204,8 @@ export async function searchMessaging(
     hasMore: false,
     state: searchState === "degraded" ? "degraded" : (isOnlyUnindexed ? "unindexed" : "active"),
     unindexedKinds: isUnindexedRequested ? ["file"] : [],
+    isCapped: false,
+    windowExceeded: false,
   };
 
   // Safe blank/whitespace queries behavior
@@ -218,6 +221,8 @@ export async function searchMessaging(
       hasMore: false,
       state: "degraded",
       unindexedKinds: isUnindexedRequested ? ["file"] : [],
+      isCapped: false,
+      windowExceeded: false,
     };
   }
 
@@ -559,13 +564,16 @@ export async function searchMessaging(
     file: 0, // unindexed in this sprint
   };
 
+  const isCapped =
+    (requestedKinds.includes("message") && messageCount > MAX_CANDIDATES_PER_KIND) ||
+    (requestedKinds.includes("conversation") && conversationCount > MAX_CANDIDATES_PER_KIND) ||
+    (requestedKinds.includes("task") && taskCount > MAX_CANDIDATES_PER_KIND) ||
+    (requestedKinds.includes("meeting") && meetingCount > MAX_CANDIDATES_PER_KIND);
+
+  const windowExceeded = offset >= allResults.length && allResults.length > 0;
+
   const paginatedResults = allResults.slice(offset, offset + limit);
-  const hasMore =
-    allResults.length > offset + limit ||
-    (requestedKinds.includes("message") && messageCount > matchingMessages.length && offset + limit >= allResults.length) ||
-    (requestedKinds.includes("conversation") && conversationCount > matchingConversations.length && offset + limit >= allResults.length) ||
-    (requestedKinds.includes("task") && taskCount > matchingTasks.length && offset + limit >= allResults.length) ||
-    (requestedKinds.includes("meeting") && meetingCount > matchingMeetings.length && offset + limit >= allResults.length);
+  const hasMore = allResults.length > offset + limit;
 
   return {
     results: paginatedResults,
@@ -573,5 +581,7 @@ export async function searchMessaging(
     hasMore,
     state: searchState === "degraded" ? "degraded" : (isOnlyUnindexed ? "unindexed" : "active"),
     unindexedKinds: isUnindexedRequested ? ["file"] : [],
+    isCapped,
+    windowExceeded,
   };
 }

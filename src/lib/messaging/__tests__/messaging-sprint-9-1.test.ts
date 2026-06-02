@@ -384,17 +384,33 @@ describe("Sprint 9.1 — Search Foundation & Visibility-Safe Query Model", () =>
 
       // Truthful facet count reports 600
       expect(result.facets.message).toBe(600);
-      // Because 600 total > 200 retrieved, hasMore is truthful (true) even if offset+limit (20) <= 200
+      // Because we loaded 200 candidates and offset+limit (20) <= 200, hasMore is true
       expect(result.hasMore).toBe(true);
+      expect(result.isCapped).toBe(true);
+      expect(result.windowExceeded).toBe(false);
 
-      // If we page past the retrieved array but total in DB is higher, hasMore is still true
+      // If we page near the limit of retrieved candidate pool (190 + 20 = 210 > 200), hasMore is false
       const endPageResult = await searchMessaging("org-1", "user-1", {
         q: "high volume query matches",
         kinds: ["message"],
         limit: 20,
         offset: 190,
       });
-      expect(endPageResult.hasMore).toBe(true);
+      expect(endPageResult.hasMore).toBe(false);
+      expect(endPageResult.isCapped).toBe(true);
+      expect(endPageResult.windowExceeded).toBe(false);
+
+      // If we request past the retrieved pool (offset: 220), we get empty results and windowExceeded: true
+      const exceededResult = await searchMessaging("org-1", "user-1", {
+        q: "high volume query matches",
+        kinds: ["message"],
+        limit: 20,
+        offset: 220,
+      });
+      expect(exceededResult.results).toEqual([]);
+      expect(exceededResult.hasMore).toBe(false);
+      expect(exceededResult.isCapped).toBe(true);
+      expect(exceededResult.windowExceeded).toBe(true);
     });
   });
 });
