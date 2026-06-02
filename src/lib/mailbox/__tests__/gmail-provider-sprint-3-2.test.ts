@@ -237,14 +237,14 @@ describe("gmailProviderAdapter Sprint 3.2", () => {
     const threadsListCalls = fetchMock.mock.calls.filter(
       (call) => typeof call[0] === "string" && (call[0] as string).includes("/threads?"),
     );
-    // 6 slices: INBOX, SENT, SPAM, DRAFT, TRASH, ARCHIVE
+    // 6 slices: INBOX, SENT, SPAM, DRAFT, TRASH, STARRED
     expect(threadsListCalls).toHaveLength(6);
     expect(threadsListCalls[0]?.[0]).toContain("q=in%3Ainbox");
     expect(threadsListCalls[1]?.[0]).toContain("q=in%3Asent");
     expect(threadsListCalls[2]?.[0]).toContain("q=in%3Aspam");
     expect(threadsListCalls[3]?.[0]).toContain("q=in%3Adraft");
     expect(threadsListCalls[4]?.[0]).toContain("q=in%3Atrash");
-    expect(threadsListCalls[5]?.[0]).toContain("q=-in%3Ainbox");
+    expect(threadsListCalls[5]?.[0]).toContain("q=is%3Astarred");
     const threadDetailCalls = fetchMock.mock.calls.filter(
       (call) => typeof call[0] === "string" && (call[0] as string).includes("/threads/thread-1"),
     );

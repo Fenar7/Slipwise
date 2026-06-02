@@ -30,7 +30,7 @@ export interface MailboxConnection {
 }
 
 export type ThreadStatus = "open" | "pending" | "closed" | "archived";
-export type MailboxFolder = "INBOX" | "SENT" | "SPAM" | "ARCHIVE" | "DRAFT" | "TRASH";
+export type MailboxFolder = "INBOX" | "SENT" | "SPAM" | "STARRED" | "DRAFT" | "TRASH";
 
 export interface MailboxTreeItem {
   id: string;

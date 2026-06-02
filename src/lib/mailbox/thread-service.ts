@@ -55,7 +55,7 @@ function parseSearchTerms(query: string): {
       INBOX: "INBOX",
       SENT: "SENT",
       SPAM: "SPAM",
-      ARCHIVE: "ARCHIVE",
+      STARRED: "STARRED",
       DRAFT: "DRAFT",
       TRASH: "TRASH",
     };
@@ -281,30 +281,10 @@ export async function listMailboxThreads(
 
   if (folder === "INBOX" && !status) {
     baseWhere.status = { in: ["OPEN", "PENDING"] };
-  } else if (folder === "ARCHIVE") {
-    // Gmail-grade archive semantics: thread must be ARCHIVED, but NOT in
-    // spam and NOT in trash. Spam-to-trash movements should disappear from
-    // archive view even if the thread status was previously ARCHIVED.
-    const spamThreadIds = await resolveSpamThreadIds(orgId, connectionIdsToQuery);
-    const trashRows = await db.mailboxMessage.findMany({
-      where: {
-        orgId,
-        thread: {
-          mailboxConnectionId: { in: connectionIdsToQuery },
-          status: "ARCHIVED",
-        },
-      },
-      select: { threadId: true, providerMetadata: true },
-    });
-    const trashThreadIds = [...new Set(trashRows
-      .filter((row) => hasTrashLabel(row.providerMetadata))
-      .map((row) => row.threadId))];
-    const excludeIds = [...new Set([...spamThreadIds, ...trashThreadIds])];
-
-    baseWhere.status = "ARCHIVED";
-    if (excludeIds.length > 0) {
-      baseWhere.id = { notIn: excludeIds };
-    }
+  } else if (folder === "STARRED") {
+    // Starred folder: thread must be flagged (starred). Gmail STARRED label
+    // is synced to isFlagged during ingestion.
+    baseWhere.isFlagged = true;
   } else if (folder === "SENT") {
     baseWhere.messages = {
       some: {

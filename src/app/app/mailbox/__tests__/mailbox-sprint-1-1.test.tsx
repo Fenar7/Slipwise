@@ -242,7 +242,7 @@ describe("MailboxLeftRail", () => {
   it("renders all six system folder labels for connected accounts", () => {
     render(<MailboxLeftRail connections={MOCK_CONNECTIONS} />);
     // Each folder label appears once per account (3 connected × 6 folders = 18 links)
-    const folderLabels = ["Inbox", "Sent", "Drafts", "Archive", "Spam", "Trash"];
+    const folderLabels = ["Inbox", "Sent", "Drafts", "Starred", "Spam", "Trash"];
     for (const label of folderLabels) {
       const links = screen.getAllByRole("link").filter((l) => l.textContent === label);
       // One per account: Billing, Support, Accounts

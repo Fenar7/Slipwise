@@ -13,7 +13,7 @@ import {
   Clock,
   Send,
   FileEdit,
-  Archive,
+  Star,
   ShieldAlert,
   Trash2,
   ChevronDown,
@@ -40,7 +40,7 @@ const ICON_MAP: Record<string, React.ElementType> = {
   Clock,
   Send,
   FileEdit,
-  Archive,
+  Star,
   ShieldAlert,
   Trash2,
 };
@@ -165,10 +165,10 @@ function mailboxFolders(connectionId: string, prefix: string): MailboxTreeItem[]
       mailboxConnectionId: connectionId,
     },
     {
-      id: `${connectionId}-archive`,
-      label: "Archive",
-      href: `/app/mailbox/${prefix}/archive`,
-      icon: "Archive",
+      id: `${connectionId}-starred`,
+      label: "Starred",
+      href: `/app/mailbox/${prefix}/starred`,
+      icon: "Star",
       mailboxConnectionId: connectionId,
     },
     {

@@ -407,10 +407,10 @@ describe("Sprint 4.4 review — Finding B: route-derived status semantics", () =
     expect(params.connectionId).toBe("conn_billing");
   });
 
-  it("archive route resolves to ARCHIVE folder semantics", () => {
+  it("starred route resolves to STARRED folder semantics", () => {
     const connections = [makeMinimalConnection({ slug: "billing" })];
-    const params = resolveThreadQueryParams("/app/mailbox/billing/archive", connections);
-    expect(params.folder).toBe("ARCHIVE");
+    const params = resolveThreadQueryParams("/app/mailbox/billing/starred", connections);
+    expect(params.folder).toBe("STARRED");
   });
 
   it("sent route resolves to SENT folder semantics", () => {

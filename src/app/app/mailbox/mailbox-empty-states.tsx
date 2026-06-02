@@ -377,7 +377,7 @@ export function EmptySpamState({
  * No MailboxSyncSummary card — that is for the settings admin surface.
  */
 /**
- * Internal: sync-aware empty state for Sent, Spam, Drafts, and Archive folders.
+ * Internal: sync-aware empty state for Sent, Spam, Drafts, and Starred folders.
  * Shows import-in-progress or never-imported states to prevent false empties.
  */
 function SyncAwareFolderEmpty({

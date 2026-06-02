@@ -54,16 +54,12 @@ const GMAIL_DRAFTS_URL = "https://gmail.googleapis.com/gmail/v1/users/me/drafts"
 const GMAIL_SEND_URL = "https://www.googleapis.com/gmail/v1/users/me/messages/send";
 const GMAIL_INITIAL_SYNC_MAX_RESULTS = 100;
 const GMAIL_BOOTSTRAP_SLICES = [
-  { query: "in:inbox", folder: "INBOX" as const, includeSpamTrash: false },
-  { query: "in:sent",  folder: "SENT"  as const, includeSpamTrash: false },
-  { query: "in:spam",  folder: "SPAM"  as const, includeSpamTrash: true  },
-  { query: "in:draft", folder: "DRAFT" as const, includeSpamTrash: false },
-  { query: "in:trash", folder: "TRASH" as const, includeSpamTrash: true  },
-  {
-    query: "-in:inbox -in:sent -in:spam -in:trash -in:draft",
-    folder: "ARCHIVE" as const,
-    includeSpamTrash: false,
-  },
+  { query: "in:inbox",  folder: "INBOX"   as const, includeSpamTrash: false },
+  { query: "in:sent",   folder: "SENT"    as const, includeSpamTrash: false },
+  { query: "in:spam",   folder: "SPAM"    as const, includeSpamTrash: true  },
+  { query: "in:draft",  folder: "DRAFT"   as const, includeSpamTrash: false },
+  { query: "in:trash",  folder: "TRASH"   as const, includeSpamTrash: true  },
+  { query: "is:starred", folder: "STARRED" as const, includeSpamTrash: false },
 ] as const;
 
 const GMAIL_WATCH_LABEL_IDS = ["INBOX", "SENT", "SPAM", "DRAFT"] as const;
@@ -495,7 +491,7 @@ export const gmailProviderAdapter: IMailboxProviderAdapter = {
 
     // ─── Initial path: use threads.list ─────────────────────────────────────
     // Gmail-grade bootstrap: fetch all mailbox history across INBOX, SENT, SPAM,
-    // DRAFT, and ARCHIVE slices using exhaustive multi-pass pagination
+    // DRAFT, and STARRED slices using exhaustive multi-pass pagination
     // (100 threads per page, until exhaustion). Returns per-slice exhaustion
     // status so the sync service can decide folder completeness truthfully.
     const threadIds = new Set<string>();
