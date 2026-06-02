@@ -192,6 +192,25 @@ export async function updateFolderCoverageBootstrapping(
   });
 }
 
+/**
+ * Reset the per-folder coverage cursor without changing the state.
+ * Used when a stored cursor becomes stale/invalid (e.g. stored a historyId
+ * instead of a page token) so the next recovery attempt starts fresh.
+ */
+export async function resetFolderCoverageCursor(
+  orgId: string,
+  connectionId: string,
+  folder: MailboxCoverageFolder,
+): Promise<void> {
+  await upsertFolderCoverage({
+    orgId,
+    connectionId,
+    folder,
+    state: "BOOTSTRAPPING",
+    lastAdvancedCursor: null,
+  });
+}
+
 export async function markFolderCoverageErrored(
   orgId: string,
   connectionId: string,

@@ -114,6 +114,7 @@ vi.mock("@/lib/mailbox/folder-coverage-service", () => ({
   initFolderCoverageForBootstrap: vi.fn(),
   getIncompleteRequiredFolders: vi.fn().mockResolvedValue([]),
   getFolderCoverage: vi.fn().mockResolvedValue(null),
+  resetFolderCoverageCursor: vi.fn(),
 }));
 
 vi.mock("@/app/api/integrations/_auth", () => ({

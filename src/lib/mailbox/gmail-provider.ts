@@ -527,7 +527,7 @@ export const gmailProviderAdapter: IMailboxProviderAdapter = {
         sliceLabel,
         paginationExhausted: sliceResult.paginationExhausted,
         threadCount: sliceThreadCount,
-        lastAdvancedCursor: sliceHighestHistoryId,
+        lastAdvancedCursor: sliceResult.nextPageToken ?? "",
       });
     }
 
@@ -972,6 +972,7 @@ async function fetchBoundedThreadRefsForQuery(
 ): Promise<{
   threadRefs: GmailThreadRef[];
   paginationExhausted: boolean;
+  nextPageToken?: string;
 } | MailboxProviderError> {
   const threadRefs: GmailThreadRef[] = [];
   let nextPageToken: string | undefined = startPageToken;
@@ -1006,7 +1007,7 @@ async function fetchBoundedThreadRefsForQuery(
   } while (nextPageToken);
 
   // paginationExhausted is true when there are no more pages on the provider
-  return { threadRefs, paginationExhausted: !nextPageToken };
+  return { threadRefs, paginationExhausted: !nextPageToken, nextPageToken };
 }
 
 async function fetchAllDraftIds(

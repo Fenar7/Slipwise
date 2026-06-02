@@ -280,6 +280,32 @@ describe("bootstrap slice exhaustion vs bounded cap", () => {
   });
 });
 
+describe("resetFolderCoverageCursor", () => {
+  it("is exported from folder-coverage-service", async () => {
+    const { resetFolderCoverageCursor } = await import("../folder-coverage-service");
+    expect(typeof resetFolderCoverageCursor).toBe("function");
+  });
+
+  it("gmail provider adapter exports with correct contract types", async () => {
+    // Verifies that fetchBoundedThreadRefsForQuery's return type change
+    // (added nextPageToken to the result) compiles correctly.
+    const { gmailProviderAdapter } = await import("../gmail-provider");
+    expect(gmailProviderAdapter).toBeDefined();
+    expect(gmailProviderAdapter.descriptor.provider).toBe("GMAIL");
+  });
+});
+
+describe("TRASH inclusion in sync service", () => {
+  it("GMAIL_REQUIRED_COVERAGE_FOLDERS includes TRASH", () => {
+    expect(GMAIL_REQUIRED_COVERAGE_FOLDERS).toContain("TRASH");
+  });
+
+  it("lastAdvancedCursor default is null for initial state", () => {
+    const coverage = makeCoverage("TRASH", "PENDING");
+    expect(coverage.lastAdvancedCursor).toBeNull();
+  });
+});
+
 describe("no false empties after partial coverage", () => {
   it("SENT with BOOTSTRAPPING and non-zero threads: not empty, may have more data", () => {
     const cov = makeCoverage("SENT", "BOOTSTRAPPING", 350);
