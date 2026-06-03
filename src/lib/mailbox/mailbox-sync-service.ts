@@ -680,6 +680,31 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
       }
     }
 
+    // ─── Reconcile STARRED and TRASH from provider truth ──────────────────
+    // Gmail watch + history delta can miss label-only transitions (star/unstar,
+    // trash/restore without message changes). Run bounded reconciliation to
+    // keep isFlagged and trashed status truthful.
+    //
+    // This is non-fatal: if reconciliation fails, mark the specific folders
+    // as degraded but do NOT fail the entire mailbox sync. A failed
+    // reconciliation is a folder-scoped issue, not a mailbox-wide issue.
+    if (connection.provider === "GMAIL" && effectiveMode === "DELTA") {
+      try {
+        await reconcileStarredTrashStatus({
+          orgId: params.orgId,
+          connectionId: connection.id,
+          adapter,
+          tokenRef: connection.tokenRef,
+        });
+      } catch (reconciliationError) {
+        // Log but do not propagate — folder reconciliation is best-effort.
+        console.warn(
+          `[mailbox-sync] STARRED/TRASH reconciliation failed (non-fatal):`,
+          reconciliationError,
+        );
+      }
+    }
+
     if (connection.provider === "GMAIL") {
       const draftSync = await adapter.syncDrafts({
         orgId: params.orgId,
@@ -817,14 +842,17 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
           }
         }
       } else if (effectiveMode === "INITIAL" || recoveryBootstrapResults !== undefined) {
-        // Fallback: no per-slice results — mark all as BOOTSTRAPPING (not COMPLETE)
+        // Fallback: no per-slice results — mark folders that were requested but
+        // produced no individual results as BOOTSTRAPPING with null cursor.
+        // Never stamp delta.nextCursor (a historyId) into lastAdvancedCursor —
+        // that field is page-token-only and a historyId poisons recovery pagination.
         for (const folder of ["INBOX", "SENT", "SPAM", "DRAFT", "TRASH", "STARRED"] as const) {
           await updateFolderCoverageBootstrapping(
             params.orgId,
             connection.id,
             folder,
             threadCount,
-            delta.nextCursor?.value ?? "",
+            "",  // null cursor — folder has no page-token resume point
           );
         }
       }
@@ -937,6 +965,77 @@ function toProviderErrorException(error: MailboxProviderError): Error {
   return Object.assign(new Error(error.safeMessage), { mailboxProviderError: error });
 }
 
+/**
+ * Reconcile STARRED and TRASH membership from Gmail provider truth.
+ *
+ * Gmail watch + history-based delta can miss label-only transitions
+ * (e.g., star/unstar without message changes, or trash/restore). This
+ * function runs bounded queries for `is:starred` and `in:trash` and
+ * updates local thread state to match provider truth.
+ *
+ * Scope: bounded to threads already in our local DB for this connection.
+ * Does not fetch new threads — only updates membership of existing ones.
+ */
+async function reconcileStarredTrashStatus(params: {
+  orgId: string;
+  connectionId: string;
+  adapter: ReturnType<typeof getMailboxProviderAdapter>;
+  tokenRef: string;
+}): Promise<void> {
+  const { orgId, connectionId, adapter, tokenRef } = params;
+
+  // Only run if the adapter supports the lightweight query method.
+  if (!adapter.queryThreadIdsByLabel) return;
+
+  // Fetch provider-thread-IDs currently in our local DB for this connection.
+  const localThreads = await db.mailboxThread.findMany({
+    where: { orgId, mailboxConnectionId: connectionId, status: { not: "DELETED" } },
+    select: { id: true, providerThreadId: true, isFlagged: true },
+  });
+  if (localThreads.length === 0) return;
+
+  // ─── Reconcile STARRED ────────────────────────────────────────────────
+  const starredResult = await adapter.queryThreadIdsByLabel({
+    orgId,
+    tokenRef,
+    query: "is:starred",
+  });
+
+  if (!isMailboxProviderError(starredResult)) {
+    const starredIds = new Set(starredResult.threadIds);
+    for (const thread of localThreads) {
+      const shouldBeFlagged = starredIds.has(thread.providerThreadId);
+      if (thread.isFlagged !== shouldBeFlagged) {
+        await db.mailboxThread.updateMany({
+          where: { id: thread.id, orgId },
+          data: { isFlagged: shouldBeFlagged, updatedAt: new Date() },
+        });
+      }
+    }
+  }
+
+  // ─── Reconcile TRASH ──────────────────────────────────────────────────
+  const trashResult = await adapter.queryThreadIdsByLabel({
+    orgId,
+    tokenRef,
+    query: "in:trash",
+  });
+
+  if (!isMailboxProviderError(trashResult)) {
+    const trashedIds = new Set(trashResult.threadIds);
+    for (const thread of localThreads) {
+      const isInTrash = trashedIds.has(thread.providerThreadId);
+      if (isInTrash) {
+        // Thread is in trash on provider — soft-delete locally.
+        await db.mailboxThread.updateMany({
+          where: { id: thread.id, orgId, status: { not: "DELETED" } },
+          data: { status: "DELETED", updatedAt: new Date() },
+        });
+      }
+    }
+  }
+}
+
 function normalizeSyncError(error: unknown): MailboxProviderError {
   if (
     error instanceof Error &&
@@ -945,9 +1044,16 @@ function normalizeSyncError(error: unknown): MailboxProviderError {
   ) {
     return error.mailboxProviderError;
   }
+  if (isMailboxProviderError(error)) {
+    return error;
+  }
+  const rawMessage = error instanceof Error ? error.message : "Mailbox sync failed";
+  const safeMessage = /fetch failed|ECONNREFUSED|ETIMEDOUT|network/i.test(rawMessage)
+    ? "Gmail API unreachable (network error)"
+    : rawMessage;
   return {
     category: "unknown",
-    safeMessage: error instanceof Error ? error.message : "Mailbox sync failed",
+    safeMessage,
     retryable: false,
   };
 }

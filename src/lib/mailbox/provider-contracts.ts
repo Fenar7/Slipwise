@@ -196,7 +196,7 @@ export interface MailboxBootstrapSliceResult {
   sliceLabel: string;
   paginationExhausted: boolean;
   threadCount: number;
-  lastAdvancedCursor: string;
+  lastAdvancedCursor: string | null;
 }
 
 export interface MailboxWatchRenewalResult {
@@ -412,6 +412,20 @@ export interface IMailboxProviderAdapter {
     orgId: string;
     tokenRef: string;
   }): Promise<void>;
+
+  /**
+   * Query the provider for thread IDs matching a provider-specific query.
+   * Used for lightweight reconciliation (e.g., `is:starred`, `in:trash`)
+   * without triggering a full sync. Returns only provider thread IDs —
+   * no message envelopes or body content.
+   *
+   * Max results is bounded by the adapter (typically 500).
+   */
+  queryThreadIdsByLabel?(params: {
+    orgId: string;
+    tokenRef: string;
+    query: string;
+  }): Promise<{ threadIds: string[] } | MailboxProviderError>;
 }
 
 // ─── Provider registry ────────────────────────────────────────────────────────

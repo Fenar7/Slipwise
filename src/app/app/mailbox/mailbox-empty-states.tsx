@@ -394,17 +394,42 @@ function SyncAwareFolderEmpty({
   isSyncPending: boolean;
 }) {
   const isActivelyRunning = syncStatus.isSyncing || isSyncPending;
+
+  // Check per-folder coverage to distinguish folder-specific degradation
+  // from mailbox-wide failure. A folder with COMPLETE coverage should not
+  // show as "failed" just because another folder or the overall sync errored.
+  const folderCov = syncStatus.folderCoverage
+    ? syncStatus.folderCoverage.coverages.find((c) => c.folder === folder.toUpperCase())
+    : null;
+  const folderIsComplete = folderCov?.state === "COMPLETE";
+  const folderIsErrored = folderCov?.state === "ERRORED";
+
+  // When the mailbox shows "failed" but this specific folder is complete,
+  // show a truthful folder-level message instead of the generic error.
+  const isMailboxFailed = syncStatus.state === "failed";
+  const showFolderSpecificError = isMailboxFailed && !folderIsComplete && !folderIsErrored;
+  const showFolderErrored = isMailboxFailed && folderIsErrored;
+
   const heading = (() => {
     if (syncStatus.state === "running") return `Importing ${folder}…`;
-    if (syncStatus.state === "failed") return "Sync needs attention";
+    if (showFolderErrored) return `${folder.charAt(0).toUpperCase() + folder.slice(1)} sync needs attention`;
+    if (isMailboxFailed && !folderIsComplete) return "Sync needs attention";
+    if (isMailboxFailed && folderIsComplete) return `${mailboxLabel} ${folder}`;
     return `${mailboxLabel} ${folder} is waiting`;
   })();
+
   const body = (() => {
     if (syncStatus.state === "running") {
       return `Importing ${folder} from this mailbox. They will appear here automatically.`;
     }
-    if (syncStatus.state === "failed") {
+    if (showFolderErrored) {
+      return folderCov?.errorSummary ?? "This folder encountered a sync issue. Try syncing again.";
+    }
+    if (isMailboxFailed && !folderIsComplete) {
       return syncStatus.lastErrorSummary ?? "Sync encountered a problem. Try syncing again.";
+    }
+    if (isMailboxFailed && folderIsComplete) {
+      return `${folder.charAt(0).toUpperCase() + folder.slice(1)} is up to date. Other parts of the mailbox need attention.`;
     }
     return `Your mailbox is connected but ${folder} haven't been imported yet. Click Sync now to start importing.`;
   })();
@@ -469,7 +494,16 @@ function SyncAwareInboxEmpty({
 
   const heading = (() => {
     if (syncStatus.state === "running") return "Importing messages…";
-    if (syncStatus.state === "failed") return "Sync needs attention";
+    if (syncStatus.state === "failed") {
+      // Check if INBOX folder coverage is actually healthy — if so, show
+      // "Inbox is up to date" instead of "Sync needs attention" to avoid
+      // false failure UX when only other folders (e.g., Starred) are degraded.
+      const inboxCov = syncStatus.folderCoverage
+        ? syncStatus.folderCoverage.coverages.find((c) => c.folder === "INBOX")
+        : null;
+      if (inboxCov?.state === "COMPLETE") return `${mailboxLabel} is ready`;
+      return "Sync needs attention";
+    }
     // completed_never_imported
     return `${mailboxLabel} is ready`;
   })();
@@ -484,6 +518,14 @@ function SyncAwareInboxEmpty({
       return "We're importing recent messages. Threads will appear here automatically.";
     }
     if (syncStatus.state === "failed") {
+      // When INBOX folder coverage is COMPLETE, show a truthful healthy message
+      // instead of the generic mailbox-wide error.
+      const inboxCov = syncStatus.folderCoverage
+        ? syncStatus.folderCoverage.coverages.find((c) => c.folder === "INBOX")
+        : null;
+      if (inboxCov?.state === "COMPLETE") {
+        return "Your inbox is up to date. No new messages right now.";
+      }
       return (
         syncError ??
         syncStatus.lastErrorSummary ??

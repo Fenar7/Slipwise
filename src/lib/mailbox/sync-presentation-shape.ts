@@ -22,6 +22,7 @@ export interface MailboxSyncPresentation {
       folder: string;
       state: string;
       totalThreads: number;
+      errorSummary?: string | null;
     }>;
   };
   /**

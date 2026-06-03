@@ -347,7 +347,7 @@ describe("gmailProviderAdapter Sprint 3.2", () => {
     expect("metadata" in result).toBe(true);
     const [, options] = fetchMock.mock.calls[0] ?? [];
     const body = JSON.parse(String(options?.body ?? "{}"));
-    expect(body.labelIds).toEqual(["INBOX", "SENT", "SPAM", "DRAFT"]);
+    expect(body.labelIds).toEqual(["INBOX", "SENT", "SPAM", "DRAFT", "STARRED", "TRASH"]);
   });
 
   it("syncs provider drafts through drafts.list and drafts.get, then resolves thread envelopes", async () => {

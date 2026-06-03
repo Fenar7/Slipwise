@@ -122,6 +122,7 @@ export async function listMailboxConnectionsForMember(
               folder: c.folder,
               state: c.state,
               totalThreads: c.totalThreads,
+              errorSummary: c.errorSummary,
             })),
           },
         };
