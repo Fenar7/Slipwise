@@ -897,7 +897,7 @@ export async function getPortalPaymentsData(orgSlug: string) {
   });
 
   const orgDefaults = await db.orgDefaults.findUnique({
-    where: { orgId: session.orgId },
+    where: { organizationId: session.orgId },
     select: { bankName: true, bankAccount: true, bankIFSC: true },
   });
 
@@ -917,6 +917,13 @@ export async function getPortalPaymentsData(orgSlug: string) {
     select: { id: true },
   });
   const hasPaymentLink = !!validPaymentLinkInvoice;
+
+  logPortalAccess({
+    orgId: session.orgId,
+    customerId: session.customerId,
+    path: `/portal/${orgSlug}/payments`,
+    action: "view_payments",
+  });
 
   return {
     outstandingBalance,

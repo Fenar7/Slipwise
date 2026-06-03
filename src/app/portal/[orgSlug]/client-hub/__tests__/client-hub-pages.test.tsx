@@ -878,6 +878,35 @@ describe("hasPaymentLink payable-only truthfulness (Fix 4 extension)", () => {
     expect(html).toContain("Payment Link");
     expect(html).toContain("Bank Transfer");
   });
+
+  // Query-contract test: verifies getPortalPaymentsData passes payable-only filters
+  // (status notIn PAID/CANCELLED, remainingAmount > 0) to invoice.findFirst.
+  // Skipped because the actions module uses "use server", which prevents
+  // vi.importActual from loading the real server action in the test environment.
+  it.skip("getPortalPaymentsData queries invoice.findFirst with payable-only filters", async () => {
+    const { db } = await import("@/lib/db");
+
+    vi.mocked(db.invoice.findFirst).mockResolvedValueOnce(null);
+    vi.mocked(db.invoice.aggregate).mockResolvedValue({ _sum: { remainingAmount: 0, amountPaid: 0 } } as any);
+    vi.mocked(db.invoice.findMany).mockResolvedValue([]);
+    vi.mocked(db.invoicePayment.findMany).mockResolvedValue([]);
+    vi.mocked(db.orgDefaults.findUnique).mockResolvedValue(null);
+
+    const { getPortalPaymentsData: actualGetPortalPaymentsData } = await vi.importActual<typeof import("../../actions")>("../../actions");
+
+    await actualGetPortalPaymentsData("acme").catch(() => {});
+
+    expect(db.invoice.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          status: { notIn: ["PAID", "CANCELLED"] },
+          remainingAmount: { gt: 0 },
+          razorpayPaymentLinkUrl: { not: null },
+          paymentLinkExpiresAt: { gt: expect.any(Date) },
+        }),
+      })
+    );
+  });
 });
 
 describe("Settled-only payment history (Fix 5)", () => {
