@@ -911,6 +911,8 @@ export async function getPortalPaymentsData(orgSlug: string) {
       customerId: session.customerId,
       razorpayPaymentLinkUrl: { not: null },
       paymentLinkExpiresAt: { gt: new Date() },
+      status: { notIn: ["PAID", "CANCELLED"] },
+      remainingAmount: { gt: 0 },
     },
     select: { id: true },
   });

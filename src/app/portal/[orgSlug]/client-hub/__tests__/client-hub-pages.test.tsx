@@ -807,6 +807,79 @@ describe("Payment-method availability truthful (Fix 4)", () => {
   });
 });
 
+describe("hasPaymentLink payable-only truthfulness (Fix 4 extension)", () => {
+
+  it("payments overview hides Payment Link when only a PAID invoice has a live link", async () => {
+    const { getPortalPaymentsData } = await import("../../actions");
+    vi.mocked(getPortalPaymentsData).mockResolvedValueOnce({
+      outstandingBalance: 0,
+      totalPaid: 5000,
+      orgHasBankDetails: true,
+      hasPaymentLink: false,
+      payments: [
+        { id: "pmt-001", invoiceNumber: "INV-000100", amount: 5000, paidAt: "2025-11-01", method: "Bank Transfer", status: "SETTLED" }
+      ],
+      outstandingInvoices: [],
+    });
+
+    const html = await renderAsyncPage(PaymentsPage);
+    expect(html).not.toContain("Payment Link");
+    expect(html).toContain("Bank Transfer");
+  });
+
+  it("payments overview hides Payment Link when only a CANCELLED invoice has a live link", async () => {
+    const { getPortalPaymentsData } = await import("../../actions");
+    vi.mocked(getPortalPaymentsData).mockResolvedValueOnce({
+      outstandingBalance: 0,
+      totalPaid: 0,
+      orgHasBankDetails: true,
+      hasPaymentLink: false,
+      payments: [],
+      outstandingInvoices: [],
+    });
+
+    const html = await renderAsyncPage(PaymentsPage);
+    expect(html).not.toContain("Payment Link");
+  });
+
+  it("payments overview hides Payment Link when only a zero-balance invoice has a live link", async () => {
+    const { getPortalPaymentsData } = await import("../../actions");
+    vi.mocked(getPortalPaymentsData).mockResolvedValueOnce({
+      outstandingBalance: 0,
+      totalPaid: 3200,
+      orgHasBankDetails: true,
+      hasPaymentLink: false,
+      payments: [
+        { id: "pmt-002", invoiceNumber: "INV-000101", amount: 3200, paidAt: "2025-10-20", method: "Bank Transfer", status: "SETTLED" }
+      ],
+      outstandingInvoices: [],
+    });
+
+    const html = await renderAsyncPage(PaymentsPage);
+    expect(html).not.toContain("Payment Link");
+  });
+
+  it("payments overview shows Payment Link when at least one invoice is live-link eligible and payable", async () => {
+    const { getPortalPaymentsData } = await import("../../actions");
+    vi.mocked(getPortalPaymentsData).mockResolvedValueOnce({
+      outstandingBalance: 1200,
+      totalPaid: 5800,
+      orgHasBankDetails: true,
+      hasPaymentLink: true,
+      payments: [
+        { id: "pmt-001", invoiceNumber: "INV-000128", amount: 3200, paidAt: "2025-10-15", method: "Bank Transfer", status: "SETTLED" }
+      ],
+      outstandingInvoices: [
+        { id: "inv-001", invoiceNumber: "INV-000131", dueDate: "2025-10-24", remainingAmount: 1200 }
+      ],
+    });
+
+    const html = await renderAsyncPage(PaymentsPage);
+    expect(html).toContain("Payment Link");
+    expect(html).toContain("Bank Transfer");
+  });
+});
+
 describe("Settled-only payment history (Fix 5)", () => {
 
   it("payment history data only contains SETTLED status payments", async () => {
