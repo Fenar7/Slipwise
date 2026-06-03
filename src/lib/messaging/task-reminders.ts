@@ -60,7 +60,6 @@ export interface ReminderDispatchResult {
 function buildTaskLink(
   conversationId: string,
   taskId: string,
-  _originatingMessageId: string | null,
 ): string {
   const base = process.env.NEXT_PUBLIC_APP_URL || "https://app.slipwise.app";
   // Primary link goes to the task within the conversation
@@ -101,7 +100,7 @@ async function sendReminderNotification(
   task: MessagingTaskRecord,
   assigneeEmail: string | null,
 ): Promise<boolean> {
-  const link = buildTaskLink(task.conversationId, task.id, task.originatingMessageId);
+  const link = buildTaskLink(task.conversationId, task.id);
 
   try {
     await createNotification({
@@ -148,7 +147,7 @@ export async function sendTaskAssignmentNotification(
   assigneeId: string,
   actorId: string,
 ): Promise<void> {
-  const link = buildTaskLink(task.conversationId, task.id, task.originatingMessageId);
+  const link = buildTaskLink(task.conversationId, task.id);
 
   // Resolve assignee email for optional email delivery
   let assigneeEmail: string | null = null;
@@ -270,6 +269,16 @@ export async function dispatchDueTaskReminders(
     return result;
   }
 
+  // Fetch default timezones for candidate orgs
+  const candidateOrgIds = [...new Set(candidates.map((c) => c.orgId))];
+  const orgDefaults = await db.orgDefaults.findMany({
+    where: { organizationId: { in: candidateOrgIds } },
+    select: { organizationId: true, timezone: true },
+  }).catch(() => []);
+  const timezoneMap = new Map<string, string>(
+    orgDefaults.map((od) => [od.organizationId, od.timezone])
+  );
+
   // Step 2: Validate assignee participation, claim, send, and release-on-failure
   for (const candidate of candidates) {
     // Re-check assignee is still an active participant in the conversation
@@ -312,6 +321,7 @@ export async function dispatchDueTaskReminders(
 
     // Resolve preferences and mute state
     const pref = await getMessagingPreferences({ userId: task.assigneeId!, orgId: task.orgId });
+    const timezone = timezoneMap.get(task.orgId) || "UTC";
     const readState = await db.conversationReadState.findFirst({
       where: { conversationId: task.conversationId, userId: task.assigneeId! },
     });
@@ -323,7 +333,7 @@ export async function dispatchDueTaskReminders(
       continue;
     }
 
-    const inQuietHours = isCurrentlyInQuietHours(pref);
+    const inQuietHours = isCurrentlyInQuietHours(pref, timezone);
     const suppressActiveDelivery = inQuietHours || isMuted;
 
     // Resolve assignee email for optional email delivery (only if not suppressed)

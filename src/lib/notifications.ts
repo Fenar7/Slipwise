@@ -73,6 +73,9 @@ export async function createNotification(params: CreateNotificationParams) {
                 },
               },
             });
+            if (!notification) {
+              throw new Error("createNotification: deduplication re-fetch returned null after P2002 — retry required");
+            }
           } else {
             throw error;
           }
@@ -100,10 +103,12 @@ export async function createNotification(params: CreateNotificationParams) {
     }
 
     // Record in-app delivery for analytics (idempotent)
-    await recordInAppDelivery(notification.id, params.orgId, params.userId, {
-      sourceModule: params.sourceModule,
-      sourceRef: params.sourceRef,
-    }).catch(() => {}); // never fail the notification itself
+    if (isNew) {
+      await recordInAppDelivery(notification.id, params.orgId, params.userId, {
+        sourceModule: params.sourceModule,
+        sourceRef: params.sourceRef,
+      }).catch(() => {}); // never fail the notification itself
+    }
 
     // Queue email delivery only if it's a newly created notification
     if (isNew && params.emailRequested && params.recipientEmail) {

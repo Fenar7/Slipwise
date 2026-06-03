@@ -15,6 +15,23 @@ vi.mock("@/lib/db", () => {
     },
     messagingNotificationPreference: {
       findUnique: vi.fn(),
+      findMany: vi.fn().mockImplementation(async (args: any) => {
+        const userIds = args?.where?.userId?.in || [];
+        const orgId = args?.where?.orgId;
+        const findUniqueMock = mocks.messagingNotificationPreference.findUnique;
+        const results = [];
+        for (const userId of userIds) {
+          const res = await findUniqueMock({
+            where: {
+              orgId_userId: { orgId, userId },
+            },
+          });
+          if (res) {
+            results.push({ userId, orgId, ...res });
+          }
+        }
+        return results;
+      }),
       upsert: vi.fn(),
     },
     conversationParticipant: {
@@ -23,6 +40,20 @@ vi.mock("@/lib/db", () => {
     },
     conversationReadState: {
       findFirst: vi.fn(),
+      findMany: vi.fn().mockImplementation(async (args: any) => {
+        const userIds = args?.where?.userId?.in || [];
+        const findFirstMock = mocks.conversationReadState.findFirst;
+        const results = [];
+        for (const userId of userIds) {
+          const res = await findFirstMock({ where: { userId } });
+          if (res) {
+            results.push({ userId, ...res });
+          } else {
+            results.push({ userId, isMuted: false });
+          }
+        }
+        return results;
+      }),
       upsert: vi.fn(),
     },
     conversationMeeting: {
@@ -37,6 +68,20 @@ vi.mock("@/lib/db", () => {
     },
     profile: {
       findUnique: vi.fn(),
+      findMany: vi.fn().mockImplementation(async (args: any) => {
+        const ids = args?.where?.id?.in || [];
+        const findUniqueMock = mocks.profile.findUnique;
+        const results = [];
+        for (const id of ids) {
+          const res = await findUniqueMock({ where: { id } });
+          if (res) {
+            results.push({ id, ...res });
+          } else {
+            results.push({ id, email: `${id}@slipwise.app` });
+          }
+        }
+        return results;
+      }),
     },
     downstreamConsumptionCheckpoint: {
       findUnique: vi.fn(),
@@ -57,6 +102,10 @@ vi.mock("@/lib/db", () => {
     },
     messagingAuditEvent: {
       create: vi.fn(),
+    },
+    orgDefaults: {
+      findUnique: vi.fn().mockResolvedValue({ timezone: "UTC" }),
+      findMany: vi.fn().mockResolvedValue([]),
     },
   };
   const db = {
@@ -193,14 +242,18 @@ describe("Sprint 9.3 — Notification Center, Preferences, and Alert Routing", (
     });
 
     it("evaluates quiet hours spanning overnight (22:00 - 08:00)", () => {
-      // Mock Date to 23:30 (11:30 PM)
       const originalDate = global.Date;
+
+      // Mock Date to 23:30 UTC
+      const mockTimeQuiet = new Date("2026-06-03T23:30:00Z");
       global.Date = class extends originalDate {
-        constructor() {
-          super();
+        constructor(...args: any[]) {
+          if (args.length === 0) {
+            super(mockTimeQuiet.getTime());
+          } else {
+            super(...args);
+          }
         }
-        getHours() { return 23; }
-        getMinutes() { return 30; }
       } as any;
 
       let inQuiet = isCurrentlyInQuietHours({
@@ -210,13 +263,16 @@ describe("Sprint 9.3 — Notification Center, Preferences, and Alert Routing", (
       } as any);
       expect(inQuiet).toBe(true);
 
-      // Mock Date to 12:00 (Noon)
+      // Mock Date to 12:00 (Noon) UTC
+      const mockTimeNoon = new Date("2026-06-03T12:00:00Z");
       global.Date = class extends originalDate {
-        constructor() {
-          super();
+        constructor(...args: any[]) {
+          if (args.length === 0) {
+            super(mockTimeNoon.getTime());
+          } else {
+            super(...args);
+          }
         }
-        getHours() { return 12; }
-        getMinutes() { return 0; }
       } as any;
 
       inQuiet = isCurrentlyInQuietHours({
@@ -225,6 +281,44 @@ describe("Sprint 9.3 — Notification Center, Preferences, and Alert Routing", (
         dndEnd: "08:00",
       } as any);
       expect(inQuiet).toBe(false);
+
+      // Restore Date
+      global.Date = originalDate;
+    });
+
+    it("evaluates quiet hours using timezone (Asia/Kolkata +5:30)", () => {
+      const originalDate = global.Date;
+
+      // Mock Date to 17:30 UTC. In Asia/Kolkata, this is 23:00 (17:30 + 5:30)
+      const mockTime = new Date("2026-06-03T17:30:00Z");
+      global.Date = class extends originalDate {
+        constructor(...args: any[]) {
+          if (args.length === 0) {
+            super(mockTime.getTime());
+          } else {
+            super(...args);
+          }
+        }
+      } as any;
+
+      // With Asia/Kolkata, it is 23:00 local time, so inside quiet hours (22:00 - 08:00)
+      const inQuietIST = isCurrentlyInQuietHours(
+        {
+          dndEnabled: true,
+          dndStart: "22:00",
+          dndEnd: "08:00",
+        } as any,
+        "Asia/Kolkata"
+      );
+      expect(inQuietIST).toBe(true);
+
+      // Without timezone, it falls back to UTC (17:30), which is outside quiet hours
+      const inQuietUTC = isCurrentlyInQuietHours({
+        dndEnabled: true,
+        dndStart: "22:00",
+        dndEnd: "08:00",
+      } as any);
+      expect(inQuietUTC).toBe(false);
 
       // Restore Date
       global.Date = originalDate;
@@ -718,6 +812,45 @@ describe("Sprint 9.3 — Notification Center, Preferences, and Alert Routing", (
         })
       );
     });
+
+    it("releases claim on meeting reminder if notifications fail for all participants", async () => {
+      const scheduledAt = new Date(Date.now() + 5 * 60 * 1000);
+      vi.mocked(db.conversationMeeting.findMany).mockResolvedValue([
+        {
+          id: "meet-3",
+          orgId: "org-1",
+          conversationId: "conv-1",
+          title: "Failed Sweep Meeting",
+          status: "UPCOMING",
+          scheduledAt,
+          conversation: {
+            id: "conv-1",
+            name: "Dev Team",
+            archivedAt: null,
+            lockedAt: null,
+          },
+        }
+      ] as any);
+
+      vi.mocked(db.conversationMeeting.updateMany).mockResolvedValue({ count: 1 } as any);
+      vi.mocked(db.conversationParticipant.findMany).mockResolvedValue([
+        { userId: "user-2" }
+      ] as any);
+
+      vi.mocked(db.profile.findUnique).mockRejectedValueOnce(new Error("Database connection timeout"));
+
+      const result = await dispatchDueMeetingRemindersSprint93();
+
+      expect(result.dispatched).toBe(0);
+      expect(result.failedAllNotifications).toBe(1);
+
+      expect(db.conversationMeeting.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: "meet-3", reminderSentAt: expect.any(Date) },
+          data: { reminderSentAt: null },
+        })
+      );
+    });
   });
 
   describe("API Router Integration Handlers", () => {
@@ -1032,6 +1165,27 @@ describe("Sprint 9.3 — Notification Center, Preferences, and Alert Routing", (
 
       expect(result2).toEqual(firstNotif);
       expect(db.notification.create).not.toHaveBeenCalledTimes(2);
+    });
+
+    it("createNotification throws error on P2002 when the second findUnique re-fetch returns null", async () => {
+      const { createNotification: actualCreateNotification } = await vi.importActual<typeof import("@/lib/notifications")>("@/lib/notifications");
+
+      vi.mocked(db.notification.findUnique)
+        .mockResolvedValueOnce(null) // first check — not found
+        .mockResolvedValueOnce(null); // second check after P2002
+
+      vi.mocked(db.notification.create).mockRejectedValueOnce({ code: "P2002" });
+
+      await expect(
+        actualCreateNotification({
+          userId: "user-2",
+          orgId: "org-1",
+          type: "TASK_REMINDER",
+          title: "Task Title",
+          body: "Task Body",
+          dedupeKey: "key",
+        })
+      ).rejects.toThrow("createNotification: deduplication re-fetch returned null after P2002 — retry required");
     });
   });
 });

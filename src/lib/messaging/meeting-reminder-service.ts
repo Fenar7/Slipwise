@@ -347,6 +347,7 @@ export interface MeetingReminderDispatchResult {
   skippedNoParticipants: number;
   failed: number;
   evaluated: number;
+  failedAllNotifications: number;
 }
 
 /**
@@ -366,6 +367,7 @@ export async function dispatchDueMeetingRemindersSprint93(
     skippedNoParticipants: 0,
     failed: 0,
     evaluated: 0,
+    failedAllNotifications: 0,
   };
 
   logMessagingAudit({
@@ -412,6 +414,16 @@ export async function dispatchDueMeetingRemindersSprint93(
     return result;
   }
 
+  // Fetch default timezones for candidate orgs
+  const candidateOrgIds = [...new Set(candidates.map((c) => c.orgId))];
+  const orgDefaults = await db.orgDefaults.findMany({
+    where: { organizationId: { in: candidateOrgIds } },
+    select: { organizationId: true, timezone: true },
+  }).catch(() => []);
+  const timezoneMap = new Map<string, string>(
+    orgDefaults.map((od) => [od.organizationId, od.timezone])
+  );
+
   for (const candidate of candidates) {
     if (candidate.conversation.archivedAt || candidate.conversation.lockedAt) {
       result.skippedInactiveConversation++;
@@ -449,6 +461,9 @@ export async function dispatchDueMeetingRemindersSprint93(
       continue;
     }
 
+    const timezone = timezoneMap.get(candidate.orgId) || "UTC";
+    let notifiedCount = 0;
+
     for (const p of participants) {
       try {
         const pref = await getMessagingPreferences({ userId: p.userId, orgId: candidate.orgId });
@@ -468,7 +483,7 @@ export async function dispatchDueMeetingRemindersSprint93(
 
         // Otherwise, create the in-app notification.
         // If in quiet hours, DND suppresses active email delivery, but we still create the in-app notification.
-        const inQuietHours = isCurrentlyInQuietHours(pref);
+        const inQuietHours = isCurrentlyInQuietHours(pref, timezone);
 
         const profile = await db.profile.findUnique({
           where: { id: p.userId },
@@ -490,12 +505,23 @@ export async function dispatchDueMeetingRemindersSprint93(
           sourceRef: candidate.id,
           dedupeKey: `meeting_reminder:${candidate.id}:FIFTEEN_MINUTES`,
         });
+
+        notifiedCount++;
       } catch (err) {
         console.error(`[meeting-reminders-9-3] Failed to notify user ${p.userId}:`, err);
       }
     }
 
-    result.dispatched++;
+    if (notifiedCount === 0 && participants.length > 0) {
+      // Release claim
+      await db.conversationMeeting.updateMany({
+        where: { id: candidate.id, reminderSentAt: now },
+        data: { reminderSentAt: null },
+      }).catch(() => {});
+      result.failedAllNotifications++;
+    } else if (notifiedCount > 0) {
+      result.dispatched++;
+    }
   }
 
   logMessagingAudit({
@@ -509,9 +535,11 @@ export async function dispatchDueMeetingRemindersSprint93(
       dispatched: result.dispatched,
       skippedInactiveConversation: result.skippedInactiveConversation,
       skippedNoParticipants: result.skippedNoParticipants,
+      failedAllNotifications: result.failedAllNotifications,
     },
   }).catch(() => {});
 
   return result;
 }
+
 
