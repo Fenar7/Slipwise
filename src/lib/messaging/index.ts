@@ -429,4 +429,20 @@ export { ConversationAccessError, InvalidInputError, NotFoundError } from "./err
 // Search Indexing
 export { indexAttachment, indexAttachmentsForMessage, updateAttachmentScanStatus, processSearchIndexEvents } from "./indexing-service";
 
+// ─── Sprint 9.4: Digests and follow-up productivity ───
 
+export type { MessagingFollowUpRecord } from "./domain-types";
+export type { DigestPayload } from "./digest-service";
+
+export {
+  buildUserDigest,
+  dispatchDigestForUser,
+  dispatchPendingDigests,
+} from "./digest-service";
+
+export {
+  flagMessageForFollowUp,
+  resolveFollowUp,
+  listFollowUps,
+  deleteFollowUp,
+} from "./followup-service";

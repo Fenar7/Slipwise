@@ -29,6 +29,7 @@ import type {
   CalendarConnection,
   RetentionPolicy,
   MessagingAuditEvent,
+  MessagingFollowUp,
 } from "@/generated/prisma/client";
 
 import type {
@@ -49,6 +50,7 @@ import type {
   CalendarConnectionSummary,
   RetentionPolicyRecord,
   MessagingAuditEventRecord,
+  MessagingFollowUpRecord,
 } from "./domain-types";
 
 // ─── Conversation ─────────────────────────────────────────────────────────────
@@ -393,5 +395,22 @@ export function toAuditEventRecord(row: MessagingAuditEvent): MessagingAuditEven
     summary: row.summary,
     metadata: (row.metadata as Record<string, unknown> | null) ?? null,
     createdAt: row.createdAt,
+  };
+}
+
+// ─── Messaging Follow-Up ──────────────────────────────────────────────────────
+
+export function toFollowUpRecord(row: MessagingFollowUp): MessagingFollowUpRecord {
+  return {
+    id: row.id,
+    orgId: row.orgId,
+    userId: row.userId,
+    conversationId: row.conversationId,
+    messageId: row.messageId,
+    note: row.note ?? null,
+    resolvedAt: row.resolvedAt ?? null,
+    resolvedBy: row.resolvedBy ?? null,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
   };
 }

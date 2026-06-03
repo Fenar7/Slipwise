@@ -20,6 +20,8 @@ export interface MessagingPreferences {
   dndEnabled: boolean;
   dndStart: string;
   dndEnd: string;
+  digestEnabled: boolean;
+  digestFrequency: string;
 }
 
 export const DEFAULT_PREFERENCES: MessagingPreferences = {
@@ -31,6 +33,8 @@ export const DEFAULT_PREFERENCES: MessagingPreferences = {
   dndEnabled: false,
   dndStart: "22:00",
   dndEnd: "08:00",
+  digestEnabled: false,
+  digestFrequency: "DAILY",
 };
 
 // ─── Preference Services ─────────────────────────────────────────────────────
@@ -114,6 +118,8 @@ export async function getMessagingPreferences(params: {
     dndEnabled: row.dndEnabled,
     dndStart: row.dndStart,
     dndEnd: row.dndEnd,
+    digestEnabled: row.digestEnabled,
+    digestFrequency: row.digestFrequency,
   };
 }
 
@@ -143,6 +149,8 @@ export async function updateMessagingPreferences(params: {
       dndEnabled: params.preferences.dndEnabled ?? DEFAULT_PREFERENCES.dndEnabled,
       dndStart: params.preferences.dndStart ?? DEFAULT_PREFERENCES.dndStart,
       dndEnd: params.preferences.dndEnd ?? DEFAULT_PREFERENCES.dndEnd,
+      digestEnabled: params.preferences.digestEnabled ?? DEFAULT_PREFERENCES.digestEnabled,
+      digestFrequency: params.preferences.digestFrequency ?? DEFAULT_PREFERENCES.digestFrequency,
     },
     update: {
       ...(params.preferences.allNotificationsEnabled !== undefined && { allNotificationsEnabled: params.preferences.allNotificationsEnabled }),
@@ -153,6 +161,8 @@ export async function updateMessagingPreferences(params: {
       ...(params.preferences.dndEnabled !== undefined && { dndEnabled: params.preferences.dndEnabled }),
       ...(params.preferences.dndStart !== undefined && { dndStart: params.preferences.dndStart }),
       ...(params.preferences.dndEnd !== undefined && { dndEnd: params.preferences.dndEnd }),
+      ...(params.preferences.digestEnabled !== undefined && { digestEnabled: params.preferences.digestEnabled }),
+      ...(params.preferences.digestFrequency !== undefined && { digestFrequency: params.preferences.digestFrequency }),
       updatedAt: new Date(),
     },
   });
@@ -166,6 +176,8 @@ export async function updateMessagingPreferences(params: {
     dndEnabled: row.dndEnabled,
     dndStart: row.dndStart,
     dndEnd: row.dndEnd,
+    digestEnabled: row.digestEnabled,
+    digestFrequency: row.digestFrequency,
   };
 }
 

@@ -544,3 +544,18 @@ export function retentionPolicyIsIndefinite(
 ): boolean {
   return record.retentionDays === null;
 }
+
+// ─── Messaging Follow-Up ──────────────────────────────────────────────────────
+
+export interface MessagingFollowUpRecord {
+  id: string;
+  orgId: string;
+  userId: string;
+  conversationId: string;
+  messageId: string;
+  note: string | null;
+  resolvedAt: Date | null;
+  resolvedBy: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}

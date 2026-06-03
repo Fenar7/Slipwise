@@ -16,7 +16,7 @@ CREATE TABLE "conversation_draft" (
 
 -- Foreign keys
 ALTER TABLE "conversation_draft" ADD CONSTRAINT "conversation_draft_orgId_fkey"
-    FOREIGN KEY ("orgId") REFERENCES "organizations"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+    FOREIGN KEY ("orgId") REFERENCES "organization"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 ALTER TABLE "conversation_draft" ADD CONSTRAINT "conversation_draft_conversationId_orgId_fkey"
     FOREIGN KEY ("conversationId", "orgId") REFERENCES "conversation"("id", "orgId") ON DELETE CASCADE ON UPDATE CASCADE;
