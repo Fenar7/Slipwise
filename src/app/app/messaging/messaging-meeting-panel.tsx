@@ -214,6 +214,7 @@ export function MessagingMeetingPanel({ conversationId, calendarConnection, now 
   const isConversationBlocked = !!conversation?.archivedAt || !!conversation?.lockedAt;
 
   const [connection, setConnection] = useState<CalendarConnection>(calendarConnection);
+  const isConnected = connection.status === "connected";
   const [callerRole, setCallerRole] = useState<string>("admin");
 
   // Hydrate connection status dynamically in Sprint 8.2

@@ -788,8 +788,6 @@ export async function searchMessaging(
     derivedState = "degraded";
   } else if (isFileSearchUnavailable && requestedKinds.length === 1 && requestedKinds.includes("file")) {
     derivedState = "unindexed";
-  } else if (isFileSearchUnavailable && requestedKinds.includes("file")) {
-    derivedState = "partial";
   } else if (!isFileSearchUnavailable && (hasPendingScans || hasUnsupportedFiles)) {
     derivedState = "partial";
   }
