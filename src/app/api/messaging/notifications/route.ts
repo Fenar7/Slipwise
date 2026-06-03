@@ -15,9 +15,42 @@ export async function GET(req: NextRequest) {
   try {
     const { userId, orgId } = await requireMessagingApiContext();
     const searchParams = req.nextUrl.searchParams;
-    const filter = (searchParams.get("filter") || "all") as "all" | "mentions" | "unread";
-    const limit = parseInt(searchParams.get("limit") || "50", 10);
-    const offset = parseInt(searchParams.get("offset") || "0", 10);
+
+    const rawFilter = searchParams.get("filter");
+    if (rawFilter !== null && rawFilter !== "all" && rawFilter !== "mentions" && rawFilter !== "unread") {
+      return messagingApiError(
+        "VALIDATION_ERROR",
+        "Invalid filter. Allowed values: all, mentions, unread",
+        422
+      );
+    }
+    const filter = (rawFilter || "all") as "all" | "mentions" | "unread";
+
+    const rawLimit = searchParams.get("limit");
+    let limit = 50;
+    if (rawLimit !== null) {
+      if (!/^\d+$/.test(rawLimit)) {
+        return messagingApiError("VALIDATION_ERROR", "Limit must be a valid positive integer", 422);
+      }
+      const val = parseInt(rawLimit, 10);
+      if (isNaN(val) || val <= 0 || val > 100) {
+        return messagingApiError("VALIDATION_ERROR", "Limit must be between 1 and 100", 422);
+      }
+      limit = val;
+    }
+
+    const rawOffset = searchParams.get("offset");
+    let offset = 0;
+    if (rawOffset !== null) {
+      if (!/^\d+$/.test(rawOffset)) {
+        return messagingApiError("VALIDATION_ERROR", "Offset must be a valid non-negative integer", 422);
+      }
+      const val = parseInt(rawOffset, 10);
+      if (isNaN(val) || val < 0 || val > 10000) {
+        return messagingApiError("VALIDATION_ERROR", "Offset must be a non-negative integer below 10000", 422);
+      }
+      offset = val;
+    }
 
     const result = await getMessagingNotifications({
       userId,

@@ -84,7 +84,6 @@ vi.mock("@/app/api/messaging/_utils", async (importOriginal) => {
 
 import { db } from "@/lib/db";
 import { createNotification } from "@/lib/notifications";
-import { requireMessagingApiContext } from "@/app/api/messaging/_utils";
 import {
   getMessagingPreferences,
   updateMessagingPreferences,
@@ -350,7 +349,7 @@ describe("Sprint 9.3 — Notification Center, Preferences, and Alert Routing", (
       vi.mocked(db.conversationMessage.findUnique).mockResolvedValue({
         id: "msg-1",
         body: "Hello @user-2 and @user-3",
-        conversation: { title: "Dev Group" },
+        conversation: { name: "Dev Group" },
       } as any);
       vi.mocked(db.profile.findUnique).mockImplementation(async (args: any) => {
         if (args.where.id === "actor-1") return { name: "Actor User" } as any;
@@ -381,6 +380,57 @@ describe("Sprint 9.3 — Notification Center, Preferences, and Alert Routing", (
       expect(db.downstreamConsumptionCheckpoint.upsert).toHaveBeenCalled();
     });
 
+    it("creates in-app notification with emailRequested false for a user in DND during mention routing", async () => {
+      vi.mocked(db.downstreamConsumptionCheckpoint.findUnique).mockResolvedValue(null);
+      vi.mocked(db.conversationEventLog.findMany).mockResolvedValue([
+        {
+          eventId: "e-3",
+          cursor: 102n,
+          eventType: "conversation.message.created",
+          orgId: "org-1",
+          conversationId: "conv-1",
+          actorId: "actor-1",
+          payload: { messageId: "msg-3", mentionIds: ["user-2"] },
+          createdAt: new Date(),
+        }
+      ] as any);
+      vi.mocked(db.conversationMessage.findUnique).mockResolvedValue({
+        id: "msg-3",
+        body: "Hello @user-2",
+        conversation: { name: "Dev Group" },
+      } as any);
+      vi.mocked(db.profile.findUnique).mockImplementation(async (args: any) => {
+        if (args.where.id === "actor-1") return { name: "Actor User" } as any;
+        return { email: `user-2@slipwise.app` } as any;
+      });
+
+      vi.mocked(db.conversationParticipant.findMany).mockResolvedValue([
+        { userId: "user-2" }
+      ] as any);
+
+      // Mock user-2 preference: allEnabled, mentionsEnabled, DND is active
+      vi.mocked(db.messagingNotificationPreference.findUnique).mockResolvedValue({
+        allNotificationsEnabled: true,
+        mentionsEnabled: true,
+        repliesEnabled: true,
+        taskRemindersEnabled: true,
+        meetingRemindersEnabled: true,
+        dndEnabled: true,
+        dndStart: "00:00",
+        dndEnd: "23:59",
+      } as any);
+
+      await processNotificationEvents("org-1", "conv-1");
+
+      expect(createNotification).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: "user-2",
+          type: "MENTION",
+          emailRequested: false, // suppressed due to DND
+        })
+      );
+    });
+
     it("routes thread.replied event to thread anchor author and distinct prior thread participants, respecting mute", async () => {
       vi.mocked(db.downstreamConsumptionCheckpoint.findUnique).mockResolvedValue(null);
       vi.mocked(db.conversationEventLog.findMany).mockResolvedValue([
@@ -398,7 +448,7 @@ describe("Sprint 9.3 — Notification Center, Preferences, and Alert Routing", (
       vi.mocked(db.conversationMessage.findUnique).mockResolvedValue({
         id: "msg-2",
         body: "Thread response body",
-        conversation: { title: "Project Alpha" },
+        conversation: { name: "Project Alpha" },
       } as any);
       vi.mocked(db.profile.findUnique).mockImplementation(async (args: any) => {
         if (args.where.id === "actor-1") return { name: "Actor User" } as any;
@@ -443,8 +493,62 @@ describe("Sprint 9.3 — Notification Center, Preferences, and Alert Routing", (
         })
       );
     });
-  });
 
+    it("creates in-app notification with emailRequested false for a user in DND during reply routing", async () => {
+      vi.mocked(db.downstreamConsumptionCheckpoint.findUnique).mockResolvedValue(null);
+      vi.mocked(db.conversationEventLog.findMany).mockResolvedValue([
+        {
+          eventId: "e-4",
+          cursor: 103n,
+          eventType: "conversation.thread.replied",
+          orgId: "org-1",
+          conversationId: "conv-1",
+          actorId: "actor-1",
+          payload: { messageId: "msg-4", threadId: "thread-1" },
+          createdAt: new Date(),
+        }
+      ] as any);
+      vi.mocked(db.conversationMessage.findUnique).mockResolvedValue({
+        id: "msg-4",
+        body: "Reply in thread",
+        conversation: { name: "Project Alpha" },
+      } as any);
+      vi.mocked(db.profile.findUnique).mockImplementation(async (args: any) => {
+        if (args.where.id === "actor-1") return { name: "Actor User" } as any;
+        return { email: `prior-participant@slipwise.app` } as any;
+      });
+      vi.mocked(db.conversationThread.findUnique).mockResolvedValue({
+        id: "thread-1",
+        anchorMessage: { authorId: "anchor-author" },
+      } as any);
+      vi.mocked(db.conversationMessage.findMany).mockResolvedValue([
+        { authorId: "prior-participant" }
+      ] as any);
+      vi.mocked(db.conversationParticipant.findMany).mockResolvedValue([
+        { userId: "prior-participant" }
+      ] as any);
+      vi.mocked(db.conversationReadState.findFirst).mockResolvedValue({ isMuted: false } as any);
+
+      // DND active for prior-participant
+      vi.mocked(db.messagingNotificationPreference.findUnique).mockResolvedValue({
+        allNotificationsEnabled: true,
+        repliesEnabled: true,
+        dndEnabled: true,
+        dndStart: "00:00",
+        dndEnd: "23:59",
+      } as any);
+
+      await processNotificationEvents("org-1", "conv-1");
+
+      expect(createNotification).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: "prior-participant",
+          type: "REPLY",
+          emailRequested: false, // suppressed due to DND
+        })
+      );
+    });
+  });
   describe("Task Reminder Preferences and Mute integration", () => {
     it("sweeps task reminders but skips notification if preferences disable them", async () => {
       vi.mocked(db.messagingTask.findMany).mockResolvedValue([
@@ -481,6 +585,51 @@ describe("Sprint 9.3 — Notification Center, Preferences, and Alert Routing", (
       expect(result.dispatched).toBe(1);
       expect(createNotification).not.toHaveBeenCalled();
     });
+
+    it("creates in-app notification but suppresses email delivery for task assignee in DND", async () => {
+      vi.mocked(db.messagingTask.findMany).mockResolvedValue([
+        {
+          id: "task-2",
+          orgId: "org-1",
+          conversationId: "conv-1",
+          title: "Complete DND task",
+          status: "OPEN",
+          reminderAt: new Date(Date.now() - 1000),
+          reminderSentAt: null,
+          assigneeId: "user-2",
+        }
+      ] as any);
+      vi.mocked(db.conversationParticipant.findFirst).mockResolvedValue({ id: "p-2" } as any);
+      vi.mocked(db.messagingTask.updateMany).mockResolvedValue({ count: 1 } as any);
+      vi.mocked(db.messagingTask.findUnique).mockResolvedValue({
+        id: "task-2",
+        orgId: "org-1",
+        conversationId: "conv-1",
+        title: "Complete DND task",
+        status: "OPEN",
+        assigneeId: "user-2",
+      } as any);
+
+      // User-2 in DND
+      vi.mocked(db.messagingNotificationPreference.findUnique).mockResolvedValue({
+        allNotificationsEnabled: true,
+        taskRemindersEnabled: true,
+        dndEnabled: true,
+        dndStart: "00:00",
+        dndEnd: "23:59",
+      } as any);
+
+      const result = await dispatchDueTaskReminders();
+
+      expect(result.dispatched).toBe(1);
+      expect(createNotification).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: "user-2",
+          type: "TASK_REMINDER",
+          emailRequested: false, // suppressed due to DND
+        })
+      );
+    });
   });
 
   describe("Meeting Reminder Sweep", () => {
@@ -496,7 +645,7 @@ describe("Sprint 9.3 — Notification Center, Preferences, and Alert Routing", (
           scheduledAt,
           conversation: {
             id: "conv-1",
-            title: "Dev Team",
+            name: "Dev Team",
             archivedAt: null,
             lockedAt: null,
           },
@@ -518,6 +667,52 @@ describe("Sprint 9.3 — Notification Center, Preferences, and Alert Routing", (
           userId: "user-2",
           type: "MEETING_REMINDER",
           title: "Upcoming Meeting: Sprint Sync",
+        })
+      );
+    });
+
+    it("creates in-app notification but suppresses email delivery for participant in DND", async () => {
+      const scheduledAt = new Date(Date.now() + 5 * 60 * 1000);
+      vi.mocked(db.conversationMeeting.findMany).mockResolvedValue([
+        {
+          id: "meet-2",
+          orgId: "org-1",
+          conversationId: "conv-1",
+          title: "DND Meeting",
+          status: "UPCOMING",
+          scheduledAt,
+          conversation: {
+            id: "conv-1",
+            name: "Dev Team",
+            archivedAt: null,
+            lockedAt: null,
+          },
+        }
+      ] as any);
+
+      vi.mocked(db.conversationMeeting.updateMany).mockResolvedValue({ count: 1 } as any);
+      vi.mocked(db.conversationParticipant.findMany).mockResolvedValue([
+        { userId: "user-2" }
+      ] as any);
+      vi.mocked(db.profile.findUnique).mockResolvedValue({ email: "user-2@slipwise.app" } as any);
+
+      // User-2 in DND
+      vi.mocked(db.messagingNotificationPreference.findUnique).mockResolvedValue({
+        allNotificationsEnabled: true,
+        meetingRemindersEnabled: true,
+        dndEnabled: true,
+        dndStart: "00:00",
+        dndEnd: "23:59",
+      } as any);
+
+      const result = await dispatchDueMeetingRemindersSprint93();
+
+      expect(result.dispatched).toBe(1);
+      expect(createNotification).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: "user-2",
+          type: "MEETING_REMINDER",
+          emailRequested: false, // suppressed due to DND
         })
       );
     });
@@ -577,6 +772,71 @@ describe("Sprint 9.3 — Notification Center, Preferences, and Alert Routing", (
 
       expect(res.success).toBe(false);
       expect(res.error).toContain("Mute toggle failed");
+    });
+  });
+
+  describe("API Route Input Validation Handlers", () => {
+    it("GET notifications list rejects invalid filter", async () => {
+      const req = new NextRequest("http://localhost/api/messaging/notifications?filter=invalid-filter");
+      const res = await getNotificationsRoute(req) as any;
+
+      expect(res.success).toBe(false);
+      expect(res.status).toBe(422);
+      expect(res.error.message).toContain("Invalid filter");
+    });
+
+    it("GET notifications list rejects invalid limit", async () => {
+      const req = new NextRequest("http://localhost/api/messaging/notifications?limit=-10");
+      const res = await getNotificationsRoute(req) as any;
+
+      expect(res.success).toBe(false);
+      expect(res.status).toBe(422);
+      expect(res.error.message).toContain("Limit must be a valid positive integer");
+    });
+
+    it("GET notifications list rejects too large limit", async () => {
+      const req = new NextRequest("http://localhost/api/messaging/notifications?limit=250");
+      const res = await getNotificationsRoute(req) as any;
+
+      expect(res.success).toBe(false);
+      expect(res.status).toBe(422);
+      expect(res.error.message).toContain("Limit must be between 1 and 100");
+    });
+
+    it("PUT preferences rejects unknown keys", async () => {
+      const req = new NextRequest("http://localhost/api/messaging/notification-preferences", {
+        method: "PUT",
+        body: JSON.stringify({ unknownKey: true }),
+      });
+      const res = await putPrefsRoute(req) as any;
+
+      expect(res.success).toBe(false);
+      expect(res.status).toBe(422);
+      expect(res.error.message).toContain("not a permitted preference option");
+    });
+
+    it("PUT preferences rejects invalid types for booleans", async () => {
+      const req = new NextRequest("http://localhost/api/messaging/notification-preferences", {
+        method: "PUT",
+        body: JSON.stringify({ allNotificationsEnabled: "true" }),
+      });
+      const res = await putPrefsRoute(req) as any;
+
+      expect(res.success).toBe(false);
+      expect(res.status).toBe(422);
+      expect(res.error.message).toContain("must be a boolean");
+    });
+
+    it("PUT preferences rejects invalid quiet-hours time format", async () => {
+      const req = new NextRequest("http://localhost/api/messaging/notification-preferences", {
+        method: "PUT",
+        body: JSON.stringify({ dndStart: "25:00" }),
+      });
+      const res = await putPrefsRoute(req) as any;
+
+      expect(res.success).toBe(false);
+      expect(res.status).toBe(422);
+      expect(res.error.message).toContain("must be a string in HH:MM format");
     });
   });
 });

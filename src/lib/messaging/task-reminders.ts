@@ -60,7 +60,7 @@ export interface ReminderDispatchResult {
 function buildTaskLink(
   conversationId: string,
   taskId: string,
-  originatingMessageId: string | null,
+  _originatingMessageId: string | null,
 ): string {
   const base = process.env.NEXT_PUBLIC_APP_URL || "https://app.slipwise.app";
   // Primary link goes to the task within the conversation
@@ -316,22 +316,27 @@ export async function dispatchDueTaskReminders(
     });
     const isMuted = readState?.isMuted ?? false;
 
-    if (!pref.allNotificationsEnabled || !pref.taskRemindersEnabled || isMuted || isCurrentlyInQuietHours(pref)) {
-      // Preference/mute prevents reminder notification - leave reminderSentAt set to now (claimed) so it is marked processed.
+    // If the category is explicitly disabled, treat as intentionally suppressed and mark processed.
+    if (!pref.allNotificationsEnabled || !pref.taskRemindersEnabled) {
       result.dispatched++;
       continue;
     }
 
-    // Resolve assignee email for optional email delivery
+    const inQuietHours = isCurrentlyInQuietHours(pref);
+    const suppressActiveDelivery = inQuietHours || isMuted;
+
+    // Resolve assignee email for optional email delivery (only if not suppressed)
     let assigneeEmail: string | null = null;
-    try {
-      const member = await db.member.findFirst({
-        where: { organizationId: task.orgId, userId: task.assigneeId! },
-        include: { user: { select: { email: true } } },
-      });
-      assigneeEmail = member?.user?.email ?? null;
-    } catch {
-      // Non-fatal
+    if (!suppressActiveDelivery) {
+      try {
+        const member = await db.member.findFirst({
+          where: { organizationId: task.orgId, userId: task.assigneeId! },
+          include: { user: { select: { email: true } } },
+        });
+        assigneeEmail = member?.user?.email ?? null;
+      } catch {
+        // Non-fatal
+      }
     }
 
     const sent = await sendReminderNotification(

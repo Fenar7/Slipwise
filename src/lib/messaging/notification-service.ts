@@ -199,7 +199,13 @@ export async function getMessagingNotifications(params: {
 }) {
   const { userId, orgId, filter = "all", limit = 50, offset = 0 } = params;
 
-  const where: any = {
+  const where: {
+    userId: string;
+    orgId: string;
+    sourceModule: string;
+    type?: string;
+    isRead?: boolean;
+  } = {
     userId,
     orgId,
     sourceModule: "messaging",
@@ -309,13 +315,13 @@ export async function processNotificationEvents(orgId: string, conversationId: s
     const payload = buildNotificationPayload(event);
     if (!payload || !payload.messageId) continue;
 
-    // Fetch the message and its conversation title
+    // Fetch the message and its conversation name
     const message = await db.conversationMessage.findUnique({
       where: { id: payload.messageId },
       include: {
         conversation: {
           select: {
-            title: true,
+            name: true,
           },
         },
       },
@@ -356,22 +362,24 @@ export async function processNotificationEvents(orgId: string, conversationId: s
 
       for (const recipientId of activeMentionUserIds) {
         const pref = await getMessagingPreferences({ userId: recipientId, orgId });
-        if (pref.allNotificationsEnabled && pref.mentionsEnabled && !isCurrentlyInQuietHours(pref)) {
+        if (pref.allNotificationsEnabled && pref.mentionsEnabled) {
           // Resolve recipient email
           const recipientProfile = await db.profile.findUnique({
             where: { id: recipientId },
             select: { email: true },
           });
 
+          const inQuietHours = isCurrentlyInQuietHours(pref);
+
           await createNotification({
             userId: recipientId,
             orgId,
             type: "MENTION",
-            title: `New mention in ${message.conversation.title || "conversation"}`,
+            title: `New mention in ${message.conversation.name || "conversation"}`,
             body: `${actorName}: ${snippet}`,
             link,
-            emailRequested: Boolean(recipientProfile?.email),
-            recipientEmail: recipientProfile?.email ?? undefined,
+            emailRequested: !inQuietHours && Boolean(recipientProfile?.email),
+            recipientEmail: !inQuietHours ? (recipientProfile?.email ?? undefined) : undefined,
             sourceModule: "messaging",
             sourceRef: message.id,
           });
@@ -440,23 +448,24 @@ export async function processNotificationEvents(orgId: string, conversationId: s
             if (
               pref.allNotificationsEnabled &&
               pref.repliesEnabled &&
-              !isMuted &&
-              !isCurrentlyInQuietHours(pref)
+              !isMuted
             ) {
               const recipientProfile = await db.profile.findUnique({
                 where: { id: recipientId },
                 select: { email: true },
               });
 
+              const inQuietHours = isCurrentlyInQuietHours(pref);
+
               await createNotification({
                 userId: recipientId,
                 orgId,
                 type: "REPLY",
-                title: `New reply in ${message.conversation.title || "conversation"}`,
+                title: `New reply in ${message.conversation.name || "conversation"}`,
                 body: `${actorName}: ${snippet}`,
                 link,
-                emailRequested: Boolean(recipientProfile?.email),
-                recipientEmail: recipientProfile?.email ?? undefined,
+                emailRequested: !inQuietHours && Boolean(recipientProfile?.email),
+                recipientEmail: !inQuietHours ? (recipientProfile?.email ?? undefined) : undefined,
                 sourceModule: "messaging",
                 sourceRef: message.id,
               });

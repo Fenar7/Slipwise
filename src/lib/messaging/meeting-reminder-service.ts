@@ -388,7 +388,7 @@ export async function dispatchDueMeetingRemindersSprint93(
       conversation: {
         select: {
           id: true,
-          title: true,
+          name: true,
           archivedAt: true,
           lockedAt: true,
         },
@@ -460,32 +460,34 @@ export async function dispatchDueMeetingRemindersSprint93(
         });
         const isMuted = readState?.isMuted ?? false;
 
-        if (
-          pref.allNotificationsEnabled &&
-          pref.meetingRemindersEnabled &&
-          !isMuted &&
-          !isCurrentlyInQuietHours(pref)
-        ) {
-          const profile = await db.profile.findUnique({
-            where: { id: p.userId },
-            select: { email: true },
-          });
-
-          const link = `${process.env.NEXT_PUBLIC_APP_URL || "https://app.slipwise.app"}/app/messaging/conversations/${candidate.conversationId}`;
-
-          await createNotification({
-            userId: p.userId,
-            orgId: candidate.orgId,
-            type: "MEETING_REMINDER",
-            title: `Upcoming Meeting: ${candidate.title}`,
-            body: `Meeting "${candidate.title}" starts in 15 minutes.`,
-            link,
-            emailRequested: Boolean(profile?.email),
-            recipientEmail: profile?.email ?? undefined,
-            sourceModule: "messaging",
-            sourceRef: candidate.id,
-          });
+        // If the category is explicitly disabled, or the conversation is muted, skip notifications entirely.
+        if (!pref.allNotificationsEnabled || !pref.meetingRemindersEnabled || isMuted) {
+          continue;
         }
+
+        // Otherwise, create the in-app notification.
+        // If in quiet hours, DND suppresses active email delivery, but we still create the in-app notification.
+        const inQuietHours = isCurrentlyInQuietHours(pref);
+
+        const profile = await db.profile.findUnique({
+          where: { id: p.userId },
+          select: { email: true },
+        });
+
+        const link = `${process.env.NEXT_PUBLIC_APP_URL || "https://app.slipwise.app"}/app/messaging/conversations/${candidate.conversationId}`;
+
+        await createNotification({
+          userId: p.userId,
+          orgId: candidate.orgId,
+          type: "MEETING_REMINDER",
+          title: `Upcoming Meeting: ${candidate.title}`,
+          body: `Meeting "${candidate.title}" starts in 15 minutes.`,
+          link,
+          emailRequested: !inQuietHours && Boolean(profile?.email),
+          recipientEmail: !inQuietHours ? (profile?.email ?? undefined) : undefined,
+          sourceModule: "messaging",
+          sourceRef: candidate.id,
+        });
       } catch (err) {
         console.error(`[meeting-reminders-9-3] Failed to notify user ${p.userId}:`, err);
       }
