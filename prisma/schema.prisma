@@ -144,6 +144,7 @@ model Organization {
   apiRequestLogs               ApiRequestLog[]
   ssoConfig                    SsoConfig?
   orgPreferences               UserOrgPreference[]
+  messagingNotificationPreferences MessagingNotificationPreference[]
   orgDomain                    OrgDomain?
   whiteLabel                   OrgWhiteLabel?
   emailDomains                 OrgEmailDomain[]
@@ -2147,9 +2148,11 @@ model Notification {
   // Sprint 18.2 delivery extensions
   emailRequested Boolean  @default(false)
   recipientEmail String?
+  dedupeKey      String?
 
   deliveries NotificationDelivery[]
 
+  @@unique([orgId, userId, dedupeKey])
   @@index([userId, isRead])
   @@index([orgId])
   @@map("notification")
@@ -6736,6 +6739,7 @@ model ConversationMeeting {
   updatedAt       DateTime      @updatedAt
   /// Structured metadata for provider sync (e.g. attendee responses from provider).
   metadata        Json?
+  reminderSentAt  DateTime?
 
   organization Organization       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   conversation Conversation       @relation(fields: [conversationId, orgId], references: [id, orgId], onDelete: Cascade)
@@ -6744,6 +6748,7 @@ model ConversationMeeting {
 
   @@index([orgId, conversationId, scheduledAt])
   @@index([orgId, status, scheduledAt])
+  @@index([orgId, reminderSentAt])
   @@map("conversation_meeting")
 }
 
@@ -6929,3 +6934,25 @@ model DownstreamConsumptionCheckpoint {
   @@index([orgId, conversationId])
   @@map("downstream_consumption_checkpoint")
 }
+
+model MessagingNotificationPreference {
+  id                        String   @id @default(cuid())
+  orgId                     String
+  userId                    String   @db.Uuid
+  allNotificationsEnabled   Boolean  @default(true)
+  mentionsEnabled           Boolean  @default(true)
+  repliesEnabled            Boolean  @default(true)
+  taskRemindersEnabled      Boolean  @default(true)
+  meetingRemindersEnabled   Boolean  @default(true)
+  dndEnabled                Boolean  @default(false)
+  dndStart                  String   @default("22:00")
+  dndEnd                    String   @default("08:00")
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, userId])
+  @@map("messaging_notification_preference")
+}
+

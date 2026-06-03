@@ -43,6 +43,7 @@ export interface MessagingChannel {
   memberCount: number;
   unreadCount: number;
   isPinned: boolean;
+  isMuted?: boolean;
   lastActivityAt: string; // ISO string — real transport fills this later
 }
 
@@ -52,6 +53,7 @@ export interface DirectMessage {
   id: string;
   participant: MessagingParticipant;
   unreadCount: number;
+  isMuted?: boolean;
   lastActivityAt: string;
 }
 
@@ -65,6 +67,7 @@ export interface MessagingGroup {
   memberCount: number;
   unreadCount: number;
   isPrivate: boolean;
+  isMuted?: boolean;
   lastActivityAt: string;
 }
 
@@ -422,6 +425,7 @@ export type NotificationKind =
   | "mention"
   | "reply"
   | "task_reminder"
+  | "task_assigned"
   | "meeting_reminder"
   | "channel_invite";
 

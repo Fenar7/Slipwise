@@ -24,6 +24,7 @@ import { db } from "@/lib/db";
 import { createNotification } from "@/lib/notifications";
 import { logMessagingAudit } from "./audit";
 import type { MessagingTaskRecord } from "./domain-types";
+import { getMessagingPreferences, isCurrentlyInQuietHours } from "./notification-service";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -59,7 +60,6 @@ export interface ReminderDispatchResult {
 function buildTaskLink(
   conversationId: string,
   taskId: string,
-  originatingMessageId: string | null,
 ): string {
   const base = process.env.NEXT_PUBLIC_APP_URL || "https://app.slipwise.app";
   // Primary link goes to the task within the conversation
@@ -100,7 +100,7 @@ async function sendReminderNotification(
   task: MessagingTaskRecord,
   assigneeEmail: string | null,
 ): Promise<boolean> {
-  const link = buildTaskLink(task.conversationId, task.id, task.originatingMessageId);
+  const link = buildTaskLink(task.conversationId, task.id);
 
   try {
     await createNotification({
@@ -116,6 +116,7 @@ async function sendReminderNotification(
       recipientEmail: assigneeEmail ?? undefined,
       sourceModule: "messaging",
       sourceRef: task.id,
+      dedupeKey: `task_reminder:${task.id}:${task.reminderAt ? new Date(task.reminderAt).getTime() : 0}`,
     });
 
     // Audit is best-effort — must not turn a delivered reminder into a retryable failure
@@ -146,7 +147,7 @@ export async function sendTaskAssignmentNotification(
   assigneeId: string,
   actorId: string,
 ): Promise<void> {
-  const link = buildTaskLink(task.conversationId, task.id, task.originatingMessageId);
+  const link = buildTaskLink(task.conversationId, task.id);
 
   // Resolve assignee email for optional email delivery
   let assigneeEmail: string | null = null;
@@ -268,6 +269,16 @@ export async function dispatchDueTaskReminders(
     return result;
   }
 
+  // Fetch default timezones for candidate orgs
+  const candidateOrgIds = [...new Set(candidates.map((c) => c.orgId))];
+  const orgDefaults = await db.orgDefaults.findMany({
+    where: { organizationId: { in: candidateOrgIds } },
+    select: { organizationId: true, timezone: true },
+  }).catch(() => []);
+  const timezoneMap = new Map<string, string>(
+    orgDefaults.map((od) => [od.organizationId, od.timezone])
+  );
+
   // Step 2: Validate assignee participation, claim, send, and release-on-failure
   for (const candidate of candidates) {
     // Re-check assignee is still an active participant in the conversation
@@ -308,38 +319,39 @@ export async function dispatchDueTaskReminders(
       continue;
     }
 
-    // Resolve assignee email for optional email delivery
+    // Resolve preferences and mute state
+    const pref = await getMessagingPreferences({ userId: task.assigneeId!, orgId: task.orgId });
+    const timezone = timezoneMap.get(task.orgId) || "UTC";
+    const readState = await db.conversationReadState.findFirst({
+      where: { conversationId: task.conversationId, userId: task.assigneeId! },
+    });
+    const isMuted = readState?.isMuted ?? false;
+
+    // If the category is explicitly disabled, treat as intentionally suppressed and mark processed.
+    if (!pref.allNotificationsEnabled || !pref.taskRemindersEnabled) {
+      result.dispatched++;
+      continue;
+    }
+
+    const inQuietHours = isCurrentlyInQuietHours(pref, timezone);
+    const suppressActiveDelivery = inQuietHours || isMuted;
+
+    // Resolve assignee email for optional email delivery (only if not suppressed)
     let assigneeEmail: string | null = null;
-    try {
-      const member = await db.member.findFirst({
-        where: { organizationId: task.orgId, userId: task.assigneeId! },
-        include: { user: { select: { email: true } } },
-      });
-      assigneeEmail = member?.user?.email ?? null;
-    } catch {
-      // Non-fatal
+    if (!suppressActiveDelivery) {
+      try {
+        const member = await db.member.findFirst({
+          where: { organizationId: task.orgId, userId: task.assigneeId! },
+          include: { user: { select: { email: true } } },
+        });
+        assigneeEmail = member?.user?.email ?? null;
+      } catch {
+        // Non-fatal
+      }
     }
 
     const sent = await sendReminderNotification(
-      {
-        id: task.id,
-        orgId: task.orgId,
-        conversationId: task.conversationId,
-        originatingMessageId: task.originatingMessageId,
-        title: task.title,
-        description: task.description,
-        status: task.status,
-        priority: task.priority,
-        assigneeId: task.assigneeId,
-        dueDate: task.dueDate,
-        reminderAt: task.reminderAt,
-        reminderSentAt: task.reminderSentAt,
-        completedAt: task.completedAt,
-        completedBy: task.completedBy,
-        createdBy: task.createdBy,
-        createdAt: task.createdAt,
-        updatedAt: task.updatedAt,
-      },
+      task,
       assigneeEmail,
     );
 

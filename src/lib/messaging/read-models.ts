@@ -98,7 +98,7 @@ export async function listConversationSummariesForUser(
             conversationId: conversation.id,
             userId,
           },
-          select: { unreadCount: true },
+          select: { unreadCount: true, isMuted: true },
         }),
       ]);
 
@@ -107,6 +107,7 @@ export async function listConversationSummariesForUser(
         participantCount,
         lastMessageAt: latestMessage?.createdAt ?? null,
         unreadCount: readState?.unreadCount ?? null,
+        isMuted: readState?.isMuted ?? false,
       });
     }),
   );

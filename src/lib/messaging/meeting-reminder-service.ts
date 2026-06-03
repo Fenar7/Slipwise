@@ -5,6 +5,8 @@ import type { MeetingReminderRecord } from "./domain-types";
 import { toMeetingReminderRecord } from "./mappers";
 import type { MeetingReminderWindow } from "./domain-types";
 import { createNotification } from "@/lib/notifications";
+import { logMessagingAudit } from "./audit";
+import { getMessagingPreferences, isCurrentlyInQuietHours } from "./notification-service";
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
 
@@ -90,6 +92,7 @@ async function sendMeetingReminderNotifications(
         recipientEmail: email ?? undefined,
         sourceModule: "messaging",
         sourceRef: meeting.id,
+        dedupeKey: `meeting_reminder:${meeting.id}:${window}`,
       });
     } catch (err) {
       console.error(`[meeting-reminder] Failed to send notification to ${userId}:`, err);
@@ -337,3 +340,206 @@ export async function listMeetingReminders(
   });
   return rows.map(toMeetingReminderRecord);
 }
+
+export interface MeetingReminderDispatchResult {
+  dispatched: number;
+  skippedInactiveConversation: number;
+  skippedNoParticipants: number;
+  failed: number;
+  evaluated: number;
+  failedAllNotifications: number;
+}
+
+/**
+ * Sweeps and dispatches reminders for upcoming meetings (Sprint 9.3).
+ * Bounded and idempotent, using reminderSentAt.
+ */
+export async function dispatchDueMeetingRemindersSprint93(
+  limit = 50,
+): Promise<MeetingReminderDispatchResult> {
+  const now = new Date();
+  const fifteenMinutesFromNow = new Date(now.getTime() + 15 * 60 * 1000);
+  const thirtyMinutesAgo = new Date(now.getTime() - 30 * 60 * 1000);
+
+  const result: MeetingReminderDispatchResult = {
+    dispatched: 0,
+    skippedInactiveConversation: 0,
+    skippedNoParticipants: 0,
+    failed: 0,
+    evaluated: 0,
+    failedAllNotifications: 0,
+  };
+
+  logMessagingAudit({
+    orgId: "__system__",
+    actorId: "__sweep__",
+    action: "ADMIN_SUPPORT_ACTION",
+    summary: "Meeting reminder sweep started",
+    metadata: { sweepType: "meeting_reminder_9_3", limit },
+  }).catch(() => {});
+
+  const candidates = await db.conversationMeeting.findMany({
+    where: {
+      status: "UPCOMING",
+      scheduledAt: {
+        lte: fifteenMinutesFromNow,
+        gt: thirtyMinutesAgo,
+      },
+      reminderSentAt: null,
+    },
+    include: {
+      conversation: {
+        select: {
+          id: true,
+          name: true,
+          archivedAt: true,
+          lockedAt: true,
+        },
+      },
+    },
+    orderBy: [{ scheduledAt: "asc" }, { id: "asc" }],
+    take: limit,
+  });
+
+  result.evaluated = candidates.length;
+
+  if (candidates.length === 0) {
+    logMessagingAudit({
+      orgId: "__system__",
+      actorId: "__sweep__",
+      action: "ADMIN_SUPPORT_ACTION",
+      summary: "Meeting reminder sweep completed — no candidates",
+      metadata: { sweepType: "meeting_reminder_9_3", evaluated: 0 },
+    }).catch(() => {});
+    return result;
+  }
+
+  // Fetch default timezones for candidate orgs
+  const candidateOrgIds = [...new Set(candidates.map((c) => c.orgId))];
+  const orgDefaults = await db.orgDefaults.findMany({
+    where: { organizationId: { in: candidateOrgIds } },
+    select: { organizationId: true, timezone: true },
+  }).catch(() => []);
+  const timezoneMap = new Map<string, string>(
+    orgDefaults.map((od) => [od.organizationId, od.timezone])
+  );
+
+  for (const candidate of candidates) {
+    if (candidate.conversation.archivedAt || candidate.conversation.lockedAt) {
+      result.skippedInactiveConversation++;
+      await db.conversationMeeting.update({
+        where: { id: candidate.id },
+        data: { reminderSentAt: now },
+      }).catch(() => {});
+      continue;
+    }
+
+    const claimed = await db.conversationMeeting.updateMany({
+      where: {
+        id: candidate.id,
+        reminderSentAt: null,
+        status: "UPCOMING",
+      },
+      data: { reminderSentAt: now },
+    });
+
+    if (claimed.count === 0) {
+      continue;
+    }
+
+    const participants = await db.conversationParticipant.findMany({
+      where: {
+        orgId: candidate.orgId,
+        conversationId: candidate.conversationId,
+        leftAt: null,
+      },
+      select: { userId: true },
+    });
+
+    if (participants.length === 0) {
+      result.skippedNoParticipants++;
+      continue;
+    }
+
+    const timezone = timezoneMap.get(candidate.orgId) || "UTC";
+    let notifiedCount = 0;
+
+    for (const p of participants) {
+      try {
+        const pref = await getMessagingPreferences({ userId: p.userId, orgId: candidate.orgId });
+        const readState = await db.conversationReadState.findFirst({
+          where: {
+            conversationId: candidate.conversationId,
+            userId: p.userId,
+          },
+          select: { isMuted: true },
+        });
+        const isMuted = readState?.isMuted ?? false;
+
+        // If the category is explicitly disabled, or the conversation is muted, skip notifications entirely.
+        if (!pref.allNotificationsEnabled || !pref.meetingRemindersEnabled || isMuted) {
+          continue;
+        }
+
+        // Otherwise, create the in-app notification.
+        // If in quiet hours, DND suppresses active email delivery, but we still create the in-app notification.
+        const inQuietHours = isCurrentlyInQuietHours(pref, timezone);
+
+        const profile = await db.profile.findUnique({
+          where: { id: p.userId },
+          select: { email: true },
+        });
+
+        const link = `${process.env.NEXT_PUBLIC_APP_URL || "https://app.slipwise.app"}/app/messaging/conversations/${candidate.conversationId}`;
+
+        await createNotification({
+          userId: p.userId,
+          orgId: candidate.orgId,
+          type: "MEETING_REMINDER",
+          title: `Upcoming Meeting: ${candidate.title}`,
+          body: `Meeting "${candidate.title}" starts in 15 minutes.`,
+          link,
+          emailRequested: !inQuietHours && Boolean(profile?.email),
+          recipientEmail: !inQuietHours ? (profile?.email ?? undefined) : undefined,
+          sourceModule: "messaging",
+          sourceRef: candidate.id,
+          dedupeKey: `meeting_reminder:${candidate.id}:FIFTEEN_MINUTES`,
+        });
+
+        notifiedCount++;
+      } catch (err) {
+        console.error(`[meeting-reminders-9-3] Failed to notify user ${p.userId}:`, err);
+      }
+    }
+
+    if (notifiedCount === 0 && participants.length > 0) {
+      // Release claim
+      await db.conversationMeeting.updateMany({
+        where: { id: candidate.id, reminderSentAt: now },
+        data: { reminderSentAt: null },
+      }).catch(() => {});
+      result.failedAllNotifications++;
+    } else if (notifiedCount > 0) {
+      result.dispatched++;
+    }
+  }
+
+  logMessagingAudit({
+    orgId: "__system__",
+    actorId: "__sweep__",
+    action: "ADMIN_SUPPORT_ACTION",
+    summary: "Meeting reminder sweep completed",
+    metadata: {
+      sweepType: "meeting_reminder_9_3",
+      evaluated: result.evaluated,
+      dispatched: result.dispatched,
+      skippedInactiveConversation: result.skippedInactiveConversation,
+      skippedNoParticipants: result.skippedNoParticipants,
+      failedAllNotifications: result.failedAllNotifications,
+    },
+  }).catch(() => {});
+
+  return result;
+}
+
+
