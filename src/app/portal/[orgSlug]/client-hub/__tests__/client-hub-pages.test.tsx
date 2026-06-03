@@ -213,6 +213,7 @@ vi.mock("../../actions", () => ({
   getPortalInvoices: vi.fn().mockImplementation(() => Promise.resolve(mockInvoicesData.value)),
   getPortalInvoiceDetail: vi.fn().mockImplementation((orgSlug: string, id: string) => Promise.resolve(mockInvoiceDetailData.value(id))),
   getPortalPaymentsData: vi.fn().mockImplementation(() => Promise.resolve(mockPaymentsData.value)),
+  getPortalQuotes: vi.fn().mockResolvedValue({ success: true, data: [] }),
   initiatePortalPayment: vi.fn().mockResolvedValue({ url: "https://razorpay.com/pay" }),
 }));
 
@@ -456,12 +457,10 @@ describe("Client Hub Invoices", () => {
 });
 
 describe("Client Hub Quotes", () => {
-  it("renders quote list with mock data", async () => {
+  it("renders quote list with empty state when no quotes", async () => {
     const html = await renderAsyncPage(QuotesPage);
     expect(html).toContain("Quotes");
-    expect(html).toContain("Outbound lead generation package");
-    expect(html).toContain("SENT");
-    expect(html).toContain("ACCEPTED");
+    expect(html).toContain("No quotes found.");
   });
 
   it("renders quote detail with response actions for sent quote", async () => {
@@ -540,11 +539,10 @@ describe("Client Hub Contact", () => {
 });
 
 describe("Client Hub Products", () => {
-  it("renders product catalog with mock data", async () => {
+  it("renders products page with truthful empty state", async () => {
     const html = await renderAsyncPage(ProductsPage);
-    expect(html).toContain("LinkedIn Inbox Yearly");
-    expect(html).toContain("Lead Generation Sprint");
-    expect(html).toContain("Quarterly Advisory");
+    expect(html).toContain("Products &amp; Services");
+    expect(html).toContain("Your service catalogue will appear here once it has been configured.");
   });
 });
 

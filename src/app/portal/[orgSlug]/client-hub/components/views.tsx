@@ -2,16 +2,7 @@ import Link from "next/link";
 import type { CSSProperties, ReactNode, SVGProps } from "react";
 import type { ClientHubConfig } from "./customization-contract";
 import {
-  getMockInvoice,
   getMockQuote,
-  MOCK_INVOICES,
-  MOCK_PAYMENTS,
-  MOCK_PRODUCTS,
-  MOCK_QUOTES,
-  OUTSTANDING_BALANCE,
-  TOTAL_PAID,
-  PENDING_INVOICES_COUNT,
-  PENDING_QUOTES_COUNT,
 } from "./mock-data";
 import { DEFAULT_CLIENT_HUB_CONFIG } from "@/app/app/settings/portal/client-hub/components/mock-config";
 import { PaymentMethodSelector, getActionablePaymentMethods } from "./payment-method-selector";
@@ -1188,13 +1179,30 @@ export function ClientHubPaymentSelectionView({
 export function ClientHubQuotesView({
   orgSlug,
   config,
+  quotes = [],
 }: {
   orgSlug: string;
   config?: ClientHubConfig;
+  quotes?: Array<{
+    id: string;
+    quoteNumber: string;
+    title: string;
+    status: string;
+    issueDate: Date;
+    validUntil: Date;
+    totalAmount: number;
+    acceptedAt: Date | null;
+    declinedAt: Date | null;
+  }>;
 }) {
   const hubConfig = getHubConfig(config);
   const basePath = `/portal/${orgSlug}/client-hub/quotes`;
-  const openQuotes = MOCK_QUOTES.filter((quote) => quote.canRespond).length;
+  const now = new Date();
+  const openQuotes = quotes.filter((q) => q.status === "SENT" && new Date(q.validUntil) >= now).length;
+  const acceptedCount = quotes.filter((q) => q.status === "ACCEPTED").length;
+  const avgValue = quotes.length > 0
+    ? formatCurrency(Math.round(quotes.reduce((sum, q) => sum + q.totalAmount, 0) / quotes.length))
+    : "—";
 
   return (
     <div className="grid gap-5 xl:grid-cols-[220px_minmax(0,1fr)_280px]">
@@ -1214,37 +1222,43 @@ export function ClientHubQuotesView({
           </div>
           <div className="grid gap-4 px-6 py-6 sm:px-8 lg:grid-cols-3">
             <SummaryMetric label="Awaiting Reply" value={`${openQuotes}`} hint="Quotations still awaiting your decision" />
-            <SummaryMetric label="Accepted" value={`${MOCK_QUOTES.length - openQuotes}`} hint="Already confirmed this cycle" />
-            <SummaryMetric label="Avg. Quote Value" value={formatCurrency(Math.round(MOCK_QUOTES.reduce((sum, quote) => sum + quote.totalAmount, 0) / MOCK_QUOTES.length))} hint="Based on current mock proposals" />
+            <SummaryMetric label="Accepted" value={`${acceptedCount}`} hint="Already confirmed this cycle" />
+            <SummaryMetric label="Avg. Quote Value" value={avgValue} hint="Based on your current proposals" />
           </div>
         </ShellCard>
         <div className="space-y-3">
-          {MOCK_QUOTES.map((quote) => (
-            <ShellCard key={quote.id} className="p-5 sm:p-6">
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-3">
-                    <h2 className="text-base font-semibold tracking-[-0.01em] text-[var(--hub-text-strong)] sm:text-lg">{quote.title}</h2>
-                    <StatusPill className={getStatusStyles(quote.status)}>{quote.status}</StatusPill>
-                  </div>
-                  <p className="mt-1.5 text-[13px] text-[var(--hub-text-soft)]">Quote #{quote.quoteNumber} · Valid until {quote.validUntil}</p>
-                </div>
-                <div className="flex shrink-0 items-center gap-4 sm:text-right">
-                  <p className="text-lg font-semibold text-[var(--hub-text-strong)]">{formatCurrency(quote.totalAmount)}</p>
-                  <Link href={`/portal/${orgSlug}/client-hub/quotes/${quote.id}`} className="rounded-lg border border-[var(--hub-border)] bg-white px-4 py-2 text-[13px] font-semibold text-[var(--hub-text-strong)] transition hover:bg-[var(--hub-surface-soft)]">
-                    Review
-                  </Link>
-                </div>
-              </div>
+          {quotes.length === 0 ? (
+            <ShellCard className="p-8 text-center">
+              <p className="text-[13px] text-[var(--hub-text-soft)]">No quotes found.</p>
             </ShellCard>
-          ))}
+          ) : (
+            quotes.map((quote) => (
+              <ShellCard key={quote.id} className="p-5 sm:p-6">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-3">
+                      <h2 className="text-base font-semibold tracking-[-0.01em] text-[var(--hub-text-strong)] sm:text-lg">{quote.title}</h2>
+                      <StatusPill className={getStatusStyles(quote.status)}>{quote.status}</StatusPill>
+                    </div>
+                    <p className="mt-1.5 text-[13px] text-[var(--hub-text-soft)]">Quote #{quote.quoteNumber} · Valid until {new Date(quote.validUntil).toLocaleDateString()}</p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-4 sm:text-right">
+                    <p className="text-lg font-semibold text-[var(--hub-text-strong)]">{formatCurrency(quote.totalAmount)}</p>
+                    <Link href={`/portal/${orgSlug}/client-hub/quotes/${quote.id}`} className="rounded-lg border border-[var(--hub-border)] bg-white px-4 py-2 text-[13px] font-semibold text-[var(--hub-text-strong)] transition hover:bg-[var(--hub-surface-soft)]">
+                      Review
+                    </Link>
+                  </div>
+                </div>
+              </ShellCard>
+            ))
+          )}
         </div>
       </div>
 
       <WorkspaceSupportRail
         orgSlug={orgSlug}
         config={hubConfig}
-        primaryHref={`/portal/${orgSlug}/client-hub/quotes/${MOCK_QUOTES[0]?.id ?? "qt-001"}`}
+        primaryHref={`/portal/${orgSlug}/client-hub/quotes/${quotes[0]?.id ?? "#"}`}
         primaryLabel="Open Pending Quote"
       />
     </div>
@@ -1612,22 +1626,11 @@ export function ClientHubProductsView({
       <div className="space-y-5">
         <PageHeader title={hubConfig.products.pageTitle} subtitle={hubConfig.products.heading} />
         <div className="space-y-3">
-          {MOCK_PRODUCTS.map((product) => (
-            <ShellCard key={product.id} className="p-5 sm:p-6">
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                <div className="min-w-0">
-                  <h2 className="text-base font-semibold tracking-[-0.01em] text-[var(--hub-text-strong)] sm:text-lg">{product.name}</h2>
-                  <p className="mt-1.5 text-[13px] text-[var(--hub-text-soft)]">{product.description}</p>
-                </div>
-                {hubConfig.products.showPricing && (
-                  <div className="shrink-0 rounded-xl border border-[var(--hub-border)] bg-[var(--hub-surface-soft)]/40 px-5 py-3.5 text-right">
-                    <p className="text-lg font-semibold text-[var(--hub-text-strong)]">{formatCurrency(product.price)}</p>
-                    {hubConfig.products.showUnit && <p className="mt-0.5 text-[11px] text-[var(--hub-text-muted)]">/{product.unit}</p>}
-                  </div>
-                )}
-              </div>
-            </ShellCard>
-          ))}
+          <div className="rounded-xl border border-[var(--hub-border)] bg-[var(--hub-surface-soft)] px-6 py-8 text-center">
+            <p className="text-[13px] text-[var(--hub-text-soft)]">
+              Your service catalogue will appear here once it has been configured.
+            </p>
+          </div>
         </div>
       </div>
     </div>

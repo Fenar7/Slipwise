@@ -176,7 +176,7 @@ export function ClientWorkspaceHeader({
               onClick={handleClearSearch}
               className="inline-flex items-center gap-1 rounded-md bg-[var(--surface-subtle)] px-2 py-1 text-[0.65rem] font-medium text-[var(--text-secondary)] hover:bg-[var(--border-soft)] transition-colors"
             >
-              Search: "{searchQuery}"
+              Search: &quot;{searchQuery}&quot;
               <X className="h-3 w-3" />
             </button>
           )}
