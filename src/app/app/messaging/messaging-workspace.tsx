@@ -20,8 +20,8 @@ import type {
   ActiveConversation,
   MessagingNotification,
 } from "./types";
-import { MOCK_NOTIFICATIONS } from "./mock-data";
 import { useConversationList } from "./lib/use-conversation-list";
+import { useNotifications } from "./lib/use-notifications";
 import { useConversationDetail } from "./lib/use-conversation-detail";
 import { useSendMessage } from "./lib/use-send-message";
 import { useSendThreadReply } from "./lib/use-send-thread-reply";
@@ -83,8 +83,15 @@ export function MessagingWorkspace() {
 
   const [notifOpen, setNotifOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
-  const [notifications, setNotifications] = useState<MessagingNotification[]>(MOCK_NOTIFICATIONS);
   const [pendingCreateId, setPendingCreateId] = useState<string | null>(null);
+
+  const {
+    notifications,
+    unreadCount,
+    markToggle: handleToggleRead,
+    markAllRead: handleMarkAllRead,
+    refetch: refreshNotifications,
+  } = useNotifications();
 
   // Sprint 6.2: jump-to-message from task detail
   const [jumpToMessageId, setJumpToMessageId] = useState<string | null>(null);
@@ -95,8 +102,6 @@ export function MessagingWorkspace() {
     originatingMessageId: string | null;
     originatingMessagePreview: string | null;
   }>({ open: false, originatingMessageId: null, originatingMessagePreview: null });
-
-  const unreadCount = notifications.filter((n) => !n.read).length;
 
   // Register contextual tabs and action buttons in the global top bar
   const { registerTabs, registerActions, clear } = useWorkspaceTopBar();
@@ -295,7 +300,11 @@ export function MessagingWorkspace() {
           onCommandBarToggle={toggleCommandBar}
           notifOpen={notifOpen}
           onNotifToggle={() => {
-            setNotifOpen((o) => !o);
+            setNotifOpen((o) => {
+              const next = !o;
+              if (next) refreshNotifications();
+              return next;
+            });
             setSearchOpen(false);
           }}
           onSearchFocus={() => {
@@ -528,14 +537,11 @@ export function MessagingWorkspace() {
           <MessagingNotificationsPanel
             onClose={() => setNotifOpen(false)}
             notifications={notifications}
-            onMarkAllRead={() =>
-              setNotifications((prev) => prev.map((n) => ({ ...n, read: true })))
-            }
-            onToggleRead={(id) =>
-              setNotifications((prev) =>
-                prev.map((n) => (n.id === id ? { ...n, read: !n.read } : n))
-              )
-            }
+            onMarkAllRead={handleMarkAllRead}
+            onToggleRead={(id) => {
+              const n = notifications.find((x) => x.id === id);
+              if (n) handleToggleRead(id, n.read);
+            }}
           />
         )}
       </div>

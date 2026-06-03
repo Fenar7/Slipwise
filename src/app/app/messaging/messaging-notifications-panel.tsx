@@ -34,6 +34,7 @@ function kindIcon(kind: MessagingNotification["kind"]) {
     case "reply":
       return <MessageSquare className="h-3.5 w-3.5" />;
     case "task_reminder":
+    case "task_assigned":
       return <CheckSquare className="h-3.5 w-3.5" />;
     case "meeting_reminder":
       return <Calendar className="h-3.5 w-3.5" />;

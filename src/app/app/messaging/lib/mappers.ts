@@ -29,6 +29,7 @@ export interface ApiConversationSummary {
   dmPeerName?: string | null;
   /** Pinned by current user — defaults to false if absent */
   isPinned?: boolean;
+  isMuted?: boolean;
 }
 
 export interface ApiParticipantProfile {
@@ -145,6 +146,7 @@ export function toFrontendChannel(summary: ApiConversationSummary): MessagingCha
     memberCount: summary.participantCount,
     unreadCount: summary.unreadCount ?? 0,
     isPinned: summary.isPinned ?? false,
+    isMuted: summary.isMuted ?? false,
     lastActivityAt: summary.lastMessageAt ?? summary.createdAt,
   };
 }
@@ -161,6 +163,7 @@ export function toFrontendDM(summary: ApiConversationSummary): DirectMessage {
       presence: "offline",
     },
     unreadCount: summary.unreadCount ?? 0,
+    isMuted: summary.isMuted ?? false,
     lastActivityAt: summary.lastMessageAt ?? summary.createdAt,
   };
 }
@@ -172,6 +175,7 @@ export function toFrontendGroup(summary: ApiConversationSummary): MessagingGroup
     memberCount: summary.participantCount,
     unreadCount: summary.unreadCount ?? 0,
     isPrivate: summary.visibility === "PRIVATE",
+    isMuted: summary.isMuted ?? false,
     lastActivityAt: summary.lastMessageAt ?? summary.createdAt,
   };
 }

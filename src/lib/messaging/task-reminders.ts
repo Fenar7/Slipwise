@@ -24,6 +24,7 @@ import { db } from "@/lib/db";
 import { createNotification } from "@/lib/notifications";
 import { logMessagingAudit } from "./audit";
 import type { MessagingTaskRecord } from "./domain-types";
+import { getMessagingPreferences, isCurrentlyInQuietHours } from "./notification-service";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -308,6 +309,19 @@ export async function dispatchDueTaskReminders(
       continue;
     }
 
+    // Resolve preferences and mute state
+    const pref = await getMessagingPreferences({ userId: task.assigneeId!, orgId: task.orgId });
+    const readState = await db.conversationReadState.findFirst({
+      where: { conversationId: task.conversationId, userId: task.assigneeId! },
+    });
+    const isMuted = readState?.isMuted ?? false;
+
+    if (!pref.allNotificationsEnabled || !pref.taskRemindersEnabled || isMuted || isCurrentlyInQuietHours(pref)) {
+      // Preference/mute prevents reminder notification - leave reminderSentAt set to now (claimed) so it is marked processed.
+      result.dispatched++;
+      continue;
+    }
+
     // Resolve assignee email for optional email delivery
     let assigneeEmail: string | null = null;
     try {
@@ -321,25 +335,7 @@ export async function dispatchDueTaskReminders(
     }
 
     const sent = await sendReminderNotification(
-      {
-        id: task.id,
-        orgId: task.orgId,
-        conversationId: task.conversationId,
-        originatingMessageId: task.originatingMessageId,
-        title: task.title,
-        description: task.description,
-        status: task.status,
-        priority: task.priority,
-        assigneeId: task.assigneeId,
-        dueDate: task.dueDate,
-        reminderAt: task.reminderAt,
-        reminderSentAt: task.reminderSentAt,
-        completedAt: task.completedAt,
-        completedBy: task.completedBy,
-        createdBy: task.createdBy,
-        createdAt: task.createdAt,
-        updatedAt: task.updatedAt,
-      },
+      task,
       assigneeEmail,
     );
 
