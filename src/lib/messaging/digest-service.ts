@@ -277,6 +277,57 @@ export async function dispatchPendingDigests(
   const twentyHoursAgo = new Date(now.getTime() - 20 * 60 * 60 * 1000);
   const sixDaysTwentyHoursAgo = new Date(now.getTime() - (6 * 24 + 20) * 60 * 60 * 1000);
 
+  // 1. Fetch unique timezone values currently in the DB
+  const allTimezones = await db.orgDefaults.findMany({
+    select: { timezone: true },
+    distinct: ["timezone"],
+  }).then(rows => rows.map(r => r.timezone).filter(Boolean));
+
+  // 2. Identify timezones currently in quiet hours (23:00 to 07:00)
+  const quietTimezones = allTimezones.filter(tz => {
+    try {
+      const parts = new Intl.DateTimeFormat("en-US", {
+        timeZone: tz,
+        hour: "numeric",
+        hourCycle: "h23",
+      }).formatToParts(now);
+      const hourVal = parts.find((p) => p.type === "hour")?.value;
+      if (hourVal) {
+        const hour = parseInt(hourVal, 10);
+        return hour >= 23 || hour < 7;
+      }
+    } catch {}
+    return false;
+  });
+
+  // 3. Build a query filter to exclude organizations in quiet timezones
+  const utcIsQuiet = quietTimezones.includes("UTC");
+  const timezoneFilter = utcIsQuiet
+    ? {
+        organization: {
+          defaults: {
+            timezone: { notIn: quietTimezones },
+          },
+        },
+      }
+    : {
+        OR: [
+          {
+            organization: {
+              defaults: null,
+            },
+          },
+          {
+            organization: {
+              defaults: {
+                timezone: { notIn: quietTimezones },
+              },
+            },
+          },
+        ],
+      };
+
+  // 4. Query candidates excluding quiet zones
   const candidates = await db.messagingNotificationPreference.findMany({
     where: {
       digestEnabled: true,
@@ -295,6 +346,7 @@ export async function dispatchPendingDigests(
           ],
         },
       ],
+      ...timezoneFilter,
     },
     take: limit,
   });
@@ -326,7 +378,7 @@ export async function dispatchPendingDigests(
         const parts = new Intl.DateTimeFormat("en-US", {
           timeZone: timezone,
           hour: "numeric",
-          hour12: false,
+          hourCycle: "h23",
         }).formatToParts(now);
         const hourVal = parts.find((p) => p.type === "hour")?.value;
         if (hourVal) {

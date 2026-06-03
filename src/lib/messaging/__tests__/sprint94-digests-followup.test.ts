@@ -254,9 +254,11 @@ describe("Sprint 9.4 — Notification Digest Service & Follow-Up Flag Service", 
     ] as any);
 
     // Mock org timezone to UTC
-    vi.mocked(db.orgDefaults.findMany).mockResolvedValueOnce([
-      { organizationId: "org-1", timezone: "UTC" },
-    ] as any);
+    vi.mocked(db.orgDefaults.findMany)
+      .mockResolvedValueOnce([{ timezone: "UTC" }] as any)
+      .mockResolvedValueOnce([
+        { organizationId: "org-1", timezone: "UTC" },
+      ] as any);
 
     const result = await dispatchPendingDigests(50);
 
@@ -302,9 +304,11 @@ describe("Sprint 9.4 — Notification Digest Service & Follow-Up Flag Service", 
       lastDigestSentAt: null,
     } as any);
 
-    vi.mocked(db.orgDefaults.findMany).mockResolvedValueOnce([
-      { organizationId: "org-1", timezone: "UTC" },
-    ] as any);
+    vi.mocked(db.orgDefaults.findMany)
+      .mockResolvedValueOnce([{ timezone: "UTC" }] as any)
+      .mockResolvedValueOnce([
+        { organizationId: "org-1", timezone: "UTC" },
+      ] as any);
 
     // For first user, dispatch succeeds
     // For second user, no notifications exist (empty) -> skips

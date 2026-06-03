@@ -59,7 +59,7 @@ export function isCurrentlyInQuietHours(
         timeZone: timezone,
         hour: "numeric",
         minute: "numeric",
-        hour12: false,
+        hourCycle: "h23",
       }).formatToParts(now);
       hours = parseInt(parts.find(p => p.type === "hour")?.value ?? "0", 10);
       minutes = parseInt(parts.find(p => p.type === "minute")?.value ?? "0", 10);
