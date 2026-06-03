@@ -585,6 +585,8 @@ export async function searchMessaging(
           snippet = "[Blocked due to security policy]";
         } else if (idx.scanStatus === AttachmentScanStatus.PENDING) {
           snippet = "[Pending scan - unindexed]";
+        } else if (idx.indexingStatus === AttachmentIndexingStatus.FAILED) {
+          snippet = `[Indexing failed: ${idx.lastError ?? "unknown error"}]`;
         } else if (idx.indexingStatus === AttachmentIndexingStatus.UNINDEXED) {
           snippet = "[File content not indexed]";
         }

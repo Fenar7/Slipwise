@@ -29,6 +29,7 @@ vi.mock("@/lib/db", () => {
       findMany: vi.fn(),
       findUnique: vi.fn(),
       count: vi.fn(),
+      update: vi.fn(),
     },
     messagingAttachmentIndex: {
       findMany: vi.fn(),
@@ -39,6 +40,14 @@ vi.mock("@/lib/db", () => {
     profile: {
       findMany: vi.fn(),
       count: vi.fn(),
+    },
+    downstreamConsumptionCheckpoint: {
+      findUnique: vi.fn(),
+      upsert: vi.fn(),
+    },
+    conversationEventLog: {
+      findMany: vi.fn(),
+      create: vi.fn(),
     },
   };
   const db = {
@@ -75,7 +84,7 @@ vi.mock("pdfjs-dist/legacy/build/pdf.mjs", () => {
 
 import { db } from "@/lib/db";
 import { downloadFileServer } from "@/lib/storage/upload-server";
-import { indexAttachment } from "../indexing-service";
+import { indexAttachment, processSearchIndexEvents, updateAttachmentScanStatus } from "../indexing-service";
 import { searchMessaging } from "../search-service";
 import { AttachmentScanStatus, AttachmentIndexingStatus } from "@/generated/prisma/client";
 
@@ -88,6 +97,8 @@ describe("Sprint 9.2 — Full File Search & Attachment Indexing", () => {
     vi.mocked(db.messagingTask.findMany).mockResolvedValue([]);
     vi.mocked(db.conversationMeeting.findMany).mockResolvedValue([]);
     vi.mocked(db.messagingAttachmentIndex.findMany).mockResolvedValue([]);
+    vi.mocked(db.downstreamConsumptionCheckpoint.findUnique).mockResolvedValue(null);
+    vi.mocked(db.conversationEventLog.findMany).mockResolvedValue([]);
 
     vi.mocked(db.conversationParticipant.count).mockResolvedValue(0);
     vi.mocked(db.conversationMessage.count).mockResolvedValue(0);
@@ -401,6 +412,198 @@ describe("Sprint 9.2 — Full File Search & Attachment Indexing", () => {
       expect(response.state).toBe("partial");
       expect(response.hasPendingScans).toBe(true);
       expect(response.hasUnsupportedFiles).toBe(true);
+    });
+  });
+
+  describe("Durable Indexing & Scan Status Transitions", () => {
+    it("processes search index events durably and updates checkpoints", async () => {
+      // Setup mock events
+      const mockEvent = {
+        eventId: "event-1",
+        cursor: BigInt(123),
+        eventType: "conversation.message.created",
+        orgId: "org-1",
+        conversationId: "conv-1",
+        actorId: "user-1",
+        createdAt: new Date(),
+        payload: { messageId: "msg-1" },
+      };
+
+      vi.mocked(db.conversationEventLog.findMany).mockResolvedValue([mockEvent] as any);
+      vi.mocked(db.conversationAttachment.findMany).mockResolvedValue([
+        { id: "att-event-1" },
+      ] as any);
+      vi.mocked(db.conversationAttachment.findUnique).mockResolvedValue({
+        id: "att-event-1",
+        orgId: "org-1",
+        messageId: "msg-1",
+        storageRef: "ref-event-1",
+        fileName: "file.txt",
+        mimeType: "text/plain",
+        sizeBytes: 100,
+        scanStatus: AttachmentScanStatus.CLEAN,
+        message: { conversationId: "conv-1" },
+      } as any);
+
+      await processSearchIndexEvents("org-1", "conv-1");
+
+      // Verify indexing was triggered
+      expect(db.messagingAttachmentIndex.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { attachmentId: "att-event-1" },
+          create: expect.objectContaining({
+            fileName: "file.txt",
+            indexingStatus: AttachmentIndexingStatus.INDEXED,
+          }),
+        })
+      );
+
+      // Verify consumption checkpoint was updated
+      expect(db.downstreamConsumptionCheckpoint.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            consumerType_orgId_conversationId: {
+              consumerType: "search_index",
+              orgId: "org-1",
+              conversationId: "conv-1",
+            },
+          },
+          update: expect.objectContaining({
+            cursor: BigInt(123),
+          }),
+        })
+      );
+    });
+
+    it("re-indexes file when moving from PENDING to CLEAN and clears extracted text when transitioning to BLOCKED", async () => {
+      // 1. Transition PENDING -> CLEAN
+      vi.mocked(db.conversationAttachment.findUnique).mockResolvedValue({
+        id: "att-transition-1",
+        orgId: "org-1",
+        messageId: "msg-1",
+        storageRef: "ref-transition-1",
+        fileName: "data.txt",
+        mimeType: "text/plain",
+        sizeBytes: 200,
+        scanStatus: AttachmentScanStatus.CLEAN,
+        message: { conversationId: "conv-1" },
+      } as any);
+
+      await updateAttachmentScanStatus("org-1", "att-transition-1", AttachmentScanStatus.CLEAN);
+
+      expect(db.conversationAttachment.update).toHaveBeenCalledWith({
+        where: { id: "att-transition-1", orgId: "org-1" },
+        data: { scanStatus: AttachmentScanStatus.CLEAN },
+      });
+
+      expect(db.messagingAttachmentIndex.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({
+            scanStatus: AttachmentScanStatus.CLEAN,
+            indexingStatus: AttachmentIndexingStatus.INDEXED,
+            extractedText: "mock file content with target query",
+          }),
+        })
+      );
+
+      // 2. Transition CLEAN -> BLOCKED
+      vi.mocked(db.conversationAttachment.findUnique).mockResolvedValue({
+        id: "att-transition-1",
+        orgId: "org-1",
+        messageId: "msg-1",
+        storageRef: "ref-transition-1",
+        fileName: "data.txt",
+        mimeType: "text/plain",
+        sizeBytes: 200,
+        scanStatus: AttachmentScanStatus.BLOCKED,
+        message: { conversationId: "conv-1" },
+      } as any);
+
+      await updateAttachmentScanStatus("org-1", "att-transition-1", AttachmentScanStatus.BLOCKED);
+
+      expect(db.messagingAttachmentIndex.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({
+            scanStatus: AttachmentScanStatus.BLOCKED,
+            indexingStatus: AttachmentIndexingStatus.UNINDEXED,
+            extractedText: "", // extracted text must be removed
+            extractedPreview: "[Blocked due to security policy]",
+          }),
+        })
+      );
+    });
+  });
+
+  describe("PDF Indexing Resource Hardening Limits", () => {
+    it("handles oversized PDF truthfully without downloading and sets FAILED size limit exceeded", async () => {
+      vi.mocked(db.conversationAttachment.findUnique).mockResolvedValue({
+        id: "att-oversized",
+        orgId: "org-1",
+        messageId: "msg-1",
+        storageRef: "ref-oversized",
+        fileName: "huge.pdf",
+        mimeType: "application/pdf",
+        sizeBytes: 10 * 1024 * 1024, // 10MB (exceeds 5MB limit)
+        scanStatus: AttachmentScanStatus.CLEAN,
+        message: { conversationId: "conv-1" },
+      } as any);
+
+      await indexAttachment("att-oversized");
+
+      // Verify download was not called
+      expect(downloadFileServer).not.toHaveBeenCalled();
+
+      // Verify indexing marked as FAILED with size reason
+      expect(db.messagingAttachmentIndex.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({
+            indexingStatus: AttachmentIndexingStatus.FAILED,
+            lastError: "File size limit exceeded",
+            extractedText: "",
+          }),
+        })
+      );
+    });
+
+    it("handles excessive page count PDF truthfully and sets FAILED page count limit exceeded", async () => {
+      vi.mocked(db.conversationAttachment.findUnique).mockResolvedValue({
+        id: "att-many-pages",
+        orgId: "org-1",
+        messageId: "msg-1",
+        storageRef: "ref-many-pages",
+        fileName: "verbose.pdf",
+        mimeType: "application/pdf",
+        sizeBytes: 100 * 1024, // 100KB (below size limit)
+        scanStatus: AttachmentScanStatus.CLEAN,
+        message: { conversationId: "conv-1" },
+      } as any);
+
+      // Mock pdfjs-dist getDocument to return a PDF with 20 pages (exceeds 10 page limit)
+      const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
+      const mockPdfDestroy = vi.fn();
+      vi.mocked(pdfjsLib.getDocument).mockReturnValueOnce({
+        promise: Promise.resolve({
+          numPages: 20,
+          getPage: vi.fn(),
+          destroy: mockPdfDestroy,
+        }),
+      } as any);
+
+      await indexAttachment("att-many-pages");
+
+      // Verify page parser was not called (because page count check triggers error first)
+      expect(mockPdfDestroy).toHaveBeenCalled();
+
+      // Verify indexing marked as FAILED with page count reason
+      expect(db.messagingAttachmentIndex.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({
+            indexingStatus: AttachmentIndexingStatus.FAILED,
+            lastError: "Page count limit exceeded",
+            extractedText: "",
+          }),
+        })
+      );
     });
   });
 });

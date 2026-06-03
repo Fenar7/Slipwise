@@ -349,7 +349,7 @@ export async function replyToThread(
   );
 
   if (input.attachments && input.attachments.length > 0) {
-    indexAttachmentsForMessage(result.id);
+    indexAttachmentsForMessage(result.id, input.orgId, input.conversationId);
   }
 
   return result;
