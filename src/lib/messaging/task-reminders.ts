@@ -117,6 +117,7 @@ async function sendReminderNotification(
       recipientEmail: assigneeEmail ?? undefined,
       sourceModule: "messaging",
       sourceRef: task.id,
+      dedupeKey: `task_reminder:${task.id}:${task.reminderAt ? new Date(task.reminderAt).getTime() : 0}`,
     });
 
     // Audit is best-effort — must not turn a delivered reminder into a retryable failure

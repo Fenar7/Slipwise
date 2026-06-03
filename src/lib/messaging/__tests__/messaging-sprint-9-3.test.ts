@@ -10,6 +10,8 @@ vi.mock("@/lib/db", () => {
       findMany: vi.fn(),
       count: vi.fn(),
       updateMany: vi.fn(),
+      findUnique: vi.fn(),
+      create: vi.fn(),
     },
     messagingNotificationPreference: {
       findUnique: vi.fn(),
@@ -837,6 +839,199 @@ describe("Sprint 9.3 — Notification Center, Preferences, and Alert Routing", (
       expect(res.success).toBe(false);
       expect(res.status).toBe(422);
       expect(res.error.message).toContain("must be a string in HH:MM format");
+    });
+  });
+
+  describe("Notification Idempotency and Downstream Retry Recovery", () => {
+    it("createNotification helper is idempotent: returns existing row and skips email queueing when dedupeKey matches", async () => {
+      const { createNotification: actualCreateNotification } = await vi.importActual<typeof import("@/lib/notifications")>("@/lib/notifications");
+
+      const existingNotif = { id: "notif-1", dedupeKey: "dedupe-123", isRead: false };
+      vi.mocked(db.notification.findUnique).mockResolvedValue(existingNotif as any);
+
+      const result = await actualCreateNotification({
+        userId: "user-2",
+        orgId: "org-1",
+        type: "MEETING_REMINDER",
+        title: "Test Meeting",
+        body: "Starts in 15m",
+        emailRequested: true,
+        recipientEmail: "user-2@slipwise.app",
+        dedupeKey: "dedupe-123",
+      });
+
+      expect(result).toEqual(existingNotif);
+      expect(db.notification.findUnique).toHaveBeenCalled();
+      expect(db.notification.create).not.toHaveBeenCalled();
+    });
+
+    it("createNotification helper creates a new notification on first run, but returns existing on second run", async () => {
+      const { createNotification: actualCreateNotification } = await vi.importActual<typeof import("@/lib/notifications")>("@/lib/notifications");
+
+      const newNotif = { id: "notif-2", dedupeKey: "dedupe-456" };
+      
+      vi.mocked(db.notification.findUnique).mockResolvedValueOnce(null);
+      vi.mocked(db.notification.create).mockResolvedValueOnce(newNotif as any);
+
+      const result1 = await actualCreateNotification({
+        userId: "user-2",
+        orgId: "org-1",
+        type: "TASK_REMINDER",
+        title: "Task Title",
+        body: "Task Body",
+        dedupeKey: "dedupe-456",
+      });
+
+      expect(result1).toEqual(newNotif);
+      expect(db.notification.create).toHaveBeenCalled();
+
+      vi.mocked(db.notification.findUnique).mockResolvedValueOnce(newNotif as any);
+
+      const result2 = await actualCreateNotification({
+        userId: "user-2",
+        orgId: "org-1",
+        type: "TASK_REMINDER",
+        title: "Task Title",
+        body: "Task Body",
+        dedupeKey: "dedupe-456",
+      });
+
+      expect(result2).toEqual(newNotif);
+    });
+
+    it("processNotificationEvents retry behavior after partial failure (first recipient succeeds, later throws) does not create duplicate notifications", async () => {
+      vi.mocked(db.downstreamConsumptionCheckpoint.findUnique).mockResolvedValue(null);
+      vi.mocked(db.conversationEventLog.findMany).mockResolvedValue([
+        {
+          eventId: "e-10",
+          cursor: 200n,
+          eventType: "conversation.message.created",
+          orgId: "org-1",
+          conversationId: "conv-1",
+          actorId: "actor-1",
+          payload: { messageId: "msg-10", mentionIds: ["user-2", "user-3"] },
+          createdAt: new Date(),
+        }
+      ] as any);
+
+      vi.mocked(db.conversationMessage.findUnique).mockResolvedValue({
+        id: "msg-10",
+        body: "Hello @user-2 and @user-3",
+        conversation: { name: "Test Group" },
+      } as any);
+
+      vi.mocked(db.profile.findUnique).mockImplementation(async (args: any) => {
+        if (args.where.id === "actor-1") return { name: "Actor User" } as any;
+        return { email: `${args.where.id}@slipwise.app` } as any;
+      });
+
+      vi.mocked(db.conversationParticipant.findMany).mockResolvedValue([
+        { userId: "user-2" },
+        { userId: "user-3" }
+      ] as any);
+
+      vi.mocked(db.messagingNotificationPreference.findUnique).mockResolvedValue(null);
+
+      const createdNotifications: any[] = [];
+
+      vi.mocked(createNotification).mockImplementation(async (params: any) => {
+        if (params.userId === "user-3") {
+          throw new Error("Simulated database write failure for user-3");
+        }
+        const exists = createdNotifications.some(n => n.userId === params.userId && n.dedupeKey === params.dedupeKey);
+        if (!exists) {
+          createdNotifications.push({ ...params, id: `notif-${params.userId}` });
+        }
+        return { id: `notif-${params.userId}` };
+      });
+
+      await expect(processNotificationEvents("org-1", "conv-1")).rejects.toThrow("Simulated database write failure for user-3");
+
+      expect(createdNotifications.filter(n => n.userId === "user-2")).toHaveLength(1);
+      expect(createdNotifications.filter(n => n.userId === "user-3")).toHaveLength(0);
+      expect(db.downstreamConsumptionCheckpoint.upsert).not.toHaveBeenCalled();
+
+      vi.mocked(createNotification).mockImplementation(async (params: any) => {
+        const exists = createdNotifications.some(n => n.userId === params.userId && n.dedupeKey === params.dedupeKey);
+        if (!exists) {
+          createdNotifications.push({ ...params, id: `notif-${params.userId}` });
+        }
+        return { id: `notif-${params.userId}` };
+      });
+
+      await processNotificationEvents("org-1", "conv-1");
+
+      expect(createdNotifications.filter(n => n.userId === "user-2")).toHaveLength(1);
+      expect(createdNotifications.filter(n => n.userId === "user-3")).toHaveLength(1);
+      expect(db.downstreamConsumptionCheckpoint.upsert).toHaveBeenCalled();
+    });
+
+    it("task reminder sweep passes dedupeKey and does not duplicate in-app notification when called twice", async () => {
+      const { createNotification: actualCreateNotification } = await vi.importActual<typeof import("@/lib/notifications")>("@/lib/notifications");
+
+      const firstNotif = { id: "notif-task-1", dedupeKey: "task_reminder:task-1:1000" };
+      vi.mocked(db.notification.findUnique).mockResolvedValueOnce(null);
+      vi.mocked(db.notification.create).mockResolvedValueOnce(firstNotif as any);
+
+      const result1 = await actualCreateNotification({
+        userId: "user-2",
+        orgId: "org-1",
+        type: "TASK_REMINDER",
+        title: "Complete PR review",
+        body: "Task reminder: Complete PR review",
+        dedupeKey: "task_reminder:task-1:1000",
+      });
+
+      expect(result1).toEqual(firstNotif);
+      expect(db.notification.create).toHaveBeenCalled();
+
+      vi.mocked(db.notification.findUnique).mockResolvedValueOnce(firstNotif as any);
+
+      const result2 = await actualCreateNotification({
+        userId: "user-2",
+        orgId: "org-1",
+        type: "TASK_REMINDER",
+        title: "Complete PR review",
+        body: "Task reminder: Complete PR review",
+        dedupeKey: "task_reminder:task-1:1000",
+      });
+
+      expect(result2).toEqual(firstNotif);
+      expect(db.notification.create).not.toHaveBeenCalledTimes(2);
+    });
+
+    it("meeting reminder sweep passes dedupeKey and does not duplicate in-app notification when called twice", async () => {
+      const { createNotification: actualCreateNotification } = await vi.importActual<typeof import("@/lib/notifications")>("@/lib/notifications");
+
+      const firstNotif = { id: "notif-meet-1", dedupeKey: "meeting_reminder:meet-1:FIFTEEN_MINUTES" };
+      vi.mocked(db.notification.findUnique).mockResolvedValueOnce(null);
+      vi.mocked(db.notification.create).mockResolvedValueOnce(firstNotif as any);
+
+      const result1 = await actualCreateNotification({
+        userId: "user-2",
+        orgId: "org-1",
+        type: "MEETING_REMINDER",
+        title: "Upcoming Meeting: Sprint Sync",
+        body: "Meeting Starts in 15 minutes.",
+        dedupeKey: "meeting_reminder:meet-1:FIFTEEN_MINUTES",
+      });
+
+      expect(result1).toEqual(firstNotif);
+      expect(db.notification.create).toHaveBeenCalled();
+
+      vi.mocked(db.notification.findUnique).mockResolvedValueOnce(firstNotif as any);
+
+      const result2 = await actualCreateNotification({
+        userId: "user-2",
+        orgId: "org-1",
+        type: "MEETING_REMINDER",
+        title: "Upcoming Meeting: Sprint Sync",
+        body: "Meeting Starts in 15 minutes.",
+        dedupeKey: "meeting_reminder:meet-1:FIFTEEN_MINUTES",
+      });
+
+      expect(result2).toEqual(firstNotif);
+      expect(db.notification.create).not.toHaveBeenCalledTimes(2);
     });
   });
 });

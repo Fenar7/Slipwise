@@ -92,6 +92,7 @@ async function sendMeetingReminderNotifications(
         recipientEmail: email ?? undefined,
         sourceModule: "messaging",
         sourceRef: meeting.id,
+        dedupeKey: `meeting_reminder:${meeting.id}:${window}`,
       });
     } catch (err) {
       console.error(`[meeting-reminder] Failed to send notification to ${userId}:`, err);
@@ -487,6 +488,7 @@ export async function dispatchDueMeetingRemindersSprint93(
           recipientEmail: !inQuietHours ? (profile?.email ?? undefined) : undefined,
           sourceModule: "messaging",
           sourceRef: candidate.id,
+          dedupeKey: `meeting_reminder:${candidate.id}:FIFTEEN_MINUTES`,
         });
       } catch (err) {
         console.error(`[meeting-reminders-9-3] Failed to notify user ${p.userId}:`, err);

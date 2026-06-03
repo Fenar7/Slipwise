@@ -2148,9 +2148,11 @@ model Notification {
   // Sprint 18.2 delivery extensions
   emailRequested Boolean  @default(false)
   recipientEmail String?
+  dedupeKey      String?
 
   deliveries NotificationDelivery[]
 
+  @@unique([orgId, userId, dedupeKey])
   @@index([userId, isRead])
   @@index([orgId])
   @@map("notification")

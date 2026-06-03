@@ -382,6 +382,7 @@ export async function processNotificationEvents(orgId: string, conversationId: s
             recipientEmail: !inQuietHours ? (recipientProfile?.email ?? undefined) : undefined,
             sourceModule: "messaging",
             sourceRef: message.id,
+            dedupeKey: `mention:${message.id}`,
           });
         }
       }
@@ -468,6 +469,7 @@ export async function processNotificationEvents(orgId: string, conversationId: s
                 recipientEmail: !inQuietHours ? (recipientProfile?.email ?? undefined) : undefined,
                 sourceModule: "messaging",
                 sourceRef: message.id,
+                dedupeKey: `reply:${message.id}`,
               });
             }
           }
