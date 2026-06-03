@@ -43,6 +43,8 @@ export async function PUT(req: NextRequest) {
       "dndEnabled",
       "dndStart",
       "dndEnd",
+      "digestEnabled",
+      "digestFrequency",
     ];
 
     const bodyKeys = Object.keys(body);
@@ -63,6 +65,7 @@ export async function PUT(req: NextRequest) {
       "taskRemindersEnabled",
       "meetingRemindersEnabled",
       "dndEnabled",
+      "digestEnabled",
     ];
 
     for (const key of booleanKeys) {
@@ -76,10 +79,24 @@ export async function PUT(req: NextRequest) {
     }
 
     const timeRegex = /^(?:[01]\d|2[0-3]):[0-5]\d$/; // HH:MM 24h format
-    const stringKeys = ["dndStart", "dndEnd"];
+    const stringKeys = ["dndStart", "dndEnd", "digestFrequency"];
     for (const key of stringKeys) {
       if (key in body) {
-        if (typeof body[key] !== "string" || !timeRegex.test(body[key])) {
+        if (typeof body[key] !== "string") {
+          return messagingApiError(
+            "VALIDATION_ERROR",
+            `Invalid type: '${key}' must be a string`,
+            422
+          );
+        }
+        if (key === "digestFrequency" && body[key] !== "DAILY" && body[key] !== "WEEKLY") {
+          return messagingApiError(
+            "VALIDATION_ERROR",
+            "Invalid value: 'digestFrequency' must be either 'DAILY' or 'WEEKLY'",
+            422
+          );
+        }
+        if ((key === "dndStart" || key === "dndEnd") && !timeRegex.test(body[key])) {
           return messagingApiError(
             "VALIDATION_ERROR",
             `Invalid format: '${key}' must be a string in HH:MM format (24-hour)`,
@@ -100,3 +117,5 @@ export async function PUT(req: NextRequest) {
     return handleMessagingApiError(error);
   }
 }
+
+export const POST = PUT;

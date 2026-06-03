@@ -145,6 +145,7 @@ model Organization {
   ssoConfig                    SsoConfig?
   orgPreferences               UserOrgPreference[]
   messagingNotificationPreferences MessagingNotificationPreference[]
+  messagingFollowUps           MessagingFollowUp[]
   orgDomain                    OrgDomain?
   whiteLabel                   OrgWhiteLabel?
   emailDomains                 OrgEmailDomain[]
@@ -6060,6 +6061,7 @@ model MailboxDraft {
   /// reference a connection from a different org at the database level.
   mailboxConnection  MailboxConnection @relation(fields: [mailboxConnectionId, orgId], references: [id, orgId], onDelete: Cascade)
 
+  @@unique([id, orgId])
   @@index([orgId, mailboxConnectionId, status])
   @@index([orgId, threadId])
   @@map("mailbox_draft")
@@ -6370,6 +6372,7 @@ model Conversation {
   auditEvents           MessagingAuditEvent[]
   eventLogs             ConversationEventLog[]
   drafts                ConversationDraft[]
+  followUps             MessagingFollowUp[]
 
   /// Composite unique for org-safe child relations.
   @@unique([id, orgId])
@@ -6438,6 +6441,7 @@ model ConversationMessage {
   reactions    MessageReaction[]
   mentions     MessageMention[]
   attachments  ConversationAttachment[]
+  followUps    MessagingFollowUp[]
 
   /// Composite unique for org-safe child relations.
   @@unique([id, orgId])
@@ -6947,6 +6951,9 @@ model MessagingNotificationPreference {
   dndEnabled                Boolean  @default(false)
   dndStart                  String   @default("22:00")
   dndEnd                    String   @default("08:00")
+  digestEnabled             Boolean  @default(false)
+  digestFrequency           String   @default("DAILY")
+  lastDigestSentAt          DateTime?
   createdAt                 DateTime @default(now())
   updatedAt                 DateTime @updatedAt
 
@@ -6956,3 +6963,24 @@ model MessagingNotificationPreference {
   @@map("messaging_notification_preference")
 }
 
+model MessagingFollowUp {
+  id              String    @id @default(cuid())
+  orgId           String
+  userId          String    @db.Uuid
+  conversationId  String
+  messageId       String
+  note            String?   @db.VarChar(500)
+  resolvedAt      DateTime?
+  resolvedBy      String?   @db.Uuid
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  organization  Organization        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  conversation  Conversation        @relation(fields: [conversationId, orgId], references: [id, orgId], onDelete: Cascade)
+  message       ConversationMessage @relation(fields: [messageId, orgId], references: [id, orgId], onDelete: Cascade)
+
+  @@unique([orgId, userId, messageId])
+  @@index([orgId, userId, resolvedAt])
+  @@index([orgId, conversationId])
+  @@map("messaging_follow_up")
+}
