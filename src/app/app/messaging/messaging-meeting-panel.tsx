@@ -6,11 +6,30 @@ import { cn } from "@/lib/utils";
 import { RadioPill } from "./messaging-ui-primitives";
 import { MessagingMeetingSchedule } from "./messaging-meeting-schedule";
 import { MOCK_MEETINGS } from "./mock-data";
-import type { CalendarConnection, MeetingTab } from "./types";
+import type { CalendarConnection, MeetingTab, MessagingMeeting, MeetingRsvpStatus } from "./types";
 import { MeetingRsvpControls } from "./messaging-rsvp-controls";
 
+interface AttendeeInfo {
+  rsvpStatus: MeetingRsvpStatus;
+}
+
+interface RawCalendarConnection {
+  id: string;
+  provider: string;
+  status: string;
+  emailAddress: string;
+  createdAt: string;
+  lastSyncError?: string | null;
+}
+
+interface ConversationDetails {
+  currentUserId?: string | null;
+  archivedAt?: string | null;
+  lockedAt?: string | null;
+}
+
 interface CalendarGridProps {
-  meetings: any[];
+  meetings: MessagingMeeting[];
   now?: Date;
 }
 
@@ -124,7 +143,7 @@ function CalendarGrid({ meetings, now = new Date() }: CalendarGridProps) {
 }
 
 function OrganizerAttendeeView({ meetingId }: { meetingId: string }) {
-  const [attendees, setAttendees] = useState<any[]>([]);
+  const [attendees, setAttendees] = useState<AttendeeInfo[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -164,11 +183,11 @@ function OrganizerAttendeeView({ meetingId }: { meetingId: string }) {
 export function MessagingMeetingPanel({ conversationId, calendarConnection, now = new Date() }: MessagingMeetingPanelProps) {
   const [tab, setTab] = useState<MeetingTab>("upcoming");
   const [showSchedule, setShowSchedule] = useState(false);
-  const [meetings, setMeetings] = useState<any[]>([]);
-  const [calendarEntries, setCalendarEntries] = useState<any[]>([]);
+  const [meetings, setMeetings] = useState<MessagingMeeting[]>([]);
+  const [calendarEntries, setCalendarEntries] = useState<MessagingMeeting[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [conversation, setConversation] = useState<any>(null);
+  const [conversation, setConversation] = useState<ConversationDetails | null>(null);
 
   // Hydrate conversation details dynamically
   useEffect(() => {
@@ -194,7 +213,7 @@ export function MessagingMeetingPanel({ conversationId, calendarConnection, now 
   const currentUserId = conversation?.currentUserId;
   const isConversationBlocked = !!conversation?.archivedAt || !!conversation?.lockedAt;
 
-  const [connection, setConnection] = useState<any>(calendarConnection);
+  const [connection, setConnection] = useState<CalendarConnection>(calendarConnection);
   const isConnected = connection.status === "connected";
   const [callerRole, setCallerRole] = useState<string>("admin");
 
@@ -217,7 +236,7 @@ export function MessagingMeetingPanel({ conversationId, calendarConnection, now 
 
           if (connections.length > 0) {
             const activeConn = connections.find(
-              (c: any) => c.status === "ACTIVE" || c.status === "RECONNECT_REQUIRED"
+              (c: RawCalendarConnection) => c.status === "ACTIVE" || c.status === "RECONNECT_REQUIRED"
             ) || connections[0];
 
             if (activeConn) {
@@ -357,8 +376,8 @@ export function MessagingMeetingPanel({ conversationId, calendarConnection, now 
       }
       // Update local status
       setMeetings(meetings.map(m => m.id === meetingId ? { ...m, status: "CANCELLED" } : m));
-    } catch (err: any) {
-      alert(err.message);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : String(err));
     }
   };
 
@@ -379,8 +398,8 @@ export function MessagingMeetingPanel({ conversationId, calendarConnection, now 
         connectedEmail: null,
         connectedAt: null,
       });
-    } catch (err: any) {
-      alert(err.message);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : String(err));
     }
   };
 

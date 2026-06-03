@@ -1,6 +1,7 @@
 import "server-only";
 
 import { db } from "@/lib/db";
+import type { Prisma } from "@/generated/prisma/client";
 import type { MessagingTaskRecord } from "./domain-types";
 import { participantOrgSafeWhere } from "./org-safe-helpers";
 import { toTaskRecord } from "./mappers";
@@ -8,7 +9,7 @@ import { ConversationAccessError, InvalidInputError, NotFoundError } from "./err
 import { requireConversationAccess } from "./authorization";
 import { toConversationRecord, toParticipantRecord } from "./mappers";
 import { sendTaskAssignmentNotification } from "./task-reminders";
-import { logMessagingAudit, logMessagingAuditTx } from "./audit";
+import { logMessagingAuditTx } from "./audit";
 import type {
   CreateTaskInput,
   UpdateTaskStatusInput,
@@ -232,7 +233,7 @@ export async function updateTaskStatus(input: UpdateTaskStatusInput): Promise<Me
     "updateTaskStatus",
   );
 
-  const updateData: any = { status };
+  const updateData: Prisma.MessagingTaskUpdateInput = { status };
 
   if (status === "DONE" && task.status !== "DONE") {
     updateData.completedAt = new Date();
@@ -446,7 +447,7 @@ export async function updateTask(input: UpdateTaskInput): Promise<MessagingTaskR
   }
 
   // Build the update data
-  const updateData: any = {};
+  const updateData: Prisma.MessagingTaskUpdateInput = {};
   if (input.title !== undefined) updateData.title = input.title;
   if (input.description !== undefined) updateData.description = input.description;
   if (input.priority !== undefined) updateData.priority = input.priority;

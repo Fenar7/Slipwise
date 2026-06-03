@@ -1,6 +1,7 @@
 import "server-only";
 
 import { db } from "@/lib/db";
+import { AttachmentScanStatus, AttachmentIndexingStatus } from "@/generated/prisma/client";
 
 // ─── Search config limits ────────────────────────────────────────────────────
 export const MAX_CANDIDATES_PER_KIND = 200;
@@ -69,6 +70,15 @@ export interface MeetingSearchResult extends SearchResultBase {
 
 export interface FileSearchResult extends SearchResultBase {
   kind: "file";
+  conversationId: string;
+  conversationName: string;
+  attachmentId: string;
+  mimeType: string;
+  mimeCategory: string;
+  sizeBytes: number;
+  sizeLabel: string;
+  scanStatus: "PENDING" | "CLEAN" | "BLOCKED";
+  snippet?: string;
 }
 
 // Legacy shapes for backward compatibility
@@ -101,10 +111,27 @@ export interface MessagingSearchResponse {
     file: number;
   };
   hasMore: boolean;
-  state: "active" | "degraded" | "unindexed";
+  state: "active" | "degraded" | "unindexed" | "partial";
   unindexedKinds: string[];
   isCapped: boolean;
   windowExceeded: boolean;
+  // Sprint 9.2 metadata
+  fileIndexingState?: "active" | "degraded" | "unindexed" | "partial";
+  hasPendingScans?: boolean;
+  hasUnsupportedFiles?: boolean;
+}
+
+function deriveMimeCategory(mimeType: string): string {
+  if (mimeType.startsWith("image/")) return "image";
+  if (mimeType.includes("spreadsheet") || mimeType.includes("excel") || mimeType === "text/csv") return "spreadsheet";
+  if (mimeType === "application/pdf" || mimeType.startsWith("text/") || mimeType.includes("word") || mimeType.includes("document")) return "document";
+  return "other";
+}
+
+function formatSizeLabel(sizeBytes: number): string {
+  if (sizeBytes < 1024) return `${sizeBytes} B`;
+  if (sizeBytes < 1024 * 1024) return `${(sizeBytes / 1024).toFixed(0)} KB`;
+  return `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 // ─── Helper functions ────────────────────────────────────────────────────────
@@ -195,8 +222,9 @@ export async function searchMessaging(
   const requestedKinds = query.kinds ?? ["message", "conversation", "task", "meeting", "file"];
   const searchState = query.degraded || q.toLowerCase() === "force-degraded" ? "degraded" : "active";
 
-  const isOnlyUnindexed = requestedKinds.length === 1 && requestedKinds.includes("file");
-  const isUnindexedRequested = requestedKinds.includes("file");
+  let isFileSearchUnavailable = process.env.FILE_INDEXING_DISABLED === "true";
+  const isOnlyUnindexed = requestedKinds.length === 1 && requestedKinds.includes("file") && isFileSearchUnavailable;
+  const isUnindexedRequested = requestedKinds.includes("file") && isFileSearchUnavailable;
 
   const emptyResponse: MessagingSearchResponse = {
     results: [],
@@ -220,7 +248,7 @@ export async function searchMessaging(
       facets: { message: 0, conversation: 0, task: 0, meeting: 0, file: 0 },
       hasMore: false,
       state: "degraded",
-      unindexedKinds: isUnindexedRequested ? ["file"] : [],
+      unindexedKinds: requestedKinds.includes("file") ? ["file"] : [],
       isCapped: false,
       windowExceeded: false,
     };
@@ -469,12 +497,190 @@ export async function searchMessaging(
     });
   }
 
+  // 5. Search Files (restricted to attachments in conversations user is member of)
+  let matchingFiles: FileSearchResult[] = [];
+  let fileCount = 0;
+  let hasPendingScans = false;
+  let hasUnsupportedFiles = false;
+
+  if (requestedKinds.includes("file") && memberConvIds.length > 0 && !isFileSearchUnavailable) {
+    try {
+      if (!db.messagingAttachmentIndex) {
+        throw new Error("Messaging attachment index model not initialized");
+      }
+
+      // Query database for matching indices
+      const matchingIndices = await db.messagingAttachmentIndex.findMany({
+        where: {
+          orgId,
+          conversationId: { in: memberConvIds },
+          OR: [
+            { fileName: { contains: q, mode: "insensitive" } },
+            {
+              AND: [
+                { indexingStatus: AttachmentIndexingStatus.INDEXED },
+                { scanStatus: AttachmentScanStatus.CLEAN },
+                { extractedText: { contains: q, mode: "insensitive" } },
+              ],
+            },
+          ],
+        },
+        include: {
+          attachment: {
+            select: {
+              sizeBytes: true,
+            },
+          },
+        },
+        orderBy: { lastIndexedAt: "desc" },
+        take: MAX_CANDIDATES_PER_KIND,
+      });
+
+      const conversationIds = Array.from(new Set(matchingIndices.map((idx) => idx.conversationId)));
+      const conversations = conversationIds.length > 0
+        ? await db.conversation.findMany({
+            where: { id: { in: conversationIds } },
+            select: { id: true, name: true },
+          })
+        : [];
+      const convNameMap = new Map<string, string>();
+      for (const c of conversations) {
+        convNameMap.set(c.id, c.name ?? "Direct Message");
+      }
+
+      matchingFiles = matchingIndices.map((idx) => {
+        const isPinned = memberConversationMap.get(idx.conversationId)?.isPinned ?? false;
+
+        // Custom ranking for files: Exact match on filename gets maximum priority, content match is secondary
+        let fileScore = 0;
+        const qLower = q.toLowerCase();
+        const fileNameLower = idx.fileName.toLowerCase();
+
+        if (fileNameLower === qLower) {
+          fileScore += 100;
+        } else if (fileNameLower.includes(qLower)) {
+          fileScore += 50;
+        } else if (
+          idx.indexingStatus === AttachmentIndexingStatus.INDEXED &&
+          idx.scanStatus === AttachmentScanStatus.CLEAN &&
+          idx.extractedText.toLowerCase().includes(qLower)
+        ) {
+          fileScore += 20;
+        }
+
+        const ageInDays = (Date.now() - idx.lastIndexedAt.getTime()) / (1000 * 60 * 60 * 24);
+        const recencyBoost = Math.max(0, 10 / (1 + Math.max(0, ageInDays)));
+        fileScore += recencyBoost;
+
+        if (isPinned) {
+          fileScore += 15;
+        }
+
+        fileScore = Math.round(fileScore * 100) / 100;
+
+        let snippet: string | undefined = undefined;
+        if (idx.indexingStatus === AttachmentIndexingStatus.INDEXED && idx.scanStatus === AttachmentScanStatus.CLEAN) {
+          snippet = makeMessageSnippet(idx.extractedText, q);
+        } else if (idx.scanStatus === AttachmentScanStatus.BLOCKED) {
+          snippet = "[Blocked due to security policy]";
+        } else if (idx.scanStatus === AttachmentScanStatus.PENDING) {
+          snippet = "[Pending scan - unindexed]";
+        } else if (idx.indexingStatus === AttachmentIndexingStatus.FAILED) {
+          snippet = `[Indexing failed: ${idx.lastError ?? "unknown error"}]`;
+        } else if (idx.indexingStatus === AttachmentIndexingStatus.UNINDEXED) {
+          snippet = "[File content not indexed]";
+        }
+
+        const convName = convNameMap.get(idx.conversationId) ?? "Direct Message";
+
+        return {
+          id: idx.id,
+          kind: "file" as const,
+          title: idx.fileName,
+          subtitle: convName,
+          timestamp: idx.lastIndexedAt.toISOString(),
+          score: fileScore,
+          conversationId: idx.conversationId,
+          conversationName: convName,
+          attachmentId: idx.attachmentId,
+          mimeType: idx.mimeType,
+          mimeCategory: deriveMimeCategory(idx.mimeType),
+          sizeBytes: idx.attachment?.sizeBytes ?? 0,
+          sizeLabel: formatSizeLabel(idx.attachment?.sizeBytes ?? 0),
+          scanStatus: idx.scanStatus as "PENDING" | "CLEAN" | "BLOCKED",
+          snippet,
+        };
+      });
+
+      fileCount = await db.messagingAttachmentIndex.count({
+        where: {
+          orgId,
+          conversationId: { in: memberConvIds },
+          OR: [
+            { fileName: { contains: q, mode: "insensitive" } },
+            {
+              AND: [
+                { indexingStatus: AttachmentIndexingStatus.INDEXED },
+                { scanStatus: AttachmentScanStatus.CLEAN },
+                { extractedText: { contains: q, mode: "insensitive" } },
+              ],
+            },
+          ],
+        },
+      });
+
+      // Compute metadata about limitation states
+      const pendingScanCount = await db.conversationAttachment.count({
+        where: {
+          orgId,
+          message: {
+            conversationId: { in: memberConvIds },
+          },
+          scanStatus: AttachmentScanStatus.PENDING,
+        },
+      });
+      hasPendingScans = pendingScanCount > 0;
+
+      const unindexedCount = await db.messagingAttachmentIndex.count({
+        where: {
+          orgId,
+          conversationId: { in: memberConvIds },
+          indexingStatus: AttachmentIndexingStatus.UNINDEXED,
+        },
+      });
+
+      const totalAttachmentCount = await db.conversationAttachment.count({
+        where: {
+          orgId,
+          message: {
+            conversationId: { in: memberConvIds },
+          },
+        },
+      });
+
+      const indexedAttachmentCount = await db.messagingAttachmentIndex.count({
+        where: {
+          orgId,
+          conversationId: { in: memberConvIds },
+        },
+      });
+
+      hasUnsupportedFiles = unindexedCount > 0 || (totalAttachmentCount > indexedAttachmentCount);
+
+    } catch (err) {
+      console.error("File search query failed:", err);
+      // Gracefully fall back to treating file indexing as unavailable (prevents crashing when schema is not migrated)
+      isFileSearchUnavailable = true;
+    }
+  }
+
   // Combine and rank all results by score descending, breaking ties deterministically
   const allResults: MessagingSearchResult[] = [
     ...matchingMessages,
     ...matchingConversations,
     ...matchingTasks,
     ...matchingMeetings,
+    ...matchingFiles,
   ];
 
   allResults.sort((a, b) => {
@@ -561,27 +767,41 @@ export async function searchMessaging(
     conversation: conversationCount,
     task: taskCount,
     meeting: meetingCount,
-    file: 0, // unindexed in this sprint
+    file: fileCount,
   };
 
   const isCapped =
     (requestedKinds.includes("message") && messageCount > MAX_CANDIDATES_PER_KIND) ||
     (requestedKinds.includes("conversation") && conversationCount > MAX_CANDIDATES_PER_KIND) ||
     (requestedKinds.includes("task") && taskCount > MAX_CANDIDATES_PER_KIND) ||
-    (requestedKinds.includes("meeting") && meetingCount > MAX_CANDIDATES_PER_KIND);
+    (requestedKinds.includes("meeting") && meetingCount > MAX_CANDIDATES_PER_KIND) ||
+    (requestedKinds.includes("file") && fileCount > MAX_CANDIDATES_PER_KIND);
 
   const windowExceeded = offset >= allResults.length && allResults.length > 0;
 
   const paginatedResults = allResults.slice(offset, offset + limit);
   const hasMore = allResults.length > offset + limit;
 
+  // Derive final index state truthfully
+  let derivedState: "active" | "degraded" | "unindexed" | "partial" = "active";
+  if (searchState === "degraded") {
+    derivedState = "degraded";
+  } else if (isFileSearchUnavailable && requestedKinds.length === 1 && requestedKinds.includes("file")) {
+    derivedState = "unindexed";
+  } else if (!isFileSearchUnavailable && (hasPendingScans || hasUnsupportedFiles)) {
+    derivedState = "partial";
+  }
+
   return {
     results: paginatedResults,
     facets,
     hasMore,
-    state: searchState === "degraded" ? "degraded" : (isOnlyUnindexed ? "unindexed" : "active"),
-    unindexedKinds: isUnindexedRequested ? ["file"] : [],
+    state: derivedState,
+    unindexedKinds: isFileSearchUnavailable && requestedKinds.includes("file") ? ["file"] : [],
     isCapped,
     windowExceeded,
+    fileIndexingState: isFileSearchUnavailable ? "unindexed" : (hasPendingScans || hasUnsupportedFiles ? "partial" : "active"),
+    hasPendingScans,
+    hasUnsupportedFiles,
   };
 }

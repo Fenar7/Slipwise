@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { cn } from "@/lib/utils";
+
 import {
   X,
   MessageSquare,
@@ -10,7 +10,7 @@ import {
   CheckSquare,
   Video,
 } from "lucide-react";
-import type { MessagingSearchResult, SearchResultKind, MessageSearchResult } from "./types";
+import type { MessagingSearchResult, SearchResultKind, MessageSearchResult, FileSearchResult } from "./types";
 import { RadioPill } from "./messaging-ui-primitives";
 
 interface MessagingSearchPanelProps {
@@ -51,9 +51,16 @@ function SearchResultRow({ result }: { result: MessagingSearchResult }) {
       <FileText className="h-4 w-4 text-[#79747E]" />
     );
 
-  const subtitle = result.kind === "message"
-    ? (result as MessageSearchResult).snippet
-    : result.subtitle;
+  let subtitle = result.subtitle;
+  if (result.kind === "message") {
+    subtitle = (result as MessageSearchResult).snippet;
+  } else if (result.kind === "file") {
+    const fileRes = result as FileSearchResult;
+    const sizePart = fileRes.sizeLabel ? ` (${fileRes.sizeLabel})` : "";
+    const scanPart = fileRes.scanStatus === "BLOCKED" ? " [BLOCKED]" : fileRes.scanStatus === "PENDING" ? " [PENDING SCAN]" : "";
+    const snippetPart = fileRes.snippet ? ` - ${fileRes.snippet}` : "";
+    subtitle = `${fileRes.subtitle || "File"}${sizePart}${scanPart}${snippetPart}`;
+  }
 
   return (
     <button
@@ -85,10 +92,12 @@ export function MessagingSearchPanel({ query, onClose }: MessagingSearchPanelPro
   const [filter, setFilter] = React.useState("all");
   const [results, setResults] = React.useState<MessagingSearchResult[]>([]);
   const [facets, setFacets] = React.useState<Record<string, number>>({ message: 0, conversation: 0, task: 0, meeting: 0, file: 0 });
-  const [searchState, setSearchState] = React.useState<"active" | "degraded" | "unindexed">("active");
+  const [searchState, setSearchState] = React.useState<"active" | "degraded" | "unindexed" | "partial">("active");
   const [unindexedKinds, setUnindexedKinds] = React.useState<string[]>([]);
   const [isCapped, setIsCapped] = React.useState(false);
   const [windowExceeded, setWindowExceeded] = React.useState(false);
+  const [hasPendingScans, setHasPendingScans] = React.useState(false);
+  const [hasUnsupportedFiles, setHasUnsupportedFiles] = React.useState(false);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
@@ -110,6 +119,8 @@ export function MessagingSearchPanel({ query, onClose }: MessagingSearchPanelPro
       setUnindexedKinds([]);
       setIsCapped(false);
       setWindowExceeded(false);
+      setHasPendingScans(false);
+      setHasUnsupportedFiles(false);
       setLoading(false);
       setError(null);
       return;
@@ -146,13 +157,16 @@ export function MessagingSearchPanel({ query, onClose }: MessagingSearchPanelPro
           setUnindexedKinds(json.data.unindexedKinds || []);
           setIsCapped(!!json.data.isCapped);
           setWindowExceeded(!!json.data.windowExceeded);
+          setHasPendingScans(!!json.data.hasPendingScans);
+          setHasUnsupportedFiles(!!json.data.hasUnsupportedFiles);
         } else {
           throw new Error(json.error?.message || "Failed to load search results.");
         }
-      } catch (err: any) {
-        if (err.name !== "AbortError") {
+      } catch (err) {
+        const errorObject = err as { name?: string; message?: string };
+        if (errorObject.name !== "AbortError") {
           console.error("Search fetch failed:", err);
-          setError(err.message || "An unexpected error occurred.");
+          setError(errorObject.message || "An unexpected error occurred.");
           setSearchState("degraded");
         }
       } finally {
@@ -221,6 +235,18 @@ export function MessagingSearchPanel({ query, onClose }: MessagingSearchPanelPro
           </div>
         )}
 
+        {hasPendingScans && (
+          <div className="mb-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-800 flex items-center gap-2" data-testid="search-pending-scans-banner">
+            ⚠️ Some files are still pending scan checks and cannot be searched yet.
+          </div>
+        )}
+
+        {hasUnsupportedFiles && (
+          <div className="mb-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-xs text-blue-800 flex items-center gap-2" data-testid="search-unsupported-files-banner">
+            ℹ️ Only .txt, .csv, and .pdf files are fully indexed. Other file types are unindexed.
+          </div>
+        )}
+
         {isCapped && searchState !== "unindexed" && (
           <div className="mb-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-xs text-blue-800 flex items-center gap-2" data-testid="search-capped-banner">
             ℹ️ Results are ranked from the 200 most recent items of each type.
@@ -253,7 +279,7 @@ export function MessagingSearchPanel({ query, onClose }: MessagingSearchPanelPro
               ))}
             </div>
           </div>
-        ) : (filter === "files" || searchState === "unindexed") ? (
+        ) : (filter === "files" && searchState === "unindexed") ? (
           <div className="py-8 text-center text-sm text-[#79747E]" data-testid="search-unindexed">
             File search is not yet available in this sprint.
           </div>
@@ -269,6 +295,22 @@ export function MessagingSearchPanel({ query, onClose }: MessagingSearchPanelPro
               data-testid="search-no-results-unindexed"
             >
               No results for &ldquo;{query}&rdquo; (some requested types like {unindexedKinds.join(", ")} are not yet available).
+            </div>
+          ) : filter === "files" && hasPendingScans ? (
+            <div
+              className="py-6 text-center text-sm"
+              style={{ color: "#79747E" }}
+              data-testid="search-no-results-pending"
+            >
+              No matching files found. Some files are pending scan checks and cannot be searched yet.
+            </div>
+          ) : filter === "files" && hasUnsupportedFiles ? (
+            <div
+              className="py-6 text-center text-sm"
+              style={{ color: "#79747E" }}
+              data-testid="search-no-results-unsupported"
+            >
+              No matching files found. Only supported file types (.txt, .csv, .pdf) are indexed.
             </div>
           ) : (
             <div

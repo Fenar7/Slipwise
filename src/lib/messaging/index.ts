@@ -426,3 +426,7 @@ export {
 // Errors
 export { ConversationAccessError, InvalidInputError, NotFoundError } from "./errors";
 
+// Search Indexing
+export { indexAttachment, indexAttachmentsForMessage, updateAttachmentScanStatus, processSearchIndexEvents } from "./indexing-service";
+
+

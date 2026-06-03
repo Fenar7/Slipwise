@@ -270,6 +270,7 @@ model Organization {
   presenceSessions             PresenceSession[]
   typingSessions               TypingSession[]
   conversationAttachments      ConversationAttachment[]
+  messagingAttachmentIndexes   MessagingAttachmentIndex[]
   messagingTasks               MessagingTask[]
   conversationMeetings         ConversationMeeting[]
   calendarConnections          CalendarConnection[]
@@ -6635,10 +6636,44 @@ model ConversationAttachment {
 
   organization Organization        @relation(fields: [orgId], references: [id], onDelete: Cascade)
   message      ConversationMessage @relation(fields: [messageId, orgId], references: [id, orgId], onDelete: Cascade)
+  searchIndex  MessagingAttachmentIndex?
 
   @@index([orgId, messageId])
   @@index([orgId, scanStatus])
   @@map("conversation_attachment")
+}
+
+enum AttachmentIndexingStatus {
+  INDEXED   @map("indexed")
+  UNINDEXED @map("unindexed")
+  PENDING   @map("pending")
+  FAILED    @map("failed")
+
+  @@map("attachment_indexing_status")
+}
+
+/// Index of messaging attachment for search.
+model MessagingAttachmentIndex {
+  id               String                   @id @default(cuid())
+  orgId            String
+  attachmentId     String                   @unique
+  messageId        String
+  conversationId   String
+  fileName         String
+  mimeType         String
+  scanStatus       AttachmentScanStatus
+  indexingStatus   AttachmentIndexingStatus
+  extractedText    String                   @db.Text
+  extractedPreview String?                  @db.Text
+  lastIndexedAt    DateTime                 @default(now())
+  lastError        String?
+
+  organization Organization           @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  attachment   ConversationAttachment @relation(fields: [attachmentId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, conversationId])
+  @@index([orgId, indexingStatus])
+  @@map("messaging_attachment_index")
 }
 
 /// A task created from or linked to a conversation.
