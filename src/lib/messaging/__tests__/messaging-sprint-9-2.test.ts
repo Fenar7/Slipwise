@@ -86,11 +86,23 @@ import { db } from "@/lib/db";
 import { downloadFileServer } from "@/lib/storage/upload-server";
 import { indexAttachment, processSearchIndexEvents, updateAttachmentScanStatus } from "../indexing-service";
 import { searchMessaging } from "../search-service";
-import { AttachmentScanStatus, AttachmentIndexingStatus } from "@/generated/prisma/client";
+const AttachmentScanStatus = {
+  PENDING: "PENDING",
+  CLEAN: "CLEAN",
+  BLOCKED: "BLOCKED",
+} as const;
+
+const AttachmentIndexingStatus = {
+  PENDING: "PENDING",
+  INDEXED: "INDEXED",
+  UNINDEXED: "UNINDEXED",
+  FAILED: "FAILED",
+} as const;
 
 describe("Sprint 9.2 — Full File Search & Attachment Indexing", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    delete process.env.FILE_INDEXING_DISABLED;
     vi.mocked(db.conversationParticipant.findMany).mockResolvedValue([]);
     vi.mocked(db.conversationMessage.findMany).mockResolvedValue([]);
     vi.mocked(db.conversation.findMany).mockResolvedValue([]);

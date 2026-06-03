@@ -5,7 +5,7 @@ import {
   messagingApiResponse,
   handleMessagingApiError,
   requireNumberRange,
-} from "../_utils";
+} from "@/app/api/messaging/_utils";
 
 export const runtime = "nodejs";
 

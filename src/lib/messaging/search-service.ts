@@ -667,7 +667,8 @@ export async function searchMessaging(
 
       hasUnsupportedFiles = unindexedCount > 0 || (totalAttachmentCount > indexedAttachmentCount);
 
-    } catch {
+    } catch (err) {
+      console.error("File search query failed:", err);
       // Gracefully fall back to treating file indexing as unavailable (prevents crashing when schema is not migrated)
       isFileSearchUnavailable = true;
     }
@@ -787,6 +788,8 @@ export async function searchMessaging(
     derivedState = "degraded";
   } else if (isFileSearchUnavailable && requestedKinds.length === 1 && requestedKinds.includes("file")) {
     derivedState = "unindexed";
+  } else if (isFileSearchUnavailable && requestedKinds.includes("file")) {
+    derivedState = "partial";
   } else if (!isFileSearchUnavailable && (hasPendingScans || hasUnsupportedFiles)) {
     derivedState = "partial";
   }
