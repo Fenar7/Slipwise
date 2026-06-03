@@ -1152,6 +1152,7 @@ export function ClientHubPaymentSelectionView({
     dueDate: string | null;
     totalAmount: number;
     remainingAmount: number;
+    hasValidPaymentLink: boolean;
     organization: {
       name: string;
       defaults: {
@@ -1179,7 +1180,7 @@ export function ClientHubPaymentSelectionView({
         ← Invoice #{invoice.invoiceNumber}
       </Link>
 
-      <PaymentMethodSelector orgSlug={orgSlug} invoice={invoice} acceptedMethods={hubConfig.payments.acceptedMethods} />
+      <PaymentMethodSelector orgSlug={orgSlug} invoice={invoice} acceptedMethods={hubConfig.payments.acceptedMethods} hasValidPaymentLink={invoice.hasValidPaymentLink} />
     </div>
   );
 }
@@ -1378,6 +1379,7 @@ export function ClientHubPaymentsView({
   outstandingBalance = 0,
   totalPaid = 0,
   orgHasBankDetails = false,
+  hasPaymentLink = false,
   payments = [],
   outstandingInvoices = [],
 }: {
@@ -1386,6 +1388,7 @@ export function ClientHubPaymentsView({
   outstandingBalance?: number;
   totalPaid?: number;
   orgHasBankDetails?: boolean;
+  hasPaymentLink?: boolean;
   payments?: Array<{
     id: string;
     invoiceNumber: string;
@@ -1403,7 +1406,7 @@ export function ClientHubPaymentsView({
 }) {
   const hubConfig = getHubConfig(config);
   const basePath = `/portal/${orgSlug}/client-hub/payments`;
-  const availableMethods = getActionablePaymentMethods(hubConfig.payments.acceptedMethods, orgHasBankDetails);
+  const availableMethods = getActionablePaymentMethods(hubConfig.payments.acceptedMethods, orgHasBankDetails, hasPaymentLink);
 
   return (
     <div className="grid gap-5 xl:grid-cols-[220px_minmax(0,1fr)_280px]">

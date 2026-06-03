@@ -147,6 +147,7 @@ export async function getPortalInvoiceDetail(
     include: {
       lineItems: true,
       payments: {
+        where: { status: "SETTLED" },
         orderBy: { paidAt: "desc" },
         select: {
           id: true,
@@ -154,6 +155,7 @@ export async function getPortalInvoiceDetail(
           paidAt: true,
           method: true,
           note: true,
+          status: true,
           paymentMethodDisplay: true,
         },
       },
@@ -184,6 +186,12 @@ export async function getPortalInvoiceDetail(
     action: "view_invoice",
   });
 
+  const hasValidPaymentLink = !!(
+    invoice.razorpayPaymentLinkUrl &&
+    invoice.paymentLinkExpiresAt &&
+    invoice.paymentLinkExpiresAt > new Date()
+  );
+
   return {
     id: invoice.id,
     invoiceNumber: invoice.invoiceNumber ?? "—",
@@ -193,6 +201,7 @@ export async function getPortalInvoiceDetail(
     amountPaid: toAccountingNumber(invoice.amountPaid),
     remainingAmount: toAccountingNumber(invoice.remainingAmount),
     status: invoice.status,
+    hasValidPaymentLink,
     fromName: invoice.organization.name,
     clientName: invoice.customer.name,
     organization: invoice.organization,
@@ -209,6 +218,7 @@ export async function getPortalInvoiceDetail(
       paidAt: formatIsoDate(pmt.paidAt),
       method: pmt.method ?? "—",
       note: pmt.note ?? "—",
+      status: pmt.status,
       paymentMethodDisplay: pmt.paymentMethodDisplay ?? "—",
     })),
   };
@@ -895,10 +905,22 @@ export async function getPortalPaymentsData(orgSlug: string) {
     orgDefaults?.bankName || orgDefaults?.bankAccount || orgDefaults?.bankIFSC
   );
 
+  const validPaymentLinkInvoice = await db.invoice.findFirst({
+    where: {
+      organizationId: session.orgId,
+      customerId: session.customerId,
+      razorpayPaymentLinkUrl: { not: null },
+      paymentLinkExpiresAt: { gt: new Date() },
+    },
+    select: { id: true },
+  });
+  const hasPaymentLink = !!validPaymentLinkInvoice;
+
   return {
     outstandingBalance,
     totalPaid,
     orgHasBankDetails,
+    hasPaymentLink,
     payments: payments.map((pmt) => ({
       id: pmt.id,
       invoiceNumber: pmt.invoice.invoiceNumber ?? "—",

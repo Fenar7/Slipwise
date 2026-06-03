@@ -7,7 +7,7 @@ import { initiatePortalPayment } from "../../actions";
 /**
  * Shared source of truth for which payment methods are actually actionable.
  * In this sprint:
- * - Payment Link is available (Client Hub can initiate it)
+ * - Payment Link is available only when the invoice has a valid live payment link
  * - Bank Transfer is available only when bank details exist
  * - UPI is not supported
  * - Unknown methods are excluded
@@ -15,11 +15,12 @@ import { initiatePortalPayment } from "../../actions";
 export function getActionablePaymentMethods(
   acceptedMethods: string[],
   hasBankDetails: boolean,
+  hasPaymentLink: boolean,
 ): string[] {
   return acceptedMethods.filter((method) => {
     if (method === "UPI") return false;
     if (method === "Bank Transfer") return hasBankDetails;
-    if (method === "Payment Link") return true;
+    if (method === "Payment Link") return hasPaymentLink;
     return false;
   });
 }
@@ -40,6 +41,7 @@ export function PaymentMethodSelector({
   orgSlug,
   invoice,
   acceptedMethods,
+  hasValidPaymentLink,
 }: {
   orgSlug: string;
   invoice: {
@@ -58,6 +60,7 @@ export function PaymentMethodSelector({
     } | null;
   };
   acceptedMethods: string[];
+  hasValidPaymentLink: boolean;
 }) {
   const [selectedMethod, setSelectedMethod] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -71,7 +74,7 @@ export function PaymentMethodSelector({
     invoice.organization?.defaults?.bankIFSC
   );
 
-  const methods = getActionablePaymentMethods(acceptedMethods, hasBankDetails).map((method) => ({
+  const methods = getActionablePaymentMethods(acceptedMethods, hasBankDetails, hasValidPaymentLink).map((method) => ({
       id: method,
       label: method,
       description:

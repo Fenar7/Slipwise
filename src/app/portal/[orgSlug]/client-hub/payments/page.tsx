@@ -27,6 +27,7 @@ export default async function ClientHubPaymentsPage({
       outstandingBalance={data.outstandingBalance}
       totalPaid={data.totalPaid}
       orgHasBankDetails={data.orgHasBankDetails}
+      hasPaymentLink={data.hasPaymentLink}
       payments={data.payments}
       outstandingInvoices={data.outstandingInvoices}
     />

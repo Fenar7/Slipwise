@@ -126,6 +126,7 @@ const mockInvoiceDetailData = vi.hoisted(() => ({
         amountPaid: 0,
         remainingAmount: 1200,
         status: "UNPAID",
+        hasValidPaymentLink: true,
         fromName: "Acme Corporation",
         clientName: "Hadi Azeez",
         lineItems: [
@@ -700,6 +701,7 @@ describe("Server-side payment initiation fail-closed (Fix 2 + 3)", () => {
           },
         }}
         acceptedMethods={["Payment Link"]}
+        hasValidPaymentLink={true}
       />
     );
 
@@ -715,35 +717,48 @@ describe("Server-side payment initiation fail-closed (Fix 2 + 3)", () => {
 describe("Payment-method availability truthful (Fix 4)", () => {
 
   it("getActionablePaymentMethods filters out UPI", () => {
-    const result = getActionablePaymentMethods(["Payment Link", "Bank Transfer", "UPI"], true);
+    const result = getActionablePaymentMethods(["Payment Link", "Bank Transfer", "UPI"], true, true);
     expect(result).toContain("Payment Link");
     expect(result).toContain("Bank Transfer");
     expect(result).not.toContain("UPI");
   });
 
   it("getActionablePaymentMethods hides Bank Transfer when no bank details", () => {
-    const result = getActionablePaymentMethods(["Payment Link", "Bank Transfer"], false);
+    const result = getActionablePaymentMethods(["Payment Link", "Bank Transfer"], false, true);
     expect(result).toContain("Payment Link");
     expect(result).not.toContain("Bank Transfer");
   });
 
   it("getActionablePaymentMethods shows Bank Transfer when bank details exist", () => {
-    const result = getActionablePaymentMethods(["Payment Link", "Bank Transfer"], true);
+    const result = getActionablePaymentMethods(["Payment Link", "Bank Transfer"], true, true);
+    expect(result).toContain("Payment Link");
+    expect(result).toContain("Bank Transfer");
+  });
+
+  it("getActionablePaymentMethods hides Payment Link when no valid payment link exists", () => {
+    const result = getActionablePaymentMethods(["Payment Link", "Bank Transfer"], true, false);
+    expect(result).not.toContain("Payment Link");
+    expect(result).toContain("Bank Transfer");
+  });
+
+  it("getActionablePaymentMethods shows Payment Link when valid payment link exists", () => {
+    const result = getActionablePaymentMethods(["Payment Link", "Bank Transfer"], true, true);
     expect(result).toContain("Payment Link");
     expect(result).toContain("Bank Transfer");
   });
 
   it("getActionablePaymentMethods excludes unknown methods", () => {
-    const result = getActionablePaymentMethods(["Payment Link", "Credit Card", "Debit Card"], false);
-    expect(result).toEqual(["Payment Link"]);
+    const result = getActionablePaymentMethods(["Payment Link", "Credit Card", "Debit Card"], false, false);
+    expect(result).toEqual([]);
   });
 
-  it("payments overview page shows only available methods with bank details", async () => {
+  it("payments overview page shows only available methods with bank details and payment link", async () => {
     const { getPortalPaymentsData } = await import("../../actions");
     vi.mocked(getPortalPaymentsData).mockResolvedValueOnce({
       outstandingBalance: 3000,
       totalPaid: 5800,
       orgHasBankDetails: true,
+      hasPaymentLink: true,
       payments: [
         { id: "pmt-001", invoiceNumber: "INV-000128", amount: 3200, paidAt: "2025-10-15", method: "Bank Transfer", status: "SETTLED" }
       ],
@@ -764,6 +779,7 @@ describe("Payment-method availability truthful (Fix 4)", () => {
       outstandingBalance: 3000,
       totalPaid: 5800,
       orgHasBankDetails: false,
+      hasPaymentLink: true,
       payments: [],
       outstandingInvoices: [],
     });
@@ -772,6 +788,22 @@ describe("Payment-method availability truthful (Fix 4)", () => {
     expect(html).toContain("Payment Link");
     expect(html).not.toContain("Bank Transfer");
     expect(html).not.toContain("UPI");
+  });
+
+  it("payments overview page hides Payment Link when org has no valid payment links", async () => {
+    const { getPortalPaymentsData } = await import("../../actions");
+    vi.mocked(getPortalPaymentsData).mockResolvedValueOnce({
+      outstandingBalance: 3000,
+      totalPaid: 5800,
+      orgHasBankDetails: true,
+      hasPaymentLink: false,
+      payments: [],
+      outstandingInvoices: [],
+    });
+
+    const html = await renderAsyncPage(PaymentsPage);
+    expect(html).not.toContain("Payment Link");
+    expect(html).toContain("Bank Transfer");
   });
 });
 
@@ -790,6 +822,7 @@ describe("Settled-only payment history (Fix 5)", () => {
       outstandingBalance: 3000,
       totalPaid: 5800,
       orgHasBankDetails: true,
+      hasPaymentLink: true,
       payments: [
         { id: "pmt-001", invoiceNumber: "INV-000128", amount: 3200, paidAt: "2025-10-15", method: "Bank Transfer", status: "SETTLED" }
       ],
@@ -799,6 +832,128 @@ describe("Settled-only payment history (Fix 5)", () => {
     const html = await renderAsyncPage(PaymentsPage);
     expect(html).toContain("INV-000128");
     expect(html).toContain("SETTLED");
+  });
+
+  it("invoice detail only shows SETTLED payments in payment history", async () => {
+    const { getPortalInvoiceDetail } = await import("../../actions");
+    vi.mocked(getPortalInvoiceDetail).mockResolvedValueOnce({
+      id: "inv-001",
+      invoiceNumber: "INV-000128",
+      invoiceDate: "2025-10-01",
+      dueDate: "2025-10-15",
+      totalAmount: 5000,
+      amountPaid: 3200,
+      remainingAmount: 1800,
+      status: "PARTIALLY_PAID",
+      hasValidPaymentLink: true,
+      fromName: "Test Org",
+      clientName: "Test Customer",
+      organization: { id: "org-1", name: "Test Org" },
+      lineItems: [],
+      payments: [
+        { id: "pmt-001", amount: 3200, paidAt: "2025-10-15", method: "Bank Transfer", note: "Settled", status: "SETTLED", paymentMethodDisplay: "Bank Transfer" },
+      ],
+    });
+
+    const { ClientHubInvoiceDetailView } = await import("../components/views");
+    const html = renderToStaticMarkup(
+      <ClientHubInvoiceDetailView
+        invoice={{
+          id: "inv-001",
+          invoiceNumber: "INV-000128",
+          invoiceDate: "2025-10-01",
+          dueDate: "2025-10-15",
+          totalAmount: 5000,
+          amountPaid: 3200,
+          remainingAmount: 1800,
+          status: "PARTIALLY_PAID",
+          fromName: "Test Org",
+          clientName: "Test Customer",
+          lineItems: [],
+          payments: [
+            { id: "pmt-001", amount: 3200, paidAt: "2025-10-15", method: "Bank Transfer", note: "--", paymentMethodDisplay: "Bank Transfer" },
+          ],
+        }}
+      />
+    );
+    expect(html).toContain("Bank Transfer");
+    expect(html).toContain("3,200");
+  });
+
+  it("invoice detail returns hasValidPaymentLink=true when razorpay link is valid", async () => {
+    const { getPortalInvoiceDetail } = await import("../../actions");
+    vi.mocked(getPortalInvoiceDetail).mockResolvedValueOnce({
+      id: "inv-001",
+      invoiceNumber: "INV-000128",
+      invoiceDate: "2025-10-01",
+      dueDate: "2025-10-15",
+      totalAmount: 5000,
+      amountPaid: 0,
+      remainingAmount: 5000,
+      status: "UNPAID",
+      hasValidPaymentLink: true,
+      fromName: "Test Org",
+      clientName: "Test Customer",
+      organization: { id: "org-1", name: "Test Org" },
+      lineItems: [],
+      payments: [],
+    });
+
+    const { ClientHubPaymentSelectionView } = await import("../components/views");
+    const html = renderToStaticMarkup(
+      <ClientHubPaymentSelectionView
+        orgSlug={ORG_SLUG}
+        invoice={{
+          id: "inv-001",
+          invoiceNumber: "INV-000128",
+          dueDate: "2025-10-15",
+          totalAmount: 5000,
+          remainingAmount: 5000,
+          hasValidPaymentLink: true,
+          organization: { name: "Test Org", defaults: { bankName: "Emirates NBD", bankAccount: "123", bankIFSC: "AE07" } },
+        }}
+        config={mockConfig.value}
+      />
+    );
+    expect(html).toContain("Payment Link");
+  });
+
+  it("invoice detail returns hasValidPaymentLink=false when razorpay link is expired or missing", async () => {
+    const { getPortalInvoiceDetail } = await import("../../actions");
+    vi.mocked(getPortalInvoiceDetail).mockResolvedValueOnce({
+      id: "inv-001",
+      invoiceNumber: "INV-000128",
+      invoiceDate: "2025-10-01",
+      dueDate: "2025-10-15",
+      totalAmount: 5000,
+      amountPaid: 0,
+      remainingAmount: 5000,
+      status: "UNPAID",
+      hasValidPaymentLink: false,
+      fromName: "Test Org",
+      clientName: "Test Customer",
+      organization: { id: "org-1", name: "Test Org" },
+      lineItems: [],
+      payments: [],
+    });
+
+    const { ClientHubPaymentSelectionView } = await import("../components/views");
+    const html = renderToStaticMarkup(
+      <ClientHubPaymentSelectionView
+        orgSlug={ORG_SLUG}
+        invoice={{
+          id: "inv-001",
+          invoiceNumber: "INV-000128",
+          dueDate: "2025-10-15",
+          totalAmount: 5000,
+          remainingAmount: 5000,
+          hasValidPaymentLink: false,
+          organization: { name: "Test Org", defaults: { bankName: "Emirates NBD", bankAccount: "123", bankIFSC: "AE07" } },
+        }}
+        config={mockConfig.value}
+      />
+    );
+    expect(html).not.toContain("Payment Link");
   });
 });
 
@@ -826,6 +981,7 @@ describe("PaymentMethodSelector Component", () => {
         orgSlug={ORG_SLUG}
         invoice={dummyInvoice}
         acceptedMethods={["Payment Link", "Bank Transfer", "UPI"]}
+        hasValidPaymentLink={true}
       />
     );
 
@@ -848,11 +1004,26 @@ describe("PaymentMethodSelector Component", () => {
         orgSlug={ORG_SLUG}
         invoice={invoiceNoBank}
         acceptedMethods={["Payment Link", "Bank Transfer"]}
+        hasValidPaymentLink={true}
       />
     );
 
     expect(screen.getByText("Payment Link")).toBeInTheDocument();
     expect(queryByText("Bank Transfer")).not.toBeInTheDocument();
+  });
+
+  it("hides Payment Link option when no valid payment link exists for invoice", () => {
+    const { queryByText } = render(
+      <PaymentMethodSelector
+        orgSlug={ORG_SLUG}
+        invoice={dummyInvoice}
+        acceptedMethods={["Payment Link", "Bank Transfer"]}
+        hasValidPaymentLink={false}
+      />
+    );
+
+    expect(queryByText("Payment Link")).not.toBeInTheDocument();
+    expect(screen.getByText("Bank Transfer")).toBeInTheDocument();
   });
 
   it("displays bank details when Bank Transfer is selected", () => {
@@ -861,6 +1032,7 @@ describe("PaymentMethodSelector Component", () => {
         orgSlug={ORG_SLUG}
         invoice={dummyInvoice}
         acceptedMethods={["Payment Link", "Bank Transfer"]}
+        hasValidPaymentLink={true}
       />
     );
 
@@ -886,6 +1058,7 @@ describe("PaymentMethodSelector Component", () => {
         orgSlug={ORG_SLUG}
         invoice={dummyInvoice}
         acceptedMethods={["Payment Link"]}
+        hasValidPaymentLink={true}
       />
     );
 
@@ -917,6 +1090,7 @@ describe("PaymentMethodSelector Component", () => {
         orgSlug={ORG_SLUG}
         invoice={dummyInvoice}
         acceptedMethods={["Payment Link"]}
+        hasValidPaymentLink={true}
       />
     );
 
@@ -926,5 +1100,19 @@ describe("PaymentMethodSelector Component", () => {
     await waitFor(() => {
       expect(screen.getByText("Unable to initiate online payment. Please contact support or use another payment method.")).toBeInTheDocument();
     });
+  });
+
+  it("does not render Payment Link method when hasValidPaymentLink is false even if configured", () => {
+    render(
+      <PaymentMethodSelector
+        orgSlug={ORG_SLUG}
+        invoice={dummyInvoice}
+        acceptedMethods={["Payment Link"]}
+        hasValidPaymentLink={false}
+      />
+    );
+
+    expect(screen.queryByText("Payment Link")).not.toBeInTheDocument();
+    expect(screen.queryByText("PROCEED TO SECURE PAYMENT")).not.toBeInTheDocument();
   });
 });
