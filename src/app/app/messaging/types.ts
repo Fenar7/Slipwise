@@ -387,6 +387,15 @@ export interface MeetingSearchResult extends SearchResultBase {
 
 export interface FileSearchResult extends SearchResultBase {
   kind: "file";
+  conversationId: string;
+  conversationName: string;
+  attachmentId: string;
+  mimeType: string;
+  mimeCategory: string;
+  sizeBytes: number;
+  sizeLabel: string;
+  scanStatus: "PENDING" | "CLEAN" | "BLOCKED";
+  snippet?: string;
 }
 
 // Support legacy mock data shapes as well

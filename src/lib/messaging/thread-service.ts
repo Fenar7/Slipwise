@@ -19,6 +19,7 @@ import {
 } from "./service-helpers";
 import { getRealtimePublisherOrNoop } from "./realtime/publisher";
 import { appendConversationEvent } from "./realtime/event-log-service";
+import { indexAttachmentsForMessage } from "./indexing-service";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -346,6 +347,10 @@ export async function replyToThread(
     { messageId: result.id, threadId: input.threadId },
     { eventId: eventMeta!.eventId, cursor: eventMeta!.cursor.toString() },
   );
+
+  if (input.attachments && input.attachments.length > 0) {
+    indexAttachmentsForMessage(result.id);
+  }
 
   return result;
 }
