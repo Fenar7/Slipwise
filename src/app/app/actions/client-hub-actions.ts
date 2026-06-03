@@ -20,7 +20,6 @@ import {
 } from "@/app/portal/[orgSlug]/client-hub/components/config-resolver";
 import { sendEmail, clientHubInviteEmailHtml } from "@/lib/email";
 import { revokePortalSession, checkPortalResendCooldown, logPortalAccess } from "@/lib/portal-auth";
-import type { Prisma } from "@prisma/client";
 
 export type ClientHubReadinessStatus = "disabled" | "enabled_not_ready" | "enabled_ready";
 
@@ -183,10 +182,10 @@ export async function updateClientHubOrgConfig(input: ClientHubConfig) {
       where: { organizationId: orgId },
       create: {
         organizationId: orgId,
-        config: validatedConfig as Prisma.InputJsonValue,
+        config: validatedConfig as any,
       },
       update: {
-        config: validatedConfig as Prisma.InputJsonValue,
+        config: validatedConfig as any,
       },
     });
 
@@ -358,10 +357,10 @@ export async function updateClientHubCustomerOverride(customerId: string, effect
       create: {
         organizationId: orgId,
         customerId,
-        overrideConfig: validatedDelta as Prisma.InputJsonValue,
+        overrideConfig: validatedDelta as any,
       },
       update: {
-        overrideConfig: validatedDelta as Prisma.InputJsonValue,
+        overrideConfig: validatedDelta as any,
       },
     });
 

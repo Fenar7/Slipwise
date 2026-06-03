@@ -195,7 +195,7 @@ export function TagPicker({
           className="flex w-full items-center gap-2 rounded-lg border border-dashed border-[var(--border-default)] bg-[var(--surface-subtle)] px-3 py-2 text-sm text-[var(--text-secondary)] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)]"
         >
           <Plus className="h-4 w-4" />
-          Create tag &quot;{search.trim()}&quot;
+          Create tag "{search.trim()}"
         </button>
       )}
 

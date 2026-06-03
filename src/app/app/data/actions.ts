@@ -234,7 +234,7 @@ export async function updateCustomer(
 
     const { tagIds } = input;
 
-    const updateData: Record<string, unknown> = {};
+    const updateData: any = {};
     if (name !== undefined) updateData.name = name;
     if (email !== undefined) updateData.email = email;
     if (phone !== undefined) updateData.phone = phone;

@@ -107,7 +107,7 @@ export function CustomizationShell() {
   const [customers, setCustomers] = useState<{ id: string; name: string; email: string | null }[]>([]);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>("");
   const [orgDefaultConfig, setOrgDefaultConfig] = useState<ClientHubConfig>(DEFAULT_CLIENT_HUB_CONFIG);
-  const [overrideConfig, setOverrideConfig] = useState<Record<string, unknown>>({});
+  const [overrideConfig, setOverrideConfig] = useState<any>({});
 
   // Sprint 3.3 / 3.4 — Per-Client Lifecycle & Admin State
   const [lifecycleReadiness, setLifecycleReadiness] = useState<ClientHubCustomerReadiness | null>(null);
@@ -767,26 +767,26 @@ export function CustomizationShell() {
           {selectedCustomerId && activeTab !== "preview" && (
             <div className={cn(
               "flex items-center justify-between p-3 rounded-lg border mb-4 text-xs",
-              isSectionOverridden(activeTab as keyof ClientHubConfig)
-                ? "bg-amber-50 border-amber-200 text-amber-800"
+              isSectionOverridden(activeTab as any) 
+                ? "bg-amber-50 border-amber-200 text-amber-800" 
                 : "bg-green-50 border-green-200 text-green-800"
             )}>
               <div>
                 <span className="font-semibold capitalize">{activeTab} Section Status: </span>
-                {isSectionOverridden(activeTab as keyof ClientHubConfig) ? (
+                {isSectionOverridden(activeTab as any) ? (
                   <span>This section has <strong>custom overrides</strong> for this client.</span>
                 ) : (
                   <span>This section is currently <strong>inheriting all values</strong> from organization defaults.</span>
                 )}
               </div>
-              {isSectionOverridden(activeTab as keyof ClientHubConfig) && (
+              {isSectionOverridden(activeTab as any) && (
                 <Button
                   type="button"
                   variant="secondary"
                   size="sm"
                   onClick={() => {
                     const next = { ...config };
-                    next[activeTab as keyof ClientHubConfig] = orgDefaultConfig[activeTab as keyof ClientHubConfig];
+                    next[activeTab as keyof ClientHubConfig] = orgDefaultConfig[activeTab as keyof ClientHubConfig] as any;
                     handleConfigChange(next);
                     toast.info(`Reverted ${activeTab} section to organization defaults`);
                   }}

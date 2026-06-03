@@ -47,7 +47,7 @@ export function CustomerForm({ customer }: CustomerFormProps) {
     if (result.success) {
       router.push("/app/clients");
     } else {
-      setError("error" in result ? result.error : "An unexpected error occurred");
+      setError((result as any).error || "An unexpected error occurred");
     }
   };
   
