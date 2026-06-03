@@ -188,11 +188,11 @@ export type ClientHubOverride = z.infer<typeof ClientHubOverrideSchema>;
  * Deterministically merges partial overrides into a target configuration.
  * Treated recursively, preserving nested structures. Arrays are replaced directly.
  */
-export function deepMerge<T extends Record<string, any>>(target: T, source: any): T {
-  if (!source || typeof source !== "object") {
+export function deepMerge<T extends Record<string, unknown>>(target: T, source: Record<string, unknown> | null | undefined): T {
+  if (!source) {
     return target;
   }
-  const result = { ...target } as any;
+  const result = { ...target } as Record<string, unknown>;
   for (const key of Object.keys(target)) {
     const targetValue = target[key];
     const sourceValue = source[key];
@@ -206,13 +206,13 @@ export function deepMerge<T extends Record<string, any>>(target: T, source: any)
         typeof sourceValue === "object" &&
         !Array.isArray(sourceValue)
       ) {
-        result[key] = deepMerge(targetValue, sourceValue);
+        result[key] = deepMerge(targetValue as Record<string, unknown>, sourceValue as Record<string, unknown>);
       } else {
         result[key] = sourceValue;
       }
     }
   }
-  return result;
+  return result as unknown as T;
 }
 
 /**
@@ -220,19 +220,19 @@ export function deepMerge<T extends Record<string, any>>(target: T, source: any)
  * Empty sections or identical properties are omitted.
  */
 export function computeOverrideDiff(orgDefault: ClientHubConfig, edited: ClientHubConfig): ClientHubOverride {
-  const diff: any = {};
+  const diff: Record<string, unknown> = {};
 
   for (const sectionKey of Object.keys(orgDefault) as Array<keyof ClientHubConfig>) {
     const defaultSection = orgDefault[sectionKey];
     const editedSection = edited[sectionKey];
 
     if (typeof defaultSection === "object" && defaultSection !== null && !Array.isArray(defaultSection)) {
-      const sectionDiff: any = {};
+      const sectionDiff: Record<string, unknown> = {};
       let hasSectionDiff = false;
 
-      for (const fieldKey of Object.keys(defaultSection)) {
-        const defaultValue = (defaultSection as any)[fieldKey];
-        const editedValue = (editedSection as any)[fieldKey];
+      for (const fieldKey of Object.keys(defaultSection as Record<string, unknown>)) {
+        const defaultValue = (defaultSection as Record<string, unknown>)[fieldKey];
+        const editedValue = (editedSection as Record<string, unknown>)[fieldKey];
 
         if (Array.isArray(defaultValue) && Array.isArray(editedValue)) {
           if (JSON.stringify(defaultValue) !== JSON.stringify(editedValue)) {

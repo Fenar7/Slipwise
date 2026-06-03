@@ -13,7 +13,7 @@ import {
  * performing a resilient fallback to DEFAULT_CLIENT_HUB_CONFIG if parsing fails.
  * To handle future partial/stale config updates, it merges with defaults.
  */
-export function safeValidateHubConfig(rawConfig: any): ClientHubConfig {
+export function safeValidateHubConfig(rawConfig: Record<string, unknown> | null | undefined): ClientHubConfig {
   if (!rawConfig) {
     return DEFAULT_CLIENT_HUB_CONFIG;
   }
@@ -23,15 +23,15 @@ export function safeValidateHubConfig(rawConfig: any): ClientHubConfig {
     const merged = {
       ...DEFAULT_CLIENT_HUB_CONFIG,
       ...rawConfig,
-      branding: { ...DEFAULT_CLIENT_HUB_CONFIG.branding, ...rawConfig.branding },
-      homeDashboard: { ...DEFAULT_CLIENT_HUB_CONFIG.homeDashboard, ...rawConfig.homeDashboard },
-      invoices: { ...DEFAULT_CLIENT_HUB_CONFIG.invoices, ...rawConfig.invoices },
-      quotes: { ...DEFAULT_CLIENT_HUB_CONFIG.quotes, ...rawConfig.quotes },
-      payments: { ...DEFAULT_CLIENT_HUB_CONFIG.payments, ...rawConfig.payments },
-      about: { ...DEFAULT_CLIENT_HUB_CONFIG.about, ...rawConfig.about },
-      contact: { ...DEFAULT_CLIENT_HUB_CONFIG.contact, ...rawConfig.contact },
-      products: { ...DEFAULT_CLIENT_HUB_CONFIG.products, ...rawConfig.products },
-      navigation: { ...DEFAULT_CLIENT_HUB_CONFIG.navigation, ...rawConfig.navigation },
+      branding: { ...DEFAULT_CLIENT_HUB_CONFIG.branding, ...(rawConfig.branding as Record<string, unknown> || {}) },
+      homeDashboard: { ...DEFAULT_CLIENT_HUB_CONFIG.homeDashboard, ...(rawConfig.homeDashboard as Record<string, unknown> || {}) },
+      invoices: { ...DEFAULT_CLIENT_HUB_CONFIG.invoices, ...(rawConfig.invoices as Record<string, unknown> || {}) },
+      quotes: { ...DEFAULT_CLIENT_HUB_CONFIG.quotes, ...(rawConfig.quotes as Record<string, unknown> || {}) },
+      payments: { ...DEFAULT_CLIENT_HUB_CONFIG.payments, ...(rawConfig.payments as Record<string, unknown> || {}) },
+      about: { ...DEFAULT_CLIENT_HUB_CONFIG.about, ...(rawConfig.about as Record<string, unknown> || {}) },
+      contact: { ...DEFAULT_CLIENT_HUB_CONFIG.contact, ...(rawConfig.contact as Record<string, unknown> || {}) },
+      products: { ...DEFAULT_CLIENT_HUB_CONFIG.products, ...(rawConfig.products as Record<string, unknown> || {}) },
+      navigation: { ...DEFAULT_CLIENT_HUB_CONFIG.navigation, ...(rawConfig.navigation as Record<string, unknown> || {}) },
     };
 
     // Validate merged result against Zod schema
@@ -80,7 +80,7 @@ export async function getPersistedHubConfig(orgSlug: string): Promise<ClientHubC
  * Shared internal utility to merge stored sparse customer overrides into the
  * resolved organization-level defaults, validating the final effective schema.
  */
-export function resolveEffectiveConfig(orgDefault: ClientHubConfig, overridePayload: any): ClientHubConfig {
+export function resolveEffectiveConfig(orgDefault: ClientHubConfig, overridePayload: Record<string, unknown> | null | undefined): ClientHubConfig {
   if (!overridePayload) {
     return orgDefault;
   }

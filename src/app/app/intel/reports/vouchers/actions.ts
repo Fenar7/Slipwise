@@ -106,9 +106,9 @@ export async function getVoucherReport(filters: VoucherReportFilters) {
       .filter(Boolean);
     const uniqueCategories = [...new Set(categories)];
 
-    const tagNames = ((v as any).tagAssignments ?? [])
-      .map((a: { tag: { name: string } }) => a.tag.name)
-      .sort();
+    const tagNames = "tagAssignments" in v && Array.isArray(v.tagAssignments)
+      ? (v.tagAssignments as Array<{ tag: { name: string } }>).map((a) => a.tag.name).sort()
+      : [];
 
     return {
       id: v.id,

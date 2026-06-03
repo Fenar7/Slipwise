@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo, startTransition } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { Search, Plus, ChevronDown, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -89,8 +89,10 @@ export function TagPicker({
       inputRef.current.focus();
     }
     if (!open) {
-      setHighlightedIndex(-1);
-      setSearch("");
+      startTransition(() => {
+        setHighlightedIndex(-1);
+        setSearch("");
+      });
     }
   }, [open]);
 

@@ -1146,7 +1146,22 @@ export function ClientHubPaymentSelectionView({
   config,
 }: {
   orgSlug: string;
-  invoice: any;
+  invoice: {
+    id: string;
+    invoiceNumber: string;
+    totalAmount: number;
+    remainingAmount: number;
+    dueDate: string | null;
+    organization: {
+      name: string;
+      defaults: {
+        bankName: string | null;
+        bankAccount: string | null;
+        bankIFSC: string | null;
+      } | null;
+    } | null;
+    [key: string]: unknown;
+  };
   config?: ClientHubConfig;
 }) {
   const hubConfig = getHubConfig(config);

@@ -90,7 +90,7 @@ export function PaymentMethodSelector({
       } else {
         setError(res?.error ?? "Unable to initiate online payment. Please contact support or use another payment method.");
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
       setError("Something went wrong while initiating the payment. Please try again later.");
     } finally {

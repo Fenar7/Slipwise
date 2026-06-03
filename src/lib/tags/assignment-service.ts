@@ -29,7 +29,13 @@ async function verifyOrgEntity(
   table: "invoice" | "voucher" | "customer" | "vendor",
   id: string
 ): Promise<boolean> {
-  const record = await (db as any)[table].findFirst({
+  const delegate = {
+    invoice: db.invoice,
+    voucher: db.voucher,
+    customer: db.customer,
+    vendor: db.vendor,
+  } as const;
+  const record = await delegate[table].findFirst({
     where: { id, organizationId: orgId },
     select: { id: true },
   });
