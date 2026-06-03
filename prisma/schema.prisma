@@ -6984,4 +6984,3 @@ model MessagingFollowUp {
   @@index([orgId, conversationId])
   @@map("messaging_follow_up")
 }
-
