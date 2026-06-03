@@ -171,7 +171,7 @@ export async function markFolderCoverageComplete(
     folder,
     state: "COMPLETE",
     totalThreads,
-    lastAdvancedCursor,
+    lastAdvancedCursor: lastAdvancedCursor || null,
   });
 }
 
@@ -188,7 +188,7 @@ export async function updateFolderCoverageBootstrapping(
     folder,
     state: "BOOTSTRAPPING",
     totalThreads,
-    lastAdvancedCursor,
+    lastAdvancedCursor: lastAdvancedCursor || null,
   });
 }
 

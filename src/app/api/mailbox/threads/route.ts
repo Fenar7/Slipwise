@@ -8,7 +8,7 @@ import type { MailboxThreadStatus } from "@/lib/mailbox/domain-types";
 import type { MailboxFolder } from "@/app/app/mailbox/types";
 
 const VALID_STATUSES: MailboxThreadStatus[] = ["OPEN", "PENDING", "CLOSED", "ARCHIVED"];
-const VALID_FOLDERS: MailboxFolder[] = ["INBOX", "SENT", "SPAM", "STARRED", "DRAFT"];
+const VALID_FOLDERS: MailboxFolder[] = ["INBOX", "SENT", "SPAM", "STARRED", "DRAFT", "TRASH"];
 const MAX_LIMIT = 100;
 
 function parseStatusParam(
@@ -117,7 +117,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     const rawFolder = searchParams.get("folder");
     if (rawFolder && !folder) {
       return NextResponse.json(
-        { error: "Invalid folder. Use INBOX, SENT, SPAM, STARRED, or DRAFT." },
+        { error: "Invalid folder. Use INBOX, SENT, SPAM, STARRED, DRAFT, or TRASH." },
         { status: 400 },
       );
     }

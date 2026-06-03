@@ -62,7 +62,7 @@ const GMAIL_BOOTSTRAP_SLICES = [
   { query: "is:starred", folder: "STARRED" as const, includeSpamTrash: false },
 ] as const;
 
-const GMAIL_WATCH_LABEL_IDS = ["INBOX", "SENT", "SPAM", "DRAFT"] as const;
+const GMAIL_WATCH_LABEL_IDS = ["INBOX", "SENT", "SPAM", "DRAFT", "STARRED", "TRASH"] as const;
 
 /**
  * Least-privilege scopes for the Phase 6 connect/reconnect flow.
@@ -278,6 +278,60 @@ function isProviderError(v: unknown): v is MailboxProviderError {
   );
 }
 
+// ─── Safe fetch wrapper ─────────────────────────────────────────────────────
+
+/**
+ * Wraps fetch() and normalizes ALL transport-level exceptions into a
+ * MailboxProviderError with a safe category string. This prevents raw
+ * "fetch failed" / "TypeError: fetch failed" text from leaking into
+ * user-visible sync state.
+ *
+ * Non-OK HTTP responses are NOT treated as errors here — callers must
+ * check `res.ok` themselves (or use this wrapper only for the transport
+ * layer). This keeps the helper focused on network/transport failures.
+ */
+async function safeGmailFetch(
+  url: string | URL,
+  init?: RequestInit,
+): Promise<Response | MailboxProviderError> {
+  try {
+    const res = await fetch(url, init);
+    return res;
+  } catch (error) {
+    if (isAbortError(error)) {
+      return {
+        category: "provider_unavailable",
+        safeMessage: "Gmail request timed out or was aborted",
+        retryable: true,
+      };
+    }
+    if (isNetworkError(error)) {
+      return {
+        category: "provider_unavailable",
+        safeMessage: "Gmail API unreachable (network error)",
+        retryable: true,
+      };
+    }
+    return {
+      category: "unknown",
+      safeMessage: "Gmail request failed (transport error)",
+      retryable: true,
+    };
+  }
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === "AbortError";
+}
+
+function isNetworkError(error: unknown): boolean {
+  if (error instanceof TypeError) {
+    const msg = error.message.toLowerCase();
+    return msg.includes("fetch failed") || msg.includes("network") || msg.includes("econnrefused");
+  }
+  return false;
+}
+
 // ─── Adapter implementation ───────────────────────────────────────────────────
 
 const descriptor: MailboxProviderDescriptor = {
@@ -438,9 +492,10 @@ export const gmailProviderAdapter: IMailboxProviderAdapter = {
         if (nextPageToken) {
           params.set("pageToken", nextPageToken);
         }
-        const historyRes = await fetch(`${GMAIL_HISTORY_URL}?${params.toString()}`, {
+        const historyRes = await safeGmailFetch(`${GMAIL_HISTORY_URL}?${params.toString()}`, {
           headers: { Authorization: `Bearer ${accessToken}` },
         });
+        if (isProviderError(historyRes)) return historyRes;
         if (!historyRes.ok) {
           const errorCode = await parseGoogleErrorCode(historyRes);
           return mapGoogleError(historyRes.status, errorCode);
@@ -523,7 +578,7 @@ export const gmailProviderAdapter: IMailboxProviderAdapter = {
         sliceLabel,
         paginationExhausted: sliceResult.paginationExhausted,
         threadCount: sliceThreadCount,
-        lastAdvancedCursor: sliceResult.nextPageToken ?? "",
+        lastAdvancedCursor: sliceResult.nextPageToken ?? null,
       });
     }
 
@@ -639,7 +694,7 @@ export const gmailProviderAdapter: IMailboxProviderAdapter = {
       };
     }
 
-    const res = await fetch(GMAIL_WATCH_URL, {
+    const res = await safeGmailFetch(GMAIL_WATCH_URL, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -648,6 +703,7 @@ export const gmailProviderAdapter: IMailboxProviderAdapter = {
       body: JSON.stringify({ topicName, labelIds: [...GMAIL_WATCH_LABEL_IDS] }),
     });
 
+    if (isProviderError(res)) return res;
     if (!res.ok) {
       const errorCode = await parseGoogleErrorCode(res);
       return mapGoogleError(res.status, errorCode);
@@ -676,9 +732,10 @@ export const gmailProviderAdapter: IMailboxProviderAdapter = {
     const accessToken = await ensureValidAccessToken(orgId, tokenRef, credential);
     if (isProviderError(accessToken)) return accessToken;
 
-    const res = await fetch(`${GMAIL_THREAD_URL}/${providerThreadId}`, {
+    const res = await safeGmailFetch(`${GMAIL_THREAD_URL}/${providerThreadId}`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
+    if (isProviderError(res)) return res;
     if (!res.ok) {
       const errorCode = await parseGoogleErrorCode(res);
       return mapGoogleError(res.status, errorCode);
@@ -723,7 +780,7 @@ export const gmailProviderAdapter: IMailboxProviderAdapter = {
       payload.threadId = threadContext.providerThreadId;
     }
 
-    const res = await fetch(GMAIL_SEND_URL, {
+    const res = await safeGmailFetch(GMAIL_SEND_URL, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -732,6 +789,7 @@ export const gmailProviderAdapter: IMailboxProviderAdapter = {
       body: JSON.stringify(payload),
     });
 
+    if (isProviderError(res)) return res;
     if (!res.ok) {
       const errorCode = await parseGoogleErrorCode(res);
       return mapGoogleError(res.status, errorCode);
@@ -742,10 +800,10 @@ export const gmailProviderAdapter: IMailboxProviderAdapter = {
     // Extract the RFC Message-ID from the sent message by re-fetching
     let extractedRfcMessageId: string | null = null;
     try {
-      const detailRes = await fetch(`${GMAIL_THREAD_URL}/${data.threadId ?? threadContext?.providerThreadId ?? ""}/messages/${data.id}`, {
+      const detailRes = await safeGmailFetch(`${GMAIL_THREAD_URL}/${data.threadId ?? threadContext?.providerThreadId ?? ""}/messages/${data.id}`, {
         headers: { Authorization: `Bearer ${accessToken}` },
       });
-      if (detailRes.ok) {
+      if (!isProviderError(detailRes) && detailRes.ok) {
         const detail = await detailRes.json() as GmailMessage;
         const headers = detail.payload?.headers ?? [];
         extractedRfcMessageId = headers.find((h) => h.name === "Message-ID")?.value ?? null;
@@ -784,10 +842,11 @@ export const gmailProviderAdapter: IMailboxProviderAdapter = {
 
     const searchUrl = `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(query)}`;
     try {
-      const searchRes = await fetch(searchUrl, {
+      const searchRes = await safeGmailFetch(searchUrl, {
         headers: { Authorization: `Bearer ${accessToken}` },
       });
 
+      if (isProviderError(searchRes)) return searchRes;
       if (!searchRes.ok) {
         const errorCode = await parseGoogleErrorCode(searchRes);
         return mapGoogleError(searchRes.status, errorCode);
@@ -826,11 +885,12 @@ export const gmailProviderAdapter: IMailboxProviderAdapter = {
     if (isProviderError(accessToken)) return accessToken;
 
     const url = `https://gmail.googleapis.com/gmail/v1/users/me/messages/${providerMessageId}/attachments/${providerAttachmentId}`;
-    const res = await fetch(url, {
+    const res = await safeGmailFetch(url, {
       method: "GET",
       headers: { Authorization: `Bearer ${accessToken}` },
     });
 
+    if (isProviderError(res)) return res;
     if (!res.ok) {
       if (res.status === 401) {
         return { category: "auth_expired", safeMessage: "Gmail auth expired during attachment fetch", retryable: false };
@@ -870,6 +930,53 @@ export const gmailProviderAdapter: IMailboxProviderAdapter = {
     }
     // Always delete the local credential entry.
     await revokeMailboxCredential(orgId, tokenRef);
+  },
+
+  /**
+   * Query Gmail for thread IDs matching a provider-specific query.
+   * Lightweight: returns only thread IDs, no message content.
+   * Used for STARRED/TRASH reconciliation after delta sync.
+   */
+  async queryThreadIdsByLabel({ orgId, tokenRef, query }) {
+    const credential = await readMailboxCredential(orgId, tokenRef);
+    if (!credential) {
+      return { category: "auth_expired", safeMessage: "Credential not found for tokenRef", retryable: false };
+    }
+
+    const accessToken = await ensureValidAccessToken(orgId, tokenRef, credential);
+    if (isProviderError(accessToken)) return accessToken;
+
+    const threadIds: string[] = [];
+    let nextPageToken: string | undefined;
+    const MAX_PAGES = 5; // Bounded: ~500 threads max for reconciliation
+
+    for (let page = 0; page < MAX_PAGES; page++) {
+      const params = new URLSearchParams({
+        q: query,
+        maxResults: "100",
+      });
+      if (nextPageToken) {
+        params.set("pageToken", nextPageToken);
+      }
+
+      const res = await safeGmailFetch(`${GMAIL_THREADS_URL}?${params.toString()}`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (isProviderError(res)) return res;
+      if (!res.ok) {
+        const errorCode = await parseGoogleErrorCode(res);
+        return mapGoogleError(res.status, errorCode);
+      }
+
+      const data = await res.json() as GmailThreadsListResponse;
+      for (const thread of data.threads ?? []) {
+        threadIds.push(thread.id);
+      }
+      nextPageToken = data.nextPageToken;
+      if (!nextPageToken) break;
+    }
+
+    return { threadIds };
   },
 };
 
@@ -989,9 +1096,10 @@ async function fetchBoundedThreadRefsForQuery(
       params.set("pageToken", nextPageToken);
     }
 
-    const res = await fetch(`${GMAIL_THREADS_URL}?${params.toString()}`, {
+    const res = await safeGmailFetch(`${GMAIL_THREADS_URL}?${params.toString()}`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
+    if (isProviderError(res)) return res;
     if (!res.ok) {
       const errorCode = await parseGoogleErrorCode(res);
       return mapGoogleError(res.status, errorCode);
@@ -1020,9 +1128,10 @@ async function fetchAllDraftIds(
       params.set("pageToken", nextPageToken);
     }
 
-    const res = await fetch(`${GMAIL_DRAFTS_URL}?${params.toString()}`, {
+    const res = await safeGmailFetch(`${GMAIL_DRAFTS_URL}?${params.toString()}`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
+    if (isProviderError(res)) return res;
     if (!res.ok) {
       const errorCode = await parseGoogleErrorCode(res);
       return mapGoogleError(res.status, errorCode);
@@ -1054,9 +1163,10 @@ async function fetchDraft(
   accessToken: string,
   draftId: string,
 ): Promise<GmailDraftResponse | MailboxProviderError> {
-  const res = await fetch(`${GMAIL_DRAFTS_URL}/${draftId}?format=full`, {
+  const res = await safeGmailFetch(`${GMAIL_DRAFTS_URL}/${draftId}?format=full`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
+  if (isProviderError(res)) return res;
   if (!res.ok) {
     const errorCode = await parseGoogleErrorCode(res);
     return mapGoogleError(res.status, errorCode);
@@ -1093,10 +1203,10 @@ async function fetchThreadEnvelopes(
   let highestHistoryId = initialHighestHistoryId;
 
   for (const threadId of threadIds) {
-    const threadRes = await fetch(`${GMAIL_THREAD_URL}/${threadId}`, {
+    const threadRes = await safeGmailFetch(`${GMAIL_THREAD_URL}/${threadId}`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
-    if (!threadRes.ok) continue;
+    if (isProviderError(threadRes) || !threadRes.ok) continue;
 
     const threadData = await threadRes.json() as GmailThreadResponse;
     highestHistoryId = maxHistoryId(highestHistoryId, threadData.historyId);

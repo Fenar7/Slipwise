@@ -21,12 +21,20 @@ export function MailboxSyncStateChip({
     ? sync.folderCoverage.coverages.find((c) => c.folder === folder)
     : null;
   const folderIsIncomplete = folderCov ? folderCov.state !== "COMPLETE" : false;
+  const folderIsErrored = folderCov ? folderCov.state === "ERRORED" : false;
   const hasIncompleteRequiredFolders = sync.folderCoverage
     ? sync.folderCoverage.overallState !== "COMPLETE"
     : false;
   const isRecoveryRecommended =
     sync.state === "completed" &&
     (sync.staleGmailCoverage || hasIncompleteRequiredFolders);
+
+  // When a folder is specified and its coverage is COMPLETE, the chip should
+  // show "Up to date" even if the overall mailbox state is "failed". This
+  // prevents false failure UX when only other folders are degraded.
+  const folderIsHealthy = folder && folderCov && folderCov.state === "COMPLETE";
+  const showFailedState = sync.state === "failed" && !folderIsHealthy;
+
   const config =
     sync.state === "running"
       ? {
@@ -35,10 +43,10 @@ export function MailboxSyncStateChip({
           className: "border-blue-100 bg-blue-50 text-blue-700",
           iconClassName: "animate-spin",
         }
-      : sync.state === "failed"
+      : showFailedState
         ? {
-            icon: AlertTriangle,
-            label: "Needs attention",
+            icon: folderIsErrored ? AlertTriangle : AlertTriangle,
+            label: folderIsErrored ? "Folder sync issue" : "Needs attention",
             className: "border-amber-100 bg-amber-50 text-amber-700",
             iconClassName: "",
           }
@@ -56,7 +64,7 @@ export function MailboxSyncStateChip({
                 className: "border-amber-100 bg-amber-50 text-amber-700",
                 iconClassName: "",
               }
-            : sync.state === "completed"
+            : sync.state === "completed" || folderIsHealthy
             ? {
                 icon: CheckCircle2,
                 label: "Up to date",
