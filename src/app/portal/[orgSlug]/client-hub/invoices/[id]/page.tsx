@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { ClientHubInvoiceDetailView } from "../../components/views";
 import { requirePortalSession } from "@/lib/portal-auth";
 import { getPortalInvoiceDetail } from "../../../actions";
-import { getPersistedHubConfig } from "../../components/config-resolver";
+import { getEffectiveClientHubConfig } from "../../components/config-resolver";
 
 export default async function ClientHubInvoiceDetailPage({
   params,
@@ -10,9 +10,9 @@ export default async function ClientHubInvoiceDetailPage({
   params: Promise<{ orgSlug: string; id: string }>;
 }) {
   const { orgSlug, id } = await params;
-  await requirePortalSession(orgSlug, `/portal/${orgSlug}/client-hub/login`);
+  const session = await requirePortalSession(orgSlug, `/portal/${orgSlug}/client-hub/login`);
 
-  const config = await getPersistedHubConfig(orgSlug);
+  const config = await getEffectiveClientHubConfig(orgSlug, session.customerId);
 
   if (!config.navigation.showInvoices) {
     notFound();

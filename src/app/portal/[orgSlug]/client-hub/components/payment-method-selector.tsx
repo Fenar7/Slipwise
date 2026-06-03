@@ -4,6 +4,26 @@ import { useState } from "react";
 import { formatCurrency } from "./views";
 import { initiatePortalPayment } from "../../actions";
 
+/**
+ * Shared source of truth for which payment methods are actually actionable.
+ * In this sprint:
+ * - Payment Link is available (Client Hub can initiate it)
+ * - Bank Transfer is available only when bank details exist
+ * - UPI is not supported
+ * - Unknown methods are excluded
+ */
+export function getActionablePaymentMethods(
+  acceptedMethods: string[],
+  hasBankDetails: boolean,
+): string[] {
+  return acceptedMethods.filter((method) => {
+    if (method === "UPI") return false;
+    if (method === "Bank Transfer") return hasBankDetails;
+    if (method === "Payment Link") return true;
+    return false;
+  });
+}
+
 function ShellCard({
   children,
   className = "",
@@ -51,17 +71,7 @@ export function PaymentMethodSelector({
     invoice.organization?.defaults?.bankIFSC
   );
 
-  const methods = acceptedMethods
-    .filter((method) => {
-      if (method === "Bank Transfer") {
-        return hasBankDetails;
-      }
-      if (method === "Payment Link") {
-        return true;
-      }
-      return false;
-    })
-    .map((method) => ({
+  const methods = getActionablePaymentMethods(acceptedMethods, hasBankDetails).map((method) => ({
       id: method,
       label: method,
       description:
@@ -78,7 +88,7 @@ export function PaymentMethodSelector({
       if (res && res.url) {
         window.location.href = res.url;
       } else {
-        setError("Unable to initiate online payment. Please contact support or use another payment method.");
+        setError(res?.error ?? "Unable to initiate online payment. Please contact support or use another payment method.");
       }
     } catch (err: any) {
       console.error(err);

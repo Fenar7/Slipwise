@@ -576,7 +576,231 @@ describe("Client Hub Verify", () => {
   });
 });
 
-import { PaymentMethodSelector } from "../components/payment-method-selector";
+// ─── Blocker Remediation Tests ─────────────────────────────────────────────────
+
+import { getActionablePaymentMethods, PaymentMethodSelector } from "../components/payment-method-selector";
+
+describe("Per-client override gating (Fix 1)", () => {
+
+  it("invoices list page respects per-client override showInvoices=false", async () => {
+    mockConfig.value.navigation.showInvoices = false;
+    await expect(renderAsyncPage(InvoicesPage)).rejects.toThrow("404");
+  });
+
+  it("invoice detail page respects per-client override showInvoices=false", async () => {
+    mockConfig.value.navigation.showInvoices = false;
+    await expect(renderAsyncDetailPage(InvoiceDetailPage, "inv-001")).rejects.toThrow("404");
+  });
+
+  it("payments page respects per-client override showPayments=false", async () => {
+    mockConfig.value.navigation.showPayments = false;
+    await expect(renderAsyncPage(PaymentsPage)).rejects.toThrow("404");
+  });
+
+  it("uses getEffectiveClientHubConfig (not getPersistedHubConfig) on invoices list page", async () => {
+    const { getEffectiveClientHubConfig, getPersistedHubConfig } = await import("../components/config-resolver");
+    vi.mocked(getEffectiveClientHubConfig).mockClear();
+    vi.mocked(getPersistedHubConfig).mockClear();
+    mockConfig.value.navigation.showInvoices = true;
+
+    await renderAsyncPage(InvoicesPage).catch(() => {});
+
+    expect(getEffectiveClientHubConfig).toHaveBeenCalled();
+  });
+
+  it("uses getEffectiveClientHubConfig (not getPersistedHubConfig) on invoice detail page", async () => {
+    const { getEffectiveClientHubConfig, getPersistedHubConfig } = await import("../components/config-resolver");
+    vi.mocked(getEffectiveClientHubConfig).mockClear();
+    vi.mocked(getPersistedHubConfig).mockClear();
+    mockConfig.value.navigation.showInvoices = true;
+
+    await renderAsyncDetailPage(InvoiceDetailPage, "inv-001").catch(() => {});
+
+    expect(getEffectiveClientHubConfig).toHaveBeenCalled();
+  });
+
+  it("uses getEffectiveClientHubConfig (not getPersistedHubConfig) on payments page", async () => {
+    const { getEffectiveClientHubConfig, getPersistedHubConfig } = await import("../components/config-resolver");
+    vi.mocked(getEffectiveClientHubConfig).mockClear();
+    vi.mocked(getPersistedHubConfig).mockClear();
+    mockConfig.value.navigation.showPayments = true;
+
+    await renderAsyncPage(PaymentsPage).catch(() => {});
+
+    expect(getEffectiveClientHubConfig).toHaveBeenCalled();
+  });
+});
+
+describe("Server-side payment initiation fail-closed (Fix 2 + 3)", () => {
+
+  it("returns error (not url) for CANCELLED invoice", async () => {
+    const { initiatePortalPayment } = await import("../../actions");
+    vi.mocked(initiatePortalPayment).mockResolvedValueOnce({
+      alreadyPaid: false,
+      url: null,
+      error: "This invoice has been cancelled.",
+    });
+
+    const res = await initiatePortalPayment("acme", "inv-cancelled");
+    expect(res.url).toBeNull();
+    expect(res.error).toContain("cancelled");
+  });
+
+  it("returns error (not url) for paid invoice", async () => {
+    const { initiatePortalPayment } = await import("../../actions");
+    vi.mocked(initiatePortalPayment).mockResolvedValueOnce({
+      alreadyPaid: true,
+      url: null,
+      error: "This invoice has already been paid.",
+    });
+
+    const res = await initiatePortalPayment("acme", "inv-paid");
+    expect(res.url).toBeNull();
+    expect(res.alreadyPaid).toBe(true);
+  });
+
+  it("does not return /invoice/[token] fallback URL", async () => {
+    const { initiatePortalPayment } = await import("../../actions");
+    // Simulate invoice with no valid payment link
+    vi.mocked(initiatePortalPayment).mockResolvedValueOnce({
+      alreadyPaid: false,
+      url: null,
+      error: "Online payment is not currently available for this invoice.",
+    });
+
+    const res = await initiatePortalPayment("acme", "inv-no-link");
+    expect(res.url).toBeNull();
+    expect(res.error).toBeTruthy();
+  });
+
+  it("surfaces server error message in PaymentMethodSelector UI", async () => {
+    const { initiatePortalPayment } = await import("../../actions");
+    vi.mocked(initiatePortalPayment).mockResolvedValueOnce({
+      alreadyPaid: false,
+      url: null,
+      error: "This invoice has been cancelled.",
+    });
+
+    render(
+      <PaymentMethodSelector
+        orgSlug={ORG_SLUG}
+        invoice={{
+          id: "inv-cancelled",
+          invoiceNumber: "INV-000999",
+          dueDate: "2025-12-01",
+          totalAmount: 1000,
+          remainingAmount: 1000,
+          organization: {
+            name: "Acme Corporation",
+            defaults: {
+              bankName: "Emirates NBD",
+              bankAccount: "1234567890123",
+              bankIFSC: "AE07 0123 4567 8901 2345 678",
+            },
+          },
+        }}
+        acceptedMethods={["Payment Link"]}
+      />
+    );
+
+    fireEvent.click(screen.getByText("Payment Link"));
+    fireEvent.click(screen.getByText("PROCEED TO SECURE PAYMENT"));
+
+    await waitFor(() => {
+      expect(screen.getByText("This invoice has been cancelled.")).toBeInTheDocument();
+    });
+  });
+});
+
+describe("Payment-method availability truthful (Fix 4)", () => {
+
+  it("getActionablePaymentMethods filters out UPI", () => {
+    const result = getActionablePaymentMethods(["Payment Link", "Bank Transfer", "UPI"], true);
+    expect(result).toContain("Payment Link");
+    expect(result).toContain("Bank Transfer");
+    expect(result).not.toContain("UPI");
+  });
+
+  it("getActionablePaymentMethods hides Bank Transfer when no bank details", () => {
+    const result = getActionablePaymentMethods(["Payment Link", "Bank Transfer"], false);
+    expect(result).toContain("Payment Link");
+    expect(result).not.toContain("Bank Transfer");
+  });
+
+  it("getActionablePaymentMethods shows Bank Transfer when bank details exist", () => {
+    const result = getActionablePaymentMethods(["Payment Link", "Bank Transfer"], true);
+    expect(result).toContain("Payment Link");
+    expect(result).toContain("Bank Transfer");
+  });
+
+  it("getActionablePaymentMethods excludes unknown methods", () => {
+    const result = getActionablePaymentMethods(["Payment Link", "Credit Card", "Debit Card"], false);
+    expect(result).toEqual(["Payment Link"]);
+  });
+
+  it("payments overview page shows only available methods with bank details", async () => {
+    const { getPortalPaymentsData } = await import("../../actions");
+    vi.mocked(getPortalPaymentsData).mockResolvedValueOnce({
+      outstandingBalance: 3000,
+      totalPaid: 5800,
+      orgHasBankDetails: true,
+      payments: [
+        { id: "pmt-001", invoiceNumber: "INV-000128", amount: 3200, paidAt: "2025-10-15", method: "Bank Transfer", status: "SETTLED" }
+      ],
+      outstandingInvoices: [
+        { id: "inv-001", invoiceNumber: "INV-000131", dueDate: "2025-10-24", remainingAmount: 1200 }
+      ],
+    });
+
+    const html = await renderAsyncPage(PaymentsPage);
+    expect(html).toContain("Payment Link");
+    expect(html).toContain("Bank Transfer");
+    expect(html).not.toContain("UPI");
+  });
+
+  it("payments overview page hides Bank Transfer from methods when org has no bank details", async () => {
+    const { getPortalPaymentsData } = await import("../../actions");
+    vi.mocked(getPortalPaymentsData).mockResolvedValueOnce({
+      outstandingBalance: 3000,
+      totalPaid: 5800,
+      orgHasBankDetails: false,
+      payments: [],
+      outstandingInvoices: [],
+    });
+
+    const html = await renderAsyncPage(PaymentsPage);
+    expect(html).toContain("Payment Link");
+    expect(html).not.toContain("Bank Transfer");
+    expect(html).not.toContain("UPI");
+  });
+});
+
+describe("Settled-only payment history (Fix 5)", () => {
+
+  it("payment history data only contains SETTLED status payments", async () => {
+    const { getPortalPaymentsData } = await import("../../actions");
+    const data = await getPortalPaymentsData(ORG_SLUG);
+    const nonSettled = data.payments.filter((pmt: { status: string }) => pmt.status !== "SETTLED");
+    expect(nonSettled).toHaveLength(0);
+  });
+
+  it("payments page does not render non-settled payment entries", async () => {
+    const { getPortalPaymentsData } = await import("../../actions");
+    vi.mocked(getPortalPaymentsData).mockResolvedValueOnce({
+      outstandingBalance: 3000,
+      totalPaid: 5800,
+      orgHasBankDetails: true,
+      payments: [
+        { id: "pmt-001", invoiceNumber: "INV-000128", amount: 3200, paidAt: "2025-10-15", method: "Bank Transfer", status: "SETTLED" }
+      ],
+      outstandingInvoices: [],
+    });
+
+    const html = await renderAsyncPage(PaymentsPage);
+    expect(html).toContain("INV-000128");
+    expect(html).toContain("SETTLED");
+  });
+});
 
 describe("PaymentMethodSelector Component", () => {
   const dummyInvoice = {

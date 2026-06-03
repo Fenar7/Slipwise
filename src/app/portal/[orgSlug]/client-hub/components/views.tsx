@@ -14,7 +14,7 @@ import {
   PENDING_QUOTES_COUNT,
 } from "./mock-data";
 import { DEFAULT_CLIENT_HUB_CONFIG } from "@/app/app/settings/portal/client-hub/components/mock-config";
-import { PaymentMethodSelector } from "./payment-method-selector";
+import { PaymentMethodSelector, getActionablePaymentMethods } from "./payment-method-selector";
 
 export const DEFAULT_HUB_ACCENT = "#e8401e";
 
@@ -1363,6 +1363,7 @@ export function ClientHubPaymentsView({
   config,
   outstandingBalance = 0,
   totalPaid = 0,
+  orgHasBankDetails = false,
   payments = [],
   outstandingInvoices = [],
 }: {
@@ -1370,6 +1371,7 @@ export function ClientHubPaymentsView({
   config?: ClientHubConfig;
   outstandingBalance?: number;
   totalPaid?: number;
+  orgHasBankDetails?: boolean;
   payments?: Array<{
     id: string;
     invoiceNumber: string;
@@ -1387,6 +1389,7 @@ export function ClientHubPaymentsView({
 }) {
   const hubConfig = getHubConfig(config);
   const basePath = `/portal/${orgSlug}/client-hub/payments`;
+  const availableMethods = getActionablePaymentMethods(hubConfig.payments.acceptedMethods, orgHasBankDetails);
 
   return (
     <div className="grid gap-5 xl:grid-cols-[220px_minmax(0,1fr)_280px]">
@@ -1405,17 +1408,25 @@ export function ClientHubPaymentsView({
           </ShellCard>
         </div>
 
-        <ShellCard className="p-5 sm:p-6">
-          <h2 className="text-base font-semibold tracking-[-0.01em] text-[var(--hub-text-strong)]">Payment Methods</h2>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {hubConfig.payments.acceptedMethods.map((method) => (
-              <div key={method} className="rounded-xl border border-[var(--hub-border)] bg-[var(--hub-surface-soft)]/40 p-4 text-center transition hover:border-[var(--hub-border-strong)]">
-                <p className="text-sm font-semibold text-[var(--hub-text-strong)]">{method}</p>
-                <p className="mt-1 text-[11px] text-[var(--hub-text-muted)]">Available</p>
+        {hubConfig.payments.showPaymentMethods && (
+          <ShellCard className="p-5 sm:p-6">
+            <h2 className="text-base font-semibold tracking-[-0.01em] text-[var(--hub-text-strong)]">Payment Methods</h2>
+            {availableMethods.length === 0 ? (
+              <div className="mt-4 rounded-xl border border-[var(--hub-border)] bg-[var(--hub-surface-soft)]/40 p-6 text-center">
+                <p className="text-[13px] text-[var(--hub-text-soft)]">No payment methods are currently available.</p>
               </div>
-            ))}
-          </div>
-        </ShellCard>
+            ) : (
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {availableMethods.map((method) => (
+                  <div key={method} className="rounded-xl border border-[var(--hub-border)] bg-[var(--hub-surface-soft)]/40 p-4 text-center transition hover:border-[var(--hub-border-strong)]">
+                    <p className="text-sm font-semibold text-[var(--hub-text-strong)]">{method}</p>
+                    <p className="mt-1 text-[11px] text-[var(--hub-text-muted)]">Available</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </ShellCard>
+        )}
 
         {outstandingInvoices.length > 0 && (
           <ShellCard className="overflow-hidden">

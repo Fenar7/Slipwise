@@ -362,12 +362,24 @@ export async function initiatePortalPayment(
     },
   });
 
+  // Fail closed: invoice not found
   if (!invoice) {
-    throw new Error("Invoice not found");
+    return { alreadyPaid: false, url: null, error: "Invoice not found." };
   }
 
+  // Fail closed: already paid
   if (invoice.status === "PAID") {
-    return { alreadyPaid: true, url: null };
+    return { alreadyPaid: true, url: null, error: "This invoice has already been paid." };
+  }
+
+  // Fail closed: cancelled
+  if (invoice.status === "CANCELLED") {
+    return { alreadyPaid: false, url: null, error: "This invoice has been cancelled." };
+  }
+
+  // Fail closed: zero remaining balance
+  if (invoice.remainingAmount <= 0) {
+    return { alreadyPaid: false, url: null, error: "This invoice has no outstanding balance." };
   }
 
   // Return existing payment link if still valid
@@ -379,12 +391,6 @@ export async function initiatePortalPayment(
     return { alreadyPaid: false, url: invoice.razorpayPaymentLinkUrl };
   }
 
-  // Otherwise, direct to public invoice page for payment
-  const publicToken = await db.publicInvoiceToken.findFirst({
-    where: { invoiceId: invoice.id },
-    select: { token: true },
-  });
-
   logPortalAccess({
     orgId: session.orgId,
     customerId: session.customerId,
@@ -392,9 +398,11 @@ export async function initiatePortalPayment(
     action: "initiate_payment",
   });
 
+  // No usable payment link: return failure instead of redirecting to detached public invoice page
   return {
     alreadyPaid: false,
-    url: publicToken ? `/invoice/${publicToken.token}` : null,
+    url: null,
+    error: "Online payment is not currently available for this invoice. Please use Bank Transfer or contact support.",
   };
 }
 
@@ -848,6 +856,7 @@ export async function getPortalPaymentsData(orgSlug: string) {
   const payments = await db.invoicePayment.findMany({
     where: {
       orgId: session.orgId,
+      status: "SETTLED",
       invoice: {
         customerId: session.customerId,
       },
@@ -877,9 +886,19 @@ export async function getPortalPaymentsData(orgSlug: string) {
     },
   });
 
+  const orgDefaults = await db.orgDefaults.findUnique({
+    where: { orgId: session.orgId },
+    select: { bankName: true, bankAccount: true, bankIFSC: true },
+  });
+
+  const orgHasBankDetails = !!(
+    orgDefaults?.bankName || orgDefaults?.bankAccount || orgDefaults?.bankIFSC
+  );
+
   return {
     outstandingBalance,
     totalPaid,
+    orgHasBankDetails,
     payments: payments.map((pmt) => ({
       id: pmt.id,
       invoiceNumber: pmt.invoice.invoiceNumber ?? "—",
