@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useState } from "react";
 
 interface Column {
   key: string;
@@ -14,7 +14,6 @@ interface DataTableProps<T> {
   columns: Column[];
   entityType: string;
   editPath: string;
-  deleteAction: (id: string) => Promise<{ success: boolean; error?: string }>;
   total: number;
   page: number;
   totalPages: number;
@@ -25,14 +24,12 @@ export function DataTable<T extends { id: string }>({
   columns,
   entityType,
   editPath,
-  deleteAction,
   total,
   page,
   totalPages,
 }: DataTableProps<T>) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [isPending, startTransition] = useTransition();
   const [search, setSearch] = useState(searchParams.get("search") || "");
   
   const handleSearch = (e: React.FormEvent) => {
@@ -45,17 +42,6 @@ export function DataTable<T extends { id: string }>({
     }
     params.set("page", "1");
     router.push(`?${params.toString()}`);
-  };
-  
-  const handleDelete = async (id: string) => {
-    if (!confirm(`Delete this ${entityType}?`)) return;
-    
-    startTransition(async () => {
-      const result = await deleteAction(id);
-      if (!result.success) {
-        alert(result.error || "Failed to delete");
-      }
-    });
   };
   
   const goToPage = (newPage: number) => {
@@ -124,17 +110,10 @@ export function DataTable<T extends { id: string }>({
                   <td className="px-4 py-3 text-right">
                     <Link
                       href={`${editPath}/${item.id}`}
-                      className="mr-2 text-sm text-blue-600 hover:underline"
+                      className="text-sm text-blue-600 hover:underline"
                     >
                       Edit
                     </Link>
-                    <button
-                      onClick={() => handleDelete(item.id)}
-                      disabled={isPending}
-                      className="text-sm text-red-600 hover:underline disabled:opacity-50"
-                    >
-                      Delete
-                    </button>
                   </td>
                 </tr>
               ))

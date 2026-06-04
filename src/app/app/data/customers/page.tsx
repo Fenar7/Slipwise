@@ -1,5 +1,5 @@
 import { Suspense } from "react";
-import { listCustomers, deleteCustomer } from "../actions";
+import { listCustomers } from "../actions";
 import { DataTable } from "../components/data-table";
 import { PageHeader } from "../components/page-header";
 
@@ -21,7 +21,6 @@ async function CustomersTable({ search, page }: { search?: string; page: number 
       ]}
       entityType="customer"
       editPath="/app/data/customers"
-      deleteAction={deleteCustomer}
       total={total}
       page={page}
       totalPages={totalPages}

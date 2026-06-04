@@ -1,5 +1,5 @@
 import { Suspense } from "react";
-import { listVendors, deleteVendor } from "../actions";
+import { listVendors } from "../actions";
 import { DataTable } from "../components/data-table";
 import { PageHeader } from "../components/page-header";
 
@@ -21,7 +21,6 @@ async function VendorsTable({ search, page }: { search?: string; page: number })
       ]}
       entityType="vendor"
       editPath="/app/data/vendors"
-      deleteAction={deleteVendor}
       total={total}
       page={page}
       totalPages={totalPages}
