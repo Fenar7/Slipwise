@@ -27,7 +27,7 @@ import { consumeSequenceNumber } from "@/features/sequences/services/sequence-en
 import { getSequenceConfig } from "@/features/sequences/services/sequence-admin";
 import { rateLimitByOrg, RATE_LIMITS } from "@/lib/rate-limit";
 import type { ConsumeResult } from "@/features/sequences/types";
-import { setInvoiceTags } from "@/lib/tags/assignment-service";
+
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -485,10 +485,7 @@ export async function saveInvoice(
       });
     }
 
-    // Assign tags if provided
-    if (input.tagIds !== undefined) {
-      await setInvoiceTags(invoice.id, input.tagIds);
-    }
+
 
     await emitInvoiceEvent(orgId, invoice.id, status === "ISSUED" ? "issued" : "created", {
       actorId: userId,
@@ -571,10 +568,7 @@ export async function updateInvoice(
       }
     });
 
-    // Assign tags if provided
-    if (input.tagIds !== undefined) {
-      await setInvoiceTags(id, input.tagIds);
-    }
+
 
     await emitInvoiceEvent(orgId, id, "updated", { actorId: userId });
     await syncInvoiceRecordToIndex(orgId, id);
@@ -729,7 +723,6 @@ export async function getInvoice(id: string) {
     include: {
       lineItems: { orderBy: { sortOrder: "asc" } },
       customer: true,
-      tagAssignments: { include: { tag: { select: { id: true, name: true, slug: true, color: true } } } },
     },
   });
 
@@ -804,19 +797,7 @@ export async function listInvoices(params?: {
     where.invoiceDate = { lte: dateTo };
   }
 
-  // Tag filter
-  if (params?.tagIds && params.tagIds.length > 0) {
-    where.tagAssignments = {
-      some: { tagId: { in: params.tagIds } },
-    };
-  }
 
-  // Tagged-only filter (has at least one tag)
-  if (params?.hasTags && !(params.tagIds && params.tagIds.length > 0)) {
-    where.tagAssignments = {
-      some: {},
-    };
-  }
 
   const [invoices, total] = await Promise.all([
     db.invoice.findMany({
