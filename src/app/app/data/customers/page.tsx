@@ -1,6 +1,6 @@
 import { Suspense } from "react";
 import Link from "next/link";
-import { listCustomers, deleteCustomer } from "../actions";
+import { listCustomers } from "../actions";
 import { DataTable } from "../components/data-table";
 import { PageHeader } from "../components/page-header";
 import { KpiCard } from "@/components/dashboard/kpi-card";
@@ -35,18 +35,6 @@ async function CustomersTable({ search, page }: { search?: string; page: number 
           {
             key: "name",
             label: "Name",
-            render: (row) => (
-              <div className="flex items-center gap-2">
-                <span className="font-medium">{row.name}</span>
-                <Link
-                  href={`/app/crm/customers/${row.id}`}
-                  className="inline-flex items-center text-[var(--text-muted)] hover:text-[var(--brand-primary)] transition-colors"
-                  title="Open CRM view"
-                >
-                  <ArrowUpRight className="h-3 w-3" />
-                </Link>
-              </div>
-            ),
           },
           { key: "email", label: "Email" },
           { key: "phone", label: "Phone" },
@@ -55,19 +43,10 @@ async function CustomersTable({ search, page }: { search?: string; page: number 
             key: "lifecycleStage",
             label: "Stage",
             width: "120px",
-            render: (row) => {
-              const stage = row.lifecycleStage ?? "PROSPECT";
-              return (
-                <StatusBadge variant={LIFECYCLE_VARIANTS[stage] ?? "neutral"}>
-                  {String(stage).replace(/_/g, " ")}
-                </StatusBadge>
-              );
-            },
           },
         ]}
         entityType="customer"
         editPath="/app/data/customers"
-        deleteAction={deleteCustomer}
         total={total}
         page={page}
         totalPages={totalPages}
