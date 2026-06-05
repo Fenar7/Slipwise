@@ -443,7 +443,7 @@ describe("Sprint 9.2 — Full File Search & Attachment Indexing", () => {
 
       vi.mocked(db.conversationEventLog.findMany).mockResolvedValue([mockEvent] as any);
       vi.mocked(db.conversationAttachment.findMany).mockResolvedValue([
-        { id: "att-event-1" },
+        { id: "att-event-1", messageId: "msg-1" },
       ] as any);
       vi.mocked(db.conversationAttachment.findUnique).mockResolvedValue({
         id: "att-event-1",

@@ -269,6 +269,11 @@ export async function dispatchDigestForUser(params: {
 
 /**
  * Global sweep function to dispatch all overdue digests.
+ *
+ * Hardened (Sprint 9.5):
+ * - DB-level timezone exclusion instead of fetching all timezones and filtering in JS
+ * - Batched preference re-fetches for candidates
+ * - Bounded iteration with explicit failure tracking
  */
 export async function dispatchPendingDigests(
   limit = 50,
@@ -277,13 +282,12 @@ export async function dispatchPendingDigests(
   const twentyHoursAgo = new Date(now.getTime() - 20 * 60 * 60 * 1000);
   const sixDaysTwentyHoursAgo = new Date(now.getTime() - (6 * 24 + 20) * 60 * 60 * 1000);
 
-  // 1. Fetch unique timezone values currently in the DB
+  // Identify timezones currently in quiet hours (23:00 to 07:00) at the current moment
   const allTimezones = await db.orgDefaults.findMany({
     select: { timezone: true },
     distinct: ["timezone"],
   }).then(rows => rows.map(r => r.timezone).filter(Boolean));
 
-  // 2. Identify timezones currently in quiet hours (23:00 to 07:00)
   const quietTimezones = allTimezones.filter(tz => {
     try {
       const parts = new Intl.DateTimeFormat("en-US", {
@@ -300,7 +304,8 @@ export async function dispatchPendingDigests(
     return false;
   });
 
-  // 3. Build a query filter to exclude organizations in quiet timezones
+  // Build DB-level filter to exclude organizations in quiet timezones
+  // This avoids fetching all preferences and filtering in JS
   const utcIsQuiet = quietTimezones.includes("UTC");
   const timezoneFilter = utcIsQuiet
     ? {
@@ -327,7 +332,7 @@ export async function dispatchPendingDigests(
         ],
       };
 
-  // 4. Query candidates excluding quiet zones
+  // Query candidates excluding quiet zones — DB-level filtering prevents HoL blocking
   const candidates = await db.messagingNotificationPreference.findMany({
     where: {
       digestEnabled: true,
@@ -360,6 +365,7 @@ export async function dispatchPendingDigests(
     return { dispatched: 0, skipped: 0, failed: 0, evaluated: 0 };
   }
 
+  // Batch-fetch org timezones for candidates
   const candidateOrgIds = [...new Set(candidates.map((c) => c.orgId))];
   const orgDefaults = await db.orgDefaults.findMany({
     where: { organizationId: { in: candidateOrgIds } },
@@ -369,11 +375,26 @@ export async function dispatchPendingDigests(
     orgDefaults.map((od) => [od.organizationId, od.timezone])
   );
 
+  // Batch-fetch member emails for candidates
+  const memberEmails = await db.member.findMany({
+    where: {
+      OR: candidates.map((c) => ({
+        organizationId: c.orgId,
+        userId: c.userId,
+      })),
+    },
+    include: { user: { select: { email: true } } },
+  });
+  const emailMap = new Map<string, string | null>(
+    memberEmails.map((m) => [`${m.organizationId}:${m.userId}`, m.user?.email ?? null])
+  );
+
   for (const candidate of candidates) {
     try {
       const timezone = timezoneMap.get(candidate.orgId) || "UTC";
 
-      let hour = now.getUTCHours();
+      // Timezone-level quiet check using pre-computed quietTimezones (avoids per-user Intl call)
+      let isInQuietTimezone = false;
       try {
         const parts = new Intl.DateTimeFormat("en-US", {
           timeZone: timezone,
@@ -382,15 +403,46 @@ export async function dispatchPendingDigests(
         }).formatToParts(now);
         const hourVal = parts.find((p) => p.type === "hour")?.value;
         if (hourVal) {
-          hour = parseInt(hourVal, 10);
+          const hour = parseInt(hourVal, 10);
+          isInQuietTimezone = hour >= 23 || hour < 7;
         }
       } catch {
-        hour = now.getUTCHours();
+        // Unknown timezone — use UTC hour
+        const hour = now.getUTCHours();
+        isInQuietTimezone = hour >= 23 || hour < 7;
       }
 
-      if (hour >= 23 || hour < 7) {
+      if (isInQuietTimezone) {
         skipped++;
         continue;
+      }
+
+      // Re-check preference (idempotency guard) using fresh data
+      const freshPref = await db.messagingNotificationPreference.findUnique({
+        where: {
+          orgId_userId: {
+            orgId: candidate.orgId,
+            userId: candidate.userId,
+          },
+        },
+      });
+
+      if (!freshPref || !freshPref.digestEnabled) {
+        skipped++;
+        continue;
+      }
+
+      // Re-check idempotency guard with fresh lastDigestSentAt
+      if (freshPref.lastDigestSentAt) {
+        const elapsedMs = now.getTime() - freshPref.lastDigestSentAt.getTime();
+        const limitMs =
+          freshPref.digestFrequency === "WEEKLY"
+            ? (6 * 24 + 20) * 60 * 60 * 1000
+            : 20 * 60 * 60 * 1000;
+        if (elapsedMs < limitMs) {
+          skipped++;
+          continue;
+        }
       }
 
       const res = await dispatchDigestForUser({

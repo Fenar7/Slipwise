@@ -17,6 +17,9 @@ const MAX_EXTRACTED_TEXT_LENGTH = 100000;
 const MAX_PDF_SIZE_BYTES = 5 * 1024 * 1024; // 5MB
 const MAX_PDF_PAGE_COUNT = 10;
 
+// Timeout for PDF text extraction (30 seconds)
+const PDF_EXTRACTION_TIMEOUT_MS = 30_000;
+
 /**
  * Indexes a single attachment according to safe indexing rules.
  * - CLEAN: indexed if supported file type (text/plain, text/csv, application/pdf).
@@ -231,39 +234,53 @@ export async function indexAttachment(attachmentId: string): Promise<void> {
 
 /**
  * Extracts text from PDF bytes using pdfjs-dist.
+ * Includes a timeout guard to prevent indefinite hangs on malformed PDFs.
  */
 async function extractPdfText(pdfBytes: Uint8Array): Promise<string> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let pdf: any = null;
   try {
     const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
-    pdf = await pdfjsLib.getDocument({
-      data: pdfBytes,
-      disableWorker: true,
-    }).promise;
 
-    if (pdf.numPages > MAX_PDF_PAGE_COUNT) {
-      throw new Error("Page count limit exceeded");
-    }
+    const extractionPromise = (async () => {
+      pdf = await pdfjsLib.getDocument({
+        data: pdfBytes,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        disableWorker: true,
+      } as any).promise;
 
-    let text = "";
-    for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
-      const page = await pdf.getPage(pageNumber);
-      const content = await page.getTextContent();
-      const pageText = content.items
-        .map((item: unknown) => {
-          const typedItem = item as Record<string, unknown>;
-          return typeof typedItem.str === "string" ? typedItem.str : "";
-        })
-        .filter((str) => str.trim().length > 0)
-        .join(" ");
-      text += pageText + "\n";
-      page.cleanup();
-    }
+      if (pdf.numPages > MAX_PDF_PAGE_COUNT) {
+        throw new Error("Page count limit exceeded");
+      }
 
-    return text;
+      let text = "";
+      for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
+        const page = await pdf.getPage(pageNumber);
+        const content = await page.getTextContent();
+        const pageText = content.items
+          .map((item: unknown) => {
+            const typedItem = item as Record<string, unknown>;
+            return typeof typedItem.str === "string" ? typedItem.str : "";
+          })
+          .filter((str: string) => str.trim().length > 0)
+          .join(" ");
+        text += pageText + "\n";
+        page.cleanup();
+      }
+
+      return text;
+    })();
+
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error("PDF extraction timeout")), PDF_EXTRACTION_TIMEOUT_MS);
+    });
+
+    return await Promise.race([extractionPromise, timeoutPromise]);
   } catch (err) {
     if (err instanceof Error && err.message === "Page count limit exceeded") {
+      throw err;
+    }
+    if (err instanceof Error && err.message === "PDF extraction timeout") {
       throw err;
     }
     console.error("PDF text extraction error during search indexing:", err);
@@ -282,54 +299,78 @@ async function extractPdfText(pdfBytes: Uint8Array): Promise<string> {
 /**
  * Processes search indexing events durably by consuming downstream events
  * and recording consumption checkpoints.
+ *
+ * Hardened (Sprint 9.5):
+ * - Iterative loop instead of recursion to prevent stack overflow on high-volume conversations
+ * - Batched attachment fetches per message to eliminate N+1 query pattern
+ * - Bounded max iterations per invocation
  */
 export async function processSearchIndexEvents(orgId: string, conversationId: string): Promise<void> {
-  // 1. Get the current consumption checkpoint for the "search_index" consumer
   const checkpoint = await getConsumptionCheckpoint(db, {
     consumerType: "search_index",
     orgId,
     conversationId,
   });
 
-  const startCursor = checkpoint ? checkpoint.cursor : undefined;
+  let currentCursor = checkpoint ? checkpoint.cursor : undefined;
+  const maxIterations = 10;
 
-  // 2. Consume events log starting after the last checkpoint cursor
-  const result = await consumeDownstreamEvents(db, {
-    consumerType: "search_index",
-    orgId,
-    conversationId,
-    afterCursor: startCursor,
-    eventTypes: ["conversation.message.created", "conversation.thread.replied"],
-  });
+  for (let iteration = 0; iteration < maxIterations; iteration++) {
+    const result = await consumeDownstreamEvents(db, {
+      consumerType: "search_index",
+      orgId,
+      conversationId,
+      afterCursor: currentCursor,
+      eventTypes: ["conversation.message.created", "conversation.thread.replied"],
+    });
 
-  // 3. Process the events
-  for (const event of result.events) {
-    const payload = buildSearchIndexPayload(event);
-    if (payload && payload.messageId) {
-      const attachments = await db.conversationAttachment.findMany({
-        where: { messageId: payload.messageId },
-        select: { id: true },
-      });
+    if (result.events.length === 0) break;
 
+    // Batch-fetch all attachments for all messages in this batch (eliminates N+1)
+    const messageIds = result.events
+      .map((e) => buildSearchIndexPayload(e))
+      .filter((p): p is NonNullable<typeof p> => p !== null && !!p.messageId)
+      .map((p) => p.messageId!);
+
+    const uniqueMessageIds = [...new Set(messageIds)];
+    const allAttachments = uniqueMessageIds.length > 0
+      ? await db.conversationAttachment.findMany({
+          where: { messageId: { in: uniqueMessageIds } },
+          select: { id: true, messageId: true },
+        })
+      : [];
+
+    // Group attachments by messageId for O(1) lookup
+    const attachmentsByMessage = new Map<string, Array<{ id: string }>>();
+    for (const att of allAttachments) {
+      const existing = attachmentsByMessage.get(att.messageId) ?? [];
+      existing.push(att);
+      attachmentsByMessage.set(att.messageId, existing);
+    }
+
+    // Index all attachments in this batch
+    for (const event of result.events) {
+      const payload = buildSearchIndexPayload(event);
+      if (!payload || !payload.messageId) continue;
+
+      const attachments = attachmentsByMessage.get(payload.messageId) ?? [];
       for (const attachment of attachments) {
         await indexAttachment(attachment.id);
       }
     }
-  }
 
-  // 4. Record consumption checkpoint up to the nextCursor
-  if (result.nextCursor !== undefined) {
-    await recordConsumptionCheckpoint(db, {
-      consumerType: "search_index",
-      orgId,
-      conversationId,
-      cursor: result.nextCursor,
-    });
-  }
+    // Record checkpoint and prepare for next iteration
+    if (result.nextCursor !== undefined) {
+      await recordConsumptionCheckpoint(db, {
+        consumerType: "search_index",
+        orgId,
+        conversationId,
+        cursor: result.nextCursor,
+      });
+      currentCursor = result.nextCursor;
+    }
 
-  // 5. If there are more events, recurse to catch up
-  if (result.hasMore) {
-    await processSearchIndexEvents(orgId, conversationId);
+    if (!result.hasMore) break;
   }
 }
 

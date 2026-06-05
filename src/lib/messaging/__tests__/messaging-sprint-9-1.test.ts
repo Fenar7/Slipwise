@@ -7,6 +7,7 @@ vi.mock("@/lib/db", () => {
     conversationParticipant: {
       findMany: vi.fn(),
       count: vi.fn(),
+      groupBy: vi.fn(),
     },
     conversation: {
       findMany: vi.fn(),
@@ -46,6 +47,7 @@ describe("Sprint 9.1 — Search Foundation & Visibility-Safe Query Model", () =>
     vi.mocked(db.conversation.count).mockResolvedValue(0);
     vi.mocked(db.messagingTask.count).mockResolvedValue(0);
     vi.mocked(db.conversationMeeting.count).mockResolvedValue(0);
+    vi.mocked(db.conversationParticipant.groupBy).mockResolvedValue([]);
   });
 
   describe("searchMessaging Visibility and Authorization", () => {
@@ -153,11 +155,14 @@ describe("Sprint 9.1 — Search Foundation & Visibility-Safe Query Model", () =>
             },
           ],
         },
-        include: {
-          participants: {
-            where: { leftAt: null },
-            select: { id: true },
-          },
+        select: {
+          id: true,
+          orgId: true,
+          type: true,
+          name: true,
+          description: true,
+          visibility: true,
+          createdAt: true,
         },
         orderBy: { createdAt: "desc" },
         take: 200,

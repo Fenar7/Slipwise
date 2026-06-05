@@ -356,15 +356,35 @@ export async function searchMessaging(
           },
         ],
       },
-      include: {
-        participants: {
-          where: { leftAt: null },
-          select: { id: true },
-        },
+      select: {
+        id: true,
+        orgId: true,
+        type: true,
+        name: true,
+        description: true,
+        visibility: true,
+        createdAt: true,
       },
       orderBy: { createdAt: "desc" },
       take: MAX_CANDIDATES_PER_KIND,
     });
+
+    // Batch-fetch active participant counts for matched conversations (avoids N+1 include)
+    const convIds = conversations.map((c) => c.id);
+    const participantCounts = convIds.length > 0
+      ? await db.conversationParticipant.groupBy({
+          by: ["conversationId"],
+          where: {
+            orgId,
+            conversationId: { in: convIds },
+            leftAt: null,
+          },
+          _count: { id: true },
+        })
+      : [];
+    const participantCountMap = new Map<string, number>(
+      participantCounts.map((pc) => [pc.conversationId, pc._count.id])
+    );
 
     matchingConversations = conversations.map((c) => {
       const isPinned = memberConversationMap.get(c.id)?.isPinned ?? false;
@@ -385,7 +405,7 @@ export async function searchMessaging(
         score,
         conversationType: c.type,
         isPrivate: c.visibility === "PRIVATE" || c.type === "DM",
-        memberCount: c.participants?.length ?? 0,
+        memberCount: participantCountMap.get(c.id) ?? 0,
       };
     });
   }
@@ -402,16 +422,22 @@ export async function searchMessaging(
           { description: { contains: q, mode: "insensitive" } },
         ],
       },
-      include: {
-        conversation: {
-          select: { name: true },
-        },
+      select: {
+        id: true,
+        orgId: true,
+        conversationId: true,
+        title: true,
+        description: true,
+        status: true,
+        assigneeId: true,
+        dueDate: true,
+        createdAt: true,
       },
       orderBy: { createdAt: "desc" },
       take: MAX_CANDIDATES_PER_KIND,
     });
 
-    // Hydrate assignees
+    // Batch-fetch assignee profiles
     const assigneeIds = Array.from(new Set(tasks.map((t) => t.assigneeId).filter((id): id is string => id !== null)));
     const profiles = assigneeIds.length > 0
       ? await db.profile.findMany({
@@ -424,6 +450,18 @@ export async function searchMessaging(
       profileMap.set(p.id, p.name);
     }
 
+    // Batch-fetch conversation names for task results
+    const taskConvIds = Array.from(new Set(tasks.map((t) => t.conversationId)));
+    const taskConvs = taskConvIds.length > 0
+      ? await db.conversation.findMany({
+          where: { id: { in: taskConvIds } },
+          select: { id: true, name: true },
+        })
+      : [];
+    const taskConvNameMap = new Map<string, string | null>(
+      taskConvs.map((c) => [c.id, c.name])
+    );
+
     matchingTasks = tasks.map((t) => {
       const isPinned = memberConversationMap.get(t.conversationId)?.isPinned ?? false;
       const score = calculateScore({
@@ -433,16 +471,17 @@ export async function searchMessaging(
         createdAt: t.createdAt,
         isPinned,
       });
+      const convName = taskConvNameMap.get(t.conversationId) ?? null;
 
       return {
         id: t.id,
         kind: "task",
         title: t.title,
-        subtitle: t.conversation.name ? `#${t.conversation.name}` : "Task Reference",
+        subtitle: convName ? `#${convName}` : "Task Reference",
         timestamp: t.createdAt.toISOString(),
         score,
         conversationId: t.conversationId,
-        conversationName: t.conversation.name ?? "Direct Message",
+        conversationName: convName ?? "Direct Message",
         status: t.status as TaskSearchResult["status"],
         assigneeName: t.assigneeId ? profileMap.get(t.assigneeId) : undefined,
         dueDate: t.dueDate?.toISOString(),
@@ -462,14 +501,32 @@ export async function searchMessaging(
           { description: { contains: q, mode: "insensitive" } },
         ],
       },
-      include: {
-        conversation: {
-          select: { name: true },
-        },
+      select: {
+        id: true,
+        orgId: true,
+        conversationId: true,
+        title: true,
+        description: true,
+        scheduledAt: true,
+        durationMinutes: true,
+        joinUrl: true,
+        createdAt: true,
       },
       orderBy: { createdAt: "desc" },
       take: MAX_CANDIDATES_PER_KIND,
     });
+
+    // Batch-fetch conversation names for meeting results
+    const meetingConvIds = Array.from(new Set(meetings.map((m) => m.conversationId)));
+    const meetingConvs = meetingConvIds.length > 0
+      ? await db.conversation.findMany({
+          where: { id: { in: meetingConvIds } },
+          select: { id: true, name: true },
+        })
+      : [];
+    const meetingConvNameMap = new Map<string, string | null>(
+      meetingConvs.map((c) => [c.id, c.name])
+    );
 
     matchingMeetings = meetings.map((m) => {
       const isPinned = memberConversationMap.get(m.conversationId)?.isPinned ?? false;
@@ -480,16 +537,17 @@ export async function searchMessaging(
         createdAt: m.createdAt,
         isPinned,
       });
+      const convName = meetingConvNameMap.get(m.conversationId) ?? null;
 
       return {
         id: m.id,
         kind: "meeting",
         title: m.title,
-        subtitle: m.conversation.name ? `#${m.conversation.name}` : "Meeting Reference",
+        subtitle: convName ? `#${convName}` : "Meeting Reference",
         timestamp: m.createdAt.toISOString(),
         score,
         conversationId: m.conversationId,
-        conversationName: m.conversation.name ?? "Direct Message",
+        conversationName: convName ?? "Direct Message",
         scheduledAt: m.scheduledAt.toISOString(),
         durationMinutes: m.durationMinutes,
         joinUrl: m.joinUrl ?? undefined,
@@ -629,42 +687,37 @@ export async function searchMessaging(
         },
       });
 
-      // Compute metadata about limitation states
-      const pendingScanCount = await db.conversationAttachment.count({
-        where: {
-          orgId,
-          message: {
+      // Batch-fetch file search metadata states in parallel (reduces from 4 sequential queries to 1 parallel batch)
+      const [pendingScanCount, unindexedCount, totalAttachmentCount, indexedAttachmentCount] = await Promise.all([
+        db.conversationAttachment.count({
+          where: {
+            orgId,
+            message: { conversationId: { in: memberConvIds } },
+            scanStatus: AttachmentScanStatus.PENDING,
+          },
+        }),
+        db.messagingAttachmentIndex.count({
+          where: {
+            orgId,
+            conversationId: { in: memberConvIds },
+            indexingStatus: AttachmentIndexingStatus.UNINDEXED,
+          },
+        }),
+        db.conversationAttachment.count({
+          where: {
+            orgId,
+            message: { conversationId: { in: memberConvIds } },
+          },
+        }),
+        db.messagingAttachmentIndex.count({
+          where: {
+            orgId,
             conversationId: { in: memberConvIds },
           },
-          scanStatus: AttachmentScanStatus.PENDING,
-        },
-      });
+        }),
+      ]);
+
       hasPendingScans = pendingScanCount > 0;
-
-      const unindexedCount = await db.messagingAttachmentIndex.count({
-        where: {
-          orgId,
-          conversationId: { in: memberConvIds },
-          indexingStatus: AttachmentIndexingStatus.UNINDEXED,
-        },
-      });
-
-      const totalAttachmentCount = await db.conversationAttachment.count({
-        where: {
-          orgId,
-          message: {
-            conversationId: { in: memberConvIds },
-          },
-        },
-      });
-
-      const indexedAttachmentCount = await db.messagingAttachmentIndex.count({
-        where: {
-          orgId,
-          conversationId: { in: memberConvIds },
-        },
-      });
-
       hasUnsupportedFiles = unindexedCount > 0 || (totalAttachmentCount > indexedAttachmentCount);
 
     } catch (err) {
@@ -784,7 +837,7 @@ export async function searchMessaging(
 
   // Derive final index state truthfully
   let derivedState: "active" | "degraded" | "unindexed" | "partial" = "active";
-  if (searchState === "degraded") {
+  if ((searchState as string) === "degraded") {
     derivedState = "degraded";
   } else if (isFileSearchUnavailable && requestedKinds.length === 1 && requestedKinds.includes("file")) {
     derivedState = "unindexed";

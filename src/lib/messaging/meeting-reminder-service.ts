@@ -269,6 +269,10 @@ export async function dispatchDueMeetingReminders(now = new Date(), limit = 100)
     where: {
       status: "UPCOMING",
       scheduledAt: { lte: windowEnd },
+      conversation: {
+        archivedAt: null,
+        lockedAt: null,
+      },
     },
     take: limit,
     select: {
@@ -386,16 +390,17 @@ export async function dispatchDueMeetingRemindersSprint93(
         gt: thirtyMinutesAgo,
       },
       reminderSentAt: null,
-    },
-    include: {
       conversation: {
-        select: {
-          id: true,
-          name: true,
-          archivedAt: true,
-          lockedAt: true,
-        },
+        archivedAt: null,
+        lockedAt: null,
       },
+    },
+    select: {
+      id: true,
+      orgId: true,
+      title: true,
+      scheduledAt: true,
+      conversationId: true,
     },
     orderBy: [{ scheduledAt: "asc" }, { id: "asc" }],
     take: limit,
@@ -424,37 +429,73 @@ export async function dispatchDueMeetingRemindersSprint93(
     orgDefaults.map((od) => [od.organizationId, od.timezone])
   );
 
+  // Batch-fetch all participants for all candidate conversations upfront
+  const candidateConvIds = [...new Set(candidates.map((c) => c.conversationId))];
+  const allParticipants = candidateConvIds.length > 0
+    ? await db.conversationParticipant.findMany({
+        where: {
+          OR: candidateConvIds.map((convId) => ({
+            conversationId: convId,
+            leftAt: null,
+          })),
+        },
+        select: { orgId: true, conversationId: true, userId: true },
+      })
+    : [];
+  const participantsByConv = new Map<string, Array<{ orgId: string; userId: string }>>();
+  for (const p of allParticipants) {
+    const existing = participantsByConv.get(p.conversationId) ?? [];
+    existing.push(p);
+    participantsByConv.set(p.conversationId, existing);
+  }
+
+  // Batch-fetch all preferences for all unique participants
+  const allParticipantUserIds = [...new Set(allParticipants.map((p) => p.userId))];
+  const allParticipantOrgIds = [...new Set(allParticipants.map((p) => p.orgId))];
+  const allPrefs = allParticipantUserIds.length > 0
+    ? await db.messagingNotificationPreference.findMany({
+        where: {
+          OR: allParticipantUserIds.map((userId) => ({
+            userId,
+            orgId: { in: allParticipantOrgIds },
+          })),
+        },
+      })
+    : [];
+  const prefMap = new Map<string, typeof allPrefs[0]>();
+  for (const pref of allPrefs) {
+    prefMap.set(`${pref.orgId}:${pref.userId}`, pref);
+  }
+
+  // Batch-fetch all read states for mute checks
+  const allReadStates = allParticipantUserIds.length > 0
+    ? await db.conversationReadState.findMany({
+        where: {
+          OR: allParticipants.map((p) => ({
+            conversationId: p.conversationId,
+            userId: p.userId,
+          })),
+        },
+        select: { conversationId: true, userId: true, isMuted: true },
+      })
+    : [];
+  const readStateMap = new Map<string, boolean>(
+    allReadStates.map((rs) => [`${rs.conversationId}:${rs.userId}`, rs.isMuted])
+  );
+
+  // Batch-fetch all profiles for email lookup
+  const allProfiles = allParticipantUserIds.length > 0
+    ? await db.profile.findMany({
+        where: { id: { in: allParticipantUserIds } },
+        select: { id: true, email: true },
+      })
+    : [];
+  const profileMap = new Map<string, string | null>(
+    allProfiles.map((p) => [p.id, p.email])
+  );
+
   for (const candidate of candidates) {
-    if (candidate.conversation.archivedAt || candidate.conversation.lockedAt) {
-      result.skippedInactiveConversation++;
-      await db.conversationMeeting.update({
-        where: { id: candidate.id },
-        data: { reminderSentAt: now },
-      }).catch(() => {});
-      continue;
-    }
-
-    const claimed = await db.conversationMeeting.updateMany({
-      where: {
-        id: candidate.id,
-        reminderSentAt: null,
-        status: "UPCOMING",
-      },
-      data: { reminderSentAt: now },
-    });
-
-    if (claimed.count === 0) {
-      continue;
-    }
-
-    const participants = await db.conversationParticipant.findMany({
-      where: {
-        orgId: candidate.orgId,
-        conversationId: candidate.conversationId,
-        leftAt: null,
-      },
-      select: { userId: true },
-    });
+    const participants = participantsByConv.get(candidate.conversationId) ?? [];
 
     if (participants.length === 0) {
       result.skippedNoParticipants++;
@@ -466,15 +507,16 @@ export async function dispatchDueMeetingRemindersSprint93(
 
     for (const p of participants) {
       try {
-        const pref = await getMessagingPreferences({ userId: p.userId, orgId: candidate.orgId });
-        const readState = await db.conversationReadState.findFirst({
-          where: {
-            conversationId: candidate.conversationId,
-            userId: p.userId,
-          },
-          select: { isMuted: true },
-        });
-        const isMuted = readState?.isMuted ?? false;
+        const prefKey = `${candidate.orgId}:${p.userId}`;
+        const pref = prefMap.get(prefKey) || {
+          allNotificationsEnabled: true,
+          meetingRemindersEnabled: true,
+          dndEnabled: false,
+          dndStart: "22:00",
+          dndEnd: "08:00",
+        };
+        const muteKey = `${candidate.conversationId}:${p.userId}`;
+        const isMuted = readStateMap.get(muteKey) ?? false;
 
         // If the category is explicitly disabled, or the conversation is muted, skip notifications entirely.
         if (!pref.allNotificationsEnabled || !pref.meetingRemindersEnabled || isMuted) {
@@ -485,11 +527,7 @@ export async function dispatchDueMeetingRemindersSprint93(
         // If in quiet hours, DND suppresses active email delivery, but we still create the in-app notification.
         const inQuietHours = isCurrentlyInQuietHours(pref, timezone);
 
-        const profile = await db.profile.findUnique({
-          where: { id: p.userId },
-          select: { email: true },
-        });
-
+        const email = profileMap.get(p.userId) ?? null;
         const link = `${process.env.NEXT_PUBLIC_APP_URL || "https://app.slipwise.app"}/app/messaging/conversations/${candidate.conversationId}`;
 
         await createNotification({
@@ -499,8 +537,8 @@ export async function dispatchDueMeetingRemindersSprint93(
           title: `Upcoming Meeting: ${candidate.title}`,
           body: `Meeting "${candidate.title}" starts in 15 minutes.`,
           link,
-          emailRequested: !inQuietHours && Boolean(profile?.email),
-          recipientEmail: !inQuietHours ? (profile?.email ?? undefined) : undefined,
+          emailRequested: !inQuietHours && Boolean(email),
+          recipientEmail: !inQuietHours ? (email ?? undefined) : undefined,
           sourceModule: "messaging",
           sourceRef: candidate.id,
           dedupeKey: `meeting_reminder:${candidate.id}:FIFTEEN_MINUTES`,
