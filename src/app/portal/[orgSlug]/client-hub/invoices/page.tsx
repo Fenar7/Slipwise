@@ -1,7 +1,8 @@
 import { ClientHubInvoicesView } from "../components/views";
-import { getPersistedHubConfig } from "../components/config-resolver";
+import { getEffectiveClientHubConfig } from "../components/config-resolver";
 import { notFound } from "next/navigation";
 import { requirePortalSession } from "@/lib/portal-auth";
+import { getPortalInvoices, getPortalDashboardData } from "../../actions";
 
 export default async function ClientHubInvoicesPage({
   params,
@@ -9,13 +10,23 @@ export default async function ClientHubInvoicesPage({
   params: Promise<{ orgSlug: string }>;
 }) {
   const { orgSlug } = await params;
-  await requirePortalSession(orgSlug, `/portal/${orgSlug}/client-hub/login`);
+  const session = await requirePortalSession(orgSlug, `/portal/${orgSlug}/client-hub/login`);
 
-  const config = await getPersistedHubConfig(orgSlug);
+  const config = await getEffectiveClientHubConfig(orgSlug, session.customerId);
 
   if (!config.navigation.showInvoices) {
     notFound();
   }
 
-  return <ClientHubInvoicesView orgSlug={orgSlug} config={config} />;
+  const invoices = await getPortalInvoices(orgSlug);
+  const dashboardData = await getPortalDashboardData(orgSlug);
+
+  return (
+    <ClientHubInvoicesView
+      orgSlug={orgSlug}
+      config={config}
+      invoices={invoices}
+      outstandingBalance={dashboardData.outstandingBalance}
+    />
+  );
 }

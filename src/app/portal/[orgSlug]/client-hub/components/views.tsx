@@ -1,22 +1,55 @@
 import Link from "next/link";
 import type { CSSProperties, ReactNode, SVGProps } from "react";
 import type { ClientHubConfig } from "./customization-contract";
-import {
-  getMockInvoice,
-  getMockQuote,
-  MOCK_INVOICES,
-  MOCK_PAYMENTS,
-  MOCK_PRODUCTS,
-  MOCK_QUOTES,
-  OUTSTANDING_BALANCE,
-  TOTAL_PAID,
-  PENDING_INVOICES_COUNT,
-  PENDING_QUOTES_COUNT,
-} from "./mock-data";
 import { DEFAULT_CLIENT_HUB_CONFIG } from "@/app/app/settings/portal/client-hub/components/mock-config";
-import { PaymentMethodSelector } from "./payment-method-selector";
+import { PaymentMethodSelector, getActionablePaymentMethods } from "./payment-method-selector";
+import { QuoteResponseActions } from "./quote-response-actions";
 
 export const DEFAULT_HUB_ACCENT = "#e8401e";
+
+export interface ClientHubDashboardData {
+  customer: {
+    id: string;
+    name: string;
+    email: string | null;
+    phone: string | null;
+  };
+  outstandingBalance: number;
+  totalPaid: number;
+  pendingInvoicesCount: number;
+  pendingQuotesCount: number;
+  pendingInvoices: Array<{
+    id: string;
+    invoiceNumber: string;
+    dueDate: string | null;
+    remainingAmount: number;
+    totalAmount: number;
+    status: string;
+  }>;
+  pendingQuotes: Array<{
+    id: string;
+    quoteNumber: string;
+    title: string;
+    validUntil: string;
+    totalAmount: number;
+    status: string;
+  }>;
+}
+
+export const fallbackPreviewData: ClientHubDashboardData = {
+  customer: { id: "preview", name: "Valued Customer", email: "client@example.com", phone: null },
+  outstandingBalance: 3000,
+  totalPaid: 5800,
+  pendingInvoicesCount: 2,
+  pendingQuotesCount: 1,
+  pendingInvoices: [
+    { id: "inv-001", invoiceNumber: "INV-000131", dueDate: "2025-10-24", remainingAmount: 1200, totalAmount: 1200, status: "UNPAID" },
+    { id: "inv-003", invoiceNumber: "INV-000124", dueDate: "2025-10-20", remainingAmount: 1800, totalAmount: 4400, status: "PARTIALLY_PAID" }
+  ],
+  pendingQuotes: [
+    { id: "qt-001", quoteNumber: "QT-000084", title: "Outbound lead generation package", validUntil: "2025-11-12", totalAmount: 2800, status: "SENT" }
+  ],
+};
 
 type NavItem = {
   href: string;
@@ -81,7 +114,7 @@ function Glyph({
   name,
   className = "h-4 w-4",
 }: {
-  name: "home" | "invoice" | "quote" | "payment" | "products" | "download" | "print" | "arrow";
+  name: "home" | "invoice" | "quote" | "payment" | "products" | "projects" | "download" | "print" | "arrow";
   className?: string;
 }) {
   const base = { className, fill: "none", viewBox: "0 0 24 24", stroke: "currentColor", strokeWidth: 1.8 } as SVGProps<SVGSVGElement>;
@@ -97,6 +130,8 @@ function Glyph({
       return <svg {...base}><rect x="3" y="6" width="18" height="12" rx="2.5" /><path strokeLinecap="round" strokeLinejoin="round" d="M3 10h18M8 15h3" /></svg>;
     case "products":
       return <svg {...base}><path strokeLinecap="round" strokeLinejoin="round" d="m12 3 8 4.5-8 4.5L4 7.5 12 3Z" /><path strokeLinecap="round" strokeLinejoin="round" d="M4 12l8 4.5 8-4.5M4 16.5 12 21l8-4.5" /></svg>;
+    case "projects":
+      return <svg {...base}><path strokeLinecap="round" strokeLinejoin="round" d="M4 5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5Z" /><path strokeLinecap="round" strokeLinejoin="round" d="M14 5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1h-4a1 1 0 0 1-1-1V5Z" /><path strokeLinecap="round" strokeLinejoin="round" d="M4 15a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-4Z" /><path strokeLinecap="round" strokeLinejoin="round" d="M14 15a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1h-4a1 1 0 0 1-1-1v-4Z" /></svg>;
     case "download":
       return <svg {...base}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v10m0 0 4-4m-4 4-4-4M5 19h14" /></svg>;
     case "print":
@@ -130,6 +165,7 @@ function getSidebarItems(orgSlug: string, config?: ClientHubConfig): SidebarItem
     { visible: hubConfig.navigation.showQuotes, href: `${base}/quotes`, label: "Quotes", shortLabel: "Q" },
     { visible: hubConfig.navigation.showPayments, href: `${base}/payments`, label: "Payments", shortLabel: "P" },
     { visible: hubConfig.navigation.showProducts, href: `${base}/products`, label: "Products & Services", shortLabel: "S" },
+    { visible: hubConfig.navigation.showJobs, href: `${base}/jobs`, label: "Projects", shortLabel: "J" },
   ];
   return items.filter((item) => item.visible).map(({ href, label, shortLabel }) => ({ href, label, shortLabel }));
 }
@@ -314,12 +350,13 @@ function Sidebar({
   activePath: string;
 }) {
   const items = getSidebarItems(orgSlug, config);
-  const iconMap: Record<string, "home" | "invoice" | "quote" | "payment" | "products"> = {
+  const iconMap: Record<string, "home" | "invoice" | "quote" | "payment" | "products" | "projects"> = {
     Home: "home",
     Invoices: "invoice",
     Quotes: "quote",
     Payments: "payment",
     "Products & Services": "products",
+    Projects: "projects",
   };
 
   return (
@@ -350,12 +387,35 @@ function Sidebar({
   );
 }
 
-function DashboardHero({ orgSlug, config }: { orgSlug: string; config: ClientHubConfig }) {
-  const actions = [
-    { href: `/portal/${orgSlug}/client-hub/invoices`, label: "View Invoices", glyph: "invoice" as const },
-    { href: `/portal/${orgSlug}/client-hub/quotes`, label: "Review Quotes", glyph: "quote" as const },
-    { href: `/portal/${orgSlug}/client-hub/products`, label: "Browse Services", glyph: "products" as const },
-  ];
+function DashboardHero({
+  orgSlug,
+  config,
+  data,
+}: {
+  orgSlug: string;
+  config: ClientHubConfig;
+  data: ClientHubDashboardData;
+}) {
+  const actions: Array<{ href: string; label: string; glyph: "invoice" | "quote" | "products" | "payment" | "home" | "download" | "print" | "arrow" }> = [];
+
+  if (config.homeDashboard.showQuickActions) {
+    if (config.navigation.showInvoices) {
+      actions.push({ href: `/portal/${orgSlug}/client-hub/invoices`, label: "View Invoices", glyph: "invoice" });
+    }
+    if (config.navigation.showQuotes) {
+      actions.push({ href: `/portal/${orgSlug}/client-hub/quotes`, label: "Review Quotes", glyph: "quote" });
+    }
+    if (config.navigation.showPayments && data.outstandingBalance > 0) {
+      actions.push({ href: `/portal/${orgSlug}/client-hub/payments`, label: "Make a Payment", glyph: "payment" });
+    }
+    if (config.navigation.showProducts) {
+      actions.push({ href: `/portal/${orgSlug}/client-hub/products`, label: "Browse Services", glyph: "products" });
+    }
+    const hasSupportContact = !!(config.contact.supportEmail || config.contact.supportPhone);
+    if (config.navigation.showContact && hasSupportContact) {
+      actions.push({ href: `/portal/${orgSlug}/client-hub/contact`, label: "Contact Support", glyph: "arrow" });
+    }
+  }
 
   return (
     <section className="relative overflow-hidden rounded-2xl border border-[var(--hub-border)] bg-[var(--hub-surface)] px-6 py-10 sm:px-10 sm:py-14 lg:px-12" style={{ background: "var(--hub-hero-gradient)" }}>
@@ -369,38 +429,55 @@ function DashboardHero({ orgSlug, config }: { orgSlug: string; config: ClientHub
         <p className="mt-3 max-w-xl text-[15px] leading-7 text-[var(--hub-text-soft)] sm:text-base sm:leading-8">
           {config.homeDashboard.heroSubtitle}
         </p>
-        <div className="mt-7 flex flex-wrap items-center gap-3">
-          {actions.map((action, index) => (
-            <Link
-              key={action.href}
-              href={action.href}
-              className={`inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-[13px] font-semibold transition ${
-                index === 0
-                  ? "bg-[var(--hub-accent)] text-white shadow-sm hover:brightness-[0.97]"
-                  : "border border-[var(--hub-border-strong)] bg-white text-[var(--hub-text-strong)] hover:bg-[var(--hub-surface-soft)]"
-              }`}
-            >
-              <Glyph name={action.glyph} className="h-4 w-4" />
-              {action.label}
-            </Link>
-          ))}
-        </div>
+        {actions.length > 0 && (
+          <div className="mt-7 flex flex-wrap items-center gap-3">
+            {actions.map((action, index) => (
+              <Link
+                key={action.href}
+                href={action.href}
+                className={`inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-[13px] font-semibold transition ${
+                  index === 0
+                    ? "bg-[var(--hub-accent)] text-white shadow-sm hover:brightness-[0.97]"
+                    : "border border-[var(--hub-border-strong)] bg-white text-[var(--hub-text-strong)] hover:bg-[var(--hub-surface-soft)]"
+                }`}
+              >
+                <Glyph name={action.glyph} className="h-4 w-4" />
+                {action.label}
+              </Link>
+            ))}
+          </div>
+        )}
       </div>
     </section>
   );
 }
 
-function DashboardActionBoard({ orgSlug }: { orgSlug: string }) {
-  const pendingInvoice = MOCK_INVOICES.find((inv) => inv.remainingAmount > 0);
-  const pendingQuote = MOCK_QUOTES.find((qt) => qt.canRespond);
+function DashboardActionBoard({
+  orgSlug,
+  config,
+  data,
+}: {
+  orgSlug: string;
+  config: ClientHubConfig;
+  data: ClientHubDashboardData;
+}) {
+  const showInvs = config.navigation.showInvoices && config.homeDashboard.showPendingInvoices;
+  const showQts = config.navigation.showQuotes && config.homeDashboard.showPendingQuotes;
+
+  const pendingInvoice = showInvs ? data.pendingInvoices[0] : undefined;
+  const pendingQuote = showQts ? data.pendingQuotes[0] : undefined;
+  
+  const totalActions = (showInvs ? data.pendingInvoicesCount : 0) + (showQts ? data.pendingQuotesCount : 0);
 
   return (
     <ShellCard className="p-6 sm:p-7">
       <div className="flex items-center justify-between">
         <h2 className="text-base font-semibold tracking-[-0.01em] text-[var(--hub-text-strong)]">Take Actions</h2>
-        <span className="flex h-5 min-w-5 items-center justify-center rounded-md bg-[var(--hub-accent)] px-1.5 text-[11px] font-bold text-white">
-          {PENDING_INVOICES_COUNT + PENDING_QUOTES_COUNT}
-        </span>
+        {totalActions > 0 && (
+          <span className="flex h-5 min-w-5 items-center justify-center rounded-md bg-[var(--hub-accent)] px-1.5 text-[11px] font-bold text-white">
+            {totalActions}
+          </span>
+        )}
       </div>
 
       <div className="mt-5 space-y-3">
@@ -410,8 +487,8 @@ function DashboardActionBoard({ orgSlug }: { orgSlug: string }) {
               <Glyph name="invoice" className="h-[18px] w-[18px]" />
             </span>
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold text-[var(--hub-text-strong)]">Pay {PENDING_INVOICES_COUNT} invoices</p>
-              <p className="mt-0.5 text-[13px] text-[var(--hub-text-soft)]">{formatCurrency(pendingInvoice.remainingAmount)} pending</p>
+              <p className="text-sm font-semibold text-[var(--hub-text-strong)]">Pay {data.pendingInvoicesCount} invoice{data.pendingInvoicesCount !== 1 ? "s" : ""}</p>
+              <p className="mt-0.5 text-[13px] text-[var(--hub-text-soft)]">{formatCurrency(data.outstandingBalance)} pending</p>
             </div>
             <Link href={`/portal/${orgSlug}/client-hub/invoices/${pendingInvoice.id}`} className="shrink-0 rounded-lg border border-[var(--hub-border)] bg-white px-4 py-2 text-[13px] font-semibold text-[var(--hub-text-strong)] transition hover:bg-[var(--hub-surface-soft)]">
               View Invoice
@@ -425,7 +502,7 @@ function DashboardActionBoard({ orgSlug }: { orgSlug: string }) {
               <Glyph name="quote" className="h-[18px] w-[18px]" />
             </span>
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold text-[var(--hub-text-strong)]">Respond to {PENDING_QUOTES_COUNT} quote</p>
+              <p className="text-sm font-semibold text-[var(--hub-text-strong)]">Respond to {data.pendingQuotesCount} quote{data.pendingQuotesCount !== 1 ? "s" : ""}</p>
               <p className="mt-0.5 text-[13px] text-[var(--hub-text-soft)]">Awaiting your response</p>
             </div>
             <Link href={`/portal/${orgSlug}/client-hub/quotes/${pendingQuote.id}`} className="shrink-0 rounded-lg border border-[var(--hub-border)] bg-white px-4 py-2 text-[13px] font-semibold text-[var(--hub-text-strong)] transition hover:bg-[var(--hub-surface-soft)]">
@@ -434,7 +511,7 @@ function DashboardActionBoard({ orgSlug }: { orgSlug: string }) {
           </div>
         )}
 
-        {!pendingInvoice && !pendingQuote && (
+        {totalActions === 0 && (
           <div className="flex min-h-[120px] items-center justify-center rounded-xl border border-dashed border-[var(--hub-border)] text-sm text-[var(--hub-text-muted)]">
             No actions required right now
           </div>
@@ -466,26 +543,32 @@ function SupportCard({ orgSlug, config }: { orgSlug: string; config: ClientHubCo
   );
 }
 
-function PendingInvoicesCard({ orgSlug }: { orgSlug: string }) {
-  const pending = MOCK_INVOICES.filter((invoice) => invoice.remainingAmount > 0);
+function PendingInvoicesCard({ orgSlug, data }: { orgSlug: string; data: ClientHubDashboardData }) {
+  const pending = data.pendingInvoices;
 
   return (
     <ShellCard className="p-5 sm:p-6">
       <div className="flex items-center justify-between">
         <h3 className="text-base font-semibold tracking-[-0.01em] text-[var(--hub-text-strong)]">Pending Invoices</h3>
-        <span className="flex h-5 min-w-5 items-center justify-center rounded-md bg-[var(--hub-accent)] px-1.5 text-[11px] font-bold text-white">{pending.length}</span>
+        <span className="flex h-5 min-w-5 items-center justify-center rounded-md bg-[var(--hub-accent)] px-1.5 text-[11px] font-bold text-white">{data.pendingInvoicesCount}</span>
       </div>
-      <div className="mt-4 space-y-2">
-        {pending.map((invoice) => (
-          <div key={invoice.id} className="flex items-center justify-between gap-4 rounded-xl border border-[var(--hub-border)] bg-[var(--hub-surface-soft)]/40 px-4 py-3.5 transition hover:border-[var(--hub-border-strong)]">
-            <div className="min-w-0">
-              <p className="text-sm font-semibold text-[var(--hub-text-strong)]">#{invoice.invoiceNumber}</p>
-              <p className="text-[12px] text-[var(--hub-text-muted)]">Due {invoice.dueDate}</p>
+      {pending.length > 0 ? (
+        <div className="mt-4 space-y-2">
+          {pending.map((invoice) => (
+            <div key={invoice.id} className="flex items-center justify-between gap-4 rounded-xl border border-[var(--hub-border)] bg-[var(--hub-surface-soft)]/40 px-4 py-3.5 transition hover:border-[var(--hub-border-strong)]">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-[var(--hub-text-strong)]">#{invoice.invoiceNumber}</p>
+                <p className="text-[12px] text-[var(--hub-text-muted)]">Due {invoice.dueDate ?? "—"}</p>
+              </div>
+              <p className="shrink-0 text-sm font-semibold text-[var(--hub-text-strong)]">{formatCurrency(invoice.remainingAmount)}</p>
             </div>
-            <p className="shrink-0 text-sm font-semibold text-[var(--hub-text-strong)]">{formatCurrency(invoice.remainingAmount)}</p>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      ) : (
+        <div className="mt-4 flex min-h-[120px] items-center justify-center rounded-xl border border-dashed border-[var(--hub-border)] text-sm text-[var(--hub-text-muted)]">
+          No pending invoices
+        </div>
+      )}
       <Link href={`/portal/${orgSlug}/client-hub/invoices`} className="mt-4 inline-flex w-full items-center justify-center rounded-lg border border-[var(--hub-border)] bg-white px-4 py-2.5 text-[13px] font-semibold text-[var(--hub-text-strong)] transition hover:bg-[var(--hub-surface-soft)]">
         View All
       </Link>
@@ -493,14 +576,14 @@ function PendingInvoicesCard({ orgSlug }: { orgSlug: string }) {
   );
 }
 
-function PendingQuotesCard({ orgSlug }: { orgSlug: string }) {
-  const pending = MOCK_QUOTES.filter((quote) => quote.canRespond);
+function PendingQuotesCard({ orgSlug, data }: { orgSlug: string; data: ClientHubDashboardData }) {
+  const pending = data.pendingQuotes;
 
   return (
     <ShellCard className="p-5 sm:p-6">
       <div className="flex items-center justify-between">
         <h3 className="text-base font-semibold tracking-[-0.01em] text-[var(--hub-text-strong)]">Pending Quotes</h3>
-        <span className="flex h-5 min-w-5 items-center justify-center rounded-md bg-[var(--hub-accent)] px-1.5 text-[11px] font-bold text-white">{pending.length}</span>
+        <span className="flex h-5 min-w-5 items-center justify-center rounded-md bg-[var(--hub-accent)] px-1.5 text-[11px] font-bold text-white">{data.pendingQuotesCount}</span>
       </div>
       {pending.length > 0 ? (
         <div className="mt-4 space-y-2">
@@ -696,24 +779,69 @@ export function ClientHubPreviewShell({
 export function ClientHubDashboardView({
   orgSlug,
   config,
+  data = fallbackPreviewData,
 }: {
   orgSlug: string;
   config?: ClientHubConfig;
+  data?: ClientHubDashboardData;
 }) {
   const hubConfig = getHubConfig(config);
   const basePath = `/portal/${orgSlug}/client-hub`;
 
+  const unpaidInvoices = data.pendingInvoices;
+  const pendingQuotes = data.pendingQuotes;
+
+  const showOutstanding = hubConfig.homeDashboard.showOutstandingBalance && hubConfig.navigation.showInvoices;
+  const showPendingInvs = hubConfig.homeDashboard.showPendingInvoices && hubConfig.navigation.showInvoices;
+  const showPendingQts = hubConfig.homeDashboard.showPendingQuotes && hubConfig.navigation.showQuotes;
+  const showTotalPaid = hubConfig.navigation.showPayments;
+
   return (
     <div className="space-y-6">
-      <DashboardHero orgSlug={orgSlug} config={hubConfig} />
+      <DashboardHero orgSlug={orgSlug} config={hubConfig} data={data} />
+
+      {/* Summary Cards */}
+      {(showOutstanding || showPendingInvs || showPendingQts || showTotalPaid) && (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {showOutstanding && (
+            <SummaryMetric
+              label="Outstanding Balance"
+              value={formatCurrency(data.outstandingBalance)}
+              hint={data.outstandingBalance > 0 ? "Awaiting your payment" : "No outstanding balance"}
+            />
+          )}
+          {showPendingInvs && (
+            <SummaryMetric
+              label="Pending Invoices"
+              value={`${unpaidInvoices.length}`}
+              hint={unpaidInvoices.length > 0 ? "Action required" : "All invoices settled"}
+            />
+          )}
+          {showPendingQts && (
+            <SummaryMetric
+              label="Pending Quotes"
+              value={`${pendingQuotes.length}`}
+              hint={pendingQuotes.length > 0 ? "Awaiting response" : "No open quotes"}
+            />
+          )}
+          {showTotalPaid && (
+            <SummaryMetric
+              label="Total Paid"
+              value={formatCurrency(data.totalPaid)}
+              hint="Lifetime transaction volume"
+            />
+          )}
+        </div>
+      )}
+
       <div className="grid gap-5 xl:grid-cols-[220px_1fr_280px]">
         <Sidebar orgSlug={orgSlug} config={hubConfig} activePath={basePath} />
-        <DashboardActionBoard orgSlug={orgSlug} />
+        <DashboardActionBoard orgSlug={orgSlug} config={hubConfig} data={data} />
         <SupportCard orgSlug={orgSlug} config={hubConfig} />
       </div>
       <div className="grid gap-5 md:grid-cols-[7fr_5fr]">
-        <PendingInvoicesCard orgSlug={orgSlug} />
-        <PendingQuotesCard orgSlug={orgSlug} />
+        {showPendingInvs && <PendingInvoicesCard orgSlug={orgSlug} data={data} />}
+        {showPendingQts && <PendingQuotesCard orgSlug={orgSlug} data={data} />}
       </div>
     </div>
   );
@@ -722,13 +850,29 @@ export function ClientHubDashboardView({
 export function ClientHubInvoicesView({
   orgSlug,
   config,
+  invoices = [],
+  outstandingBalance = 0,
 }: {
   orgSlug: string;
   config?: ClientHubConfig;
+  invoices?: Array<{
+    id: string;
+    invoiceNumber: string | null;
+    invoiceDate: string;
+    dueDate: string | null;
+    totalAmount: number;
+    amountPaid: number;
+    remainingAmount: number;
+    status: string;
+  }>;
+  outstandingBalance?: number;
 }) {
   const hubConfig = getHubConfig(config);
   const basePath = `/portal/${orgSlug}/client-hub/invoices`;
-  const dueSoon = MOCK_INVOICES.filter((invoice) => invoice.remainingAmount > 0).length;
+  const dueSoon = invoices.filter((invoice) => invoice.remainingAmount > 0).length;
+  const acceptedMethods = hubConfig.payments.acceptedMethods || [];
+  const methodsText = `${acceptedMethods.length} method${acceptedMethods.length !== 1 ? "s" : ""}`;
+  const methodsHint = acceptedMethods.join(", ");
 
   return (
     <div className="grid gap-5 xl:grid-cols-[220px_minmax(0,1fr)_280px]">
@@ -753,9 +897,9 @@ export function ClientHubInvoicesView({
           </div>
 
           <div className="grid gap-4 px-6 py-6 sm:px-8 lg:grid-cols-3">
-            <SummaryMetric label="Outstanding" value={formatCurrency(OUTSTANDING_BALANCE)} hint="Across open invoices" />
+            <SummaryMetric label="Outstanding" value={formatCurrency(outstandingBalance)} hint="Across open invoices" />
             <SummaryMetric label="Invoices Open" value={`${dueSoon}`} hint="Ready for review or payment" />
-            <SummaryMetric label="Payment Options" value="3 methods" hint="Payment link, bank transfer, UPI" />
+            <SummaryMetric label="Payment Options" value={methodsText} hint={methodsHint} />
           </div>
         </ShellCard>
 
@@ -766,7 +910,7 @@ export function ClientHubInvoicesView({
               <p className="mt-0.5 text-[13px] text-[var(--hub-text-soft)]">Track payment status, due dates, and what still needs action.</p>
             </div>
             <div className="rounded-md border border-[var(--hub-border)] bg-[var(--hub-surface-soft)] px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--hub-text-muted)]">
-              {MOCK_INVOICES.length} records
+              {invoices.length} records
             </div>
           </div>
           <div className="overflow-x-auto">
@@ -783,19 +927,27 @@ export function ClientHubInvoicesView({
                 </tr>
               </thead>
               <tbody>
-                {MOCK_INVOICES.map((invoice) => (
-                  <tr key={invoice.id} className="border-b border-[var(--hub-border)] last:border-b-0 transition hover:bg-[var(--hub-surface-soft)]/40">
-                    <td className="px-6 py-4 text-sm font-semibold text-[var(--hub-accent)]">#{invoice.invoiceNumber}</td>
-                    <td className="px-6 py-4 text-sm text-[var(--hub-text-soft)]">{invoice.invoiceDate}</td>
-                    <td className="px-6 py-4 text-sm text-[var(--hub-text-soft)]">{invoice.dueDate ?? "—"}</td>
-                    <td className="px-6 py-4 text-sm font-medium text-[var(--hub-text-strong)]">{formatCurrency(invoice.totalAmount)}</td>
-                    <td className="px-6 py-4"><StatusPill className={getStatusStyles(invoice.status)}>{invoice.status.replace(/_/g, " ")}</StatusPill></td>
-                    <td className="px-6 py-4 text-sm text-[var(--hub-text-strong)]">{invoice.remainingAmount > 0 ? formatCurrency(invoice.remainingAmount) : "—"}</td>
-                    <td className="px-6 py-4 text-right">
-                      <Link href={`/portal/${orgSlug}/client-hub/invoices/${invoice.id}`} className="text-[13px] font-semibold text-[var(--hub-accent)] hover:underline">View</Link>
+                {invoices.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="px-6 py-12 text-center text-sm text-[var(--hub-text-soft)]">
+                      No invoices found.
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  invoices.map((invoice) => (
+                    <tr key={invoice.id} className="border-b border-[var(--hub-border)] last:border-b-0 transition hover:bg-[var(--hub-surface-soft)]/40">
+                      <td className="px-6 py-4 text-sm font-semibold text-[var(--hub-accent)]">#{invoice.invoiceNumber ?? "—"}</td>
+                      <td className="px-6 py-4 text-sm text-[var(--hub-text-soft)]">{invoice.invoiceDate}</td>
+                      <td className="px-6 py-4 text-sm text-[var(--hub-text-soft)]">{invoice.dueDate ?? "—"}</td>
+                      <td className="px-6 py-4 text-sm font-medium text-[var(--hub-text-strong)]">{formatCurrency(invoice.totalAmount)}</td>
+                      <td className="px-6 py-4"><StatusPill className={getStatusStyles(invoice.status)}>{invoice.status.replace(/_/g, " ")}</StatusPill></td>
+                      <td className="px-6 py-4 text-sm text-[var(--hub-text-strong)]">{invoice.remainingAmount > 0 ? formatCurrency(invoice.remainingAmount) : "—"}</td>
+                      <td className="px-6 py-4 text-right">
+                        <Link href={`/portal/${orgSlug}/client-hub/invoices/${invoice.id}`} className="text-[13px] font-semibold text-[var(--hub-accent)] hover:underline">View</Link>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
@@ -814,16 +966,42 @@ export function ClientHubInvoicesView({
 
 export function ClientHubInvoiceDetailView({
   orgSlug,
-  invoiceId,
+  invoice,
+  config,
 }: {
   orgSlug: string;
-  invoiceId: string;
+  invoice: {
+    id: string;
+    invoiceNumber: string;
+    invoiceDate: string;
+    dueDate: string | null;
+    totalAmount: number;
+    amountPaid: number;
+    remainingAmount: number;
+    status: string;
+    fromName: string;
+    clientName: string;
+    lineItems: Array<{
+      id: string;
+      name: string;
+      quantity: number;
+      price: number;
+      total: number;
+    }>;
+    payments?: Array<{
+      id: string;
+      amount: number;
+      paidAt: string;
+      method: string;
+      note: string;
+      paymentMethodDisplay: string;
+    }>;
+  };
   config?: ClientHubConfig;
 }) {
-  const invoice = getMockInvoice(invoiceId);
-  if (!invoice) return null;
-
-  const amountDue = invoice.remainingAmount || invoice.totalAmount;
+  const hubConfig = getHubConfig(config);
+  const amountDue = invoice.remainingAmount;
+  const isPayable = invoice.status !== "PAID" && invoice.status !== "CANCELLED" && invoice.remainingAmount > 0;
 
   return (
     <div className="space-y-6">
@@ -835,11 +1013,15 @@ export function ClientHubInvoiceDetailView({
 
       <section className="overflow-hidden rounded-2xl border border-[var(--hub-border)] bg-[var(--hub-surface-soft)] px-6 py-10 text-center sm:px-10 sm:py-14" style={{ background: "var(--hub-hero-gradient)" }}>
         <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-white shadow-sm ring-1 ring-[var(--hub-border)]">
-          <span className="text-base font-bold text-[var(--hub-accent)]">{invoice.fromName.charAt(0)}</span>
+          <span className="text-base font-bold text-[var(--hub-accent)]">{invoice.fromName ? invoice.fromName.charAt(0) : "—"}</span>
         </div>
-        <p className="mt-4 text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--hub-text-muted)]">{invoice.fromName}</p>
-        <h1 className="mt-5 text-[28px] font-semibold tracking-[-0.03em] text-[var(--hub-text-strong)] sm:text-[34px]">Hi {invoice.clientName},</h1>
-        <p className="mx-auto mt-3 max-w-xl text-[15px] leading-7 text-[var(--hub-text-soft)]">Your payment of {formatCurrency(amountDue)} is due on {invoice.dueDate}.</p>
+        <p className="mt-4 text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--hub-text-muted)]">{invoice.fromName ?? "—"}</p>
+        <h1 className="mt-5 text-[28px] font-semibold tracking-[-0.03em] text-[var(--hub-text-strong)] sm:text-[34px]">Hi {invoice.clientName ?? "Guest"},</h1>
+        <p className="mx-auto mt-3 max-w-xl text-[15px] leading-7 text-[var(--hub-text-soft)]">
+          {invoice.status === "PAID"
+            ? "This invoice is fully paid. Thank you!"
+            : `Your payment of ${formatCurrency(amountDue)} is due on ${invoice.dueDate ?? "—"}.`}
+        </p>
       </section>
 
       <div className="-mt-12 px-2 sm:px-4">
@@ -849,20 +1031,16 @@ export function ClientHubInvoiceDetailView({
               <h2 className="text-xl font-semibold tracking-[-0.02em] text-[var(--hub-text-strong)] sm:text-2xl">Invoice #{invoice.invoiceNumber}</h2>
               <StatusPill className={getStatusStyles(invoice.status)}>{invoice.status.replace(/_/g, " ")}</StatusPill>
             </div>
-            <div className="flex items-center gap-2 text-[var(--hub-text-muted)]">
-              <button type="button" className="flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--hub-border)] bg-white text-[var(--hub-text-soft)] transition hover:bg-[var(--hub-surface-soft)]" aria-label="Print invoice"><Glyph name="print" className="h-4 w-4" /></button>
-              <button type="button" className="flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--hub-border)] bg-white text-[var(--hub-text-soft)] transition hover:bg-[var(--hub-surface-soft)]" aria-label="Download invoice"><Glyph name="download" className="h-4 w-4" /></button>
-            </div>
           </div>
 
           <div className="grid gap-6 px-6 py-5 sm:px-8 sm:py-6 md:grid-cols-3">
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--hub-text-muted)]">From</p>
-              <p className="mt-1.5 text-base font-semibold text-[var(--hub-text-strong)]">{invoice.fromName}</p>
+              <p className="mt-1.5 text-base font-semibold text-[var(--hub-text-strong)]">{invoice.fromName ?? "—"}</p>
             </div>
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--hub-text-muted)]">To</p>
-              <p className="mt-1.5 text-base font-semibold text-[var(--hub-text-strong)]">{invoice.clientName}</p>
+              <p className="mt-1.5 text-base font-semibold text-[var(--hub-text-strong)]">{invoice.clientName ?? "—"}</p>
             </div>
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--hub-text-muted)]">Issue Date</p>
@@ -870,7 +1048,7 @@ export function ClientHubInvoiceDetailView({
             </div>
           </div>
 
-          {invoice.remainingAmount > 0 && (
+          {isPayable && (
             <div className="px-6 pb-5 sm:px-8 sm:pb-6">
               <Link href={`/portal/${orgSlug}/client-hub/invoices/${invoice.id}/payment`} className="inline-flex w-full items-center justify-center rounded-xl bg-[var(--hub-accent)] px-6 py-3.5 text-[13px] font-semibold text-white transition hover:brightness-[0.97]">
                 PAY NOW
@@ -902,7 +1080,7 @@ export function ClientHubInvoiceDetailView({
                   <td className="px-6 py-3.5 text-sm font-semibold text-[var(--hub-text-strong)]">{item.name}</td>
                   <td className="px-6 py-3.5 text-sm text-[var(--hub-text-soft)]">{item.quantity}</td>
                   <td className="px-6 py-3.5 text-sm text-[var(--hub-text-soft)]">{formatCurrency(item.price)}</td>
-                  <td className="px-6 py-3.5 text-sm font-semibold text-[var(--hub-text-strong)]">{formatCurrency(item.quantity * item.price)}</td>
+                  <td className="px-6 py-3.5 text-sm font-semibold text-[var(--hub-text-strong)]">{formatCurrency(item.total)}</td>
                 </tr>
               ))}
             </tbody>
@@ -921,22 +1099,65 @@ export function ClientHubInvoiceDetailView({
           </div>
         </div>
       </ShellCard>
+
+      {invoice.payments && invoice.payments.length > 0 && (
+        <ShellCard className="mx-auto max-w-[880px] overflow-hidden">
+          <div className="border-b border-[var(--hub-border)] px-6 py-4 sm:px-8">
+            <h3 className="text-base font-semibold tracking-[-0.01em] text-[var(--hub-text-strong)]">Payment History</h3>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-[var(--hub-surface-soft)] text-left">
+                <tr>
+                  <th className="px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--hub-text-muted)]">Date</th>
+                  <th className="px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--hub-text-muted)]">Method</th>
+                  <th className="px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--hub-text-muted)]">Note</th>
+                  <th className="px-6 py-3 text-right text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--hub-text-muted)]">Amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                {invoice.payments.map((pmt) => (
+                  <tr key={pmt.id} className="border-b border-[var(--hub-border)] last:border-b-0 transition hover:bg-[var(--hub-surface-soft)]/40">
+                    <td className="px-6 py-3.5 text-sm text-[var(--hub-text-soft)]">{pmt.paidAt}</td>
+                    <td className="px-6 py-3.5 text-sm font-semibold text-[var(--hub-text-strong)]">{pmt.paymentMethodDisplay || pmt.method || "—"}</td>
+                    <td className="px-6 py-3.5 text-sm text-[var(--hub-text-soft)]">{pmt.note || "—"}</td>
+                    <td className="px-6 py-3.5 text-sm text-right font-semibold text-[var(--hub-text-strong)]">{formatCurrency(pmt.amount)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </ShellCard>
+      )}
     </div>
   );
 }
 
 export function ClientHubPaymentSelectionView({
   orgSlug,
-  invoiceId,
+  invoice,
   config,
 }: {
   orgSlug: string;
-  invoiceId: string;
+  invoice: {
+    id: string;
+    invoiceNumber: string;
+    dueDate: string | null;
+    totalAmount: number;
+    remainingAmount: number;
+    hasValidPaymentLink: boolean;
+    organization: {
+      name: string;
+      defaults: {
+        bankName: string | null;
+        bankAccount: string | null;
+        bankIFSC: string | null;
+      } | null;
+    } | null;
+  };
   config?: ClientHubConfig;
 }) {
   const hubConfig = getHubConfig(config);
-  const invoice = getMockInvoice(invoiceId);
-  if (!invoice) return null;
 
   return (
     <div className="mx-auto max-w-[720px] space-y-6">
@@ -952,7 +1173,7 @@ export function ClientHubPaymentSelectionView({
         ← Invoice #{invoice.invoiceNumber}
       </Link>
 
-      <PaymentMethodSelector invoice={invoice} acceptedMethods={hubConfig.payments.acceptedMethods} />
+      <PaymentMethodSelector orgSlug={orgSlug} invoice={invoice} acceptedMethods={hubConfig.payments.acceptedMethods} hasValidPaymentLink={invoice.hasValidPaymentLink} />
     </div>
   );
 }
@@ -960,13 +1181,36 @@ export function ClientHubPaymentSelectionView({
 export function ClientHubQuotesView({
   orgSlug,
   config,
+  quotes,
+  quotesError,
+  acceptanceEnabled = true,
 }: {
   orgSlug: string;
   config?: ClientHubConfig;
+  quotes?: Array<{
+    id: string;
+    quoteNumber: string;
+    title: string;
+    status: string;
+    issueDate: Date;
+    validUntil: Date;
+    totalAmount: number;
+    acceptedAt: Date | null;
+    declinedAt: Date | null;
+    canRespond: boolean;
+  }>;
+  quotesError?: string;
+  acceptanceEnabled?: boolean;
 }) {
   const hubConfig = getHubConfig(config);
   const basePath = `/portal/${orgSlug}/client-hub/quotes`;
-  const openQuotes = MOCK_QUOTES.filter((quote) => quote.canRespond).length;
+  const now = new Date();
+  const quoteList = quotes ?? [];
+  const openQuotes = quoteList.filter((q) => q.status === "SENT" && new Date(q.validUntil) >= now).length;
+  const acceptedCount = quoteList.filter((q) => q.status === "ACCEPTED").length;
+  const avgValue = quoteList.length > 0
+    ? formatCurrency(Math.round(quoteList.reduce((sum, q) => sum + q.totalAmount, 0) / quoteList.length))
+    : "—";
 
   return (
     <div className="grid gap-5 xl:grid-cols-[220px_minmax(0,1fr)_280px]">
@@ -984,57 +1228,120 @@ export function ClientHubQuotesView({
               </Link>
             </div>
           </div>
-          <div className="grid gap-4 px-6 py-6 sm:px-8 lg:grid-cols-3">
-            <SummaryMetric label="Awaiting Reply" value={`${openQuotes}`} hint="Quotations still awaiting your decision" />
-            <SummaryMetric label="Accepted" value={`${MOCK_QUOTES.length - openQuotes}`} hint="Already confirmed this cycle" />
-            <SummaryMetric label="Avg. Quote Value" value={formatCurrency(Math.round(MOCK_QUOTES.reduce((sum, quote) => sum + quote.totalAmount, 0) / MOCK_QUOTES.length))} hint="Based on current mock proposals" />
-          </div>
+          {!quotesError && quotes !== undefined && (
+            <div className="grid gap-4 px-6 py-6 sm:px-8 lg:grid-cols-3">
+              <SummaryMetric label="Awaiting Reply" value={`${openQuotes}`} hint="Quotations still awaiting your decision" />
+              <SummaryMetric label="Accepted" value={`${acceptedCount}`} hint="Already confirmed this cycle" />
+              <SummaryMetric label="Avg. Quote Value" value={avgValue} hint="Based on your current proposals" />
+            </div>
+          )}
         </ShellCard>
         <div className="space-y-3">
-          {MOCK_QUOTES.map((quote) => (
-            <ShellCard key={quote.id} className="p-5 sm:p-6">
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-3">
-                    <h2 className="text-base font-semibold tracking-[-0.01em] text-[var(--hub-text-strong)] sm:text-lg">{quote.title}</h2>
-                    <StatusPill className={getStatusStyles(quote.status)}>{quote.status}</StatusPill>
-                  </div>
-                  <p className="mt-1.5 text-[13px] text-[var(--hub-text-soft)]">Quote #{quote.quoteNumber} · Valid until {quote.validUntil}</p>
-                </div>
-                <div className="flex shrink-0 items-center gap-4 sm:text-right">
-                  <p className="text-lg font-semibold text-[var(--hub-text-strong)]">{formatCurrency(quote.totalAmount)}</p>
-                  <Link href={`/portal/${orgSlug}/client-hub/quotes/${quote.id}`} className="rounded-lg border border-[var(--hub-border)] bg-white px-4 py-2 text-[13px] font-semibold text-[var(--hub-text-strong)] transition hover:bg-[var(--hub-surface-soft)]">
-                    Review
-                  </Link>
-                </div>
-              </div>
+          {!acceptanceEnabled && (
+            <ShellCard className="border-amber-200 bg-amber-50/60 p-5">
+              <p className="text-[13px] font-semibold text-amber-800">
+                Quote responses are not currently enabled for this portal. You can view quotes but cannot accept or decline them at this time.
+              </p>
             </ShellCard>
-          ))}
+          )}
+          {quotesError ? (
+            <ShellCard className="border-rose-200 bg-rose-50/60 p-5">
+              <p className="text-[13px] font-semibold text-rose-800">
+                Unable to load quotes. Please try again or contact support if this persists.
+              </p>
+            </ShellCard>
+          ) : quoteList.length === 0 ? (
+            <ShellCard className="p-8 text-center">
+              <p className="text-[13px] text-[var(--hub-text-soft)]">No quotes found.</p>
+            </ShellCard>
+          ) : (
+              quotes.map((quote) => (
+                <ShellCard key={quote.id} className="p-5 sm:p-6">
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-3">
+                        <h2 className="text-base font-semibold tracking-[-0.01em] text-[var(--hub-text-strong)] sm:text-lg">{quote.title}</h2>
+                        <StatusPill className={getStatusStyles(quote.status)}>{quote.status}</StatusPill>
+                        {quote.canRespond && (
+                          <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700 ring-1 ring-amber-200/60">
+                            Action Needed
+                          </span>
+                        )}
+                      </div>
+                      <p className="mt-1.5 text-[13px] text-[var(--hub-text-soft)]">Quote #{quote.quoteNumber} · Valid until {new Date(quote.validUntil).toLocaleDateString()}</p>
+                    </div>
+                  <div className="flex shrink-0 items-center gap-4 sm:text-right">
+                    <p className="text-lg font-semibold text-[var(--hub-text-strong)]">{formatCurrency(quote.totalAmount)}</p>
+                    <Link href={`/portal/${orgSlug}/client-hub/quotes/${quote.id}`} className="rounded-lg border border-[var(--hub-border)] bg-white px-4 py-2 text-[13px] font-semibold text-[var(--hub-text-strong)] transition hover:bg-[var(--hub-surface-soft)]">
+                      Review
+                    </Link>
+                  </div>
+                </div>
+              </ShellCard>
+            ))
+          )}
         </div>
       </div>
 
-      <WorkspaceSupportRail
-        orgSlug={orgSlug}
-        config={hubConfig}
-        primaryHref={`/portal/${orgSlug}/client-hub/quotes/${MOCK_QUOTES[0]?.id ?? "qt-001"}`}
-        primaryLabel="Open Pending Quote"
-      />
+      {!quotesError && quoteList.length > 0 && (
+        <WorkspaceSupportRail
+          orgSlug={orgSlug}
+          config={hubConfig}
+          primaryHref={`/portal/${orgSlug}/client-hub/quotes/${quoteList[0]?.id ?? "#"}`}
+          primaryLabel="Open Pending Quote"
+        />
+      )}
     </div>
   );
 }
 
 export function ClientHubQuoteDetailView({
-  quoteId,
-  orgSlug = "acme",
+  orgSlug,
+  quote,
   config,
 }: {
-  quoteId: string;
-  orgSlug?: string;
+  orgSlug: string;
+  quote: {
+    id: string;
+    quoteNumber: string;
+    title: string;
+    status: string;
+    issueDate: Date | string;
+    validUntil: Date | string;
+    subtotal: number;
+    taxAmount: number;
+    discountAmount: number;
+    totalAmount: number;
+    notes: string | null;
+    termsAndConditions: string | null;
+    acceptedAt: Date | string | null;
+    declinedAt: Date | string | null;
+    declineReason: string | null;
+    canRespond: boolean;
+    customerName: string;
+    orgName: string;
+    lineItems: Array<{
+      id: string;
+      description: string;
+      quantity: number;
+      unitPrice: number;
+      taxRate: number;
+      amount: number;
+    }>;
+  };
   config?: ClientHubConfig;
 }) {
   const hubConfig = getHubConfig(config);
-  const quote = getMockQuote(quoteId);
-  if (!quote) return null;
+  const issueDateStr = new Date(quote.issueDate).toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+  const validUntilStr = new Date(quote.validUntil).toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
 
   return (
     <div className="space-y-6">
@@ -1049,10 +1356,35 @@ export function ClientHubQuoteDetailView({
           <span className="text-base font-bold text-[var(--hub-accent)]">Q</span>
         </div>
         <p className="mt-4 text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--hub-text-muted)]">Quotation</p>
-        <h1 className="mt-5 text-[28px] font-semibold tracking-[-0.03em] text-[var(--hub-text-strong)] sm:text-[34px]">Hi Hadi Azeez,</h1>
+        <h1 className="mt-5 text-[28px] font-semibold tracking-[-0.03em] text-[var(--hub-text-strong)] sm:text-[34px]">Hi {quote.customerName},</h1>
         <p className="mx-auto mt-3 max-w-xl text-[15px] leading-7 text-[var(--hub-text-soft)]">Please review the quotation details below.</p>
         <p className="mx-auto mt-2 max-w-xl text-sm font-medium text-[var(--hub-text-strong)]">{quote.title}</p>
       </section>
+
+      {/* Status notices */}
+      {quote.status === "ACCEPTED" && quote.acceptedAt && (
+        <div className="mx-auto max-w-[880px] rounded-xl border border-emerald-200 bg-emerald-50 px-5 py-3.5 text-sm font-semibold text-emerald-800">
+          You accepted this quote on {new Date(quote.acceptedAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}.
+        </div>
+      )}
+      {quote.status === "DECLINED" && quote.declinedAt && (
+        <div className="mx-auto max-w-[880px] rounded-xl border border-rose-200 bg-rose-50 px-5 py-3.5 text-sm font-semibold text-rose-800">
+          You declined this quote on {new Date(quote.declinedAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}.
+          {quote.declineReason && (
+            <p className="mt-1 text-[13px] font-normal text-rose-700">Reason: {quote.declineReason}</p>
+          )}
+        </div>
+      )}
+      {quote.status === "EXPIRED" && (
+        <div className="mx-auto max-w-[880px] rounded-xl border border-slate-200 bg-slate-50 px-5 py-3.5 text-sm font-semibold text-slate-600">
+          This quote has expired and is no longer available for response.
+        </div>
+      )}
+      {quote.status === "CONVERTED" && (
+        <div className="mx-auto max-w-[880px] rounded-xl border border-teal-200 bg-teal-50 px-5 py-3.5 text-sm font-semibold text-teal-800">
+          This quote was accepted and converted to an invoice.
+        </div>
+      )}
 
       <div className="-mt-12 px-2 sm:px-4">
         <ShellCard className="mx-auto max-w-[880px] overflow-hidden">
@@ -1061,47 +1393,47 @@ export function ClientHubQuoteDetailView({
               <h2 className="text-xl font-semibold tracking-[-0.02em] text-[var(--hub-text-strong)] sm:text-2xl">Quotation #{quote.quoteNumber}</h2>
               <StatusPill className={getStatusStyles(quote.status)}>{quote.status}</StatusPill>
             </div>
-            <div className="flex items-center gap-2 text-[var(--hub-text-muted)]">
-              <button type="button" className="flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--hub-border)] bg-white text-[var(--hub-text-soft)] transition hover:bg-[var(--hub-surface-soft)]" aria-label="Print quote"><Glyph name="print" className="h-4 w-4" /></button>
-              <button type="button" className="flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--hub-border)] bg-white text-[var(--hub-text-soft)] transition hover:bg-[var(--hub-surface-soft)]" aria-label="Download quote"><Glyph name="download" className="h-4 w-4" /></button>
-            </div>
           </div>
 
           <div className="grid gap-6 px-6 py-5 sm:px-8 sm:py-6 md:grid-cols-3">
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--hub-text-muted)]">From</p>
-              <p className="mt-1.5 text-base font-semibold text-[var(--hub-text-strong)]">{orgSlug.charAt(0).toUpperCase() + orgSlug.slice(1)}</p>
+              <p className="mt-1.5 text-base font-semibold text-[var(--hub-text-strong)]">{quote.orgName}</p>
             </div>
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--hub-text-muted)]">To</p>
-              <p className="mt-1.5 text-base font-semibold text-[var(--hub-text-strong)]">Hadi Azeez</p>
+              <p className="mt-1.5 text-base font-semibold text-[var(--hub-text-strong)]">{quote.customerName}</p>
             </div>
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--hub-text-muted)]">Issue Date</p>
-              <p className="mt-1.5 text-base font-semibold text-[var(--hub-text-strong)]">{quote.issueDate}</p>
+              <p className="mt-1.5 text-base font-semibold text-[var(--hub-text-strong)]">{issueDateStr}</p>
             </div>
           </div>
 
-          {quote.canRespond ? (
-            <div className="px-6 pb-5 sm:px-8 sm:pb-6">
-              <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--hub-text-muted)]">Your Response</h3>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <button type="button" disabled className="inline-flex items-center justify-center rounded-xl bg-[var(--hub-accent)] px-6 py-3 text-[13px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-80">
-                  Accept Quote
-                </button>
-                <button type="button" disabled className="inline-flex items-center justify-center rounded-xl border border-rose-200 bg-rose-50 px-6 py-3 text-[13px] font-semibold text-rose-700 disabled:cursor-not-allowed disabled:opacity-80">
-                  Decline
-                </button>
-              </div>
+          <div className="grid gap-6 border-t border-[var(--hub-border)] px-6 py-5 sm:px-8 sm:py-6 md:grid-cols-2">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--hub-text-muted)]">Valid Until</p>
+              <p className="mt-1.5 text-base font-semibold text-[var(--hub-text-strong)]">{validUntilStr}</p>
             </div>
-          ) : (
-            <div className="px-6 pb-5 sm:px-8 sm:pb-6">
-              <div className="rounded-xl border border-emerald-100 bg-emerald-50/70 px-5 py-3.5 text-sm font-semibold text-emerald-800">You accepted this quote.</div>
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--hub-text-muted)]">Quote Total</p>
+              <p className="mt-1.5 text-base font-semibold text-[var(--hub-accent)]">{formatCurrency(quote.totalAmount)}</p>
+            </div>
+          </div>
+
+          {quote.canRespond && (
+            <div className="border-t border-[var(--hub-border)] px-6 py-5 sm:px-8 sm:pb-6">
+              <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--hub-text-muted)]">Your Response</h3>
+              <p className="mb-4 text-[13px] text-[var(--hub-text-soft)]">
+                Please review the quote and let us know your decision before {validUntilStr}.
+              </p>
+              <QuoteResponseActions orgSlug={orgSlug} quoteId={quote.id} />
             </div>
           )}
         </ShellCard>
       </div>
 
+      {/* Line Items */}
       <ShellCard className="mx-auto max-w-[880px] overflow-hidden">
         <div className="border-b border-[var(--hub-border)] px-6 py-4 sm:px-8">
           <h3 className="text-base font-semibold tracking-[-0.01em] text-[var(--hub-text-strong)]">Items</h3>
@@ -1111,20 +1443,24 @@ export function ClientHubQuoteDetailView({
             <thead className="bg-[var(--hub-surface-soft)] text-left">
               <tr>
                 <th className="px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--hub-text-muted)]">No</th>
-                <th className="px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--hub-text-muted)]">Item</th>
-                <th className="px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--hub-text-muted)]">User</th>
-                <th className="px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--hub-text-muted)]">Price</th>
-                <th className="px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--hub-text-muted)]">Total</th>
+                <th className="px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--hub-text-muted)]">Description</th>
+                <th className="px-6 py-3 text-right text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--hub-text-muted)]">Qty</th>
+                <th className="px-6 py-3 text-right text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--hub-text-muted)]">Unit Price</th>
+                <th className="px-6 py-3 text-right text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--hub-text-muted)]">Tax</th>
+                <th className="px-6 py-3 text-right text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--hub-text-muted)]">Amount</th>
               </tr>
             </thead>
             <tbody>
-              <tr className="border-b border-[var(--hub-border)]">
-                <td className="px-6 py-3.5 text-sm text-[var(--hub-text-soft)]">1</td>
-                <td className="px-6 py-3.5 text-sm font-semibold text-[var(--hub-text-strong)]">LinkedIn inbox yearly</td>
-                <td className="px-6 py-3.5 text-sm text-[var(--hub-text-soft)]">-</td>
-                <td className="px-6 py-3.5 text-sm text-[var(--hub-text-soft)]">{formatCurrency(quote.totalAmount)}</td>
-                <td className="px-6 py-3.5 text-sm font-semibold text-[var(--hub-text-strong)]">{formatCurrency(quote.totalAmount)}</td>
-              </tr>
+              {quote.lineItems.map((item, idx) => (
+                <tr key={item.id} className="border-b border-[var(--hub-border)] last:border-b-0 transition hover:bg-[var(--hub-surface-soft)]/40">
+                  <td className="px-6 py-3.5 text-sm text-[var(--hub-text-soft)]">{idx + 1}</td>
+                  <td className="px-6 py-3.5 text-sm font-semibold text-[var(--hub-text-strong)]">{item.description}</td>
+                  <td className="px-6 py-3.5 text-sm text-right text-[var(--hub-text-soft)]">{item.quantity}</td>
+                  <td className="px-6 py-3.5 text-sm text-right text-[var(--hub-text-soft)]">{formatCurrency(item.unitPrice)}</td>
+                  <td className="px-6 py-3.5 text-sm text-right text-[var(--hub-text-soft)]">{item.taxRate > 0 ? `${item.taxRate}%` : "—"}</td>
+                  <td className="px-6 py-3.5 text-sm text-right font-semibold text-[var(--hub-text-strong)]">{formatCurrency(item.amount)}</td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
@@ -1132,8 +1468,20 @@ export function ClientHubQuoteDetailView({
           <div className="ml-auto max-w-xs space-y-2.5 text-sm">
             <div className="flex items-center justify-between">
               <span className="text-[var(--hub-text-soft)]">Subtotal</span>
-              <span className="font-semibold text-[var(--hub-text-strong)]">{formatCurrency(quote.totalAmount)}</span>
+              <span className="font-semibold text-[var(--hub-text-strong)]">{formatCurrency(quote.subtotal)}</span>
             </div>
+            {quote.discountAmount > 0 && (
+              <div className="flex items-center justify-between">
+                <span className="text-[var(--hub-text-soft)]">Discount</span>
+                <span className="font-semibold text-emerald-600">− {formatCurrency(quote.discountAmount)}</span>
+              </div>
+            )}
+            {quote.taxAmount > 0 && (
+              <div className="flex items-center justify-between">
+                <span className="text-[var(--hub-text-soft)]">Tax</span>
+                <span className="font-semibold text-[var(--hub-text-strong)]">{formatCurrency(quote.taxAmount)}</span>
+              </div>
+            )}
             <div className="flex items-center justify-between border-t border-[var(--hub-border)] pt-2.5">
               <span className="text-base font-semibold text-[var(--hub-text-strong)]">Total</span>
               <span className="text-base font-semibold text-[var(--hub-accent)]">{formatCurrency(quote.totalAmount)}</span>
@@ -1141,6 +1489,24 @@ export function ClientHubQuoteDetailView({
           </div>
         </div>
       </ShellCard>
+
+      {/* Notes / Terms */}
+      {(quote.notes || quote.termsAndConditions) && (
+        <div className="mx-auto max-w-[880px] grid gap-4 sm:grid-cols-2">
+          {quote.notes && (
+            <ShellCard className="p-5">
+              <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--hub-text-muted)]">Notes</h3>
+              <p className="text-[13px] leading-6 text-[var(--hub-text-soft)] whitespace-pre-wrap">{quote.notes}</p>
+            </ShellCard>
+          )}
+          {quote.termsAndConditions && (
+            <ShellCard className="p-5">
+              <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--hub-text-muted)]">Terms &amp; Conditions</h3>
+              <p className="text-[13px] leading-6 text-[var(--hub-text-soft)] whitespace-pre-wrap">{quote.termsAndConditions}</p>
+            </ShellCard>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -1148,12 +1514,37 @@ export function ClientHubQuoteDetailView({
 export function ClientHubPaymentsView({
   orgSlug = "acme",
   config,
+  outstandingBalance = 0,
+  totalPaid = 0,
+  orgHasBankDetails = false,
+  hasPaymentLink = false,
+  payments = [],
+  outstandingInvoices = [],
 }: {
   orgSlug?: string;
   config?: ClientHubConfig;
+  outstandingBalance?: number;
+  totalPaid?: number;
+  orgHasBankDetails?: boolean;
+  hasPaymentLink?: boolean;
+  payments?: Array<{
+    id: string;
+    invoiceNumber: string;
+    amount: number;
+    paidAt: string;
+    method: string;
+    status: string;
+  }>;
+  outstandingInvoices?: Array<{
+    id: string;
+    invoiceNumber: string;
+    dueDate: string | null;
+    remainingAmount: number;
+  }>;
 }) {
   const hubConfig = getHubConfig(config);
   const basePath = `/portal/${orgSlug}/client-hub/payments`;
+  const availableMethods = getActionablePaymentMethods(hubConfig.payments.acceptedMethods, orgHasBankDetails, hasPaymentLink);
 
   return (
     <div className="grid gap-5 xl:grid-cols-[220px_minmax(0,1fr)_280px]">
@@ -1164,40 +1555,91 @@ export function ClientHubPaymentsView({
         <div className="grid gap-4 sm:grid-cols-2">
           <ShellCard className="p-6">
             <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--hub-text-muted)]">Total Paid</p>
-            <p className="mt-3 text-3xl font-semibold tracking-[-0.03em] text-[var(--hub-text-strong)]">{formatCurrency(TOTAL_PAID)}</p>
+            <p className="mt-3 text-3xl font-semibold tracking-[-0.03em] text-[var(--hub-text-strong)]">{formatCurrency(totalPaid)}</p>
           </ShellCard>
           <ShellCard className="p-6">
             <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--hub-text-muted)]">Outstanding</p>
-            <p className="mt-3 text-3xl font-semibold tracking-[-0.03em] text-[var(--hub-text-strong)]">{formatCurrency(OUTSTANDING_BALANCE)}</p>
+            <p className="mt-3 text-3xl font-semibold tracking-[-0.03em] text-[var(--hub-text-strong)]">{formatCurrency(outstandingBalance)}</p>
           </ShellCard>
         </div>
 
-        <ShellCard className="p-5 sm:p-6">
-          <h2 className="text-base font-semibold tracking-[-0.01em] text-[var(--hub-text-strong)]">Payment Methods</h2>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {hubConfig.payments.acceptedMethods.map((method) => (
-              <div key={method} className="rounded-xl border border-[var(--hub-border)] bg-[var(--hub-surface-soft)]/40 p-4 text-center transition hover:border-[var(--hub-border-strong)]">
-                <p className="text-sm font-semibold text-[var(--hub-text-strong)]">{method}</p>
-                <p className="mt-1 text-[11px] text-[var(--hub-text-muted)]">Available</p>
+        {hubConfig.payments.showPaymentMethods && (
+          <ShellCard className="p-5 sm:p-6">
+            <h2 className="text-base font-semibold tracking-[-0.01em] text-[var(--hub-text-strong)]">Payment Methods</h2>
+            {availableMethods.length === 0 ? (
+              <div className="mt-4 rounded-xl border border-[var(--hub-border)] bg-[var(--hub-surface-soft)]/40 p-6 text-center">
+                <p className="text-[13px] text-[var(--hub-text-soft)]">No payment methods are currently available.</p>
               </div>
-            ))}
-          </div>
-        </ShellCard>
+            ) : (
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {availableMethods.map((method) => (
+                  <div key={method} className="rounded-xl border border-[var(--hub-border)] bg-[var(--hub-surface-soft)]/40 p-4 text-center transition hover:border-[var(--hub-border-strong)]">
+                    <p className="text-sm font-semibold text-[var(--hub-text-strong)]">{method}</p>
+                    <p className="mt-1 text-[11px] text-[var(--hub-text-muted)]">Available</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </ShellCard>
+        )}
+
+        {outstandingInvoices.length > 0 && (
+          <ShellCard className="overflow-hidden">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--hub-border)] px-6 py-4">
+              <div>
+                <h2 className="text-base font-semibold tracking-[-0.01em] text-[var(--hub-text-strong)]">Unpaid Invoices</h2>
+                <p className="mt-0.5 text-[13px] text-[var(--hub-text-soft)]">Select an invoice to settle your open balance.</p>
+              </div>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-[var(--hub-border)] text-left">
+                    <th className="px-6 py-3.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--hub-text-muted)]">Invoice #</th>
+                    <th className="px-6 py-3.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--hub-text-muted)]">Due Date</th>
+                    <th className="px-6 py-3.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--hub-text-muted)]">Remaining Amount</th>
+                    <th className="px-6 py-3.5 text-right text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--hub-text-muted)]">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {outstandingInvoices.map((invoice) => (
+                    <tr key={invoice.id} className="border-b border-[var(--hub-border)] last:border-b-0 transition hover:bg-[var(--hub-surface-soft)]/40">
+                      <td className="px-6 py-4 text-sm font-semibold text-[var(--hub-text-strong)]">#{invoice.invoiceNumber}</td>
+                      <td className="px-6 py-4 text-sm text-[var(--hub-text-soft)]">{invoice.dueDate ?? "—"}</td>
+                      <td className="px-6 py-4 text-sm font-semibold text-[var(--hub-text-strong)]">{formatCurrency(invoice.remainingAmount)}</td>
+                      <td className="px-6 py-4 text-right">
+                        <Link href={`/portal/${orgSlug}/client-hub/invoices/${invoice.id}/payment`} className="inline-flex items-center rounded-lg bg-[var(--hub-accent)] px-3 py-1.5 text-[12px] font-bold text-white transition hover:brightness-[0.97]">
+                          Pay Now
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </ShellCard>
+        )}
 
         <ShellCard className="overflow-hidden">
           <div className="border-b border-[var(--hub-border)] px-6 py-4">
             <h2 className="text-base font-semibold tracking-[-0.01em] text-[var(--hub-text-strong)]">Payment History</h2>
           </div>
           <div className="divide-y divide-[var(--hub-border)]">
-            {MOCK_PAYMENTS.map((payment) => (
-              <div key={payment.id} className="flex flex-wrap items-center justify-between gap-4 px-6 py-3.5 transition hover:bg-[var(--hub-surface-soft)]/40">
-                <div>
-                  <p className="text-sm font-semibold text-[var(--hub-text-strong)]">Invoice #{payment.invoiceNumber}</p>
-                  <p className="text-[12px] text-[var(--hub-text-soft)]">{payment.paidAt} · {payment.method}</p>
-                </div>
-                <StatusPill className={getStatusStyles(payment.status)}>{payment.status}</StatusPill>
+            {payments.length === 0 ? (
+              <div className="px-6 py-8 text-center text-sm text-[var(--hub-text-muted)]">
+                No payment history available.
               </div>
-            ))}
+            ) : (
+              payments.map((payment) => (
+                <div key={payment.id} className="flex flex-wrap items-center justify-between gap-4 px-6 py-3.5 transition hover:bg-[var(--hub-surface-soft)]/40">
+                  <div>
+                    <p className="text-sm font-semibold text-[var(--hub-text-strong)]">Invoice #{payment.invoiceNumber}</p>
+                    <p className="text-[12px] text-[var(--hub-text-soft)]">{payment.paidAt} · {payment.method}</p>
+                  </div>
+                  <StatusPill className={getStatusStyles(payment.status)}>{payment.status}</StatusPill>
+                </div>
+              ))
+            )}
           </div>
         </ShellCard>
       </div>
@@ -1221,6 +1663,8 @@ export function ClientHubAboutView({
 }) {
   const hubConfig = getHubConfig(config);
   const basePath = `/portal/${orgSlug}/client-hub/about`;
+  const hasBody = hubConfig.about.body.trim().length > 0;
+  const hasFoundedYear = hubConfig.about.showFoundedYear && hubConfig.about.foundedYear.trim().length > 0;
 
   return (
     <div className="grid gap-5 xl:grid-cols-[220px_1fr]">
@@ -1231,10 +1675,23 @@ export function ClientHubAboutView({
         </div>
         <div className="p-6 sm:p-10">
           <h1 className="text-[28px] font-semibold tracking-[-0.03em] text-[var(--hub-text-strong)] sm:text-[32px]">{hubConfig.about.pageTitle}</h1>
-          <p className="mt-2 text-[15px] leading-7 text-[var(--hub-text-soft)]">{hubConfig.about.heading}</p>
-          <div className="mt-6 rounded-xl border border-[var(--hub-border)] bg-[var(--hub-surface-soft)]/40 p-6 sm:p-8">
-            <p className="text-[15px] leading-8 text-[var(--hub-text-soft)]">{hubConfig.about.body}</p>
-          </div>
+          {hubConfig.about.heading.trim().length > 0 && (
+            <p className="mt-2 text-[15px] leading-7 text-[var(--hub-text-soft)]">{hubConfig.about.heading}</p>
+          )}
+          {hasBody ? (
+            <div className="mt-6 rounded-xl border border-[var(--hub-border)] bg-[var(--hub-surface-soft)]/40 p-6 sm:p-8">
+              <p className="text-[15px] leading-8 text-[var(--hub-text-soft)]">{hubConfig.about.body}</p>
+            </div>
+          ) : (
+            <div className="mt-6 rounded-xl border border-[var(--hub-border)] bg-[var(--hub-surface-soft)]/40 p-6 sm:p-8 text-center">
+              <p className="text-[13px] text-[var(--hub-text-muted)]">About information will appear here once it has been configured.</p>
+            </div>
+          )}
+          {hasFoundedYear && (
+            <div className="mt-5 flex items-center gap-2 text-[13px] text-[var(--hub-text-muted)]">
+              <span>Established {hubConfig.about.foundedYear}</span>
+            </div>
+          )}
         </div>
       </ShellCard>
     </div>
@@ -1250,43 +1707,63 @@ export function ClientHubContactView({
 }) {
   const hubConfig = getHubConfig(config);
   const basePath = `/portal/${orgSlug}/client-hub/contact`;
+  const hasEmail = hubConfig.contact.supportEmail.trim().length > 0;
+  const hasPhone = hubConfig.contact.supportPhone.trim().length > 0;
+  const hasHours = hubConfig.contact.businessHours.trim().length > 0;
+  const hasAnyContact = hasEmail || hasPhone;
 
   return (
     <div className="grid gap-5 xl:grid-cols-[220px_1fr]">
       <Sidebar orgSlug={orgSlug} config={hubConfig} activePath={basePath} />
       <ShellCard className="p-6 sm:p-10">
         <h1 className="text-[28px] font-semibold tracking-[-0.03em] text-[var(--hub-text-strong)] sm:text-[32px]">{hubConfig.contact.pageTitle}</h1>
-        <p className="mt-2 text-[15px] leading-7 text-[var(--hub-text-soft)]">{hubConfig.contact.heading}</p>
+        {hubConfig.contact.heading.trim().length > 0 && (
+          <p className="mt-2 text-[15px] leading-7 text-[var(--hub-text-soft)]">{hubConfig.contact.heading}</p>
+        )}
 
         <div className="mt-6 rounded-xl border border-[var(--hub-border)] bg-[var(--hub-surface-soft)]/40 p-6 sm:p-8">
           <h2 className="text-sm font-semibold text-[var(--hub-text-strong)]">Contact Information</h2>
           <div className="mt-5 grid gap-6 sm:grid-cols-2">
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--hub-text-muted)]">Email</p>
-              <p className="mt-1.5 text-sm font-medium text-[var(--hub-text-strong)]">{hubConfig.contact.supportEmail}</p>
-              <p className="mt-0.5 text-[12px] text-[var(--hub-text-soft)]">We&apos;ll respond within 24 hours</p>
-            </div>
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--hub-text-muted)]">Phone</p>
-              <p className="mt-1.5 text-sm font-medium text-[var(--hub-text-strong)]">{hubConfig.contact.supportPhone}</p>
-              <p className="mt-0.5 text-[12px] text-[var(--hub-text-soft)]">Mon–Fri, 9:00 AM – 6:00 PM GST</p>
-            </div>
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--hub-text-muted)]">Office</p>
-              <p className="mt-1.5 text-sm font-medium text-[var(--hub-text-strong)]">123 Business Street</p>
-              <p className="mt-0.5 text-[12px] text-[var(--hub-text-soft)]">Dubai, United Arab Emirates</p>
-            </div>
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--hub-text-muted)]">Business Hours</p>
-              <p className="mt-1.5 text-[13px] leading-6 text-[var(--hub-text-soft)]">Monday – Friday: 9:00 AM – 6:00 PM<br />Saturday: 10:00 AM – 2:00 PM<br />Sunday: Closed</p>
-            </div>
+            {hasEmail && (
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--hub-text-muted)]">Email</p>
+                <p className="mt-1.5 text-sm font-medium text-[var(--hub-text-strong)]">{hubConfig.contact.supportEmail}</p>
+                <p className="mt-0.5 text-[12px] text-[var(--hub-text-soft)]">We&apos;ll respond within 24 hours</p>
+              </div>
+            )}
+            {hasPhone && (
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--hub-text-muted)]">Phone</p>
+                <p className="mt-1.5 text-sm font-medium text-[var(--hub-text-strong)]">{hubConfig.contact.supportPhone}</p>
+                <p className="mt-0.5 text-[12px] text-[var(--hub-text-soft)]">Mon–Fri, 9:00 AM – 6:00 PM GST</p>
+              </div>
+            )}
+            {hasHours && (
+              <div className={hasEmail && hasPhone ? "" : "sm:col-span-2"}>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--hub-text-muted)]">Business Hours</p>
+                <p className="mt-1.5 text-[13px] leading-6 text-[var(--hub-text-soft)]">{hubConfig.contact.businessHours}</p>
+              </div>
+            )}
+            {!hasAnyContact && !hasHours && (
+              <div className="sm:col-span-2 text-center py-4">
+                <p className="text-[13px] text-[var(--hub-text-muted)]">Contact information will appear here once it has been configured.</p>
+              </div>
+            )}
           </div>
         </div>
 
-        <div className="mt-5 rounded-xl border border-rose-100 bg-rose-50/70 px-6 py-4 sm:px-8">
-          <p className="text-sm font-semibold text-rose-900">Emergency Support</p>
-          <p className="mt-1 text-[13px] text-rose-800">For urgent matters outside business hours, please call our emergency line: +971 XX XXX XXXX</p>
-        </div>
+        {hasAnyContact && (
+          <div className="mt-5 rounded-xl border border-rose-100 bg-rose-50/70 px-6 py-4 sm:px-8">
+            <p className="text-sm font-semibold text-rose-900">Need Help?</p>
+            <p className="mt-1 text-[13px] text-rose-800">
+              {hasEmail && hasPhone
+                ? `Reach out to us at ${hubConfig.contact.supportEmail} or call ${hubConfig.contact.supportPhone} for assistance.`
+                : hasEmail
+                  ? `Reach out to us at ${hubConfig.contact.supportEmail} for assistance.`
+                  : `Call us at ${hubConfig.contact.supportPhone} for assistance.`}
+            </p>
+          </div>
+        )}
       </ShellCard>
     </div>
   );
@@ -1301,30 +1778,101 @@ export function ClientHubProductsView({
 }) {
   const hubConfig = getHubConfig(config);
   const basePath = `/portal/${orgSlug}/client-hub/products`;
+  const hasDescription = hubConfig.products.description.trim().length > 0;
 
   return (
     <div className="grid gap-5 xl:grid-cols-[220px_1fr]">
       <Sidebar orgSlug={orgSlug} config={hubConfig} activePath={basePath} />
       <div className="space-y-5">
         <PageHeader title={hubConfig.products.pageTitle} subtitle={hubConfig.products.heading} />
-        <div className="space-y-3">
-          {MOCK_PRODUCTS.map((product) => (
-            <ShellCard key={product.id} className="p-5 sm:p-6">
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                <div className="min-w-0">
-                  <h2 className="text-base font-semibold tracking-[-0.01em] text-[var(--hub-text-strong)] sm:text-lg">{product.name}</h2>
-                  <p className="mt-1.5 text-[13px] text-[var(--hub-text-soft)]">{product.description}</p>
-                </div>
-                {hubConfig.products.showPricing && (
-                  <div className="shrink-0 rounded-xl border border-[var(--hub-border)] bg-[var(--hub-surface-soft)]/40 px-5 py-3.5 text-right">
-                    <p className="text-lg font-semibold text-[var(--hub-text-strong)]">{formatCurrency(product.price)}</p>
-                    {hubConfig.products.showUnit && <p className="mt-0.5 text-[11px] text-[var(--hub-text-muted)]">/{product.unit}</p>}
+        {hasDescription && (
+          <ShellCard className="p-5 sm:p-6">
+            <p className="text-[15px] leading-7 text-[var(--hub-text-soft)]">{hubConfig.products.description}</p>
+          </ShellCard>
+        )}
+        <ShellCard className="p-8 text-center">
+          <p className="text-[13px] text-[var(--hub-text-soft)]">
+            Your service catalogue will appear here once it has been configured.
+          </p>
+        </ShellCard>
+      </div>
+    </div>
+  );
+}
+
+export type JobsProjectItem = {
+  id: string;
+  title: string;
+  type: "INVOICE" | "QUOTE";
+  referenceNumber: string;
+  status: string;
+  totalAmount: number;
+  createdAt: string;
+  dueDate: string | null;
+};
+
+export function ClientHubJobsView({
+  orgSlug = "acme",
+  config,
+  jobs = [],
+  jobsError,
+}: {
+  orgSlug?: string;
+  config?: ClientHubConfig;
+  jobs?: JobsProjectItem[];
+  jobsError?: string;
+}) {
+  const hubConfig = getHubConfig(config);
+  const basePath = `/portal/${orgSlug}/client-hub/jobs`;
+
+  return (
+    <div className="grid gap-5 xl:grid-cols-[220px_1fr]">
+      <Sidebar orgSlug={orgSlug} config={hubConfig} activePath={basePath} />
+      <div className="space-y-5">
+        <PageHeader title={hubConfig.jobs.pageTitle} subtitle={hubConfig.jobs.heading} />
+        {hubConfig.jobs.description.trim().length > 0 && (
+          <ShellCard className="p-5 sm:p-6">
+            <p className="text-[15px] leading-7 text-[var(--hub-text-soft)]">{hubConfig.jobs.description}</p>
+          </ShellCard>
+        )}
+        {jobsError ? (
+          <ShellCard className="border-rose-200 bg-rose-50/60 p-5">
+            <p className="text-[13px] font-semibold text-rose-800">
+              Unable to load projects. Please try again or contact support if this persists.
+            </p>
+          </ShellCard>
+        ) : jobs.length === 0 ? (
+          <ShellCard className="p-8 text-center">
+            <p className="text-[13px] text-[var(--hub-text-soft)]">
+              {hubConfig.jobs.emptyMessage || "No active projects or engagements to display at this time."}
+            </p>
+          </ShellCard>
+        ) : (
+          <div className="space-y-3">
+            {jobs.map((job) => (
+              <ShellCard key={job.id} className="p-5 sm:p-6">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-3">
+                      <h2 className="text-base font-semibold tracking-[-0.01em] text-[var(--hub-text-strong)] sm:text-lg">{job.title}</h2>
+                      <StatusPill className={getStatusStyles(job.status)}>{job.status}</StatusPill>
+                      <span className="inline-flex items-center rounded-full bg-[var(--hub-surface-soft)] px-2 py-0.5 text-[11px] font-semibold text-[var(--hub-text-muted)] ring-1 ring-[var(--hub-border)]">
+                        {job.type === "INVOICE" ? "Invoice" : "Quote"}
+                      </span>
+                    </div>
+                    <p className="mt-1.5 text-[13px] text-[var(--hub-text-soft)]">
+                      #{job.referenceNumber} · Created {new Date(job.createdAt).toLocaleDateString()}
+                      {job.dueDate && ` · Due ${new Date(job.dueDate).toLocaleDateString()}`}
+                    </p>
                   </div>
-                )}
-              </div>
-            </ShellCard>
-          ))}
-        </div>
+                  <div className="text-right">
+                    <p className="text-base font-semibold text-[var(--hub-text-strong)]">{formatCurrency(job.totalAmount)}</p>
+                  </div>
+                </div>
+              </ShellCard>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
