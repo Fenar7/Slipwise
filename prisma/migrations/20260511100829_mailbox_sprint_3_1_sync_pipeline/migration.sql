@@ -301,5 +301,3 @@ ALTER TABLE "mailbox_provider_cursor" ADD CONSTRAINT "mailbox_provider_cursor_ma
 
 -- RenameIndex
 ALTER INDEX "document_tag_orgId_slug_key" RENAME TO "document_tag_org_slug_unique";
-
-CREATE UNIQUE INDEX "mailbox_draft_id_orgId_key" ON "mailbox_draft"("id", "orgId");

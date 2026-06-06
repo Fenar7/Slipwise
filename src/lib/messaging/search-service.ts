@@ -644,7 +644,7 @@ export async function searchMessaging(
         } else if (idx.scanStatus === AttachmentScanStatus.PENDING) {
           snippet = "[Pending scan - unindexed]";
         } else if (idx.indexingStatus === AttachmentIndexingStatus.FAILED) {
-          snippet = `[Indexing failed: ${idx.lastError ?? "unknown error"}]`;
+          snippet = "[File content search unavailable for this attachment]";
         } else if (idx.indexingStatus === AttachmentIndexingStatus.UNINDEXED) {
           snippet = "[File content not indexed]";
         }

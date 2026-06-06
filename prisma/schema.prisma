@@ -6061,7 +6061,6 @@ model MailboxDraft {
   /// reference a connection from a different org at the database level.
   mailboxConnection  MailboxConnection @relation(fields: [mailboxConnectionId, orgId], references: [id, orgId], onDelete: Cascade)
 
-  @@unique([id, orgId])
   @@index([orgId, mailboxConnectionId, status])
   @@index([orgId, threadId])
   @@map("mailbox_draft")

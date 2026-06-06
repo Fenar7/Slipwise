@@ -15,7 +15,6 @@ export default defineConfig({
       "**/.next/**",
       "coverage/**",
       "dist/**",
-      "worktrees/**",
     ],
     testTimeout: 30000,
   },
