@@ -31,6 +31,7 @@ export function safeValidateHubConfig(rawConfig: any): ClientHubConfig {
       about: { ...DEFAULT_CLIENT_HUB_CONFIG.about, ...rawConfig.about },
       contact: { ...DEFAULT_CLIENT_HUB_CONFIG.contact, ...rawConfig.contact },
       products: { ...DEFAULT_CLIENT_HUB_CONFIG.products, ...rawConfig.products },
+      jobs: { ...DEFAULT_CLIENT_HUB_CONFIG.jobs, ...rawConfig.jobs },
       navigation: { ...DEFAULT_CLIENT_HUB_CONFIG.navigation, ...rawConfig.navigation },
     };
 

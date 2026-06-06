@@ -61,6 +61,12 @@ export const DEFAULT_CLIENT_HUB_CONFIG: ClientHubConfig = {
     showPricing: true,
     showUnit: true,
   },
+  jobs: {
+    pageTitle: "Projects & Engagements",
+    heading: "Your active projects and service engagements",
+    description: "Track the progress of current work, milestones, and deliverables across your engagements.",
+    emptyMessage: "No active projects or engagements to display at this time.",
+  },
   navigation: {
     showDashboard: true,
     showInvoices: true,
@@ -69,6 +75,7 @@ export const DEFAULT_CLIENT_HUB_CONFIG: ClientHubConfig = {
     showAbout: true,
     showContact: true,
     showProducts: true,
+    showJobs: true,
     footerText: "A calmer, clearer place to work with us.",
   },
 };
