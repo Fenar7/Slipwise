@@ -145,6 +145,7 @@ export async function getPortalInvoiceDetail(
       id: invoiceId,
       organizationId: session.orgId,
       customerId: session.customerId,
+      status: { not: "DRAFT" },
     },
     include: {
       lineItems: true,

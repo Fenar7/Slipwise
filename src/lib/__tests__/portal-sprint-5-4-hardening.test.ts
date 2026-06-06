@@ -696,6 +696,50 @@ describe("Sprint 5.4 Hardening Suite", () => {
       const res3 = await initiatePortalPayment("test-org", "inv-1");
       expect(res3.error).toBe("This invoice has been cancelled.");
     });
+
+    it("getPortalInvoiceDetail does not return draft invoices", async () => {
+      const { getPortalInvoiceDetail } = await import("@/app/portal/[orgSlug]/actions");
+      
+      const now = Math.floor(Date.now() / 1000);
+      const jwt = makeJwt({
+        jti: "test-jti",
+        customerId: "cust-1",
+        orgId: "org-1",
+        orgSlug: "test-org",
+        iat: now,
+        exp: now + 86400,
+      });
+
+      const cookieStore = await mockCookies();
+      cookieStore.get.mockReturnValue({ value: jwt });
+
+      mockDb.customerPortalSession.findUnique.mockResolvedValue({
+        revokedAt: null,
+        expiresAt: new Date(Date.now() + 86400000),
+        customer: {
+          id: "cust-1",
+          lifecycleStage: "ACTIVE",
+          organization: {
+            slug: "test-org",
+            defaults: { portalEnabled: true }
+          },
+          clientHubLifecycle: { enabled: true },
+        },
+      });
+      mockDb.organization.findUnique.mockResolvedValue({ id: "org-1" });
+
+      mockDb.invoice.findFirst.mockResolvedValue(null);
+
+      const res = await getPortalInvoiceDetail("test-org", "inv-draft");
+      expect(res).toBeNull();
+      expect(mockDb.invoice.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            status: { not: "DRAFT" }
+          })
+        })
+      );
+    });
   });
 });
 
