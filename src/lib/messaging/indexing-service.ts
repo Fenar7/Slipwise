@@ -245,9 +245,7 @@ async function extractPdfText(pdfBytes: Uint8Array): Promise<string> {
     const extractionPromise = (async () => {
       pdf = await pdfjsLib.getDocument({
         data: pdfBytes,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        disableWorker: true,
-      } as any).promise;
+      }).promise;
 
       if (pdf.numPages > MAX_PDF_PAGE_COUNT) {
         throw new Error("Page count limit exceeded");
