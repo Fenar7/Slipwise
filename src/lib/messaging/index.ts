@@ -446,3 +446,15 @@ export {
   listFollowUps,
   deleteFollowUp,
 } from "./followup-service";
+
+// ─── Sprint 9.5: Diagnostics ───
+
+export {
+  getMessagingDiagnostics,
+  type MessagingDiagnostics,
+  type SearchIndexHealth,
+  type NotificationHealth,
+  type ReminderHealth,
+  type DigestHealth,
+  type FollowUpHealth,
+} from "./diagnostics-service";

@@ -22,6 +22,7 @@ vi.mock("@/lib/db", () => {
     },
     member: {
       findFirst: vi.fn(),
+      findMany: vi.fn().mockResolvedValue([]),
     },
     orgDefaults: {
       findMany: vi.fn(),

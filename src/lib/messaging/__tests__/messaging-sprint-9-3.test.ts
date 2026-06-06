@@ -99,6 +99,7 @@ vi.mock("@/lib/db", () => {
     },
     member: {
       findFirst: vi.fn(),
+      findMany: vi.fn().mockResolvedValue([]),
     },
     messagingAuditEvent: {
       create: vi.fn(),
@@ -659,7 +660,6 @@ describe("Sprint 9.3 — Notification Center, Preferences, and Alert Routing", (
           assigneeId: "user-2",
         }
       ] as any);
-      vi.mocked(db.conversationParticipant.findFirst).mockResolvedValue({ id: "p-2" } as any);
       vi.mocked(db.messagingTask.updateMany).mockResolvedValue({ count: 1 } as any);
       vi.mocked(db.messagingTask.findUnique).mockResolvedValue({
         id: "task-1",
@@ -670,14 +670,17 @@ describe("Sprint 9.3 — Notification Center, Preferences, and Alert Routing", (
         assigneeId: "user-2",
       } as any);
 
-      // user-2 disabled task reminders
-      vi.mocked(db.messagingNotificationPreference.findUnique).mockResolvedValue({
-        taskRemindersEnabled: false,
-      } as any);
+      vi.mocked(db.conversationParticipant.findMany).mockResolvedValue([
+        { orgId: "org-1", conversationId: "conv-1", userId: "user-2" }
+      ] as any);
+      vi.mocked(db.conversationReadState.findMany).mockResolvedValue([]);
+      vi.mocked(db.messagingNotificationPreference.findMany).mockResolvedValue([
+        { orgId: "org-1", userId: "user-2", taskRemindersEnabled: false }
+      ] as any);
+      vi.mocked(db.member.findMany).mockResolvedValue([]);
 
       const result = await dispatchDueTaskReminders();
 
-      // Marked as processed (claimed set left intact) but notification skipped
       expect(result.dispatched).toBe(1);
       expect(createNotification).not.toHaveBeenCalled();
     });
@@ -695,7 +698,6 @@ describe("Sprint 9.3 — Notification Center, Preferences, and Alert Routing", (
           assigneeId: "user-2",
         }
       ] as any);
-      vi.mocked(db.conversationParticipant.findFirst).mockResolvedValue({ id: "p-2" } as any);
       vi.mocked(db.messagingTask.updateMany).mockResolvedValue({ count: 1 } as any);
       vi.mocked(db.messagingTask.findUnique).mockResolvedValue({
         id: "task-2",
@@ -706,14 +708,24 @@ describe("Sprint 9.3 — Notification Center, Preferences, and Alert Routing", (
         assigneeId: "user-2",
       } as any);
 
-      // User-2 in DND
-      vi.mocked(db.messagingNotificationPreference.findUnique).mockResolvedValue({
-        allNotificationsEnabled: true,
-        taskRemindersEnabled: true,
-        dndEnabled: true,
-        dndStart: "00:00",
-        dndEnd: "23:59",
-      } as any);
+      vi.mocked(db.conversationParticipant.findMany).mockResolvedValue([
+        { orgId: "org-1", conversationId: "conv-1", userId: "user-2" }
+      ] as any);
+      vi.mocked(db.conversationReadState.findMany).mockResolvedValue([]);
+      vi.mocked(db.messagingNotificationPreference.findMany).mockResolvedValue([
+        {
+          orgId: "org-1",
+          userId: "user-2",
+          allNotificationsEnabled: true,
+          taskRemindersEnabled: true,
+          dndEnabled: true,
+          dndStart: "00:00",
+          dndEnd: "23:59",
+        }
+      ] as any);
+      vi.mocked(db.member.findMany).mockResolvedValue([
+        { organizationId: "org-1", userId: "user-2", user: { email: "user-2@slipwise.app" } }
+      ] as any);
 
       const result = await dispatchDueTaskReminders();
 
@@ -750,10 +762,13 @@ describe("Sprint 9.3 — Notification Center, Preferences, and Alert Routing", (
 
       vi.mocked(db.conversationMeeting.updateMany).mockResolvedValue({ count: 1 } as any);
       vi.mocked(db.conversationParticipant.findMany).mockResolvedValue([
-        { userId: "user-2" }
+        { orgId: "org-1", conversationId: "conv-1", userId: "user-2" }
       ] as any);
-      vi.mocked(db.profile.findUnique).mockResolvedValue({ email: "user-2@slipwise.app" } as any);
-      vi.mocked(db.messagingNotificationPreference.findUnique).mockResolvedValue(null);
+      vi.mocked(db.messagingNotificationPreference.findMany).mockResolvedValue([]);
+      vi.mocked(db.conversationReadState.findMany).mockResolvedValue([]);
+      vi.mocked(db.profile.findMany).mockResolvedValue([
+        { id: "user-2", email: "user-2@slipwise.app" }
+      ] as any);
 
       const result = await dispatchDueMeetingRemindersSprint93();
 
@@ -788,18 +803,25 @@ describe("Sprint 9.3 — Notification Center, Preferences, and Alert Routing", (
 
       vi.mocked(db.conversationMeeting.updateMany).mockResolvedValue({ count: 1 } as any);
       vi.mocked(db.conversationParticipant.findMany).mockResolvedValue([
-        { userId: "user-2" }
+        { orgId: "org-1", conversationId: "conv-1", userId: "user-2" }
       ] as any);
-      vi.mocked(db.profile.findUnique).mockResolvedValue({ email: "user-2@slipwise.app" } as any);
+      vi.mocked(db.profile.findMany).mockResolvedValue([
+        { id: "user-2", email: "user-2@slipwise.app" }
+      ] as any);
+      vi.mocked(db.conversationReadState.findMany).mockResolvedValue([]);
 
       // User-2 in DND
-      vi.mocked(db.messagingNotificationPreference.findUnique).mockResolvedValue({
-        allNotificationsEnabled: true,
-        meetingRemindersEnabled: true,
-        dndEnabled: true,
-        dndStart: "00:00",
-        dndEnd: "23:59",
-      } as any);
+      vi.mocked(db.messagingNotificationPreference.findMany).mockResolvedValue([
+        {
+          userId: "user-2",
+          orgId: "org-1",
+          allNotificationsEnabled: true,
+          meetingRemindersEnabled: true,
+          dndEnabled: true,
+          dndStart: "00:00",
+          dndEnd: "23:59",
+        }
+      ] as any);
 
       const result = await dispatchDueMeetingRemindersSprint93();
 
@@ -834,10 +856,16 @@ describe("Sprint 9.3 — Notification Center, Preferences, and Alert Routing", (
 
       vi.mocked(db.conversationMeeting.updateMany).mockResolvedValue({ count: 1 } as any);
       vi.mocked(db.conversationParticipant.findMany).mockResolvedValue([
-        { userId: "user-2" }
+        { orgId: "org-1", conversationId: "conv-1", userId: "user-2" }
+      ] as any);
+      vi.mocked(db.messagingNotificationPreference.findMany).mockResolvedValue([]);
+      vi.mocked(db.conversationReadState.findMany).mockResolvedValue([]);
+      vi.mocked(db.profile.findMany).mockResolvedValue([
+        { id: "user-2", email: "user-2@slipwise.app" }
       ] as any);
 
-      vi.mocked(db.profile.findUnique).mockRejectedValueOnce(new Error("Database connection timeout"));
+      // createNotification throws for all participants — triggers claim release
+      vi.mocked(createNotification).mockRejectedValue(new Error("Database connection timeout"));
 
       const result = await dispatchDueMeetingRemindersSprint93();
 
@@ -1078,8 +1106,11 @@ describe("Sprint 9.3 — Notification Center, Preferences, and Alert Routing", (
         return { id: `notif-${params.userId}` };
       });
 
-      await expect(processNotificationEvents("org-1", "conv-1")).rejects.toThrow("Simulated database write failure for user-3");
+      await processNotificationEvents("org-1", "conv-1");
 
+      // Sprint 9.5: per-event error handling means the function does NOT throw on partial failure.
+      // user-2 gets notified, user-3's failure is caught and logged.
+      // Checkpoint is NOT advanced past the failed event — cursor 200 stays retryable.
       expect(createdNotifications.filter(n => n.userId === "user-2")).toHaveLength(1);
       expect(createdNotifications.filter(n => n.userId === "user-3")).toHaveLength(0);
       expect(db.downstreamConsumptionCheckpoint.upsert).not.toHaveBeenCalled();
