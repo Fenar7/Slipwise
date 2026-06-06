@@ -694,6 +694,7 @@ export async function getUnifiedCalendar(
   }
 
   // 2. Build where filters
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic Prisma where clause: filters are conditionally composed
   const meetingWhere: any = {
     orgId,
     conversationId: { in: accessibleConversationIds },
@@ -704,6 +705,7 @@ export async function getUnifiedCalendar(
     if (endAt) meetingWhere.scheduledAt.lte = endAt;
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic Prisma where clause
   const taskWhere: any = {
     orgId,
     conversationId: { in: accessibleConversationIds },
@@ -716,6 +718,7 @@ export async function getUnifiedCalendar(
     if (endAt) taskWhere.dueDate.lte = endAt;
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic Prisma where clause
   const taskReminderWhere: any = {
     orgId,
     conversationId: { in: accessibleConversationIds },
@@ -754,8 +757,10 @@ export async function getUnifiedCalendar(
     })
   );
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- reconciliation cache stores heterogeneous task records
   const taskReconciliationCache = new Map<string, any>();
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- receives raw Prisma task record
   async function getReconciledTask(t: any) {
     if (t.providerEventId && taskReconciliationCache.has(t.id)) {
       return taskReconciliationCache.get(t.id);

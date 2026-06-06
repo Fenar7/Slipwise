@@ -86,7 +86,8 @@ export async function refreshConnectionTokensIfNeeded(
     });
 
     return refreshed.accessToken;
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Token refresh failed";
     console.error(`[provider-sync] Failed to refresh token for connection ${connection.id}:`, error);
     
     // Shift connection to RECONNECT_REQUIRED state on auth refresh failure
@@ -157,7 +158,8 @@ export async function syncMeetingToProvider(orgId: string, meetingId: string): P
   const attendeeEmails = participants.map((p) => p.user.email).filter(Boolean);
   const currentEventIds = parseProviderEventIds(meeting.providerEventId);
   const updatedEventIds = { ...currentEventIds };
-  let metadataPatch: any = meeting.metadata ? { ...(meeting.metadata as any) } : {};
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic metadata merge object
+  const metadataPatch: Record<string, unknown> = meeting.metadata ? { ...(meeting.metadata as Record<string, unknown>) } : {};
 
   for (const conn of connections) {
     const provider = conn.provider;
@@ -195,8 +197,8 @@ export async function syncMeetingToProvider(orgId: string, meetingId: string): P
         if (remoteEventId) {
           try {
             await adapter.deleteEvent(activeAccessToken, remoteEventId);
-          } catch (err: any) {
-            const errMsg = err.message || "";
+          } catch (err: unknown) {
+            const errMsg = err instanceof Error ? err.message : "";
             const isNotFound = errMsg.includes("404") || errMsg.toLowerCase().includes("not found") || errMsg.includes("notFound");
             if (!isNotFound) {
               throw err;
@@ -249,8 +251,8 @@ export async function syncMeetingToProvider(orgId: string, meetingId: string): P
                 ...result.attendeeResponses,
               };
             }
-          } catch (err: any) {
-            const errMsg = err.message || "";
+          } catch (err: unknown) {
+            const errMsg = err instanceof Error ? err.message : "";
             if (errMsg.includes("404") || errMsg.toLowerCase().includes("not found") || errMsg.includes("notFound")) {
               // Remote event has been deleted. Re-create it!
               const result = await adapter.createEvent(activeAccessToken, {
@@ -282,12 +284,13 @@ export async function syncMeetingToProvider(orgId: string, meetingId: string): P
         where: { id: conn.id },
         data: { lastSyncAt: new Date(), lastSyncError: null },
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed sync";
       console.error(`[provider-sync] Failed sync for provider ${provider}:`, err);
       // Fail safely without throwing out of the whole loop, register degraded error status
       await db.calendarConnection.update({
         where: { id: conn.id },
-        data: { lastSyncError: err.message || "Failed sync" },
+        data: { lastSyncError: message },
       });
     }
   }
@@ -407,8 +410,8 @@ export async function syncTaskToProvider(orgId: string, taskId: string): Promise
         if (remoteEventId) {
           try {
             await adapter.deleteEvent(activeAccessToken, remoteEventId);
-          } catch (err: any) {
-            const errMsg = err.message || "";
+          } catch (err: unknown) {
+            const errMsg = err instanceof Error ? err.message : "";
             const isNotFound = errMsg.includes("404") || errMsg.toLowerCase().includes("not found") || errMsg.includes("notFound");
             if (!isNotFound) {
               throw err;
@@ -437,8 +440,8 @@ export async function syncTaskToProvider(orgId: string, taskId: string): Promise
           // UPDATE
           try {
             await adapter.updateEvent(activeAccessToken, remoteEventId, eventInput);
-          } catch (err: any) {
-            const errMsg = err.message || "";
+          } catch (err: unknown) {
+            const errMsg = err instanceof Error ? err.message : "";
             if (errMsg.includes("404") || errMsg.toLowerCase().includes("not found") || errMsg.includes("notFound")) {
               // Remote event has been deleted. Re-create it!
               const result = await adapter.createEvent(activeAccessToken, eventInput);
@@ -454,11 +457,12 @@ export async function syncTaskToProvider(orgId: string, taskId: string): Promise
         where: { id: conn.id },
         data: { lastSyncAt: new Date(), lastSyncError: null },
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed task sync";
       console.error(`[provider-sync] Failed task sync for provider ${provider}:`, err);
       await db.calendarConnection.update({
         where: { id: conn.id },
-        data: { lastSyncError: err.message || "Failed sync" },
+        data: { lastSyncError: message },
       });
     }
   }
@@ -528,8 +532,8 @@ export async function reconcileProviderChangesForMeeting(orgId: string, meetingI
   }
 
   const currentEventIds = parseProviderEventIds(meeting.providerEventId);
-  let resolvedMeeting = { ...meeting };
-  let metadataPatch = meeting.metadata ? { ...(meeting.metadata as any) } : {};
+  const resolvedMeeting = { ...meeting };
+  const metadataPatch: { joinUrl?: string | null; attendeeResponses?: Record<string, string>; [key: string]: unknown } = meeting.metadata ? { ...(meeting.metadata as Record<string, unknown>) } : {};
   let statusUpdate: string | null = null;
   let hasDrift = false;
 

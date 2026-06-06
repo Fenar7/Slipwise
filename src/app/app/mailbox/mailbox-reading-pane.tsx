@@ -34,6 +34,7 @@ function AttachmentChip({ attachment }: { attachment: MailboxAttachmentSummary }
   const Icon = attachmentIcon(attachment.mimeType);
   return (
     <div className="flex items-center gap-2 rounded-lg border border-[#E2E5EA] bg-[#F7F8FB] px-3 py-2 text-sm">
+      {/* eslint-disable-next-line react-hooks/static-components -- Icon is a stable component lookup from a map, not dynamically created */}
       <Icon className="h-4 w-4 shrink-0 text-[#64748B]" aria-hidden="true" />
       <div className="min-w-0">
         <p className="truncate text-xs font-medium text-[#0F172A]">{attachment.filename}</p>

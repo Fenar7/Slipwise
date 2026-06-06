@@ -1100,20 +1100,20 @@ describe("retentionPolicyOrgSafeWhere", () => {
 
 describe("ConversationMessageStatus transitions", () => {
   it("allows ACTIVE → EDITED", () => {
-    const from: "ACTIVE" = "ACTIVE";
-    const to: "EDITED" = "EDITED";
+    const from = "ACTIVE" as const;
+    const to = "EDITED" as const;
     expect(["ACTIVE", "EDITED", "DELETED"].includes(from)).toBe(true);
     expect(["ACTIVE", "EDITED", "DELETED"].includes(to)).toBe(true);
   });
   it("allows ACTIVE → DELETED", () => {
-    const from: "ACTIVE" = "ACTIVE";
-    const to: "DELETED" = "DELETED";
+    const from = "ACTIVE" as const;
+    const to = "DELETED" as const;
     expect(["ACTIVE", "EDITED", "DELETED"].includes(from)).toBe(true);
     expect(["ACTIVE", "EDITED", "DELETED"].includes(to)).toBe(true);
   });
   it("does not allow DELETED → ACTIVE (irreversible)", () => {
-    const from: "DELETED" = "DELETED";
-    const to: "ACTIVE" = "ACTIVE";
+    const from = "DELETED" as const;
+    const to = "ACTIVE" as const;
     // Service contract layer should enforce this; schema allows the value,
     // but the domain helper treats DELETED as terminal.
     expect(messageIsDeleted({ status: from } as never)).toBe(true);

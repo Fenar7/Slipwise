@@ -241,12 +241,14 @@ export function MailboxWorkspace() {
 
   useEffect(() => {
     if (selectedThreadId && !visibleThreads.some((t) => t.id === selectedThreadId)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional sync state correction on thread list change
       setSelectedThreadId(null);
     }
   }, [selectedThreadId, visibleThreads]);
 
   useEffect(() => {
     if (isFilterPanelOpen) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional sync snapshot when filter panel opens
       setFilterDraftState({ filters: [...filterState.filters], searchQuery: filterState.searchQuery });
     }
   }, [isFilterPanelOpen, filterState]);

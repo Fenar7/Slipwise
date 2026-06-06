@@ -147,9 +147,10 @@ export async function GET(
     successResponse.cookies.set(cookieName, "", getClearedCalendarOAuthStateCookieOptions(provider));
     return successResponse;
 
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "callback_failed";
     console.error(`[api/messaging/calendar/callback] Exception:`, error);
-    const errResponse = redirectWithError(request, error.message || "callback_failed");
+    const errResponse = redirectWithError(request, message);
     errResponse.cookies.set(cookieName, "", getClearedCalendarOAuthStateCookieOptions(provider));
     return errResponse;
   }

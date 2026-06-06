@@ -114,7 +114,7 @@ function DisconnectPanel({
           <div>
             <p className="text-sm font-bold text-red-900">Disconnect {displayName}?</p>
             <p className="mt-1 text-sm text-red-800">
-              This will remove Slipwise's access to this Gmail mailbox. Existing thread data will be retained, but new sync will stop immediately. This action requires re-authorization to undo.
+              This will remove Slipwise&apos;s access to this Gmail mailbox. Existing thread data will be retained, but new sync will stop immediately. This action requires re-authorization to undo.
             </p>
           </div>
         </div>
@@ -170,6 +170,16 @@ export function ConnectionDetailClient({ connectionId }: ConnectionDetailClientP
   const [showReconnect, setShowReconnect] = useState(false);
   const [saved, setSaved] = useState(false);
 
+  useEffect(() => {
+    if (disconnectState !== "disconnecting") return;
+
+    const timeout = window.setTimeout(() => {
+      setDisconnectState("disconnected");
+    }, 1200);
+
+    return () => window.clearTimeout(timeout);
+  }, [disconnectState]);
+
   if (!summary || !policy) {
     return (
       <div className="mx-auto max-w-2xl px-6 py-8" data-testid="connection-not-found">
@@ -183,16 +193,6 @@ export function ConnectionDetailClient({ connectionId }: ConnectionDetailClientP
 
   const { connection } = summary;
   const needsReconnect = connection.status === "reconnect_required";
-
-  useEffect(() => {
-    if (disconnectState !== "disconnecting") return;
-
-    const timeout = window.setTimeout(() => {
-      setDisconnectState("disconnected");
-    }, 1200);
-
-    return () => window.clearTimeout(timeout);
-  }, [disconnectState]);
 
   const handleSavePermissions = () => {
     setSaved(true);
@@ -356,7 +356,7 @@ export function ConnectionDetailClient({ connectionId }: ConnectionDetailClientP
       >
         <h2 className="mb-1 text-sm font-bold text-red-700">Danger zone</h2>
         <p className="mb-4 text-xs text-[#64748B]">
-          Disconnecting this mailbox will stop all sync and remove Slipwise's access. Existing thread data is retained but will no longer update.
+          Disconnecting this mailbox will stop all sync and remove Slipwise&apos;s access. Existing thread data is retained but will no longer update.
         </p>
         <DisconnectPanel
           displayName={connection.displayName}

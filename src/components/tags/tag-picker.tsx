@@ -89,7 +89,9 @@ export function TagPicker({
       inputRef.current.focus();
     }
     if (!open) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional reset on open/close toggle
       setHighlightedIndex(-1);
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional reset on open/close toggle
       setSearch("");
     }
   }, [open]);

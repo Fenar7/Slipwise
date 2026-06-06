@@ -9,6 +9,7 @@ import type { CalendarConnection } from "./types";
 interface MessagingMeetingScheduleProps {
   conversationId?: string | null;
   onClose: () => void;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- callback receives API response shape
   onSuccess?: (meeting: any) => void;
   calendarConnection: CalendarConnection;
 }
@@ -92,8 +93,8 @@ export function MessagingMeetingSchedule({
         onSuccess(data.data);
       }
       onClose();
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to schedule meeting");
     } finally {
       setSubmitting(false);
     }

@@ -46,7 +46,8 @@ describe("MessagingSearchPanel", () => {
       const q = urlObj.searchParams.get("q") || "";
       const kindsParam = urlObj.searchParams.get("kinds") || "";
       
-      let results: any[] = [];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test mock data
+      const results: any[] = [];
       let state = "active";
 
       if (q && q !== "xyznonexistent") {

@@ -265,6 +265,7 @@ export async function updateConnectionHealth(
     throw new NotFoundError("Calendar connection not found");
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic update object: only set fields that are provided
   const updateData: any = {};
   if (status !== undefined) updateData.status = status;
   if (lastSyncError !== undefined) updateData.lastSyncError = lastSyncError;

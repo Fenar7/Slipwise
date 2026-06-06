@@ -20,6 +20,7 @@ export function useNotifications() {
       }
 
       const raw = payload.data.notifications || [];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- raw API notification shape
       const mapped: MessagingNotification[] = raw.map((n: any) => {
         let actorName = "System";
         let actorInitials = "SW";

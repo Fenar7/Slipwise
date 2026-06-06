@@ -22,6 +22,7 @@ export function MessagingNotificationPreferences({
   // UI state
   const [loading, setLoading] = React.useState(true);
   const [saving, setSaving] = React.useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- conversation list shape from API
   const [conversations, setConversations] = React.useState<any[]>([]);
 
   // Keyboard navigation
@@ -63,6 +64,7 @@ export function MessagingNotificationPreferences({
           if (convPayload.success && convPayload.data?.conversations) {
             // Keep only Channels and Groups (no DMs)
             const list = convPayload.data.conversations.filter(
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any -- API response shape
               (c: any) => c.type === "CHANNEL" || c.type === "GROUP",
             );
             setConversations(list);
