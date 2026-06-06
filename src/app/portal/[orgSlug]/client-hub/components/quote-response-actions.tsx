@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { acceptPortalQuote, declinePortalQuote } from "../../actions";
 import { getStaleOutcomeMessage } from "@/lib/portal-quote-helpers";
 
@@ -10,6 +11,7 @@ interface QuoteResponseActionsProps {
 }
 
 export function QuoteResponseActions({ orgSlug, quoteId }: QuoteResponseActionsProps) {
+  const router = useRouter();
   const [mode, setMode] = useState<"idle" | "declining">("idle");
   const [declineReason, setDeclineReason] = useState("");
   const [result, setResult] = useState<{ type: "success" | "error"; message: string } | null>(null);
@@ -23,10 +25,12 @@ export function QuoteResponseActions({ orgSlug, quoteId }: QuoteResponseActionsP
         if (res.data.staleOutcome) {
           setResult({ type: "success", message: getStaleOutcomeMessage(res.data.staleOutcome) });
         } else {
-          setResult({ type: "success", message: `Quote #${res.data.quoteNumber} accepted. We'll be in touch shortly.` });
+          setResult({ type: "success", message: "Quote accepted successfully." });
         }
+        router.refresh();
       } else {
-        setResult({ type: "error", message: res.error });
+        const errorMsg = "error" in res ? res.error : "Failed to accept quote";
+        setResult({ type: "error", message: errorMsg });
       }
     });
   }
@@ -39,10 +43,12 @@ export function QuoteResponseActions({ orgSlug, quoteId }: QuoteResponseActionsP
         if (res.data.staleOutcome) {
           setResult({ type: "success", message: getStaleOutcomeMessage(res.data.staleOutcome) });
         } else {
-          setResult({ type: "success", message: `Quote #${res.data.quoteNumber} declined.` });
+          setResult({ type: "success", message: "Quote declined." });
         }
+        router.refresh();
       } else {
-        setResult({ type: "error", message: res.error });
+        const errorMsg = "error" in res ? res.error : "Failed to decline quote";
+        setResult({ type: "error", message: errorMsg });
       }
     });
   }
@@ -50,10 +56,10 @@ export function QuoteResponseActions({ orgSlug, quoteId }: QuoteResponseActionsP
   if (result) {
     return (
       <div
-        className={`rounded-xl border p-4 ${
+        className={`rounded-xl border p-4 text-[13px] font-semibold ${
           result.type === "success"
-            ? "border-green-200 bg-green-50 text-green-800"
-            : "border-red-200 bg-red-50 text-red-800"
+            ? "border-emerald-100 bg-emerald-50 text-emerald-800"
+            : "border-rose-100 bg-rose-50 text-rose-800"
         }`}
         role="status"
       >
@@ -68,10 +74,10 @@ export function QuoteResponseActions({ orgSlug, quoteId }: QuoteResponseActionsP
         <div>
           <label
             htmlFor="declineReason"
-            className="block text-sm font-medium text-slate-700"
+            className="block text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--hub-text-muted)]"
           >
             Reason for declining{" "}
-            <span className="font-normal text-slate-400">(optional)</span>
+            <span className="font-normal lowercase text-[var(--hub-text-muted)]">(optional)</span>
           </label>
           <textarea
             id="declineReason"
@@ -79,21 +85,21 @@ export function QuoteResponseActions({ orgSlug, quoteId }: QuoteResponseActionsP
             onChange={(e) => setDeclineReason(e.target.value)}
             rows={3}
             placeholder="Let us know why you're declining…"
-            className="mt-1 block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
+            className="mt-1 block w-full rounded-xl border border-[var(--hub-border)] bg-white px-3 py-2 text-sm text-[var(--hub-text-strong)] focus:border-[var(--hub-accent)] focus:outline-none"
           />
         </div>
         <div className="flex items-center gap-3">
           <button
             type="submit"
             disabled={declinePending}
-            className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-700 disabled:opacity-50"
+            className="inline-flex items-center justify-center rounded-xl bg-rose-600 px-6 py-3 text-[13px] font-semibold text-white transition hover:bg-rose-700 disabled:opacity-50"
           >
             {declinePending ? "Submitting…" : "Confirm Decline"}
           </button>
           <button
             type="button"
             onClick={() => setMode("idle")}
-            className="rounded-lg px-4 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100"
+            className="inline-flex items-center justify-center rounded-xl border border-[var(--hub-border)] bg-white px-6 py-3 text-[13px] font-semibold text-[var(--hub-text-strong)] transition hover:bg-[var(--hub-surface-soft)]"
           >
             Cancel
           </button>
@@ -103,17 +109,17 @@ export function QuoteResponseActions({ orgSlug, quoteId }: QuoteResponseActionsP
   }
 
   return (
-    <div className="flex items-center gap-3">
+    <div className="grid gap-3 sm:grid-cols-2">
       <button
         onClick={handleAccept}
         disabled={acceptPending}
-        className="rounded-lg bg-green-600 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-green-700 disabled:opacity-50"
+        className="inline-flex items-center justify-center rounded-xl bg-[var(--hub-accent)] px-6 py-3 text-[13px] font-semibold text-white transition hover:opacity-90 disabled:opacity-50"
       >
         {acceptPending ? "Accepting…" : "Accept Quote"}
       </button>
       <button
         onClick={() => setMode("declining")}
-        className="rounded-lg border border-red-200 px-5 py-2.5 text-sm font-medium text-red-600 transition-colors hover:bg-red-50"
+        className="inline-flex items-center justify-center rounded-xl border border-rose-200 bg-rose-50 px-6 py-3 text-[13px] font-semibold text-rose-700 transition hover:bg-rose-100"
       >
         Decline
       </button>

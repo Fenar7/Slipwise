@@ -3,6 +3,7 @@ import { getEffectiveClientHubConfig } from "../components/config-resolver";
 import { notFound } from "next/navigation";
 import { requirePortalSession } from "@/lib/portal-auth";
 import { getPortalQuotes } from "../../actions";
+import { db } from "@/lib/db";
 
 export default async function ClientHubQuotesPage({
   params,
@@ -18,8 +19,25 @@ export default async function ClientHubQuotesPage({
     notFound();
   }
 
-  const quotesResult = await getPortalQuotes(orgSlug);
-  const quotes = quotesResult.success ? quotesResult.data : [];
+  const [quotesResult, orgDefaults] = await Promise.all([
+    getPortalQuotes(orgSlug),
+    db.orgDefaults.findUnique({
+      where: { organizationId: session.orgId },
+      select: { portalQuoteAcceptanceEnabled: true },
+    }),
+  ]);
 
-  return <ClientHubQuotesView orgSlug={orgSlug} config={config} quotes={quotes} />;
+  const quotes = quotesResult.success ? quotesResult.data : undefined;
+  const quotesError = quotesResult.success ? undefined : (quotesResult.error ?? "Failed to load quotes");
+  const acceptanceEnabled = orgDefaults?.portalQuoteAcceptanceEnabled ?? false;
+
+  return (
+    <ClientHubQuotesView
+      orgSlug={orgSlug}
+      config={config}
+      quotes={quotes}
+      quotesError={quotesError}
+      acceptanceEnabled={acceptanceEnabled}
+    />
+  );
 }

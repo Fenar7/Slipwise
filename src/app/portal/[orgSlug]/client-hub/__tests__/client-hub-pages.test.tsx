@@ -214,6 +214,63 @@ vi.mock("../../actions", () => ({
   getPortalInvoiceDetail: vi.fn().mockImplementation((orgSlug: string, id: string) => Promise.resolve(mockInvoiceDetailData.value(id))),
   getPortalPaymentsData: vi.fn().mockImplementation(() => Promise.resolve(mockPaymentsData.value)),
   getPortalQuotes: vi.fn().mockResolvedValue({ success: true, data: [] }),
+  getPortalQuoteDetail: vi.fn().mockImplementation((_orgSlug: string, quoteId: string) => {
+    const mockQuotes: Record<string, { success: true; data: Record<string, unknown> }> = {
+      "qt-001": {
+        success: true,
+        data: {
+          id: "qt-001",
+          quoteNumber: "QT-000084",
+          title: "Outbound lead generation package",
+          status: "SENT",
+          issueDate: new Date("2025-10-15"),
+          validUntil: new Date("2025-11-12"),
+          subtotal: 2400,
+          taxAmount: 400,
+          discountAmount: 0,
+          totalAmount: 2800,
+          notes: null,
+          termsAndConditions: null,
+          acceptedAt: null,
+          declinedAt: null,
+          declineReason: null,
+          canRespond: true,
+          customer: { name: "Acme Corp" },
+          org: { name: "Zenxvio" },
+          lineItems: [
+            { id: "li-1", description: "Lead Gen Package", quantity: 1, unitPrice: 2400, taxRate: 16.67, amount: 2800 },
+          ],
+        },
+      },
+      "qt-002": {
+        success: true,
+        data: {
+          id: "qt-002",
+          quoteNumber: "QT-000085",
+          title: "SEO optimization",
+          status: "ACCEPTED",
+          issueDate: new Date("2025-09-01"),
+          validUntil: new Date("2025-10-01"),
+          subtotal: 5000,
+          taxAmount: 900,
+          discountAmount: 0,
+          totalAmount: 5900,
+          notes: null,
+          termsAndConditions: null,
+          acceptedAt: new Date("2025-09-15"),
+          declinedAt: null,
+          declineReason: null,
+          canRespond: false,
+          customer: { name: "Acme Corp" },
+          org: { name: "Zenxvio" },
+          lineItems: [
+            { id: "li-2", description: "SEO Service", quantity: 1, unitPrice: 5000, taxRate: 18, amount: 5900 },
+          ],
+        },
+      },
+    };
+    return Promise.resolve(mockQuotes[quoteId] ?? { success: false, error: "not_found" });
+  }),
   initiatePortalPayment: vi.fn().mockResolvedValue({ url: "https://razorpay.com/pay" }),
 }));
 
@@ -222,7 +279,7 @@ import InvoicesPage from "../invoices/page";
 import InvoiceDetailPage from "../invoices/[id]/page";
 import InvoicePaymentPage from "../invoices/[id]/payment/page";
 import QuotesPage from "../quotes/page";
-import QuoteDetailPage from "../quotes/[id]/page";
+import QuoteDetailPage from "../quotes/[quoteId]/page";
 import PaymentsPage from "../payments/page";
 import AboutPage from "../about/page";
 import ContactPage from "../contact/page";
@@ -259,10 +316,11 @@ async function renderAsyncPage(Page: (props: { params: Promise<{ orgSlug: string
 }
 
 async function renderAsyncDetailPage(
-  Page: (props: { params: Promise<{ orgSlug: string; id: string }> }) => Promise<React.ReactElement>,
-  id: string
+  Page: (props: { params: Promise<Record<string, string>> }) => Promise<React.ReactElement>,
+  id: string,
+  paramName: string = "id",
 ) {
-  const jsx = await Page({ params: Promise.resolve({ orgSlug: ORG_SLUG, id }) });
+  const jsx = await Page({ params: Promise.resolve({ orgSlug: ORG_SLUG, [paramName]: id }) });
   return renderToStaticMarkup(jsx);
 }
 
@@ -463,8 +521,26 @@ describe("Client Hub Quotes", () => {
     expect(html).toContain("No quotes found.");
   });
 
+  it("renders truthful failure state when quote loading fails", async () => {
+    const { getPortalQuotes } = await import("../../actions");
+    vi.mocked(getPortalQuotes).mockResolvedValueOnce({ success: false, error: "Database connection lost" });
+
+    const html = await renderAsyncPage(QuotesPage);
+    expect(html).toContain("Unable to load quotes");
+    expect(html).not.toContain("No quotes found.");
+  });
+
+  it("does not show empty state when loading fails", async () => {
+    const { getPortalQuotes } = await import("../../actions");
+    vi.mocked(getPortalQuotes).mockResolvedValueOnce({ success: false, error: "Server error" });
+
+    const html = await renderAsyncPage(QuotesPage);
+    expect(html).not.toContain("No quotes found.");
+    expect(html).toContain("Unable to load quotes");
+  });
+
   it("renders quote detail with response actions for sent quote", async () => {
-    const html = await renderAsyncDetailPage(QuoteDetailPage, "qt-001");
+    const html = await renderAsyncDetailPage(QuoteDetailPage, "qt-001", "quoteId");
     expect(html).toContain("Outbound lead generation package");
     expect(html).toContain("Your Response");
     expect(html).toContain("Accept Quote");
@@ -472,8 +548,22 @@ describe("Client Hub Quotes", () => {
   });
 
   it("renders accepted notice for accepted quote", async () => {
-    const html = await renderAsyncDetailPage(QuoteDetailPage, "qt-002");
+    const html = await renderAsyncDetailPage(QuoteDetailPage, "qt-002", "quoteId");
     expect(html).toContain("You accepted this quote");
+  });
+
+  it("quote list denies access (404) when showQuotes config is disabled", async () => {
+    mockConfig.value.navigation.showQuotes = false;
+    await expect(
+      QuotesPage({ params: Promise.resolve({ orgSlug: ORG_SLUG }) })
+    ).rejects.toThrow("404");
+  });
+
+  it("quote detail denies access (404) when showQuotes config is disabled", async () => {
+    mockConfig.value.navigation.showQuotes = false;
+    await expect(
+      QuoteDetailPage({ params: Promise.resolve({ orgSlug: ORG_SLUG, quoteId: "qt-001" }) })
+    ).rejects.toThrow("404");
   });
 });
 
@@ -1214,5 +1304,75 @@ describe("PaymentMethodSelector Component", () => {
 
     expect(screen.queryByText("Payment Link")).not.toBeInTheDocument();
     expect(screen.queryByText("PROCEED TO SECURE PAYMENT")).not.toBeInTheDocument();
+  });
+});
+
+// ─── Quotes view misleading metrics/CTA prevention ─────────────────────────
+
+describe("Quotes view misleading metrics/CTA prevention", () => {
+  it("suppresses summary metrics when quotesError is set", async () => {
+    const { getPortalQuotes } = await import("../../actions");
+    vi.mocked(getPortalQuotes).mockResolvedValueOnce({ success: false, error: "Database error" });
+
+    const html = await renderAsyncPage(QuotesPage);
+    expect(html).not.toContain("Awaiting Reply");
+    expect(html).not.toContain("Accepted");
+    expect(html).not.toContain("Avg. Quote Value");
+  });
+
+  it("suppresses Open Pending Quote CTA when quotesError is set", async () => {
+    const { getPortalQuotes } = await import("../../actions");
+    vi.mocked(getPortalQuotes).mockResolvedValueOnce({ success: false, error: "Database error" });
+
+    const html = await renderAsyncPage(QuotesPage);
+    expect(html).not.toContain("Open Pending Quote");
+  });
+
+  it("shows summary metrics when quotes load successfully with empty array", async () => {
+    const { getPortalQuotes } = await import("../../actions");
+    vi.mocked(getPortalQuotes).mockResolvedValueOnce({ success: true, data: [] });
+
+    const html = await renderAsyncPage(QuotesPage);
+    expect(html).toContain("Awaiting Reply");
+    expect(html).toContain("Accepted");
+    expect(html).toContain("Avg. Quote Value");
+  });
+
+  it("shows summary metrics when quotes load successfully with populated array", async () => {
+    const { getPortalQuotes } = await import("../../actions");
+    vi.mocked(getPortalQuotes).mockResolvedValueOnce({
+      success: true,
+      data: [
+        {
+          id: "qt-001",
+          quoteNumber: "QT-000084",
+          title: "Lead Gen",
+          status: "SENT",
+          issueDate: new Date(),
+          validUntil: new Date(Date.now() + 86_400_000),
+          totalAmount: 2800,
+          acceptedAt: null,
+          declinedAt: null,
+          canRespond: true,
+        },
+      ],
+    });
+
+    const html = await renderAsyncPage(QuotesPage);
+    expect(html).toContain("Awaiting Reply");
+    expect(html).toContain("Accepted");
+    expect(html).toContain("Avg. Quote Value");
+    expect(html).toContain("Open Pending Quote");
+  });
+
+  it("shows truthful failure state but no misleading metrics on error", async () => {
+    const { getPortalQuotes } = await import("../../actions");
+    vi.mocked(getPortalQuotes).mockResolvedValueOnce({ success: false, error: "Server error" });
+
+    const html = await renderAsyncPage(QuotesPage);
+    expect(html).toContain("Unable to load quotes");
+    expect(html).not.toContain("Awaiting Reply");
+    expect(html).not.toContain("Open Pending Quote");
+    expect(html).not.toContain("No quotes found.");
   });
 });

@@ -10,6 +10,8 @@ import {
   requestPortalOtp,
   verifyPortalOtp,
 } from "@/lib/portal-auth";
+import { canQuoteBeRespondedTo, isQuoteExpired, isQuoteVisibleToPortal, normalizeDeclineReason, type QuoteStaleOutcome } from "@/lib/portal-quote-helpers";
+import { emitQuoteEvent } from "@/lib/document-events";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -428,6 +430,7 @@ export interface PortalQuoteListItem {
   totalAmount: number;
   acceptedAt: Date | null;
   declinedAt: Date | null;
+  canRespond: boolean;
 }
 
 export async function getPortalQuotes(
@@ -437,30 +440,38 @@ export async function getPortalQuotes(
     const session = await requireSession();
     await resolveOrgId(orgSlug, session.orgId);
 
-    const quotes = await db.quote.findMany({
-      where: {
-        orgId: session.orgId,
-        customerId: session.customerId,
-        status: { not: "DRAFT" },
-      },
-      orderBy: { createdAt: "desc" },
-      select: {
-        id: true,
-        quoteNumber: true,
-        title: true,
-        status: true,
-        issueDate: true,
-        validUntil: true,
-        totalAmount: true,
-        acceptedAt: true,
-        declinedAt: true,
-      },
-    });
+    const [quotes, orgDefaults] = await Promise.all([
+      db.quote.findMany({
+        where: {
+          orgId: session.orgId,
+          customerId: session.customerId,
+          status: { not: "DRAFT" },
+        },
+        orderBy: { createdAt: "desc" },
+        select: {
+          id: true,
+          quoteNumber: true,
+          title: true,
+          status: true,
+          issueDate: true,
+          validUntil: true,
+          totalAmount: true,
+          acceptedAt: true,
+          declinedAt: true,
+        },
+      }),
+      db.orgDefaults.findUnique({
+        where: { organizationId: session.orgId },
+        select: { portalQuoteAcceptanceEnabled: true },
+      }),
+    ]);
+
+    const policyEnabled = orgDefaults?.portalQuoteAcceptanceEnabled ?? false;
 
     logPortalAccess({
       orgId: session.orgId,
       customerId: session.customerId,
-      path: `/portal/${orgSlug}/quotes`,
+      path: `/portal/${orgSlug}/client-hub/quotes`,
       action: "list_quotes",
     });
 
@@ -469,6 +480,11 @@ export async function getPortalQuotes(
       data: quotes.map((quote) => ({
         ...quote,
         totalAmount: toAccountingNumber(quote.totalAmount),
+        canRespond: canQuoteBeRespondedTo(
+          quote.status,
+          quote.validUntil,
+          policyEnabled,
+        ),
       })),
     };
   } catch (err) {
@@ -508,7 +524,7 @@ export async function getPortalQuoteDetail(orgSlug: string, quoteId: string) {
     logPortalAccess({
       orgId: session.orgId,
       customerId: session.customerId,
-      path: `/portal/${orgSlug}/quotes/${quoteId}`,
+      path: `/portal/${orgSlug}/client-hub/quotes/${quoteId}`,
       action: "view_quote",
     });
 
@@ -526,10 +542,11 @@ export async function getPortalQuoteDetail(orgSlug: string, quoteId: string) {
           taxRate: toAccountingNumber(item.taxRate),
           amount: toAccountingNumber(item.amount),
         })),
-        canRespond:
-          (orgDefaults?.portalQuoteAcceptanceEnabled ?? false) &&
-          quote.status === "SENT" &&
-          quote.validUntil >= new Date(),
+        canRespond: canQuoteBeRespondedTo(
+          quote.status,
+          quote.validUntil,
+          orgDefaults?.portalQuoteAcceptanceEnabled ?? false,
+        ),
       },
     };
   } catch (err) {
@@ -542,7 +559,7 @@ export async function getPortalQuoteDetail(orgSlug: string, quoteId: string) {
 export async function acceptPortalQuote(
   orgSlug: string,
   quoteId: string,
-): Promise<PortalActionResult<{ quoteNumber: string }>> {
+): Promise<PortalActionResult<{ quoteNumber: string; staleOutcome?: QuoteStaleOutcome }>> {
   try {
     const session = await requireSession();
     await resolveOrgId(orgSlug, session.orgId);
@@ -559,36 +576,93 @@ export async function acceptPortalQuote(
       return { success: false, error: "Quote acceptance is not enabled for this portal" };
     }
 
-    // IDOR + state check
-    const quote = await db.quote.findFirst({
-      where: {
-        id: quoteId,
-        orgId: session.orgId,
-        customerId: session.customerId,
-        status: "SENT",
-        validUntil: { gte: new Date() },
-      },
-      select: { id: true, quoteNumber: true },
+    // Transaction-safe: read + validate + write atomically to prevent races
+    const result = await db.$transaction(async (tx) => {
+      const quote = await tx.quote.findFirst({
+        where: {
+          id: quoteId,
+          orgId: session.orgId,
+          customerId: session.customerId,
+          status: "SENT",
+          validUntil: { gte: new Date() },
+        },
+        select: { id: true, quoteNumber: true },
+      });
+
+      if (!quote) {
+        // Check if quote exists but is in a non-actionable state (for truthful messaging)
+        const existingQuote = await tx.quote.findFirst({
+          where: {
+            id: quoteId,
+            orgId: session.orgId,
+            customerId: session.customerId,
+          },
+          select: { id: true, status: true, quoteNumber: true },
+        });
+
+        if (!existingQuote) {
+          return { status: "not_found" as const };
+        }
+
+        // Fail-closed: DRAFT quotes must never be revealed to portal customers
+        if (!isQuoteVisibleToPortal(existingQuote.status)) {
+          return { status: "not_found" as const };
+        }
+
+        // Map raw status to customer-safe stale outcome
+        const staleOutcome: QuoteStaleOutcome =
+          existingQuote.status === "ACCEPTED"
+            ? "already_accepted"
+            : existingQuote.status === "DECLINED"
+              ? "already_declined"
+              : existingQuote.status === "CONVERTED"
+                ? "converted"
+                : "expired";
+
+        return {
+          status: "already_handled" as const,
+          quoteNumber: existingQuote.quoteNumber,
+          staleOutcome,
+        };
+      }
+
+      const updated = await tx.quote.update({
+        where: { id: quote.id },
+        data: { status: "ACCEPTED", acceptedAt: new Date() },
+        select: { quoteNumber: true },
+      });
+
+      return { status: "accepted" as const, quoteNumber: updated.quoteNumber };
     });
 
-    if (!quote) {
-      return { success: false, error: "Quote not available for acceptance" };
+    if (result.status === "not_found") {
+      return { success: false, error: "Quote not found" };
     }
 
-    const updated = await db.quote.update({
-      where: { id: quote.id },
-      data: { status: "ACCEPTED", acceptedAt: new Date() },
-      select: { quoteNumber: true, orgId: true, customerId: true },
-    });
+    if (result.status === "already_handled") {
+      return {
+        success: true,
+        data: {
+          quoteNumber: result.quoteNumber,
+          staleOutcome: result.staleOutcome,
+        },
+      };
+    }
 
     logPortalAccess({
       orgId: session.orgId,
       customerId: session.customerId,
-      path: `/portal/${orgSlug}/quotes/${quoteId}/accept`,
+      path: `/portal/${orgSlug}/client-hub/quotes/${quoteId}/accept`,
       action: "accept_quote",
     });
 
-    // Sprint 25.1: fire quote.accepted workflow trigger
+    // Emit normalized document event for quote acceptance
+    void emitQuoteEvent(session.orgId, quoteId, "quote_accepted", {
+      actorId: session.customerId,
+      metadata: { quoteNumber: result.quoteNumber, source: "portal" },
+    });
+
+    // Fire quote.accepted workflow trigger
     const { fireWorkflowTrigger } = await import("@/lib/flow/workflow-engine");
     void fireWorkflowTrigger({
       triggerType: "quote.accepted",
@@ -597,10 +671,10 @@ export async function acceptPortalQuote(
       sourceEntityType: "Quote",
       sourceEntityId: quoteId,
       actorId: session.customerId,
-      payload: { quoteNumber: updated.quoteNumber, customerId: session.customerId },
+      payload: { quoteNumber: result.quoteNumber, customerId: session.customerId },
     });
 
-    return { success: true, data: { quoteNumber: updated.quoteNumber } };
+    return { success: true, data: { quoteNumber: result.quoteNumber } };
   } catch (err) {
     return { success: false, error: err instanceof Error ? err.message : "Failed to accept quote" };
   }
@@ -612,10 +686,16 @@ export async function declinePortalQuote(
   orgSlug: string,
   quoteId: string,
   reason?: string,
-): Promise<PortalActionResult<{ quoteNumber: string }>> {
+): Promise<PortalActionResult<{ quoteNumber: string; staleOutcome?: QuoteStaleOutcome }>> {
   try {
     const session = await requireSession();
     await resolveOrgId(orgSlug, session.orgId);
+
+    // Server-side validation: normalize and validate decline reason
+    const normalizedReason = normalizeDeclineReason(reason);
+    if (!normalizedReason.valid) {
+      return { success: false, error: normalizedReason.error };
+    }
 
     // Check portal enabled + policy
     const orgDefaults = await db.orgDefaults.findUnique({
@@ -629,40 +709,96 @@ export async function declinePortalQuote(
       return { success: false, error: "Quote responses are not enabled for this portal" };
     }
 
-    // IDOR + state check
-    const quote = await db.quote.findFirst({
-      where: {
-        id: quoteId,
-        orgId: session.orgId,
-        customerId: session.customerId,
-        status: "SENT",
-        validUntil: { gte: new Date() },
-      },
-      select: { id: true, quoteNumber: true },
+    // Transaction-safe: read + validate + write atomically to prevent races
+    const result = await db.$transaction(async (tx) => {
+      const quote = await tx.quote.findFirst({
+        where: {
+          id: quoteId,
+          orgId: session.orgId,
+          customerId: session.customerId,
+          status: "SENT",
+          validUntil: { gte: new Date() },
+        },
+        select: { id: true, quoteNumber: true },
+      });
+
+      if (!quote) {
+        const existingQuote = await tx.quote.findFirst({
+          where: {
+            id: quoteId,
+            orgId: session.orgId,
+            customerId: session.customerId,
+          },
+          select: { id: true, status: true, quoteNumber: true },
+        });
+
+        if (!existingQuote) {
+          return { status: "not_found" as const };
+        }
+
+        // Fail-closed: DRAFT quotes must never be revealed to portal customers
+        if (!isQuoteVisibleToPortal(existingQuote.status)) {
+          return { status: "not_found" as const };
+        }
+
+        // Map raw status to customer-safe stale outcome
+        const staleOutcome: QuoteStaleOutcome =
+          existingQuote.status === "ACCEPTED"
+            ? "already_accepted"
+            : existingQuote.status === "DECLINED"
+              ? "already_declined"
+              : existingQuote.status === "CONVERTED"
+                ? "converted"
+                : "expired";
+
+        return {
+          status: "already_handled" as const,
+          quoteNumber: existingQuote.quoteNumber,
+          staleOutcome,
+        };
+      }
+
+      const updated = await tx.quote.update({
+        where: { id: quote.id },
+        data: {
+          status: "DECLINED",
+          declinedAt: new Date(),
+          declineReason: normalizedReason.reason,
+        },
+        select: { quoteNumber: true },
+      });
+
+      return { status: "declined" as const, quoteNumber: updated.quoteNumber };
     });
 
-    if (!quote) {
-      return { success: false, error: "Quote not available for response" };
+    if (result.status === "not_found") {
+      return { success: false, error: "Quote not found" };
     }
 
-    const updated = await db.quote.update({
-      where: { id: quote.id },
-      data: {
-        status: "DECLINED",
-        declinedAt: new Date(),
-        declineReason: reason ?? null,
-      },
-      select: { quoteNumber: true },
-    });
+    if (result.status === "already_handled") {
+      return {
+        success: true,
+        data: {
+          quoteNumber: result.quoteNumber,
+          staleOutcome: result.staleOutcome,
+        },
+      };
+    }
 
     logPortalAccess({
       orgId: session.orgId,
       customerId: session.customerId,
-      path: `/portal/${orgSlug}/quotes/${quoteId}/decline`,
+      path: `/portal/${orgSlug}/client-hub/quotes/${quoteId}/decline`,
       action: "decline_quote",
     });
 
-    // Sprint 25.1: fire quote.declined workflow trigger
+    // Emit normalized document event for quote decline
+    void emitQuoteEvent(session.orgId, quoteId, "quote_declined", {
+      actorId: session.customerId,
+      metadata: { quoteNumber: result.quoteNumber, source: "portal", reason: normalizedReason.reason },
+    });
+
+    // Fire quote.declined workflow trigger
     const { fireWorkflowTrigger } = await import("@/lib/flow/workflow-engine");
     void fireWorkflowTrigger({
       triggerType: "quote.declined",
@@ -671,10 +807,10 @@ export async function declinePortalQuote(
       sourceEntityType: "Quote",
       sourceEntityId: quoteId,
       actorId: session.customerId,
-      payload: { quoteNumber: updated.quoteNumber, reason: reason ?? null, customerId: session.customerId },
+      payload: { quoteNumber: result.quoteNumber, reason: normalizedReason.reason, customerId: session.customerId },
     });
 
-    return { success: true, data: { quoteNumber: updated.quoteNumber } };
+    return { success: true, data: { quoteNumber: result.quoteNumber } };
   } catch (err) {
     return { success: false, error: err instanceof Error ? err.message : "Failed to decline quote" };
   }
