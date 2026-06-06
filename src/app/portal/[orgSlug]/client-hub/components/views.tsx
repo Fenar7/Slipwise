@@ -1,11 +1,9 @@
 import Link from "next/link";
 import type { CSSProperties, ReactNode, SVGProps } from "react";
 import type { ClientHubConfig } from "./customization-contract";
-import {
-  getMockQuote,
-} from "./mock-data";
 import { DEFAULT_CLIENT_HUB_CONFIG } from "@/app/app/settings/portal/client-hub/components/mock-config";
 import { PaymentMethodSelector, getActionablePaymentMethods } from "./payment-method-selector";
+import { QuoteResponseActions } from "./quote-response-actions";
 
 export const DEFAULT_HUB_ACCENT = "#e8401e";
 
@@ -1179,7 +1177,9 @@ export function ClientHubPaymentSelectionView({
 export function ClientHubQuotesView({
   orgSlug,
   config,
-  quotes = [],
+  quotes,
+  quotesError,
+  acceptanceEnabled = true,
 }: {
   orgSlug: string;
   config?: ClientHubConfig;
@@ -1193,15 +1193,19 @@ export function ClientHubQuotesView({
     totalAmount: number;
     acceptedAt: Date | null;
     declinedAt: Date | null;
+    canRespond: boolean;
   }>;
+  quotesError?: string;
+  acceptanceEnabled?: boolean;
 }) {
   const hubConfig = getHubConfig(config);
   const basePath = `/portal/${orgSlug}/client-hub/quotes`;
   const now = new Date();
-  const openQuotes = quotes.filter((q) => q.status === "SENT" && new Date(q.validUntil) >= now).length;
-  const acceptedCount = quotes.filter((q) => q.status === "ACCEPTED").length;
-  const avgValue = quotes.length > 0
-    ? formatCurrency(Math.round(quotes.reduce((sum, q) => sum + q.totalAmount, 0) / quotes.length))
+  const quoteList = quotes ?? [];
+  const openQuotes = quoteList.filter((q) => q.status === "SENT" && new Date(q.validUntil) >= now).length;
+  const acceptedCount = quoteList.filter((q) => q.status === "ACCEPTED").length;
+  const avgValue = quoteList.length > 0
+    ? formatCurrency(Math.round(quoteList.reduce((sum, q) => sum + q.totalAmount, 0) / quoteList.length))
     : "—";
 
   return (
@@ -1220,28 +1224,48 @@ export function ClientHubQuotesView({
               </Link>
             </div>
           </div>
-          <div className="grid gap-4 px-6 py-6 sm:px-8 lg:grid-cols-3">
-            <SummaryMetric label="Awaiting Reply" value={`${openQuotes}`} hint="Quotations still awaiting your decision" />
-            <SummaryMetric label="Accepted" value={`${acceptedCount}`} hint="Already confirmed this cycle" />
-            <SummaryMetric label="Avg. Quote Value" value={avgValue} hint="Based on your current proposals" />
-          </div>
+          {!quotesError && quotes !== undefined && (
+            <div className="grid gap-4 px-6 py-6 sm:px-8 lg:grid-cols-3">
+              <SummaryMetric label="Awaiting Reply" value={`${openQuotes}`} hint="Quotations still awaiting your decision" />
+              <SummaryMetric label="Accepted" value={`${acceptedCount}`} hint="Already confirmed this cycle" />
+              <SummaryMetric label="Avg. Quote Value" value={avgValue} hint="Based on your current proposals" />
+            </div>
+          )}
         </ShellCard>
         <div className="space-y-3">
-          {quotes.length === 0 ? (
+          {!acceptanceEnabled && (
+            <ShellCard className="border-amber-200 bg-amber-50/60 p-5">
+              <p className="text-[13px] font-semibold text-amber-800">
+                Quote responses are not currently enabled for this portal. You can view quotes but cannot accept or decline them at this time.
+              </p>
+            </ShellCard>
+          )}
+          {quotesError ? (
+            <ShellCard className="border-rose-200 bg-rose-50/60 p-5">
+              <p className="text-[13px] font-semibold text-rose-800">
+                Unable to load quotes. Please try again or contact support if this persists.
+              </p>
+            </ShellCard>
+          ) : quoteList.length === 0 ? (
             <ShellCard className="p-8 text-center">
               <p className="text-[13px] text-[var(--hub-text-soft)]">No quotes found.</p>
             </ShellCard>
           ) : (
-            quotes.map((quote) => (
-              <ShellCard key={quote.id} className="p-5 sm:p-6">
-                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-3">
-                      <h2 className="text-base font-semibold tracking-[-0.01em] text-[var(--hub-text-strong)] sm:text-lg">{quote.title}</h2>
-                      <StatusPill className={getStatusStyles(quote.status)}>{quote.status}</StatusPill>
+              quotes.map((quote) => (
+                <ShellCard key={quote.id} className="p-5 sm:p-6">
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-3">
+                        <h2 className="text-base font-semibold tracking-[-0.01em] text-[var(--hub-text-strong)] sm:text-lg">{quote.title}</h2>
+                        <StatusPill className={getStatusStyles(quote.status)}>{quote.status}</StatusPill>
+                        {quote.canRespond && (
+                          <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700 ring-1 ring-amber-200/60">
+                            Action Needed
+                          </span>
+                        )}
+                      </div>
+                      <p className="mt-1.5 text-[13px] text-[var(--hub-text-soft)]">Quote #{quote.quoteNumber} · Valid until {new Date(quote.validUntil).toLocaleDateString()}</p>
                     </div>
-                    <p className="mt-1.5 text-[13px] text-[var(--hub-text-soft)]">Quote #{quote.quoteNumber} · Valid until {new Date(quote.validUntil).toLocaleDateString()}</p>
-                  </div>
                   <div className="flex shrink-0 items-center gap-4 sm:text-right">
                     <p className="text-lg font-semibold text-[var(--hub-text-strong)]">{formatCurrency(quote.totalAmount)}</p>
                     <Link href={`/portal/${orgSlug}/client-hub/quotes/${quote.id}`} className="rounded-lg border border-[var(--hub-border)] bg-white px-4 py-2 text-[13px] font-semibold text-[var(--hub-text-strong)] transition hover:bg-[var(--hub-surface-soft)]">
@@ -1255,28 +1279,65 @@ export function ClientHubQuotesView({
         </div>
       </div>
 
-      <WorkspaceSupportRail
-        orgSlug={orgSlug}
-        config={hubConfig}
-        primaryHref={`/portal/${orgSlug}/client-hub/quotes/${quotes[0]?.id ?? "#"}`}
-        primaryLabel="Open Pending Quote"
-      />
+      {!quotesError && quoteList.length > 0 && (
+        <WorkspaceSupportRail
+          orgSlug={orgSlug}
+          config={hubConfig}
+          primaryHref={`/portal/${orgSlug}/client-hub/quotes/${quoteList[0]?.id ?? "#"}`}
+          primaryLabel="Open Pending Quote"
+        />
+      )}
     </div>
   );
 }
 
 export function ClientHubQuoteDetailView({
-  quoteId,
-  orgSlug = "acme",
+  orgSlug,
+  quote,
   config,
 }: {
-  quoteId: string;
-  orgSlug?: string;
+  orgSlug: string;
+  quote: {
+    id: string;
+    quoteNumber: string;
+    title: string;
+    status: string;
+    issueDate: Date | string;
+    validUntil: Date | string;
+    subtotal: number;
+    taxAmount: number;
+    discountAmount: number;
+    totalAmount: number;
+    notes: string | null;
+    termsAndConditions: string | null;
+    acceptedAt: Date | string | null;
+    declinedAt: Date | string | null;
+    declineReason: string | null;
+    canRespond: boolean;
+    customerName: string;
+    orgName: string;
+    lineItems: Array<{
+      id: string;
+      description: string;
+      quantity: number;
+      unitPrice: number;
+      taxRate: number;
+      amount: number;
+    }>;
+  };
   config?: ClientHubConfig;
 }) {
   const hubConfig = getHubConfig(config);
-  const quote = getMockQuote(quoteId);
-  if (!quote) return null;
+  const issueDateStr = new Date(quote.issueDate).toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+  const validUntilStr = new Date(quote.validUntil).toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
 
   return (
     <div className="space-y-6">
@@ -1291,10 +1352,35 @@ export function ClientHubQuoteDetailView({
           <span className="text-base font-bold text-[var(--hub-accent)]">Q</span>
         </div>
         <p className="mt-4 text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--hub-text-muted)]">Quotation</p>
-        <h1 className="mt-5 text-[28px] font-semibold tracking-[-0.03em] text-[var(--hub-text-strong)] sm:text-[34px]">Hi Hadi Azeez,</h1>
+        <h1 className="mt-5 text-[28px] font-semibold tracking-[-0.03em] text-[var(--hub-text-strong)] sm:text-[34px]">Hi {quote.customerName},</h1>
         <p className="mx-auto mt-3 max-w-xl text-[15px] leading-7 text-[var(--hub-text-soft)]">Please review the quotation details below.</p>
         <p className="mx-auto mt-2 max-w-xl text-sm font-medium text-[var(--hub-text-strong)]">{quote.title}</p>
       </section>
+
+      {/* Status notices */}
+      {quote.status === "ACCEPTED" && quote.acceptedAt && (
+        <div className="mx-auto max-w-[880px] rounded-xl border border-emerald-200 bg-emerald-50 px-5 py-3.5 text-sm font-semibold text-emerald-800">
+          You accepted this quote on {new Date(quote.acceptedAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}.
+        </div>
+      )}
+      {quote.status === "DECLINED" && quote.declinedAt && (
+        <div className="mx-auto max-w-[880px] rounded-xl border border-rose-200 bg-rose-50 px-5 py-3.5 text-sm font-semibold text-rose-800">
+          You declined this quote on {new Date(quote.declinedAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}.
+          {quote.declineReason && (
+            <p className="mt-1 text-[13px] font-normal text-rose-700">Reason: {quote.declineReason}</p>
+          )}
+        </div>
+      )}
+      {quote.status === "EXPIRED" && (
+        <div className="mx-auto max-w-[880px] rounded-xl border border-slate-200 bg-slate-50 px-5 py-3.5 text-sm font-semibold text-slate-600">
+          This quote has expired and is no longer available for response.
+        </div>
+      )}
+      {quote.status === "CONVERTED" && (
+        <div className="mx-auto max-w-[880px] rounded-xl border border-teal-200 bg-teal-50 px-5 py-3.5 text-sm font-semibold text-teal-800">
+          This quote was accepted and converted to an invoice.
+        </div>
+      )}
 
       <div className="-mt-12 px-2 sm:px-4">
         <ShellCard className="mx-auto max-w-[880px] overflow-hidden">
@@ -1303,47 +1389,47 @@ export function ClientHubQuoteDetailView({
               <h2 className="text-xl font-semibold tracking-[-0.02em] text-[var(--hub-text-strong)] sm:text-2xl">Quotation #{quote.quoteNumber}</h2>
               <StatusPill className={getStatusStyles(quote.status)}>{quote.status}</StatusPill>
             </div>
-            <div className="flex items-center gap-2 text-[var(--hub-text-muted)]">
-              <button type="button" className="flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--hub-border)] bg-white text-[var(--hub-text-soft)] transition hover:bg-[var(--hub-surface-soft)]" aria-label="Print quote"><Glyph name="print" className="h-4 w-4" /></button>
-              <button type="button" className="flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--hub-border)] bg-white text-[var(--hub-text-soft)] transition hover:bg-[var(--hub-surface-soft)]" aria-label="Download quote"><Glyph name="download" className="h-4 w-4" /></button>
-            </div>
           </div>
 
           <div className="grid gap-6 px-6 py-5 sm:px-8 sm:py-6 md:grid-cols-3">
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--hub-text-muted)]">From</p>
-              <p className="mt-1.5 text-base font-semibold text-[var(--hub-text-strong)]">{orgSlug.charAt(0).toUpperCase() + orgSlug.slice(1)}</p>
+              <p className="mt-1.5 text-base font-semibold text-[var(--hub-text-strong)]">{quote.orgName}</p>
             </div>
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--hub-text-muted)]">To</p>
-              <p className="mt-1.5 text-base font-semibold text-[var(--hub-text-strong)]">Hadi Azeez</p>
+              <p className="mt-1.5 text-base font-semibold text-[var(--hub-text-strong)]">{quote.customerName}</p>
             </div>
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--hub-text-muted)]">Issue Date</p>
-              <p className="mt-1.5 text-base font-semibold text-[var(--hub-text-strong)]">{quote.issueDate}</p>
+              <p className="mt-1.5 text-base font-semibold text-[var(--hub-text-strong)]">{issueDateStr}</p>
             </div>
           </div>
 
-          {quote.canRespond ? (
-            <div className="px-6 pb-5 sm:px-8 sm:pb-6">
-              <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--hub-text-muted)]">Your Response</h3>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <button type="button" disabled className="inline-flex items-center justify-center rounded-xl bg-[var(--hub-accent)] px-6 py-3 text-[13px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-80">
-                  Accept Quote
-                </button>
-                <button type="button" disabled className="inline-flex items-center justify-center rounded-xl border border-rose-200 bg-rose-50 px-6 py-3 text-[13px] font-semibold text-rose-700 disabled:cursor-not-allowed disabled:opacity-80">
-                  Decline
-                </button>
-              </div>
+          <div className="grid gap-6 border-t border-[var(--hub-border)] px-6 py-5 sm:px-8 sm:py-6 md:grid-cols-2">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--hub-text-muted)]">Valid Until</p>
+              <p className="mt-1.5 text-base font-semibold text-[var(--hub-text-strong)]">{validUntilStr}</p>
             </div>
-          ) : (
-            <div className="px-6 pb-5 sm:px-8 sm:pb-6">
-              <div className="rounded-xl border border-emerald-100 bg-emerald-50/70 px-5 py-3.5 text-sm font-semibold text-emerald-800">You accepted this quote.</div>
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--hub-text-muted)]">Quote Total</p>
+              <p className="mt-1.5 text-base font-semibold text-[var(--hub-accent)]">{formatCurrency(quote.totalAmount)}</p>
+            </div>
+          </div>
+
+          {quote.canRespond && (
+            <div className="border-t border-[var(--hub-border)] px-6 py-5 sm:px-8 sm:pb-6">
+              <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--hub-text-muted)]">Your Response</h3>
+              <p className="mb-4 text-[13px] text-[var(--hub-text-soft)]">
+                Please review the quote and let us know your decision before {validUntilStr}.
+              </p>
+              <QuoteResponseActions orgSlug={orgSlug} quoteId={quote.id} />
             </div>
           )}
         </ShellCard>
       </div>
 
+      {/* Line Items */}
       <ShellCard className="mx-auto max-w-[880px] overflow-hidden">
         <div className="border-b border-[var(--hub-border)] px-6 py-4 sm:px-8">
           <h3 className="text-base font-semibold tracking-[-0.01em] text-[var(--hub-text-strong)]">Items</h3>
@@ -1353,20 +1439,24 @@ export function ClientHubQuoteDetailView({
             <thead className="bg-[var(--hub-surface-soft)] text-left">
               <tr>
                 <th className="px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--hub-text-muted)]">No</th>
-                <th className="px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--hub-text-muted)]">Item</th>
-                <th className="px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--hub-text-muted)]">User</th>
-                <th className="px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--hub-text-muted)]">Price</th>
-                <th className="px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--hub-text-muted)]">Total</th>
+                <th className="px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--hub-text-muted)]">Description</th>
+                <th className="px-6 py-3 text-right text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--hub-text-muted)]">Qty</th>
+                <th className="px-6 py-3 text-right text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--hub-text-muted)]">Unit Price</th>
+                <th className="px-6 py-3 text-right text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--hub-text-muted)]">Tax</th>
+                <th className="px-6 py-3 text-right text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--hub-text-muted)]">Amount</th>
               </tr>
             </thead>
             <tbody>
-              <tr className="border-b border-[var(--hub-border)]">
-                <td className="px-6 py-3.5 text-sm text-[var(--hub-text-soft)]">1</td>
-                <td className="px-6 py-3.5 text-sm font-semibold text-[var(--hub-text-strong)]">LinkedIn inbox yearly</td>
-                <td className="px-6 py-3.5 text-sm text-[var(--hub-text-soft)]">-</td>
-                <td className="px-6 py-3.5 text-sm text-[var(--hub-text-soft)]">{formatCurrency(quote.totalAmount)}</td>
-                <td className="px-6 py-3.5 text-sm font-semibold text-[var(--hub-text-strong)]">{formatCurrency(quote.totalAmount)}</td>
-              </tr>
+              {quote.lineItems.map((item, idx) => (
+                <tr key={item.id} className="border-b border-[var(--hub-border)] last:border-b-0 transition hover:bg-[var(--hub-surface-soft)]/40">
+                  <td className="px-6 py-3.5 text-sm text-[var(--hub-text-soft)]">{idx + 1}</td>
+                  <td className="px-6 py-3.5 text-sm font-semibold text-[var(--hub-text-strong)]">{item.description}</td>
+                  <td className="px-6 py-3.5 text-sm text-right text-[var(--hub-text-soft)]">{item.quantity}</td>
+                  <td className="px-6 py-3.5 text-sm text-right text-[var(--hub-text-soft)]">{formatCurrency(item.unitPrice)}</td>
+                  <td className="px-6 py-3.5 text-sm text-right text-[var(--hub-text-soft)]">{item.taxRate > 0 ? `${item.taxRate}%` : "—"}</td>
+                  <td className="px-6 py-3.5 text-sm text-right font-semibold text-[var(--hub-text-strong)]">{formatCurrency(item.amount)}</td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
@@ -1374,8 +1464,20 @@ export function ClientHubQuoteDetailView({
           <div className="ml-auto max-w-xs space-y-2.5 text-sm">
             <div className="flex items-center justify-between">
               <span className="text-[var(--hub-text-soft)]">Subtotal</span>
-              <span className="font-semibold text-[var(--hub-text-strong)]">{formatCurrency(quote.totalAmount)}</span>
+              <span className="font-semibold text-[var(--hub-text-strong)]">{formatCurrency(quote.subtotal)}</span>
             </div>
+            {quote.discountAmount > 0 && (
+              <div className="flex items-center justify-between">
+                <span className="text-[var(--hub-text-soft)]">Discount</span>
+                <span className="font-semibold text-emerald-600">− {formatCurrency(quote.discountAmount)}</span>
+              </div>
+            )}
+            {quote.taxAmount > 0 && (
+              <div className="flex items-center justify-between">
+                <span className="text-[var(--hub-text-soft)]">Tax</span>
+                <span className="font-semibold text-[var(--hub-text-strong)]">{formatCurrency(quote.taxAmount)}</span>
+              </div>
+            )}
             <div className="flex items-center justify-between border-t border-[var(--hub-border)] pt-2.5">
               <span className="text-base font-semibold text-[var(--hub-text-strong)]">Total</span>
               <span className="text-base font-semibold text-[var(--hub-accent)]">{formatCurrency(quote.totalAmount)}</span>
@@ -1383,6 +1485,24 @@ export function ClientHubQuoteDetailView({
           </div>
         </div>
       </ShellCard>
+
+      {/* Notes / Terms */}
+      {(quote.notes || quote.termsAndConditions) && (
+        <div className="mx-auto max-w-[880px] grid gap-4 sm:grid-cols-2">
+          {quote.notes && (
+            <ShellCard className="p-5">
+              <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--hub-text-muted)]">Notes</h3>
+              <p className="text-[13px] leading-6 text-[var(--hub-text-soft)] whitespace-pre-wrap">{quote.notes}</p>
+            </ShellCard>
+          )}
+          {quote.termsAndConditions && (
+            <ShellCard className="p-5">
+              <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--hub-text-muted)]">Terms &amp; Conditions</h3>
+              <p className="text-[13px] leading-6 text-[var(--hub-text-soft)] whitespace-pre-wrap">{quote.termsAndConditions}</p>
+            </ShellCard>
+          )}
+        </div>
+      )}
     </div>
   );
 }
