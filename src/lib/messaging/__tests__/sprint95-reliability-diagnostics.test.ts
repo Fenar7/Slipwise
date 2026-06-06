@@ -2,8 +2,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
-// Mock db client
-vi.mock("@/lib/db", () => {
+// vi.mock factories are hoisted above all top-level code. Use vi.hoisted()
+// to create shared mock references that survive hoisting.
+const { _db } = vi.hoisted(() => {
   const mocks = {
     conversationParticipant: {
       findMany: vi.fn(),
@@ -101,7 +102,11 @@ vi.mock("@/lib/db", () => {
     ...mocks,
     $transaction: vi.fn((cb: any) => cb(db)),
   };
-  return { db };
+  return { _db: db };
+});
+
+vi.mock("@/lib/db", () => {
+  return { db: _db };
 });
 
 vi.mock("@/lib/notifications", () => ({
@@ -159,6 +164,7 @@ vi.mock("@/lib/rate-limit", () => ({
 }));
 
 import { db } from "@/lib/db";
+
 import { createNotification } from "@/lib/notifications";
 import { searchMessaging } from "../search-service";
 import { dispatchDueTaskReminders } from "../task-reminders";
@@ -389,6 +395,7 @@ describe("Sprint 9.5 — Reliability, Diagnostics, Performance, and Phase Closeo
         },
       ] as any);
 
+      vi.mocked(db.conversationMeeting.updateMany).mockResolvedValue({ count: 1 } as any);
       vi.mocked(db.conversationParticipant.findMany).mockResolvedValue([
         { orgId: "org-1", conversationId: "conv-1", userId: "user-1" },
         { orgId: "org-1", conversationId: "conv-1", userId: "user-2" },
@@ -471,8 +478,11 @@ describe("Sprint 9.5 — Reliability, Diagnostics, Performance, and Phase Closeo
 
   describe("Notification Service — Per-Event Error Handling", () => {
     it("continues processing remaining events when one event fails (poison event isolation)", async () => {
-      // Import the REAL processNotificationEvents (not mocked)
-      const { processNotificationEvents: realProcessNotificationEvents } = await vi.importActual<typeof import("../notification-service")>("../notification-service");
+      const { processNotificationEvents: realPNE } = await vi.importActual<typeof import("../notification-service")>("../notification-service");
+
+      // Clear any leaked mockResolvedValueOnce stacks from prior tests
+      vi.mocked(db.conversationEventLog.findMany).mockReset();
+      vi.mocked(db.conversationMessage.findUnique).mockReset();
 
       vi.mocked(db.downstreamConsumptionCheckpoint.findUnique).mockResolvedValue(null);
       vi.mocked(db.orgDefaults.findUnique).mockResolvedValue({ timezone: "UTC" } as any);
@@ -496,8 +506,7 @@ describe("Sprint 9.5 — Reliability, Diagnostics, Performance, and Phase Closeo
             payload: { messageId: "msg-poison" },
             createdAt: new Date(),
           },
-        ] as any)
-        .mockResolvedValueOnce([] as any); // Second batch (no more events)
+        ] as any);
 
       // First message lookup succeeds, second throws
       vi.mocked(db.conversationMessage.findUnique)
@@ -515,7 +524,7 @@ describe("Sprint 9.5 — Reliability, Diagnostics, Performance, and Phase Closeo
       vi.mocked(db.messagingNotificationPreference.findMany).mockResolvedValue([]);
 
       // Should not throw — poison event is caught
-      await realProcessNotificationEvents("org-1", "conv-1");
+      await realPNE("org-1", "conv-1");
 
       // Good event should still produce a notification
       expect(createNotification).toHaveBeenCalledWith(
@@ -673,6 +682,129 @@ describe("Sprint 9.5 — Reliability, Diagnostics, Performance, and Phase Closeo
   // ═══════════════════════════════════════════════════════════════════════════
   // 7. EDGE CASES AND CROSS-CUTTING CONCERNS
   // ═══════════════════════════════════════════════════════════════════════════
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 3B. MEETING REMINDER DURABILITY (Sprint 9.5 Regression Fixes)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  describe("Meeting Reminders — Claim/Success Durability Model", () => {
+    it("sets reminderSentAt on successful dispatch (durable success marker)", async () => {
+      const scheduledAt = new Date(Date.now() + 5 * 60 * 1000);
+      vi.mocked(db.conversationMeeting.findMany).mockResolvedValue([
+        {
+          id: "meet-dur-1", orgId: "org-1", title: "Durable Meeting",
+          scheduledAt, conversationId: "conv-1",
+        },
+      ] as any);
+
+      // updateMany for claim returns count=1 (claim won)
+      vi.mocked(db.conversationMeeting.updateMany).mockResolvedValue({ count: 1 } as any);
+      vi.mocked(db.conversationParticipant.findMany).mockResolvedValue([
+        { orgId: "org-1", conversationId: "conv-1", userId: "user-1" },
+      ] as any);
+      vi.mocked(db.messagingNotificationPreference.findMany).mockResolvedValue([]);
+      vi.mocked(db.conversationReadState.findMany).mockResolvedValue([]);
+      vi.mocked(db.profile.findMany).mockResolvedValue([
+        { id: "user-1", email: "user-1@slipwise.app" },
+      ] as any);
+      vi.mocked(db.messagingAuditEvent.create).mockResolvedValue({} as any);
+
+      const result = await dispatchDueMeetingRemindersSprint93();
+
+      expect(result.dispatched).toBe(1);
+      // First updateMany call is the claim — should set reminderSentAt to now
+      expect(db.conversationMeeting.updateMany).toHaveBeenNthCalledWith(1,
+        expect.objectContaining({
+          where: expect.objectContaining({
+            id: "meet-dur-1",
+            reminderSentAt: null,
+            status: "UPCOMING",
+          }),
+          data: { reminderSentAt: expect.any(Date) },
+        })
+      );
+      // No release call — claim should remain as durable success
+      expect(db.conversationMeeting.updateMany).toHaveBeenCalledTimes(1);
+    });
+
+    it("releases reminderSentAt back to null when all notifications fail", async () => {
+      const scheduledAt = new Date(Date.now() + 5 * 60 * 1000);
+      vi.mocked(db.conversationMeeting.findMany).mockResolvedValue([
+        {
+          id: "meet-fail-1", orgId: "org-1", title: "Failing Meeting",
+          scheduledAt, conversationId: "conv-1",
+        },
+      ] as any);
+
+      const claimNow = new Date();
+      vi.mocked(db.conversationMeeting.updateMany)
+        .mockResolvedValueOnce({ count: 1 } as any)  // claim
+        .mockResolvedValueOnce({ count: 1 } as any);  // release
+      vi.mocked(db.conversationParticipant.findMany).mockResolvedValue([
+        { orgId: "org-1", conversationId: "conv-1", userId: "user-1" },
+      ] as any);
+      vi.mocked(db.messagingNotificationPreference.findMany).mockResolvedValue([]);
+      vi.mocked(db.conversationReadState.findMany).mockResolvedValue([]);
+      vi.mocked(db.profile.findMany).mockResolvedValue([
+        { id: "user-1", email: "user-1@slipwise.app" },
+      ] as any);
+      vi.mocked(db.messagingAuditEvent.create).mockResolvedValue({} as any);
+
+      // All notifications fail
+      vi.mocked(createNotification).mockRejectedValue(new Error("DB timeout"));
+
+      const result = await dispatchDueMeetingRemindersSprint93();
+
+      expect(result.dispatched).toBe(0);
+      expect(result.failedAllNotifications).toBe(1);
+      // Second updateMany call is the release — should set reminderSentAt back to null
+      expect(db.conversationMeeting.updateMany).toHaveBeenNthCalledWith(2,
+        expect.objectContaining({
+          where: expect.objectContaining({
+            id: "meet-fail-1",
+            reminderSentAt: expect.any(Date),
+          }),
+          data: { reminderSentAt: null },
+        })
+      );
+    });
+
+    it("concurrent claim loser skips cleanly (updateMany returns count=0)", async () => {
+      const scheduledAt = new Date(Date.now() + 5 * 60 * 1000);
+      vi.mocked(db.conversationMeeting.findMany).mockResolvedValue([
+        {
+          id: "meet-concur-1", orgId: "org-1", title: "Concurrent Meeting",
+          scheduledAt, conversationId: "conv-1",
+        },
+      ] as any);
+
+      // Claim fails — another worker already claimed it
+      vi.mocked(db.conversationMeeting.updateMany).mockResolvedValue({ count: 0 } as any);
+      vi.mocked(db.messagingAuditEvent.create).mockResolvedValue({} as any);
+
+      const result = await dispatchDueMeetingRemindersSprint93();
+
+      expect(result.dispatched).toBe(0);
+      expect(result.failedAllNotifications).toBe(0);
+      // createNotification should never be called since claim was lost
+      expect(createNotification).not.toHaveBeenCalled();
+    });
+
+    it("repeated sweeps do not re-process a successfully-reminded meeting", async () => {
+      const scheduledAt = new Date(Date.now() + 5 * 60 * 1000);
+      // Meeting already has reminderSentAt set — should NOT appear in candidates
+      vi.mocked(db.conversationMeeting.findMany).mockResolvedValue([] as any);
+      vi.mocked(db.messagingAuditEvent.create).mockResolvedValue({} as any);
+
+      const result = await dispatchDueMeetingRemindersSprint93();
+
+      expect(result.evaluated).toBe(0);
+      expect(result.dispatched).toBe(0);
+      // No claim or notification attempts
+      expect(db.conversationMeeting.updateMany).not.toHaveBeenCalled();
+      expect(createNotification).not.toHaveBeenCalled();
+    });
+  });
 
   describe("Edge Cases — Empty vs Degraded vs Unavailable States", () => {
     it("search returns truthful empty state when no conversations joined", async () => {

@@ -502,6 +502,22 @@ export async function dispatchDueMeetingRemindersSprint93(
       continue;
     }
 
+    // Atomic claim: write reminderSentAt WHERE it IS NULL and status is UPCOMING.
+    // Only the winning concurrent run gets count === 1.
+    const claimed = await db.conversationMeeting.updateMany({
+      where: {
+        id: candidate.id,
+        reminderSentAt: null,
+        status: "UPCOMING",
+      },
+      data: { reminderSentAt: now },
+    });
+
+    if (claimed.count === 0) {
+      // Already claimed by another concurrent sweep — skip cleanly.
+      continue;
+    }
+
     const timezone = timezoneMap.get(candidate.orgId) || "UTC";
     let notifiedCount = 0;
 
@@ -551,13 +567,14 @@ export async function dispatchDueMeetingRemindersSprint93(
     }
 
     if (notifiedCount === 0 && participants.length > 0) {
-      // Release claim
+      // All notifications failed — release claim so next sweep retries.
       await db.conversationMeeting.updateMany({
         where: { id: candidate.id, reminderSentAt: now },
         data: { reminderSentAt: null },
       }).catch(() => {});
       result.failedAllNotifications++;
     } else if (notifiedCount > 0) {
+      // At least one notification succeeded — reminderSentAt stays as durable success marker.
       result.dispatched++;
     }
   }

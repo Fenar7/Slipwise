@@ -1109,10 +1109,11 @@ describe("Sprint 9.3 — Notification Center, Preferences, and Alert Routing", (
       await processNotificationEvents("org-1", "conv-1");
 
       // Sprint 9.5: per-event error handling means the function does NOT throw on partial failure.
-      // user-2 gets notified, user-3's failure is caught and logged, checkpoint is still updated.
+      // user-2 gets notified, user-3's failure is caught and logged.
+      // Checkpoint is NOT advanced past the failed event — cursor 200 stays retryable.
       expect(createdNotifications.filter(n => n.userId === "user-2")).toHaveLength(1);
       expect(createdNotifications.filter(n => n.userId === "user-3")).toHaveLength(0);
-      expect(db.downstreamConsumptionCheckpoint.upsert).toHaveBeenCalled();
+      expect(db.downstreamConsumptionCheckpoint.upsert).not.toHaveBeenCalled();
 
       vi.mocked(createNotification).mockImplementation(async (params: any) => {
         const exists = createdNotifications.some(n => n.userId === params.userId && n.dedupeKey === params.dedupeKey);

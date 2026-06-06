@@ -368,10 +368,20 @@ export async function processNotificationEvents(
       eventTypes: ["conversation.message.created", "conversation.thread.replied"],
     });
 
+    // Track the highest cursor that was successfully processed.
+    // We never advance the checkpoint past a failed event, so failed
+    // events remain retryable on the next invocation.
+    let lastSuccessfulCursor: bigint | undefined;
+
     for (const event of result.events) {
       try {
         const payload = buildNotificationPayload(event);
-        if (!payload || !payload.messageId) continue;
+        if (!payload || !payload.messageId) {
+          // Event has no actionable payload — treat as successfully consumed
+          // (nothing to retry for a missing messageId).
+          lastSuccessfulCursor = event.cursor;
+          continue;
+        }
 
         // Fetch the message and its conversation name
         const message = await db.conversationMessage.findUnique({
@@ -387,7 +397,11 @@ export async function processNotificationEvents(
           },
         });
 
-        if (!message || message.deletedAt) continue;
+        if (!message || message.deletedAt) {
+          // Deleted message — nothing to notify, treat as consumed.
+          lastSuccessfulCursor = event.cursor;
+          continue;
+        }
 
         const actorProfile = await db.profile.findUnique({
           where: { id: payload.actorId },
@@ -563,9 +577,13 @@ export async function processNotificationEvents(
             }
           }
         }
+
+        // Event fully processed — mark cursor as safe to advance past.
+        lastSuccessfulCursor = event.cursor;
       } catch (eventError) {
         // Per-event error handling: log and continue processing remaining events.
-        // This prevents a single poison event from blocking the entire checkpoint.
+        // The checkpoint will NOT advance past this event's cursor, so it
+        // remains retryable on the next invocation.
         console.error(
           `[notification-service] Failed to process event ${event.eventId} (cursor ${event.cursor}):`,
           eventError,
@@ -573,14 +591,16 @@ export async function processNotificationEvents(
       }
     }
 
-    if (result.nextCursor !== undefined) {
+    // Only advance the checkpoint to the last successfully processed cursor.
+    // This ensures failed events remain retryable and no notifications are lost.
+    if (lastSuccessfulCursor !== undefined) {
       await recordConsumptionCheckpoint(db, {
         consumerType: "notification",
         orgId,
         conversationId,
-        cursor: result.nextCursor,
+        cursor: lastSuccessfulCursor,
       });
-      currentCursor = result.nextCursor;
+      currentCursor = lastSuccessfulCursor;
     }
 
     hasMore = result.hasMore;
