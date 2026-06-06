@@ -522,6 +522,9 @@ function DashboardActionBoard({
 }
 
 function SupportCard({ orgSlug, config }: { orgSlug: string; config: ClientHubConfig }) {
+  if (!config.navigation.showAbout) {
+    return null;
+  }
   return (
     <ShellCard className="overflow-hidden">
       <div className="h-32 border-b border-[var(--hub-border)] bg-[var(--hub-surface-soft)] relative overflow-hidden">
@@ -834,10 +837,10 @@ export function ClientHubDashboardView({
         </div>
       )}
 
-      <div className="grid gap-5 xl:grid-cols-[220px_1fr_280px]">
+      <div className={`grid gap-5 ${hubConfig.navigation.showAbout ? "xl:grid-cols-[220px_1fr_280px]" : "xl:grid-cols-[220px_1fr]"}`}>
         <Sidebar orgSlug={orgSlug} config={hubConfig} activePath={basePath} />
         <DashboardActionBoard orgSlug={orgSlug} config={hubConfig} data={data} />
-        <SupportCard orgSlug={orgSlug} config={hubConfig} />
+        {hubConfig.navigation.showAbout && <SupportCard orgSlug={orgSlug} config={hubConfig} />}
       </div>
       <div className="grid gap-5 md:grid-cols-[7fr_5fr]">
         {showPendingInvs && <PendingInvoicesCard orgSlug={orgSlug} data={data} />}

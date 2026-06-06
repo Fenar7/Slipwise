@@ -248,6 +248,15 @@ export async function updateCustomer(
         where: { id },
         data: updateData,
       });
+
+      if (email !== undefined && email !== existing.email) {
+        try {
+          const { revokePortalSession } = await import("@/lib/portal-auth");
+          await revokePortalSession(id, orgId);
+        } catch (err) {
+          console.error("Failed to revoke portal session on email change:", err);
+        }
+      }
     }
 
     if (tagIds !== undefined) {

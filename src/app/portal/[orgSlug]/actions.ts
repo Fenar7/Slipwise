@@ -379,6 +379,11 @@ export async function initiatePortalPayment(
     return { alreadyPaid: false, url: null, error: "Invoice not found." };
   }
 
+  // Fail closed: draft
+  if (invoice.status === "DRAFT") {
+    return { alreadyPaid: false, url: null, error: "Invoice is not ready for payment." };
+  }
+
   // Fail closed: already paid
   if (invoice.status === "PAID") {
     return { alreadyPaid: true, url: null, error: "This invoice has already been paid." };
