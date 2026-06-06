@@ -17,6 +17,7 @@ import {
 interface Column<T = Record<string, unknown>> {
   key: string;
   label: string;
+  render?: (row: T) => React.ReactNode;
   width?: string;
   align?: "left" | "right" | "center";
 }
@@ -26,6 +27,7 @@ interface DataTableProps<T> {
   columns: Column<T>[];
   entityType: string;
   editPath: string;
+  deleteAction: (id: string) => Promise<{ success: boolean; error?: string }>;
   total: number;
   page: number;
   totalPages: number;
@@ -37,6 +39,7 @@ export function DataTable<T extends { id: string }>({
   columns,
   entityType,
   editPath,
+  deleteAction,
   total,
   page,
   totalPages,
@@ -44,6 +47,7 @@ export function DataTable<T extends { id: string }>({
 }: DataTableProps<T>) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const [isPending, startTransition] = useTransition();
   const [search, setSearch] = useState(searchParams.get("search") || "");
 
   const handleSearch = (e: React.FormEvent) => {
@@ -65,7 +69,16 @@ export function DataTable<T extends { id: string }>({
     [router, searchParams]
   );
 
+  const handleDelete = async (id: string) => {
+    if (!confirm(`Delete this ${entityType}?`)) return;
 
+    startTransition(async () => {
+      const result = await deleteAction(id);
+      if (!result.success) {
+        alert(result.error || "Failed to delete");
+      }
+    });
+  };
 
   const goToPage = (newPage: number) => {
     const params = new URLSearchParams(searchParams);
@@ -152,9 +165,11 @@ export function DataTable<T extends { id: string }>({
                         col.align === "center" && "text-center"
                       )}
                     >
-                      {((item as Record<string, unknown>)[
-                        col.key
-                      ] as string) || "—"}
+                      {col.render
+                        ? col.render(item as unknown as T)
+                        : ((item as Record<string, unknown>)[
+                            col.key
+                          ] as string) || "—"}
                     </td>
                   ))}
                   <td className="px-5 py-3 text-right">
@@ -166,6 +181,14 @@ export function DataTable<T extends { id: string }>({
                           <Pencil className="h-3 w-3" />
                           Edit
                         </Link>
+                        <button
+                          onClick={() => handleDelete(item.id)}
+                          disabled={isPending}
+                          className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-[var(--state-danger)] transition-colors hover:bg-[var(--state-danger-soft)] disabled:opacity-50"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                          Delete
+                        </button>
                       </div>
                     </td>
                   </tr>

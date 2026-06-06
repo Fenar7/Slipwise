@@ -27,6 +27,5 @@ export async function uploadPaymentProofFile(input: {
     buildPaymentProofStoragePath(input.orgId, input.invoiceId, resolvedFileName),
     Buffer.from(await input.file.arrayBuffer()),
     input.file.type || "application/octet-stream",
-    { useAdmin: true }
   );
 }

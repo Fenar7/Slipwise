@@ -59,10 +59,7 @@ function isMissingBucketError(error: unknown): error is { message?: string; stat
   }
 
   const candidate = error as { message?: string; statusCode?: string | number };
-  const is404 = candidate.message === "Bucket not found" || candidate.statusCode === "404";
-  const is403 = candidate.statusCode === "403" || candidate.statusCode === 403 || String(candidate.message).includes("row-level security");
-  
-  return is404 || is403;
+  return candidate.message === "Bucket not found" || candidate.statusCode === "404";
 }
 
 async function ensureBucketExists(bucket: StorageBucket): Promise<void> {
