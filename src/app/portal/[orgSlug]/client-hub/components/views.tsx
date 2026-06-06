@@ -114,7 +114,7 @@ function Glyph({
   name,
   className = "h-4 w-4",
 }: {
-  name: "home" | "invoice" | "quote" | "payment" | "products" | "download" | "print" | "arrow";
+  name: "home" | "invoice" | "quote" | "payment" | "products" | "projects" | "download" | "print" | "arrow";
   className?: string;
 }) {
   const base = { className, fill: "none", viewBox: "0 0 24 24", stroke: "currentColor", strokeWidth: 1.8 } as SVGProps<SVGSVGElement>;
@@ -130,6 +130,8 @@ function Glyph({
       return <svg {...base}><rect x="3" y="6" width="18" height="12" rx="2.5" /><path strokeLinecap="round" strokeLinejoin="round" d="M3 10h18M8 15h3" /></svg>;
     case "products":
       return <svg {...base}><path strokeLinecap="round" strokeLinejoin="round" d="m12 3 8 4.5-8 4.5L4 7.5 12 3Z" /><path strokeLinecap="round" strokeLinejoin="round" d="M4 12l8 4.5 8-4.5M4 16.5 12 21l8-4.5" /></svg>;
+    case "projects":
+      return <svg {...base}><path strokeLinecap="round" strokeLinejoin="round" d="M4 5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5Z" /><path strokeLinecap="round" strokeLinejoin="round" d="M14 5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1h-4a1 1 0 0 1-1-1V5Z" /><path strokeLinecap="round" strokeLinejoin="round" d="M4 15a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-4Z" /><path strokeLinecap="round" strokeLinejoin="round" d="M14 15a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1h-4a1 1 0 0 1-1-1v-4Z" /></svg>;
     case "download":
       return <svg {...base}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v10m0 0 4-4m-4 4-4-4M5 19h14" /></svg>;
     case "print":
@@ -163,6 +165,7 @@ function getSidebarItems(orgSlug: string, config?: ClientHubConfig): SidebarItem
     { visible: hubConfig.navigation.showQuotes, href: `${base}/quotes`, label: "Quotes", shortLabel: "Q" },
     { visible: hubConfig.navigation.showPayments, href: `${base}/payments`, label: "Payments", shortLabel: "P" },
     { visible: hubConfig.navigation.showProducts, href: `${base}/products`, label: "Products & Services", shortLabel: "S" },
+    { visible: hubConfig.navigation.showJobs, href: `${base}/jobs`, label: "Projects", shortLabel: "J" },
   ];
   return items.filter((item) => item.visible).map(({ href, label, shortLabel }) => ({ href, label, shortLabel }));
 }
@@ -347,12 +350,13 @@ function Sidebar({
   activePath: string;
 }) {
   const items = getSidebarItems(orgSlug, config);
-  const iconMap: Record<string, "home" | "invoice" | "quote" | "payment" | "products"> = {
+  const iconMap: Record<string, "home" | "invoice" | "quote" | "payment" | "products" | "projects"> = {
     Home: "home",
     Invoices: "invoice",
     Quotes: "quote",
     Payments: "payment",
     "Products & Services": "products",
+    Projects: "projects",
   };
 
   return (
@@ -1659,6 +1663,8 @@ export function ClientHubAboutView({
 }) {
   const hubConfig = getHubConfig(config);
   const basePath = `/portal/${orgSlug}/client-hub/about`;
+  const hasBody = hubConfig.about.body.trim().length > 0;
+  const hasFoundedYear = hubConfig.about.showFoundedYear && hubConfig.about.foundedYear.trim().length > 0;
 
   return (
     <div className="grid gap-5 xl:grid-cols-[220px_1fr]">
@@ -1669,10 +1675,23 @@ export function ClientHubAboutView({
         </div>
         <div className="p-6 sm:p-10">
           <h1 className="text-[28px] font-semibold tracking-[-0.03em] text-[var(--hub-text-strong)] sm:text-[32px]">{hubConfig.about.pageTitle}</h1>
-          <p className="mt-2 text-[15px] leading-7 text-[var(--hub-text-soft)]">{hubConfig.about.heading}</p>
-          <div className="mt-6 rounded-xl border border-[var(--hub-border)] bg-[var(--hub-surface-soft)]/40 p-6 sm:p-8">
-            <p className="text-[15px] leading-8 text-[var(--hub-text-soft)]">{hubConfig.about.body}</p>
-          </div>
+          {hubConfig.about.heading.trim().length > 0 && (
+            <p className="mt-2 text-[15px] leading-7 text-[var(--hub-text-soft)]">{hubConfig.about.heading}</p>
+          )}
+          {hasBody ? (
+            <div className="mt-6 rounded-xl border border-[var(--hub-border)] bg-[var(--hub-surface-soft)]/40 p-6 sm:p-8">
+              <p className="text-[15px] leading-8 text-[var(--hub-text-soft)]">{hubConfig.about.body}</p>
+            </div>
+          ) : (
+            <div className="mt-6 rounded-xl border border-[var(--hub-border)] bg-[var(--hub-surface-soft)]/40 p-6 sm:p-8 text-center">
+              <p className="text-[13px] text-[var(--hub-text-muted)]">About information will appear here once it has been configured.</p>
+            </div>
+          )}
+          {hasFoundedYear && (
+            <div className="mt-5 flex items-center gap-2 text-[13px] text-[var(--hub-text-muted)]">
+              <span>Established {hubConfig.about.foundedYear}</span>
+            </div>
+          )}
         </div>
       </ShellCard>
     </div>
@@ -1688,43 +1707,63 @@ export function ClientHubContactView({
 }) {
   const hubConfig = getHubConfig(config);
   const basePath = `/portal/${orgSlug}/client-hub/contact`;
+  const hasEmail = hubConfig.contact.supportEmail.trim().length > 0;
+  const hasPhone = hubConfig.contact.supportPhone.trim().length > 0;
+  const hasHours = hubConfig.contact.businessHours.trim().length > 0;
+  const hasAnyContact = hasEmail || hasPhone;
 
   return (
     <div className="grid gap-5 xl:grid-cols-[220px_1fr]">
       <Sidebar orgSlug={orgSlug} config={hubConfig} activePath={basePath} />
       <ShellCard className="p-6 sm:p-10">
         <h1 className="text-[28px] font-semibold tracking-[-0.03em] text-[var(--hub-text-strong)] sm:text-[32px]">{hubConfig.contact.pageTitle}</h1>
-        <p className="mt-2 text-[15px] leading-7 text-[var(--hub-text-soft)]">{hubConfig.contact.heading}</p>
+        {hubConfig.contact.heading.trim().length > 0 && (
+          <p className="mt-2 text-[15px] leading-7 text-[var(--hub-text-soft)]">{hubConfig.contact.heading}</p>
+        )}
 
         <div className="mt-6 rounded-xl border border-[var(--hub-border)] bg-[var(--hub-surface-soft)]/40 p-6 sm:p-8">
           <h2 className="text-sm font-semibold text-[var(--hub-text-strong)]">Contact Information</h2>
           <div className="mt-5 grid gap-6 sm:grid-cols-2">
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--hub-text-muted)]">Email</p>
-              <p className="mt-1.5 text-sm font-medium text-[var(--hub-text-strong)]">{hubConfig.contact.supportEmail}</p>
-              <p className="mt-0.5 text-[12px] text-[var(--hub-text-soft)]">We&apos;ll respond within 24 hours</p>
-            </div>
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--hub-text-muted)]">Phone</p>
-              <p className="mt-1.5 text-sm font-medium text-[var(--hub-text-strong)]">{hubConfig.contact.supportPhone}</p>
-              <p className="mt-0.5 text-[12px] text-[var(--hub-text-soft)]">Mon–Fri, 9:00 AM – 6:00 PM GST</p>
-            </div>
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--hub-text-muted)]">Office</p>
-              <p className="mt-1.5 text-sm font-medium text-[var(--hub-text-strong)]">123 Business Street</p>
-              <p className="mt-0.5 text-[12px] text-[var(--hub-text-soft)]">Dubai, United Arab Emirates</p>
-            </div>
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--hub-text-muted)]">Business Hours</p>
-              <p className="mt-1.5 text-[13px] leading-6 text-[var(--hub-text-soft)]">Monday – Friday: 9:00 AM – 6:00 PM<br />Saturday: 10:00 AM – 2:00 PM<br />Sunday: Closed</p>
-            </div>
+            {hasEmail && (
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--hub-text-muted)]">Email</p>
+                <p className="mt-1.5 text-sm font-medium text-[var(--hub-text-strong)]">{hubConfig.contact.supportEmail}</p>
+                <p className="mt-0.5 text-[12px] text-[var(--hub-text-soft)]">We&apos;ll respond within 24 hours</p>
+              </div>
+            )}
+            {hasPhone && (
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--hub-text-muted)]">Phone</p>
+                <p className="mt-1.5 text-sm font-medium text-[var(--hub-text-strong)]">{hubConfig.contact.supportPhone}</p>
+                <p className="mt-0.5 text-[12px] text-[var(--hub-text-soft)]">Mon–Fri, 9:00 AM – 6:00 PM GST</p>
+              </div>
+            )}
+            {hasHours && (
+              <div className={hasEmail && hasPhone ? "" : "sm:col-span-2"}>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--hub-text-muted)]">Business Hours</p>
+                <p className="mt-1.5 text-[13px] leading-6 text-[var(--hub-text-soft)]">{hubConfig.contact.businessHours}</p>
+              </div>
+            )}
+            {!hasAnyContact && !hasHours && (
+              <div className="sm:col-span-2 text-center py-4">
+                <p className="text-[13px] text-[var(--hub-text-muted)]">Contact information will appear here once it has been configured.</p>
+              </div>
+            )}
           </div>
         </div>
 
-        <div className="mt-5 rounded-xl border border-rose-100 bg-rose-50/70 px-6 py-4 sm:px-8">
-          <p className="text-sm font-semibold text-rose-900">Emergency Support</p>
-          <p className="mt-1 text-[13px] text-rose-800">For urgent matters outside business hours, please call our emergency line: +971 XX XXX XXXX</p>
-        </div>
+        {hasAnyContact && (
+          <div className="mt-5 rounded-xl border border-rose-100 bg-rose-50/70 px-6 py-4 sm:px-8">
+            <p className="text-sm font-semibold text-rose-900">Need Help?</p>
+            <p className="mt-1 text-[13px] text-rose-800">
+              {hasEmail && hasPhone
+                ? `Reach out to us at ${hubConfig.contact.supportEmail} or call ${hubConfig.contact.supportPhone} for assistance.`
+                : hasEmail
+                  ? `Reach out to us at ${hubConfig.contact.supportEmail} for assistance.`
+                  : `Call us at ${hubConfig.contact.supportPhone} for assistance.`}
+            </p>
+          </div>
+        )}
       </ShellCard>
     </div>
   );
@@ -1739,19 +1778,101 @@ export function ClientHubProductsView({
 }) {
   const hubConfig = getHubConfig(config);
   const basePath = `/portal/${orgSlug}/client-hub/products`;
+  const hasDescription = hubConfig.products.description.trim().length > 0;
 
   return (
     <div className="grid gap-5 xl:grid-cols-[220px_1fr]">
       <Sidebar orgSlug={orgSlug} config={hubConfig} activePath={basePath} />
       <div className="space-y-5">
         <PageHeader title={hubConfig.products.pageTitle} subtitle={hubConfig.products.heading} />
-        <div className="space-y-3">
-          <div className="rounded-xl border border-[var(--hub-border)] bg-[var(--hub-surface-soft)] px-6 py-8 text-center">
-            <p className="text-[13px] text-[var(--hub-text-soft)]">
-              Your service catalogue will appear here once it has been configured.
+        {hasDescription && (
+          <ShellCard className="p-5 sm:p-6">
+            <p className="text-[15px] leading-7 text-[var(--hub-text-soft)]">{hubConfig.products.description}</p>
+          </ShellCard>
+        )}
+        <ShellCard className="p-8 text-center">
+          <p className="text-[13px] text-[var(--hub-text-soft)]">
+            Your service catalogue will appear here once it has been configured.
+          </p>
+        </ShellCard>
+      </div>
+    </div>
+  );
+}
+
+export type JobsProjectItem = {
+  id: string;
+  title: string;
+  type: "INVOICE" | "QUOTE";
+  referenceNumber: string;
+  status: string;
+  totalAmount: number;
+  createdAt: string;
+  dueDate: string | null;
+};
+
+export function ClientHubJobsView({
+  orgSlug = "acme",
+  config,
+  jobs = [],
+  jobsError,
+}: {
+  orgSlug?: string;
+  config?: ClientHubConfig;
+  jobs?: JobsProjectItem[];
+  jobsError?: string;
+}) {
+  const hubConfig = getHubConfig(config);
+  const basePath = `/portal/${orgSlug}/client-hub/jobs`;
+
+  return (
+    <div className="grid gap-5 xl:grid-cols-[220px_1fr]">
+      <Sidebar orgSlug={orgSlug} config={hubConfig} activePath={basePath} />
+      <div className="space-y-5">
+        <PageHeader title={hubConfig.jobs.pageTitle} subtitle={hubConfig.jobs.heading} />
+        {hubConfig.jobs.description.trim().length > 0 && (
+          <ShellCard className="p-5 sm:p-6">
+            <p className="text-[15px] leading-7 text-[var(--hub-text-soft)]">{hubConfig.jobs.description}</p>
+          </ShellCard>
+        )}
+        {jobsError ? (
+          <ShellCard className="border-rose-200 bg-rose-50/60 p-5">
+            <p className="text-[13px] font-semibold text-rose-800">
+              Unable to load projects. Please try again or contact support if this persists.
             </p>
+          </ShellCard>
+        ) : jobs.length === 0 ? (
+          <ShellCard className="p-8 text-center">
+            <p className="text-[13px] text-[var(--hub-text-soft)]">
+              {hubConfig.jobs.emptyMessage || "No active projects or engagements to display at this time."}
+            </p>
+          </ShellCard>
+        ) : (
+          <div className="space-y-3">
+            {jobs.map((job) => (
+              <ShellCard key={job.id} className="p-5 sm:p-6">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-3">
+                      <h2 className="text-base font-semibold tracking-[-0.01em] text-[var(--hub-text-strong)] sm:text-lg">{job.title}</h2>
+                      <StatusPill className={getStatusStyles(job.status)}>{job.status}</StatusPill>
+                      <span className="inline-flex items-center rounded-full bg-[var(--hub-surface-soft)] px-2 py-0.5 text-[11px] font-semibold text-[var(--hub-text-muted)] ring-1 ring-[var(--hub-border)]">
+                        {job.type === "INVOICE" ? "Invoice" : "Quote"}
+                      </span>
+                    </div>
+                    <p className="mt-1.5 text-[13px] text-[var(--hub-text-soft)]">
+                      #{job.referenceNumber} · Created {new Date(job.createdAt).toLocaleDateString()}
+                      {job.dueDate && ` · Due ${new Date(job.dueDate).toLocaleDateString()}`}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-base font-semibold text-[var(--hub-text-strong)]">{formatCurrency(job.totalAmount)}</p>
+                  </div>
+                </div>
+              </ShellCard>
+            ))}
           </div>
-        </div>
+        )}
       </div>
     </div>
   );

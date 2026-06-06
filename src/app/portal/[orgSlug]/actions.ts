@@ -1083,3 +1083,92 @@ export async function getPortalPaymentsData(orgSlug: string) {
   };
 }
 
+export type PortalJobsProjectItem = {
+  id: string;
+  title: string;
+  type: "INVOICE" | "QUOTE";
+  referenceNumber: string;
+  status: string;
+  totalAmount: number;
+  createdAt: string;
+  dueDate: string | null;
+};
+
+export async function getPortalJobsProjects(orgSlug: string): Promise<PortalJobsProjectItem[]> {
+  const session = await requireSession();
+  await resolveOrgId(orgSlug, session.orgId);
+
+  const invoices = await db.invoice.findMany({
+    where: {
+      organizationId: session.orgId,
+      customerId: session.customerId,
+      status: { notIn: ["DRAFT", "CANCELLED"] },
+    },
+    select: {
+      id: true,
+      invoiceNumber: true,
+      status: true,
+      totalAmount: true,
+      createdAt: true,
+      dueDate: true,
+      lineItems: {
+        select: { name: true },
+        take: 1,
+      },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  const quotes = await db.quote.findMany({
+    where: {
+      organizationId: session.orgId,
+      customerId: session.customerId,
+      status: { notIn: ["DRAFT"] },
+    },
+    select: {
+      id: true,
+      quoteNumber: true,
+      title: true,
+      status: true,
+      totalAmount: true,
+      createdAt: true,
+      validUntil: true,
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  const items: PortalJobsProjectItem[] = [
+    ...invoices.map((inv) => ({
+      id: inv.id,
+      title: inv.lineItems[0]?.name || `Invoice ${inv.invoiceNumber}`,
+      type: "INVOICE" as const,
+      referenceNumber: inv.invoiceNumber ?? "—",
+      status: inv.status,
+      totalAmount: toAccountingNumber(inv.totalAmount),
+      createdAt: formatIsoDate(inv.createdAt),
+      dueDate: inv.dueDate ? formatIsoDate(inv.dueDate) : null,
+    })),
+    ...quotes.map((q) => ({
+      id: q.id,
+      title: q.title,
+      type: "QUOTE" as const,
+      referenceNumber: q.quoteNumber,
+      status: q.status,
+      totalAmount: toAccountingNumber(q.totalAmount),
+      createdAt: formatIsoDate(q.createdAt),
+      dueDate: formatIsoDate(q.validUntil),
+    })),
+  ];
+
+  items.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+  logPortalAccess({
+    orgId: session.orgId,
+    customerId: session.customerId,
+    path: `/portal/${orgSlug}/jobs`,
+    action: "view_jobs_projects",
+  });
+
+  return items;
+}
+

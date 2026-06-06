@@ -69,6 +69,12 @@ const mockConfig = vi.hoisted(() => {
       showPricing: true,
       showUnit: true,
     },
+    jobs: {
+      pageTitle: "Projects & Engagements",
+      heading: "Your active projects and service engagements",
+      description: "Track the progress of current work, milestones, and deliverables across your engagements.",
+      emptyMessage: "No active projects or engagements to display at this time.",
+    },
     navigation: {
       showDashboard: true,
       showInvoices: true,
@@ -77,6 +83,7 @@ const mockConfig = vi.hoisted(() => {
       showAbout: true,
       showContact: true,
       showProducts: true,
+      showJobs: true,
       footerText: "A calmer, clearer place to work with us.",
     },
   };
@@ -214,6 +221,7 @@ vi.mock("../../actions", () => ({
   getPortalInvoiceDetail: vi.fn().mockImplementation((orgSlug: string, id: string) => Promise.resolve(mockInvoiceDetailData.value(id))),
   getPortalPaymentsData: vi.fn().mockImplementation(() => Promise.resolve(mockPaymentsData.value)),
   getPortalQuotes: vi.fn().mockResolvedValue({ success: true, data: [] }),
+  getPortalJobsProjects: vi.fn().mockResolvedValue([]),
   getPortalQuoteDetail: vi.fn().mockImplementation((_orgSlug: string, quoteId: string) => {
     const mockQuotes: Record<string, { success: true; data: Record<string, unknown> }> = {
       "qt-001": {
@@ -284,6 +292,7 @@ import PaymentsPage from "../payments/page";
 import AboutPage from "../about/page";
 import ContactPage from "../contact/page";
 import ProductsPage from "../products/page";
+import JobsPage from "../jobs/page";
 import LoginPage from "../login/page";
 import VerifyPage from "../verify/page";
 
@@ -615,6 +624,42 @@ describe("Client Hub About", () => {
     expect(html).toContain("About");
     expect(html).toContain("We combine clear communication");
   });
+
+  it("renders empty body state when about body is empty", async () => {
+    mockConfig.value.about.body = "";
+    const html = await renderAsyncPage(AboutPage);
+    expect(html).toContain("About");
+    expect(html).toContain("will appear here once it has been configured");
+  });
+
+  it("renders founded year when configured", async () => {
+    mockConfig.value.about.showFoundedYear = true;
+    mockConfig.value.about.foundedYear = "2020";
+    const html = await renderAsyncPage(AboutPage);
+    expect(html).toContain("Established 2020");
+  });
+
+  it("hides founded year when showFoundedYear is false", async () => {
+    mockConfig.value.about.showFoundedYear = false;
+    const html = await renderAsyncPage(AboutPage);
+    expect(html).not.toContain("Established");
+  });
+
+  it("gates the about page by showAbout navigation config", async () => {
+    mockConfig.value.navigation.showAbout = false;
+    await expect(renderAsyncPage(AboutPage)).rejects.toThrow("404");
+  });
+
+  it("uses getEffectiveClientHubConfig (not getPersistedHubConfig) on about page", async () => {
+    const { getEffectiveClientHubConfig, getPersistedHubConfig } = await import("../components/config-resolver");
+    vi.mocked(getEffectiveClientHubConfig).mockClear();
+    vi.mocked(getPersistedHubConfig).mockClear();
+    mockConfig.value.navigation.showAbout = true;
+
+    await renderAsyncPage(AboutPage).catch(() => {});
+
+    expect(getEffectiveClientHubConfig).toHaveBeenCalled();
+  });
 });
 
 describe("Client Hub Contact", () => {
@@ -624,7 +669,63 @@ describe("Client Hub Contact", () => {
     expect(html).toContain("Email");
     expect(html).toContain("Phone");
     expect(html).toContain("Business Hours");
-    expect(html).toContain("Emergency Support");
+    expect(html).toContain("Need Help?");
+  });
+
+  it("renders empty contact state when all fields are empty", async () => {
+    mockConfig.value.contact.supportEmail = "";
+    mockConfig.value.contact.supportPhone = "";
+    mockConfig.value.contact.businessHours = "";
+    const html = await renderAsyncPage(ContactPage);
+    expect(html).toContain("Contact Us");
+    expect(html).toContain("will appear here once it has been configured");
+    expect(html).not.toContain("Email");
+    expect(html).not.toContain("Phone");
+  });
+
+  it("renders partial contact info safely when only email is provided", async () => {
+    mockConfig.value.contact.supportEmail = "support@test.com";
+    mockConfig.value.contact.supportPhone = "";
+    const html = await renderAsyncPage(ContactPage);
+    expect(html).toContain("support@test.com");
+    expect(html).toContain("Email");
+    expect(html).not.toContain("Phone");
+    expect(html).toContain("Reach out to us at support@test.com");
+  });
+
+  it("renders partial contact info safely when only phone is provided", async () => {
+    mockConfig.value.contact.supportEmail = "";
+    mockConfig.value.contact.supportPhone = "+1234567890";
+    const html = await renderAsyncPage(ContactPage);
+    expect(html).toContain("+1234567890");
+    expect(html).toContain("Phone");
+    expect(html).not.toContain("Email");
+    expect(html).toContain("Call us at +1234567890");
+  });
+
+  it("renders full contact with both email and phone", async () => {
+    mockConfig.value.contact.supportEmail = "support@test.com";
+    mockConfig.value.contact.supportPhone = "+1234567890";
+    const html = await renderAsyncPage(ContactPage);
+    expect(html).toContain("support@test.com");
+    expect(html).toContain("+1234567890");
+    expect(html).toContain("Reach out to us at support@test.com or call +1234567890");
+  });
+
+  it("gates the contact page by showContact navigation config", async () => {
+    mockConfig.value.navigation.showContact = false;
+    await expect(renderAsyncPage(ContactPage)).rejects.toThrow("404");
+  });
+
+  it("uses getEffectiveClientHubConfig (not getPersistedHubConfig) on contact page", async () => {
+    const { getEffectiveClientHubConfig, getPersistedHubConfig } = await import("../components/config-resolver");
+    vi.mocked(getEffectiveClientHubConfig).mockClear();
+    vi.mocked(getPersistedHubConfig).mockClear();
+    mockConfig.value.navigation.showContact = true;
+
+    await renderAsyncPage(ContactPage).catch(() => {});
+
+    expect(getEffectiveClientHubConfig).toHaveBeenCalled();
   });
 });
 
@@ -633,6 +734,155 @@ describe("Client Hub Products", () => {
     const html = await renderAsyncPage(ProductsPage);
     expect(html).toContain("Products &amp; Services");
     expect(html).toContain("Your service catalogue will appear here once it has been configured.");
+  });
+
+  it("renders products description when configured", async () => {
+    mockConfig.value.products.description = "Our comprehensive service offerings";
+    const html = await renderAsyncPage(ProductsPage);
+    expect(html).toContain("Our comprehensive service offerings");
+  });
+
+  it("hides products description when empty", async () => {
+    mockConfig.value.products.description = "";
+    const html = await renderAsyncPage(ProductsPage);
+    expect(html).toContain("Products &amp; Services");
+    expect(html).toContain("Your service catalogue will appear here once it has been configured.");
+  });
+
+  it("gates the products page by showProducts navigation config", async () => {
+    mockConfig.value.navigation.showProducts = false;
+    await expect(renderAsyncPage(ProductsPage)).rejects.toThrow("404");
+  });
+
+  it("uses getEffectiveClientHubConfig (not getPersistedHubConfig) on products page", async () => {
+    const { getEffectiveClientHubConfig, getPersistedHubConfig } = await import("../components/config-resolver");
+    vi.mocked(getEffectiveClientHubConfig).mockClear();
+    vi.mocked(getPersistedHubConfig).mockClear();
+    mockConfig.value.navigation.showProducts = true;
+
+    await renderAsyncPage(ProductsPage).catch(() => {});
+
+    expect(getEffectiveClientHubConfig).toHaveBeenCalled();
+  });
+});
+
+describe("Client Hub Jobs/Projects", () => {
+  it("renders jobs page with truthful empty state", async () => {
+    const { getPortalJobsProjects } = await import("../../actions");
+    vi.mocked(getPortalJobsProjects).mockResolvedValueOnce([]);
+    const html = await renderAsyncPage(JobsPage);
+    expect(html).toContain("Projects &amp; Engagements");
+    expect(html).toContain("No active projects or engagements to display at this time.");
+  });
+
+  it("renders jobs data when engagements exist", async () => {
+    const { getPortalJobsProjects } = await import("../../actions");
+    vi.mocked(getPortalJobsProjects).mockResolvedValueOnce([
+      {
+        id: "job-001",
+        title: "Lead Generation Package",
+        type: "INVOICE",
+        referenceNumber: "INV-000131",
+        status: "UNPAID",
+        totalAmount: 1200,
+        createdAt: "2025-10-21",
+        dueDate: "2025-10-24",
+      },
+      {
+        id: "job-002",
+        title: "SEO Optimization",
+        type: "QUOTE",
+        referenceNumber: "QT-000084",
+        status: "SENT",
+        totalAmount: 2800,
+        createdAt: "2025-10-15",
+        dueDate: "2025-11-12",
+      },
+    ]);
+    const html = await renderAsyncPage(JobsPage);
+    expect(html).toContain("Lead Generation Package");
+    expect(html).toContain("INV-000131");
+    expect(html).toContain("UNPAID");
+    expect(html).toContain("SEO Optimization");
+    expect(html).toContain("QT-000084");
+    expect(html).toContain("SENT");
+    expect(html).toContain("Invoice");
+    expect(html).toContain("Quote");
+  });
+
+  it("renders truthful failure state when jobs loading fails", async () => {
+    const { getPortalJobsProjects } = await import("../../actions");
+    vi.mocked(getPortalJobsProjects).mockRejectedValueOnce(new Error("DB error"));
+    const html = await renderAsyncPage(JobsPage);
+    expect(html).toContain("Unable to load projects");
+  });
+
+  it("gates the jobs page by showJobs navigation config", async () => {
+    mockConfig.value.navigation.showJobs = false;
+    await expect(renderAsyncPage(JobsPage)).rejects.toThrow("404");
+  });
+
+  it("uses getEffectiveClientHubConfig (not getPersistedHubConfig) on jobs page", async () => {
+    const { getEffectiveClientHubConfig, getPersistedHubConfig } = await import("../components/config-resolver");
+    vi.mocked(getEffectiveClientHubConfig).mockClear();
+    vi.mocked(getPersistedHubConfig).mockClear();
+    mockConfig.value.navigation.showJobs = true;
+
+    await renderAsyncPage(JobsPage).catch(() => {});
+
+    expect(getEffectiveClientHubConfig).toHaveBeenCalled();
+  });
+
+  it("calls getPortalJobsProjects with the correct orgSlug", async () => {
+    const { getPortalJobsProjects } = await import("../../actions");
+    vi.mocked(getPortalJobsProjects).mockClear();
+    vi.mocked(getPortalJobsProjects).mockResolvedValueOnce([]);
+
+    await renderAsyncPage(JobsPage);
+
+    expect(getPortalJobsProjects).toHaveBeenCalledWith(ORG_SLUG);
+  });
+});
+
+describe("Sprint 6.4 Navigation visibility", () => {
+  it("hides Projects from sidebar when showJobs is false", async () => {
+    mockConfig.value.navigation.showJobs = false;
+    mockConfig.value.navigation.showDashboard = true;
+    mockConfig.value.navigation.showInvoices = true;
+    mockConfig.value.navigation.showQuotes = true;
+    mockConfig.value.navigation.showPayments = true;
+    mockConfig.value.navigation.showProducts = true;
+    const html = await renderAsyncPage(DashboardPage);
+    expect(html).not.toContain("Projects");
+  });
+
+  it("shows Projects in sidebar when showJobs is true", async () => {
+    mockConfig.value.navigation.showJobs = true;
+    const html = await renderAsyncPage(DashboardPage);
+    expect(html).toContain("Projects");
+  });
+
+  it("getHubNavItems excludes About Us when showAbout is false", async () => {
+    const { getHubNavItems } = await import("../components/views");
+    mockConfig.value.navigation.showAbout = false;
+    const items = getHubNavItems("acme", mockConfig.value);
+    expect(items.find((i) => i.label === "About Us")).toBeUndefined();
+  });
+
+  it("getHubNavItems excludes Contact when showContact is false", async () => {
+    const { getHubNavItems } = await import("../components/views");
+    mockConfig.value.navigation.showContact = false;
+    const items = getHubNavItems("acme", mockConfig.value);
+    expect(items.find((i) => i.label === "Contact")).toBeUndefined();
+  });
+
+  it("getHubNavItems includes About Us and Contact when enabled", async () => {
+    const { getHubNavItems } = await import("../components/views");
+    mockConfig.value.navigation.showAbout = true;
+    mockConfig.value.navigation.showContact = true;
+    const items = getHubNavItems("acme", mockConfig.value);
+    expect(items.find((i) => i.label === "About Us")).toBeTruthy();
+    expect(items.find((i) => i.label === "Contact")).toBeTruthy();
   });
 });
 

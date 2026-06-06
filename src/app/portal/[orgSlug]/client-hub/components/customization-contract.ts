@@ -62,6 +62,13 @@ export interface ProductsConfig {
   showUnit: boolean;
 }
 
+export interface JobsConfig {
+  pageTitle: string;
+  heading: string;
+  description: string;
+  emptyMessage: string;
+}
+
 export interface NavigationConfig {
   showDashboard: boolean;
   showInvoices: boolean;
@@ -70,6 +77,7 @@ export interface NavigationConfig {
   showAbout: boolean;
   showContact: boolean;
   showProducts: boolean;
+  showJobs: boolean;
   footerText: string;
 }
 
@@ -82,6 +90,7 @@ export interface ClientHubConfig {
   about: AboutConfig;
   contact: ContactConfig;
   products: ProductsConfig;
+  jobs: JobsConfig;
   navigation: NavigationConfig;
 }
 
@@ -147,6 +156,13 @@ export const ProductsConfigSchema = z.object({
   showUnit: z.boolean(),
 });
 
+export const JobsConfigSchema = z.object({
+  pageTitle: z.string().min(1, "Page title is required").max(50, "Page title too long"),
+  heading: z.string().max(200, "Heading too long"),
+  description: z.string().max(300, "Description too long"),
+  emptyMessage: z.string().max(300, "Empty message too long"),
+});
+
 export const NavigationConfigSchema = z.object({
   showDashboard: z.boolean(),
   showInvoices: z.boolean(),
@@ -155,6 +171,7 @@ export const NavigationConfigSchema = z.object({
   showAbout: z.boolean(),
   showContact: z.boolean(),
   showProducts: z.boolean(),
+  showJobs: z.boolean(),
   footerText: z.string().max(150, "Footer text too long"),
 });
 
@@ -167,6 +184,7 @@ export const ClientHubConfigSchema = z.object({
   about: AboutConfigSchema,
   contact: ContactConfigSchema,
   products: ProductsConfigSchema,
+  jobs: JobsConfigSchema,
   navigation: NavigationConfigSchema,
 });
 
@@ -179,6 +197,7 @@ export const ClientHubOverrideSchema = z.object({
   about: AboutConfigSchema.partial().optional(),
   contact: ContactConfigSchema.partial().optional(),
   products: ProductsConfigSchema.partial().optional(),
+  jobs: JobsConfigSchema.partial().optional(),
   navigation: NavigationConfigSchema.partial().optional(),
 }).partial();
 
