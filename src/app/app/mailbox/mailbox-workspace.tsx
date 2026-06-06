@@ -416,8 +416,13 @@ export function MailboxWorkspace() {
     () => rawDrafts.find((draft) => draft.id === selectedDraftId) ?? null,
     [rawDrafts, selectedDraftId],
   );
+  // Derive effective selection: clear stale draft ID without a cascading setState effect.
+  const effectiveSelectedDraftId =
+    selectedDraftId && mappedDrafts.some((d) => d.id === selectedDraftId)
+      ? selectedDraftId
+      : null;
   const selectedProviderDraftActive =
-    inDraftsMode && selectedDraftEntry?.source === "provider" && !!selectedDraftId;
+    inDraftsMode && selectedDraftEntry?.source === "provider" && !!effectiveSelectedDraftId;
 
   const totalCount = inDraftsMode ? mappedDrafts.length : apiTotalCount;
   const unreadCount = inDraftsMode ? 0 : mappedThreads.filter((t) => t.isUnread).length;
@@ -436,7 +441,7 @@ export function MailboxWorkspace() {
     isNotFound: providerDraftDetailNotFound,
     refetch: refetchProviderDraftDetail,
   } = useMailboxProviderDraftDetail(
-    selectedProviderDraftActive ? selectedDraftId : null,
+    selectedProviderDraftActive ? effectiveSelectedDraftId : null,
     selectedProviderDraftActive,
   );
 
@@ -633,16 +638,6 @@ export function MailboxWorkspace() {
       setSelectedThreadId(null);
     }
   }, [inDraftsMode, selectedThreadId, visibleThreads]);
-
-  useEffect(() => {
-    if (selectedDraftId && !mappedDrafts.some((draft) => draft.id === selectedDraftId)) {
-      setSelectedDraftId(null);
-      if (inDraftsMode) {
-        setComposer(null);
-        clearCurrentDraft();
-      }
-    }
-  }, [clearCurrentDraft, inDraftsMode, mappedDrafts, selectedDraftId]);
 
   useEffect(() => {
     if (isFilterPanelOpen) {
@@ -1155,7 +1150,7 @@ export function MailboxWorkspace() {
             {inDraftsMode ? (
               <MailboxDraftList
                 drafts={mappedDrafts}
-                selectedDraftId={selectedDraftId}
+                selectedDraftId={effectiveSelectedDraftId}
                 onSelectDraft={handleSelectDraft}
                 emptyState={threadListEmptyState ?? undefined}
                 isLoading={draftsLoading}
