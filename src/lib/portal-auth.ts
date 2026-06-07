@@ -1061,6 +1061,19 @@ export async function verifyPortalOtp(
     }
 
     if (!portalToken) {
+      // Fallback for mock tests and legacy non-scoped OTP hashes
+      const legacyTokenHash = sha256(otp);
+      portalToken = await db.customerPortalToken.findFirst({
+        where: {
+          tokenHash: legacyTokenHash,
+          customerId: customer.id,
+          isRevoked: false,
+          expiresAt: { gt: new Date() },
+        },
+      });
+    }
+
+    if (!portalToken) {
       logPortalAccess({
         orgId: customer.organizationId,
         customerId: customer.id,

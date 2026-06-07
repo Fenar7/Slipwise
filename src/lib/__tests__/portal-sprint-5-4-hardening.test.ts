@@ -73,7 +73,6 @@ vi.mock("next/navigation", () => ({
     throw new Error("notFound");
   }),
 }));
-
 vi.mock("@/lib/auth", () => ({
   requireOrgContext: vi.fn().mockResolvedValue({ orgId: "org-1", userId: "user-1" }),
 }));
@@ -745,6 +744,13 @@ describe("Sprint 5.4 Hardening Suite", () => {
 
       const res = await getPortalInvoiceDetail("test-org", "inv-draft");
       expect(res).toBeNull();
+      expect(mockDb.invoice.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            status: { not: "DRAFT" }
+          })
+        })
+      );
     });
 
     it("allows magic-link verification after a customer email change without requiring invite resend", async () => {
