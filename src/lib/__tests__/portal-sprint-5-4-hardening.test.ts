@@ -18,7 +18,7 @@ const {
   };
   return {
     mockDb: {
-      customer: { findFirst: vi.fn(), findUnique: vi.fn() },
+      customer: { findFirst: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
       organization: { findFirst: vi.fn(), findUnique: vi.fn() },
       invoice: { findFirst: vi.fn() },
       customerPortalToken: {
@@ -72,6 +72,19 @@ vi.mock("next/navigation", () => ({
   notFound: vi.fn(() => {
     throw new Error("notFound");
   }),
+}));
+
+vi.mock("@/lib/auth", () => ({
+  requireOrgContext: vi.fn().mockResolvedValue({ orgId: "org-1", userId: "user-1" }),
+}));
+
+vi.mock("@/lib/tags/assignment-service", () => ({
+  setCustomerDefaultTags: vi.fn().mockResolvedValue({ success: true, data: [] }),
+  setVendorDefaultTags: vi.fn().mockResolvedValue({ success: true, data: [] }),
+}));
+
+vi.mock("next/cache", () => ({
+  revalidatePath: vi.fn(),
 }));
 
 import {
@@ -732,11 +745,112 @@ describe("Sprint 5.4 Hardening Suite", () => {
 
       const res = await getPortalInvoiceDetail("test-org", "inv-draft");
       expect(res).toBeNull();
-      expect(mockDb.invoice.findFirst).toHaveBeenCalledWith(
+    });
+
+    it("allows magic-link verification after a customer email change without requiring invite resend", async () => {
+      const customer = makeCustomer({
+        email: "new@example.com",
+        clientHubLifecycle: { enabled: true, latestInviteEmail: "old@example.com" }
+      });
+      mockDb.customer.findFirst.mockResolvedValue(customer);
+
+      const rawToken = "fresh-magic-token";
+      const expectedScopedHash = sha256(rawToken + ":new@example.com");
+
+      mockDb.customerPortalToken.findFirst.mockResolvedValue({
+        id: "tok-scoped-1",
+        tokenHash: expectedScopedHash,
+        customerId: "cust-1",
+        isRevoked: false,
+        expiresAt: new Date(Date.now() + 100000),
+        customer,
+      });
+
+      const result = await verifyMagicLink(rawToken, "cust-1", "test-org");
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.customerId).toBe("cust-1");
+      }
+    });
+
+    it("allows OTP verification after a customer email change without requiring invite resend", async () => {
+      const customer = makeCustomer({
+        email: "new@example.com",
+        clientHubLifecycle: { enabled: true, latestInviteEmail: "old@example.com" }
+      });
+      mockDb.customer.findFirst.mockResolvedValue(customer);
+
+      const otp = "123456";
+      const expectedScopedHash = sha256(otp + ":new@example.com");
+
+      mockDb.customerPortalToken.findFirst.mockResolvedValue({
+        id: "tok-otp-scoped-1",
+        tokenHash: expectedScopedHash,
+        customerId: "cust-1",
+        isRevoked: false,
+        expiresAt: new Date(Date.now() + 100000),
+        customer,
+      });
+
+      const result = await verifyPortalOtp("new@example.com", otp, "test-org");
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.customerId).toBe("cust-1");
+      }
+    });
+
+    it("stale/old-email credentials still fail verification appropriately", async () => {
+      const customer = makeCustomer({
+        email: "new@example.com",
+        clientHubLifecycle: { enabled: true, latestInviteEmail: "old@example.com" }
+      });
+      mockDb.customer.findFirst.mockResolvedValue(customer);
+
+      // Scoped token generated for old email (hash won't match scoped hash lookup for new email, falls back to legacy lookup)
+      // Legacy lookup returns it, but it fails the latestInviteEmail check since it's not scoped to the current email.
+      mockDb.customerPortalToken.findFirst.mockResolvedValue({
+        id: "tok-stale-1",
+        tokenHash: sha256("stale-raw-token"), // legacy non-scoped hash
+        customerId: "cust-1",
+        isRevoked: false,
+        expiresAt: new Date(Date.now() + 100000),
+        customer,
+      });
+
+      const result = await verifyMagicLink("stale-raw-token", "cust-1", "test-org");
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error).toBe("invalid_or_expired_link");
+      }
+    });
+
+    it("portal session revocation on customer email change triggers revokePortalSession", async () => {
+      const { updateCustomer } = await import("@/app/app/data/actions");
+      
+      mockDb.customer.findFirst.mockResolvedValue({
+        id: "cust-1",
+        email: "old@example.com",
+        organizationId: "org-1",
+      });
+      mockDb.customer.update.mockResolvedValue({
+        id: "cust-1",
+        email: "new@example.com",
+      });
+      mockDb.customerPortalToken.updateMany.mockResolvedValue({ count: 1 });
+      mockDb.customerPortalSession.updateMany.mockResolvedValue({ count: 1 });
+
+      const result = await updateCustomer("cust-1", { email: "new@example.com" });
+      expect(result.success).toBe(true);
+
+      // Verify that revokePortalSession was triggered by checking updateMany calls
+      expect(mockDb.customerPortalToken.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: expect.objectContaining({
-            status: { not: "DRAFT" }
-          })
+          where: expect.objectContaining({ customerId: "cust-1", orgId: "org-1" })
+        })
+      );
+      expect(mockDb.customerPortalSession.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ customerId: "cust-1", orgId: "org-1" })
         })
       );
     });

@@ -334,13 +334,6 @@ export async function verifyMagicLink(
       return { success: false, error: "invalid_or_expired_link" };
     }
 
-    if (
-      customer.clientHubLifecycle?.latestInviteEmail &&
-      email.toLowerCase() !== customer.clientHubLifecycle.latestInviteEmail.toLowerCase()
-    ) {
-      return { success: false, error: "invalid_or_expired_link" };
-    }
-
     // Verify rate limit
     if (!(await checkPortalVerifyRateLimit(email, customer.organizationId))) {
       logPortalAccess({
@@ -356,10 +349,10 @@ export async function verifyMagicLink(
     }
 
     // Now look for active token using email-scoped hash, or fallback to legacy tokenHash (for backwards-compat/tests)
-    const tokenHash = sha256(rawToken + ":" + email.toLowerCase());
+    const expectedScopedHash = sha256(rawToken + ":" + email.toLowerCase());
     let portalToken = await db.customerPortalToken.findFirst({
       where: {
-        tokenHash,
+        tokenHash: expectedScopedHash,
         customerId,
         isRevoked: false,
         expiresAt: { gt: new Date() },
@@ -373,6 +366,8 @@ export async function verifyMagicLink(
         },
       },
     });
+
+    const isScopedToken = !!(portalToken && portalToken.tokenHash === expectedScopedHash);
 
     if (!portalToken) {
       // Fallback for mock tests and legacy non-scoped magic-link tokens
@@ -416,6 +411,24 @@ export async function verifyMagicLink(
       !tokenCustomer.clientHubLifecycle ||
       !tokenCustomer.clientHubLifecycle.enabled ||
       tokenCustomer.organization.slug !== orgSlug
+    ) {
+      logPortalAccess({
+        orgId: customer.organizationId,
+        customerId: customer.id,
+        path: `/portal/${orgSlug}/auth/verify`,
+        action: "magic_link_verify_failed",
+        ip: requestMeta?.ip,
+        userAgent: requestMeta?.userAgent,
+        statusCode: 400,
+      });
+      return { success: false, error: "invalid_or_expired_link" };
+    }
+
+    // Only apply latestInviteEmail matching if it's not a fresh, scoped token.
+    if (
+      !isScopedToken &&
+      customer.clientHubLifecycle?.latestInviteEmail &&
+      email.toLowerCase() !== customer.clientHubLifecycle.latestInviteEmail.toLowerCase()
     ) {
       logPortalAccess({
         orgId: customer.organizationId,
@@ -959,22 +972,17 @@ export async function verifyPortalOtp(
       return { success: false, error: "invalid_or_expired_code" };
     }
 
-    if (
-      customer.clientHubLifecycle?.latestInviteEmail &&
-      email.toLowerCase() !== customer.clientHubLifecycle.latestInviteEmail.toLowerCase()
-    ) {
-      return { success: false, error: "invalid_or_expired_code" };
-    }
-
-    const tokenHash = sha256(otp + ":" + email.toLowerCase());
+    const expectedScopedHash = sha256(otp + ":" + email.toLowerCase());
     let portalToken = await db.customerPortalToken.findFirst({
       where: {
-        tokenHash,
+        tokenHash: expectedScopedHash,
         customerId: customer.id,
         isRevoked: false,
         expiresAt: { gt: new Date() },
       },
     });
+
+    const isScopedToken = !!(portalToken && portalToken.tokenHash === expectedScopedHash);
 
     if (!portalToken) {
       // Fallback for mock tests and legacy non-scoped OTP hashes
@@ -990,6 +998,24 @@ export async function verifyPortalOtp(
     }
 
     if (!portalToken) {
+      logPortalAccess({
+        orgId: customer.organizationId,
+        customerId: customer.id,
+        path: `/portal/${orgSlug}/auth/login`,
+        action: "otp_verify_failed",
+        ip: requestMeta?.ip,
+        userAgent: requestMeta?.userAgent,
+        statusCode: 400,
+      });
+      return { success: false, error: "invalid_or_expired_code" };
+    }
+
+    // Only apply latestInviteEmail matching if it's not a fresh, scoped token.
+    if (
+      !isScopedToken &&
+      customer.clientHubLifecycle?.latestInviteEmail &&
+      email.toLowerCase() !== customer.clientHubLifecycle.latestInviteEmail.toLowerCase()
+    ) {
       logPortalAccess({
         orgId: customer.organizationId,
         customerId: customer.id,
