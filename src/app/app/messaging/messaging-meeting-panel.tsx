@@ -6,11 +6,30 @@ import { cn } from "@/lib/utils";
 import { RadioPill } from "./messaging-ui-primitives";
 import { MessagingMeetingSchedule } from "./messaging-meeting-schedule";
 import { MOCK_MEETINGS } from "./mock-data";
-import type { CalendarConnection, MeetingTab } from "./types";
+import type { CalendarConnection, MeetingTab, MessagingMeeting, MeetingRsvpStatus } from "./types";
 import { MeetingRsvpControls } from "./messaging-rsvp-controls";
 
+interface AttendeeInfo {
+  rsvpStatus: MeetingRsvpStatus;
+}
+
+interface RawCalendarConnection {
+  id: string;
+  provider: string;
+  status: string;
+  emailAddress: string;
+  createdAt: string;
+  lastSyncError?: string | null;
+}
+
+interface ConversationDetails {
+  currentUserId?: string | null;
+  archivedAt?: string | null;
+  lockedAt?: string | null;
+}
+
 interface CalendarGridProps {
-  meetings: any[];
+  meetings: MessagingMeeting[];
   now?: Date;
 }
 
@@ -124,7 +143,7 @@ function CalendarGrid({ meetings, now = new Date() }: CalendarGridProps) {
 }
 
 function OrganizerAttendeeView({ meetingId }: { meetingId: string }) {
-  const [attendees, setAttendees] = useState<any[]>([]);
+  const [attendees, setAttendees] = useState<AttendeeInfo[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -164,11 +183,11 @@ function OrganizerAttendeeView({ meetingId }: { meetingId: string }) {
 export function MessagingMeetingPanel({ conversationId, calendarConnection, now = new Date() }: MessagingMeetingPanelProps) {
   const [tab, setTab] = useState<MeetingTab>("upcoming");
   const [showSchedule, setShowSchedule] = useState(false);
-  const [meetings, setMeetings] = useState<any[]>([]);
-  const [calendarEntries, setCalendarEntries] = useState<any[]>([]);
+  const [meetings, setMeetings] = useState<MessagingMeeting[]>([]);
+  const [calendarEntries, setCalendarEntries] = useState<MessagingMeeting[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [conversation, setConversation] = useState<any>(null);
+  const [conversation, setConversation] = useState<ConversationDetails | null>(null);
 
   // Hydrate conversation details dynamically
   useEffect(() => {
@@ -194,8 +213,9 @@ export function MessagingMeetingPanel({ conversationId, calendarConnection, now 
   const currentUserId = conversation?.currentUserId;
   const isConversationBlocked = !!conversation?.archivedAt || !!conversation?.lockedAt;
 
-  const [connection, setConnection] = useState<any>(calendarConnection);
+  const [connection, setConnection] = useState<CalendarConnection>(calendarConnection);
   const isConnected = connection.status === "connected";
+  const [callerRole, setCallerRole] = useState<string>("admin");
 
   // Hydrate connection status dynamically in Sprint 8.2
   useEffect(() => {
@@ -209,29 +229,37 @@ export function MessagingMeetingPanel({ conversationId, calendarConnection, now 
         return res.json();
       })
       .then((data) => {
-        if (data.success && data.data && data.data.length > 0) {
-          const activeConn = data.data.find(
-            (c: any) => c.status === "ACTIVE" || c.status === "RECONNECT_REQUIRED"
-          ) || data.data[0];
+        if (data.success && data.data) {
+          const connections = data.data.connections || [];
+          const role = data.data.callerRole || "member";
+          setCallerRole(role);
 
-          if (activeConn) {
-            let mappedStatus = "not_connected";
-            if (activeConn.status === "ACTIVE") {
-              mappedStatus = activeConn.lastSyncError ? "degraded" : "connected";
-            } else if (activeConn.status === "RECONNECT_REQUIRED") {
-              mappedStatus = "reconnect_required";
-            } else if (activeConn.status === "DISCONNECTED") {
-              mappedStatus = "not_connected";
+          if (connections.length > 0) {
+            const activeConn = connections.find(
+              (c: RawCalendarConnection) => c.status === "ACTIVE" || c.status === "RECONNECT_REQUIRED"
+            ) || connections[0];
+
+            if (activeConn) {
+              let mappedStatus = "not_connected";
+              if (activeConn.status === "ACTIVE") {
+                mappedStatus = activeConn.lastSyncError ? "degraded" : "connected";
+              } else if (activeConn.status === "RECONNECT_REQUIRED") {
+                mappedStatus = "reconnect_required";
+              } else if (activeConn.status === "DISCONNECTED") {
+                mappedStatus = "not_connected";
+              }
+
+              setConnection({
+                id: activeConn.id,
+                provider: activeConn.provider.toLowerCase(),
+                status: mappedStatus,
+                connectedEmail: activeConn.emailAddress,
+                connectedAt: activeConn.createdAt,
+                lastSyncError: activeConn.lastSyncError,
+              });
+            } else {
+              setConnection(calendarConnection);
             }
-
-            setConnection({
-              id: activeConn.id,
-              provider: activeConn.provider.toLowerCase(),
-              status: mappedStatus,
-              connectedEmail: activeConn.emailAddress,
-              connectedAt: activeConn.createdAt,
-              lastSyncError: activeConn.lastSyncError,
-            });
           } else {
             setConnection(calendarConnection);
           }
@@ -348,8 +376,8 @@ export function MessagingMeetingPanel({ conversationId, calendarConnection, now 
       }
       // Update local status
       setMeetings(meetings.map(m => m.id === meetingId ? { ...m, status: "CANCELLED" } : m));
-    } catch (err: any) {
-      alert(err.message);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : String(err));
     }
   };
 
@@ -370,8 +398,8 @@ export function MessagingMeetingPanel({ conversationId, calendarConnection, now 
         connectedEmail: null,
         connectedAt: null,
       });
-    } catch (err: any) {
-      alert(err.message);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : String(err));
     }
   };
 
@@ -427,14 +455,16 @@ export function MessagingMeetingPanel({ conversationId, calendarConnection, now 
               <span className="flex-1 text-xs font-semibold truncate" style={{ color: "#49454F" }}>
                 {connection.provider === "google" ? "Google" : "Outlook"} Calendar · {connection.connectedEmail}
               </span>
-              <button
-                type="button"
-                onClick={handleDisconnect}
-                data-testid="meeting-disconnect-calendar"
-                className="text-xs text-[#DC2626] hover:underline focus-visible:outline-none font-medium shrink-0"
-              >
-                Disconnect
-              </button>
+              {callerRole === "admin" && (
+                <button
+                  type="button"
+                  onClick={handleDisconnect}
+                  data-testid="meeting-disconnect-calendar"
+                  className="text-xs text-[#DC2626] hover:underline focus-visible:outline-none font-medium shrink-0"
+                >
+                  Disconnect
+                </button>
+              )}
             </div>
           )}
 
@@ -449,13 +479,15 @@ export function MessagingMeetingPanel({ conversationId, calendarConnection, now 
               <span className="flex-1 text-xs font-semibold text-amber-800 truncate">
                 Sync Degraded · {connection.lastSyncError || "connectivity failed"}
               </span>
-              <button
-                type="button"
-                onClick={handleReconnect}
-                className="text-xs text-amber-905 hover:underline font-semibold shrink-0"
-              >
-                Reconnect
-              </button>
+              {callerRole === "admin" && (
+                <button
+                  type="button"
+                  onClick={handleReconnect}
+                  className="text-xs text-amber-905 hover:underline font-semibold shrink-0"
+                >
+                  Reconnect
+                </button>
+              )}
             </div>
           )}
 
@@ -470,40 +502,50 @@ export function MessagingMeetingPanel({ conversationId, calendarConnection, now 
               <span className="flex-1 text-xs font-semibold text-red-800 truncate">
                 Connection Expired · Reconnect Required
               </span>
-              <button
-                type="button"
-                onClick={handleReconnect}
-                className="text-xs text-[#DC2626] hover:underline font-bold shrink-0"
-              >
-                Reconnect
-              </button>
+              {callerRole === "admin" && (
+                <button
+                  type="button"
+                  onClick={handleReconnect}
+                  className="text-xs text-[#DC2626] hover:underline font-bold shrink-0"
+                >
+                  Reconnect
+                </button>
+              )}
             </div>
           )}
 
           {connection.status === "not_connected" && (
             <div className="flex items-center gap-2 rounded-lg border border-dashed px-3 py-2.5 bg-gray-50/50" style={{ borderColor: "#E0E0E0" }}>
               <Calendar className="h-3.5 w-3.5 shrink-0" style={{ color: "#79747E" }} />
-              <span className="flex-1 text-xs" style={{ color: "#79747E" }}>
-                Connect Google Calendar or Outlook to Slipwise.
-              </span>
-              <div className="flex gap-2 shrink-0">
-                <button
-                  type="button"
-                  data-testid="meeting-connect-calendar-btn"
-                  onClick={() => window.location.href = "/api/messaging/calendar/connections/google/connect"}
-                  className="text-xs font-semibold text-[#DC2626] hover:underline focus-visible:outline-none"
-                >
-                  Connect Google
-                </button>
-                <span className="text-gray-300 text-xs">|</span>
-                <button
-                  type="button"
-                  onClick={() => window.location.href = "/api/messaging/calendar/connections/outlook/connect"}
-                  className="text-xs font-semibold text-[#DC2626] hover:underline focus-visible:outline-none"
-                >
-                  Connect Outlook
-                </button>
-              </div>
+              {callerRole === "admin" ? (
+                <>
+                  <span className="flex-1 text-xs" style={{ color: "#79747E" }}>
+                    Connect Google Calendar or Outlook to Slipwise.
+                  </span>
+                  <div className="flex gap-2 shrink-0">
+                    <button
+                      type="button"
+                      data-testid="meeting-connect-calendar-btn"
+                      onClick={() => window.location.href = "/api/messaging/calendar/connections/google/connect"}
+                      className="text-xs font-semibold text-[#DC2626] hover:underline focus-visible:outline-none"
+                    >
+                      Connect Google
+                    </button>
+                    <span className="text-gray-300 text-xs">|</span>
+                    <button
+                      type="button"
+                      onClick={() => window.location.href = "/api/messaging/calendar/connections/outlook/connect"}
+                      className="text-xs font-semibold text-[#DC2626] hover:underline focus-visible:outline-none"
+                    >
+                      Connect Outlook
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <span className="flex-1 text-xs" style={{ color: "#79747E" }}>
+                  No calendar connected.
+                </span>
+              )}
             </div>
           )}
         </div>

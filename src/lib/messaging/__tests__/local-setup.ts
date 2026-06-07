@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- test setup: dynamically patches db client models for test isolation, requires `any` for runtime augmentation */
 import { db } from "@/lib/db";
 import { vi, beforeEach } from "vitest";
 

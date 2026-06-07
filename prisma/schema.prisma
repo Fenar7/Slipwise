@@ -144,6 +144,8 @@ model Organization {
   apiRequestLogs               ApiRequestLog[]
   ssoConfig                    SsoConfig?
   orgPreferences               UserOrgPreference[]
+  messagingNotificationPreferences MessagingNotificationPreference[]
+  messagingFollowUps           MessagingFollowUp[]
   orgDomain                    OrgDomain?
   whiteLabel                   OrgWhiteLabel?
   emailDomains                 OrgEmailDomain[]
@@ -270,6 +272,7 @@ model Organization {
   presenceSessions             PresenceSession[]
   typingSessions               TypingSession[]
   conversationAttachments      ConversationAttachment[]
+  messagingAttachmentIndexes   MessagingAttachmentIndex[]
   messagingTasks               MessagingTask[]
   conversationMeetings         ConversationMeeting[]
   calendarConnections          CalendarConnection[]
@@ -2146,9 +2149,11 @@ model Notification {
   // Sprint 18.2 delivery extensions
   emailRequested Boolean  @default(false)
   recipientEmail String?
+  dedupeKey      String?
 
   deliveries NotificationDelivery[]
 
+  @@unique([orgId, userId, dedupeKey])
   @@index([userId, isRead])
   @@index([orgId])
   @@map("notification")
@@ -6366,6 +6371,7 @@ model Conversation {
   auditEvents           MessagingAuditEvent[]
   eventLogs             ConversationEventLog[]
   drafts                ConversationDraft[]
+  followUps             MessagingFollowUp[]
 
   /// Composite unique for org-safe child relations.
   @@unique([id, orgId])
@@ -6434,6 +6440,7 @@ model ConversationMessage {
   reactions    MessageReaction[]
   mentions     MessageMention[]
   attachments  ConversationAttachment[]
+  followUps    MessagingFollowUp[]
 
   /// Composite unique for org-safe child relations.
   @@unique([id, orgId])
@@ -6635,10 +6642,44 @@ model ConversationAttachment {
 
   organization Organization        @relation(fields: [orgId], references: [id], onDelete: Cascade)
   message      ConversationMessage @relation(fields: [messageId, orgId], references: [id, orgId], onDelete: Cascade)
+  searchIndex  MessagingAttachmentIndex?
 
   @@index([orgId, messageId])
   @@index([orgId, scanStatus])
   @@map("conversation_attachment")
+}
+
+enum AttachmentIndexingStatus {
+  INDEXED   @map("indexed")
+  UNINDEXED @map("unindexed")
+  PENDING   @map("pending")
+  FAILED    @map("failed")
+
+  @@map("attachment_indexing_status")
+}
+
+/// Index of messaging attachment for search.
+model MessagingAttachmentIndex {
+  id               String                   @id @default(cuid())
+  orgId            String
+  attachmentId     String                   @unique
+  messageId        String
+  conversationId   String
+  fileName         String
+  mimeType         String
+  scanStatus       AttachmentScanStatus
+  indexingStatus   AttachmentIndexingStatus
+  extractedText    String                   @db.Text
+  extractedPreview String?                  @db.Text
+  lastIndexedAt    DateTime                 @default(now())
+  lastError        String?
+
+  organization Organization           @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  attachment   ConversationAttachment @relation(fields: [attachmentId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, conversationId])
+  @@index([orgId, indexingStatus])
+  @@map("messaging_attachment_index")
 }
 
 /// A task created from or linked to a conversation.
@@ -6701,6 +6742,7 @@ model ConversationMeeting {
   updatedAt       DateTime      @updatedAt
   /// Structured metadata for provider sync (e.g. attendee responses from provider).
   metadata        Json?
+  reminderSentAt  DateTime?
 
   organization Organization       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   conversation Conversation       @relation(fields: [conversationId, orgId], references: [id, orgId], onDelete: Cascade)
@@ -6709,6 +6751,7 @@ model ConversationMeeting {
 
   @@index([orgId, conversationId, scheduledAt])
   @@index([orgId, status, scheduledAt])
+  @@index([orgId, reminderSentAt])
   @@map("conversation_meeting")
 }
 
@@ -6893,4 +6936,50 @@ model DownstreamConsumptionCheckpoint {
   @@unique([consumerType, orgId, conversationId])
   @@index([orgId, conversationId])
   @@map("downstream_consumption_checkpoint")
+}
+
+model MessagingNotificationPreference {
+  id                        String   @id @default(cuid())
+  orgId                     String
+  userId                    String   @db.Uuid
+  allNotificationsEnabled   Boolean  @default(true)
+  mentionsEnabled           Boolean  @default(true)
+  repliesEnabled            Boolean  @default(true)
+  taskRemindersEnabled      Boolean  @default(true)
+  meetingRemindersEnabled   Boolean  @default(true)
+  dndEnabled                Boolean  @default(false)
+  dndStart                  String   @default("22:00")
+  dndEnd                    String   @default("08:00")
+  digestEnabled             Boolean  @default(false)
+  digestFrequency           String   @default("DAILY")
+  lastDigestSentAt          DateTime?
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, userId])
+  @@map("messaging_notification_preference")
+}
+
+model MessagingFollowUp {
+  id              String    @id @default(cuid())
+  orgId           String
+  userId          String    @db.Uuid
+  conversationId  String
+  messageId       String
+  note            String?   @db.VarChar(500)
+  resolvedAt      DateTime?
+  resolvedBy      String?   @db.Uuid
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  organization  Organization        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  conversation  Conversation        @relation(fields: [conversationId, orgId], references: [id, orgId], onDelete: Cascade)
+  message       ConversationMessage @relation(fields: [messageId, orgId], references: [id, orgId], onDelete: Cascade)
+
+  @@unique([orgId, userId, messageId])
+  @@index([orgId, userId, resolvedAt])
+  @@index([orgId, conversationId])
+  @@map("messaging_follow_up")
 }

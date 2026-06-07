@@ -61,6 +61,7 @@ export function ImminentMeetingBanner({ pollIntervalMs = 60_000 }: ImminentMeeti
 
   // Poll server for authoritative state.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- polling effect intentionally triggers state updates from server response
     fetchAlert();
     const id = setInterval(fetchAlert, pollIntervalMs);
     return () => clearInterval(id);

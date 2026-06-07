@@ -21,33 +21,97 @@ export interface CreateNotificationParams {
   sourceRef?: string;
   workflowRunId?: string;
   scheduledActionId?: string;
+  dedupeKey?: string;
 }
 
 export async function createNotification(params: CreateNotificationParams) {
   try {
-    const notification = await db.notification.create({
-      data: {
-        userId: params.userId,
-        orgId: params.orgId,
-        type: params.type,
-        title: params.title,
-        body: params.body,
-        link: params.link ?? null,
-        emailRequested: params.emailRequested ?? false,
-        recipientEmail: params.recipientEmail ?? null,
-        sourceModule: params.sourceModule ?? null,
-        sourceRef: params.sourceRef ?? null,
-      },
-    });
+    let isNew = true;
+    let notification;
+
+    if (params.dedupeKey) {
+      const existing = await db.notification.findUnique({
+        where: {
+          orgId_userId_dedupeKey: {
+            orgId: params.orgId,
+            userId: params.userId,
+            dedupeKey: params.dedupeKey,
+          },
+        },
+      });
+
+      if (existing) {
+        isNew = false;
+        notification = existing;
+      } else {
+        try {
+          notification = await db.notification.create({
+            data: {
+              userId: params.userId,
+              orgId: params.orgId,
+              type: params.type,
+              title: params.title,
+              body: params.body,
+              link: params.link ?? null,
+              emailRequested: params.emailRequested ?? false,
+              recipientEmail: params.recipientEmail ?? null,
+              sourceModule: params.sourceModule ?? null,
+              sourceRef: params.sourceRef ?? null,
+              dedupeKey: params.dedupeKey,
+            },
+          });
+        } catch (error) {
+          const prismaError = error as { code?: string };
+          if (prismaError.code === "P2002") {
+            isNew = false;
+            notification = await db.notification.findUnique({
+              where: {
+                orgId_userId_dedupeKey: {
+                  orgId: params.orgId,
+                  userId: params.userId,
+                  dedupeKey: params.dedupeKey,
+                },
+              },
+            });
+            if (!notification) {
+              throw new Error("createNotification: deduplication re-fetch returned null after P2002 — retry required");
+            }
+          } else {
+            throw error;
+          }
+        }
+      }
+    } else {
+      notification = await db.notification.create({
+        data: {
+          userId: params.userId,
+          orgId: params.orgId,
+          type: params.type,
+          title: params.title,
+          body: params.body,
+          link: params.link ?? null,
+          emailRequested: params.emailRequested ?? false,
+          recipientEmail: params.recipientEmail ?? null,
+          sourceModule: params.sourceModule ?? null,
+          sourceRef: params.sourceRef ?? null,
+        },
+      });
+    }
+
+    if (!notification) {
+      return null;
+    }
 
     // Record in-app delivery for analytics (idempotent)
-    await recordInAppDelivery(notification.id, params.orgId, params.userId, {
-      sourceModule: params.sourceModule,
-      sourceRef: params.sourceRef,
-    }).catch(() => {}); // never fail the notification itself
+    if (isNew) {
+      await recordInAppDelivery(notification.id, params.orgId, params.userId, {
+        sourceModule: params.sourceModule,
+        sourceRef: params.sourceRef,
+      }).catch(() => {}); // never fail the notification itself
+    }
 
-    // Queue email delivery if requested and recipient provided
-    if (params.emailRequested && params.recipientEmail) {
+    // Queue email delivery only if it's a newly created notification
+    if (isNew && params.emailRequested && params.recipientEmail) {
       const subject = `[Slipwise] ${params.title}`;
       const html = buildNotificationEmailHtml({
         title: params.title,

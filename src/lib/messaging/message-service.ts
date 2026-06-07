@@ -13,13 +13,13 @@ import type {
   SendMessageInput,
   EditMessageInput,
   DeleteMessageInput,
-  MessageAttachmentDescriptor,
 } from "./service-contracts";
 import {
   assertConversationAction,
 } from "./service-helpers";
 import { getRealtimePublisherOrNoop } from "./realtime/publisher";
 import { appendConversationEvent } from "./realtime/event-log-service";
+import { indexAttachmentsForMessage } from "./indexing-service";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -277,6 +277,10 @@ export async function sendMessage(
     { messageId: result.id, threadId: result.threadId },
     { eventId: eventMeta!.eventId, cursor: eventMeta!.cursor.toString() },
   );
+
+  if (input.attachments && input.attachments.length > 0) {
+    indexAttachmentsForMessage(result.id, input.orgId, input.conversationId);
+  }
 
   return result;
 }

@@ -69,10 +69,11 @@ export async function GET(
     );
 
     return response;
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Failed to initiate OAuth flow";
     console.error("[api/messaging/calendar/connect] OAuth initiation failed:", error);
     return NextResponse.json(
-      { success: false, error: error.message || "Failed to initiate OAuth flow" },
+      { success: false, error: message },
       { status: 500 },
     );
   }

@@ -24,6 +24,7 @@ import { db } from "@/lib/db";
 import { createNotification } from "@/lib/notifications";
 import { logMessagingAudit } from "./audit";
 import type { MessagingTaskRecord } from "./domain-types";
+import { getMessagingPreferences, isCurrentlyInQuietHours, DEFAULT_PREFERENCES } from "./notification-service";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -59,7 +60,6 @@ export interface ReminderDispatchResult {
 function buildTaskLink(
   conversationId: string,
   taskId: string,
-  originatingMessageId: string | null,
 ): string {
   const base = process.env.NEXT_PUBLIC_APP_URL || "https://app.slipwise.app";
   // Primary link goes to the task within the conversation
@@ -100,7 +100,7 @@ async function sendReminderNotification(
   task: MessagingTaskRecord,
   assigneeEmail: string | null,
 ): Promise<boolean> {
-  const link = buildTaskLink(task.conversationId, task.id, task.originatingMessageId);
+  const link = buildTaskLink(task.conversationId, task.id);
 
   try {
     await createNotification({
@@ -116,6 +116,7 @@ async function sendReminderNotification(
       recipientEmail: assigneeEmail ?? undefined,
       sourceModule: "messaging",
       sourceRef: task.id,
+      dedupeKey: `task_reminder:${task.id}:${task.reminderAt ? new Date(task.reminderAt).getTime() : 0}`,
     });
 
     // Audit is best-effort — must not turn a delivered reminder into a retryable failure
@@ -146,7 +147,7 @@ export async function sendTaskAssignmentNotification(
   assigneeId: string,
   actorId: string,
 ): Promise<void> {
-  const link = buildTaskLink(task.conversationId, task.id, task.originatingMessageId);
+  const link = buildTaskLink(task.conversationId, task.id);
 
   // Resolve assignee email for optional email delivery
   let assigneeEmail: string | null = null;
@@ -268,19 +269,88 @@ export async function dispatchDueTaskReminders(
     return result;
   }
 
-  // Step 2: Validate assignee participation, claim, send, and release-on-failure
-  for (const candidate of candidates) {
-    // Re-check assignee is still an active participant in the conversation
-    const participant = await db.conversationParticipant.findFirst({
-      where: {
-        orgId: candidate.orgId,
-        conversationId: candidate.conversationId,
-        userId: candidate.assigneeId!,
-        leftAt: null,
-      },
-    });
+  // Fetch default timezones for candidate orgs
+  const candidateOrgIds = [...new Set(candidates.map((c) => c.orgId))];
+  const orgDefaults = await db.orgDefaults.findMany({
+    where: { organizationId: { in: candidateOrgIds } },
+    select: { organizationId: true, timezone: true },
+  }).catch(() => []);
+  const timezoneMap = new Map<string, string>(
+    orgDefaults.map((od) => [od.organizationId, od.timezone])
+  );
 
-    if (!participant) {
+  // Step 2: Batch-validate all assignee participations upfront (eliminates N+1 per-candidate queries)
+  const assigneeConversationPairs = candidates.map((c) => ({
+    taskId: c.id,
+    orgId: c.orgId,
+    conversationId: c.conversationId,
+    assigneeId: c.assigneeId!,
+  }));
+
+  const participantChecks = await db.conversationParticipant.findMany({
+    where: {
+      OR: assigneeConversationPairs.map((p) => ({
+        orgId: p.orgId,
+        conversationId: p.conversationId,
+        userId: p.assigneeId,
+        leftAt: null,
+      })),
+    },
+    select: { orgId: true, conversationId: true, userId: true },
+  });
+
+  const activeParticipantSet = new Set(
+    participantChecks.map((p) => `${p.orgId}:${p.conversationId}:${p.userId}`)
+  );
+
+  // Batch-fetch read states for mute checks
+  const readStates = await db.conversationReadState.findMany({
+    where: {
+      OR: assigneeConversationPairs.map((p) => ({
+        conversationId: p.conversationId,
+        userId: p.assigneeId,
+      })),
+    },
+    select: { conversationId: true, userId: true, isMuted: true },
+  });
+  const readStateMap = new Map<string, boolean>(
+    readStates.map((rs) => [`${rs.conversationId}:${rs.userId}`, rs.isMuted])
+  );
+
+  // Batch-fetch messaging preferences for all candidate assignees
+  const uniqueAssigneeOrgPairs = [...new Set(assigneeConversationPairs.map((p) => `${p.orgId}:${p.assigneeId}`))];
+  const uniqueAssigneeIds = [...new Set(assigneeConversationPairs.map((p) => p.assigneeId))];
+  const allPrefs = await db.messagingNotificationPreference.findMany({
+    where: {
+      OR: uniqueAssigneeOrgPairs.map((pair) => {
+        const [orgId, userId] = pair.split(":");
+        return { orgId, userId };
+      }),
+    },
+  });
+  const prefMap = new Map<string, typeof allPrefs[0]>();
+  for (const pref of allPrefs) {
+    prefMap.set(`${pref.orgId}:${pref.userId}`, pref);
+  }
+
+  // Resolve assignee emails in batch
+  const assigneeEmails = await db.member.findMany({
+    where: {
+      OR: uniqueAssigneeOrgPairs.map((pair) => {
+        const [orgId, userId] = pair.split(":");
+        return { organizationId: orgId, userId };
+      }),
+    },
+    include: { user: { select: { email: true } } },
+  });
+  const emailMap = new Map<string, string | null>(
+    assigneeEmails.map((m) => [`${m.organizationId}:${m.userId}`, m.user?.email ?? null])
+  );
+
+  // Step 3: Process each candidate with pre-fetched data
+  for (const candidate of candidates) {
+    const participantKey = `${candidate.orgId}:${candidate.conversationId}:${candidate.assigneeId!}`;
+    if (!activeParticipantSet.has(participantKey)) {
       result.skippedIneligibleAssignee++;
       continue;
     }
@@ -308,38 +378,27 @@ export async function dispatchDueTaskReminders(
       continue;
     }
 
-    // Resolve assignee email for optional email delivery
-    let assigneeEmail: string | null = null;
-    try {
-      const member = await db.member.findFirst({
-        where: { organizationId: task.orgId, userId: task.assigneeId! },
-        include: { user: { select: { email: true } } },
-      });
-      assigneeEmail = member?.user?.email ?? null;
-    } catch {
-      // Non-fatal
+    // Use pre-fetched preferences and mute state
+    const prefKey = `${task.orgId}:${task.assigneeId!}`;
+    const pref = prefMap.get(prefKey) || DEFAULT_PREFERENCES;
+    const timezone = timezoneMap.get(task.orgId) || "UTC";
+    const muteKey = `${task.conversationId}:${task.assigneeId!}`;
+    const isMuted = readStateMap.get(muteKey) ?? false;
+
+    // If the category is explicitly disabled, treat as intentionally suppressed and mark processed.
+    if (!pref.allNotificationsEnabled || !pref.taskRemindersEnabled) {
+      result.dispatched++;
+      continue;
     }
 
+    const inQuietHours = isCurrentlyInQuietHours(pref, timezone);
+    const suppressActiveDelivery = inQuietHours || isMuted;
+
+    // Use pre-fetched email
+    const assigneeEmail = suppressActiveDelivery ? null : (emailMap.get(prefKey) ?? null);
+
     const sent = await sendReminderNotification(
-      {
-        id: task.id,
-        orgId: task.orgId,
-        conversationId: task.conversationId,
-        originatingMessageId: task.originatingMessageId,
-        title: task.title,
-        description: task.description,
-        status: task.status,
-        priority: task.priority,
-        assigneeId: task.assigneeId,
-        dueDate: task.dueDate,
-        reminderAt: task.reminderAt,
-        reminderSentAt: task.reminderSentAt,
-        completedAt: task.completedAt,
-        completedBy: task.completedBy,
-        createdBy: task.createdBy,
-        createdAt: task.createdAt,
-        updatedAt: task.updatedAt,
-      },
+      task,
       assigneeEmail,
     );
 

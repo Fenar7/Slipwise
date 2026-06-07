@@ -182,6 +182,7 @@ export async function updateMeeting(input: UpdateMeetingInput): Promise<Conversa
     throw new InvalidInputError("Meeting duration must be positive");
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic update object: only set fields that are provided
   const updatedData: any = {};
   if (title !== undefined) updatedData.title = title.trim();
   if (description !== undefined) updatedData.description = description;

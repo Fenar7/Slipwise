@@ -43,6 +43,7 @@ export interface MessagingChannel {
   memberCount: number;
   unreadCount: number;
   isPinned: boolean;
+  isMuted?: boolean;
   lastActivityAt: string; // ISO string — real transport fills this later
 }
 
@@ -52,6 +53,7 @@ export interface DirectMessage {
   id: string;
   participant: MessagingParticipant;
   unreadCount: number;
+  isMuted?: boolean;
   lastActivityAt: string;
 }
 
@@ -65,6 +67,7 @@ export interface MessagingGroup {
   memberCount: number;
   unreadCount: number;
   isPrivate: boolean;
+  isMuted?: boolean;
   lastActivityAt: string;
 }
 
@@ -333,22 +336,96 @@ export type TaskFilterStatus = "all" | "open" | "in-progress" | "done" | "overdu
 
 // ─── Sprint 1.6 — Search, Files, Notifications, and Final Polish ─────────────
 
-export type SearchResultKind = "message" | "channel" | "person" | "file";
+export type SearchResultKind =
+  | "message"
+  | "conversation"
+  | "task"
+  | "meeting"
+  | "file"
+  | "channel"
+  | "person";
 
-export interface MessagingSearchResult {
+export interface SearchResultBase {
   id: string;
   kind: SearchResultKind;
   title: string;
   subtitle: string;
-  avatarInitials?: string;
   timestamp?: string;
+  score?: number;
+}
+
+export interface MessageSearchResult extends SearchResultBase {
+  kind: "message";
+  conversationId: string;
+  conversationName: string;
+  authorName: string;
+  authorInitials: string;
+  snippet: string;
+}
+
+export interface ConversationSearchResult extends SearchResultBase {
+  kind: "conversation";
+  conversationType: "CHANNEL" | "DM" | "GROUP";
+  isPrivate: boolean;
+  memberCount: number;
+}
+
+export interface TaskSearchResult extends SearchResultBase {
+  kind: "task";
+  conversationId: string;
+  conversationName: string;
+  status: "OPEN" | "IN_PROGRESS" | "DONE" | "OVERDUE" | "CANCELLED";
+  assigneeName?: string;
+  dueDate?: string;
+}
+
+export interface MeetingSearchResult extends SearchResultBase {
+  kind: "meeting";
+  conversationId: string;
+  conversationName: string;
+  scheduledAt: string;
+  durationMinutes: number;
+  joinUrl?: string;
+}
+
+export interface FileSearchResult extends SearchResultBase {
+  kind: "file";
+  conversationId: string;
+  conversationName: string;
+  attachmentId: string;
+  mimeType: string;
+  mimeCategory: string;
+  sizeBytes: number;
+  sizeLabel: string;
+  scanStatus: "PENDING" | "CLEAN" | "BLOCKED";
+  snippet?: string;
+}
+
+// Support legacy mock data shapes as well
+export interface LegacyChannelSearchResult extends SearchResultBase {
+  kind: "channel";
   conversationRef?: string;
 }
+
+export interface LegacyPersonSearchResult extends SearchResultBase {
+  kind: "person";
+  avatarInitials?: string;
+}
+
+export type MessagingSearchResult =
+  | MessageSearchResult
+  | ConversationSearchResult
+  | TaskSearchResult
+  | MeetingSearchResult
+  | FileSearchResult
+  | LegacyChannelSearchResult
+  | LegacyPersonSearchResult;
 
 export type NotificationKind =
   | "mention"
   | "reply"
   | "task_reminder"
+  | "task_assigned"
   | "meeting_reminder"
   | "channel_invite";
 

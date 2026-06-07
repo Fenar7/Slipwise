@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- legacy mock helper: maps UI shapes to API shapes, `any` is the pragmatic choice for untyped mock data */
 import { expect, vi } from "vitest";
 import * as mockData from "../mock-data";
 import { useConversationList } from "../lib/use-conversation-list";

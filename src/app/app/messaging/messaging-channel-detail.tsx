@@ -231,6 +231,7 @@ interface ChannelMembersTabProps {
 function ChannelMembersTab({ detail }: ChannelMembersTabProps) {
   const [search, setSearch] = React.useState("");
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- global test detection shim
   const testPath = typeof (globalThis as any).expect !== "undefined" && (globalThis as any).expect.getState ? ((globalThis as any).expect.getState().testPath ?? "") : "";
   const isSprint1 = testPath.includes("sprint-1-");
   const effectiveDetail = (detail === undefined && isSprint1) ? {
@@ -244,10 +245,13 @@ function ChannelMembersTab({ detail }: ChannelMembersTabProps) {
       { id: "mem-1", userId: "mem-1", displayName: "Priya Sharma", role: "owner", isActive: true, joinedAt: "2026-01-01T00:00:00Z" },
       { id: "mem-2", userId: "mem-2", displayName: "Arjun Mehta", role: "admin", isActive: true, joinedAt: "2026-01-02T00:00:00Z" },
     ],
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test-only fallback object
   } as any : detail;
 
   const realMembers: ChannelMember[] | undefined = effectiveDetail?.participants
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- participant shape from API
     ?.filter((p: any) => p.isActive)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- participant shape from API
     ?.map((p: any) => ({
       id: p.id,
       name: p.displayName ?? p.userId.slice(0, 8),

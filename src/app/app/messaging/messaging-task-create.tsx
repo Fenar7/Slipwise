@@ -145,8 +145,10 @@ export function MessagingTaskCreate({
         if (payload.success && payload.data) {
           const detail: ApiConversationDetail = payload.data;
           const profilesMap = new Map(
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any -- API response shape
             detail.participantProfiles?.map((p: any) => [p.userId, p]) ?? []
           );
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- API response shape
           const list = detail.participants.map((p: any) => {
             const prof = profilesMap.get(p.userId);
             const name = prof?.name ?? p.displayName ?? `User ${p.userId.slice(0, 4)}`;

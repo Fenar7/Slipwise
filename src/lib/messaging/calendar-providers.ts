@@ -190,6 +190,7 @@ export class GoogleCalendarAdapter implements CalendarProviderAdapter {
     }
 
     const data = await response.json();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Google Calendar API response shape
     const joinUrl = data.conferenceData?.entryPoints?.find((ep: any) => ep.entryPointType === "video")?.uri || null;
     const attendeeResponses: Record<string, string> = {};
     if (data.attendees) {
@@ -233,6 +234,7 @@ export class GoogleCalendarAdapter implements CalendarProviderAdapter {
     }
 
     const data = await response.json();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Google Calendar API response shape
     const joinUrl = data.conferenceData?.entryPoints?.find((ep: any) => ep.entryPointType === "video")?.uri || null;
     const attendeeResponses: Record<string, string> = {};
     if (data.attendees) {

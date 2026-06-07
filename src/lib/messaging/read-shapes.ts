@@ -68,6 +68,7 @@ export interface ConversationSummary {
   createdAt: string;
   /** Whether the current user can send messages. */
   canSend: boolean;
+  isMuted: boolean;
 }
 
 export interface ConversationSummaryInput {
@@ -75,10 +76,11 @@ export interface ConversationSummaryInput {
   participantCount: number;
   lastMessageAt: Date | null;
   unreadCount: number | null;
+  isMuted: boolean;
 }
 
 export function toConversationSummary(input: ConversationSummaryInput): ConversationSummary {
-  const { record, participantCount, lastMessageAt, unreadCount } = input;
+  const { record, participantCount, lastMessageAt, unreadCount, isMuted } = input;
   return {
     id: record.id,
     orgId: record.orgId,
@@ -93,6 +95,7 @@ export function toConversationSummary(input: ConversationSummaryInput): Conversa
     unreadCount,
     createdAt: record.createdAt.toISOString(),
     canSend: !conversationIsArchived(record) && !conversationIsLocked(record),
+    isMuted,
   };
 }
 

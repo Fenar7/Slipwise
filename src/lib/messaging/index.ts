@@ -326,6 +326,15 @@ export {
   type GetOrgTaskSummariesOptions,
 } from "./read-models";
 
+// ─── Sprint 9.1: Search service ──────────────────────────────────────────────────
+export {
+  searchMessaging,
+  type MessagingSearchQuery,
+  type MessagingSearchResponse,
+  type MessagingSearchResult,
+  type SearchResultKind,
+} from "./search-service";
+
 // ─── Phase 4 Sprint 4.1: Realtime transport ───────────────────────────────────────
 
 export {
@@ -417,3 +426,35 @@ export {
 // Errors
 export { ConversationAccessError, InvalidInputError, NotFoundError } from "./errors";
 
+// Search Indexing
+export { indexAttachment, indexAttachmentsForMessage, updateAttachmentScanStatus, processSearchIndexEvents } from "./indexing-service";
+
+// ─── Sprint 9.4: Digests and follow-up productivity ───
+
+export type { MessagingFollowUpRecord } from "./domain-types";
+export type { DigestPayload } from "./digest-service";
+
+export {
+  buildUserDigest,
+  dispatchDigestForUser,
+  dispatchPendingDigests,
+} from "./digest-service";
+
+export {
+  flagMessageForFollowUp,
+  resolveFollowUp,
+  listFollowUps,
+  deleteFollowUp,
+} from "./followup-service";
+
+// ─── Sprint 9.5: Diagnostics ───
+
+export {
+  getMessagingDiagnostics,
+  type MessagingDiagnostics,
+  type SearchIndexHealth,
+  type NotificationHealth,
+  type ReminderHealth,
+  type DigestHealth,
+  type FollowUpHealth,
+} from "./diagnostics-service";

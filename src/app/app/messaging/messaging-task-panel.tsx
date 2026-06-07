@@ -748,6 +748,7 @@ export function MessagingTaskPanel({ conversationId, onNavigateToOrigin }: Messa
     const targetConvId = task.conversationRef;
 
     // Map frontend values to backend payload format
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- build dynamic PATCH payload
     const payload: any = {};
     if (updates.title !== undefined) payload.title = updates.title;
     if (updates.description !== undefined) payload.description = updates.description;
