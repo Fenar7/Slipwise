@@ -8,6 +8,7 @@ vi.mock("@/lib/db", () => {
     notification: {
       findMany: vi.fn(),
       create: vi.fn(),
+      delete: vi.fn().mockResolvedValue({}),
     },
     messagingTask: {
       count: vi.fn(),
@@ -552,5 +553,52 @@ describe("Sprint 9.4 — Notification Digest Service & Follow-Up Flag Service", 
 
     expect(result).toEqual({ deleted: false });
     expect(db.messagingFollowUp.delete).not.toHaveBeenCalled();
+  });
+
+  // 16. dispatchDigestForUser handles queue email failure correctly (truthful dispatch semantics)
+  it("dispatchDigestForUser handles queue email failure correctly", async () => {
+    const baseTime = new Date("2026-06-03T12:00:00Z");
+    vi.setSystemTime(baseTime);
+
+    vi.mocked(db.messagingNotificationPreference.findUnique).mockResolvedValueOnce({
+      digestEnabled: true,
+      digestFrequency: "DAILY",
+      lastDigestSentAt: new Date(baseTime.getTime() - 21 * 60 * 60 * 1000), // 21 hours ago
+    } as any);
+
+    const mockNotifications = [
+      { id: "1", type: "MENTION", createdAt: new Date() },
+    ];
+    vi.mocked(db.notification.findMany).mockResolvedValueOnce(mockNotifications as any);
+    vi.mocked(db.messagingTask.count).mockResolvedValueOnce(1);
+    vi.mocked(db.conversationMeeting.count).mockResolvedValueOnce(0);
+
+    vi.mocked(db.member.findFirst).mockResolvedValueOnce({
+      user: { email: "user@example.com" },
+    } as any);
+
+    vi.mocked(db.notification.create).mockResolvedValueOnce({
+      id: "digest-audit-notif-id-failed",
+    } as any);
+
+    // Mock queueEmailDelivery to reject/throw an error
+    vi.mocked(queueEmailDelivery).mockRejectedValueOnce(new Error("Queue error"));
+
+    const result = await dispatchDigestForUser({
+      userId: "user-1",
+      orgId: "org-1",
+    });
+
+    // Check it returns dispatched: false and skipped: false
+    expect(result.dispatched).toBe(false);
+    expect(result.skipped).toBe(false);
+    // Check that we did NOT update lastDigestSentAt
+    expect(db.messagingNotificationPreference.update).not.toHaveBeenCalled();
+    // Check that we cleaned up/deleted the created notification
+    expect(db.notification.delete).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "digest-audit-notif-id-failed" },
+      })
+    );
   });
 });

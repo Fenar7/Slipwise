@@ -166,7 +166,7 @@ export default async function CustomerDetailPage({
                 <div className="flex flex-wrap gap-1.5">
                   {customer.defaultTagAssignments.map((assignment) => {
                     const tag = assignment.tag;
-                    const isArchived = "isArchived" in tag ? Boolean((tag as { isArchived?: boolean }).isArchived) : false;
+                    const isArchived = (tag as any).isArchived;
                     return (
                       <span
                         key={tag.id}

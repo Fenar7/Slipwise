@@ -106,7 +106,6 @@ export async function getVoucherReport(filters: VoucherReportFilters) {
       .filter(Boolean);
     const uniqueCategories = [...new Set(categories)];
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Prisma include shape doesn't narrow tagAssignments type at call site
     const tagNames = ((v as any).tagAssignments ?? [])
       .map((a: { tag: { name: string } }) => a.tag.name)
       .sort();

@@ -372,6 +372,7 @@ export async function processNotificationEvents(
     // We never advance the checkpoint past a failed event, so failed
     // events remain retryable on the next invocation.
     let lastSuccessfulCursor: bigint | undefined;
+    let failed = false;
 
     for (const event of result.events) {
       try {
@@ -581,13 +582,15 @@ export async function processNotificationEvents(
         // Event fully processed — mark cursor as safe to advance past.
         lastSuccessfulCursor = event.cursor;
       } catch (eventError) {
-        // Per-event error handling: log and continue processing remaining events.
-        // The checkpoint will NOT advance past this event's cursor, so it
-        // remains retryable on the next invocation.
+        // Per-event error handling: log and stop processing remaining events in the batch.
+        // This guarantees that the checkpoint does not advance past a failed cursor,
+        // and we avoid processing (and potentially duplicating) subsequent successful events.
         console.error(
           `[notification-service] Failed to process event ${event.eventId} (cursor ${event.cursor}):`,
           eventError,
         );
+        failed = true;
+        break;
       }
     }
 
@@ -601,6 +604,10 @@ export async function processNotificationEvents(
         cursor: lastSuccessfulCursor,
       });
       currentCursor = lastSuccessfulCursor;
+    }
+
+    if (failed) {
+      break;
     }
 
     hasMore = result.hasMore;

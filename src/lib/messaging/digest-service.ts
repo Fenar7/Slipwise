@@ -230,16 +230,23 @@ export async function dispatchDigestForUser(params: {
 
   const html = buildDigestEmailHtml(digest);
 
-  await queueEmailDelivery({
-    notificationId: notif.id,
-    orgId,
-    recipientEmail,
-    subject: `[Slipwise] Your ${pref.digestFrequency.toLowerCase()} notification digest`,
-    html,
-    sourceModule: "messaging",
-  }).catch((err) => {
+  try {
+    await queueEmailDelivery({
+      notificationId: notif.id,
+      orgId,
+      recipientEmail,
+      subject: `[Slipwise] Your ${pref.digestFrequency.toLowerCase()} notification digest`,
+      html,
+      sourceModule: "messaging",
+    });
+  } catch (err) {
     console.error("[digest-service] Email queueing failed:", err);
-  });
+    // Clean up created notification so that future retry attempts do not violate the dedupeKey constraint
+    await db.notification.delete({
+      where: { id: notif.id },
+    }).catch(() => {});
+    return { dispatched: false, skipped: false, reason: "email_queue_failed" };
+  }
 
   await db.messagingNotificationPreference.update({
     where: {
