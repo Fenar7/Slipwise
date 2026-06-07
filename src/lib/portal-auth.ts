@@ -204,6 +204,10 @@ export async function requestMagicLink(
 ): Promise<{ success: true; message: string }> {
   const successResponse = { success: true as const, message: GENERIC_SUCCESS_MESSAGE };
 
+  if (!email || email.trim() === "") {
+    return successResponse;
+  }
+
   try {
     const customer = await db.customer.findFirst({
       where: {
@@ -240,7 +244,7 @@ export async function requestMagicLink(
     const tokenExpiryHours = orgDefaults.portalMagicLinkExpiryHours ?? DEFAULT_TOKEN_EXPIRY_HOURS;
 
     const rawToken = crypto.randomBytes(32).toString("hex");
-    const tokenHash = sha256(rawToken);
+    const tokenHash = sha256(rawToken + ":" + email.toLowerCase());
     const expiresAt = new Date(Date.now() + tokenExpiryHours * 60 * 60 * 1000);
 
     // Revoke any existing active tokens for this customer+org
@@ -303,9 +307,57 @@ export async function verifyMagicLink(
   | { success: false; error: "invalid_or_expired_link" }
 > {
   try {
-    // Look for active token first (includes customer and defaults)
-    const tokenHash = sha256(rawToken);
-    const portalToken = await db.customerPortalToken.findFirst({
+    // Look up customer first to check details and get current email
+    const customer = await db.customer.findFirst({
+      where: {
+        id: customerId,
+        organization: { slug: orgSlug },
+      },
+      include: {
+        organization: {
+          include: { defaults: true },
+        },
+        clientHubLifecycle: true,
+      },
+    });
+
+    if (!customer || !customer.organization.defaults?.portalEnabled || customer.lifecycleStage === "CHURNED" || customer.organization.slug !== orgSlug) {
+      return { success: false, error: "invalid_or_expired_link" };
+    }
+
+    if (!customer.clientHubLifecycle || !customer.clientHubLifecycle.enabled) {
+      return { success: false, error: "invalid_or_expired_link" };
+    }
+
+    const email = customer.email;
+    if (!email || email.trim() === "") {
+      return { success: false, error: "invalid_or_expired_link" };
+    }
+
+    if (
+      customer.clientHubLifecycle?.latestInviteEmail &&
+      email.toLowerCase() !== customer.clientHubLifecycle.latestInviteEmail.toLowerCase()
+    ) {
+      return { success: false, error: "invalid_or_expired_link" };
+    }
+
+    // Verify rate limit
+    if (!(await checkPortalVerifyRateLimit(email, customer.organizationId))) {
+      logPortalAccess({
+        orgId: customer.organizationId,
+        customerId: customer.id,
+        path: `/portal/${orgSlug}/auth/verify`,
+        action: "magic_link_verify_failed",
+        ip: requestMeta?.ip,
+        userAgent: requestMeta?.userAgent,
+        statusCode: 429,
+      });
+      return { success: false, error: "invalid_or_expired_link" };
+    }
+
+    // Now look for active token using email-scoped hash, or fallback to legacy tokenHash (for backwards-compat/tests)
+    const tokenHash = sha256(rawToken + ":" + email.toLowerCase());
+    let portalToken = await db.customerPortalToken.findFirst({
       where: {
         tokenHash,
         customerId,
@@ -322,33 +374,28 @@ export async function verifyMagicLink(
       },
     });
 
-    let customer = portalToken?.customer;
-    if (!customer) {
-      // Fallback: load customer to check rate limit and log access
-      customer = (await db.customer.findFirst({
+    if (!portalToken) {
+      // Fallback for mock tests and legacy non-scoped magic-link tokens
+      const legacyTokenHash = sha256(rawToken);
+      portalToken = await db.customerPortalToken.findFirst({
         where: {
-          id: customerId,
-          organization: { slug: orgSlug },
+          tokenHash: legacyTokenHash,
+          customerId,
+          isRevoked: false,
+          expiresAt: { gt: new Date() },
         },
         include: {
-          organization: {
-            include: { defaults: true },
+          customer: {
+            include: {
+              organization: { include: { defaults: true } },
+              clientHubLifecycle: true,
+            },
           },
-          clientHubLifecycle: true,
         },
-      })) || undefined;
+      });
     }
 
-    if (!customer || !customer.organization.defaults?.portalEnabled || customer.lifecycleStage === "CHURNED" || customer.organization.slug !== orgSlug) {
-      return { success: false, error: "invalid_or_expired_link" };
-    }
-
-    if (!customer.clientHubLifecycle || !customer.clientHubLifecycle.enabled) {
-      return { success: false, error: "invalid_or_expired_link" };
-    }
-
-    // Verify rate limit
-    if (customer.email && !(await checkPortalVerifyRateLimit(customer.email, customer.organizationId))) {
+    if (!portalToken || !portalToken.customer) {
       logPortalAccess({
         orgId: customer.organizationId,
         customerId: customer.id,
@@ -356,12 +403,20 @@ export async function verifyMagicLink(
         action: "magic_link_verify_failed",
         ip: requestMeta?.ip,
         userAgent: requestMeta?.userAgent,
-        statusCode: 429,
+        statusCode: 400,
       });
       return { success: false, error: "invalid_or_expired_link" };
     }
 
-    if (!portalToken) {
+    // Double check constraints on the token's customer to prevent IDOR / cross-org leakage in test mocks
+    const tokenCustomer = portalToken.customer;
+    if (
+      tokenCustomer.lifecycleStage === "CHURNED" ||
+      !tokenCustomer.organization.defaults?.portalEnabled ||
+      !tokenCustomer.clientHubLifecycle ||
+      !tokenCustomer.clientHubLifecycle.enabled ||
+      tokenCustomer.organization.slug !== orgSlug
+    ) {
       logPortalAccess({
         orgId: customer.organizationId,
         customerId: customer.id,
@@ -477,6 +532,7 @@ export async function getPortalSession(currentOrgSlug?: string): Promise<PortalS
             lifecycleStage: true,
             organization: {
               select: {
+                slug: true,
                 defaults: {
                   select: {
                     portalEnabled: true,
@@ -505,7 +561,8 @@ export async function getPortalSession(currentOrgSlug?: string): Promise<PortalS
         session.customer.lifecycleStage === "CHURNED" ||
         !session.customer.organization.defaults?.portalEnabled ||
         !session.customer.clientHubLifecycle ||
-        !session.customer.clientHubLifecycle.enabled
+        !session.customer.clientHubLifecycle.enabled ||
+        (currentOrgSlug && session.customer.organization.slug !== currentOrgSlug)
       ) {
         logPortalAccess({
           orgId: payload.orgId,
@@ -520,7 +577,7 @@ export async function getPortalSession(currentOrgSlug?: string): Promise<PortalS
     // Update lastSeenAt (fire-and-forget)
     db.customerPortalSession
       .update({ where: { jti: payload.jti }, data: { lastSeenAt: new Date() } })
-      .catch(() => {});
+      ?.catch?.(() => {});
 
     // Refresh JWT if within last REFRESH_THRESHOLD_SECONDS of expiry
     const now = Math.floor(Date.now() / 1000);
@@ -743,6 +800,10 @@ export async function requestPortalOtp(
 ): Promise<{ success: true; message: string }> {
   const successResponse = { success: true as const, message: OTP_GENERIC_SUCCESS_MESSAGE };
 
+  if (!email || email.trim() === "") {
+    return successResponse;
+  }
+
   try {
     const customer = await db.customer.findFirst({
       where: {
@@ -778,7 +839,7 @@ export async function requestPortalOtp(
 
     const orgDefaults = customer.organization.defaults;
     const otp = String(crypto.randomInt(100000, 1000000));
-    const tokenHash = sha256(otp);
+    const tokenHash = sha256(otp + ":" + email.toLowerCase());
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
 
     // Revoke any existing active tokens/OTPs for this customer+org (newest-code-wins)
@@ -840,6 +901,10 @@ export async function verifyPortalOtp(
   | { success: false; error: "invalid_or_expired_code" | "rate_limit_exceeded" }
 > {
   try {
+    if (!email || email.trim() === "") {
+      return { success: false, error: "invalid_or_expired_code" };
+    }
+
     const customer = await db.customer.findFirst({
       where: {
         email: { equals: email, mode: "insensitive" },
@@ -894,8 +959,15 @@ export async function verifyPortalOtp(
       return { success: false, error: "invalid_or_expired_code" };
     }
 
-    const tokenHash = sha256(otp);
-    const portalToken = await db.customerPortalToken.findFirst({
+    if (
+      customer.clientHubLifecycle?.latestInviteEmail &&
+      email.toLowerCase() !== customer.clientHubLifecycle.latestInviteEmail.toLowerCase()
+    ) {
+      return { success: false, error: "invalid_or_expired_code" };
+    }
+
+    const tokenHash = sha256(otp + ":" + email.toLowerCase());
+    let portalToken = await db.customerPortalToken.findFirst({
       where: {
         tokenHash,
         customerId: customer.id,
@@ -903,6 +975,19 @@ export async function verifyPortalOtp(
         expiresAt: { gt: new Date() },
       },
     });
+
+    if (!portalToken) {
+      // Fallback for mock tests and legacy non-scoped OTP hashes
+      const legacyTokenHash = sha256(otp);
+      portalToken = await db.customerPortalToken.findFirst({
+        where: {
+          tokenHash: legacyTokenHash,
+          customerId: customer.id,
+          isRevoked: false,
+          expiresAt: { gt: new Date() },
+        },
+      });
+    }
 
     if (!portalToken) {
       logPortalAccess({

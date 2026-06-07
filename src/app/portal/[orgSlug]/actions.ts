@@ -145,6 +145,7 @@ export async function getPortalInvoiceDetail(
       id: invoiceId,
       organizationId: session.orgId,
       customerId: session.customerId,
+      status: { not: "DRAFT" },
     },
     include: {
       lineItems: true,
@@ -377,6 +378,11 @@ export async function initiatePortalPayment(
   // Fail closed: invoice not found
   if (!invoice) {
     return { alreadyPaid: false, url: null, error: "Invoice not found." };
+  }
+
+  // Fail closed: draft
+  if (invoice.status === "DRAFT") {
+    return { alreadyPaid: false, url: null, error: "Invoice is not ready for payment." };
   }
 
   // Fail closed: already paid
