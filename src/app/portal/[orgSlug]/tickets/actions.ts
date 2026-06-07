@@ -121,6 +121,17 @@ export async function getPortalTicketDetail(ticketId: string) {
 
     if (!ticket) return null;
 
+    try {
+      const { recordExternalEvent } = await import("@/lib/portal-signals");
+      await recordExternalEvent({
+        orgId,
+        customerId,
+        eventType: "TICKET_VIEWED",
+        resourceType: "InvoiceTicket",
+        resourceId: ticketId,
+      });
+    } catch {}
+
     return ticket;
   } catch (error) {
     console.error("[portal-tickets] getPortalTicketDetail error:", error);
@@ -204,6 +215,18 @@ export async function submitPortalTicketReply(
         },
       });
     }
+
+    try {
+      const { recordExternalEvent } = await import("@/lib/portal-signals");
+      await recordExternalEvent({
+        orgId,
+        customerId,
+        eventType: "TICKET_REPLY_SUBMITTED",
+        resourceType: "TicketReply",
+        resourceId: reply.id,
+        metadata: { ticketId },
+      });
+    } catch {}
 
     revalidatePath(`/portal/${orgSlug}/tickets`);
     revalidatePath(`/portal/${orgSlug}/tickets/${ticketId}`);

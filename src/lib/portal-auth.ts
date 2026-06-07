@@ -345,6 +345,17 @@ export async function verifyMagicLink(
         userAgent: requestMeta?.userAgent,
         statusCode: 429,
       });
+      try {
+        const { recordExternalEvent } = await import("@/lib/portal-signals");
+        await recordExternalEvent({
+          orgId: customer.organizationId,
+          customerId: customer.id,
+          eventType: "UNUSUAL_ACCESS",
+          ip: requestMeta?.ip,
+          userAgent: requestMeta?.userAgent,
+          metadata: { reason: "rate_limit_exceeded", flow: "magic_link" },
+        });
+      } catch {}
       return { success: false, error: "invalid_or_expired_link" };
     }
 
@@ -439,6 +450,17 @@ export async function verifyMagicLink(
         userAgent: requestMeta?.userAgent,
         statusCode: 400,
       });
+      try {
+        const { recordExternalEvent } = await import("@/lib/portal-signals");
+        await recordExternalEvent({
+          orgId: customer.organizationId,
+          customerId: customer.id,
+          eventType: "UNUSUAL_ACCESS",
+          ip: requestMeta?.ip,
+          userAgent: requestMeta?.userAgent,
+          metadata: { reason: "email_mismatch_stale_credential", flow: "magic_link" },
+        });
+      } catch {}
       return { success: false, error: "invalid_or_expired_link" };
     }
 
@@ -496,6 +518,18 @@ export async function verifyMagicLink(
       userAgent: requestMeta?.userAgent,
       statusCode: 200,
     });
+
+    try {
+      const { recordExternalEvent } = await import("@/lib/portal-signals");
+      await recordExternalEvent({
+        orgId,
+        customerId,
+        eventType: "PORTAL_LOGIN",
+        ip: requestMeta?.ip,
+        userAgent: requestMeta?.userAgent,
+        metadata: { method: "magic_link" },
+      });
+    } catch {}
 
     logAudit({
       orgId,
@@ -661,6 +695,15 @@ export async function revokePortalSession(customerId: string, orgId: string): Pr
       action: "access_revoked",
     });
 
+    try {
+      const { recordExternalEvent } = await import("@/lib/portal-signals");
+      await recordExternalEvent({
+        orgId,
+        customerId,
+        eventType: "PORTAL_SESSION_REVOKED",
+      });
+    } catch {}
+
     logAudit({
       orgId,
       actorId: customerId,
@@ -692,6 +735,15 @@ export async function revokeCurrentPortalSession(jti: string, customerId: string
       path: "/portal",
       action: "logout",
     });
+
+    try {
+      const { recordExternalEvent } = await import("@/lib/portal-signals");
+      await recordExternalEvent({
+        orgId,
+        customerId,
+        eventType: "PORTAL_LOGOUT",
+      });
+    } catch {}
 
     logAudit({
       orgId,
@@ -964,6 +1016,17 @@ export async function verifyPortalOtp(
           userAgent: requestMeta?.userAgent,
           statusCode: 429,
         });
+        try {
+          const { recordExternalEvent } = await import("@/lib/portal-signals");
+          await recordExternalEvent({
+            orgId: customer.organizationId,
+            customerId: customer.id,
+            eventType: "UNUSUAL_ACCESS",
+            ip: requestMeta?.ip,
+            userAgent: requestMeta?.userAgent,
+            metadata: { reason: "rate_limit_exceeded", flow: "otp" },
+          });
+        } catch {}
       }
       return { success: false, error: "rate_limit_exceeded" };
     }
@@ -1025,6 +1088,17 @@ export async function verifyPortalOtp(
         userAgent: requestMeta?.userAgent,
         statusCode: 400,
       });
+      try {
+        const { recordExternalEvent } = await import("@/lib/portal-signals");
+        await recordExternalEvent({
+          orgId: customer.organizationId,
+          customerId: customer.id,
+          eventType: "UNUSUAL_ACCESS",
+          ip: requestMeta?.ip,
+          userAgent: requestMeta?.userAgent,
+          metadata: { reason: "email_mismatch_stale_credential", flow: "otp" },
+        });
+      } catch {}
       return { success: false, error: "invalid_or_expired_code" };
     }
 
@@ -1080,6 +1154,18 @@ export async function verifyPortalOtp(
       userAgent: requestMeta?.userAgent,
       statusCode: 200,
     });
+
+    try {
+      const { recordExternalEvent } = await import("@/lib/portal-signals");
+      await recordExternalEvent({
+        orgId,
+        customerId: customer.id,
+        eventType: "PORTAL_LOGIN",
+        ip: requestMeta?.ip,
+        userAgent: requestMeta?.userAgent,
+        metadata: { method: "otp" },
+      });
+    } catch {}
 
     logAudit({
       orgId,
