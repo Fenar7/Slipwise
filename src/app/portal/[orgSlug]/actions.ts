@@ -189,6 +189,17 @@ export async function getPortalInvoiceDetail(
     action: "view_invoice",
   });
 
+  try {
+    const { recordExternalEvent } = await import("@/lib/portal-signals");
+    await recordExternalEvent({
+      orgId: session.orgId,
+      customerId: session.customerId,
+      eventType: "INVOICE_VIEWED",
+      resourceType: "Invoice",
+      resourceId: invoiceId,
+    });
+  } catch {}
+
   const hasValidPaymentLink = !!(
     invoice.razorpayPaymentLinkUrl &&
     invoice.paymentLinkExpiresAt &&
@@ -305,6 +316,18 @@ export async function generatePortalStatement(
     action: "generate_statement",
   });
 
+  try {
+    const { recordExternalEvent } = await import("@/lib/portal-signals");
+    await recordExternalEvent({
+      orgId: session.orgId,
+      customerId: session.customerId,
+      eventType: "STATEMENT_VIEWED",
+      resourceType: "CustomerStatement",
+      resourceId: statement.id,
+      metadata: { fromDate, toDate },
+    });
+  } catch {}
+
   return {
     id: statement.id,
     fromDate: statement.fromDate.toISOString(),
@@ -377,26 +400,61 @@ export async function initiatePortalPayment(
 
   // Fail closed: invoice not found
   if (!invoice) {
+    logPortalAccess({
+      orgId: session.orgId,
+      customerId: session.customerId,
+      path: `/portal/${orgSlug}/invoices/${invoiceId}/pay`,
+      action: "initiate_payment",
+      statusCode: 404,
+    });
     return { alreadyPaid: false, url: null, error: "Invoice not found." };
   }
 
   // Fail closed: draft
   if (invoice.status === "DRAFT") {
+    logPortalAccess({
+      orgId: session.orgId,
+      customerId: session.customerId,
+      path: `/portal/${orgSlug}/invoices/${invoiceId}/pay`,
+      action: "initiate_payment",
+      statusCode: 400,
+    });
     return { alreadyPaid: false, url: null, error: "Invoice is not ready for payment." };
   }
 
   // Fail closed: already paid
   if (invoice.status === "PAID") {
+    logPortalAccess({
+      orgId: session.orgId,
+      customerId: session.customerId,
+      path: `/portal/${orgSlug}/invoices/${invoiceId}/pay`,
+      action: "initiate_payment",
+      statusCode: 400,
+    });
     return { alreadyPaid: true, url: null, error: "This invoice has already been paid." };
   }
 
   // Fail closed: cancelled
   if (invoice.status === "CANCELLED") {
+    logPortalAccess({
+      orgId: session.orgId,
+      customerId: session.customerId,
+      path: `/portal/${orgSlug}/invoices/${invoiceId}/pay`,
+      action: "initiate_payment",
+      statusCode: 400,
+    });
     return { alreadyPaid: false, url: null, error: "This invoice has been cancelled." };
   }
 
   // Fail closed: zero remaining balance
   if (invoice.remainingAmount <= 0) {
+    logPortalAccess({
+      orgId: session.orgId,
+      customerId: session.customerId,
+      path: `/portal/${orgSlug}/invoices/${invoiceId}/pay`,
+      action: "initiate_payment",
+      statusCode: 400,
+    });
     return { alreadyPaid: false, url: null, error: "This invoice has no outstanding balance." };
   }
 
@@ -406,6 +464,13 @@ export async function initiatePortalPayment(
     invoice.paymentLinkExpiresAt &&
     invoice.paymentLinkExpiresAt > new Date()
   ) {
+    logPortalAccess({
+      orgId: session.orgId,
+      customerId: session.customerId,
+      path: `/portal/${orgSlug}/invoices/${invoiceId}/pay`,
+      action: "initiate_payment",
+      statusCode: 200,
+    });
     return { alreadyPaid: false, url: invoice.razorpayPaymentLinkUrl };
   }
 
@@ -414,6 +479,7 @@ export async function initiatePortalPayment(
     customerId: session.customerId,
     path: `/portal/${orgSlug}/invoices/${invoiceId}/pay`,
     action: "initiate_payment",
+    statusCode: 400,
   });
 
   // No usable payment link: return failure instead of redirecting to detached public invoice page
@@ -533,6 +599,17 @@ export async function getPortalQuoteDetail(orgSlug: string, quoteId: string) {
       path: `/portal/${orgSlug}/client-hub/quotes/${quoteId}`,
       action: "view_quote",
     });
+
+    try {
+      const { recordExternalEvent } = await import("@/lib/portal-signals");
+      await recordExternalEvent({
+        orgId: session.orgId,
+        customerId: session.customerId,
+        eventType: "QUOTE_VIEWED",
+        resourceType: "Quote",
+        resourceId: quoteId,
+      });
+    } catch {}
 
     return {
       success: true as const,
@@ -661,6 +738,17 @@ export async function acceptPortalQuote(
       path: `/portal/${orgSlug}/client-hub/quotes/${quoteId}/accept`,
       action: "accept_quote",
     });
+
+    try {
+      const { recordExternalEvent } = await import("@/lib/portal-signals");
+      await recordExternalEvent({
+        orgId: session.orgId,
+        customerId: session.customerId,
+        eventType: "QUOTE_ACCEPTED",
+        resourceType: "Quote",
+        resourceId: quoteId,
+      });
+    } catch {}
 
     // Emit normalized document event for quote acceptance
     void emitQuoteEvent(session.orgId, quoteId, "quote_accepted", {
@@ -797,6 +885,18 @@ export async function declinePortalQuote(
       path: `/portal/${orgSlug}/client-hub/quotes/${quoteId}/decline`,
       action: "decline_quote",
     });
+
+    try {
+      const { recordExternalEvent } = await import("@/lib/portal-signals");
+      await recordExternalEvent({
+        orgId: session.orgId,
+        customerId: session.customerId,
+        eventType: "QUOTE_DECLINED",
+        resourceType: "Quote",
+        resourceId: quoteId,
+        metadata: { reason: normalizedReason.reason },
+      });
+    } catch {}
 
     // Emit normalized document event for quote decline
     void emitQuoteEvent(session.orgId, quoteId, "quote_declined", {

@@ -19,7 +19,7 @@ export async function uploadPortalAttachmentAction(
   storageKey: string
 ) {
   try {
-    const { orgId } = await requirePortalSession();
+    const { orgId, customerId } = await requirePortalSession();
 
     const trimmedName = fileName.trim();
     if (!trimmedName) {
@@ -46,6 +46,18 @@ export async function uploadPortalAttachmentAction(
         entityId: "temp", // Temporary until linked to a reply
       },
     });
+
+    try {
+      const { recordExternalEvent } = await import("@/lib/portal-signals");
+      await recordExternalEvent({
+        orgId,
+        customerId,
+        eventType: "PROOF_UPLOADED",
+        resourceType: "FileAttachment",
+        resourceId: attachment.id,
+        metadata: { isTicketAttachment: true, fileSize },
+      });
+    } catch {}
 
     return { success: true, id: attachment.id };
   } catch (error) {

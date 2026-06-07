@@ -13,6 +13,7 @@ type AccessLog = {
   path: string;
   action: string | null;
   ip: string | null;
+  userAgent: string | null;
   statusCode: number | null;
   accessedAt: string | Date;
   customer: { id: string; name: string; email: string };
@@ -249,7 +250,12 @@ export default function PortalActivityPage() {
                           )}
                         </td>
                         <td className="py-2 pr-4">
-                          <span className="font-mono text-xs text-[#666]">{log.ip ?? "—"}</span>
+                          <span className="font-mono text-xs text-[#666] block">{log.ip ?? "—"}</span>
+                          {log.userAgent && (
+                            <span className="text-[10px] text-gray-400 block max-w-[150px] truncate" title={log.userAgent}>
+                              {log.userAgent}
+                            </span>
+                          )}
                         </td>
                         <td className="py-2 text-xs text-[#666] whitespace-nowrap">
                           {formatDate(log.accessedAt)}

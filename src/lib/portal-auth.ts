@@ -334,13 +334,6 @@ export async function verifyMagicLink(
       return { success: false, error: "invalid_or_expired_link" };
     }
 
-    if (
-      customer.clientHubLifecycle?.latestInviteEmail &&
-      email.toLowerCase() !== customer.clientHubLifecycle.latestInviteEmail.toLowerCase()
-    ) {
-      return { success: false, error: "invalid_or_expired_link" };
-    }
-
     // Verify rate limit
     if (!(await checkPortalVerifyRateLimit(email, customer.organizationId))) {
       logPortalAccess({
@@ -352,14 +345,25 @@ export async function verifyMagicLink(
         userAgent: requestMeta?.userAgent,
         statusCode: 429,
       });
+      try {
+        const { recordExternalEvent } = await import("@/lib/portal-signals");
+        await recordExternalEvent({
+          orgId: customer.organizationId,
+          customerId: customer.id,
+          eventType: "UNUSUAL_ACCESS",
+          ip: requestMeta?.ip,
+          userAgent: requestMeta?.userAgent,
+          metadata: { reason: "rate_limit_exceeded", flow: "magic_link" },
+        });
+      } catch {}
       return { success: false, error: "invalid_or_expired_link" };
     }
 
     // Now look for active token using email-scoped hash, or fallback to legacy tokenHash (for backwards-compat/tests)
-    const tokenHash = sha256(rawToken + ":" + email.toLowerCase());
+    const expectedScopedHash = sha256(rawToken + ":" + email.toLowerCase());
     let portalToken = await db.customerPortalToken.findFirst({
       where: {
-        tokenHash,
+        tokenHash: expectedScopedHash,
         customerId,
         isRevoked: false,
         expiresAt: { gt: new Date() },
@@ -373,6 +377,8 @@ export async function verifyMagicLink(
         },
       },
     });
+
+    const isScopedToken = !!(portalToken && portalToken.tokenHash === expectedScopedHash);
 
     if (!portalToken) {
       // Fallback for mock tests and legacy non-scoped magic-link tokens
@@ -426,6 +432,35 @@ export async function verifyMagicLink(
         userAgent: requestMeta?.userAgent,
         statusCode: 400,
       });
+      return { success: false, error: "invalid_or_expired_link" };
+    }
+
+    // Only apply latestInviteEmail matching if it's not a fresh, scoped token.
+    if (
+      !isScopedToken &&
+      customer.clientHubLifecycle?.latestInviteEmail &&
+      email.toLowerCase() !== customer.clientHubLifecycle.latestInviteEmail.toLowerCase()
+    ) {
+      logPortalAccess({
+        orgId: customer.organizationId,
+        customerId: customer.id,
+        path: `/portal/${orgSlug}/auth/verify`,
+        action: "magic_link_verify_failed",
+        ip: requestMeta?.ip,
+        userAgent: requestMeta?.userAgent,
+        statusCode: 400,
+      });
+      try {
+        const { recordExternalEvent } = await import("@/lib/portal-signals");
+        await recordExternalEvent({
+          orgId: customer.organizationId,
+          customerId: customer.id,
+          eventType: "UNUSUAL_ACCESS",
+          ip: requestMeta?.ip,
+          userAgent: requestMeta?.userAgent,
+          metadata: { reason: "email_mismatch_stale_credential", flow: "magic_link" },
+        });
+      } catch {}
       return { success: false, error: "invalid_or_expired_link" };
     }
 
@@ -483,6 +518,18 @@ export async function verifyMagicLink(
       userAgent: requestMeta?.userAgent,
       statusCode: 200,
     });
+
+    try {
+      const { recordExternalEvent } = await import("@/lib/portal-signals");
+      await recordExternalEvent({
+        orgId,
+        customerId,
+        eventType: "PORTAL_LOGIN",
+        ip: requestMeta?.ip,
+        userAgent: requestMeta?.userAgent,
+        metadata: { method: "magic_link" },
+      });
+    } catch {}
 
     logAudit({
       orgId,
@@ -648,6 +695,15 @@ export async function revokePortalSession(customerId: string, orgId: string): Pr
       action: "access_revoked",
     });
 
+    try {
+      const { recordExternalEvent } = await import("@/lib/portal-signals");
+      await recordExternalEvent({
+        orgId,
+        customerId,
+        eventType: "PORTAL_SESSION_REVOKED",
+      });
+    } catch {}
+
     logAudit({
       orgId,
       actorId: customerId,
@@ -679,6 +735,15 @@ export async function revokeCurrentPortalSession(jti: string, customerId: string
       path: "/portal",
       action: "logout",
     });
+
+    try {
+      const { recordExternalEvent } = await import("@/lib/portal-signals");
+      await recordExternalEvent({
+        orgId,
+        customerId,
+        eventType: "PORTAL_LOGOUT",
+      });
+    } catch {}
 
     logAudit({
       orgId,
@@ -951,6 +1016,17 @@ export async function verifyPortalOtp(
           userAgent: requestMeta?.userAgent,
           statusCode: 429,
         });
+        try {
+          const { recordExternalEvent } = await import("@/lib/portal-signals");
+          await recordExternalEvent({
+            orgId: customer.organizationId,
+            customerId: customer.id,
+            eventType: "UNUSUAL_ACCESS",
+            ip: requestMeta?.ip,
+            userAgent: requestMeta?.userAgent,
+            metadata: { reason: "rate_limit_exceeded", flow: "otp" },
+          });
+        } catch {}
       }
       return { success: false, error: "rate_limit_exceeded" };
     }
@@ -959,22 +1035,30 @@ export async function verifyPortalOtp(
       return { success: false, error: "invalid_or_expired_code" };
     }
 
-    if (
-      customer.clientHubLifecycle?.latestInviteEmail &&
-      email.toLowerCase() !== customer.clientHubLifecycle.latestInviteEmail.toLowerCase()
-    ) {
-      return { success: false, error: "invalid_or_expired_code" };
-    }
-
-    const tokenHash = sha256(otp + ":" + email.toLowerCase());
+    const expectedScopedHash = sha256(otp + ":" + email.toLowerCase());
     let portalToken = await db.customerPortalToken.findFirst({
       where: {
-        tokenHash,
+        tokenHash: expectedScopedHash,
         customerId: customer.id,
         isRevoked: false,
         expiresAt: { gt: new Date() },
       },
     });
+
+    const isScopedToken = !!(portalToken && portalToken.tokenHash === expectedScopedHash);
+
+    if (!portalToken) {
+      // Fallback for mock tests and legacy non-scoped OTP hashes
+      const legacyTokenHash = sha256(otp);
+      portalToken = await db.customerPortalToken.findFirst({
+        where: {
+          tokenHash: legacyTokenHash,
+          customerId: customer.id,
+          isRevoked: false,
+          expiresAt: { gt: new Date() },
+        },
+      });
+    }
 
     if (!portalToken) {
       // Fallback for mock tests and legacy non-scoped OTP hashes
@@ -999,6 +1083,35 @@ export async function verifyPortalOtp(
         userAgent: requestMeta?.userAgent,
         statusCode: 400,
       });
+      return { success: false, error: "invalid_or_expired_code" };
+    }
+
+    // Only apply latestInviteEmail matching if it's not a fresh, scoped token.
+    if (
+      !isScopedToken &&
+      customer.clientHubLifecycle?.latestInviteEmail &&
+      email.toLowerCase() !== customer.clientHubLifecycle.latestInviteEmail.toLowerCase()
+    ) {
+      logPortalAccess({
+        orgId: customer.organizationId,
+        customerId: customer.id,
+        path: `/portal/${orgSlug}/auth/login`,
+        action: "otp_verify_failed",
+        ip: requestMeta?.ip,
+        userAgent: requestMeta?.userAgent,
+        statusCode: 400,
+      });
+      try {
+        const { recordExternalEvent } = await import("@/lib/portal-signals");
+        await recordExternalEvent({
+          orgId: customer.organizationId,
+          customerId: customer.id,
+          eventType: "UNUSUAL_ACCESS",
+          ip: requestMeta?.ip,
+          userAgent: requestMeta?.userAgent,
+          metadata: { reason: "email_mismatch_stale_credential", flow: "otp" },
+        });
+      } catch {}
       return { success: false, error: "invalid_or_expired_code" };
     }
 
@@ -1054,6 +1167,18 @@ export async function verifyPortalOtp(
       userAgent: requestMeta?.userAgent,
       statusCode: 200,
     });
+
+    try {
+      const { recordExternalEvent } = await import("@/lib/portal-signals");
+      await recordExternalEvent({
+        orgId,
+        customerId: customer.id,
+        eventType: "PORTAL_LOGIN",
+        ip: requestMeta?.ip,
+        userAgent: requestMeta?.userAgent,
+        metadata: { method: "otp" },
+      });
+    } catch {}
 
     logAudit({
       orgId,

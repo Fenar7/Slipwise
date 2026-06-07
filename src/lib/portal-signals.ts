@@ -84,7 +84,19 @@ export async function getPortalAnalyticsSummary(
         createdAt: { gte: since },
       },
     }),
-    db.externalAccessEvent.count({ where: { orgId, eventType: "PROOF_UPLOADED", createdAt: { gte: since } } }),
+    db.externalAccessEvent.count({
+      where: {
+        orgId,
+        eventType: "PROOF_UPLOADED",
+        createdAt: { gte: since },
+        NOT: {
+          metadata: {
+            path: ["isTicketAttachment"],
+            equals: true,
+          },
+        },
+      },
+    }),
     db.externalAccessEvent.count({ where: { orgId, eventType: "UNUSUAL_ACCESS", createdAt: { gte: since } } }),
   ]);
 
