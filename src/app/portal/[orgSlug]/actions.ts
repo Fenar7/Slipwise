@@ -21,9 +21,15 @@ export type PortalActionResult<T> =
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
-async function requireSession() {
-  const session = await getPortalSession();
-  if (!session) redirect("/portal");
+async function requireSession(orgSlug?: string) {
+  const session = await getPortalSession(orgSlug);
+  if (!session) {
+    if (orgSlug) {
+      redirect(`/portal/${orgSlug}/auth/login`);
+    } else {
+      redirect("/portal");
+    }
+  }
   return session;
 }
 
@@ -99,7 +105,7 @@ export async function verifyPortalOtpAction(
 // ─── 2. Get Portal Invoices ────────────────────────────────────────────────────
 
 export async function getPortalInvoices(orgSlug: string) {
-  const session = await requireSession();
+  const session = await requireSession(orgSlug);
   await resolveOrgId(orgSlug, session.orgId);
 
   const invoices = await db.invoice.findMany({
@@ -137,7 +143,7 @@ export async function getPortalInvoiceDetail(
   orgSlug: string,
   invoiceId: string,
 ) {
-  const session = await requireSession();
+  const session = await requireSession(orgSlug);
   await resolveOrgId(orgSlug, session.orgId);
 
   const invoice = await db.invoice.findFirst({
@@ -245,7 +251,7 @@ export async function generatePortalStatement(
   fromDate: string,
   toDate: string,
 ) {
-  const session = await requireSession();
+  const session = await requireSession(orgSlug);
   await resolveOrgId(orgSlug, session.orgId);
 
   // Enforce portalEnabled + portalStatementEnabled policy
@@ -349,7 +355,7 @@ export async function updatePortalProfile(
   orgSlug: string,
   data: { phone?: string; address?: string },
 ) {
-  const session = await requireSession();
+  const session = await requireSession(orgSlug);
   await resolveOrgId(orgSlug, session.orgId);
 
   await db.customer.update({
@@ -379,7 +385,7 @@ export async function initiatePortalPayment(
   orgSlug: string,
   invoiceId: string,
 ) {
-  const session = await requireSession();
+  const session = await requireSession(orgSlug);
   await resolveOrgId(orgSlug, session.orgId);
 
   // IDOR check: invoice must belong to this customer + org
@@ -509,7 +515,7 @@ export async function getPortalQuotes(
   orgSlug: string,
 ): Promise<PortalActionResult<PortalQuoteListItem[]>> {
   try {
-    const session = await requireSession();
+    const session = await requireSession(orgSlug);
     await resolveOrgId(orgSlug, session.orgId);
 
     const [quotes, orgDefaults] = await Promise.all([
@@ -568,7 +574,7 @@ export async function getPortalQuotes(
 
 export async function getPortalQuoteDetail(orgSlug: string, quoteId: string) {
   try {
-    const session = await requireSession();
+    const session = await requireSession(orgSlug);
     await resolveOrgId(orgSlug, session.orgId);
 
     const [quote, orgDefaults] = await Promise.all([
@@ -644,7 +650,7 @@ export async function acceptPortalQuote(
   quoteId: string,
 ): Promise<PortalActionResult<{ quoteNumber: string; staleOutcome?: QuoteStaleOutcome }>> {
   try {
-    const session = await requireSession();
+    const session = await requireSession(orgSlug);
     await resolveOrgId(orgSlug, session.orgId);
 
     // Check portal enabled + policy
@@ -782,7 +788,7 @@ export async function declinePortalQuote(
   reason?: string,
 ): Promise<PortalActionResult<{ quoteNumber: string; staleOutcome?: QuoteStaleOutcome }>> {
   try {
-    const session = await requireSession();
+    const session = await requireSession(orgSlug);
     await resolveOrgId(orgSlug, session.orgId);
 
     // Server-side validation: normalize and validate decline reason
@@ -925,7 +931,7 @@ export async function declinePortalQuote(
 // ─── 11. Get Portal Client Hub Dashboard Data (Sprint 6.1) ──────────────────────
 
 export async function getPortalDashboardData(orgSlug: string) {
-  const session = await requireSession();
+  const session = await requireSession(orgSlug);
   await resolveOrgId(orgSlug, session.orgId);
 
   const customer = await db.customer.findFirst({
@@ -1078,7 +1084,7 @@ export async function getPortalDashboardData(orgSlug: string) {
 }
 
 export async function getPortalPaymentsData(orgSlug: string) {
-  const session = await requireSession();
+  const session = await requireSession(orgSlug);
   await resolveOrgId(orgSlug, session.orgId);
 
   const outstandingBalanceSum = await db.invoice.aggregate({
@@ -1201,7 +1207,7 @@ export type PortalJobsProjectItem = {
 };
 
 export async function getPortalJobsProjects(orgSlug: string): Promise<PortalJobsProjectItem[]> {
-  const session = await requireSession();
+  const session = await requireSession(orgSlug);
   await resolveOrgId(orgSlug, session.orgId);
 
   const invoices = await db.invoice.findMany({

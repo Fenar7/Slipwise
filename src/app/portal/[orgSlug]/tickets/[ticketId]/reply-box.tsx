@@ -47,7 +47,8 @@ export function PortalReplyBox({ ticketId, orgSlug }: PortalReplyBoxProps) {
           file.name,
           file.size,
           file.type,
-          mockStorageKey
+          mockStorageKey,
+          orgSlug
         );
 
         if (result.success && result.id) {
@@ -79,7 +80,7 @@ export function PortalReplyBox({ ticketId, orgSlug }: PortalReplyBoxProps) {
       const result = await submitPortalTicketReply(ticketId, {
         message: message.trim(),
         attachmentIds: attachments.map((a) => a.id),
-      });
+      }, orgSlug);
 
       if (result.success) {
         setMessage("");

@@ -26,13 +26,17 @@ function formatCurrency(amount: number) {
   }).format(amount);
 }
 
+import { checkLegacyRouteRedirect } from "@/lib/portal-eligibility";
+
 export default async function PortalDashboardPage({
   params,
 }: {
   params: Promise<{ orgSlug: string }>;
 }) {
   const { orgSlug } = await params;
-  const session = await getPortalSession();
+  await checkLegacyRouteRedirect(orgSlug, "");
+
+  const session = await getPortalSession(orgSlug);
   if (!session) redirect(`/portal/${orgSlug}/auth/login`);
 
   const now = new Date();

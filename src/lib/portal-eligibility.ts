@@ -110,3 +110,12 @@ export async function checkPortalEligibility(orgSlug: string): Promise<PortalEli
     config,
   };
 }
+
+export async function checkLegacyRouteRedirect(orgSlug: string, targetPath: string): Promise<void> {
+  const eligibility = await checkPortalEligibility(orgSlug);
+  if (eligibility.state === "ENABLED_AND_READY" || eligibility.state === "ENABLED_BUT_NOT_READY") {
+    const { redirect } = await import("next/navigation");
+    redirect(`/portal/${orgSlug}/client-hub${targetPath}`);
+  }
+}
+

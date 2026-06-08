@@ -17,7 +17,7 @@ export default async function PortalStatementsPage({
   params: Promise<{ orgSlug: string }>;
 }) {
   const { orgSlug } = await params;
-  const session = await getPortalSession();
+  const session = await getPortalSession(orgSlug);
   if (!session) redirect(`/portal/${orgSlug}/auth/login`);
 
   const statements = await db.customerStatement.findMany({

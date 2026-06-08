@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { verifyMagicLink } from "@/lib/portal-auth";
+import { checkPortalEligibility } from "@/lib/portal-eligibility";
 
 export default async function PortalVerifyPage({
   params,
@@ -16,13 +17,23 @@ export default async function PortalVerifyPage({
     return <InvalidLink orgSlug={orgSlug} />;
   }
 
+  let verified = false;
   try {
     const result = await verifyMagicLink(token, cid, orgSlug);
     if (result.success) {
-      redirect(`/portal/${orgSlug}/dashboard`);
+      verified = true;
     }
   } catch {
     // Verification failed — fall through to error UI
+  }
+
+  if (verified) {
+    const eligibility = await checkPortalEligibility(orgSlug);
+    if (eligibility.state === "ENABLED_AND_READY" || eligibility.state === "ENABLED_BUT_NOT_READY") {
+      redirect(`/portal/${orgSlug}/client-hub`);
+    } else {
+      redirect(`/portal/${orgSlug}/dashboard`);
+    }
   }
 
   return <InvalidLink orgSlug={orgSlug} />;
