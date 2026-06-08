@@ -210,6 +210,8 @@ export {
   unlockConversation,
   closePortalConversation,
   reopenPortalConversation,
+  updatePortalConversationState,
+  updatePortalConversationAssignment,
 } from "./conversation-service";
 
 // Participant service

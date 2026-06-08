@@ -129,6 +129,10 @@ export async function POST(
 
     const attachments = parseAttachments(body.attachments, orgId, userId);
     const mentions = parseMentions(body.mentions);
+    const audience =
+      body.audience === "INTERNAL_ONLY"
+        ? "INTERNAL_ONLY"
+        : "EXTERNAL_VISIBLE";
 
     const message = await sendMessage({
       orgId,
@@ -138,6 +142,7 @@ export async function POST(
       body: messageBody,
       attachments,
       mentions,
+      audience,
     });
 
     return messagingApiResponse(message, 201);

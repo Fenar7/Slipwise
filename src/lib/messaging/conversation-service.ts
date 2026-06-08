@@ -2,7 +2,7 @@ import "server-only";
 
 import { db } from "@/lib/db";
 import type { Prisma } from "@/generated/prisma/client";
-import type { ConversationRecord } from "./domain-types";
+import type { ConversationRecord, ConversationPortalState, LinkedRecordType } from "./domain-types";
 import {
   conversationOrgSafeWhere,
   participantOrgSafeWhere,
@@ -896,4 +896,165 @@ export async function reopenPortalConversation(
   });
 
   return result;
+}
+
+/**
+ * Update the owner/assignee of a portal conversation.
+ * If assigneeId is null, demotes all owners to MEMBER.
+ * If assigneeId is provided, adds them as OWNER and demotes other owners to MEMBER.
+ */
+export async function updatePortalConversationAssignment(
+  input: {
+    orgId: string;
+    conversationId: string;
+    assigneeId: string | null;
+    actorId: string;
+  }
+): Promise<ConversationRecord> {
+  const result = await db.$transaction(async (tx) => {
+    // Assert conversation access
+    const conversation = await tx.conversation.findFirst({
+      where: { id: input.conversationId, orgId: input.orgId },
+    });
+    if (!conversation) {
+      throw new Error("Conversation not found");
+    }
+    if (conversation.type !== "PORTAL") {
+      throw new Error("Assignment can only be updated for portal conversations");
+    }
+
+    // Find current owners
+    const currentOwners = await tx.conversationParticipant.findMany({
+      where: {
+        orgId: input.orgId,
+        conversationId: input.conversationId,
+        kind: "INTERNAL_MEMBER",
+        role: "OWNER",
+        leftAt: null,
+      },
+    });
+
+    if (input.assigneeId) {
+      // Check if target assignee is valid org member
+      await assertValidOrgMembers(tx, input.orgId, [input.assigneeId], "updatePortalConversationAssignment");
+
+      // Check if target is already a participant
+      const existingPart = await tx.conversationParticipant.findFirst({
+        where: {
+          orgId: input.orgId,
+          conversationId: input.conversationId,
+          userId: input.assigneeId,
+        },
+      });
+
+      if (existingPart) {
+        await tx.conversationParticipant.update({
+          where: { id: existingPart.id },
+          data: { role: "OWNER", leftAt: null },
+        });
+      } else {
+        await tx.conversationParticipant.create({
+          data: {
+            orgId: input.orgId,
+            conversationId: input.conversationId,
+            userId: input.assigneeId,
+            kind: "INTERNAL_MEMBER",
+            role: "OWNER",
+          },
+        });
+      }
+
+      // Demote all other owners to MEMBER
+      for (const owner of currentOwners) {
+        if (owner.userId !== input.assigneeId) {
+          await tx.conversationParticipant.update({
+            where: { id: owner.id },
+            data: { role: "MEMBER" },
+          });
+        }
+      }
+    } else {
+      // Unassign: Demote all owners to MEMBER
+      for (const owner of currentOwners) {
+        await tx.conversationParticipant.update({
+          where: { id: owner.id },
+          data: { role: "MEMBER" },
+        });
+      }
+    }
+
+    // Log audit event
+    await logMessagingAuditTx(tx, {
+      orgId: input.orgId,
+      actorId: input.actorId,
+      action: "PORTAL_CONVERSATION_ASSIGNED",
+      summary: input.assigneeId
+        ? `Assigned portal conversation to user ${input.assigneeId}`
+        : "Unassigned portal conversation",
+      conversationId: input.conversationId,
+    });
+
+    return toConversationRecord(conversation);
+  });
+
+  return result;
+}
+
+/**
+ * Update the portalState of a portal conversation.
+ * Handles closed/reopen transitions through their respective functions,
+ * and directly updates other state transitions.
+ */
+export async function updatePortalConversationState(
+  input: {
+    orgId: string;
+    conversationId: string;
+    portalState: ConversationPortalState;
+    actorId: string;
+  }
+): Promise<ConversationRecord> {
+  if (input.portalState === "CLOSED") {
+    return closePortalConversation({
+      orgId: input.orgId,
+      conversationId: input.conversationId,
+      actorId: input.actorId,
+    });
+  }
+
+  // If reopening from CLOSED, call reopenPortalConversation
+  const conversation = await db.conversation.findFirst({
+    where: { id: input.conversationId, orgId: input.orgId },
+  });
+  if (!conversation) {
+    throw new Error("Conversation not found");
+  }
+  if (conversation.type !== "PORTAL") {
+    throw new Error("State updates can only be performed on portal conversations");
+  }
+
+  if (conversation.portalState === "CLOSED" && input.portalState !== "CLOSED") {
+    return reopenPortalConversation({
+      orgId: input.orgId,
+      conversationId: input.conversationId,
+      actorId: input.actorId,
+    });
+  }
+
+  // Otherwise direct state update (e.g. OPEN <-> WAITING_ON_INTERNAL <-> WAITING_ON_CLIENT)
+  const updated = await db.conversation.update({
+    where: { id: input.conversationId, orgId: input.orgId },
+    data: {
+      portalState: input.portalState,
+    },
+  });
+
+  await logMessagingAuditTx(db, {
+    orgId: input.orgId,
+    actorId: input.actorId,
+    action: "PORTAL_CONVERSATION_REOPENED",
+    summary: `Updated portal conversation state to ${input.portalState}`,
+    conversationId: updated.id,
+  });
+
+  return toConversationRecord(updated);
 }

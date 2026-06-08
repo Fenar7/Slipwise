@@ -27,6 +27,7 @@ export interface AttachmentPayload {
 export interface SendMessageOptions {
   mentions?: MentionPayload[];
   attachments?: AttachmentPayload[];
+  audience?: "EXTERNAL_VISIBLE" | "INTERNAL_ONLY";
 }
 
 export function useSendMessage() {
@@ -54,6 +55,7 @@ export function useSendMessage() {
           threadId: threadId ?? null,
           mentions: options?.mentions ?? [],
           attachments: options?.attachments ?? [],
+          audience: options?.audience ?? "EXTERNAL_VISIBLE",
         }),
       });
       const payload = await res.json();

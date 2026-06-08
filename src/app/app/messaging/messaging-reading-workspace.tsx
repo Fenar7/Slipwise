@@ -29,12 +29,14 @@ import {
   Smile,
   AlertTriangle,
   Loader2,
+  Globe,
 } from "lucide-react";
 import type { ActiveConversation, ConversationMessage, MentionSuggestion, PresenceStatus } from "./types";
 import { MessagingComposer } from "./messaging-composer";
 import { MessagingThreadPanel, type ThreadReplyAttachmentPayload } from "./messaging-thread-panel";
 import { MessagingChannelDetail } from "./messaging-channel-detail";
 import { MessagingGroupDetail } from "./messaging-group-detail";
+import { useOrgMembers } from "./lib/use-org-members";
 import { MentionText } from "./messaging-mention-text";
 import { MessagingMessageActions } from "./messaging-message-actions";
 import { MessagingEmojiPicker } from "./messaging-emoji-picker";
@@ -244,11 +246,13 @@ function WorkspaceHeader({ conversation, threadOpen, onToggleThread, detailOpen,
       ? isPrivateGroup
         ? Lock
         : Users
+      : kind === "portal"
+      ? Globe
       : channelVisibility === "private"
       ? Lock
       : Hash;
 
-  const iconColor = kind === "dm" ? "#79747E" : "#79747E";
+  const iconColor = kind === "portal" ? "#059669" : "#79747E";
 
   return (
     <header
@@ -289,6 +293,20 @@ function WorkspaceHeader({ conversation, threadOpen, onToggleThread, detailOpen,
         {kind === "group" && (
           <span className="shrink-0 rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-[#79747E]">
             {isPrivateGroup ? "Private group" : "Group"} · {groupMemberCount} members
+          </span>
+        )}
+        {kind === "portal" && conversation.portalState && (
+          <span
+            className={cn(
+              "shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider",
+              conversation.portalState === "OPEN" && "bg-emerald-100 text-emerald-800",
+              conversation.portalState === "WAITING_ON_INTERNAL" && "bg-blue-100 text-blue-800",
+              conversation.portalState === "WAITING_ON_CLIENT" && "bg-amber-100 text-amber-800",
+              conversation.portalState === "CLOSED" && "bg-gray-100 text-gray-800"
+            )}
+            data-testid="header-portal-state"
+          >
+            {conversation.portalState}
           </span>
         )}
         {kind === "dm" && dmParticipant && (
@@ -340,7 +358,7 @@ function WorkspaceHeader({ conversation, threadOpen, onToggleThread, detailOpen,
           aria-pressed={detailOpen}
           title="Info"
           onClick={onToggleDetail}
-          data-testid="info-panel-toggle"
+          data-testid="header-toggle-detail"
         >
           <Info
             className={cn("h-3.5 w-3.5", detailOpen ? "text-[#DC2626]" : "")}
@@ -524,7 +542,11 @@ function MessageRow({ message, isThreadAnchor, onOpenThread, onDownloadAttachmen
     <div
       className={cn(
         "group flex gap-3 px-4 py-2 transition-colors",
-        isThreadAnchor ? "bg-red-50/60" : "hover:bg-gray-50/70"
+        message.audience === "INTERNAL_ONLY"
+          ? "bg-amber-50/60 border-l-4 border-amber-400 hover:bg-amber-100/50"
+          : isThreadAnchor
+          ? "bg-red-50/60"
+          : "hover:bg-gray-50/70"
       )}
       data-testid={`message-row-${message.id}`}
     >
@@ -548,6 +570,11 @@ function MessageRow({ message, isThreadAnchor, onOpenThread, onDownloadAttachmen
           {message.authorRole !== "member" && (
             <span className="rounded-full bg-amber-50 px-1.5 py-0.5 text-[9px] font-semibold text-amber-700 capitalize">
               {message.authorRole}
+            </span>
+          )}
+          {message.audience === "INTERNAL_ONLY" && (
+            <span className="rounded bg-amber-100 px-1 py-0.5 text-[9px] font-bold text-amber-800 uppercase tracking-wide">
+              Internal Note
             </span>
           )}
           <span className="text-[10px]" style={{ color: "#79747E" }}>
@@ -987,6 +1014,339 @@ function GroupWorkspace({
   );
 }
 
+// ─── Portal workspace ──────────────────────────────────────────────────────────
+
+interface MessagingPortalDetailProps {
+  conversation: ActiveConversation;
+  onClose: () => void;
+  detail: ApiConversationDetail | null;
+  onRefresh: () => void;
+}
+
+function MessagingPortalDetail({ conversation, onClose, detail, onRefresh }: MessagingPortalDetailProps) {
+  const { members, loading: loadingMembers } = useOrgMembers();
+  const [updating, setUpdating] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+
+  const currentPortalState = detail?.portalState ?? conversation.portalState ?? "OPEN";
+  const currentAssigneeId = detail?.assigneeId ?? conversation.assigneeId ?? null;
+
+  async function handleStateChange(newState: string) {
+    setUpdating(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/messaging/conversations/${conversation.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ portalState: newState }),
+      });
+      if (!res.ok) {
+        throw new Error("Failed to update portal state");
+      }
+      onRefresh();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setUpdating(false);
+    }
+  }
+
+  async function handleAssigneeChange(newAssigneeId: string | null) {
+    setUpdating(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/messaging/conversations/${conversation.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ assigneeId: newAssigneeId || null }),
+      });
+      if (!res.ok) {
+        throw new Error("Failed to update assignee");
+      }
+      onRefresh();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setUpdating(false);
+    }
+  }
+
+  return (
+    <div
+      className="flex flex-col h-full w-80 shrink-0 border-l bg-white overflow-hidden"
+      style={{ borderColor: "#E0E0E0" }}
+      data-testid="portal-detail-panel"
+    >
+      {/* Header */}
+      <div className="flex h-12 shrink-0 items-center justify-between border-b px-4" style={{ borderColor: "#E0E0E0" }}>
+        <span className="text-sm font-bold" style={{ color: "#1C1B1F" }}>Portal Info</span>
+        <button
+          type="button"
+          className="flex h-7 w-7 items-center justify-center rounded-lg hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]"
+          aria-label="Close details panel"
+          onClick={onClose}
+          data-testid="portal-detail-close"
+        >
+          <X className="h-4 w-4" style={{ color: "#79747E" }} />
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-4 space-y-6">
+        {error && (
+          <div className="rounded-lg bg-red-50 p-2.5 text-xs text-red-700" data-testid="portal-detail-error">
+            {error}
+          </div>
+        )}
+
+        {/* Client identity & Context */}
+        <div className="space-y-2">
+          <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500">Client Info</h4>
+          <div className="rounded-lg border p-3 bg-gray-50 space-y-1.5" style={{ borderColor: "#E8E8E8" }}>
+            <div>
+              <span className="text-[10px] text-gray-400 block font-semibold">CLIENT NAME</span>
+              <span className="text-xs font-bold text-[#1C1B1F]">{detail?.name ?? conversation.name ?? "Portal Client"}</span>
+            </div>
+            {detail?.linkedRecordType && (
+              <div>
+                <span className="text-[10px] text-gray-400 block font-semibold">LINKED CONTEXT</span>
+                <span className="text-xs text-[#1C1B1F] font-mono">
+                  {detail.linkedRecordType}: {detail.linkedRecordId}
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* State Control */}
+        <div className="space-y-2">
+          <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500">Lifecycle State</h4>
+          <div className="relative">
+            <select
+              value={currentPortalState}
+              disabled={updating}
+              onChange={(e) => handleStateChange(e.target.value)}
+              className="w-full text-xs rounded-lg border p-2 bg-white text-gray-800 focus:outline-none focus:ring-1 focus:ring-red-500"
+              style={{ borderColor: "#E8E8E8" }}
+              data-testid="portal-state-select"
+            >
+              <option value="OPEN">OPEN</option>
+              <option value="WAITING_ON_INTERNAL">WAITING_ON_INTERNAL</option>
+              <option value="WAITING_ON_CLIENT">WAITING_ON_CLIENT</option>
+              <option value="CLOSED">CLOSED</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Assignment Control */}
+        <div className="space-y-2">
+          <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500">Owner Assignee</h4>
+          <div className="relative">
+            {loadingMembers ? (
+              <div className="flex items-center gap-2 text-xs text-gray-500">
+                <Loader2 className="h-3.5 w-3.5 animate-spin text-[#DC2626]" />
+                Loading team members…
+              </div>
+            ) : (
+              <select
+                value={currentAssigneeId ?? ""}
+                disabled={updating}
+                onChange={(e) => handleAssigneeChange(e.target.value || null)}
+                className="w-full text-xs rounded-lg border p-2 bg-white text-gray-800 focus:outline-none focus:ring-1 focus:ring-red-500"
+                style={{ borderColor: "#E8E8E8" }}
+                data-testid="portal-assignee-select"
+              >
+                <option value="">Unassigned</option>
+                {members.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name} ({m.orgRole})
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PortalWorkspace({
+  conversation,
+  threadOpen,
+  threadAnchorMessageId,
+  onOpenThread,
+  onCloseThread,
+  onToggleThread,
+  detailOpen,
+  onToggleDetail,
+  onCloseDetail,
+  messages: externalMessages,
+  canSend,
+  sending,
+  sendError,
+  onSend,
+  onReply,
+  sendingReply,
+  replyError,
+  threadReplies: externalThreadReplies,
+  detail,
+  onRefreshDetail,
+  participants,
+  onDownloadAttachment,
+  onCreateTaskFromMessage,
+}: WorkspaceBodyProps) {
+  const portalMessages = externalMessages ?? [];
+  const anchorMsg = threadAnchorMessageId
+    ? portalMessages.find((m) => m.id === threadAnchorMessageId) ?? null
+    : null;
+  const threadReplies = externalThreadReplies ?? [];
+
+  const portalState = detail?.portalState ?? conversation.portalState ?? "OPEN";
+  const isClosed = portalState === "CLOSED";
+
+  const [reopening, setReopening] = React.useState(false);
+  const [reopenError, setReopenError] = React.useState<string | null>(null);
+
+  async function handleReopen() {
+    setReopening(true);
+    setReopenError(null);
+    try {
+      const res = await fetch(`/api/messaging/conversations/${conversation.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ portalState: "OPEN" }),
+      });
+      if (!res.ok) {
+        throw new Error("Failed to reopen conversation");
+      }
+      if (onRefreshDetail) {
+        onRefreshDetail();
+      }
+    } catch (e: any) {
+      setReopenError(e.message);
+    } finally {
+      setReopening(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-1 overflow-hidden" data-testid="portal-workspace">
+      {/* Main reading pane */}
+      <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
+        <WorkspaceHeader
+          conversation={conversation}
+          threadOpen={threadOpen}
+          onToggleThread={onToggleThread}
+          detailOpen={detailOpen}
+          onToggleDetail={onToggleDetail}
+        />
+        {/* Portal context bar */}
+        <div
+          className="flex shrink-0 items-center gap-3 border-b px-4 py-2"
+          style={{ borderColor: "#F0F0F0", background: "#FAFAFA" }}
+          data-testid="portal-context-bar"
+        >
+          <Globe className="h-3 w-3 shrink-0 text-emerald-600" />
+          <p className="text-xs truncate font-medium text-gray-600">
+            Portal Conversation with {detail?.name ?? conversation.name ?? "Portal Customer"}
+            {detail?.linkedRecordType && ` · Linked ${detail.linkedRecordType}: ${detail.linkedRecordId}`}
+          </p>
+        </div>
+
+        <MessageFeed
+          messages={portalMessages}
+          threadAnchorMessageId={threadAnchorMessageId}
+          onOpenThread={onOpenThread}
+          onDownloadAttachment={onDownloadAttachment}
+          onCreateTaskFromMessage={onCreateTaskFromMessage}
+          canSend={canSend && !isClosed}
+        />
+
+        {isClosed ? (
+          <div
+            className="border-t bg-gray-50 px-4 py-3 flex items-center justify-between gap-4"
+            style={{ borderColor: "#E0E0E0" }}
+            data-testid="portal-closed-banner"
+          >
+            <div className="flex flex-col">
+              <span className="text-xs font-bold text-gray-700">This portal conversation is closed</span>
+              <span className="text-[10px] text-gray-500">Clients and operators cannot send new messages while closed.</span>
+              {reopenError && <span className="text-[10px] text-red-600 mt-1">{reopenError}</span>}
+            </div>
+            <button
+              type="button"
+              disabled={reopening}
+              onClick={handleReopen}
+              className="px-3 py-1.5 text-xs font-bold rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+              data-testid="portal-reopen-button"
+            >
+              {reopening ? "Reopening…" : "Reopen"}
+            </button>
+          </div>
+        ) : (
+          <MessagingComposer
+            placeholder={`Reply to ${detail?.name ?? conversation.name ?? "client"} or write internal note...`}
+            isAccessible={canSend}
+            onSend={onSend}
+            sending={sending}
+            sendError={sendError}
+            conversationId={conversation.id}
+            participants={participants}
+            isPortal={true}
+          />
+        )}
+      </div>
+
+      {/* Thread panel */}
+      {threadOpen && (anchorMsg ? (
+          <MessagingThreadPanel
+            anchorMessage={anchorMsg}
+            replies={threadReplies}
+            onClose={onCloseThread}
+            onReply={onReply && detail && threadAnchorMessageId
+              ? (body, attachments) => {
+                  const threadId = detail.threads.find((thread) => thread.anchorMessageId === threadAnchorMessageId)?.id ?? threadAnchorMessageId;
+                  const attPayloads = attachments?.map(a => ({ storageRef: a.storageRef, uploadToken: a.uploadToken, fileName: a.fileName, mimeType: a.mimeType, sizeBytes: a.sizeBytes }));
+                  return onReply(threadId, body, attPayloads?.length ? ({ attachments: attPayloads, mentions: undefined }) : undefined);
+                }
+              : undefined}
+            sendingReply={sendingReply}
+            replyError={replyError}
+          />
+        ) : (
+        <div
+          className="flex flex-col h-full w-80 shrink-0 border-l bg-white overflow-hidden"
+          style={{ borderColor: "#E0E0E0" }}
+          data-testid="thread-panel"
+        >
+          <div className="flex h-12 shrink-0 items-center justify-between border-b px-4" style={{ borderColor: "#E0E0E0" }}>
+            <span className="text-sm font-bold" style={{ color: "#1C1B1F" }}>Thread</span>
+            <button
+              type="button"
+              className="flex h-7 w-7 items-center justify-center rounded-lg hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]"
+              aria-label="Close thread panel"
+              onClick={onCloseThread}
+              data-testid="thread-panel-close"
+            >
+              <X className="h-4 w-4" style={{ color: "#79747E" }} />
+            </button>
+          </div>
+          <div className="flex flex-1 items-center justify-center px-4">
+            <p className="text-xs text-center" style={{ color: "#79747E" }}>
+              Select a message thread to view replies here.
+            </p>
+          </div>
+        </div>
+      ))}
+
+      {/* Detail panel */}
+      {detailOpen && (
+        <MessagingPortalDetail conversation={conversation} onClose={onCloseDetail} detail={detail} onRefresh={onRefreshDetail} />
+      )}
+    </div>
+  );
+}
+
 // ─── WorkspaceBodyProps ───────────────────────────────────────────────────────
 
 interface WorkspaceBodyProps {
@@ -1005,7 +1365,11 @@ interface WorkspaceBodyProps {
   sendError?: string | null;
   onSend?: (
     body: string,
-    options?: { mentions?: Array<{ userId: string; offsetStart: number; offsetEnd: number }> },
+    options?: {
+      mentions?: Array<{ userId: string; offsetStart: number; offsetEnd: number }>;
+      attachments?: Array<{ storageRef: string; fileName: string; mimeType: string; sizeBytes: number }>;
+      audience?: "EXTERNAL_VISIBLE" | "INTERNAL_ONLY";
+    },
   ) => Promise<{ id: string } | null>;
   onReply?: (
     threadId: string,
@@ -1038,7 +1402,11 @@ interface MessagingReadingWorkspaceProps {
   sendError?: string | null;
   onSend?: (
     body: string,
-    options?: { mentions?: Array<{ userId: string; offsetStart: number; offsetEnd: number }>; attachments?: Array<{ storageRef: string; fileName: string; mimeType: string; sizeBytes: number }> },
+    options?: {
+      mentions?: Array<{ userId: string; offsetStart: number; offsetEnd: number }>;
+      attachments?: Array<{ storageRef: string; fileName: string; mimeType: string; sizeBytes: number }>;
+      audience?: "EXTERNAL_VISIBLE" | "INTERNAL_ONLY";
+    },
   ) => Promise<{ id: string } | null>;
   onReply?: (
     threadId: string,
@@ -1238,6 +1606,7 @@ export function MessagingReadingWorkspace({
       {conversation.kind === "channel" && <ChannelWorkspace {...bodyProps} />}
       {conversation.kind === "dm" && <DMWorkspace {...bodyProps} />}
       {conversation.kind === "group" && <GroupWorkspace {...bodyProps} />}
+      {conversation.kind === "portal" && <PortalWorkspace {...bodyProps} />}
     </div>
   );
 }
