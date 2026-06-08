@@ -257,6 +257,13 @@ export async function requestMagicLink(
       data: { orgId: customer.organizationId, customerId: customer.id, tokenHash, expiresAt },
     });
 
+    if (customer.clientHubLifecycle && db.clientHubCustomerLifecycle) {
+      await db.clientHubCustomerLifecycle.update({
+        where: { id: customer.clientHubLifecycle.id },
+        data: { latestInviteEmail: customer.email },
+      });
+    }
+
     const baseUrl = getBaseUrl();
     const magicLinkUrl = `${baseUrl}/portal/${orgSlug}/auth/verify?token=${rawToken}&cid=${customer.id}`;
 
@@ -916,6 +923,13 @@ export async function requestPortalOtp(
     await db.customerPortalToken.create({
       data: { orgId: customer.organizationId, customerId: customer.id, tokenHash, expiresAt },
     });
+
+    if (customer.clientHubLifecycle && db.clientHubCustomerLifecycle) {
+      await db.clientHubCustomerLifecycle.update({
+        where: { id: customer.clientHubLifecycle.id },
+        data: { latestInviteEmail: customer.email },
+      });
+    }
 
     console.log(`[ClientHubPortal] OTP generated for ${email.toLowerCase()}`);
 

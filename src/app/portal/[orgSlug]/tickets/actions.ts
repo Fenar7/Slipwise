@@ -27,9 +27,10 @@ export async function listPortalTickets(params?: {
   status?: string;
   search?: string;
   page?: number;
+  orgSlug?: string;
 }): Promise<ActionResult<{ tickets: PortalTicketItem[]; total: number }>> {
   try {
-    const { customerId, orgId } = await requirePortalSession();
+    const { customerId, orgId } = await requirePortalSession(params?.orgSlug);
     const page = params?.page ?? 1;
     const skip = (page - 1) * PAGE_SIZE;
 
@@ -87,9 +88,9 @@ export async function listPortalTickets(params?: {
 
 // ─── Get Ticket Detail ────────────────────────────────────────────────────────
 
-export async function getPortalTicketDetail(ticketId: string) {
+export async function getPortalTicketDetail(ticketId: string, orgSlug?: string) {
   try {
-    const { customerId, orgId } = await requirePortalSession();
+    const { customerId, orgId } = await requirePortalSession(orgSlug);
 
     const ticket = await db.invoiceTicket.findFirst({
       where: {
@@ -143,10 +144,11 @@ export async function getPortalTicketDetail(ticketId: string) {
 
 export async function submitPortalTicketReply(
   ticketId: string,
-  data: { message: string, attachmentIds?: string[] }
+  data: { message: string, attachmentIds?: string[] },
+  orgSlug?: string
 ): Promise<ActionResult<{ replyId: string }>> {
   try {
-    const { customerId, orgId, orgSlug } = await requirePortalSession();
+    const { customerId, orgId, orgSlug: sessionOrgSlug } = await requirePortalSession(orgSlug);
 
     if (!data.message.trim()) {
       return { success: false, error: "Message is required" };
@@ -228,8 +230,9 @@ export async function submitPortalTicketReply(
       });
     } catch {}
 
-    revalidatePath(`/portal/${orgSlug}/tickets`);
-    revalidatePath(`/portal/${orgSlug}/tickets/${ticketId}`);
+    const targetOrgSlug = orgSlug || sessionOrgSlug;
+    revalidatePath(`/portal/${targetOrgSlug}/tickets`);
+    revalidatePath(`/portal/${targetOrgSlug}/tickets/${ticketId}`);
     return { success: true, data: { replyId: reply.id } };
   } catch (error) {
     console.error("[portal-tickets] submitPortalTicketReply error:", error);

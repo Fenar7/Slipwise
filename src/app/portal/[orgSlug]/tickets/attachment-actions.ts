@@ -16,10 +16,11 @@ export async function uploadPortalAttachmentAction(
   fileName: string,
   fileSize: number,
   mimeType: string,
-  storageKey: string
+  storageKey: string,
+  orgSlug?: string
 ) {
   try {
-    const { orgId, customerId } = await requirePortalSession();
+    const { orgId, customerId } = await requirePortalSession(orgSlug);
 
     const trimmedName = fileName.trim();
     if (!trimmedName) {

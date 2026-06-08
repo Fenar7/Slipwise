@@ -11,7 +11,7 @@ interface PageProps {
 
 export default async function PortalTicketDetailPage({ params }: PageProps) {
   const { orgSlug, ticketId } = await params;
-  const ticket = await getPortalTicketDetail(ticketId);
+  const ticket = await getPortalTicketDetail(ticketId, orgSlug);
 
   if (!ticket) {
     notFound();
