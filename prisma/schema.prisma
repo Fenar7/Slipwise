@@ -1181,6 +1181,10 @@ model Customer {
   quotes           Quote[]
   arrangements     PaymentArrangement[]
   crmNotes         CrmNote[]                 @relation("CustomerNotes")
+  conversations    Conversation[]
+  conversationParticipants ConversationParticipant[]
+  conversationMessages    ConversationMessage[]
+  conversationReadStates ConversationReadState[]
 
   @@index([organizationId])
   @@map("customer")
@@ -6165,8 +6169,44 @@ enum ConversationType {
   CHANNEL
   DM
   GROUP
+  PORTAL
 
   @@map("conversation_type")
+}
+
+enum ConversationPortalState {
+  OPEN
+  WAITING_ON_INTERNAL
+  WAITING_ON_CLIENT
+  CLOSED
+
+  @@map("conversation_portal_state")
+}
+
+enum LinkedRecordType {
+  CUSTOMER
+  INVOICE
+  QUOTE
+  PAYMENT
+  STATEMENT
+  TICKET
+  GENERAL_SUPPORT
+
+  @@map("linked_record_type")
+}
+
+enum MessageAudience {
+  EXTERNAL_VISIBLE
+  INTERNAL_ONLY
+
+  @@map("message_audience")
+}
+
+enum ParticipantKind {
+  INTERNAL_MEMBER
+  PORTAL_CLIENT
+
+  @@map("participant_kind")
 }
 
 enum ConversationVisibility {
@@ -6313,6 +6353,15 @@ enum MessagingAuditAction {
   RETENTION_POLICY_CREATED
   RETENTION_POLICY_UPDATED
   ADMIN_SUPPORT_ACTION
+  PORTAL_CONVERSATION_CREATED
+  PORTAL_MESSAGE_SENT
+  PORTAL_INTERNAL_NOTE_CREATED
+  PORTAL_CONVERSATION_CLOSED
+  PORTAL_CONVERSATION_REOPENED
+  PORTAL_CONVERSATION_ASSIGNED
+  PORTAL_ATTACHMENT_UPLOADED
+  PORTAL_CONVERSATION_ACCESS_BLOCKED
+  PORTAL_CONVERSATION_RATE_LIMITED
 
   @@map("messaging_audit_action")
 }
@@ -6359,7 +6408,13 @@ model Conversation {
   createdAt   DateTime                @default(now())
   updatedAt   DateTime                @updatedAt
 
+  portalState      ConversationPortalState?
+  linkedRecordType LinkedRecordType?
+  linkedRecordId   String?
+  customerId       String?
+
   organization          Organization            @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  customer              Customer?               @relation(fields: [customerId], references: [id], onDelete: SetNull)
   participants          ConversationParticipant[]
   messages              ConversationMessage[]
   threads               ConversationThread[]
@@ -6379,6 +6434,7 @@ model Conversation {
   @@index([orgId, type, visibility])
   @@index([orgId, archivedAt])
   @@index([orgId, createdAt])
+  @@index([orgId, customerId])
   @@map("conversation")
 }
 
@@ -6387,7 +6443,9 @@ model ConversationParticipant {
   id             String                     @id @default(cuid())
   orgId          String
   conversationId String
-  userId         String                     @db.Uuid
+  userId         String?                    @db.Uuid
+  customerId     String?
+  kind           ParticipantKind            @default(INTERNAL_MEMBER)
   role           ConversationParticipantRole @default(MEMBER)
   /// When the user last left. Re-joining reactivates this record by clearing leftAt.
   leftAt         DateTime?
@@ -6402,10 +6460,13 @@ model ConversationParticipant {
 
   organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
   conversation Conversation @relation(fields: [conversationId, orgId], references: [id, orgId], onDelete: Cascade)
+  customer     Customer?    @relation(fields: [customerId], references: [id], onDelete: Cascade)
 
   /// One membership record per user per conversation.
   @@unique([conversationId, userId])
+  @@unique([conversationId, customerId])
   @@index([orgId, userId, leftAt])
+  @@index([orgId, customerId, leftAt])
   @@index([orgId, conversationId, leftAt])
   @@map("conversation_participant")
 }
@@ -6418,7 +6479,9 @@ model ConversationMessage {
   conversationId String
   threadId     String?
   /// The user who sent this message (may be a system actor in later phases).
-  authorId     String                     @db.Uuid
+  authorId     String?                    @db.Uuid
+  customerId   String?
+  audience     MessageAudience            @default(EXTERNAL_VISIBLE)
   /// Message body (plain text or rich text serialized format).
   body         String                     @db.Text
   /// Serialized rich content metadata (blocks, formatting, etc.).
@@ -6437,6 +6500,7 @@ model ConversationMessage {
   conversation Conversation           @relation(fields: [conversationId, orgId], references: [id, orgId], onDelete: Cascade)
   thread       ConversationThread?    @relation(fields: [threadId, orgId], references: [id, orgId], onDelete: Cascade)
   anchoredThread ConversationThread?  @relation("ThreadAnchor")
+  customer     Customer?              @relation(fields: [customerId], references: [id], onDelete: Cascade)
   reactions    MessageReaction[]
   mentions     MessageMention[]
   attachments  ConversationAttachment[]
@@ -6448,6 +6512,7 @@ model ConversationMessage {
   @@index([orgId, conversationId, createdAt])
   @@index([orgId, conversationId, threadId, createdAt])
   @@index([orgId, authorId, createdAt])
+  @@index([orgId, customerId, createdAt])
   @@index([orgId, status, createdAt])
   @@map("conversation_message")
 }
@@ -6557,7 +6622,8 @@ model ConversationReadState {
   id                String    @id @default(cuid())
   orgId             String
   conversationId    String
-  userId            String    @db.Uuid
+  userId            String?   @db.Uuid
+  customerId        String?
   lastReadMessageId String?
   /// The timestamp of the last read message (for reconnect/replay safety).
   lastReadAt        DateTime?
@@ -6568,9 +6634,12 @@ model ConversationReadState {
 
   organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
   conversation Conversation @relation(fields: [conversationId, orgId], references: [id, orgId], onDelete: Cascade)
+  customer     Customer?    @relation(fields: [customerId], references: [id], onDelete: Cascade)
 
   @@unique([conversationId, userId])
+  @@unique([conversationId, customerId])
   @@index([orgId, userId, unreadCount])
+  @@index([orgId, customerId, unreadCount])
   @@index([orgId, conversationId, updatedAt])
   @@map("conversation_read_state")
 }

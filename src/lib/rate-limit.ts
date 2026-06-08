@@ -11,7 +11,7 @@ type RateLimitResult = {
 
 const FAIL_OPEN: RateLimitResult = { success: true, remaining: 999 };
 
-async function rateLimit(
+export async function rateLimit(
   identifier: string,
   options?: { maxRequests?: number; window?: string }
 ): Promise<RateLimitResult> {
@@ -85,4 +85,7 @@ export const RATE_LIMITS = {
   messagingGovernance: { maxRequests: 30, window: "60 s" },
   messagingSend: { maxRequests: 60, window: "60 s" },
   messagingUpload: { maxRequests: 30, window: "60 s" },
+  // Phase 10: Portal conversation write boundaries
+  portalMessagingSend: { maxRequests: 20, window: "60 s" },
+  portalMessagingCreate: { maxRequests: 5, window: "60 s" },
 } as const;

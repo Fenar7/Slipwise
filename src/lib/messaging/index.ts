@@ -208,6 +208,8 @@ export {
   changeConversationVisibility,
   lockConversation,
   unlockConversation,
+  closePortalConversation,
+  reopenPortalConversation,
 } from "./conversation-service";
 
 // Participant service
