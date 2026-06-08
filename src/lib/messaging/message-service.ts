@@ -8,7 +8,7 @@ import {
   messageListOrgSafeWhere,
 } from "./org-safe-helpers";
 import { toMessageRecord } from "./mappers";
-import { logMessagingAuditTx } from "./audit";
+import { logMessagingAudit, logMessagingAuditTx } from "./audit";
 import type {
   SendMessageInput,
   EditMessageInput,
@@ -17,6 +17,7 @@ import type {
 import {
   assertConversationAction,
 } from "./service-helpers";
+import { rateLimit } from "@/lib/rate-limit";
 import { getRealtimePublisherOrNoop } from "./realtime/publisher";
 import { appendConversationEvent } from "./realtime/event-log-service";
 import { indexAttachmentsForMessage } from "./indexing-service";
@@ -77,11 +78,14 @@ export async function listConversationMessages(
   userId: string,
   options?: { limit?: number; cursor?: string },
 ): Promise<ConversationMessageRecord[]> {
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId);
+
   const participant = await db.conversationParticipant.findFirst({
     where: {
       orgId,
       conversationId,
-      userId,
+      userId: isUuid ? userId : undefined,
+      customerId: !isUuid ? userId : undefined,
       leftAt: null,
     },
   });
@@ -89,10 +93,17 @@ export async function listConversationMessages(
     throw new Error("listConversationMessages: active participant access required");
   }
 
+  const conversation = await db.conversation.findFirst({
+    where: { id: conversationId, orgId },
+  });
+
+  const hideInternalNotes = conversation?.type === "PORTAL" && participant.kind === "PORTAL_CLIENT";
+
   const rows = await db.conversationMessage.findMany({
     where: {
       ...messageListOrgSafeWhere(orgId, conversationId),
       threadId: null,
+      audience: hideInternalNotes ? "EXTERNAL_VISIBLE" : undefined,
     },
     orderBy: { createdAt: "asc" },
     take: options?.limit ?? 50,
@@ -111,10 +122,33 @@ export async function listConversationMessages(
 export async function sendMessage(
   input: SendMessageInput,
 ): Promise<ConversationMessageRecord> {
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(input.authorId);
+
+  // Rate limiting for portal client writes
+  if (!isUuid) {
+    const conversation = await db.conversation.findFirst({
+      where: { id: input.conversationId, orgId: input.orgId },
+    });
+    if (conversation?.type === "PORTAL") {
+      const limitResult = await rateLimit(`portal-msg:${input.authorId}`, { maxRequests: 20, window: "60 s" });
+      if (!limitResult.success) {
+        await logMessagingAudit({
+          orgId: input.orgId,
+          actorId: input.authorId,
+          action: "PORTAL_CONVERSATION_RATE_LIMITED",
+          summary: "Portal message send blocked: Rate limit exceeded",
+          conversationId: input.conversationId,
+          metadata: { customerId: input.authorId, reason: "rate_limit_exceeded" }
+        });
+        throw new Error("Rate limit exceeded. Please try again later.");
+      }
+    }
+  }
+
   let eventMeta: { eventId: string; cursor: bigint } | undefined;
 
   const result = await db.$transaction(async (tx) => {
-    await assertConversationAction(
+    const { conversation } = await assertConversationAction(
       tx,
       input.orgId,
       input.conversationId,
@@ -122,6 +156,11 @@ export async function sendMessage(
       "SEND_MESSAGE",
       "sendMessage",
     );
+    // If it's a portal conversation and the client sends a message, audience MUST be EXTERNAL_VISIBLE
+    let msgAudience: "EXTERNAL_VISIBLE" | "INTERNAL_ONLY" = input.audience ?? "EXTERNAL_VISIBLE";
+    if (conversation.type === "PORTAL" && !isUuid) {
+      msgAudience = "EXTERNAL_VISIBLE";
+    }
 
     if (input.threadId) {
       const thread = await tx.conversationThread.findFirst({
@@ -180,7 +219,9 @@ export async function sendMessage(
         orgId: input.orgId,
         conversationId: input.conversationId,
         threadId: input.threadId ?? null,
-        authorId: input.authorId,
+        authorId: isUuid ? input.authorId : null,
+        customerId: !isUuid ? input.authorId : null,
+        audience: msgAudience,
         body: input.body,
         participantCountAtSend: participantCount,
       },
@@ -218,7 +259,7 @@ export async function sendMessage(
       await logMessagingAuditTx(tx, {
         orgId: input.orgId,
         actorId: input.authorId,
-        action: "ATTACHMENT_UPLOADED",
+        action: conversation.type === "PORTAL" ? "PORTAL_ATTACHMENT_UPLOADED" : "ATTACHMENT_UPLOADED",
         summary: `Linked ${input.attachments.length} attachment(s) to message`,
         conversationId: input.conversationId,
         messageId: message.id,
@@ -226,43 +267,107 @@ export async function sendMessage(
     }
 
     // Upsert read state for author to mark their own message as read
-    await tx.conversationReadState.upsert({
-      where: {
-        conversationId_userId: {
+    if (isUuid) {
+      await tx.conversationReadState.upsert({
+        where: {
+          conversationId_userId: {
+            conversationId: input.conversationId,
+            userId: input.authorId,
+          },
+        },
+        create: {
+          orgId: input.orgId,
           conversationId: input.conversationId,
           userId: input.authorId,
+          lastReadMessageId: message.id,
+          lastReadAt: new Date(),
+          unreadCount: 0,
         },
-      },
-      create: {
-        orgId: input.orgId,
-        conversationId: input.conversationId,
-        userId: input.authorId,
-        lastReadMessageId: message.id,
-        lastReadAt: new Date(),
-        unreadCount: 0,
-      },
-      update: {
-        lastReadMessageId: message.id,
-        lastReadAt: new Date(),
-        unreadCount: 0,
-      },
-    });
+        update: {
+          lastReadMessageId: message.id,
+          lastReadAt: new Date(),
+          unreadCount: 0,
+        },
+      });
+    } else {
+      await tx.conversationReadState.upsert({
+        where: {
+          conversationId_customerId: {
+            conversationId: input.conversationId,
+            customerId: input.authorId,
+          },
+        },
+        create: {
+          orgId: input.orgId,
+          conversationId: input.conversationId,
+          customerId: input.authorId,
+          lastReadMessageId: message.id,
+          lastReadAt: new Date(),
+          unreadCount: 0,
+        },
+        update: {
+          lastReadMessageId: message.id,
+          lastReadAt: new Date(),
+          unreadCount: 0,
+        },
+      });
+    }
 
-    await logMessagingAuditTx(tx, {
-      orgId: input.orgId,
-      actorId: input.authorId,
-      action: "MESSAGE_SENT",
-      summary: `Sent message in conversation`,
-      conversationId: input.conversationId,
-      messageId: message.id,
-    });
+    // Handle portal specific audit events and state transitions
+    if (conversation.type === "PORTAL") {
+      let nextState: "WAITING_ON_INTERNAL" | "WAITING_ON_CLIENT" | null = null;
+      let auditAction: any = "PORTAL_MESSAGE_SENT";
+      let summary = "Sent portal message";
+
+      if (!isUuid) {
+        // Sent by external client
+        nextState = "WAITING_ON_INTERNAL";
+        auditAction = "PORTAL_MESSAGE_SENT";
+        summary = `Client sent portal message`;
+      } else {
+        // Sent by internal user
+        if (msgAudience === "INTERNAL_ONLY") {
+          auditAction = "PORTAL_INTERNAL_NOTE_CREATED";
+          summary = `Created internal note`;
+        } else {
+          nextState = "WAITING_ON_CLIENT";
+          auditAction = "PORTAL_MESSAGE_SENT";
+          summary = `Internal user sent portal message`;
+        }
+      }
+
+      if (nextState) {
+        await tx.conversation.update({
+          where: { id: input.conversationId, orgId: input.orgId },
+          data: { portalState: nextState },
+        });
+      }
+
+      await logMessagingAuditTx(tx, {
+        orgId: input.orgId,
+        actorId: input.authorId,
+        action: auditAction,
+        summary,
+        conversationId: input.conversationId,
+        messageId: message.id,
+      });
+    } else {
+      await logMessagingAuditTx(tx, {
+        orgId: input.orgId,
+        actorId: input.authorId,
+        action: "MESSAGE_SENT",
+        summary: `Sent message in conversation`,
+        conversationId: input.conversationId,
+        messageId: message.id,
+      });
+    }
 
     // Sprint 4.3: durable event log append for replay
     eventMeta = await appendConversationEvent(tx, {
       orgId: input.orgId,
       conversationId: input.conversationId,
       eventType: "conversation.message.created",
-      actorId: input.authorId,
+      actorId: isUuid ? input.authorId : null,
       payload: { messageId: message.id, threadId: message.threadId },
     });
 

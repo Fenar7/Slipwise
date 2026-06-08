@@ -30,6 +30,10 @@ import type {
   MessagingAuditAction,
   RetentionPolicyType,
   RetentionAction,
+  ConversationPortalState,
+  LinkedRecordType,
+  MessageAudience,
+  ParticipantKind,
 } from "@/generated/prisma/client";
 
 // Re-export enums for use in service layer without importing from generated client directly.
@@ -51,6 +55,10 @@ export type {
   MessagingAuditAction,
   RetentionPolicyType,
   RetentionAction,
+  ConversationPortalState,
+  LinkedRecordType,
+  MessageAudience,
+  ParticipantKind,
 };
 
 // ─── Conversation ───────────────────────────────────────────────────────────────
@@ -71,6 +79,10 @@ export interface ConversationRecord {
   createdBy: string;
   createdAt: Date;
   updatedAt: Date;
+  portalState: ConversationPortalState | null;
+  linkedRecordType: LinkedRecordType | null;
+  linkedRecordId: string | null;
+  customerId: string | null;
 }
 
 export function conversationIsArchived(record: ConversationRecord): boolean {
@@ -103,7 +115,9 @@ export interface ConversationParticipantRecord {
   id: string;
   orgId: string;
   conversationId: string;
-  userId: string;
+  userId: string | null;
+  customerId: string | null;
+  kind: ParticipantKind;
   role: ConversationParticipantRole;
   leftAt: Date | null;
   mutedUntil: Date | null;
@@ -133,7 +147,9 @@ export interface ConversationMessageRecord {
   orgId: string;
   conversationId: string;
   threadId: string | null;
-  authorId: string;
+  authorId: string | null;
+  customerId: string | null;
+  audience: MessageAudience;
   body: string;
   contentMeta: Record<string, unknown> | null;
   status: ConversationMessageStatus;
@@ -229,7 +245,8 @@ export interface ConversationReadStateRecord {
   id: string;
   orgId: string;
   conversationId: string;
-  userId: string;
+  userId: string | null;
+  customerId: string | null;
   lastReadMessageId: string | null;
   lastReadAt: Date | null;
   unreadCount: number;

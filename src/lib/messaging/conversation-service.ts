@@ -8,11 +8,12 @@ import {
   participantOrgSafeWhere,
 } from "./org-safe-helpers";
 import { toConversationRecord, toParticipantRecord } from "./mappers";
-import { logMessagingAuditTx } from "./audit";
+import { logMessagingAudit, logMessagingAuditTx } from "./audit";
 import {
   assertConversationAction,
   assertGovernanceAction,
 } from "./service-helpers";
+import { rateLimit } from "@/lib/rate-limit";
 import { getRealtimePublisherOrNoop } from "./realtime/publisher";
 import { appendConversationEvent } from "./realtime/event-log-service";
 import type {
@@ -201,10 +202,79 @@ export async function listConversationsForUser(
  * For DMs, enforces exactly two participants (creator + dmPeerId) and null visibility.
  * Duplicate DMs for the same pair are prevented server-side.
  */
+
 export async function createConversation(
   input: CreateConversationInput,
 ): Promise<CreateConversationResult> {
+  // Rate limit check for portal conversations
+  if (input.type === "PORTAL") {
+    const limitResult = await rateLimit(`portal-create:${input.customerId}`, { maxRequests: 5, window: "60 s" });
+    if (!limitResult.success) {
+      await logMessagingAudit({
+        orgId: input.orgId,
+        actorId: input.createdBy,
+        action: "PORTAL_CONVERSATION_RATE_LIMITED",
+        summary: "Portal conversation creation blocked: Rate limit exceeded",
+        metadata: { customerId: input.customerId, reason: "rate_limit_exceeded" }
+      });
+      throw new Error("Rate limit exceeded. Please try again later.");
+    }
+  }
+
   const result = await db.$transaction(async (tx) => {
+    // Portal validation and scoping
+    if (input.type === "PORTAL") {
+      if (!input.customerId) {
+        throw new Error("Portal conversations require customerId");
+      }
+
+      if (input.linkedRecordType) {
+        const allowedTypes = ["CUSTOMER", "INVOICE", "QUOTE", "PAYMENT", "STATEMENT", "TICKET", "GENERAL_SUPPORT"];
+        if (!allowedTypes.includes(input.linkedRecordType)) {
+          throw new Error(`Invalid linkedRecordType: ${input.linkedRecordType}`);
+        }
+      }
+
+      // Check customer eligibility
+      const customer = await tx.customer.findFirst({
+        where: { id: input.customerId, organizationId: input.orgId },
+        include: { organization: { include: { defaults: true } } },
+      });
+
+      if (!customer) {
+        await logMessagingAuditTx(tx, {
+          orgId: input.orgId,
+          actorId: input.createdBy,
+          action: "PORTAL_CONVERSATION_ACCESS_BLOCKED",
+          summary: "Portal conversation creation blocked: Customer not found",
+          metadata: { customerId: input.customerId, reason: "customer_not_found" }
+        });
+        throw new Error("Customer not found in this organization");
+      }
+
+      if (customer.lifecycleStage === "CHURNED") {
+        await logMessagingAuditTx(tx, {
+          orgId: input.orgId,
+          actorId: input.createdBy,
+          action: "PORTAL_CONVERSATION_ACCESS_BLOCKED",
+          summary: "Portal conversation creation blocked: Customer is churned",
+          metadata: { customerId: input.customerId, reason: "customer_churned" }
+        });
+        throw new Error("Customer is churned and ineligible for portal access");
+      }
+
+      if (!customer.organization.defaults?.portalEnabled) {
+        await logMessagingAuditTx(tx, {
+          orgId: input.orgId,
+          actorId: input.createdBy,
+          action: "PORTAL_CONVERSATION_ACCESS_BLOCKED",
+          summary: "Portal conversation creation blocked: Portal access disabled",
+          metadata: { customerId: input.customerId, reason: "portal_disabled" }
+        });
+        throw new Error("Portal access is disabled for this organization");
+      }
+    }
+
     // DM validation
     if (input.type === "DM") {
       if (!input.dmPeerId) {
@@ -220,8 +290,7 @@ export async function createConversation(
       // Validate peer is an org member
       await assertValidOrgMembers(tx, input.orgId, [input.dmPeerId], "createConversation");
 
-      // Prevent duplicate DMs: if a DM already exists between these two users,
-      // return the existing conversation instead of creating a new one.
+      // Prevent duplicate DMs
       const existing = await findExistingDM(tx, input.orgId, input.createdBy, input.dmPeerId);
       if (existing) {
         const existingParticipants = await tx.conversationParticipant.findMany({
@@ -235,7 +304,7 @@ export async function createConversation(
     }
 
     // For channels/groups, validate initial participants are org members
-    if (input.type !== "DM" && input.initialParticipantIds && input.initialParticipantIds.length > 0) {
+    if (input.type !== "DM" && input.type !== "PORTAL" && input.initialParticipantIds && input.initialParticipantIds.length > 0) {
       await assertValidOrgMembers(tx, input.orgId, input.initialParticipantIds, "createConversation");
     }
 
@@ -249,46 +318,91 @@ export async function createConversation(
         visibility: input.type === "DM" ? null : input.visibility,
         dmPeerId: input.type === "DM" ? (input.dmPeerId ?? null) : null,
         createdBy: input.createdBy,
+        portalState: input.type === "PORTAL" ? (input.portalState ?? "OPEN") : null,
+        linkedRecordType: input.type === "PORTAL" ? (input.linkedRecordType ?? null) : null,
+        linkedRecordId: input.type === "PORTAL" ? (input.linkedRecordId ?? null) : null,
+        customerId: input.type === "PORTAL" ? (input.customerId ?? null) : null,
       },
     });
 
-    // Build participant list: creator is always OWNER
+    // Build participant list
     const participantData: Array<{
       orgId: string;
-      userId: string;
+      userId: string | null;
+      customerId: string | null;
+      kind: "INTERNAL_MEMBER" | "PORTAL_CLIENT";
       role: "OWNER" | "ADMIN" | "MEMBER";
-    }> = [
-      {
-        orgId: input.orgId,
-        userId: input.createdBy,
-        role: "OWNER",
-      },
-    ];
+    }> = [];
 
-    if (input.type === "DM") {
-      participantData.push({
-        orgId: input.orgId,
-        userId: input.dmPeerId as string,
-        role: "MEMBER",
-      });
-    } else if (input.initialParticipantIds && input.initialParticipantIds.length > 0) {
-      const seenUserIds = new Set<string>([input.createdBy]);
-      for (const userId of input.initialParticipantIds) {
-        if (userId === input.createdBy) continue;
-        if (seenUserIds.has(userId)) continue;
-        seenUserIds.add(userId);
+    if (input.type === "PORTAL") {
+      const isCreatedByClient = input.createdBy === input.customerId;
+      if (isCreatedByClient) {
         participantData.push({
           orgId: input.orgId,
-          userId,
+          userId: null,
+          customerId: input.customerId,
+          kind: "PORTAL_CLIENT",
+          role: "OWNER",
+        });
+      } else {
+        // Created by internal user
+        participantData.push({
+          orgId: input.orgId,
+          userId: input.createdBy,
+          customerId: null,
+          kind: "INTERNAL_MEMBER",
+          role: "OWNER",
+        });
+        participantData.push({
+          orgId: input.orgId,
+          userId: null,
+          customerId: input.customerId,
+          kind: "PORTAL_CLIENT",
           role: "MEMBER",
         });
+      }
+    } else {
+      participantData.push({
+        orgId: input.orgId,
+        userId: input.createdBy,
+        customerId: null,
+        kind: "INTERNAL_MEMBER",
+        role: "OWNER",
+      });
+
+      if (input.type === "DM") {
+        participantData.push({
+          orgId: input.orgId,
+          userId: input.dmPeerId as string,
+          customerId: null,
+          kind: "INTERNAL_MEMBER",
+          role: "MEMBER",
+        });
+      } else if (input.initialParticipantIds && input.initialParticipantIds.length > 0) {
+        const seenUserIds = new Set<string>([input.createdBy]);
+        for (const userId of input.initialParticipantIds) {
+          if (userId === input.createdBy) continue;
+          if (seenUserIds.has(userId)) continue;
+          seenUserIds.add(userId);
+          participantData.push({
+            orgId: input.orgId,
+            userId,
+            customerId: null,
+            kind: "INTERNAL_MEMBER",
+            role: "MEMBER",
+          });
+        }
       }
     }
 
     await tx.conversationParticipant.createMany({
       data: participantData.map((p) => ({
-        ...p,
+        orgId: p.orgId,
         conversationId: conversationRow.id,
+        userId: p.userId,
+        customerId: p.customerId,
+        kind: p.kind,
+        role: p.role,
       })),
     });
 
@@ -296,11 +410,14 @@ export async function createConversation(
       where: participantOrgSafeWhere(input.orgId, conversationRow.id),
     });
 
+    const isPortal = input.type === "PORTAL";
     await logMessagingAuditTx(tx, {
       orgId: input.orgId,
       actorId: input.createdBy,
-      action: "CONVERSATION_CREATED",
-      summary: `Created ${input.type.toLowerCase()} "${conversationRow.name ?? "(untitled)"}"`,
+      action: isPortal ? "PORTAL_CONVERSATION_CREATED" : "CONVERSATION_CREATED",
+      summary: isPortal
+        ? `Created portal conversation for customer "${input.customerId}"`
+        : `Created ${input.type.toLowerCase()} "${conversationRow.name ?? "(untitled)"}"`,
       conversationId: conversationRow.id,
     });
 
@@ -644,6 +761,134 @@ export async function unlockConversation(
       actorId: input.unlockedBy,
       action: "CONVERSATION_UNLOCKED",
       summary: `Unlocked conversation "${updated.name ?? "(untitled)"}"`,
+      conversationId: updated.id,
+    });
+
+    return toConversationRecord(updated);
+  });
+
+  return result;
+}
+
+/**
+ * Close a portal conversation. Lifecycle state becomes CLOSED.
+ * Only internal users may close portal conversations.
+ */
+export async function closePortalConversation(
+  input: {
+    orgId: string;
+    conversationId: string;
+    actorId: string;
+    actorOrgRole?: string;
+    isPlatformAdmin?: boolean;
+  }
+): Promise<ConversationRecord> {
+  const result = await db.$transaction(async (tx) => {
+    const { conversation } = await assertGovernanceOrConversationAction(
+      tx,
+      {
+        orgId: input.orgId,
+        conversationId: input.conversationId,
+        actorId: input.actorId,
+        actorOrgRole: input.actorOrgRole,
+        isPlatformAdmin: input.isPlatformAdmin,
+      },
+      "ARCHIVE",
+      "closePortalConversation",
+    );
+
+    if (conversation.type !== "PORTAL") {
+      throw new Error("closePortalConversation: conversation is not a portal conversation");
+    }
+
+    if (conversation.portalState === "CLOSED") {
+      throw new Error("closePortalConversation: conversation is already closed");
+    }
+
+    const updated = await tx.conversation.update({
+      where: { id: input.conversationId, orgId: input.orgId },
+      data: {
+        portalState: "CLOSED",
+      },
+    });
+
+    await logMessagingAuditTx(tx, {
+      orgId: input.orgId,
+      actorId: input.actorId,
+      action: "PORTAL_CONVERSATION_CLOSED",
+      summary: `Closed portal conversation for customer "${conversation.customerId}"`,
+      conversationId: updated.id,
+    });
+
+    return toConversationRecord(updated);
+  });
+
+  return result;
+}
+
+/**
+ * Reopen a closed portal conversation. Lifecycle state becomes OPEN.
+ * Only internal users may reopen portal conversations.
+ */
+export async function reopenPortalConversation(
+  input: {
+    orgId: string;
+    conversationId: string;
+    actorId: string;
+    actorOrgRole?: string;
+    isPlatformAdmin?: boolean;
+  }
+): Promise<ConversationRecord> {
+  const result = await db.$transaction(async (tx) => {
+    const { conversation } = await assertGovernanceOrConversationAction(
+      tx,
+      {
+        orgId: input.orgId,
+        conversationId: input.conversationId,
+        actorId: input.actorId,
+        actorOrgRole: input.actorOrgRole,
+        isPlatformAdmin: input.isPlatformAdmin,
+      },
+      "UNARCHIVE",
+      "reopenPortalConversation",
+    );
+
+    if (conversation.type !== "PORTAL") {
+      throw new Error("reopenPortalConversation: conversation is not a portal conversation");
+    }
+
+    if (conversation.portalState !== "CLOSED") {
+      throw new Error("reopenPortalConversation: conversation is not closed");
+    }
+
+    const customer = await tx.customer.findFirst({
+      where: { id: conversation.customerId as string, organizationId: input.orgId },
+      include: { organization: { include: { defaults: true } } },
+    });
+
+    if (!customer || customer.lifecycleStage === "CHURNED" || !customer.organization.defaults?.portalEnabled) {
+      await logMessagingAuditTx(tx, {
+        orgId: input.orgId,
+        actorId: input.actorId,
+        action: "PORTAL_CONVERSATION_ACCESS_BLOCKED",
+        summary: "Portal conversation reopening blocked: Customer ineligible",
+        metadata: { customerId: conversation.customerId, reason: "customer_ineligible" }
+      });
+      throw new Error("Customer is ineligible for portal access");
+    }
+
+    const updated = await tx.conversation.update({
+      where: { id: input.conversationId, orgId: input.orgId },
+      data: {
+        portalState: "OPEN",
+      },
+    });
+
+    await logMessagingAuditTx(tx, {
+      orgId: input.orgId,
+      actorId: input.actorId,
+      action: "PORTAL_CONVERSATION_REOPENED",
+      summary: `Reopened portal conversation for customer "${conversation.customerId}"`,
       conversationId: updated.id,
     });
 

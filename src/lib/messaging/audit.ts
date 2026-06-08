@@ -43,6 +43,15 @@ export const MESSAGING_AUDIT_ACTION_LABELS: Record<MessagingAuditAction, string>
   RETENTION_POLICY_CREATED: "Created retention policy",
   RETENTION_POLICY_UPDATED: "Updated retention policy",
   ADMIN_SUPPORT_ACTION: "Performed admin support action",
+  PORTAL_CONVERSATION_CREATED: "Created portal conversation",
+  PORTAL_MESSAGE_SENT: "Sent portal message",
+  PORTAL_INTERNAL_NOTE_CREATED: "Created internal note",
+  PORTAL_CONVERSATION_CLOSED: "Closed portal conversation",
+  PORTAL_CONVERSATION_REOPENED: "Reopened portal conversation",
+  PORTAL_CONVERSATION_ASSIGNED: "Assigned portal conversation",
+  PORTAL_ATTACHMENT_UPLOADED: "Uploaded portal attachment",
+  PORTAL_CONVERSATION_ACCESS_BLOCKED: "Blocked portal conversation access",
+  PORTAL_CONVERSATION_RATE_LIMITED: "Rate limited portal conversation action",
 };
 
 // ─── Safe metadata rules ──────────────────────────────────────────────────────
