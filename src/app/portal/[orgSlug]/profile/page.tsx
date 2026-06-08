@@ -21,7 +21,7 @@ export default async function PortalProfilePage({
   params: Promise<{ orgSlug: string }>;
 }) {
   const { orgSlug } = await params;
-  const session = await getPortalSession();
+  const session = await getPortalSession(orgSlug);
   if (!session) redirect(`/portal/${orgSlug}/auth/login`);
 
   const [customer, activeSessions] = await Promise.all([

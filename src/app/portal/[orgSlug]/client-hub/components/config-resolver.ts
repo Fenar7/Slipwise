@@ -115,17 +115,16 @@ export async function getEffectiveClientHubConfig(orgSlug: string, customerId: s
     return orgDefault;
   }
 
+  const customer = await db.customer.findUnique({
+    where: { id: customerId },
+    select: { organization: { select: { slug: true } } },
+  });
+
+  if (!customer || customer.organization.slug !== orgSlug) {
+    throw new Error("Unauthorized customer organization context");
+  }
+
   try {
-    const customer = await db.customer.findUnique({
-      where: { id: customerId },
-      select: { organization: { select: { slug: true } } },
-    });
-
-    if (!customer || customer.organization.slug !== orgSlug) {
-      console.warn("getEffectiveClientHubConfig: customer org mismatch, returning defaults");
-      return orgDefault;
-    }
-
     const overrideRecord = await db.clientHubCustomerOverride.findUnique({
       where: { customerId },
       select: { overrideConfig: true },

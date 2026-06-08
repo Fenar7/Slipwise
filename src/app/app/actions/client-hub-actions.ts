@@ -156,7 +156,7 @@ export async function getClientHubOrgConfig(): Promise<GetClientHubOrgConfigResu
 export async function updateClientHubOrgConfig(input: ClientHubConfig) {
   try {
     // 1. Authenticate and enforce organization context
-    const { orgId, role } = await requireOrgContext();
+    const { orgId, role, userId } = await requireOrgContext();
 
     // 2. Authorize only admin and owner roles
     if (role !== "admin" && role !== "owner") {
@@ -177,16 +177,27 @@ export async function updateClientHubOrgConfig(input: ClientHubConfig) {
 
     const validatedConfig = validationResult.data;
 
-    // 4. Perform truthful persistence using upsert (strictly org-scoped)
-    await db.clientHubOrgConfig.upsert({
-      where: { organizationId: orgId },
-      create: {
-        organizationId: orgId,
-        config: validatedConfig as any,
-      },
-      update: {
-        config: validatedConfig as any,
-      },
+    // 4. Perform truthful persistence using upsert (strictly org-scoped) and log audit transactionally
+    await db.$transaction(async (tx) => {
+      await tx.clientHubOrgConfig.upsert({
+        where: { organizationId: orgId },
+        create: {
+          organizationId: orgId,
+          config: validatedConfig as any,
+        },
+        update: {
+          config: validatedConfig as any,
+        },
+      });
+
+      await logAuditTx(tx, {
+        orgId,
+        actorId: userId,
+        action: "portal.config_updated",
+        entityType: "ClientHubOrgConfig",
+        entityId: orgId,
+        metadata: { config: validatedConfig },
+      });
     });
 
     // 5. Revalidate cache on affected pages to reflect new defaults
@@ -293,7 +304,7 @@ export async function getClientOverrideEditorState(customerId: string) {
 export async function updateClientHubCustomerOverride(customerId: string, effectiveConfig: ClientHubConfig) {
   try {
     // 1. Authenticate and enforce organization context and admin/owner role
-    const { orgId, role } = await requireOrgContext();
+    const { orgId, role, userId } = await requireOrgContext();
     if (role !== "admin" && role !== "owner") {
       return { success: false, error: "Only administrators can update client overrides." };
     }
@@ -339,33 +350,51 @@ export async function updateClientHubCustomerOverride(customerId: string, effect
     }
     const validatedDelta = deltaValidation.data;
 
-    // 7. Persist or Clean up the record
+    // 7. Persist or Clean up the record transactionally with audit log
     const isEmpty = Object.keys(validatedDelta || {}).length === 0;
 
-    if (isEmpty) {
-      // Delta is empty (identical to defaults), so cleanly delete to avoid database bloat
-      await db.clientHubCustomerOverride.deleteMany({
-        where: { customerId },
-      });
-      revalidatePath("/app/settings/portal/client-hub");
-      return { success: true, isCleared: true };
-    }
+    await db.$transaction(async (tx) => {
+      if (isEmpty) {
+        // Delta is empty (identical to defaults), so cleanly delete to avoid database bloat
+        await tx.clientHubCustomerOverride.deleteMany({
+          where: { customerId },
+        });
 
-    // Persist only the delta/override payload (strictly org-scoped)
-    await db.clientHubCustomerOverride.upsert({
-      where: { customerId },
-      create: {
-        organizationId: orgId,
-        customerId,
-        overrideConfig: validatedDelta as any,
-      },
-      update: {
-        overrideConfig: validatedDelta as any,
-      },
+        await logAuditTx(tx, {
+          orgId,
+          actorId: userId,
+          action: "portal.override_cleared",
+          entityType: "ClientHubCustomerOverride",
+          entityId: customerId,
+          metadata: { customerId },
+        });
+      } else {
+        // Persist only the delta/override payload (strictly org-scoped)
+        await tx.clientHubCustomerOverride.upsert({
+          where: { customerId },
+          create: {
+            organizationId: orgId,
+            customerId,
+            overrideConfig: validatedDelta as any,
+          },
+          update: {
+            overrideConfig: validatedDelta as any,
+          },
+        });
+
+        await logAuditTx(tx, {
+          orgId,
+          actorId: userId,
+          action: "portal.override_updated",
+          entityType: "ClientHubCustomerOverride",
+          entityId: customerId,
+          metadata: { customerId, overrideConfig: validatedDelta },
+        });
+      }
     });
 
     revalidatePath("/app/settings/portal/client-hub");
-    return { success: true, isCleared: false };
+    return { success: true, isCleared: isEmpty };
   } catch (error) {
     console.error("updateClientHubCustomerOverride error:", error);
     return { success: false, error: "Failed to persist client override configuration." };
@@ -379,7 +408,7 @@ export async function updateClientHubCustomerOverride(customerId: string, effect
 export async function clearClientHubCustomerOverride(customerId: string) {
   try {
     // 1. Authenticate and enforce organization context and admin/owner role
-    const { orgId, role } = await requireOrgContext();
+    const { orgId, role, userId } = await requireOrgContext();
     if (role !== "admin" && role !== "owner") {
       return { success: false, error: "Only administrators can reset client overrides." };
     }
@@ -393,9 +422,20 @@ export async function clearClientHubCustomerOverride(customerId: string) {
       return { success: false, error: "Customer context mismatch or not authorized." };
     }
 
-    // 3. Delete the override record
-    await db.clientHubCustomerOverride.deleteMany({
-      where: { customerId },
+    // 3. Delete the override record and log audit transactionally
+    await db.$transaction(async (tx) => {
+      await tx.clientHubCustomerOverride.deleteMany({
+        where: { customerId },
+      });
+
+      await logAuditTx(tx, {
+        orgId,
+        actorId: userId,
+        action: "portal.override_cleared",
+        entityType: "ClientHubCustomerOverride",
+        entityId: customerId,
+        metadata: { customerId },
+      });
     });
 
     revalidatePath("/app/settings/portal/client-hub");

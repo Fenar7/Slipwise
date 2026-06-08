@@ -27,13 +27,17 @@ function formatCurrency(amount: number) {
   }).format(amount);
 }
 
+import { checkLegacyRouteRedirect } from "@/lib/portal-eligibility";
+
 export default async function PortalInvoiceDetailPage({
   params,
 }: {
   params: Promise<{ orgSlug: string; id: string }>;
 }) {
   const { orgSlug, id } = await params;
-  const session = await getPortalSession();
+  await checkLegacyRouteRedirect(orgSlug, `/invoices/${id}`);
+
+  const session = await getPortalSession(orgSlug);
   if (!session) redirect(`/portal/${orgSlug}/auth/login`);
 
   // IDOR prevention: verify invoice belongs to this customer + org

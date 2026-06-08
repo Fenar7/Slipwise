@@ -20,7 +20,7 @@ export default async function PortalTicketsPage({
   const { page: pageStr, status } = await searchParams;
   const page = parseInt(pageStr ?? "1", 10);
 
-  const result = await listPortalTickets({ page, status });
+  const result = await listPortalTickets({ page, status, orgSlug });
 
   if (!result.success) {
     return (

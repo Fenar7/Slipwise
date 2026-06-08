@@ -1,6 +1,7 @@
 import { TrendingUp, Users, Eye, FileText, Package, ShieldAlert, Upload } from "lucide-react";
-import { requireOrgContext } from "@/lib/auth";
+import { requireRole } from "@/lib/auth";
 import { getPortalAnalyticsSummary } from "@/lib/portal-signals";
+import { db } from "@/lib/db";
 
 export const metadata = { title: "Portal Analytics – Slipwise" };
 
@@ -30,11 +31,38 @@ export default async function PortalAnalyticsPage({
 }: {
   searchParams: Promise<{ days?: string }>;
 }) {
-  const { orgId } = await requireOrgContext();
+  const { orgId } = await requireRole("admin");
   const { days: daysParam } = await searchParams;
   const periodDays = Math.min(90, Math.max(7, parseInt(daysParam ?? "30", 10) || 30));
 
   const summary = await getPortalAnalyticsSummary(orgId, periodDays);
+
+  const unusualEvents = await db.externalAccessEvent.findMany({
+    where: {
+      orgId,
+      eventType: "UNUSUAL_ACCESS",
+    },
+    orderBy: { createdAt: "desc" },
+    take: 5,
+  });
+
+  const customerIds = Array.from(
+    new Set(unusualEvents.map((e) => e.customerId).filter(Boolean) as string[])
+  );
+
+  const customers = customerIds.length > 0
+    ? await db.customer.findMany({
+        where: { id: { in: customerIds }, organizationId: orgId },
+        select: { id: true, name: true, email: true },
+      })
+    : [];
+
+  const customerMap = new Map(customers.map((c) => [c.id, c]));
+
+  const unusualEventsWithCustomer = unusualEvents.map((e) => ({
+    ...e,
+    customer: e.customerId ? customerMap.get(e.customerId) : undefined,
+  }));
 
   return (
     <div className="space-y-6 p-6">
@@ -108,15 +136,78 @@ export default async function PortalAnalyticsPage({
                 Review active portal sessions and revoke any suspicious access.
               </p>
               <a
-                href="/app/settings/portal/access"
+                href="/app/settings/portal/activity"
                 className="mt-2 inline-flex text-sm font-medium text-red-700 underline-offset-2 hover:underline"
               >
-                Review portal sessions →
+                Review portal access logs →
               </a>
             </div>
           </div>
         </div>
       )}
+
+      {/* Recent Unusual Activity */}
+      <div className="rounded-xl border border-gray-200 bg-white p-6">
+        <div className="flex items-center gap-2 border-b border-gray-100 pb-4">
+          <ShieldAlert className="h-5 w-5 text-red-500" />
+          <h2 className="text-lg font-semibold text-gray-900">Recent Security Alerts & Unusual Access</h2>
+        </div>
+
+        {unusualEventsWithCustomer.length === 0 ? (
+          <p className="mt-4 text-sm text-gray-500">No unusual access attempts detected in this organization.</p>
+        ) : (
+          <div className="mt-4 overflow-hidden rounded-lg border border-gray-100">
+            <table className="min-w-full divide-y divide-gray-200 text-left text-sm text-gray-500">
+              <thead className="bg-gray-50 text-xs uppercase text-gray-700 font-semibold">
+                <tr>
+                  <th className="px-4 py-3">Timestamp</th>
+                  <th className="px-4 py-3">Client</th>
+                  <th className="px-4 py-3">Event Detail</th>
+                  <th className="px-4 py-3">IP Address</th>
+                  <th className="px-4 py-3">User Agent</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100 bg-white">
+                {unusualEventsWithCustomer.map((event) => {
+                  const metadataObj = typeof event.metadata === "object" && event.metadata !== null
+                    ? (event.metadata as Record<string, unknown>)
+                    : {};
+                  const reason = String(metadataObj.reason || "N/A").replace(/_/g, " ");
+                  const flow = String(metadataObj.flow || "");
+                  return (
+                    <tr key={event.id} className="hover:bg-gray-50 transition-colors">
+                      <td className="whitespace-nowrap px-4 py-3 text-xs text-gray-600 font-mono">
+                        {new Date(event.createdAt).toLocaleString()}
+                      </td>
+                      <td className="px-4 py-3">
+                        {event.customer ? (
+                          <div>
+                            <div className="font-medium text-gray-900">{event.customer.name}</div>
+                            <div className="text-xs text-gray-400">{event.customer.email}</div>
+                          </div>
+                        ) : (
+                          <span className="italic text-gray-400">Unknown Client ({event.customerId || "N/A"})</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="inline-flex items-center rounded-full bg-red-50 px-2 py-1 text-xs font-medium text-red-700 capitalize">
+                          {reason} {flow ? `(${flow})` : ""}
+                        </span>
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-3 text-xs font-mono text-gray-600">
+                        {event.ip || "—"}
+                      </td>
+                      <td className="px-4 py-3 text-xs text-gray-400 max-w-xs truncate" title={event.userAgent || ""}>
+                        {event.userAgent || "—"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
 
       {summary.totalLogins === 0 && (
         <div className="rounded-xl border border-gray-200 bg-gray-50 px-5 py-8 text-center">

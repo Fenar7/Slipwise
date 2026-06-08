@@ -160,22 +160,27 @@ export async function getPortalAccessLogs(
   const page = filters?.page ?? 1;
   const pageSize = filters?.pageSize ?? 20;
 
+  let fromDateObj: Date | undefined;
+  if (filters?.fromDate && !isNaN(Date.parse(filters.fromDate))) {
+    fromDateObj = new Date(filters.fromDate);
+  }
+
+  let toDateObj: Date | undefined;
+  if (filters?.toDate && !isNaN(Date.parse(filters.toDate))) {
+    toDateObj = new Date(filters.toDate);
+    toDateObj.setUTCHours(23, 59, 59, 999);
+  }
+
   const where = {
     orgId: organizationId,
     ...(filters?.customerId && { customerId: filters.customerId }),
     ...(filters?.action && { action: filters.action }),
     ...(filters?.path && { path: { contains: filters.path, mode: "insensitive" as const } }),
     ...(filters?.statusCode !== undefined && { statusCode: filters.statusCode }),
-    ...((filters?.fromDate || filters?.toDate) && {
+    ...((fromDateObj || toDateObj) && {
       accessedAt: {
-        ...(filters.fromDate && { gte: new Date(filters.fromDate) }),
-        ...(filters.toDate && {
-          lte: (() => {
-            const date = new Date(filters.toDate);
-            date.setUTCHours(23, 59, 59, 999);
-            return date;
-          })(),
-        }),
+        ...(fromDateObj && { gte: fromDateObj }),
+        ...(toDateObj && { lte: toDateObj }),
       },
     }),
   };

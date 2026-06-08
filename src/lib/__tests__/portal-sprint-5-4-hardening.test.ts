@@ -18,8 +18,9 @@ const {
   };
   return {
     mockDb: {
-      customer: { findFirst: vi.fn(), findUnique: vi.fn() },
+      customer: { findFirst: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
       organization: { findFirst: vi.fn(), findUnique: vi.fn() },
+      invoice: { findFirst: vi.fn() },
       customerPortalToken: {
         findFirst: vi.fn(),
         create: vi.fn(),
@@ -66,7 +67,24 @@ vi.mock("@/lib/audit", () => ({ logAudit: mockLogAudit }));
 vi.mock("@/lib/redis-client", () => ({ redis: mockRedis }));
 vi.mock("@/lib/rate-limit", () => ({ rateLimit: mockRateLimit }));
 vi.mock("next/headers", () => ({ cookies: mockCookies }));
-vi.mock("next/navigation", () => ({ redirect: vi.fn() }));
+vi.mock("next/navigation", () => ({
+  redirect: vi.fn(),
+  notFound: vi.fn(() => {
+    throw new Error("notFound");
+  }),
+}));
+vi.mock("@/lib/auth", () => ({
+  requireOrgContext: vi.fn().mockResolvedValue({ orgId: "org-1", userId: "user-1" }),
+}));
+
+vi.mock("@/lib/tags/assignment-service", () => ({
+  setCustomerDefaultTags: vi.fn().mockResolvedValue({ success: true, data: [] }),
+  setVendorDefaultTags: vi.fn().mockResolvedValue({ success: true, data: [] }),
+}));
+
+vi.mock("next/cache", () => ({
+  revalidatePath: vi.fn(),
+}));
 
 import {
   requestMagicLink,
@@ -578,6 +596,269 @@ describe("Sprint 5.4 Hardening Suite", () => {
       // Cleanup env
       delete process.env.UPSTASH_REDIS_REST_URL;
       delete process.env.UPSTASH_REDIS_REST_TOKEN;
+    });
+  });
+
+  // ─── 5. Sprint 7.1 Security and Edge Case Hardening ──────────────────────────────
+  describe("Sprint 7.1 Hardening", () => {
+    it("missing email blocks request flow truthfully", async () => {
+      const result1 = await requestMagicLink(" ", "test-org");
+      expect(result1.success).toBe(true);
+      expect(mockSendEmail).not.toHaveBeenCalled();
+
+      const result2 = await requestPortalOtp("", "test-org");
+      expect(result2.success).toBe(true);
+      expect(mockSendEmail).not.toHaveBeenCalled();
+    });
+
+    it("changed email blocks stale invite/OTP assumptions", async () => {
+      const customer = makeCustomer({
+        email: "new@example.com",
+        clientHubLifecycle: { enabled: true, latestInviteEmail: "old@example.com" }
+      });
+      mockDb.customer.findFirst.mockResolvedValue(customer);
+
+      mockDb.customerPortalToken.findFirst.mockResolvedValue({
+        id: "tok-1",
+        tokenHash: sha256("123456"),
+        customerId: "cust-1",
+        isRevoked: false,
+        expiresAt: new Date(Date.now() + 100000),
+        customer,
+      });
+
+      // Verification should fail because tokenCustomer.email (new@example.com) does not match latestInviteEmail (old@example.com)
+      const result = await verifyMagicLink("raw_token", "cust-1", "test-org");
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error).toBe("invalid_or_expired_link");
+      }
+    });
+
+    it("wrong org/customer context fails closed in config resolution", async () => {
+      const { getEffectiveClientHubConfig } = await import("@/app/portal/[orgSlug]/client-hub/components/config-resolver");
+      
+      mockDb.organization.findUnique.mockResolvedValue({
+        id: "org-1",
+        clientHubOrgConfig: { config: {} }
+      });
+      mockDb.customer.findUnique.mockResolvedValue({
+        id: "cust-1",
+        organization: { slug: "other-org" }
+      });
+
+      await expect(getEffectiveClientHubConfig("test-org", "cust-1")).rejects.toThrow("Unauthorized customer organization context");
+    });
+
+    it("stale invoice status prevents invalid payment action", async () => {
+      const { initiatePortalPayment } = await import("@/app/portal/[orgSlug]/actions");
+      
+      const now = Math.floor(Date.now() / 1000);
+      const jwt = makeJwt({
+        jti: "test-jti",
+        customerId: "cust-1",
+        orgId: "org-1",
+        orgSlug: "test-org",
+        iat: now,
+        exp: now + 86400,
+      });
+
+      const cookieStore = await mockCookies();
+      cookieStore.get.mockReturnValue({ value: jwt });
+
+      mockDb.customerPortalSession.findUnique.mockResolvedValue({
+        revokedAt: null,
+        expiresAt: new Date(Date.now() + 86400000),
+        customer: {
+          id: "cust-1",
+          lifecycleStage: "ACTIVE",
+          organization: {
+            slug: "test-org",
+            defaults: { portalEnabled: true }
+          },
+          clientHubLifecycle: { enabled: true },
+        },
+      });
+      mockDb.organization.findUnique.mockResolvedValue({ id: "org-1" });
+
+      // 1. Invoice is DRAFT
+      mockDb.invoice.findFirst.mockResolvedValue({
+        id: "inv-1",
+        status: "DRAFT",
+        remainingAmount: 100,
+      });
+      const res1 = await initiatePortalPayment("test-org", "inv-1");
+      expect(res1.error).toBe("Invoice is not ready for payment.");
+
+      // 2. Invoice is PAID
+      mockDb.invoice.findFirst.mockResolvedValue({
+        id: "inv-1",
+        status: "PAID",
+        remainingAmount: 0,
+      });
+      const res2 = await initiatePortalPayment("test-org", "inv-1");
+      expect(res2.alreadyPaid).toBe(true);
+
+      // 3. Invoice is CANCELLED
+      mockDb.invoice.findFirst.mockResolvedValue({
+        id: "inv-1",
+        status: "CANCELLED",
+        remainingAmount: 100,
+      });
+      const res3 = await initiatePortalPayment("test-org", "inv-1");
+      expect(res3.error).toBe("This invoice has been cancelled.");
+    });
+
+    it("getPortalInvoiceDetail does not return draft invoices", async () => {
+      const { getPortalInvoiceDetail } = await import("@/app/portal/[orgSlug]/actions");
+      
+      const now = Math.floor(Date.now() / 1000);
+      const jwt = makeJwt({
+        jti: "test-jti",
+        customerId: "cust-1",
+        orgId: "org-1",
+        orgSlug: "test-org",
+        iat: now,
+        exp: now + 86400,
+      });
+
+      const cookieStore = await mockCookies();
+      cookieStore.get.mockReturnValue({ value: jwt });
+
+      mockDb.customerPortalSession.findUnique.mockResolvedValue({
+        revokedAt: null,
+        expiresAt: new Date(Date.now() + 86400000),
+        customer: {
+          id: "cust-1",
+          lifecycleStage: "ACTIVE",
+          organization: {
+            slug: "test-org",
+            defaults: { portalEnabled: true }
+          },
+          clientHubLifecycle: { enabled: true },
+        },
+      });
+      mockDb.organization.findUnique.mockResolvedValue({ id: "org-1" });
+
+      mockDb.invoice.findFirst.mockResolvedValue(null);
+
+      const res = await getPortalInvoiceDetail("test-org", "inv-draft");
+      expect(res).toBeNull();
+      expect(mockDb.invoice.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            status: { not: "DRAFT" }
+          })
+        })
+      );
+    });
+
+    it("allows magic-link verification after a customer email change without requiring invite resend", async () => {
+      const customer = makeCustomer({
+        email: "new@example.com",
+        clientHubLifecycle: { enabled: true, latestInviteEmail: "old@example.com" }
+      });
+      mockDb.customer.findFirst.mockResolvedValue(customer);
+
+      const rawToken = "fresh-magic-token";
+      const expectedScopedHash = sha256(rawToken + ":new@example.com");
+
+      mockDb.customerPortalToken.findFirst.mockResolvedValue({
+        id: "tok-scoped-1",
+        tokenHash: expectedScopedHash,
+        customerId: "cust-1",
+        isRevoked: false,
+        expiresAt: new Date(Date.now() + 100000),
+        customer,
+      });
+
+      const result = await verifyMagicLink(rawToken, "cust-1", "test-org");
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.customerId).toBe("cust-1");
+      }
+    });
+
+    it("allows OTP verification after a customer email change without requiring invite resend", async () => {
+      const customer = makeCustomer({
+        email: "new@example.com",
+        clientHubLifecycle: { enabled: true, latestInviteEmail: "old@example.com" }
+      });
+      mockDb.customer.findFirst.mockResolvedValue(customer);
+
+      const otp = "123456";
+      const expectedScopedHash = sha256(otp + ":new@example.com");
+
+      mockDb.customerPortalToken.findFirst.mockResolvedValue({
+        id: "tok-otp-scoped-1",
+        tokenHash: expectedScopedHash,
+        customerId: "cust-1",
+        isRevoked: false,
+        expiresAt: new Date(Date.now() + 100000),
+        customer,
+      });
+
+      const result = await verifyPortalOtp("new@example.com", otp, "test-org");
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.customerId).toBe("cust-1");
+      }
+    });
+
+    it("stale/old-email credentials still fail verification appropriately", async () => {
+      const customer = makeCustomer({
+        email: "new@example.com",
+        clientHubLifecycle: { enabled: true, latestInviteEmail: "old@example.com" }
+      });
+      mockDb.customer.findFirst.mockResolvedValue(customer);
+
+      // Scoped token generated for old email (hash won't match scoped hash lookup for new email, falls back to legacy lookup)
+      // Legacy lookup returns it, but it fails the latestInviteEmail check since it's not scoped to the current email.
+      mockDb.customerPortalToken.findFirst.mockResolvedValue({
+        id: "tok-stale-1",
+        tokenHash: sha256("stale-raw-token"), // legacy non-scoped hash
+        customerId: "cust-1",
+        isRevoked: false,
+        expiresAt: new Date(Date.now() + 100000),
+        customer,
+      });
+
+      const result = await verifyMagicLink("stale-raw-token", "cust-1", "test-org");
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error).toBe("invalid_or_expired_link");
+      }
+    });
+
+    it("portal session revocation on customer email change triggers revokePortalSession", async () => {
+      const { updateCustomer } = await import("@/app/app/data/actions");
+      
+      mockDb.customer.findFirst.mockResolvedValue({
+        id: "cust-1",
+        email: "old@example.com",
+        organizationId: "org-1",
+      });
+      mockDb.customer.update.mockResolvedValue({
+        id: "cust-1",
+        email: "new@example.com",
+      });
+      mockDb.customerPortalToken.updateMany.mockResolvedValue({ count: 1 });
+      mockDb.customerPortalSession.updateMany.mockResolvedValue({ count: 1 });
+
+      const result = await updateCustomer("cust-1", { email: "new@example.com" });
+      expect(result.success).toBe(true);
+
+      // Verify that revokePortalSession was triggered by checking updateMany calls
+      expect(mockDb.customerPortalToken.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ customerId: "cust-1", orgId: "org-1" })
+        })
+      );
+      expect(mockDb.customerPortalSession.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ customerId: "cust-1", orgId: "org-1" })
+        })
+      );
     });
   });
 });

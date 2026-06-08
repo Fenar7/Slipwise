@@ -109,6 +109,7 @@ describe("portal-auth", () => {
     vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://app.slipwise.com");
     mockSendEmail.mockResolvedValue(undefined);
     mockLogAudit.mockResolvedValue(undefined);
+    mockDb.customer.findFirst.mockResolvedValue(makeCustomerResult());
     mockDb.customerPortalToken.updateMany.mockResolvedValue({ count: 0 });
     mockDb.customerPortalToken.create.mockResolvedValue({ id: "tok-1" });
     // Rate limit: default to no window (allows through)
