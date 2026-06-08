@@ -1041,20 +1041,24 @@ export async function updatePortalConversationState(
   }
 
   // Otherwise direct state update (e.g. OPEN <-> WAITING_ON_INTERNAL <-> WAITING_ON_CLIENT)
-  const updated = await db.conversation.update({
-    where: { id: input.conversationId, orgId: input.orgId },
-    data: {
-      portalState: input.portalState,
-    },
+  const resultState = await db.$transaction(async (tx) => {
+    const updated = await tx.conversation.update({
+      where: { id: input.conversationId, orgId: input.orgId },
+      data: {
+        portalState: input.portalState,
+      },
+    });
+
+    await logMessagingAuditTx(tx, {
+      orgId: input.orgId,
+      actorId: input.actorId,
+      action: "PORTAL_CONVERSATION_REOPENED",
+      summary: `Updated portal conversation state to ${input.portalState}`,
+      conversationId: updated.id,
+    });
+
+    return updated;
   });
 
-  await logMessagingAuditTx(db, {
-    orgId: input.orgId,
-    actorId: input.actorId,
-    action: "PORTAL_CONVERSATION_REOPENED",
-    summary: `Updated portal conversation state to ${input.portalState}`,
-    conversationId: updated.id,
-  });
-
-  return toConversationRecord(updated);
+  return toConversationRecord(resultState);
 }
