@@ -1262,7 +1262,7 @@ function PortalWorkspace({
           canSend={canSend && !isClosed}
         />
 
-        {isClosed ? (
+        {isClosed && (
           <div
             className="border-t bg-gray-50 px-4 py-3 flex items-center justify-between gap-4"
             style={{ borderColor: "#E0E0E0" }}
@@ -1270,7 +1270,9 @@ function PortalWorkspace({
           >
             <div className="flex flex-col">
               <span className="text-xs font-bold text-gray-700">This portal conversation is closed</span>
-              <span className="text-[10px] text-gray-500">Clients and operators cannot send new messages while closed.</span>
+              <span className="text-[10px] text-gray-500" data-testid="portal-closed-banner-desc">
+                External messages are disabled. Only internal notes can be added.
+              </span>
               {reopenError && <span className="text-[10px] text-red-600 mt-1">{reopenError}</span>}
             </div>
             <button
@@ -1283,18 +1285,23 @@ function PortalWorkspace({
               {reopening ? "Reopening…" : "Reopen"}
             </button>
           </div>
-        ) : (
-          <MessagingComposer
-            placeholder={`Reply to ${detail?.name ?? conversation.name ?? "client"} or write internal note...`}
-            isAccessible={canSend}
-            onSend={onSend}
-            sending={sending}
-            sendError={sendError}
-            conversationId={conversation.id}
-            participants={participants}
-            isPortal={true}
-          />
         )}
+
+        <MessagingComposer
+          placeholder={
+            isClosed
+              ? "Write internal note... (Replies blocked while closed)"
+              : `Reply to ${detail?.name ?? conversation.name ?? "client"} or write internal note...`
+          }
+          isAccessible={canSend}
+          onSend={onSend}
+          sending={sending}
+          sendError={sendError}
+          conversationId={conversation.id}
+          participants={participants}
+          isPortal={true}
+          isClosed={isClosed}
+        />
       </div>
 
       {/* Thread panel */}

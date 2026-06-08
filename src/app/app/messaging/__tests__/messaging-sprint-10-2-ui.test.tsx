@@ -393,7 +393,7 @@ describe("Sprint 10.2 UI Integration - Portal Workspace and Routing", () => {
     });
   });
 
-  it("handles closed state by blocking composition and showing reopen control", async () => {
+  it("handles closed state by keeping composer visible for internal notes only, disabling reply tab, showing truthful banner, and allowing internal note sending", async () => {
     // Set mock conversation as closed initially
     conversationList = [
       createMockSummary({ id: "conv-portal-1", type: "PORTAL", name: "Closed Portal", portalState: "CLOSED" }),
@@ -407,13 +407,47 @@ describe("Sprint 10.2 UI Integration - Portal Workspace and Routing", () => {
       fireEvent.click(screen.getByTestId("portal-row-conv-portal-1"));
     });
 
-    // Verify closed banner is visible
+    // Verify closed banner is visible and has truthful description
     await waitFor(() => {
       expect(screen.getByTestId("portal-closed-banner")).toBeInTheDocument();
+      expect(screen.getByTestId("portal-closed-banner-desc")).toHaveTextContent(
+        "External messages are disabled. Only internal notes can be added."
+      );
     });
 
-    // Composer input should NOT be visible
-    expect(screen.queryByTestId("composer-input")).not.toBeInTheDocument();
+    // Composer input should BE visible
+    expect(screen.getByTestId("composer-input")).toBeInTheDocument();
+
+    // Verify placeholder is updated
+    expect(screen.getByTestId("composer-input").getAttribute("data-placeholder")).toBe(
+      "Write internal note... (Replies blocked while closed)"
+    );
+
+    // Reply to Client tab button should be disabled
+    const externalTab = screen.getByTestId("composer-tab-external");
+    expect(externalTab).toBeDisabled();
+    expect(externalTab.className).toContain("cursor-not-allowed");
+
+    // Verify composer shell has amber border/styling
+    const composerShell = screen.getByTestId("composer-shell");
+    expect(composerShell.className).toContain("border-amber-300");
+
+    // Send an internal note while closed
+    const input = screen.getByTestId("composer-input");
+    fireEvent.change(input, { target: { textContent: "Staff note on closed portal" } });
+    fireEvent.input(input, { target: { textContent: "Staff note on closed portal" } });
+
+    const sendBtn = screen.getByTestId("composer-send-btn");
+    fireEvent.click(sendBtn);
+
+    // Verify the message fetch POST payload was sent with INTERNAL_ONLY audience
+    await waitFor(() => {
+      const postMsgCall = fetchCalls.find((call) => call.url.endsWith("/messages") && call.init?.method === "POST");
+      expect(postMsgCall).toBeDefined();
+      const body = JSON.parse(postMsgCall!.init!.body as string);
+      expect(body.audience).toBe("INTERNAL_ONLY");
+      expect(body.body).toBe("Staff note on closed portal");
+    });
 
     // Reopen conversation
     const reopenBtn = screen.getByTestId("portal-reopen-button");
@@ -422,7 +456,7 @@ describe("Sprint 10.2 UI Integration - Portal Workspace and Routing", () => {
     // Verify PATCH query sent with OPEN state
     await waitFor(() => {
       const patchCall = fetchCalls.find(
-        (c) => c.url.includes("/api/messaging/conversations/conv-portal-1") && c.init?.method === "PATCH"
+         (c) => c.url.includes("/api/messaging/conversations/conv-portal-1") && c.init?.method === "PATCH"
       );
       expect(patchCall).toBeDefined();
       const body = JSON.parse(patchCall!.init!.body as string);

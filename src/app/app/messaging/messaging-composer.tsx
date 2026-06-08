@@ -314,6 +314,7 @@ export interface MessagingComposerProps {
   threadId?: string | null;
   participants?: MentionSuggestion[];
   isPortal?: boolean;
+  isClosed?: boolean;
 }
 
 export function MessagingComposer({
@@ -329,9 +330,20 @@ export function MessagingComposer({
   threadId,
   participants,
   isPortal = false,
+  isClosed = false,
 }: MessagingComposerProps) {
   const [inputValue, setInputValue] = React.useState("");
-  const [audience, setAudience] = React.useState<"EXTERNAL_VISIBLE" | "INTERNAL_ONLY">("EXTERNAL_VISIBLE");
+  const [audience, setAudience] = React.useState<"EXTERNAL_VISIBLE" | "INTERNAL_ONLY">(
+    isClosed ? "INTERNAL_ONLY" : "EXTERNAL_VISIBLE"
+  );
+
+  React.useEffect(() => {
+    if (isClosed) {
+      setAudience("INTERNAL_ONLY");
+    } else {
+      setAudience("EXTERNAL_VISIBLE");
+    }
+  }, [isClosed]);
   const [activePopover, setActivePopover] = React.useState<
     "mention" | "slash" | null
   >(simulatedState === "mention-popover" ? "mention" : simulatedState === "slash-popover" ? "slash" : null);
@@ -516,12 +528,14 @@ export function MessagingComposer({
           <div className="flex gap-1 mb-2 border-b pb-1" style={{ borderColor: "#F0F0F0" }}>
             <button
               type="button"
+              disabled={isClosed}
               onClick={() => setAudience("EXTERNAL_VISIBLE")}
               className={cn(
                 "px-3 py-1.5 text-xs font-semibold rounded-t-lg transition-all border-b-2",
                 audience === "EXTERNAL_VISIBLE"
                   ? "border-[#6200EE] text-[#6200EE] bg-gray-50"
-                  : "border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50/50"
+                  : "border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50/50",
+                isClosed && "opacity-50 cursor-not-allowed text-gray-400"
               )}
               data-testid="composer-tab-external"
             >
