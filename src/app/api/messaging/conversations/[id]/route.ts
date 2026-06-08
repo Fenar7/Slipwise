@@ -12,6 +12,7 @@ import {
   MessagingNotFoundError,
   requireEnumField,
 } from "../../_utils";
+import { isPlatformAdminUser } from "@/lib/auth/require-org";
 
 export const runtime = "nodejs";
 
@@ -55,7 +56,9 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const { orgId, userId } = await requireMessagingApiContext();
+    const context = await requireMessagingApiContext();
+    const { orgId, userId, role: actorOrgRole } = context;
+    const isPlatformAdmin = isPlatformAdminUser(userId);
     const { id } = await params;
     const body = (await request.json()) as Record<string, unknown>;
 
@@ -72,6 +75,8 @@ export async function PATCH(
         conversationId: id,
         portalState,
         actorId: userId,
+        actorOrgRole,
+        isPlatformAdmin,
       });
     }
 
@@ -92,6 +97,8 @@ export async function PATCH(
         conversationId: id,
         assigneeId,
         actorId: userId,
+        actorOrgRole,
+        isPlatformAdmin,
       });
     }
 

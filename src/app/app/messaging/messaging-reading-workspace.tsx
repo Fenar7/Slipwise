@@ -1393,7 +1393,7 @@ interface WorkspaceBodyProps {
 
 interface MessagingReadingWorkspaceProps {
   conversation: ActiveConversation | null;
-  sectionKind?: "channel" | "dm" | "group";
+  sectionKind?: "channel" | "dm" | "group" | "portal";
   initialThreadAnchorMessageId?: string | null;
   degraded?: boolean;
   messages?: ConversationMessage[];
@@ -1420,6 +1420,13 @@ interface MessagingReadingWorkspaceProps {
   participants?: MentionSuggestion[];
   onDownloadAttachment?: (attachmentId: string) => Promise<{ signedUrl: string } | null>;
   onCreateTaskFromMessage?: (messageId: string, messageBody: string) => void;
+  pendingPortalParams?: {
+    customerId: string;
+    linkedRecordType?: string | null;
+    linkedRecordId?: string | null;
+  } | null;
+  onCreatePortalFromPrompt?: () => void;
+  creatingPortalFromPrompt?: boolean;
 }
 
 export function MessagingReadingWorkspace({
@@ -1440,6 +1447,9 @@ export function MessagingReadingWorkspace({
   participants,
   onDownloadAttachment,
   onCreateTaskFromMessage,
+  pendingPortalParams,
+  onCreatePortalFromPrompt,
+  creatingPortalFromPrompt,
 }: MessagingReadingWorkspaceProps) {
   const [threadAnchorMessageId, setThreadAnchorMessageId] = React.useState<string | null>(null);
   const [threadOpen, setThreadOpen] = React.useState(false);
@@ -1516,6 +1526,41 @@ export function MessagingReadingWorkspace({
   }
 
   if (!conversation) {
+    if (pendingPortalParams) {
+      return (
+        <div
+          className="flex flex-1 flex-col items-center justify-center gap-5 px-10 text-center bg-white"
+          data-testid="portal-create-prompt"
+        >
+          {degraded && <DegradedBanner />}
+          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-50 border border-emerald-100">
+            <Globe className="h-5 w-5 text-emerald-600 animate-pulse" />
+          </div>
+          <div className="space-y-1">
+            <p className="text-sm font-semibold" style={{ color: "#1C1B1F" }}>
+              No portal conversation exists for this customer
+            </p>
+            <p className="text-xs leading-relaxed max-w-[16rem]" style={{ color: "#79747E" }}>
+              Start a new secure conversation context for customer <strong>{pendingPortalParams.customerId}</strong>
+              {pendingPortalParams.linkedRecordType && (
+                <span> linked to <strong>{pendingPortalParams.linkedRecordType} ({pendingPortalParams.linkedRecordId})</strong></span>
+              )}
+              .
+            </p>
+          </div>
+          <button
+            type="button"
+            disabled={creatingPortalFromPrompt}
+            onClick={onCreatePortalFromPrompt}
+            className="rounded-lg bg-emerald-600 px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-emerald-700 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 cursor-pointer"
+            data-testid="portal-create-prompt-button"
+          >
+            {creatingPortalFromPrompt ? "Creating…" : "Start Portal Conversation"}
+          </button>
+        </div>
+      );
+    }
+
     return (
       <div
         className="flex flex-1 flex-col items-center justify-center overflow-hidden bg-white"

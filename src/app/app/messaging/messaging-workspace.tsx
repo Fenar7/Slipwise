@@ -200,9 +200,14 @@ export function MessagingWorkspace() {
   const routeLinkedRecordType = searchParams ? searchParams.get("linkedRecordType") : null;
   const routeLinkedRecordId = searchParams ? searchParams.get("linkedRecordId") : null;
   const [autoCreating, setAutoCreating] = useState(false);
+  const [pendingPortalParams, setPendingPortalParams] = useState<{
+    customerId: string;
+    linkedRecordType?: string | null;
+    linkedRecordId?: string | null;
+  } | null>(null);
 
   React.useEffect(() => {
-    if (listLoading || autoCreating) return;
+    if (listLoading) return;
     if (routeCustomerId) {
       const found = livePortals.find(
         (c) =>
@@ -213,25 +218,45 @@ export function MessagingWorkspace() {
 
       if (found) {
         setActiveSection("portals");
-        handleConversationSelect(enrichSelected(found, "portal"));
+        const enriched = enrichSelected(found, "portal");
+        if (activeConversations["portals"]?.id !== found.id) {
+          setActiveConversations((prev) => ({
+            ...prev,
+            portals: enriched,
+          }));
+        }
+        setPendingPortalParams(null);
       } else {
-        setAutoCreating(true);
-        createConversation("PORTAL", {
+        setActiveSection("portals");
+        setPendingPortalParams({
           customerId: routeCustomerId,
-          linkedRecordType: routeLinkedRecordType ?? undefined,
-          linkedRecordId: routeLinkedRecordId ?? undefined,
-        }).then((result) => {
-          if (result) {
-            setPendingCreateId(result.id);
-            refreshList();
-          }
-          setAutoCreating(false);
-        }).catch(() => {
-          setAutoCreating(false);
+          linkedRecordType: routeLinkedRecordType,
+          linkedRecordId: routeLinkedRecordId,
         });
       }
     }
-  }, [listLoading, routeCustomerId, routeLinkedRecordType, routeLinkedRecordId, livePortals, autoCreating, createConversation, refreshList, handleConversationSelect, enrichSelected]);
+  }, [listLoading, routeCustomerId, routeLinkedRecordType, routeLinkedRecordId, livePortals, enrichSelected]);
+
+  async function handleCreatePortalFromPrompt() {
+    if (!pendingPortalParams || autoCreating) return;
+    setAutoCreating(true);
+    try {
+      const result = await createConversation("PORTAL", {
+        customerId: pendingPortalParams.customerId,
+        linkedRecordType: pendingPortalParams.linkedRecordType ?? undefined,
+        linkedRecordId: pendingPortalParams.linkedRecordId ?? undefined,
+      });
+      if (result) {
+        setPendingCreateId(result.id);
+        setPendingPortalParams(null);
+        refreshList();
+      }
+    } catch (e) {
+      console.error("Failed to create portal conversation from prompt:", e);
+    } finally {
+      setAutoCreating(false);
+    }
+  }
 
   // Sprint 6.6: open task create modal anchored to a message
   const handleCreateTaskFromMessage = React.useCallback((messageId: string, messageBody: string) => {
@@ -547,6 +572,9 @@ export function MessagingWorkspace() {
                   degraded={realtimeDegraded}
                   messages={messages}
                   detail={activeDetail}
+                  pendingPortalParams={state.activeSection === "portals" ? pendingPortalParams : null}
+                  onCreatePortalFromPrompt={handleCreatePortalFromPrompt}
+                  creatingPortalFromPrompt={autoCreating}
                   canSend={activeDetail?.canSend ?? activeConversation?.canSend ?? true}
                   sending={sendingMessage}
                   sendError={sendError}

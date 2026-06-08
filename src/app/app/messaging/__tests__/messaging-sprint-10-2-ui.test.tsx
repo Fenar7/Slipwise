@@ -430,7 +430,7 @@ describe("Sprint 10.2 UI Integration - Portal Workspace and Routing", () => {
     });
   });
 
-  it("triggers context-entrypoint auto-creation and routing if query parameters are set", async () => {
+  it("triggers context-entrypoint creation prompt and routing if query parameters are set", async () => {
     // Inject search parameters customerId=cust_101&linkedRecordType=INVOICE&linkedRecordId=inv_789
     mockSearchParamsGet.mockImplementation((key) => {
       if (key === "customerId") return "cust_101";
@@ -441,7 +441,19 @@ describe("Sprint 10.2 UI Integration - Portal Workspace and Routing", () => {
 
     render(<MessagingWorkspace />);
 
-    // Wait for auto-creation POST call
+    // Verify creation prompt is shown and auto-creation did NOT happen automatically
+    await waitFor(() => {
+      expect(screen.getByTestId("portal-create-prompt")).toBeInTheDocument();
+    });
+
+    const postCallBeforeClick = fetchCalls.find((c) => c.url === "/api/messaging/conversations" && c.init?.method === "POST");
+    expect(postCallBeforeClick).toBeUndefined();
+
+    // Click explicit create button
+    const createBtn = screen.getByTestId("portal-create-prompt-button");
+    fireEvent.click(createBtn);
+
+    // Verify POST call is triggered with the correct parameters
     await waitFor(() => {
       const postCall = fetchCalls.find((c) => c.url === "/api/messaging/conversations" && c.init?.method === "POST");
       expect(postCall).toBeDefined();

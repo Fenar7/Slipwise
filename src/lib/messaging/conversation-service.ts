@@ -3,6 +3,7 @@ import "server-only";
 import { db } from "@/lib/db";
 import type { Prisma } from "@/generated/prisma/client";
 import type { ConversationRecord, ConversationPortalState, LinkedRecordType } from "./domain-types";
+import type { ConversationAction } from "./authorization";
 import {
   conversationOrgSafeWhere,
   participantOrgSafeWhere,
@@ -125,7 +126,7 @@ async function assertGovernanceOrConversationAction(
     actorOrgRole?: string;
     isPlatformAdmin?: boolean;
   },
-  action: "ARCHIVE" | "UNARCHIVE" | "LOCK" | "UNLOCK",
+  action: ConversationAction,
   context: string,
 ): Promise<{
   conversation: Prisma.ConversationGetPayload<Record<string, never>>;
@@ -909,19 +910,24 @@ export async function updatePortalConversationAssignment(
     conversationId: string;
     assigneeId: string | null;
     actorId: string;
+    actorOrgRole?: string;
+    isPlatformAdmin?: boolean;
   }
 ): Promise<ConversationRecord> {
   const result = await db.$transaction(async (tx) => {
-    // Assert conversation access
-    const conversation = await tx.conversation.findFirst({
-      where: { id: input.conversationId, orgId: input.orgId },
-    });
-    if (!conversation) {
-      throw new Error("Conversation not found");
-    }
-    if (conversation.type !== "PORTAL") {
-      throw new Error("Assignment can only be updated for portal conversations");
-    }
+    // Assert conversation access and authorization
+    const { conversation } = await assertGovernanceOrConversationAction(
+      tx,
+      {
+        orgId: input.orgId,
+        conversationId: input.conversationId,
+        actorId: input.actorId,
+        actorOrgRole: input.actorOrgRole,
+        isPlatformAdmin: input.isPlatformAdmin,
+      },
+      "UPDATE_PORTAL_ASSIGNMENT",
+      "updatePortalConversationAssignment",
+    );
 
     // Find current owners
     const currentOwners = await tx.conversationParticipant.findMany({
@@ -1011,6 +1017,8 @@ export async function updatePortalConversationState(
     conversationId: string;
     portalState: ConversationPortalState;
     actorId: string;
+    actorOrgRole?: string;
+    isPlatformAdmin?: boolean;
   }
 ): Promise<ConversationRecord> {
   if (input.portalState === "CLOSED") {
@@ -1018,6 +1026,8 @@ export async function updatePortalConversationState(
       orgId: input.orgId,
       conversationId: input.conversationId,
       actorId: input.actorId,
+      actorOrgRole: input.actorOrgRole,
+      isPlatformAdmin: input.isPlatformAdmin,
     });
   }
 
@@ -1037,11 +1047,26 @@ export async function updatePortalConversationState(
       orgId: input.orgId,
       conversationId: input.conversationId,
       actorId: input.actorId,
+      actorOrgRole: input.actorOrgRole,
+      isPlatformAdmin: input.isPlatformAdmin,
     });
   }
 
   // Otherwise direct state update (e.g. OPEN <-> WAITING_ON_INTERNAL <-> WAITING_ON_CLIENT)
   const resultState = await db.$transaction(async (tx) => {
+    await assertGovernanceOrConversationAction(
+      tx,
+      {
+        orgId: input.orgId,
+        conversationId: input.conversationId,
+        actorId: input.actorId,
+        actorOrgRole: input.actorOrgRole,
+        isPlatformAdmin: input.isPlatformAdmin,
+      },
+      "UPDATE_PORTAL_STATE",
+      "updatePortalConversationState",
+    );
+
     const updated = await tx.conversation.update({
       where: { id: input.conversationId, orgId: input.orgId },
       data: {
@@ -1052,7 +1077,7 @@ export async function updatePortalConversationState(
     await logMessagingAuditTx(tx, {
       orgId: input.orgId,
       actorId: input.actorId,
-      action: "PORTAL_CONVERSATION_REOPENED",
+      action: "ADMIN_SUPPORT_ACTION",
       summary: `Updated portal conversation state to ${input.portalState}`,
       conversationId: updated.id,
     });
