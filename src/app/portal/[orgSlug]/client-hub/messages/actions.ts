@@ -11,10 +11,6 @@ export type ActionResult<T> =
   | { success: true; data: T }
   | { success: false; error: string };
 
-/**
- * Validates that the session matches the org slug, that the customer exists
- * and is not churned, and that the portal is enabled for the organization.
- */
 async function validateCustomerEligibility(customerId: string, orgId: string, orgSlug: string) {
   const org = await db.organization.findUnique({
     where: { slug: orgSlug },
@@ -56,9 +52,6 @@ export interface PortalConversationItem {
   linkedRecordId: string | null;
 }
 
-/**
- * Lists PORTAL conversations for the authenticated customer.
- */
 export async function listPortalConversations(
   orgSlug: string
 ): Promise<ActionResult<{ conversations: PortalConversationItem[] }>> {
@@ -83,7 +76,6 @@ export async function listPortalConversations(
 
     const enriched = await Promise.all(
       conversations.map(async (conv) => {
-        // Retrieve latest EXTERNAL_VISIBLE message
         const latestMsg = await db.conversationMessage.findFirst({
           where: {
             orgId: session.orgId,
@@ -95,7 +87,6 @@ export async function listPortalConversations(
           select: { body: true, createdAt: true },
         });
 
-        // Retrieve read state
         const readState = await db.conversationReadState.findFirst({
           where: {
             orgId: session.orgId,
@@ -105,7 +96,6 @@ export async function listPortalConversations(
           select: { lastReadAt: true },
         });
 
-        // Calculate dynamic unreadCount for EXTERNAL_VISIBLE messages only
         const unreadCount = await db.conversationMessage.count({
           where: {
             orgId: session.orgId,
@@ -129,7 +119,6 @@ export async function listPortalConversations(
       })
     );
 
-    // Sort by last message time or conversation updated time
     enriched.sort((a, b) => {
       const timeA = a.lastMessageAt ? a.lastMessageAt.getTime() : a.updatedAt.getTime();
       const timeB = b.lastMessageAt ? b.lastMessageAt.getTime() : b.updatedAt.getTime();
@@ -165,10 +154,6 @@ export interface PortalConversationDetail {
   }>;
 }
 
-/**
- * Retrieves a detailed PORTAL conversation with message timeline.
- * Enforces customer scoping and filters out INTERNAL_ONLY notes.
- */
 export async function getPortalConversationDetail(
   orgSlug: string,
   conversationId: string
@@ -190,7 +175,6 @@ export async function getPortalConversationDetail(
       return { success: false, error: "Conversation not found or access denied" };
     }
 
-    // Retrieve EXTERNAL_VISIBLE messages only, excluding soft-deleted ones
     const messages = await db.conversationMessage.findMany({
       where: {
         orgId: session.orgId,
@@ -213,7 +197,6 @@ export async function getPortalConversationDetail(
       },
     });
 
-    // Batch fetch members to display names for internal messages
     const internalAuthorIds = messages
       .filter((m) => m.authorId !== null)
       .map((m) => m.authorId as string);
@@ -248,7 +231,6 @@ export async function getPortalConversationDetail(
       };
     });
 
-    // Resolve safe linked context badge
     let linkedRecordLabel = null;
     if (conversation.linkedRecordType && conversation.linkedRecordId) {
       if (conversation.linkedRecordType === "INVOICE") {
@@ -266,7 +248,6 @@ export async function getPortalConversationDetail(
           linkedRecordLabel = "Linked Invoice (Details unavailable)";
         }
       } else {
-        // Degrade truthfully for other context types
         linkedRecordLabel = `${conversation.linkedRecordType.replace("_", " ")} Context`;
       }
     }
@@ -288,9 +269,6 @@ export async function getPortalConversationDetail(
   }
 }
 
-/**
- * Submits a message reply to a PORTAL conversation from the client.
- */
 export async function submitPortalConversationReply(
   orgSlug: string,
   conversationId: string,
@@ -312,7 +290,6 @@ export async function submitPortalConversationReply(
       return { success: false, error: "Message content cannot be empty" };
     }
 
-    // Access check
     const conversation = await db.conversation.findFirst({
       where: {
         id: conversationId,
@@ -330,11 +307,9 @@ export async function submitPortalConversationReply(
       return { success: false, error: "This conversation is closed. Replies are disabled." };
     }
 
-    // Validate upload tokens for all attachments:
     if (attachments && attachments.length > 0) {
       for (const att of attachments) {
         if (!verifyUploadToken(session.orgId, session.customerId, att.storageRef, att.uploadToken)) {
-          // Log access blocked
           await db.messagingAuditEvent.create({
             data: {
               orgId: session.orgId,
@@ -349,7 +324,6 @@ export async function submitPortalConversationReply(
       }
     }
 
-    // Idempotency / Double submit protection: check if client sent exact same message in last 10s
     const potentialDuplicates = await db.conversationMessage.findMany({
       where: {
         orgId: session.orgId,
@@ -401,9 +375,6 @@ export async function submitPortalConversationReply(
   }
 }
 
-/**
- * Marks a portal conversation as read for the client by updating the read state.
- */
 export async function markPortalConversationAsRead(
   orgSlug: string,
   conversationId: string
@@ -412,7 +383,6 @@ export async function markPortalConversationAsRead(
     const session = await requirePortalSession(orgSlug);
     await validateCustomerEligibility(session.customerId, session.orgId, orgSlug);
 
-    // Access check
     const conversation = await db.conversation.findFirst({
       where: {
         id: conversationId,
@@ -485,7 +455,7 @@ const PORTAL_BLOCKED_EXTENSIONS = new Set([
   ".vbs", ".ps1", ".sh", ".dll", ".sys",
 ]);
 
-const PORTAL_MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
+const PORTAL_MAX_FILE_SIZE = 50 * 1024 * 1024;
 
 export async function uploadPortalAttachment(
   orgSlug: string,
@@ -532,10 +502,8 @@ export async function uploadPortalAttachment(
       mimeType,
     );
 
-    // Reuse the existing uploadToken mechanism by passing customerId as userId
     const uploadToken = mintUploadToken(session.orgId, session.customerId, savedKey);
 
-    // Emit audit event
     await db.messagingAuditEvent.create({
       data: {
         orgId: session.orgId,
@@ -594,7 +562,6 @@ export async function getPortalAttachmentDownloadUrl(
       return { success: false, error: "This attachment is not available for download" };
     }
 
-    // Traverse attachment → message → conversation, then verify membership
     const message = await db.conversationMessage.findFirst({
       where: {
         id: attachment.messageId,
@@ -638,7 +605,7 @@ export async function getPortalAttachmentDownloadUrl(
     const signedUrl = await getSignedUrlServer(
       "attachments",
       attachment.storageRef,
-      300, // 5-minute expiry
+      300,
       { download: attachment.fileName },
     );
 
