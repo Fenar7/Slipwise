@@ -12,6 +12,7 @@ export type MessagingSection =
   | "channels"
   | "dms"
   | "groups"
+  | "portals"
   | "tasks"
   | "meetings"
   | "files"
@@ -149,7 +150,7 @@ export interface MessagingWorkspaceState {
  * The type of conversation currently open in the reading workspace.
  * Drives distinct workspace cues per conversation kind.
  */
-export type ConversationKind = "channel" | "dm" | "group";
+export type ConversationKind = "channel" | "dm" | "group" | "portal";
 
 /**
  * A single static message in the reading pane.
@@ -181,6 +182,7 @@ export interface ConversationMessage {
   }>;
   /** Whether the current viewer is mentioned */
   mentionsCurrentUser: boolean;
+  audience?: "EXTERNAL_VISIBLE" | "INTERNAL_ONLY";
 }
 
 /**
@@ -216,6 +218,11 @@ export interface ActiveConversation {
   lockedAt?: string | null;
   /** Backend-derived: whether the current user can send messages */
   canSend?: boolean;
+  portalState?: "OPEN" | "WAITING_ON_INTERNAL" | "WAITING_ON_CLIENT" | "CLOSED" | null;
+  linkedRecordType?: "CUSTOMER" | "INVOICE" | "QUOTE" | "PAYMENT" | "STATEMENT" | "TICKET" | "GENERAL_SUPPORT" | null;
+  linkedRecordId?: string | null;
+  customerId?: string | null;
+  assigneeId?: string | null;
 }
 
 /**

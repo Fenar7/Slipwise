@@ -36,11 +36,14 @@ export async function assertActiveParticipant(
   userId: string,
   context: string,
 ): Promise<Prisma.ConversationParticipantGetPayload<Record<string, never>>> {
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId);
+
   const participant = await tx.conversationParticipant.findFirst({
     where: {
       orgId,
       conversationId,
-      userId,
+      userId: isUuid ? userId : undefined,
+      customerId: !isUuid ? userId : undefined,
       leftAt: null,
     },
   });
@@ -149,11 +152,13 @@ export async function assertGovernanceAction(
   participant: Prisma.ConversationParticipantGetPayload<Record<string, never>> | null;
 }> {
   const conversation = await getConversationInOrg(tx, orgId, conversationId, context);
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId);
   const participant = await tx.conversationParticipant.findFirst({
     where: {
       orgId,
       conversationId,
-      userId,
+      userId: isUuid ? userId : undefined,
+      customerId: !isUuid ? userId : undefined,
       leftAt: null,
     },
   });

@@ -53,7 +53,9 @@ export type ConversationAction =
   | "UNLOCK"
   | "ADD_PARTICIPANT"
   | "REMOVE_PARTICIPANT"
-  | "CHANGE_PARTICIPANT_ROLE";
+  | "CHANGE_PARTICIPANT_ROLE"
+  | "UPDATE_PORTAL_STATE"
+  | "UPDATE_PORTAL_ASSIGNMENT";
 
 // ─── Authorization result ─────────────────────────────────────────────────────
 
@@ -105,6 +107,8 @@ const GOVERNANCE_ACTIONS: readonly ConversationAction[] = [
   "ADD_PARTICIPANT",
   "REMOVE_PARTICIPANT",
   "CHANGE_PARTICIPANT_ROLE",
+  "UPDATE_PORTAL_STATE",
+  "UPDATE_PORTAL_ASSIGNMENT",
 ];
 
 /** Actions that are ordinary member mutations blocked by archived/locked. */
@@ -138,6 +142,8 @@ const ADMIN_OVERRIDABLE_ACTIONS: readonly ConversationAction[] = [
   "LOCK",
   "UNLOCK",
   "REMOVE_PARTICIPANT",
+  "UPDATE_PORTAL_STATE",
+  "UPDATE_PORTAL_ASSIGNMENT",
 ];
 
 // ─── Governance matrix ────────────────────────────────────────────────────────
@@ -194,6 +200,91 @@ export function evaluateConversationAccess(
     };
   }
 
+  // Portal state/assignee mutation validation.
+  if (action === "UPDATE_PORTAL_STATE" || action === "UPDATE_PORTAL_ASSIGNMENT") {
+    if (conversation.type !== "PORTAL") {
+      return {
+        allowed: false,
+        reason: "action only permitted for portal conversations",
+      };
+    }
+    if (participant.kind !== "INTERNAL_MEMBER") {
+      return {
+        allowed: false,
+        reason: "only internal members can update portal state or assignment",
+      };
+    }
+  }
+
+  // ─── Phase 10 Portal boundaries & validation ───
+  if (conversation.type === "PORTAL") {
+    // Portal conversations require a customerId scoping.
+    if (!conversation.customerId) {
+      return {
+        allowed: false,
+        reason: "portal conversation missing customer identity scoping",
+      };
+    }
+
+    if (participant.kind === "PORTAL_CLIENT") {
+      if (!participant.customerId) {
+        return {
+          allowed: false,
+          reason: "portal client participant missing customer identifier",
+        };
+      }
+      if (conversation.customerId !== participant.customerId) {
+        return {
+          allowed: false,
+          reason: "customer boundary violation for portal client",
+        };
+      }
+
+      // Restrict actions allowed for external clients
+      const allowedClientActions: ConversationAction[] = [
+        "READ",
+        "SEND_MESSAGE",
+        "UPDATE_READ_STATE",
+        "ADD_REACTION",
+        "REMOVE_REACTION",
+      ];
+      if (!allowedClientActions.includes(action)) {
+        return {
+          allowed: false,
+          reason: `action ${action} not permitted for portal clients`,
+        };
+      }
+
+      // CLOSED portal conversation cannot receive new replies from client
+      if (action === "SEND_MESSAGE" && conversation.portalState === "CLOSED") {
+        return {
+          allowed: false,
+          reason: "cannot send messages to a closed portal conversation",
+        };
+      }
+    } else if (participant.kind === "INTERNAL_MEMBER") {
+      if (!participant.userId) {
+        return {
+          allowed: false,
+          reason: "internal member participant missing user identifier",
+        };
+      }
+    } else {
+      return {
+        allowed: false,
+        reason: "unknown participant kind",
+      };
+    }
+  } else {
+    // INTERNAL conversations (CHANNEL, DM, GROUP) must never allow PORTAL_CLIENT participants.
+    if (participant.kind === "PORTAL_CLIENT") {
+      return {
+        allowed: false,
+        reason: "portal clients are not allowed in internal conversations",
+      };
+    }
+  }
+
   // 3. DM-specific constraints.
   if (conversationIsDM(conversation) && NON_DM_ACTIONS.includes(action)) {
     return {
@@ -236,10 +327,12 @@ export function evaluateConversationAccess(
       };
     }
     if (action === "UNARCHIVE" && !conversationIsArchived(conversation)) {
-      return {
-        allowed: false,
-        reason: "conversation is not archived",
-      };
+      if (!(conversation.type === "PORTAL" && conversation.portalState === "CLOSED")) {
+        return {
+          allowed: false,
+          reason: "conversation is not archived",
+        };
+      }
     }
 
     // Locked conversations block governance EXCEPT unlock.
@@ -288,6 +381,13 @@ export function evaluateGovernanceAccess(
   action: ConversationAction,
 ): AuthorizationResult {
   const { participant, orgRole, isPlatformAdmin } = actor;
+
+  if (participant && participant.kind === "PORTAL_CLIENT") {
+    return {
+      allowed: false,
+      reason: "portal clients cannot perform governance actions",
+    };
+  }
 
   // First: check conversation-level governance role.
   const participantResult = evaluateConversationAccess(

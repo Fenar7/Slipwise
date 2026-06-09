@@ -12,7 +12,7 @@ import type {
 export interface ApiConversationSummary {
   id: string;
   orgId: string;
-  type: "CHANNEL" | "DM" | "GROUP";
+  type: "CHANNEL" | "DM" | "GROUP" | "PORTAL";
   name: string | null;
   description: string | null;
   visibility: "PUBLIC" | "PRIVATE" | null;
@@ -30,6 +30,11 @@ export interface ApiConversationSummary {
   /** Pinned by current user — defaults to false if absent */
   isPinned?: boolean;
   isMuted?: boolean;
+  portalState?: "OPEN" | "WAITING_ON_INTERNAL" | "WAITING_ON_CLIENT" | "CLOSED" | null;
+  linkedRecordType?: "CUSTOMER" | "INVOICE" | "QUOTE" | "PAYMENT" | "STATEMENT" | "TICKET" | "GENERAL_SUPPORT" | null;
+  linkedRecordId?: string | null;
+  customerId?: string | null;
+  assigneeId?: string | null;
 }
 
 export interface ApiParticipantProfile {
@@ -80,6 +85,7 @@ export interface ApiMessage {
   }>;
   mentionsCurrentUser?: boolean;
   createdAt: string;
+  audience?: "EXTERNAL_VISIBLE" | "INTERNAL_ONLY";
 }
 
 export interface ApiReadState {
@@ -92,7 +98,7 @@ export interface ApiReadState {
 export interface ApiConversationDetail {
   id: string;
   orgId: string;
-  type: "CHANNEL" | "DM" | "GROUP";
+  type: "CHANNEL" | "DM" | "GROUP" | "PORTAL";
   name: string | null;
   description: string | null;
   visibility: "PUBLIC" | "PRIVATE" | null;
@@ -111,6 +117,11 @@ export interface ApiConversationDetail {
   readState: ApiReadState | null;
   /** The userId of the current authenticated viewer */
   currentUserId: string;
+  portalState?: "OPEN" | "WAITING_ON_INTERNAL" | "WAITING_ON_CLIENT" | "CLOSED" | null;
+  linkedRecordType?: "CUSTOMER" | "INVOICE" | "QUOTE" | "PAYMENT" | "STATEMENT" | "TICKET" | "GENERAL_SUPPORT" | null;
+  linkedRecordId?: string | null;
+  customerId?: string | null;
+  assigneeId?: string | null;
 }
 
 export interface ApiTaskSummary {
@@ -182,7 +193,7 @@ export function toFrontendGroup(summary: ApiConversationSummary): MessagingGroup
 
 export function toActiveConversation(
   summary: ApiConversationSummary,
-  kind: "channel" | "dm" | "group",
+  kind: "channel" | "dm" | "group" | "portal",
 ): ActiveConversation {
   const isAccessible = summary.archivedAt === null && summary.lockedAt === null;
   const base: ActiveConversation = {
@@ -196,6 +207,11 @@ export function toActiveConversation(
     archivedAt: summary.archivedAt,
     lockedAt: summary.lockedAt,
     canSend: summary.canSend,
+    portalState: summary.portalState,
+    linkedRecordType: summary.linkedRecordType,
+    linkedRecordId: summary.linkedRecordId,
+    customerId: summary.customerId,
+    assigneeId: summary.assigneeId,
   };
 
   if (kind === "channel") {
@@ -207,6 +223,8 @@ export function toActiveConversation(
     base.groupMemberCount = summary.participantCount;
     base.groupIsPrivate = summary.visibility === "PRIVATE";
     base.subtitle = `${summary.participantCount} members`;
+  } else if (kind === "portal") {
+    base.subtitle = `${summary.portalState ?? "OPEN"}${summary.linkedRecordType ? ` · Linked ${summary.linkedRecordType.toLowerCase()}` : ""}`;
   }
 
   return base;
@@ -262,6 +280,7 @@ export function toFrontendMessages(detail: ApiConversationDetail): ConversationM
         scanStatus: att.scanStatus,
       })),
       mentionsCurrentUser: msg.mentionsCurrentUser ?? false,
+      audience: msg.audience,
     };
   }).filter(Boolean) as ConversationMessage[];
 }
@@ -309,6 +328,7 @@ export function toFrontendThreadReplies(replies: ApiMessage[], detail: ApiConver
         scanStatus: att.scanStatus,
       })),
       mentionsCurrentUser: msg.mentionsCurrentUser ?? false,
+      audience: msg.audience,
     };
   }).filter(Boolean) as ConversationMessage[];
 }

@@ -41,6 +41,10 @@ import type {
   RetentionPolicyType,
   RetentionAction,
   PresenceStatus,
+  ConversationPortalState,
+  LinkedRecordType,
+  MessageAudience,
+  ParticipantKind,
 } from "./domain-types";
 
 // ─── Org-safe query primitives ────────────────────────────────────────────────
@@ -75,6 +79,10 @@ export interface CreateConversationInput {
   createdBy: string;
   /** Initial participant userIds (not including createdBy; creator is always added). */
   initialParticipantIds?: string[];
+  portalState?: ConversationPortalState | null;
+  linkedRecordType?: LinkedRecordType | null;
+  linkedRecordId?: string | null;
+  customerId?: string | null;
 }
 
 export interface CreateConversationResult {
@@ -190,6 +198,7 @@ export interface SendMessageInput {
   attachments?: MessageAttachmentDescriptor[];
   /** Mentioned userIds with offset ranges (optional; may be computed by service). */
   mentions?: Array<{ userId: string; offsetStart: number; offsetEnd: number }>;
+  audience?: MessageAudience;
 }
 
 export interface EditMessageInput {

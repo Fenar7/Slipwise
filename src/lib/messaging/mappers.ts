@@ -72,6 +72,10 @@ export function toConversationRecord(row: Conversation): ConversationRecord {
     createdBy: row.createdBy,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
+    portalState: row.portalState ?? null,
+    linkedRecordType: row.linkedRecordType ?? null,
+    linkedRecordId: row.linkedRecordId ?? null,
+    customerId: row.customerId ?? null,
   };
 }
 
@@ -82,7 +86,9 @@ export function toParticipantRecord(row: ConversationParticipant): ConversationP
     id: row.id,
     orgId: row.orgId,
     conversationId: row.conversationId,
-    userId: row.userId,
+    userId: row.userId ?? null,
+    customerId: row.customerId ?? null,
+    kind: row.kind,
     role: row.role,
     leftAt: row.leftAt ?? null,
     mutedUntil: row.mutedUntil ?? null,
@@ -101,7 +107,9 @@ export function toMessageRecord(row: ConversationMessage): ConversationMessageRe
     orgId: row.orgId,
     conversationId: row.conversationId,
     threadId: row.threadId ?? null,
-    authorId: row.authorId,
+    authorId: row.authorId ?? null,
+    customerId: row.customerId ?? null,
+    audience: row.audience,
     body: row.body,
     contentMeta: (row.contentMeta as Record<string, unknown> | null) ?? null,
     status: row.status,
@@ -176,14 +184,13 @@ export function toDraftRecord(row: ConversationDraft): ConversationDraftRecord {
   };
 }
 
-// ─── Read State ───────────────────────────────────────────────────────────────
-
 export function toReadStateRecord(row: ConversationReadState): ConversationReadStateRecord {
   return {
     id: row.id,
     orgId: row.orgId,
     conversationId: row.conversationId,
-    userId: row.userId,
+    userId: row.userId ?? null,
+    customerId: row.customerId ?? null,
     lastReadMessageId: row.lastReadMessageId ?? null,
     lastReadAt: row.lastReadAt ?? null,
     unreadCount: row.unreadCount,

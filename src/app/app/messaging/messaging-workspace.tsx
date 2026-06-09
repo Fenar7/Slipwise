@@ -8,7 +8,9 @@ import {
   ChannelConversationList,
   DMConversationList,
   GroupConversationList,
+  PortalConversationList,
 } from "./messaging-conversation-list";
+import * as nextNavigation from "next/navigation";
 import { MessagingReadingWorkspace } from "./messaging-reading-workspace";
 import { MessagingSearchPanel } from "./messaging-search-panel";
 import { MessagingNotificationsPanel } from "./messaging-notifications-panel";
@@ -47,6 +49,7 @@ const MOBILE_SECTIONS: Array<{
   { section: "channels", label: "Channels" },
   { section: "dms", label: "DMs" },
   { section: "groups", label: "Groups" },
+  { section: "portals", label: "Portals" },
   { section: "tasks", label: "Tasks" },
   { section: "meetings", label: "Meetings" },
   { section: "files", label: "Files" },
@@ -152,18 +155,108 @@ export function MessagingWorkspace() {
   }, [state.activeSection]);
 
   const activeConversation = activeConversations[state.activeSection] ?? null;
+  const activeConvId = activeConversation?.id ?? null;
 
   const {
     channels: liveChannels,
     dms: liveDms,
     groups: liveGroups,
+    portals: livePortals,
     loading: listLoading,
     error: listError,
     empty: listEmpty,
     refresh: refreshList,
   } = useConversationList();
 
-  const activeConvId = activeConversation?.id ?? null;
+  const { detail: activeDetail, refresh: refreshDetail, errorType: detailErrorType } = useConversationDetail(activeConvId);
+
+  const { create: createConversation, creating: creatingConversation, error: createError, clearError: clearCreateError } = useCreateConversation();
+
+  const { send: sendMessage, sending: sendingMessage, error: sendError, clearError: clearSendError } = useSendMessage();
+  const { send: sendReply, sending: sendingReply, error: replyError, clearError: clearReplyError } = useSendThreadReply();
+  const { markRead, marking: markingRead, error: markReadError } = useMarkRead();
+  const lastMarkedRef = React.useRef<Record<string, number>>({});
+
+  const { degraded: realtimeDegraded } = useRealtimeBootstrap();
+
+  const enrichSelected = React.useCallback((summary: ApiConversationSummary, kind: "channel" | "dm" | "group" | "portal"): ActiveConversation => {
+    const conv = toActiveConversation(summary, kind);
+    if (activeDetail && activeDetail.id === summary.id) {
+      conv.canSend = activeDetail.canSend;
+    }
+    return conv;
+  }, [activeDetail]);
+
+  let searchParams: ReturnType<typeof nextNavigation.useSearchParams> | null = null;
+  try {
+    const getSearchParams = nextNavigation.useSearchParams;
+    if (typeof getSearchParams === "function") {
+      searchParams = getSearchParams();
+    }
+  } catch (e) {
+    // Avoid erroring when next/navigation mock lacks useSearchParams
+  }
+  const routeCustomerId = searchParams ? searchParams.get("customerId") : null;
+  const routeLinkedRecordType = searchParams ? searchParams.get("linkedRecordType") : null;
+  const routeLinkedRecordId = searchParams ? searchParams.get("linkedRecordId") : null;
+  const [autoCreating, setAutoCreating] = useState(false);
+  const [pendingPortalParams, setPendingPortalParams] = useState<{
+    customerId: string;
+    linkedRecordType?: string | null;
+    linkedRecordId?: string | null;
+  } | null>(null);
+
+  React.useEffect(() => {
+    if (listLoading) return;
+    if (routeCustomerId) {
+      const found = livePortals.find(
+        (c) =>
+          c.customerId === routeCustomerId &&
+          (!routeLinkedRecordType || c.linkedRecordType === routeLinkedRecordType) &&
+          (!routeLinkedRecordId || c.linkedRecordId === routeLinkedRecordId)
+      );
+
+      if (found) {
+        setActiveSection("portals");
+        const enriched = enrichSelected(found, "portal");
+        if (activeConversations["portals"]?.id !== found.id) {
+          setActiveConversations((prev) => ({
+            ...prev,
+            portals: enriched,
+          }));
+        }
+        setPendingPortalParams(null);
+      } else {
+        setActiveSection("portals");
+        setPendingPortalParams({
+          customerId: routeCustomerId,
+          linkedRecordType: routeLinkedRecordType,
+          linkedRecordId: routeLinkedRecordId,
+        });
+      }
+    }
+  }, [listLoading, routeCustomerId, routeLinkedRecordType, routeLinkedRecordId, livePortals, enrichSelected]);
+
+  async function handleCreatePortalFromPrompt() {
+    if (!pendingPortalParams || autoCreating) return;
+    setAutoCreating(true);
+    try {
+      const result = await createConversation("PORTAL", {
+        customerId: pendingPortalParams.customerId,
+        linkedRecordType: pendingPortalParams.linkedRecordType ?? undefined,
+        linkedRecordId: pendingPortalParams.linkedRecordId ?? undefined,
+      });
+      if (result) {
+        setPendingCreateId(result.id);
+        setPendingPortalParams(null);
+        refreshList();
+      }
+    } catch (e) {
+      console.error("Failed to create portal conversation from prompt:", e);
+    } finally {
+      setAutoCreating(false);
+    }
+  }
 
   // Sprint 6.6: open task create modal anchored to a message
   const handleCreateTaskFromMessage = React.useCallback((messageId: string, messageBody: string) => {
@@ -177,18 +270,32 @@ export function MessagingWorkspace() {
   // Sprint 6.2: navigate from task detail to originating message/thread
   const handleNavigateToOrigin = React.useCallback((conversationId: string, messageId: string | null) => {
     setJumpToMessageId(messageId);
-    const all = [...liveChannels, ...liveDms, ...liveGroups];
+    const all = [...liveChannels, ...liveDms, ...liveGroups, ...livePortals];
     const found = all.find((c) => c.id === conversationId);
     if (found) {
-      const kind = found.type === "CHANNEL" ? "channel" : found.type === "DM" ? "dm" : "group";
-      const section: MessagingSection = kind === "channel" ? "channels" : kind === "dm" ? "dms" : "groups";
+      const kind =
+        found.type === "CHANNEL"
+          ? "channel"
+          : found.type === "DM"
+          ? "dm"
+          : found.type === "GROUP"
+          ? "group"
+          : "portal";
+      const section: MessagingSection =
+        kind === "channel"
+          ? "channels"
+          : kind === "dm"
+          ? "dms"
+          : kind === "group"
+          ? "groups"
+          : "portals";
       setActiveSection(section);
       setActiveConversations((prev) => ({
         ...prev,
         [section]: toActiveConversation(found, kind),
       }));
     }
-  }, [liveChannels, liveDms, liveGroups, setActiveSection]);
+  }, [liveChannels, liveDms, liveGroups, livePortals, setActiveSection]);
 
   // Clear jumpToMessageId after the reading workspace has consumed it
   React.useEffect(() => {
@@ -197,13 +304,6 @@ export function MessagingWorkspace() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeConvId]);
-
-  const { detail: activeDetail, refresh: refreshDetail, errorType: detailErrorType } = useConversationDetail(activeConvId);
-
-  const { send: sendMessage, sending: sendingMessage, error: sendError, clearError: clearSendError } = useSendMessage();
-  const { send: sendReply, sending: sendingReply, error: replyError, clearError: clearReplyError } = useSendThreadReply();
-  const { markRead, marking: markingRead, error: markReadError } = useMarkRead();
-  const lastMarkedRef = React.useRef<Record<string, number>>({});
 
   // Sprint 5.2: mark read when opening a conversation with unread messages.
   // Per-conversation tracking prevents re-marking unless unreadCount grows.
@@ -222,30 +322,25 @@ export function MessagingWorkspace() {
     }
   }, [activeConvId, activeDetail, markRead, markingRead, refreshList]);
 
-  const { degraded: realtimeDegraded } = useRealtimeBootstrap();
-
-  const { create: createConversation, creating: creatingConversation, error: createError, clearError: clearCreateError } = useCreateConversation();
-
-  const enrichSelected = React.useCallback((summary: ApiConversationSummary, kind: "channel" | "dm" | "group"): ActiveConversation => {
-    const conv = toActiveConversation(summary, kind);
-    if (activeDetail && activeDetail.id === summary.id) {
-      conv.canSend = activeDetail.canSend;
-    }
-    return conv;
-  }, [activeDetail]);
-
   // Sprint 5.3: after creating a conversation, refresh the list and select it
   // when it appears in the hydrated summaries.
   React.useEffect(() => {
     if (!pendingCreateId) return;
-    const all = [...liveChannels, ...liveDms, ...liveGroups];
+    const all = [...liveChannels, ...liveDms, ...liveGroups, ...livePortals];
     const found = all.find((c) => c.id === pendingCreateId);
     if (found) {
-      const kind = found.type === "CHANNEL" ? "channel" : found.type === "DM" ? "dm" : "group";
+      const kind =
+        found.type === "CHANNEL"
+          ? "channel"
+          : found.type === "DM"
+          ? "dm"
+          : found.type === "GROUP"
+          ? "group"
+          : "portal";
       handleConversationSelect(enrichSelected(found, kind));
       setPendingCreateId(null);
     }
-  }, [liveChannels, liveDms, liveGroups, pendingCreateId, handleConversationSelect, enrichSelected]);
+  }, [liveChannels, liveDms, liveGroups, livePortals, pendingCreateId, handleConversationSelect, enrichSelected]);
 
   const sectionChannels = liveChannels.map((s) => toFrontendChannel(s));
   const sectionDms = liveDms.map((s) => toFrontendDM(s));
@@ -274,7 +369,8 @@ export function MessagingWorkspace() {
   const isConversationSection =
     state.activeSection === "channels" ||
     state.activeSection === "dms" ||
-    state.activeSection === "groups";
+    state.activeSection === "groups" ||
+    state.activeSection === "portals";
 
   return (
     <div
@@ -447,6 +543,16 @@ export function MessagingWorkspace() {
                     creatingGroup={creatingConversation}
                   />
                 )}
+                {!listLoading && !listError && !listEmpty && state.activeSection === "portals" && (
+                  <PortalConversationList
+                    activeConversationId={activeConversation?.id ?? null}
+                    onSelect={(conv) => {
+                      const summary = livePortals.find((c) => c.id === conv.id);
+                      if (summary) handleConversationSelect(enrichSelected(summary, "portal"));
+                    }}
+                    portals={livePortals}
+                  />
+                )}
               </div>
 
               {/* Reading workspace */}
@@ -459,20 +565,33 @@ export function MessagingWorkspace() {
                       ? "channel"
                       : state.activeSection === "dms"
                       ? "dm"
-                      : "group"
+                      : state.activeSection === "groups"
+                      ? "group"
+                      : "portal"
                   }
                   degraded={realtimeDegraded}
                   messages={messages}
                   detail={activeDetail}
+                  pendingPortalParams={state.activeSection === "portals" ? pendingPortalParams : null}
+                  onCreatePortalFromPrompt={handleCreatePortalFromPrompt}
+                  creatingPortalFromPrompt={autoCreating}
                   canSend={activeDetail?.canSend ?? activeConversation?.canSend ?? true}
                   sending={sendingMessage}
                   sendError={sendError}
                   onSend={async (
                     body: string,
-                    options?: { mentions?: Array<{ userId: string; offsetStart: number; offsetEnd: number }> },
+                    options?: {
+                      mentions?: Array<{ userId: string; offsetStart: number; offsetEnd: number }>;
+                      attachments?: Array<{ storageRef: string; uploadToken: string; fileName: string; mimeType: string; sizeBytes: number }>;
+                      audience?: "EXTERNAL_VISIBLE" | "INTERNAL_ONLY";
+                    },
                   ) => {
                     clearSendError();
-                    const result = await sendMessage(activeConvId!, body, null, options?.mentions?.length ? { mentions: options.mentions } : undefined);
+                    const result = await sendMessage(activeConvId!, body, null, {
+                      mentions: options?.mentions,
+                      attachments: options?.attachments,
+                      audience: options?.audience,
+                    });
                     if (result && activeConvId) {
                       await refreshDetail();
                       await refreshList();

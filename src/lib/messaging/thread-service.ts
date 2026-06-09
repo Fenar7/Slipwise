@@ -101,17 +101,23 @@ export async function listThreadReplies(
       orgId,
       conversationId,
     },
+    include: {
+      conversation: true,
+    },
   });
   if (!thread) {
     throw new Error("listThreadReplies: thread not found or does not belong to conversation");
   }
+
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId);
 
   // Membership check must use the thread's actual conversation (defense in depth).
   const participant = await db.conversationParticipant.findFirst({
     where: {
       orgId,
       conversationId: thread.conversationId,
-      userId,
+      userId: isUuid ? userId : undefined,
+      customerId: !isUuid ? userId : undefined,
       leftAt: null,
     },
   });
@@ -119,10 +125,13 @@ export async function listThreadReplies(
     throw new Error("listThreadReplies: active participant access required");
   }
 
+  const hideInternalNotes = thread.conversation.type === "PORTAL" && participant.kind === "PORTAL_CLIENT";
+
   const rows = await db.conversationMessage.findMany({
     where: {
       orgId,
       threadId,
+      audience: hideInternalNotes ? "EXTERNAL_VISIBLE" : undefined,
     },
     orderBy: { createdAt: "asc" },
   });
