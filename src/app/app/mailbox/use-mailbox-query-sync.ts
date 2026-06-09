@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
-import type { ActiveFilterState, ActiveFilter } from "./types";
+import type { ActiveFilterState, ActiveFilter, MailboxSearchMode } from "./types";
 
 function parseQueryParams(searchParams: URLSearchParams): ActiveFilterState {
   const filters: ActiveFilter[] = [];
@@ -12,9 +12,13 @@ function parseQueryParams(searchParams: URLSearchParams): ActiveFilterState {
       filters.push({ field, value, label: value });
     }
   });
+  const rawMode = searchParams.get("searchMode");
+  const searchMode: MailboxSearchMode =
+    rawMode === "messages" ? "messages" : "threads";
   return {
     filters,
     searchQuery: searchParams.get("q") ?? "",
+    searchMode,
   };
 }
 
@@ -25,6 +29,10 @@ function buildQueryString(state: ActiveFilterState): string {
   }
   for (const filter of state.filters) {
     params.set(`f_${filter.field}`, filter.value);
+  }
+  // Sprint B: persist searchMode in URL
+  if (state.searchMode === "messages") {
+    params.set("searchMode", "messages");
   }
   return params.toString();
 }

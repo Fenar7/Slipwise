@@ -5,10 +5,12 @@ import { requireIntegrationMemberRoute } from "@/app/api/integrations/_auth";
 import { rateLimitByOrg, RATE_LIMITS } from "@/lib/rate-limit";
 import { listMailboxThreads } from "@/lib/mailbox/thread-service";
 import type { MailboxThreadStatus } from "@/lib/mailbox/domain-types";
+import type { SearchMode } from "@/lib/mailbox/thread-service";
 import type { MailboxFolder } from "@/app/app/mailbox/types";
 
 const VALID_STATUSES: MailboxThreadStatus[] = ["OPEN", "PENDING", "CLOSED", "ARCHIVED"];
 const VALID_FOLDERS: MailboxFolder[] = ["INBOX", "SENT", "SPAM", "STARRED", "DRAFT", "TRASH"];
+const VALID_SEARCH_MODES: SearchMode[] = ["threads", "messages"];
 const MAX_LIMIT = 100;
 
 function parseStatusParam(
@@ -49,6 +51,16 @@ function parseBooleanParam(
   if (value === "true") return true;
   if (value === "false") return false;
   return undefined;
+}
+
+function parseSearchModeParam(
+  searchParams: URLSearchParams,
+): SearchMode | undefined {
+  const value = searchParams.get("searchMode");
+  if (!value) return undefined;
+  return VALID_SEARCH_MODES.includes(value as SearchMode)
+    ? (value as SearchMode)
+    : undefined;
 }
 
 function parseNumberParam(
@@ -104,6 +116,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       | "none"
       | undefined;
     const searchQuery = parseQueryParam(searchParams, "searchQuery")?.trim();
+    const searchMode = parseSearchModeParam(searchParams);
     const cursor = parseQueryParam(searchParams, "cursor") ?? undefined;
     const limit = parseNumberParam(searchParams, "limit", MAX_LIMIT);
 
@@ -138,6 +151,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       isFlagged,
       assigneeFilter,
       searchQuery,
+      searchMode,
       cursor,
       limit,
     });

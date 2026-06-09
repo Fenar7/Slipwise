@@ -117,6 +117,7 @@ describe("Mailbox Gmail-Grade Search Sprint A — Truth and Coverage", () => {
 
     expect(result.searchMeta).toEqual({
       mode: "gmail_exact",
+      searchMode: "threads",
       totalCountIsExact: false,
       partial: true,
       partialConnectionIds: [CONN_1],
@@ -159,6 +160,7 @@ describe("Mailbox Gmail-Grade Search Sprint A — Truth and Coverage", () => {
 
     expect(result.searchMeta).toEqual({
       mode: "gmail_exact",
+      searchMode: "threads",
       totalCountIsExact: false,
       partial: true,
       partialConnectionIds: [CONN_1],
@@ -199,6 +201,7 @@ describe("Mailbox Gmail-Grade Search Sprint A — Truth and Coverage", () => {
     // falls back to local search but marks status auth_expired
     expect(result.searchMeta).toEqual({
       mode: "local",
+      searchMode: "threads",
       totalCountIsExact: true,
       partial: true,
       partialConnectionIds: [CONN_1],
@@ -242,6 +245,7 @@ describe("Mailbox Gmail-Grade Search Sprint A — Truth and Coverage", () => {
 
     expect(result.searchMeta).toEqual({
       mode: "gmail_exact",
+      searchMode: "threads",
       totalCountIsExact: false,
       partial: true,
       partialConnectionIds: [CONN_1],

@@ -156,6 +156,25 @@ export interface MailboxThreadSearchResult {
   estimatedTotal: number | null;
 }
 
+/**
+ * Sprint B: Message-level search result from a provider.
+ * Each hit represents a single message, not a thread.
+ */
+export interface MailboxMessageSearchHit {
+  providerThreadId: string;
+  providerMessageId: string;
+  snippet: string;
+  subject: string;
+  from: MailboxParticipantRef;
+  sentAt: string;
+}
+
+export interface MailboxMessageSearchResult {
+  hits: MailboxMessageSearchHit[];
+  nextPageToken: string | null;
+  estimatedTotal: number | null;
+}
+
 export interface MailboxDraftSyncResult {
   drafts: MailboxDraftEnvelope[];
   activeDraftIds: string[];
@@ -329,6 +348,19 @@ export interface IMailboxProviderAdapter {
     pageToken?: string;
     maxResults?: number;
   }): Promise<MailboxThreadSearchResult | MailboxProviderError>;
+
+  /**
+   * Sprint B: Search provider mailbox at the message level.
+   * Returns individual message hits with enough context for message-mode rendering.
+   * Each hit includes the parent thread ID for opening the thread.
+   */
+  searchMessages?(params: {
+    orgId: string;
+    tokenRef: string;
+    query: string;
+    pageToken?: string;
+    maxResults?: number;
+  }): Promise<MailboxMessageSearchResult | MailboxProviderError>;
 
   /**
    * Renew the provider push watch/subscription.

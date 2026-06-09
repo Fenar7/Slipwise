@@ -253,6 +253,11 @@ export function resolveLiveQueryParams(
     params.searchQuery = trimmedQuery;
   }
 
+  // Sprint B: pass searchMode through to the hook
+  if (filterState.searchMode === "messages") {
+    params.searchMode = "messages";
+  }
+
   for (const filter of filterState.filters) {
     switch (filter.field) {
       case "mailbox":
@@ -342,7 +347,7 @@ export function MailboxWorkspace() {
   const { filterState, setFilterState } = useMailboxQuerySync();
   const [contextOverrides, setContextOverrides] = useState<Record<string, Partial<LinkedContextState>>>({});
   const [isFilterPanelOpen, setIsFilterPanelOpen] = useState(false);
-  const [filterDraftState, setFilterDraftState] = useState<ActiveFilterState>({ filters: [], searchQuery: "" });
+  const [filterDraftState, setFilterDraftState] = useState<ActiveFilterState>({ filters: [], searchQuery: "", searchMode: "threads" });
   const { views: savedViews, createView, deleteView } = useMailboxSavedViews();
 
   // Responsive state
@@ -370,6 +375,7 @@ export function MailboxWorkspace() {
 
   const {
     threads: rawThreads,
+    messages: rawMessages,
     totalCount: apiTotalCount,
     searchMeta: threadSearchMeta,
     hasMore: threadsHasMore,
@@ -635,10 +641,10 @@ export function MailboxWorkspace() {
 
   useEffect(() => {
     if (inDraftsMode) return;
-    if (selectedThreadId && !visibleThreads.some((t) => t.id === selectedThreadId)) {
+    if (selectedThreadId && !visibleThreads.some((t) => t.id === selectedThreadId) && rawMessages.length === 0) {
       setSelectedThreadId(null);
     }
-  }, [inDraftsMode, selectedThreadId, visibleThreads]);
+  }, [inDraftsMode, selectedThreadId, visibleThreads, rawMessages.length]);
 
   useEffect(() => {
     if (isFilterPanelOpen) {
@@ -651,6 +657,15 @@ export function MailboxWorkspace() {
     setSelectedThreadId(id);
     setSelectedDraftId(null);
     setMobilePanel("reading-pane");
+  }, []);
+
+  // Sprint B: Handle message result selection — open parent thread
+  const handleSelectMessage = useCallback((message: import("./use-mailbox-threads").MailboxMessageResultItem) => {
+    if (message.threadId) {
+      setSelectedThreadId(message.threadId);
+      setSelectedDraftId(null);
+      setMobilePanel("reading-pane");
+    }
   }, []);
 
   const handleMobileBack = useCallback(() => {
@@ -870,11 +885,11 @@ export function MailboxWorkspace() {
   }, []);
 
   const clearFilters = useCallback(() => {
-    setFilterState({ filters: [], searchQuery: "" });
+    setFilterState({ filters: [], searchQuery: "", searchMode: "threads" });
   }, []);
 
   const clearSearch = useCallback(() => {
-    setFilterState((prev) => ({ ...prev, searchQuery: "" }));
+    setFilterState((prev) => ({ ...prev, searchQuery: "", searchMode: "threads" }));
   }, []);
 
   const toggleDraftFilter = useCallback((filter: ActiveFilter) => {
@@ -936,7 +951,7 @@ export function MailboxWorkspace() {
         />
       );
     }
-    if (!inDraftsMode && rawThreads.length === 0) {
+    if (!inDraftsMode && rawThreads.length === 0 && rawMessages.length === 0) {
       if (hasActiveFilters) {
         return (
           <NoSearchResultsEmpty
@@ -1102,6 +1117,10 @@ export function MailboxWorkspace() {
               setFilterState((prev) => ({ ...prev, searchQuery: query }))
             }
             onClearSearch={clearSearch}
+            searchMode={filterState.searchMode}
+            onSearchModeChange={(mode) =>
+              setFilterState((prev) => ({ ...prev, searchMode: mode }))
+            }
             filterState={filterState}
             isFilterPanelOpen={isFilterPanelOpen}
             onToggleFilterPanel={() => setIsFilterPanelOpen((open) => !open)}
@@ -1164,8 +1183,10 @@ export function MailboxWorkspace() {
             ) : (
               <MailboxThreadList
                 threads={visibleThreads}
+                messages={rawMessages}
                 selectedThreadId={selectedThreadId}
                 onSelectThread={handleSelectThread}
+                onSelectMessage={handleSelectMessage}
                 reconnectBanner={reconnectBanner}
                 emptyState={threadListEmptyState ?? undefined}
                 totalCount={apiTotalCount}

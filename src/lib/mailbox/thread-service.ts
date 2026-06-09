@@ -21,6 +21,36 @@ import { connectionRequiresReconnect } from "./domain-types";
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
 
+/** Sprint B: Explicit search modes. */
+export type SearchMode = "threads" | "messages";
+
+/**
+ * Sprint B: Message-level search result shape for UI consumption.
+ * Each result represents a single matched message within a thread.
+ */
+export interface MailboxMessageResult {
+  /** Local message DB ID (if hydrated). */
+  id: string | null;
+  threadId: string;
+  providerThreadId: string;
+  providerMessageId: string;
+  /** Sender identity. */
+  from: { email: string; displayName: string | null } | null;
+  subject: string;
+  /** Matched snippet / preview. */
+  snippet: string;
+  /** ISO timestamp. */
+  sentAt: string;
+  /** Parent thread subject (for context). */
+  threadSubject: string;
+  /** Mailbox connection ID for scoping. */
+  mailboxConnectionId: string;
+  /** Whether this is a fully hydrated local result or a provider-shell result. */
+  isShellResult: boolean;
+  /** Mailbox display name for context. */
+  mailboxDisplayName: string | null;
+}
+
 /**
  * Parse a search query into structured search terms.
  * Supports:
@@ -143,6 +173,8 @@ export interface ListMailboxThreadsParams {
   assigneeFilter?: "me" | "none";
   /** Search query for subject and previewSnippet. Trimmed; empty values are ignored. */
   searchQuery?: string;
+  /** Sprint B: Search mode — "threads" (default) or "messages". */
+  searchMode?: SearchMode;
   /** Cursor for pagination (base64-encoded JSON {lastMessageAt, id}). */
   cursor?: string;
   /** Page size. Defaults to 50, capped at 100. */
@@ -151,6 +183,8 @@ export interface ListMailboxThreadsParams {
 
 export interface ListMailboxThreadsResult {
   threads: MailboxThreadReadShape[];
+  /** Sprint B: Message-level results when searchMode is "messages". */
+  messages?: MailboxMessageResult[];
   nextCursor: string | null;
   totalCount: number | null;
   searchMeta?: MailboxSearchMeta;
@@ -158,6 +192,8 @@ export interface ListMailboxThreadsResult {
 
 export interface MailboxSearchMeta {
   mode: "local" | "gmail_exact" | "hybrid";
+  /** Sprint B: The user-requested search mode. */
+  searchMode: SearchMode;
   totalCountIsExact: boolean;
   partial: boolean;
   partialConnectionIds: string[];
@@ -607,6 +643,219 @@ async function resolveThreadsByProviderKeys(
 }
 
 /**
+ * Sprint B: Message-mode search.
+ * Searches at the message level using provider searchMessages, then resolves
+ * parent threads from the local DB. Produces shell results for provider hits
+ * that haven't been hydrated yet.
+ */
+async function searchMailboxMessages(params: {
+  orgId: string;
+  userId: string;
+  role: "owner" | "admin" | "member";
+  connectionId: string | undefined;
+  trimmedQuery: string;
+  searchMode: SearchMode;
+  accessibleConnectionIds: string[];
+  accessibleSet: Set<string>;
+  accessibleRecordById: Map<string, MailboxConnectionRecord>;
+  connectionIdsToQuery: string[];
+  limit: number;
+}): Promise<ListMailboxThreadsResult> {
+  const {
+    orgId,
+    trimmedQuery,
+    searchMode,
+    accessibleConnectionIds,
+    accessibleSet,
+    accessibleRecordById,
+    connectionIdsToQuery,
+    limit,
+  } = params;
+
+  const { coveragesByConnectionId } = await getBatchMailboxFolderCoverage(
+    orgId,
+    connectionIdsToQuery,
+  );
+
+  const connectionStatusMap = new Map<
+    string,
+    {
+      status:
+        | "ok"
+        | "coverage_incomplete"
+        | "auth_expired"
+        | "provider_failed"
+        | "hydration_failed"
+        | "provider_unsupported";
+      reason: string;
+    }
+  >();
+
+  for (const connId of connectionIdsToQuery) {
+    const record = accessibleRecordById.get(connId);
+    if (!record) continue;
+
+    if (record.provider !== "GMAIL") {
+      connectionStatusMap.set(connId, {
+        status: "provider_unsupported",
+        reason: "Provider search is unsupported for this provider",
+      });
+    } else if (connectionRequiresReconnect(record.status)) {
+      connectionStatusMap.set(connId, {
+        status: "auth_expired",
+        reason: "Authentication token is expired or revoked. Reconnect required.",
+      });
+    } else {
+      const overallState = coveragesByConnectionId.get(connId)?.overallState;
+      if (overallState !== "COMPLETE") {
+        connectionStatusMap.set(connId, {
+          status: "coverage_incomplete",
+          reason: "Search coverage still catching up",
+        });
+      } else {
+        connectionStatusMap.set(connId, {
+          status: "ok",
+          reason: "Mailbox connection is healthy",
+        });
+      }
+    }
+  }
+
+  const gmailConnections = connectionIdsToQuery
+    .map((id) => accessibleRecordById.get(id))
+    .filter(
+      (record): record is MailboxConnectionRecord =>
+        !!record &&
+        record.provider === "GMAIL" &&
+        typeof record.tokenRef === "string" &&
+        !connectionRequiresReconnect(record.status),
+    );
+
+  const allMessageHits: Array<{
+    providerThreadId: string;
+    providerMessageId: string;
+    snippet: string;
+    subject: string;
+    from: { email: string; displayName: string | null } | null;
+    sentAt: string;
+    connectionId: string;
+  }> = [];
+
+  const partialConnectionIds = new Set<string>();
+  let nextPageToken: string | null = null;
+
+  for (const connection of gmailConnections) {
+    const adapter = getMailboxProviderAdapter(connection.provider);
+    if (!adapter.searchMessages) {
+      partialConnectionIds.add(connection.id);
+      connectionStatusMap.set(connection.id, {
+        status: "provider_unsupported",
+        reason: "Provider message search is unsupported",
+      });
+      continue;
+    }
+
+    const result = await adapter.searchMessages({
+      orgId,
+      tokenRef: connection.tokenRef,
+      query: trimmedQuery,
+      maxResults: limit,
+    });
+
+    if (isMailboxProviderError(result)) {
+      partialConnectionIds.add(connection.id);
+      const isAuthErr = result.category === "auth_expired" || result.category === "auth_insufficient";
+      connectionStatusMap.set(connection.id, {
+        status: isAuthErr ? "auth_expired" : "provider_failed",
+        reason: result.safeMessage,
+      });
+      continue;
+    }
+
+    for (const hit of result.hits) {
+      allMessageHits.push({ ...hit, connectionId: connection.id });
+    }
+
+    if (result.nextPageToken) {
+      nextPageToken = result.nextPageToken;
+    }
+  }
+
+  // Resolve parent threads from local DB for context
+  const threadKeys = allMessageHits.map((hit) =>
+    makeThreadKey(hit.connectionId, hit.providerThreadId),
+  );
+  const resolvedThreads = await resolveThreadsByProviderKeys(orgId, [...new Set(threadKeys)]);
+
+  // Build message results
+  const messageResults: MailboxMessageResult[] = allMessageHits.slice(0, limit).map((hit) => {
+    const threadKey = makeThreadKey(hit.connectionId, hit.providerThreadId);
+    const localThread = resolvedThreads.get(threadKey);
+    const connection = accessibleRecordById.get(hit.connectionId);
+
+    return {
+      id: null, // Message-level local DB resolution not yet needed for Sprint B
+      threadId: localThread?.id ?? "",
+      providerThreadId: hit.providerThreadId,
+      providerMessageId: hit.providerMessageId,
+      from: hit.from,
+      subject: hit.subject,
+      snippet: hit.snippet,
+      sentAt: hit.sentAt,
+      threadSubject: localThread?.subject ?? hit.subject,
+      mailboxConnectionId: hit.connectionId,
+      isShellResult: !localThread,
+      mailboxDisplayName: connection?.displayName ?? null,
+    };
+  });
+
+  const connectionStates = connectionIdsToQuery.map((id) => {
+    const state = connectionStatusMap.get(id) || { status: "ok" as const, reason: "Mailbox connection is healthy" };
+    return { connectionId: id, status: state.status, reason: state.reason };
+  });
+
+  const hasDegraded = connectionStates.some((cs) =>
+    isSearchModeDegradedStatus(cs.status, "gmail_exact"),
+  );
+
+  let coverageState: "complete" | "partial" | "unknown" = "unknown";
+  if (gmailConnections.length > 0) {
+    const allComplete = gmailConnections.every((conn) => {
+      const overallState = coveragesByConnectionId.get(conn.id)?.overallState;
+      return overallState === "COMPLETE";
+    });
+    coverageState = allComplete ? "complete" : "partial";
+  }
+
+  return {
+    threads: [],
+    messages: messageResults,
+    nextCursor: nextPageToken
+      ? encodeProviderSearchCursor({
+          kind: "provider_search",
+          query: trimmedQuery,
+          bufferedThreadKeys: [],
+          seenThreadKeys: [],
+          connectionPageTokens: {},
+          localFallbackFetched: true,
+          partialConnectionIds: [...partialConnectionIds],
+          estimatedTotal: null,
+        })
+      : null,
+    totalCount: null,
+    searchMeta: {
+      mode: gmailConnections.length > 0 ? "gmail_exact" : "local",
+      searchMode,
+      totalCountIsExact: false,
+      partial: hasDegraded,
+      partialConnectionIds: [...partialConnectionIds],
+      coverageState,
+      connectionStates,
+    },
+  };
+}
+
+/**
  * List mailbox threads for an org member.
  *
  * - Resolves accessible connections via visibility service.
@@ -628,9 +877,12 @@ export async function listMailboxThreads(
     isFlagged,
     assigneeFilter,
     searchQuery,
+    searchMode: rawSearchMode,
     cursor,
     limit: rawLimit,
   } = params;
+
+  const searchMode: SearchMode = rawSearchMode === "messages" ? "messages" : "threads";
 
   let { folder } = params;
 
@@ -653,6 +905,7 @@ export async function listMailboxThreads(
       searchMeta: trimmedQuery
         ? {
             mode: "local",
+            searchMode,
             totalCountIsExact: true,
             partial: false,
             partialConnectionIds: [],
@@ -767,6 +1020,23 @@ export async function listMailboxThreads(
   }
 
   if (trimmedQuery) {
+    // Sprint B: Message-mode search delegates to a dedicated path
+    if (searchMode === "messages") {
+      return searchMailboxMessages({
+        orgId,
+        userId,
+        role,
+        connectionId,
+        trimmedQuery,
+        searchMode,
+        accessibleConnectionIds,
+        accessibleSet,
+        accessibleRecordById,
+        connectionIdsToQuery,
+        limit,
+      });
+    }
+
     const decodedCursor = cursor ? decodeCursor(cursor) : null;
     const providerCursor =
       decodedCursor?.kind === "provider_search" &&
@@ -915,6 +1185,7 @@ export async function listMailboxThreads(
 
       const searchMetaResult: MailboxSearchMeta = {
         mode: "local",
+        searchMode,
         totalCountIsExact: true,
         partial: hasDegraded,
         partialConnectionIds,
@@ -1212,6 +1483,7 @@ export async function listMailboxThreads(
 
     const searchMetaResult: MailboxSearchMeta = {
       mode: "gmail_exact",
+      searchMode,
       totalCountIsExact: false,
       partial: hasDegraded,
       partialConnectionIds: finalPartialConnectionIds,

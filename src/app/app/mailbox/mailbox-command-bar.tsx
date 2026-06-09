@@ -1,10 +1,10 @@
 "use client";
 
 import { useState, useRef } from "react";
-import { Search, X, SlidersHorizontal, PenSquare, Bookmark } from "lucide-react";
+import { Search, X, SlidersHorizontal, PenSquare, Bookmark, MessageSquare, Layers } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { MailboxSearchMeta } from "@/lib/mailbox/thread-service";
-import type { ActiveFilter, ActiveFilterState, SupportedSavedViewSmartViewId } from "./types";
+import type { ActiveFilter, ActiveFilterState, SupportedSavedViewSmartViewId, MailboxSearchMode } from "./types";
 import type { MailboxSyncPresentation } from "@/lib/mailbox/sync-presentation-shape";
 import { MailboxSyncStateChip } from "./mailbox-sync-status";
 
@@ -19,6 +19,8 @@ interface MailboxCommandBarProps {
   searchQuery?: string;
   onSearchQueryChange?: (query: string) => void;
   onClearSearch?: () => void;
+  searchMode?: MailboxSearchMode;
+  onSearchModeChange?: (mode: MailboxSearchMode) => void;
   filterState?: ActiveFilterState;
   isFilterPanelOpen?: boolean;
   onToggleFilterPanel?: () => void;
@@ -40,6 +42,8 @@ export function MailboxCommandBar({
   searchQuery = "",
   onSearchQueryChange,
   onClearSearch,
+  searchMode = "threads",
+  onSearchModeChange,
   filterState,
   isFilterPanelOpen = false,
   onToggleFilterPanel,
@@ -70,7 +74,11 @@ export function MailboxCommandBar({
               {((searchMeta?.mode === "gmail_exact" || searchMeta?.mode === "hybrid") && !searchMeta.totalCountIsExact)
                 ? `Loaded ${loadedCount ?? totalCount ?? 0} `
                 : `${totalCount ?? 0} `}
-              {itemLabel === "draft"
+              {searchMeta?.searchMode === "messages"
+                ? (totalCount ?? loadedCount ?? 0) === 1
+                  ? "message"
+                  : "messages"
+                : itemLabel === "draft"
                 ? totalCount === 1
                   ? "draft"
                   : "drafts"
@@ -131,6 +139,44 @@ export function MailboxCommandBar({
           </button>
         )}
       </div>
+
+      {/* Sprint B: Search mode switch — visible when searching */}
+      {isSearching && onSearchModeChange && (
+        <div className="flex shrink-0 items-center rounded-lg border border-[#E2E5EA] bg-white" role="radiogroup" aria-label="Search mode">
+          <button
+            type="button"
+            role="radio"
+            aria-checked={searchMode === "threads"}
+            onClick={() => onSearchModeChange("threads")}
+            className={cn(
+              "flex items-center gap-1 rounded-l-lg px-2 py-1 text-xs font-medium transition-colors",
+              searchMode === "threads"
+                ? "bg-[#16294D] text-white"
+                : "text-[#64748B] hover:bg-[#F7F8FB]"
+            )}
+            title="Search threads"
+          >
+            <Layers className="h-3 w-3" />
+            <span className="hidden sm:inline">Threads</span>
+          </button>
+          <button
+            type="button"
+            role="radio"
+            aria-checked={searchMode === "messages"}
+            onClick={() => onSearchModeChange("messages")}
+            className={cn(
+              "flex items-center gap-1 rounded-r-lg px-2 py-1 text-xs font-medium transition-colors",
+              searchMode === "messages"
+                ? "bg-[#16294D] text-white"
+                : "text-[#64748B] hover:bg-[#F7F8FB]"
+            )}
+            title="Search messages"
+          >
+            <MessageSquare className="h-3 w-3" />
+            <span className="hidden sm:inline">Messages</span>
+          </button>
+        </div>
+      )}
 
       {/* Filter button */}
       <button

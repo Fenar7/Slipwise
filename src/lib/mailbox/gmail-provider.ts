@@ -37,6 +37,7 @@ import type {
   MailboxDraftSyncResult,
   MailboxDraftEnvelope,
   MailboxThreadSearchResult,
+  MailboxMessageSearchResult,
 } from "./provider-contracts";
 import { storeMailboxCredential, readMailboxCredential, rotateMailboxCredential, revokeMailboxCredential } from "./credential-store";
 import type { MailboxCredentialPayload } from "./credential-store";
@@ -1023,6 +1024,89 @@ export const gmailProviderAdapter: IMailboxProviderAdapter = {
     }));
 
     const result: MailboxThreadSearchResult = {
+      hits,
+      nextPageToken: data.nextPageToken ?? null,
+      estimatedTotal:
+        typeof data.resultSizeEstimate === "number"
+          ? data.resultSizeEstimate
+          : null,
+    };
+
+    return result;
+  },
+
+  /**
+   * Sprint B: Search Gmail at the message level.
+   * Uses messages.list with format=metadata to get subject, from, snippet, and date
+   * for each matching message, including the parent thread ID.
+   */
+  async searchMessages({ orgId, tokenRef, query, pageToken, maxResults }) {
+    const credential = await readMailboxCredential(orgId, tokenRef);
+    if (!credential) {
+      return { category: "auth_expired", safeMessage: "Credential not found for tokenRef", retryable: false };
+    }
+
+    const accessToken = await ensureValidAccessToken(orgId, tokenRef, credential);
+    if (isProviderError(accessToken)) return accessToken;
+
+    const params = new URLSearchParams({
+      q: query,
+      maxResults: String(
+        Math.min(
+          Math.max(1, maxResults ?? 50),
+          100,
+        ),
+      ),
+      format: "metadata",
+      metadataHeaders: "Subject,From,Date",
+    });
+    if (pageToken) {
+      params.set("pageToken", pageToken);
+    }
+
+    const res = await safeGmailFetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages?${params.toString()}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (isProviderError(res)) return res;
+    if (!res.ok) {
+      const errorCode = await parseGoogleErrorCode(res);
+      return mapGoogleError(res.status, errorCode);
+    }
+
+    const data = await res.json() as {
+      messages?: Array<{ id: string; threadId: string }>;
+      nextPageToken?: string;
+      resultSizeEstimate?: number;
+    };
+
+    const hits: MailboxMessageSearchResult["hits"] = [];
+
+    for (const msg of data.messages ?? []) {
+      const msgRes = await safeGmailFetch(
+        `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}?format=metadata&metadataHeaders=Subject,From,Date`,
+        { headers: { Authorization: `Bearer ${accessToken}` } },
+      );
+      if (isProviderError(msgRes) || !msgRes.ok) continue;
+
+      const msgData = await msgRes.json() as GmailMessage;
+      const headers = msgData.payload?.headers ?? [];
+      const subject = headers.find((h) => h.name === "Subject")?.value ?? "(No subject)";
+      const fromRaw = headers.find((h) => h.name === "From")?.value ?? "";
+      const from = parseAddressListHeader(fromRaw)[0] ?? { email: "", displayName: null };
+      const dateRaw = headers.find((h) => h.name === "Date")?.value ?? "";
+      const sentAt = dateRaw ? new Date(dateRaw).toISOString() : new Date().toISOString();
+
+      hits.push({
+        providerThreadId: msg.threadId,
+        providerMessageId: msg.id,
+        snippet: msgData.snippet ?? "",
+        subject,
+        from,
+        sentAt,
+      });
+    }
+
+    const result: MailboxMessageSearchResult = {
       hits,
       nextPageToken: data.nextPageToken ?? null,
       estimatedTotal:
