@@ -75,7 +75,7 @@ export async function listConversationSummariesForUser(
   // Gather aggregates in parallel
   const results = await Promise.all(
     paginated.map(async (conversation) => {
-      const [participantCount, latestMessage, readState] = await Promise.all([
+      const [participantCount, latestMessage, readState, assigneeParticipant, customerRecord] = await Promise.all([
         db.conversationParticipant.count({
           where: {
             orgId,
@@ -100,6 +100,22 @@ export async function listConversationSummariesForUser(
           },
           select: { unreadCount: true, isMuted: true },
         }),
+        db.conversationParticipant.findFirst({
+          where: {
+            orgId,
+            conversationId: conversation.id,
+            kind: "INTERNAL_MEMBER",
+            role: "OWNER",
+            leftAt: null,
+          },
+          select: { userId: true },
+        }),
+        conversation.customerId
+          ? db.customer.findFirst({
+              where: { id: conversation.customerId },
+              select: { name: true },
+            })
+          : Promise.resolve(null),
       ]);
 
       return toConversationSummary({
@@ -108,6 +124,8 @@ export async function listConversationSummariesForUser(
         lastMessageAt: latestMessage?.createdAt ?? null,
         unreadCount: readState?.unreadCount ?? null,
         isMuted: readState?.isMuted ?? false,
+        assigneeId: assigneeParticipant?.userId ?? null,
+        customerName: customerRecord?.name ?? null,
       });
     }),
   );
@@ -149,7 +167,7 @@ export async function getConversationDetail(
     return null;
   }
 
-  const [participants, messages, threads, readState] = await Promise.all([
+  const [participants, messages, threads, readState, customerRecord] = await Promise.all([
     db.conversationParticipant.findMany({
       where: { orgId, conversationId, leftAt: null },
       orderBy: { joinedAt: "asc" },
@@ -166,7 +184,17 @@ export async function getConversationDetail(
       orderBy: { createdAt: "desc" },
     }).then((rows) => rows.map(toThreadRecord)),
     getReadState(orgId, conversationId, userId),
+    conversation.customerId
+      ? db.customer.findFirst({
+          where: { id: conversation.customerId },
+          select: { name: true },
+        })
+      : Promise.resolve(null),
   ]);
+
+  if (conversation.type === "PORTAL" && customerRecord?.name) {
+    conversation.name = customerRecord.name;
+  }
 
   // Fetch reactions and attachment counts for all messages in one batch
   const messageIds = messages.map((m) => m.id);

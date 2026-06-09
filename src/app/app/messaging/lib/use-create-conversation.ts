@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from "react";
 
-export type CreateConversationType = "CHANNEL" | "GROUP" | "DM";
+export type CreateConversationType = "CHANNEL" | "GROUP" | "DM" | "PORTAL";
 
 export interface CreateConversationResult {
   id: string;

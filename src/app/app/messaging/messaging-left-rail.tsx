@@ -15,6 +15,7 @@ import {
   Lock,
   Circle,
   Inbox,
+  Globe,
 } from "lucide-react";
 import type { MessagingSection, PresenceStatus } from "./types";
 import {
@@ -146,6 +147,7 @@ export function MessagingLeftRail({ activeSection, onSectionChange }: MessagingL
     channels: true,
     dms: true,
     groups: false,
+    portals: true,
     tasks: false,
     meetings: false,
     files: false,
@@ -322,6 +324,35 @@ export function MessagingLeftRail({ activeSection, onSectionChange }: MessagingL
                 </button>
               </li>
             ))}
+          </ul>
+        )}
+
+        {/* ── Portals ── */}
+        <SectionHeader
+          icon={Globe}
+          label="Portal Chats"
+          section="portals"
+          activeSection={activeSection}
+          unreadCount={0}
+          onSelect={onSectionChange}
+          isExpanded={expanded.portals}
+          onToggle={() => toggle("portals")}
+        />
+        {expanded.portals && (
+          <ul className="ml-4 space-y-0.5 border-l pl-2" style={{ borderColor: "#F0F0F0" }}>
+            <li>
+              <button
+                type="button"
+                className={cn(
+                  ROW_BUTTON_CLASS,
+                  "text-[#79747E] hover:text-[#DC2626]"
+                )}
+                aria-label="Browse portal conversations"
+                onClick={() => onSectionChange("portals")}
+              >
+                <span className="font-medium font-semibold">Active Portals…</span>
+              </button>
+            </li>
           </ul>
         )}
 

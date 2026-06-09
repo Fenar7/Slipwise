@@ -53,7 +53,9 @@ export type ConversationAction =
   | "UNLOCK"
   | "ADD_PARTICIPANT"
   | "REMOVE_PARTICIPANT"
-  | "CHANGE_PARTICIPANT_ROLE";
+  | "CHANGE_PARTICIPANT_ROLE"
+  | "UPDATE_PORTAL_STATE"
+  | "UPDATE_PORTAL_ASSIGNMENT";
 
 // ─── Authorization result ─────────────────────────────────────────────────────
 
@@ -105,6 +107,8 @@ const GOVERNANCE_ACTIONS: readonly ConversationAction[] = [
   "ADD_PARTICIPANT",
   "REMOVE_PARTICIPANT",
   "CHANGE_PARTICIPANT_ROLE",
+  "UPDATE_PORTAL_STATE",
+  "UPDATE_PORTAL_ASSIGNMENT",
 ];
 
 /** Actions that are ordinary member mutations blocked by archived/locked. */
@@ -138,6 +142,8 @@ const ADMIN_OVERRIDABLE_ACTIONS: readonly ConversationAction[] = [
   "LOCK",
   "UNLOCK",
   "REMOVE_PARTICIPANT",
+  "UPDATE_PORTAL_STATE",
+  "UPDATE_PORTAL_ASSIGNMENT",
 ];
 
 // ─── Governance matrix ────────────────────────────────────────────────────────
@@ -192,6 +198,22 @@ export function evaluateConversationAccess(
       allowed: false,
       reason: "org boundary violation",
     };
+  }
+
+  // Portal state/assignee mutation validation.
+  if (action === "UPDATE_PORTAL_STATE" || action === "UPDATE_PORTAL_ASSIGNMENT") {
+    if (conversation.type !== "PORTAL") {
+      return {
+        allowed: false,
+        reason: "action only permitted for portal conversations",
+      };
+    }
+    if (participant.kind !== "INTERNAL_MEMBER") {
+      return {
+        allowed: false,
+        reason: "only internal members can update portal state or assignment",
+      };
+    }
   }
 
   // ─── Phase 10 Portal boundaries & validation ───

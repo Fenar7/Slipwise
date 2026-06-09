@@ -162,6 +162,13 @@ export async function sendMessage(
       msgAudience = "EXTERNAL_VISIBLE";
     }
 
+    // Closed portal conversation checks: only allow INTERNAL_ONLY notes
+    if (conversation.type === "PORTAL" && conversation.portalState === "CLOSED") {
+      if (msgAudience !== "INTERNAL_ONLY") {
+        throw new Error("Cannot send replies to a closed portal conversation");
+      }
+    }
+
     if (input.threadId) {
       const thread = await tx.conversationThread.findFirst({
         where: {

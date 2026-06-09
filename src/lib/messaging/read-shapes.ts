@@ -30,6 +30,9 @@ import type {
   MessagingTaskRecord,
   MessagingTaskStatus,
   ConversationMeetingRecord,
+  ConversationPortalState,
+  LinkedRecordType,
+  MessageAudience,
 } from "./domain-types";
 
 import {
@@ -69,6 +72,11 @@ export interface ConversationSummary {
   /** Whether the current user can send messages. */
   canSend: boolean;
   isMuted: boolean;
+  portalState: ConversationPortalState | null;
+  linkedRecordType: LinkedRecordType | null;
+  linkedRecordId: string | null;
+  customerId: string | null;
+  assigneeId: string | null;
 }
 
 export interface ConversationSummaryInput {
@@ -77,15 +85,17 @@ export interface ConversationSummaryInput {
   lastMessageAt: Date | null;
   unreadCount: number | null;
   isMuted: boolean;
+  assigneeId: string | null;
+  customerName?: string | null;
 }
 
 export function toConversationSummary(input: ConversationSummaryInput): ConversationSummary {
-  const { record, participantCount, lastMessageAt, unreadCount, isMuted } = input;
+  const { record, participantCount, lastMessageAt, unreadCount, isMuted, assigneeId, customerName } = input;
   return {
     id: record.id,
     orgId: record.orgId,
     type: record.type,
-    name: record.name,
+    name: record.type === "PORTAL" ? (customerName ?? record.name ?? "Portal Customer") : record.name,
     description: record.description,
     visibility: record.visibility,
     archivedAt: record.archivedAt?.toISOString() ?? null,
@@ -96,6 +106,11 @@ export function toConversationSummary(input: ConversationSummaryInput): Conversa
     createdAt: record.createdAt.toISOString(),
     canSend: !conversationIsArchived(record) && !conversationIsLocked(record),
     isMuted,
+    portalState: record.portalState ?? null,
+    linkedRecordType: record.linkedRecordType ?? null,
+    linkedRecordId: record.linkedRecordId ?? null,
+    customerId: record.customerId ?? null,
+    assigneeId,
   };
 }
 
@@ -125,6 +140,7 @@ export interface MessageSummary {
   }>;
   mentionsCurrentUser: boolean;
   createdAt: string;
+  audience: MessageAudience;
 }
 
 export interface MessageSummaryInput {
@@ -172,7 +188,7 @@ export function toMessageSummary(input: MessageSummaryInput): MessageSummary {
     orgId: record.orgId,
     conversationId: record.conversationId,
     threadId: record.threadId,
-    authorId: record.authorId,
+    authorId: record.authorId ?? "",
     body: record.body,
     status: record.status,
     editedAt: record.editedAt?.toISOString() ?? null,
@@ -182,6 +198,7 @@ export function toMessageSummary(input: MessageSummaryInput): MessageSummary {
     attachments: msgAttachments,
     mentionsCurrentUser,
     createdAt: record.createdAt.toISOString(),
+    audience: record.audience,
   };
 }
 
@@ -241,6 +258,11 @@ export interface ConversationDetail {
   threads: ThreadSummary[];
   readState: ReadStateSummary | null;
   currentUserId: string;
+  portalState: ConversationPortalState | null;
+  linkedRecordType: LinkedRecordType | null;
+  linkedRecordId: string | null;
+  customerId: string | null;
+  assigneeId: string | null;
 }
 
 export interface ThreadSummary {
@@ -288,6 +310,10 @@ export function toConversationDetail(input: ConversationDetailInput): Conversati
   } = input;
 
   const activeParticipants = participants.filter((p) => participantIsActive(p));
+  const assigneeParticipant = participants.find(
+    (p) => p.kind === "INTERNAL_MEMBER" && p.role === "OWNER" && p.leftAt === null
+  );
+  const assigneeId = assigneeParticipant?.userId ?? null;
 
   return {
     id: record.id,
@@ -331,6 +357,11 @@ export function toConversationDetail(input: ConversationDetailInput): Conversati
         }
       : null,
     currentUserId,
+    portalState: record.portalState ?? null,
+    linkedRecordType: record.linkedRecordType ?? null,
+    linkedRecordId: record.linkedRecordId ?? null,
+    customerId: record.customerId ?? null,
+    assigneeId,
   };
 }
 
