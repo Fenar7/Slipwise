@@ -148,6 +148,12 @@ export default async function PortalLayout({
               Support
             </Link>
             <Link
+              href={`/portal/${orgSlug}/client-hub/messages`}
+              className="rounded-lg px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900"
+            >
+              Messages
+            </Link>
+            <Link
               href={`/portal/${orgSlug}/profile`}
               className="rounded-lg px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900"
             >
@@ -177,6 +183,7 @@ export default async function PortalLayout({
                 <Link href={`/portal/${orgSlug}/quotes`} className="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">Quotes</Link>
               )}
               <Link href={`/portal/${orgSlug}/tickets`} className="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">Support</Link>
+              <Link href={`/portal/${orgSlug}/client-hub/messages`} className="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">Messages</Link>
               <Link href={`/portal/${orgSlug}/profile`} className="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">Profile</Link>
               <hr className="my-1 border-slate-100" />
               <Link href={`/portal/${orgSlug}/auth/logout`} className="block px-4 py-2 text-sm text-red-600 hover:bg-red-50">Logout</Link>
