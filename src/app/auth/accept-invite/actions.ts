@@ -2,6 +2,7 @@
 
 import { db } from "@/lib/db";
 import { createSupabaseServer } from "@/lib/supabase/server";
+import { logAudit } from "@/lib/audit";
 
 export interface InvitationDetails {
   id: string;
@@ -60,12 +61,27 @@ export async function acceptInvitation(
       return { success: false, error: "Invitation not found" };
     }
 
+    if (invitation.status === "cancelled") {
+      return { success: false, error: "This invitation has been cancelled" };
+    }
+
     if (invitation.status !== "pending") {
       return { success: false, error: "This invitation has already been used" };
     }
 
     if (new Date(invitation.expiresAt) < new Date()) {
       return { success: false, error: "This invitation has expired" };
+    }
+
+    if (!user.email) {
+      return { success: false, error: "Authenticated user email not found" };
+    }
+
+    if (user.email.trim().toLowerCase() !== invitation.email.trim().toLowerCase()) {
+      return {
+        success: false,
+        error: "This invitation was sent to a different email address. Please sign in with the correct account.",
+      };
     }
 
     // Check if user is already a member
@@ -79,12 +95,16 @@ export async function acceptInvitation(
     });
 
     if (existingMember) {
-      // Mark invitation as accepted even if already a member
-      await db.invitation.update({
-        where: { id: token },
-        data: { status: "accepted" },
-      });
-      return { success: true };
+      if (existingMember.role === "deactivated") {
+        return {
+          success: false,
+          error: "Your membership in this organization is deactivated. Please contact an administrator.",
+        };
+      }
+      return {
+        success: false,
+        error: "You are already a member of this organization",
+      };
     }
 
     // Create membership and mark invitation accepted in a transaction
@@ -102,6 +122,19 @@ export async function acceptInvitation(
       }),
     ]);
 
+    // Audit the invitation acceptance
+    await logAudit({
+      orgId: invitation.organizationId,
+      actorId: user.id,
+      action: "invitation.accepted",
+      entityType: "Invitation",
+      entityId: token,
+      metadata: {
+        email: invitation.email,
+        role: invitation.role,
+      },
+    });
+
     return { success: true };
   } catch (err) {
     return {
@@ -110,3 +143,4 @@ export async function acceptInvitation(
     };
   }
 }
+
