@@ -177,6 +177,8 @@ export async function assertGovernanceAction(
   conversation: Prisma.ConversationGetPayload<Record<string, never>>;
   participant: Prisma.ConversationParticipantGetPayload<Record<string, never>> | null;
 }> {
+  await requireActiveOrgMember(tx, orgId, userId, context);
+
   const conversation = await getConversationInOrg(tx, orgId, conversationId, context);
   const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId);
   const participant = await tx.conversationParticipant.findFirst({

@@ -31,7 +31,7 @@ vi.mock("@/lib/db", () => {
   return { db };
 });
 
-import { assertActiveParticipant } from "../service-helpers";
+import { assertActiveParticipant, assertGovernanceAction } from "../service-helpers";
 import { listConversationMessages } from "../message-service";
 import { listConversationsForUser, createConversation, assertValidOrgMembers } from "../conversation-service";
 import { authorizeConversationSubscription } from "../realtime/subscription-auth";
@@ -181,6 +181,84 @@ describe("Sprint 11.2 - Messaging active membership / deactivation checks", () =
       await expect(
         assertValidOrgMembers(mockTx, ORG_ID, ["user-1", "user-2"], "addParticipant")
       ).rejects.toThrow("addParticipant: invalid, deactivated, or unauthorized participants: user-2");
+    });
+  });
+
+  describe("assertGovernanceAction (governance/admin path)", () => {
+    it("throws active membership required if the user's member role is deactivated", async () => {
+      const mockTx = {
+        member: {
+          findUnique: mocks.memberFindUnique.mockResolvedValueOnce({ role: "deactivated" }),
+        },
+      } as any;
+
+      await expect(
+        assertGovernanceAction(
+          mockTx,
+          ORG_ID,
+          CONV_ID,
+          USER_ID,
+          "ARCHIVE",
+          { participant: null, orgRole: "admin", isPlatformAdmin: false },
+          "archiveConversation",
+        ),
+      ).rejects.toThrow("archiveConversation: active membership required");
+    });
+
+    it("throws active membership required if the user has no org membership", async () => {
+      const mockTx = {
+        member: {
+          findUnique: mocks.memberFindUnique.mockResolvedValueOnce(null),
+        },
+      } as any;
+
+      await expect(
+        assertGovernanceAction(
+          mockTx,
+          ORG_ID,
+          CONV_ID,
+          USER_ID,
+          "LOCK",
+          { participant: null, orgRole: "admin", isPlatformAdmin: false },
+          "lockConversation",
+        ),
+      ).rejects.toThrow("lockConversation: active membership required");
+    });
+
+    it("proceeds past membership check when user is an active member", async () => {
+      const mockTx = {
+        member: {
+          findUnique: mocks.memberFindUnique.mockResolvedValueOnce({ role: "admin" }),
+        },
+        conversation: {
+          findFirst: mocks.conversationFindFirst.mockResolvedValueOnce({
+            id: CONV_ID,
+            orgId: ORG_ID,
+            type: "CHANNEL",
+            archivedAt: null,
+            lockedAt: null,
+          }),
+        },
+        conversationParticipant: {
+          findFirst: mocks.conversationParticipantFindFirst.mockResolvedValueOnce(null),
+        },
+      } as any;
+
+      // Should not throw at membership check; may throw later at authorization
+      // depending on requireGovernanceAccess, which is fine — proves membership passed.
+      const result = await assertGovernanceAction(
+        mockTx,
+        ORG_ID,
+        CONV_ID,
+        USER_ID,
+        "ARCHIVE",
+        { participant: null, orgRole: "admin", isPlatformAdmin: false },
+        "archiveConversation",
+      );
+
+      expect(result).toBeDefined();
+      expect(result.conversation).toBeDefined();
+      expect(result.conversation.id).toBe(CONV_ID);
     });
   });
 
