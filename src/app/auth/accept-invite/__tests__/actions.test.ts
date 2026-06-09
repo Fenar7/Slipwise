@@ -121,6 +121,7 @@ describe("accept-invite/actions.ts unit tests", () => {
       id: TOKEN,
       status: "pending",
       organizationId: ORG_ID,
+      email: "user@test.com",
       expiresAt: new Date(Date.now() + 10000),
     });
     mocks.memberFindUnique.mockResolvedValueOnce({
@@ -139,6 +140,7 @@ describe("accept-invite/actions.ts unit tests", () => {
       id: TOKEN,
       status: "pending",
       organizationId: ORG_ID,
+      email: "user@test.com",
       expiresAt: new Date(Date.now() + 10000),
     });
     mocks.memberFindUnique.mockResolvedValueOnce({
@@ -164,6 +166,9 @@ describe("accept-invite/actions.ts unit tests", () => {
     mocks.memberFindUnique.mockResolvedValueOnce(null);
 
     const res = await acceptInvitation(TOKEN);
+    if (!res.success) {
+      console.log("TEST FAILURE ERROR:", res.error);
+    }
     expect(res.success).toBe(true);
     expect(mocks.transaction).toHaveBeenCalled();
     expect(mocks.logAudit).toHaveBeenCalledWith(
@@ -174,5 +179,47 @@ describe("accept-invite/actions.ts unit tests", () => {
         entityId: TOKEN,
       })
     );
+  });
+
+  it("rejects if authenticated user email does not match invitation email", async () => {
+    mocks.invitationFindUnique.mockResolvedValueOnce({
+      id: TOKEN,
+      status: "pending",
+      organizationId: ORG_ID,
+      email: "different@test.com",
+      role: "viewer",
+      expiresAt: new Date(Date.now() + 10000),
+    });
+    mocks.memberFindUnique.mockResolvedValueOnce(null);
+
+    const res = await acceptInvitation(TOKEN);
+    expect(res.success).toBe(false);
+    expect(res.error).toContain("This invitation was sent to a different email address");
+    expect(mocks.transaction).not.toHaveBeenCalled();
+    expect(mocks.logAudit).not.toHaveBeenCalled();
+  });
+
+  it("rejects if authenticated user has no email", async () => {
+    mocks.createSupabaseServer.mockResolvedValue({
+      auth: {
+        getUser: vi.fn().mockResolvedValue({
+          data: { user: { id: USER_ID } },
+          error: null,
+        }),
+      },
+    });
+    mocks.invitationFindUnique.mockResolvedValueOnce({
+      id: TOKEN,
+      status: "pending",
+      organizationId: ORG_ID,
+      email: "user@test.com",
+      role: "viewer",
+      expiresAt: new Date(Date.now() + 10000),
+    });
+
+    const res = await acceptInvitation(TOKEN);
+    expect(res.success).toBe(false);
+    expect(res.error).toBe("Authenticated user email not found");
+    expect(mocks.transaction).not.toHaveBeenCalled();
   });
 });

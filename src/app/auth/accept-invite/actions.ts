@@ -73,6 +73,17 @@ export async function acceptInvitation(
       return { success: false, error: "This invitation has expired" };
     }
 
+    if (!user.email) {
+      return { success: false, error: "Authenticated user email not found" };
+    }
+
+    if (user.email.trim().toLowerCase() !== invitation.email.trim().toLowerCase()) {
+      return {
+        success: false,
+        error: "This invitation was sent to a different email address. Please sign in with the correct account.",
+      };
+    }
+
     // Check if user is already a member
     const existingMember = await db.member.findUnique({
       where: {
