@@ -67,7 +67,7 @@ export function MailboxCommandBar({
           <h2 className="truncate text-sm font-bold text-[#0F172A]">{activeViewLabel}</h2>
           {totalCount !== undefined && (
             <span className="shrink-0 text-xs text-[#94A3B8]">
-              {searchMeta?.mode === "gmail_exact" && !searchMeta.totalCountIsExact
+              {((searchMeta?.mode === "gmail_exact" || searchMeta?.mode === "hybrid") && !searchMeta.totalCountIsExact)
                 ? `Loaded ${loadedCount ?? totalCount ?? 0} `
                 : `${totalCount ?? 0} `}
               {itemLabel === "draft"
@@ -77,7 +77,7 @@ export function MailboxCommandBar({
                 : (totalCount ?? loadedCount ?? 0) === 1
                 ? "thread"
                 : "threads"}
-              {searchMeta?.mode === "gmail_exact" && !searchMeta.totalCountIsExact ? (
+              {((searchMeta?.mode === "gmail_exact" || searchMeta?.mode === "hybrid") && !searchMeta.totalCountIsExact) ? (
                 <span className="ml-1">via Gmail search</span>
               ) : null}
               {unreadCount ? (

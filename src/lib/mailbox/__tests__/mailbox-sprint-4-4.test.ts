@@ -23,6 +23,9 @@ vi.mock("@/lib/db", () => ({
     mailboxConnection: {
       findMany: vi.fn(),
     },
+    mailboxFolderCoverage: {
+      findMany: vi.fn(),
+    },
   },
 }));
 
@@ -35,6 +38,9 @@ const mockDb = db as unknown as {
     count: ReturnType<typeof vi.fn>;
   };
   mailboxConnection: {
+    findMany: ReturnType<typeof vi.fn>;
+  };
+  mailboxFolderCoverage: {
     findMany: ReturnType<typeof vi.fn>;
   };
 };
@@ -71,6 +77,18 @@ beforeEach(() => {
     hits: [],
     nextPageToken: null,
     estimatedTotal: 0,
+  });
+  mockDb.mailboxFolderCoverage.findMany.mockImplementation(async (params) => {
+    const connectionIdCond = params?.where?.mailboxConnectionId;
+    const ids = connectionIdCond?.in || (connectionIdCond ? [connectionIdCond] : []);
+    return ids.flatMap((id: string) => [
+      { mailboxConnectionId: id, folder: "INBOX", state: "COMPLETE" },
+      { mailboxConnectionId: id, folder: "SENT", state: "COMPLETE" },
+      { mailboxConnectionId: id, folder: "SPAM", state: "COMPLETE" },
+      { mailboxConnectionId: id, folder: "DRAFT", state: "COMPLETE" },
+      { mailboxConnectionId: id, folder: "STARRED", state: "COMPLETE" },
+      { mailboxConnectionId: id, folder: "TRASH", state: "COMPLETE" },
+    ]);
   });
 });
 
@@ -317,6 +335,14 @@ describe("Sprint 4.4 — listMailboxThreads search", () => {
       totalCountIsExact: false,
       partial: false,
       partialConnectionIds: [],
+      coverageState: "complete",
+      connectionStates: [
+        {
+          connectionId: CONN_1,
+          status: "ok",
+          reason: "Mailbox connection is healthy",
+        },
+      ],
     });
     expect(result.nextCursor).not.toBeNull();
   });
@@ -359,6 +385,14 @@ describe("Sprint 4.4 — listMailboxThreads search", () => {
       totalCountIsExact: false,
       partial: false,
       partialConnectionIds: [],
+      coverageState: "complete",
+      connectionStates: [
+        {
+          connectionId: CONN_1,
+          status: "ok",
+          reason: "Mailbox connection is healthy",
+        },
+      ],
     });
   });
 
@@ -396,6 +430,14 @@ describe("Sprint 4.4 — listMailboxThreads search", () => {
       totalCountIsExact: true,
       partial: false,
       partialConnectionIds: [],
+      coverageState: "unknown",
+      connectionStates: [
+        {
+          connectionId: "conn-outlook",
+          status: "provider_unsupported",
+          reason: "Provider search is unsupported for this provider",
+        },
+      ],
     });
   });
 

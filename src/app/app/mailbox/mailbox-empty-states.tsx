@@ -673,16 +673,44 @@ export function NoDraftSelectedEmpty({ mailboxLabel }: { mailboxLabel?: string }
  * Shown when search or active filters return zero threads.
  * Distinct from empty inbox — the data exists, just nothing matches.
  */
+export function getFriendlyDegradedMessage(
+  status: string,
+  displayName: string
+): string {
+  switch (status) {
+    case "auth_expired":
+      return `Gmail account "${displayName}" needs reconnect`;
+    case "coverage_incomplete":
+      return `Search coverage for "${displayName}" still catching up`;
+    case "provider_failed":
+      return `Provider temporarily unavailable for "${displayName}"`;
+    case "hydration_failed":
+      return `Some results still loading into Slipwise for "${displayName}"`;
+    case "provider_unsupported":
+      return `Search is unsupported for "${displayName}"`;
+    default:
+      return `Search is degraded for "${displayName}"`;
+  }
+}
+
+/**
+ * Shown when search or active filters return zero threads.
+ * Distinct from empty inbox — the data exists, just nothing matches.
+ */
 export function NoSearchResultsEmpty({
   query,
   hasActiveFilters,
   onClearFilters,
   isPartialSearch = false,
+  searchMeta,
+  connections,
 }: {
   query?: string;
   hasActiveFilters?: boolean;
   onClearFilters?: () => void;
   isPartialSearch?: boolean;
+  searchMeta?: import("@/lib/mailbox/thread-service").MailboxSearchMeta | null;
+  connections?: Array<{ id: string; displayName: string; emailAddress: string }>;
 }) {
   const isFiltered = hasActiveFilters || !!query;
 
@@ -705,12 +733,36 @@ export function NoSearchResultsEmpty({
           {query ? `No results for "${query}"` : "No threads match"}
         </p>
         <p className="mt-1.5 text-xs leading-relaxed text-[#64748B]">
-          {isPartialSearch
-            ? "Search results may be incomplete right now. Some mailbox connections could not return a full response."
-            : isFiltered
+          {isFiltered
             ? "Try adjusting your search or removing active filters to see more threads."
             : "There are no threads in this view right now."}
         </p>
+        {isPartialSearch && (
+          <div className="mt-4 rounded-lg bg-amber-50/50 border border-amber-100 p-3 text-left max-w-xs mx-auto">
+            <p className="text-[11px] font-semibold text-amber-800">
+              Search results may be incomplete right now
+            </p>
+            <div className="mt-1.5 space-y-1">
+              {searchMeta?.connectionStates
+                ?.filter((cs) => cs.status !== "ok")
+                .map((cs) => {
+                  const conn = connections?.find((c) => c.id === cs.connectionId);
+                  const name = conn ? conn.displayName : cs.connectionId;
+                  return (
+                    <p key={cs.connectionId} className="text-[10px] text-amber-700 flex items-start gap-1">
+                      <span className="h-1.5 w-1.5 rounded-full bg-amber-500 shrink-0 mt-1" />
+                      <span>{getFriendlyDegradedMessage(cs.status, name)}</span>
+                    </p>
+                  );
+                }) ?? (
+                  <p className="text-[10px] text-amber-700 flex items-start gap-1">
+                    <span className="h-1.5 w-1.5 rounded-full bg-amber-500 shrink-0 mt-1" />
+                    <span>Some mailbox connections could not return a full response.</span>
+                  </p>
+                )}
+            </div>
+          </div>
+        )}
       </div>
       {isFiltered && onClearFilters && (
         <button
