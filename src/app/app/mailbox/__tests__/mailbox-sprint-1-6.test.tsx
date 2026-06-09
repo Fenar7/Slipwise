@@ -596,6 +596,13 @@ describe("NoSearchResultsEmpty", () => {
     render(<NoSearchResultsEmpty />);
     expect(screen.queryByRole("button", { name: /clear filters/i })).not.toBeInTheDocument();
   });
+
+  it("renders degraded copy when search results are partial", () => {
+    render(<NoSearchResultsEmpty query="chatgpt" isPartialSearch={true} />);
+    expect(
+      screen.getByText(/search results may be incomplete right now/i),
+    ).toBeInTheDocument();
+  });
 });
 
 describe("NoLinkedRecordsEmpty", () => {

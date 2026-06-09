@@ -3,14 +3,17 @@
 import { useState, useRef } from "react";
 import { Search, X, SlidersHorizontal, PenSquare, Bookmark } from "lucide-react";
 import { cn } from "@/lib/utils";
+import type { MailboxSearchMeta } from "@/lib/mailbox/thread-service";
 import type { ActiveFilter, ActiveFilterState, SupportedSavedViewSmartViewId } from "./types";
 import type { MailboxSyncPresentation } from "@/lib/mailbox/sync-presentation-shape";
 import { MailboxSyncStateChip } from "./mailbox-sync-status";
 
 interface MailboxCommandBarProps {
   activeViewLabel: string;
-  totalCount?: number;
+  totalCount?: number | null;
+  loadedCount?: number;
   unreadCount?: number;
+  searchMeta?: MailboxSearchMeta | null;
   itemLabel?: "thread" | "draft";
   onCompose?: () => void;
   searchQuery?: string;
@@ -29,7 +32,9 @@ interface MailboxCommandBarProps {
 export function MailboxCommandBar({
   activeViewLabel,
   totalCount,
+  loadedCount,
   unreadCount,
+  searchMeta,
   itemLabel = "thread",
   onCompose,
   searchQuery = "",
@@ -62,15 +67,24 @@ export function MailboxCommandBar({
           <h2 className="truncate text-sm font-bold text-[#0F172A]">{activeViewLabel}</h2>
           {totalCount !== undefined && (
             <span className="shrink-0 text-xs text-[#94A3B8]">
-              {totalCount} {itemLabel === "draft"
+              {searchMeta?.mode === "gmail_exact" && !searchMeta.totalCountIsExact
+                ? `Loaded ${loadedCount ?? totalCount ?? 0} `
+                : `${totalCount ?? 0} `}
+              {itemLabel === "draft"
                 ? totalCount === 1
                   ? "draft"
                   : "drafts"
-                : totalCount === 1
+                : (totalCount ?? loadedCount ?? 0) === 1
                 ? "thread"
                 : "threads"}
+              {searchMeta?.mode === "gmail_exact" && !searchMeta.totalCountIsExact ? (
+                <span className="ml-1">via Gmail search</span>
+              ) : null}
               {unreadCount ? (
                 <span className="ml-1 font-semibold text-[#DC2626]">· {unreadCount} unread</span>
+              ) : null}
+              {searchMeta?.partial ? (
+                <span className="ml-1 font-medium text-amber-600">· partial results</span>
               ) : null}
             </span>
           )}

@@ -36,6 +36,7 @@ import type {
   MailboxParticipantRef,
   MailboxDraftSyncResult,
   MailboxDraftEnvelope,
+  MailboxThreadSearchResult,
 } from "./provider-contracts";
 import { storeMailboxCredential, readMailboxCredential, rotateMailboxCredential, revokeMailboxCredential } from "./credential-store";
 import type { MailboxCredentialPayload } from "./credential-store";
@@ -977,6 +978,60 @@ export const gmailProviderAdapter: IMailboxProviderAdapter = {
     }
 
     return { threadIds };
+  },
+
+  async searchThreads({ orgId, tokenRef, query, pageToken, maxResults }) {
+    const credential = await readMailboxCredential(orgId, tokenRef);
+    if (!credential) {
+      return { category: "auth_expired", safeMessage: "Credential not found for tokenRef", retryable: false };
+    }
+
+    const accessToken = await ensureValidAccessToken(orgId, tokenRef, credential);
+    if (isProviderError(accessToken)) return accessToken;
+
+    const params = new URLSearchParams({
+      q: query,
+      maxResults: String(
+        Math.min(
+          Math.max(1, maxResults ?? 50),
+          100,
+        ),
+      ),
+    });
+    if (pageToken) {
+      params.set("pageToken", pageToken);
+    }
+
+    const res = await safeGmailFetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages?${params.toString()}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (isProviderError(res)) return res;
+    if (!res.ok) {
+      const errorCode = await parseGoogleErrorCode(res);
+      return mapGoogleError(res.status, errorCode);
+    }
+
+    const data = await res.json() as {
+      messages?: Array<{ id: string; threadId: string }>;
+      nextPageToken?: string;
+      resultSizeEstimate?: number;
+    };
+
+    const hits = (data.messages ?? []).map((message) => ({
+      providerThreadId: message.threadId,
+      providerMessageId: message.id,
+    }));
+
+    const result: MailboxThreadSearchResult = {
+      hits,
+      nextPageToken: data.nextPageToken ?? null,
+      estimatedTotal:
+        typeof data.resultSizeEstimate === "number"
+          ? data.resultSizeEstimate
+          : null,
+    };
+
+    return result;
   },
 };
 
