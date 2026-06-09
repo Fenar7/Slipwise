@@ -48,6 +48,16 @@ vi.mock("@/lib/rate-limit", () => ({
   RATE_LIMITS: { api: { maxRequests: 60, window: "60 s" } },
 }));
 
+const mockSearchThreads = vi.fn();
+
+vi.mock("@/lib/mailbox/provider-registry", () => ({
+  getMailboxProviderAdapter: () => ({
+    descriptor: { provider: "GMAIL", displayName: "Gmail", supportsPushSync: true, supportsSend: true },
+    searchThreads: mockSearchThreads,
+    fetchThreadDetail: vi.fn(),
+  }),
+}));
+
 import { listMailboxThreads } from "@/lib/mailbox/thread-service";
 
 const ORG_A = "org-aaa";
@@ -56,6 +66,12 @@ const CONN_1 = "conn-001";
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockSearchThreads.mockReset();
+  mockSearchThreads.mockResolvedValue({
+    hits: [],
+    nextPageToken: null,
+    estimatedTotal: 0,
+  });
 });
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
@@ -114,7 +130,9 @@ function makeThreadRecord(overrides: Partial<Record<string, unknown>> = {}) {
 
 describe("Sprint 4.4 — listMailboxThreads search", () => {
   it("ignores empty searchQuery", async () => {
-    mockDb.mailboxConnection.findMany.mockResolvedValue([makeConnectionRecord()]);
+    mockDb.mailboxConnection.findMany.mockResolvedValue([
+      makeConnectionRecord({ provider: "OUTLOOK", tokenRef: "token-outlook" }),
+    ]);
     mockDb.mailboxThread.findMany.mockResolvedValue([makeThreadRecord()]);
     mockDb.mailboxThread.count.mockResolvedValue(1);
 
@@ -133,7 +151,9 @@ describe("Sprint 4.4 — listMailboxThreads search", () => {
   });
 
   it("searches subject with case-insensitive contains", async () => {
-    mockDb.mailboxConnection.findMany.mockResolvedValue([makeConnectionRecord()]);
+    mockDb.mailboxConnection.findMany.mockResolvedValue([
+      makeConnectionRecord({ provider: "OUTLOOK", tokenRef: "token-outlook" }),
+    ]);
     mockDb.mailboxThread.findMany.mockResolvedValue([makeThreadRecord()]);
     mockDb.mailboxThread.count.mockResolvedValue(1);
 
@@ -163,7 +183,9 @@ describe("Sprint 4.4 — listMailboxThreads search", () => {
   });
 
   it("searches previewSnippet with case-insensitive contains", async () => {
-    mockDb.mailboxConnection.findMany.mockResolvedValue([makeConnectionRecord()]);
+    mockDb.mailboxConnection.findMany.mockResolvedValue([
+      makeConnectionRecord({ provider: "OUTLOOK", tokenRef: "token-outlook" }),
+    ]);
     mockDb.mailboxThread.findMany.mockResolvedValue([makeThreadRecord()]);
     mockDb.mailboxThread.count.mockResolvedValue(1);
 
@@ -188,7 +210,9 @@ describe("Sprint 4.4 — listMailboxThreads search", () => {
   });
 
   it("combines search with existing filters", async () => {
-    mockDb.mailboxConnection.findMany.mockResolvedValue([makeConnectionRecord()]);
+    mockDb.mailboxConnection.findMany.mockResolvedValue([
+      makeConnectionRecord({ provider: "OUTLOOK", tokenRef: "token-outlook" }),
+    ]);
     mockDb.mailboxThread.findMany.mockResolvedValue([makeThreadRecord({ status: "PENDING" })]);
     mockDb.mailboxThread.count.mockResolvedValue(1);
 
@@ -216,7 +240,9 @@ describe("Sprint 4.4 — listMailboxThreads search", () => {
   });
 
   it("includes search in totalCount query", async () => {
-    mockDb.mailboxConnection.findMany.mockResolvedValue([makeConnectionRecord()]);
+    mockDb.mailboxConnection.findMany.mockResolvedValue([
+      makeConnectionRecord({ provider: "OUTLOOK", tokenRef: "token-outlook" }),
+    ]);
     mockDb.mailboxThread.findMany.mockResolvedValue([]);
     mockDb.mailboxThread.count.mockResolvedValue(0);
 
@@ -242,6 +268,177 @@ describe("Sprint 4.4 — listMailboxThreads search", () => {
       }),
     );
   });
+
+  it("uses Gmail provider search for Gmail connections and preserves provider hit order", async () => {
+    mockDb.mailboxConnection.findMany.mockResolvedValue([makeConnectionRecord()]);
+    mockSearchThreads.mockResolvedValue({
+      hits: [
+        { providerThreadId: "gmail-thread-2", providerMessageId: "msg-2" },
+        { providerThreadId: "gmail-thread-1", providerMessageId: "msg-1" },
+      ],
+      nextPageToken: "next-page",
+      estimatedTotal: 20,
+    });
+    mockDb.mailboxThread.findMany.mockResolvedValue([
+      makeThreadRecord({
+        id: "thread-1",
+        providerThreadId: "gmail-thread-1",
+        lastMessageAt: new Date("2026-05-10T10:00:00Z"),
+      }),
+      makeThreadRecord({
+        id: "thread-2",
+        providerThreadId: "gmail-thread-2",
+        lastMessageAt: new Date("2026-05-11T10:00:00Z"),
+      }),
+    ]);
+
+    const result = await listMailboxThreads({
+      orgId: ORG_A,
+      userId: USER_A,
+      role: "member",
+      searchQuery: "chatgpt",
+      limit: 2,
+    });
+
+    expect(mockSearchThreads).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orgId: ORG_A,
+        query: "chatgpt",
+        maxResults: 50,
+      }),
+    );
+    expect(result.threads.map((thread) => thread.providerThreadId)).toEqual([
+      "gmail-thread-2",
+      "gmail-thread-1",
+    ]);
+    expect(result.totalCount).toBeNull();
+    expect(result.searchMeta).toEqual({
+      mode: "gmail_exact",
+      totalCountIsExact: false,
+      partial: false,
+      partialConnectionIds: [],
+    });
+    expect(result.nextCursor).not.toBeNull();
+  });
+
+  it("supplements Gmail zero-hit searches with local normalized matches for already-ingested threads", async () => {
+    mockDb.mailboxConnection.findMany.mockResolvedValue([makeConnectionRecord()]);
+    mockSearchThreads.mockResolvedValue({
+      hits: [],
+      nextPageToken: null,
+      estimatedTotal: 0,
+    });
+    mockDb.mailboxThread.findMany.mockResolvedValue([
+      makeThreadRecord({
+        id: "thread-chatgpt-1",
+        providerThreadId: "gmail-thread-chatgpt-1",
+        subject: "Find your next favorite podcast",
+        previewSnippet: "ChatGPT weekly update",
+      }),
+    ]);
+    mockDb.mailboxThread.count.mockResolvedValue(1);
+
+    const result = await listMailboxThreads({
+      orgId: ORG_A,
+      userId: USER_A,
+      role: "member",
+      searchQuery: "chatgpt",
+      limit: 10,
+    });
+
+    expect(mockSearchThreads).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: "chatgpt",
+      }),
+    );
+    expect(result.threads.map((thread) => thread.providerThreadId)).toEqual([
+      "gmail-thread-chatgpt-1",
+    ]);
+    expect(result.searchMeta).toEqual({
+      mode: "gmail_exact",
+      totalCountIsExact: false,
+      partial: false,
+      partialConnectionIds: [],
+    });
+  });
+
+  it("falls back to exact local search when the scoped mailbox is not Gmail-backed", async () => {
+    mockDb.mailboxConnection.findMany.mockResolvedValue([
+      makeConnectionRecord({
+        id: "conn-outlook",
+        provider: "OUTLOOK",
+        tokenRef: "token-outlook",
+      }),
+    ]);
+    mockDb.mailboxThread.findMany.mockResolvedValue([
+      makeThreadRecord({
+        id: "thread-outlook-1",
+        mailboxConnectionId: "conn-outlook",
+        providerThreadId: "outlook-thread-1",
+        subject: "ChatGPT weekly update",
+      }),
+    ]);
+    mockDb.mailboxThread.count.mockResolvedValue(1);
+
+    const result = await listMailboxThreads({
+      orgId: ORG_A,
+      userId: USER_A,
+      role: "member",
+      searchQuery: "chatgpt",
+      connectionId: "conn-outlook",
+      limit: 25,
+    });
+
+    expect(mockSearchThreads).not.toHaveBeenCalled();
+    expect(result.totalCount).toBe(1);
+    expect(result.searchMeta).toEqual({
+      mode: "local",
+      totalCountIsExact: true,
+      partial: false,
+      partialConnectionIds: [],
+    });
+  });
+
+  it("stops offering a dead next page when Gmail search returns the same token with only duplicate hits", async () => {
+    mockDb.mailboxConnection.findMany.mockResolvedValue([makeConnectionRecord()]);
+    mockSearchThreads.mockResolvedValue({
+      hits: [{ providerThreadId: "gmail-thread-1", providerMessageId: "msg-1" }],
+      nextPageToken: "repeat-token",
+      estimatedTotal: 1,
+    });
+    mockDb.mailboxThread.findMany.mockResolvedValue([
+      makeThreadRecord({
+        id: "thread-1",
+        providerThreadId: "gmail-thread-1",
+      }),
+    ]);
+
+    const stickyCursor = Buffer.from(
+      JSON.stringify({
+        kind: "provider_search",
+        query: "chatgpt",
+        bufferedThreadKeys: [],
+        seenThreadKeys: [`${CONN_1}:gmail-thread-1`],
+        connectionPageTokens: { [CONN_1]: "repeat-token" },
+        localFallbackFetched: true,
+        partialConnectionIds: [],
+        estimatedTotal: 1,
+      }),
+      "utf-8",
+    ).toString("base64");
+
+    const result = await listMailboxThreads({
+      orgId: ORG_A,
+      userId: USER_A,
+      role: "member",
+      searchQuery: "chatgpt",
+      limit: 1,
+      cursor: stickyCursor,
+    });
+
+    expect(result.threads).toEqual([]);
+    expect(result.nextCursor).toBeNull();
+  });
 });
 
 // ─── Route layer tests ────────────────────────────────────────────────────────
@@ -258,7 +455,9 @@ describe("Sprint 4.4 — GET /api/mailbox/threads searchQuery", () => {
       ctx: { orgId: ORG_A, userId: USER_A, role: "member" },
     } as never);
 
-    mockDb.mailboxConnection.findMany.mockResolvedValue([makeConnectionRecord()]);
+    mockDb.mailboxConnection.findMany.mockResolvedValue([
+      makeConnectionRecord({ provider: "OUTLOOK", tokenRef: "token-outlook" }),
+    ]);
     mockDb.mailboxThread.findMany.mockResolvedValue([]);
     mockDb.mailboxThread.count.mockResolvedValue(0);
 
@@ -289,7 +488,9 @@ describe("Sprint 4.4 — GET /api/mailbox/threads searchQuery", () => {
       ctx: { orgId: ORG_A, userId: USER_A, role: "member" },
     } as never);
 
-    mockDb.mailboxConnection.findMany.mockResolvedValue([makeConnectionRecord()]);
+    mockDb.mailboxConnection.findMany.mockResolvedValue([
+      makeConnectionRecord({ provider: "OUTLOOK", tokenRef: "token-outlook" }),
+    ]);
     mockDb.mailboxThread.findMany.mockResolvedValue([]);
     mockDb.mailboxThread.count.mockResolvedValue(0);
 
@@ -313,7 +514,9 @@ describe("Sprint 4.4 — GET /api/mailbox/threads searchQuery", () => {
       ctx: { orgId: ORG_A, userId: USER_A, role: "member" },
     } as never);
 
-    mockDb.mailboxConnection.findMany.mockResolvedValue([makeConnectionRecord()]);
+    mockDb.mailboxConnection.findMany.mockResolvedValue([
+      makeConnectionRecord({ provider: "OUTLOOK", tokenRef: "token-outlook" }),
+    ]);
     mockDb.mailboxThread.findMany.mockResolvedValue([]);
     mockDb.mailboxThread.count.mockResolvedValue(0);
 

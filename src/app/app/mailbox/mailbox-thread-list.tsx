@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
+import type { MailboxSearchMeta } from "@/lib/mailbox/thread-service";
 import {
   Paperclip,
   Flag,
@@ -352,9 +353,10 @@ interface MailboxThreadListProps {
   reconnectBanner?: React.ReactNode;
   /** Shown when threads array is empty */
   emptyState?: React.ReactNode;
-  totalCount?: number;
+  totalCount?: number | null;
   loadedCount?: number;
   hasMore?: boolean;
+  searchMeta?: MailboxSearchMeta | null;
   isLoadingMore?: boolean;
   onLoadMore?: () => void;
   isActionLoading?: boolean;
@@ -370,6 +372,7 @@ export function MailboxThreadList({
   totalCount,
   loadedCount,
   hasMore = false,
+  searchMeta,
   isLoading = false,
   isLoadingMore = false,
   onLoadMore,
@@ -479,8 +482,9 @@ export function MailboxThreadList({
         >
           <div className="flex items-center justify-between gap-3">
             <span data-testid="mailbox-thread-list-footer-count">
-              Loaded {Math.min(resolvedLoadedCount, resolvedTotalCount)} of{" "}
-              {resolvedTotalCount}
+              {searchMeta?.mode === "gmail_exact" && !searchMeta.totalCountIsExact
+                ? `Loaded ${resolvedLoadedCount} result${resolvedLoadedCount === 1 ? "" : "s"}`
+                : `Loaded ${Math.min(resolvedLoadedCount, resolvedTotalCount)} of ${resolvedTotalCount}`}
             </span>
             {isLoadingMore ? (
               <span className="inline-flex items-center gap-1.5 font-medium text-[#334155]">
@@ -505,6 +509,11 @@ export function MailboxThreadList({
               </span>
             )}
           </div>
+          {searchMeta?.partial ? (
+            <p className="mt-1 text-[11px] text-amber-600">
+              Some mailbox connections could not return complete search results.
+            </p>
+          ) : null}
         </div>
       ) : null}
     </div>

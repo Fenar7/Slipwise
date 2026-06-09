@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import type { MailboxThreadReadShape } from "@/lib/mailbox/read-shapes";
+import type { MailboxSearchMeta } from "@/lib/mailbox/thread-service";
 import type { MailboxFolder } from "./types";
 
 const SEARCH_DEBOUNCE_MS = 300;
@@ -9,7 +10,8 @@ const SEARCH_DEBOUNCE_MS = 300;
 export interface MailboxThreadListResponse {
   threads: MailboxThreadReadShape[];
   nextCursor: string | null;
-  totalCount: number;
+  totalCount: number | null;
+  searchMeta?: MailboxSearchMeta;
 }
 
 export interface UseMailboxThreadsParams {
@@ -26,8 +28,9 @@ export interface UseMailboxThreadsParams {
 
 export interface UseMailboxThreadsResult {
   threads: MailboxThreadReadShape[];
-  totalCount: number;
+  totalCount: number | null;
   nextCursor: string | null;
+  searchMeta: MailboxSearchMeta | null;
   isLoading: boolean;
   isLoadingMore: boolean;
   hasMore: boolean;
@@ -58,8 +61,9 @@ export function useMailboxThreads(
   params: UseMailboxThreadsParams,
 ): UseMailboxThreadsResult {
   const [threads, setThreads] = useState<MailboxThreadReadShape[]>([]);
-  const [totalCount, setTotalCount] = useState(0);
+  const [totalCount, setTotalCount] = useState<number | null>(0);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [searchMeta, setSearchMeta] = useState<MailboxSearchMeta | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -209,6 +213,7 @@ export function useMailboxThreads(
         );
         setTotalCount(data.totalCount);
         setNextCursor(data.nextCursor);
+        setSearchMeta(data.searchMeta ?? null);
       } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") {
           // Silently ignore aborted requests
@@ -269,6 +274,7 @@ export function useMailboxThreads(
     setThreads([]);
     setTotalCount(0);
     setNextCursor(null);
+    setSearchMeta(null);
     setIsLoading(false);
     setIsLoadingMore(false);
     setError(null);
@@ -317,6 +323,7 @@ export function useMailboxThreads(
     threads,
     totalCount,
     nextCursor,
+    searchMeta,
     isLoading,
     isLoadingMore,
     hasMore: nextCursor !== null,

@@ -677,10 +677,12 @@ export function NoSearchResultsEmpty({
   query,
   hasActiveFilters,
   onClearFilters,
+  isPartialSearch = false,
 }: {
   query?: string;
   hasActiveFilters?: boolean;
   onClearFilters?: () => void;
+  isPartialSearch?: boolean;
 }) {
   const isFiltered = hasActiveFilters || !!query;
 
@@ -703,7 +705,9 @@ export function NoSearchResultsEmpty({
           {query ? `No results for "${query}"` : "No threads match"}
         </p>
         <p className="mt-1.5 text-xs leading-relaxed text-[#64748B]">
-          {isFiltered
+          {isPartialSearch
+            ? "Search results may be incomplete right now. Some mailbox connections could not return a full response."
+            : isFiltered
             ? "Try adjusting your search or removing active filters to see more threads."
             : "There are no threads in this view right now."}
         </p>

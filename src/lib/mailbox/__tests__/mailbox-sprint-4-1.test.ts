@@ -437,6 +437,54 @@ describe("Sprint 4.1 — listMailboxThreads", () => {
     expect(result.totalCount).toBe(100);
   });
 
+  it("encodes unread state in the cursor boundary so unread-first pagination cannot skip rows", async () => {
+    mockDb.mailboxConnection.findMany.mockResolvedValue([makeConnectionRecord()]);
+    mockDb.mailboxThread.findMany.mockResolvedValue([makeThreadRecord()]);
+    mockDb.mailboxThread.count.mockResolvedValue(1);
+
+    const cursor = Buffer.from(
+      JSON.stringify({
+        kind: "local",
+        unreadCount: 2,
+        lastMessageAt: "2026-05-10T10:00:00.000Z",
+        id: "thread-123",
+      }),
+      "utf-8",
+    ).toString("base64");
+
+    await listMailboxThreads({
+      orgId: ORG_A,
+      userId: USER_A,
+      role: "member",
+      cursor,
+    });
+
+    expect(mockDb.mailboxThread.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          AND: expect.arrayContaining([
+            expect.objectContaining({ orgId: ORG_A }),
+            expect.objectContaining({
+              OR: [
+                { unreadCount: { lt: 2 } },
+                {
+                  unreadCount: 2,
+                  OR: [
+                    { lastMessageAt: { lt: new Date("2026-05-10T10:00:00.000Z") } },
+                    {
+                      lastMessageAt: new Date("2026-05-10T10:00:00.000Z"),
+                      id: { lt: "thread-123" },
+                    },
+                  ],
+                },
+              ],
+            }),
+          ]),
+        }),
+      }),
+    );
+  });
+
   it("returns nextCursor null when no more pages", async () => {
     mockDb.mailboxConnection.findMany.mockResolvedValue([makeConnectionRecord()]);
     mockDb.mailboxThread.findMany.mockResolvedValue([

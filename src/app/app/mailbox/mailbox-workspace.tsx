@@ -371,6 +371,7 @@ export function MailboxWorkspace() {
   const {
     threads: rawThreads,
     totalCount: apiTotalCount,
+    searchMeta: threadSearchMeta,
     hasMore: threadsHasMore,
     isLoading: threadsLoading,
     isLoadingMore: threadsLoadingMore,
@@ -942,6 +943,7 @@ export function MailboxWorkspace() {
             query={filterState.searchQuery || undefined}
             hasActiveFilters={filterState.filters.length > 0}
             onClearFilters={clearFilters}
+            isPartialSearch={threadSearchMeta?.partial === true}
           />
         );
       }
@@ -1088,7 +1090,9 @@ export function MailboxWorkspace() {
           <MailboxCommandBar
             activeViewLabel={viewLabel}
             totalCount={totalCount}
+            loadedCount={inDraftsMode ? mappedDrafts.length : visibleThreads.length}
             unreadCount={unreadCount}
+            searchMeta={threadSearchMeta}
             itemLabel={inDraftsMode ? "draft" : "thread"}
             onCompose={openNewCompose}
             searchQuery={filterState.searchQuery}
@@ -1165,6 +1169,7 @@ export function MailboxWorkspace() {
                 totalCount={apiTotalCount}
                 loadedCount={visibleThreads.length}
                 hasMore={threadsHasMore}
+                searchMeta={threadSearchMeta}
                 isLoading={threadsLoading}
                 isLoadingMore={threadsLoadingMore}
                 onLoadMore={loadMoreThreads}

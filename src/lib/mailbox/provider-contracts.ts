@@ -145,6 +145,17 @@ export interface MailboxDraftEnvelope {
   message: MailboxMessageEnvelope & { htmlBody: string; textBody: string | null };
 }
 
+export interface MailboxSearchHit {
+  providerThreadId: string;
+  providerMessageId: string | null;
+}
+
+export interface MailboxThreadSearchResult {
+  hits: MailboxSearchHit[];
+  nextPageToken: string | null;
+  estimatedTotal: number | null;
+}
+
 export interface MailboxDraftSyncResult {
   drafts: MailboxDraftEnvelope[];
   activeDraftIds: string[];
@@ -306,6 +317,18 @@ export interface IMailboxProviderAdapter {
     | { messages: (MailboxMessageEnvelope & { htmlBody: string; textBody: string | null })[] }
     | MailboxProviderError
   >;
+
+  /**
+   * Search provider mailbox content using the provider's native query semantics.
+   * Returns lightweight hits that can be hydrated into local mailbox threads.
+   */
+  searchThreads?(params: {
+    orgId: string;
+    tokenRef: string;
+    query: string;
+    pageToken?: string;
+    maxResults?: number;
+  }): Promise<MailboxThreadSearchResult | MailboxProviderError>;
 
   /**
    * Renew the provider push watch/subscription.
