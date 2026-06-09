@@ -487,6 +487,43 @@ describe("Sprint 10.5 — Hardening, Regression, and Phase Closeout", () => {
       expect(res.data?.messageId).toBe("msg-new-unique");
       expect(sendMessage).toHaveBeenCalled();
     });
+
+    it("creates a new message if the matching prior message was soft-deleted", async () => {
+      vi.mocked(db.conversation.findFirst).mockResolvedValue({
+        id: CONV_ID,
+        orgId: ORG_ID,
+        customerId: CUSTOMER_ID,
+        type: "PORTAL",
+        portalState: "OPEN",
+      } as any);
+
+      // Setup db.conversationMessage.findMany mock to return an empty list because the query
+      // filters for status: { not: "DELETED" }
+      vi.mocked(db.conversationMessage.findMany).mockResolvedValueOnce([]);
+
+      // Setup mock return for sendMessage
+      vi.mocked(sendMessage).mockResolvedValueOnce({
+        id: "msg-new-after-deleted",
+        body: "My reply text",
+      } as any);
+
+      const res = await submitPortalConversationReply(ORG_SLUG, CONV_ID, "My reply text", [
+        { storageRef: "ref-1", fileName: "f.txt", mimeType: "text/plain", sizeBytes: 100, uploadToken: "t1" },
+      ]);
+
+      expect(res.success).toBe(true);
+      expect(res.data?.messageId).toBe("msg-new-after-deleted");
+      expect(sendMessage).toHaveBeenCalled();
+      
+      // Verify that findMany query was indeed called with status: { not: "DELETED" }
+      expect(db.conversationMessage.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            status: { not: "DELETED" },
+          }),
+        })
+      );
+    });
   });
 
   // 8. Read State Durability

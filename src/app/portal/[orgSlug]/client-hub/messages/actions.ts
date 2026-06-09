@@ -356,6 +356,7 @@ export async function submitPortalConversationReply(
         conversationId,
         customerId: session.customerId,
         body: trimmedBody,
+        status: { not: "DELETED" },
         createdAt: { gte: new Date(Date.now() - 10000) },
       },
       select: {
