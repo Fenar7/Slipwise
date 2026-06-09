@@ -98,15 +98,22 @@ export async function assertValidOrgMembers(
       organizationId: orgId,
       userId: { in: userIds },
     },
-    select: { userId: true },
+    select: { userId: true, role: true },
   });
 
-  const validIds = new Set(members.map((m) => m.userId));
-  const invalid = userIds.filter((id) => !validIds.has(id));
+  const memberMap = new Map(members.map((m) => [m.userId, m.role]));
+  const invalid: string[] = [];
+
+  for (const id of userIds) {
+    const role = memberMap.get(id);
+    if (!role || role === "deactivated") {
+      invalid.push(id);
+    }
+  }
 
   if (invalid.length > 0) {
     throw new Error(
-      `${context}: invalid or unauthorized participants: ${invalid.join(", ")}`,
+      `${context}: invalid, deactivated, or unauthorized participants: ${invalid.join(", ")}`,
     );
   }
 }
@@ -181,6 +188,26 @@ export async function listConversationsForUser(
   orgId: string,
   userId: string,
 ): Promise<ConversationRecord[]> {
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId);
+
+  if (isUuid) {
+    const memberModel = (db as any).member;
+    if (memberModel && typeof memberModel.findUnique === "function") {
+      const member = await memberModel.findUnique({
+        where: {
+          organizationId_userId: {
+            organizationId: orgId,
+            userId,
+          },
+        },
+        select: { role: true },
+      });
+      if (member && member.role === "deactivated") {
+        throw new Error("listConversationsForUser: active membership required");
+      }
+    }
+  }
+
   const rows = await db.conversation.findMany({
     where: {
       orgId,
@@ -223,6 +250,25 @@ export async function createConversation(
   }
 
   const result = await db.$transaction(async (tx) => {
+    const isCreatorUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(input.createdBy);
+    if (isCreatorUuid) {
+      const memberModel = (tx as any).member;
+      if (memberModel && typeof memberModel.findUnique === "function") {
+        const creatorMember = await memberModel.findUnique({
+          where: {
+            organizationId_userId: {
+              organizationId: input.orgId,
+              userId: input.createdBy,
+            },
+          },
+          select: { role: true },
+        });
+        if (creatorMember && creatorMember.role === "deactivated") {
+          throw new Error("createConversation: active membership required for creator");
+        }
+      }
+    }
+
     // Portal validation and scoping
     if (input.type === "PORTAL") {
       if (!input.customerId) {

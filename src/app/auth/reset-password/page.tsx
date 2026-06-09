@@ -1,11 +1,12 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Eye, EyeOff } from "lucide-react";
 import { AuthCard } from "@/features/auth/components/auth-card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { createSupabaseBrowser } from "@/lib/supabase/client";
+import { checkResetPasswordState } from "./actions";
 
 function ResetPasswordContent() {
   const router = useRouter();
@@ -15,6 +16,17 @@ function ResetPasswordContent() {
   const [showConfirm, setShowConfirm] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [checking, setChecking] = useState(true);
+  const [stateError, setStateError] = useState("");
+
+  useEffect(() => {
+    checkResetPasswordState().then((res) => {
+      if (!res.success) {
+        setStateError(res.error || "Invalid or expired recovery link");
+      }
+      setChecking(false);
+    });
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -41,6 +53,35 @@ function ResetPasswordContent() {
     } finally {
       setLoading(false);
     }
+  }
+
+  if (checking) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <p className="text-sm" style={{ color: "#79747E" }}>Verifying recovery link…</p>
+      </div>
+    );
+  }
+
+  if (stateError) {
+    return (
+      <AuthCard title="Reset Link Invalid" subtitle={stateError}>
+        <div className="text-center space-y-5">
+          <div
+            className="mx-auto h-12 w-12 rounded-full flex items-center justify-center"
+            style={{ background: "#F9DEDC" }}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#B3261E" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M18 6 6 18" />
+              <path d="m6 6 12 12" />
+            </svg>
+          </div>
+          <Button variant="secondary" className="w-full" onClick={() => router.push("/auth/login")}>
+            Go to Login
+          </Button>
+        </div>
+      </AuthCard>
+    );
   }
 
   return (

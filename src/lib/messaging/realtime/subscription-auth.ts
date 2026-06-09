@@ -64,6 +64,30 @@ export async function authorizeConversationSubscription(
       };
     }
 
+    const memberModel = (db as any).member;
+    if (memberModel && typeof memberModel.findUnique === "function") {
+      const member = await memberModel.findUnique({
+        where: {
+          organizationId_userId: {
+            organizationId: session.orgId,
+            userId: session.userId,
+          },
+        },
+        select: { role: true },
+      });
+
+      if (member && member.role === "deactivated") {
+        return {
+          result: {
+            allowed: false,
+            reason: "active membership required",
+            code: "subscription_denied",
+          },
+          diagnostic: "not_member",
+        };
+      }
+    }
+
     const participant = await db.conversationParticipant.findFirst({
       where: {
         orgId: session.orgId,
