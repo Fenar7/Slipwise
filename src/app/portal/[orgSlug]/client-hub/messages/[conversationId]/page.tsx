@@ -6,6 +6,7 @@ import {
   markPortalConversationAsRead,
 } from "../actions";
 import { PortalMessageReplyBox } from "./reply-box";
+import { PortalAttachmentItem } from "./attachment-item";
 
 interface PageProps {
   params: Promise<{ orgSlug: string; conversationId: string }>;
@@ -105,9 +106,34 @@ export default async function PortalConversationDetailPage({ params }: PageProps
                       : "bg-white border border-slate-200 text-slate-900"
                   }`}
                 >
-                  <p className="whitespace-pre-wrap text-sm leading-relaxed">
-                    {msg.body}
-                  </p>
+                  {msg.body && (
+                    <p className="whitespace-pre-wrap text-sm leading-relaxed">
+                      {msg.body}
+                    </p>
+                  )}
+                  {msg.attachments && msg.attachments.length > 0 && (
+                    <div
+                      className={`space-y-2 ${
+                        msg.body
+                          ? `mt-3 border-t border-dashed pt-2.5 ${
+                              msg.isFromClient ? "border-white/20" : "border-slate-200"
+                            }`
+                          : ""
+                      }`}
+                    >
+                      {msg.attachments.map((att) => (
+                        <PortalAttachmentItem
+                          key={att.id}
+                          attachmentId={att.id}
+                          fileName={att.fileName}
+                          sizeBytes={att.sizeBytes}
+                          scanStatus={att.scanStatus}
+                          orgSlug={orgSlug}
+                          isFromClient={msg.isFromClient}
+                        />
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             ))}
