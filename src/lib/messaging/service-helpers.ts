@@ -29,6 +29,30 @@ export async function getConversationInOrg(
   return conversation;
 }
 
+export async function requireActiveOrgMember(
+  tx: Prisma.TransactionClient,
+  orgId: string,
+  userId: string,
+  context: string,
+): Promise<void> {
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId);
+  if (!isUuid) return;
+
+  const member = await tx.member.findUnique({
+    where: {
+      organizationId_userId: {
+        organizationId: orgId,
+        userId,
+      },
+    },
+    select: { role: true },
+  });
+
+  if (!member || member.role === "deactivated") {
+    throw new Error(`${context}: active membership required`);
+  }
+}
+
 export async function assertActiveParticipant(
   tx: Prisma.TransactionClient,
   orgId: string,
@@ -36,25 +60,9 @@ export async function assertActiveParticipant(
   userId: string,
   context: string,
 ): Promise<Prisma.ConversationParticipantGetPayload<Record<string, never>>> {
-  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId);
+  await requireActiveOrgMember(tx, orgId, userId, context);
 
-  if (isUuid) {
-    const memberModel = (tx as any).member;
-    if (memberModel && typeof memberModel.findUnique === "function") {
-      const member = await memberModel.findUnique({
-        where: {
-          organizationId_userId: {
-            organizationId: orgId,
-            userId,
-          },
-        },
-        select: { role: true },
-      });
-      if (member && member.role === "deactivated") {
-        throw new Error(`${context}: active membership required`);
-      }
-    }
-  }
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId);
 
   const participant = await tx.conversationParticipant.findFirst({
     where: {

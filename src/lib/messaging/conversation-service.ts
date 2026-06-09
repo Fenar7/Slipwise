@@ -13,6 +13,7 @@ import { logMessagingAudit, logMessagingAuditTx } from "./audit";
 import {
   assertConversationAction,
   assertGovernanceAction,
+  requireActiveOrgMember,
 } from "./service-helpers";
 import { rateLimit } from "@/lib/rate-limit";
 import { getRealtimePublisherOrNoop } from "./realtime/publisher";
@@ -188,25 +189,7 @@ export async function listConversationsForUser(
   orgId: string,
   userId: string,
 ): Promise<ConversationRecord[]> {
-  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId);
-
-  if (isUuid) {
-    const memberModel = (db as any).member;
-    if (memberModel && typeof memberModel.findUnique === "function") {
-      const member = await memberModel.findUnique({
-        where: {
-          organizationId_userId: {
-            organizationId: orgId,
-            userId,
-          },
-        },
-        select: { role: true },
-      });
-      if (member && member.role === "deactivated") {
-        throw new Error("listConversationsForUser: active membership required");
-      }
-    }
-  }
+  await requireActiveOrgMember(db, orgId, userId, "listConversationsForUser");
 
   const rows = await db.conversation.findMany({
     where: {
@@ -250,24 +233,7 @@ export async function createConversation(
   }
 
   const result = await db.$transaction(async (tx) => {
-    const isCreatorUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(input.createdBy);
-    if (isCreatorUuid) {
-      const memberModel = (tx as any).member;
-      if (memberModel && typeof memberModel.findUnique === "function") {
-        const creatorMember = await memberModel.findUnique({
-          where: {
-            organizationId_userId: {
-              organizationId: input.orgId,
-              userId: input.createdBy,
-            },
-          },
-          select: { role: true },
-        });
-        if (creatorMember && creatorMember.role === "deactivated") {
-          throw new Error("createConversation: active membership required for creator");
-        }
-      }
-    }
+    await requireActiveOrgMember(tx, input.orgId, input.createdBy, "createConversation");
 
     // Portal validation and scoping
     if (input.type === "PORTAL") {

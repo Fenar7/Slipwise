@@ -16,6 +16,7 @@ import type {
 } from "./service-contracts";
 import {
   assertConversationAction,
+  requireActiveOrgMember,
 } from "./service-helpers";
 import { rateLimit } from "@/lib/rate-limit";
 import { getRealtimePublisherOrNoop } from "./realtime/publisher";
@@ -80,23 +81,7 @@ export async function listConversationMessages(
 ): Promise<ConversationMessageRecord[]> {
   const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId);
 
-  if (isUuid) {
-    const memberModel = (db as any).member;
-    if (memberModel && typeof memberModel.findUnique === "function") {
-      const member = await memberModel.findUnique({
-        where: {
-          organizationId_userId: {
-            organizationId: orgId,
-            userId,
-          },
-        },
-        select: { role: true },
-      });
-      if (member && member.role === "deactivated") {
-        throw new Error("listConversationMessages: active membership required");
-      }
-    }
-  }
+  await requireActiveOrgMember(db, orgId, userId, "listConversationMessages");
 
   const participant = await db.conversationParticipant.findFirst({
     where: {

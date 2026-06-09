@@ -69,6 +69,18 @@ describe("Sprint 11.2 - Messaging active membership / deactivation checks", () =
       });
     });
 
+    it("throws active membership required if the user has no org membership", async () => {
+      const mockTx = {
+        member: {
+          findUnique: mocks.memberFindUnique.mockResolvedValueOnce(null),
+        },
+      } as any;
+
+      await expect(
+        assertActiveParticipant(mockTx, ORG_ID, CONV_ID, USER_ID, "sendMessage")
+      ).rejects.toThrow("sendMessage: active membership required");
+    });
+
     it("succeeds if user is an active member", async () => {
       const mockTx = {
         member: {
@@ -99,6 +111,14 @@ describe("Sprint 11.2 - Messaging active membership / deactivation checks", () =
         listConversationMessages(ORG_ID, CONV_ID, USER_ID)
       ).rejects.toThrow("listConversationMessages: active membership required");
     });
+
+    it("throws active membership required if user has no org membership", async () => {
+      mocks.memberFindUnique.mockResolvedValueOnce(null);
+
+      await expect(
+        listConversationMessages(ORG_ID, CONV_ID, USER_ID)
+      ).rejects.toThrow("listConversationMessages: active membership required");
+    });
   });
 
   describe("listConversationsForUser", () => {
@@ -109,12 +129,19 @@ describe("Sprint 11.2 - Messaging active membership / deactivation checks", () =
         listConversationsForUser(ORG_ID, USER_ID)
       ).rejects.toThrow("listConversationsForUser: active membership required");
     });
+
+    it("throws active membership required if user has no org membership", async () => {
+      mocks.memberFindUnique.mockResolvedValueOnce(null);
+
+      await expect(
+        listConversationsForUser(ORG_ID, USER_ID)
+      ).rejects.toThrow("listConversationsForUser: active membership required");
+    });
   });
 
   describe("createConversation", () => {
-    it("throws creator active membership required if creator is deactivated", async () => {
-      // Mock db.$transaction is called, which calls cb(db)
-      mocks.memberFindUnique.mockResolvedValueOnce({ role: "deactivated" }); // creator role check
+    it("throws active membership required if creator is deactivated", async () => {
+      mocks.memberFindUnique.mockResolvedValueOnce({ role: "deactivated" });
 
       await expect(
         createConversation({
@@ -123,7 +150,20 @@ describe("Sprint 11.2 - Messaging active membership / deactivation checks", () =
           type: "CHANNEL",
           title: "New Channel",
         })
-      ).rejects.toThrow("createConversation: active membership required for creator");
+      ).rejects.toThrow("createConversation: active membership required");
+    });
+
+    it("throws active membership required if creator has no org membership", async () => {
+      mocks.memberFindUnique.mockResolvedValueOnce(null);
+
+      await expect(
+        createConversation({
+          orgId: ORG_ID,
+          createdBy: USER_ID,
+          type: "CHANNEL",
+          title: "New Channel",
+        })
+      ).rejects.toThrow("createConversation: active membership required");
     });
   });
 
@@ -147,6 +187,30 @@ describe("Sprint 11.2 - Messaging active membership / deactivation checks", () =
   describe("realtime subscription authorization", () => {
     it("denies subscription if the user is deactivated", async () => {
       mocks.memberFindUnique.mockResolvedValueOnce({ role: "deactivated" });
+
+      const session: RealtimeSession = {
+        userId: USER_ID,
+        orgId: ORG_ID,
+        role: "member",
+        representedId: null,
+        proxyGrantId: null,
+        proxyScope: [],
+        sessionId: "session_123",
+      };
+
+      mocks.conversationFindFirst.mockResolvedValueOnce({
+        id: CONV_ID,
+        orgId: ORG_ID,
+      });
+
+      const res = await authorizeConversationSubscription(session, CONV_ID);
+      expect(res.result.allowed).toBe(false);
+      expect(res.result.reason).toBe("active membership required");
+      expect(res.diagnostic).toBe("not_member");
+    });
+
+    it("denies subscription if the user has no org membership", async () => {
+      mocks.memberFindUnique.mockResolvedValueOnce(null);
 
       const session: RealtimeSession = {
         userId: USER_ID,

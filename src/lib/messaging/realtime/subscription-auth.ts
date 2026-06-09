@@ -3,6 +3,7 @@ import "server-only";
 import { db } from "@/lib/db";
 import { toConversationRecord, toParticipantRecord } from "../mappers";
 import { evaluateConversationAccess } from "../authorization";
+import { requireActiveOrgMember } from "../service-helpers";
 import type { RealtimeSession } from "./session";
 
 /**
@@ -64,28 +65,17 @@ export async function authorizeConversationSubscription(
       };
     }
 
-    const memberModel = (db as any).member;
-    if (memberModel && typeof memberModel.findUnique === "function") {
-      const member = await memberModel.findUnique({
-        where: {
-          organizationId_userId: {
-            organizationId: session.orgId,
-            userId: session.userId,
-          },
+    try {
+      await requireActiveOrgMember(db, session.orgId, session.userId, "authorizeConversationSubscription");
+    } catch {
+      return {
+        result: {
+          allowed: false,
+          reason: "active membership required",
+          code: "subscription_denied",
         },
-        select: { role: true },
-      });
-
-      if (member && member.role === "deactivated") {
-        return {
-          result: {
-            allowed: false,
-            reason: "active membership required",
-            code: "subscription_denied",
-          },
-          diagnostic: "not_member",
-        };
-      }
+        diagnostic: "not_member",
+      };
     }
 
     const participant = await db.conversationParticipant.findFirst({
