@@ -260,6 +260,77 @@ describe("Sprint 11.2 - Messaging active membership / deactivation checks", () =
       expect(result.conversation).toBeDefined();
       expect(result.conversation.id).toBe(CONV_ID);
     });
+
+    it("skips membership check for platform admin without org membership", async () => {
+      const mockTx = {
+        member: {
+          findUnique: mocks.memberFindUnique.mockResolvedValueOnce(null),
+        },
+        conversation: {
+          findFirst: mocks.conversationFindFirst.mockResolvedValueOnce({
+            id: CONV_ID,
+            orgId: ORG_ID,
+            type: "CHANNEL",
+            archivedAt: null,
+            lockedAt: null,
+          }),
+        },
+        conversationParticipant: {
+          findFirst: mocks.conversationParticipantFindFirst.mockResolvedValueOnce(null),
+        },
+      } as any;
+
+      // Platform admin bypasses membership check; governance access granted via admin override.
+      const result = await assertGovernanceAction(
+        mockTx,
+        ORG_ID,
+        CONV_ID,
+        USER_ID,
+        "ARCHIVE",
+        { participant: null, orgRole: "member", isPlatformAdmin: true },
+        "archiveConversation",
+      );
+
+      expect(result).toBeDefined();
+      expect(result.conversation.id).toBe(CONV_ID);
+      // Membership check was skipped — findUnique should NOT have been called
+      expect(mocks.memberFindUnique).not.toHaveBeenCalled();
+    });
+
+    it("skips membership check for platform admin with deactivated membership", async () => {
+      const mockTx = {
+        member: {
+          findUnique: mocks.memberFindUnique.mockResolvedValueOnce({ role: "deactivated" }),
+        },
+        conversation: {
+          findFirst: mocks.conversationFindFirst.mockResolvedValueOnce({
+            id: CONV_ID,
+            orgId: ORG_ID,
+            type: "CHANNEL",
+            archivedAt: null,
+            lockedAt: null,
+          }),
+        },
+        conversationParticipant: {
+          findFirst: mocks.conversationParticipantFindFirst.mockResolvedValueOnce(null),
+        },
+      } as any;
+
+      // Platform admin bypasses membership check even if deactivated.
+      const result = await assertGovernanceAction(
+        mockTx,
+        ORG_ID,
+        CONV_ID,
+        USER_ID,
+        "LOCK",
+        { participant: null, orgRole: "member", isPlatformAdmin: true },
+        "lockConversation",
+      );
+
+      expect(result).toBeDefined();
+      expect(result.conversation.id).toBe(CONV_ID);
+      expect(mocks.memberFindUnique).not.toHaveBeenCalled();
+    });
   });
 
   describe("realtime subscription authorization", () => {
