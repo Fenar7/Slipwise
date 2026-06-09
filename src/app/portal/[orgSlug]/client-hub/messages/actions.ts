@@ -160,6 +160,7 @@ export interface PortalConversationDetail {
       fileName: string;
       mimeType: string;
       sizeBytes: number;
+      scanStatus: string;
     }>;
   }>;
 }
@@ -206,6 +207,7 @@ export async function getPortalConversationDetail(
             fileName: true,
             mimeType: true,
             sizeBytes: true,
+            scanStatus: true,
           },
         },
       },
@@ -566,11 +568,16 @@ export async function getPortalAttachmentDownloadUrl(
         fileName: true,
         mimeType: true,
         messageId: true,
+        scanStatus: true,
       },
     });
 
     if (!attachment) {
       return { success: false, error: "Attachment not found or access denied" };
+    }
+
+    if (attachment.scanStatus !== "CLEAN") {
+      return { success: false, error: "This attachment is not available for download" };
     }
 
     // Traverse attachment → message → conversation, then verify membership

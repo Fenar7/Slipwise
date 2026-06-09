@@ -552,6 +552,7 @@ describe("Sprint 10.4 — Portal Notifications, Attachments, and Supportability"
         fileName: "doc.pdf",
         mimeType: "application/pdf",
         messageId: "msg-1",
+        scanStatus: "CLEAN",
       } as any);
 
       // Case A: Message is INTERNAL_ONLY -> fails closed
@@ -583,6 +584,59 @@ describe("Sprint 10.4 — Portal Notifications, Attachments, and Supportability"
       const resC = await getPortalAttachmentDownloadUrl(ORG_SLUG, "att-1");
       expect(resC.success).toBe(true);
       expect(resC.data?.signedUrl).toBe("https://storage.mock/signed-url");
+    });
+
+    it("gates portal downloads based on attachment scanStatus", async () => {
+      // Setup base valid mocks for visibility and membership checks
+      vi.mocked(db.conversationMessage.findFirst).mockResolvedValue({
+        conversationId: CONV_ID,
+      } as any);
+      vi.mocked(db.conversation.findFirst).mockResolvedValue({
+        id: CONV_ID,
+        customerId: CUSTOMER_ID,
+      } as any);
+      vi.mocked(db.conversationParticipant.findFirst).mockResolvedValue({
+        id: "part-1",
+      } as any);
+
+      // 1. PENDING attachment: not downloadable yet
+      vi.mocked(db.conversationAttachment.findFirst).mockResolvedValue({
+        id: "att-pending",
+        storageRef: "some-key",
+        fileName: "doc.pdf",
+        mimeType: "application/pdf",
+        messageId: "msg-1",
+        scanStatus: "PENDING",
+      } as any);
+      const resPending = await getPortalAttachmentDownloadUrl(ORG_SLUG, "att-pending");
+      expect(resPending.success).toBe(false);
+      expect(resPending.error).toContain("not available for download");
+
+      // 2. BLOCKED attachment: never downloadable
+      vi.mocked(db.conversationAttachment.findFirst).mockResolvedValue({
+        id: "att-blocked",
+        storageRef: "some-key",
+        fileName: "doc.pdf",
+        mimeType: "application/pdf",
+        messageId: "msg-1",
+        scanStatus: "BLOCKED",
+      } as any);
+      const resBlocked = await getPortalAttachmentDownloadUrl(ORG_SLUG, "att-blocked");
+      expect(resBlocked.success).toBe(false);
+      expect(resBlocked.error).toContain("not available for download");
+
+      // 3. CLEAN attachment: downloadable
+      vi.mocked(db.conversationAttachment.findFirst).mockResolvedValue({
+        id: "att-clean",
+        storageRef: "some-key",
+        fileName: "doc.pdf",
+        mimeType: "application/pdf",
+        messageId: "msg-1",
+        scanStatus: "CLEAN",
+      } as any);
+      const resClean = await getPortalAttachmentDownloadUrl(ORG_SLUG, "att-clean");
+      expect(resClean.success).toBe(true);
+      expect(resClean.data?.signedUrl).toBe("https://storage.mock/signed-url");
     });
   });
 
