@@ -134,6 +134,13 @@ export async function getMessagingDiagnostics(
 // ─── Sub-query functions ──────────────────────────────────────────────────────
 
 async function getSearchIndexHealth(orgId: string): Promise<SearchIndexHealth> {
+  const activeMessageFilter = {
+    message: {
+      status: { not: "DELETED" },
+      deletedAt: null,
+    },
+  };
+
   const [
     totalAttachments,
     indexedCount,
@@ -144,25 +151,41 @@ async function getSearchIndexHealth(orgId: string): Promise<SearchIndexHealth> {
     blockedCount,
   ] = await Promise.all([
     db.conversationAttachment.count({
-      where: { orgId },
+      where: { orgId, ...activeMessageFilter },
     }),
     db.messagingAttachmentIndex.count({
-      where: { orgId, indexingStatus: AttachmentIndexingStatus.INDEXED },
+      where: {
+        orgId,
+        indexingStatus: AttachmentIndexingStatus.INDEXED,
+        attachment: activeMessageFilter,
+      },
     }),
     db.messagingAttachmentIndex.count({
-      where: { orgId, indexingStatus: AttachmentIndexingStatus.PENDING },
+      where: {
+        orgId,
+        indexingStatus: AttachmentIndexingStatus.PENDING,
+        attachment: activeMessageFilter,
+      },
     }),
     db.messagingAttachmentIndex.count({
-      where: { orgId, indexingStatus: AttachmentIndexingStatus.FAILED },
+      where: {
+        orgId,
+        indexingStatus: AttachmentIndexingStatus.FAILED,
+        attachment: activeMessageFilter,
+      },
     }),
     db.messagingAttachmentIndex.count({
-      where: { orgId, indexingStatus: AttachmentIndexingStatus.UNINDEXED },
+      where: {
+        orgId,
+        indexingStatus: AttachmentIndexingStatus.UNINDEXED,
+        attachment: activeMessageFilter,
+      },
     }),
     db.conversationAttachment.count({
-      where: { orgId, scanStatus: AttachmentScanStatus.PENDING },
+      where: { orgId, scanStatus: AttachmentScanStatus.PENDING, ...activeMessageFilter },
     }),
     db.conversationAttachment.count({
-      where: { orgId, scanStatus: AttachmentScanStatus.BLOCKED },
+      where: { orgId, scanStatus: AttachmentScanStatus.BLOCKED, ...activeMessageFilter },
     }),
   ]);
 
@@ -362,7 +385,8 @@ async function getPortalConversationHealth(orgId: string): Promise<PortalConvers
       where: {
         orgId,
         conversationId: { in: portalConversationIds },
-        status: { not: "DELETED" }
+        status: { not: "DELETED" },
+        audience: "EXTERNAL_VISIBLE",
       },
       orderBy: { createdAt: "desc" }
     }).catch(() => []) : Promise.resolve([]),
@@ -372,7 +396,8 @@ async function getPortalConversationHealth(orgId: string): Promise<PortalConvers
         orgId,
         message: {
           conversationId: { in: portalConversationIds },
-          status: { not: "DELETED" }
+          status: { not: "DELETED" },
+          audience: "EXTERNAL_VISIBLE",
         }
       },
       select: { message: { select: { conversationId: true } } }
