@@ -61,7 +61,7 @@ export async function listPortalConversations(
   orgSlug: string
 ): Promise<ActionResult<{ conversations: PortalConversationItem[] }>> {
   try {
-    const session = await requirePortalSession();
+    const session = await requirePortalSession(orgSlug);
     await validateCustomerEligibility(session.customerId, session.orgId, orgSlug);
 
     const conversations = await db.conversation.findMany({
@@ -165,7 +165,7 @@ export async function getPortalConversationDetail(
   conversationId: string
 ): Promise<ActionResult<PortalConversationDetail | null>> {
   try {
-    const session = await requirePortalSession();
+    const session = await requirePortalSession(orgSlug);
     await validateCustomerEligibility(session.customerId, session.orgId, orgSlug);
 
     const conversation = await db.conversation.findFirst({
@@ -181,12 +181,13 @@ export async function getPortalConversationDetail(
       return { success: false, error: "Conversation not found or access denied" };
     }
 
-    // Retrieve EXTERNAL_VISIBLE messages only
+    // Retrieve EXTERNAL_VISIBLE messages only, excluding soft-deleted ones
     const messages = await db.conversationMessage.findMany({
       where: {
         orgId: session.orgId,
         conversationId,
         audience: "EXTERNAL_VISIBLE",
+        status: { not: "DELETED" },
       },
       orderBy: { createdAt: "asc" },
       include: {
@@ -277,7 +278,7 @@ export async function submitPortalConversationReply(
   body: string
 ): Promise<ActionResult<{ messageId: string }>> {
   try {
-    const session = await requirePortalSession();
+    const session = await requirePortalSession(orgSlug);
     await validateCustomerEligibility(session.customerId, session.orgId, orgSlug);
 
     const trimmedBody = body.trim();
@@ -343,7 +344,7 @@ export async function markPortalConversationAsRead(
   conversationId: string
 ): Promise<ActionResult<void>> {
   try {
-    const session = await requirePortalSession();
+    const session = await requirePortalSession(orgSlug);
     await validateCustomerEligibility(session.customerId, session.orgId, orgSlug);
 
     // Access check

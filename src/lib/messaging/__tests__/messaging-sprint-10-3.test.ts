@@ -6,18 +6,31 @@ vi.mock("next/cache", () => ({
 }));
 
 // Mock portal-auth
-vi.mock("@/lib/portal-auth", () => ({
-  requirePortalSession: vi.fn().mockResolvedValue({
-    customerId: "cclient-1",
-    orgId: "org-1",
-    orgSlug: "test-org",
-  }),
-  getPortalSession: vi.fn().mockResolvedValue({
-    customerId: "cclient-1",
-    orgId: "org-1",
-    orgSlug: "test-org",
-  }),
-}));
+vi.mock("@/lib/portal-auth", () => {
+  const requirePortalSession = vi.fn().mockImplementation(async (orgSlug?: string) => {
+    if (orgSlug && orgSlug !== "test-org") {
+      throw new Error("NEXT_REDIRECT_TO_LOGIN");
+    }
+    return {
+      customerId: "cclient-1",
+      orgId: "org-1",
+      orgSlug: "test-org",
+    };
+  });
+  return {
+    requirePortalSession,
+    getPortalSession: vi.fn().mockImplementation(async (orgSlug?: string) => {
+      if (orgSlug && orgSlug !== "test-org") {
+        return null;
+      }
+      return {
+        customerId: "cclient-1",
+        orgId: "org-1",
+        orgSlug: "test-org",
+      };
+    }),
+  };
+});
 
 // Mock messaging services
 vi.mock("@/lib/messaging", () => ({
@@ -79,10 +92,15 @@ describe("Sprint 10.3 — Client Hub Messaging and Compose Surface", () => {
     vi.clearAllMocks();
 
     // Setup default mock values
-    vi.mocked(requirePortalSession).mockResolvedValue({
-      customerId: CUSTOMER_ID,
-      orgId: ORG_ID,
-      orgSlug: ORG_SLUG,
+    vi.mocked(requirePortalSession).mockImplementation(async (orgSlug?: string) => {
+      if (orgSlug && orgSlug !== ORG_SLUG) {
+        throw new Error("NEXT_REDIRECT_TO_LOGIN");
+      }
+      return {
+        customerId: CUSTOMER_ID,
+        orgId: ORG_ID,
+        orgSlug: ORG_SLUG,
+      };
     });
 
     vi.mocked(db.organization.findUnique).mockResolvedValue({
@@ -372,6 +390,62 @@ describe("Sprint 10.3 — Client Hub Messaging and Compose Surface", () => {
           update: expect.objectContaining({
             lastReadMessageId: "msg-latest",
             unreadCount: 0,
+          }),
+        })
+      );
+    });
+  });
+
+  describe("Hardened orgSlug-aware Portal Session Boundary", () => {
+    it("fails closed if the orgSlug does not match the active portal session", async () => {
+      const listRes = await listPortalConversations("hacker-org");
+      expect(listRes.success).toBe(false);
+      expect(listRes.error).toContain("NEXT_REDIRECT_TO_LOGIN");
+
+      const detailRes = await getPortalConversationDetail("hacker-org", CONV_ID);
+      expect(detailRes.success).toBe(false);
+      expect(detailRes.error).toContain("NEXT_REDIRECT_TO_LOGIN");
+
+      const replyRes = await submitPortalConversationReply("hacker-org", CONV_ID, "some message");
+      expect(replyRes.success).toBe(false);
+      expect(replyRes.error).toContain("NEXT_REDIRECT_TO_LOGIN");
+
+      const readRes = await markPortalConversationAsRead("hacker-org", CONV_ID);
+      expect(readRes.success).toBe(false);
+      expect(readRes.error).toContain("NEXT_REDIRECT_TO_LOGIN");
+    });
+
+    it("allows access if the orgSlug matches the active portal session", async () => {
+      vi.mocked(db.conversation.findMany).mockResolvedValue([]);
+      const result = await listPortalConversations(ORG_SLUG);
+      expect(result.success).toBe(true);
+    });
+  });
+
+  describe("Leak and Status Filtering in Detail Timeline", () => {
+    it("never includes DELETED external messages in the detail timeline", async () => {
+      vi.mocked(db.conversation.findFirst).mockResolvedValue({
+        id: CONV_ID,
+        orgId: ORG_ID,
+        customerId: CUSTOMER_ID,
+        type: "PORTAL",
+        portalState: "OPEN",
+        linkedRecordType: null,
+        linkedRecordId: null,
+      } as any);
+
+      vi.mocked(db.conversationMessage.findMany).mockResolvedValue([]);
+      vi.mocked(db.profile.findMany).mockResolvedValue([]);
+
+      await getPortalConversationDetail(ORG_SLUG, CONV_ID);
+
+      // Verify that the query filters out DELETED messages
+      expect(db.conversationMessage.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            conversationId: CONV_ID,
+            audience: "EXTERNAL_VISIBLE",
+            status: { not: "DELETED" },
           }),
         })
       );
