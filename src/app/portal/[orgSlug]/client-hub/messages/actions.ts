@@ -350,7 +350,7 @@ export async function submitPortalConversationReply(
     }
 
     // Idempotency / Double submit protection: check if client sent exact same message in last 10s
-    const duplicate = await db.conversationMessage.findFirst({
+    const potentialDuplicates = await db.conversationMessage.findMany({
       where: {
         orgId: session.orgId,
         conversationId,
@@ -358,6 +358,19 @@ export async function submitPortalConversationReply(
         body: trimmedBody,
         createdAt: { gte: new Date(Date.now() - 10000) },
       },
+      select: {
+        id: true,
+        attachments: {
+          select: { storageRef: true },
+        },
+      },
+    });
+
+    const duplicate = potentialDuplicates.find((dup) => {
+      const dupRefs = dup.attachments.map((a) => a.storageRef).sort();
+      const currentRefs = (attachments || []).map((a) => a.storageRef).sort();
+      if (dupRefs.length !== currentRefs.length) return false;
+      return dupRefs.every((ref, idx) => ref === currentRefs[idx]);
     });
 
     if (duplicate) {
