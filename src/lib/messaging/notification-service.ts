@@ -2,6 +2,8 @@ import "server-only";
 
 import { db } from "@/lib/db";
 import { createNotification } from "@/lib/notifications";
+import { sendEmail } from "@/lib/email";
+import { logMessagingAudit } from "./audit";
 import {
   consumeDownstreamEvents,
   recordConsumptionCheckpoint,
@@ -384,7 +386,7 @@ export async function processNotificationEvents(
           continue;
         }
 
-        // Fetch the message and its conversation name
+        // Fetch the message and its conversation details
         const message = await db.conversationMessage.findUnique({
           where: { id: payload.messageId },
           select: {
@@ -392,8 +394,11 @@ export async function processNotificationEvents(
             body: true,
             deletedAt: true,
             conversationId: true,
+            audience: true,
+            authorId: true,
+            customerId: true,
             conversation: {
-              select: { name: true },
+              select: { name: true, type: true, customerId: true, assigneeId: true },
             },
           },
         });
@@ -404,16 +409,35 @@ export async function processNotificationEvents(
           continue;
         }
 
-        const actorProfile = await db.profile.findUnique({
-          where: { id: payload.actorId },
-          select: { name: true },
-        });
-        const actorName = actorProfile?.name || "Someone";
-        const snippet = message.body.length > 120 ? message.body.slice(0, 120) + "..." : message.body;
+        let actorName = "Someone";
+        if (message.conversation.type === "PORTAL") {
+          if (message.customerId) {
+            const customer = await db.customer.findUnique({
+              where: { id: message.conversation.customerId || message.customerId },
+              select: { name: true },
+            });
+            actorName = customer?.name || "Client";
+          } else if (message.authorId) {
+            const actorProfile = await db.profile.findUnique({
+              where: { id: message.authorId },
+              select: { name: true },
+            });
+            actorName = actorProfile?.name || "Team Member";
+          }
+        } else {
+          if (payload.actorId) {
+            const actorProfile = await db.profile.findUnique({
+              where: { id: payload.actorId },
+              select: { name: true },
+            });
+            actorName = actorProfile?.name || "Someone";
+          }
+        }
 
+        const snippet = message.body.length > 120 ? message.body.slice(0, 120) + "..." : message.body;
         const link = `${process.env.NEXT_PUBLIC_APP_URL || "https://app.slipwise.app"}/app/messaging/conversations/${payload.conversationId}`;
 
-        // A. Handle Mention Notifications
+        // A. Handle Mention Notifications (Only for internal users in non-portal or internal notes)
         const mentionedUserIds = payload.mentionIds || [];
         const validMentions = mentionedUserIds.filter((id) => id !== payload.actorId);
         const uniqueMentions = [...new Set(validMentions)];
@@ -474,73 +498,52 @@ export async function processNotificationEvents(
           }
         }
 
-        // B. Handle Reply Notifications (for thread.replied event type)
-        if (event.eventType === "conversation.thread.replied" && payload.threadId) {
-          const thread = await db.conversationThread.findUnique({
-            where: { id: payload.threadId, orgId },
-            include: {
-              anchorMessage: {
-                select: { authorId: true },
-              },
-            },
-          });
+        // B. Handle Reply Notifications for PORTAL and non-PORTAL conversations
+        if (message.conversation.type === "PORTAL") {
+          if (message.customerId !== null) {
+            // Sent by portal client (customer) -> notify internal operators
+            const customer = await db.customer.findUnique({
+              where: { id: message.conversation.customerId || message.customerId },
+              select: { name: true },
+            });
+            const customerName = customer?.name || "Portal Client";
 
-          if (thread) {
-            // Query distinct prior thread authors
-            const priorMessages = await db.conversationMessage.findMany({
+            const assigneeId = message.conversation.assigneeId;
+            const participants = await db.conversationParticipant.findMany({
               where: {
                 orgId,
-                conversationId: payload.conversationId,
-                threadId: payload.threadId,
+                conversationId: message.conversationId,
+                kind: "INTERNAL_MEMBER",
+                leftAt: null,
               },
-              select: { authorId: true },
+              select: { userId: true },
             });
 
-            const potentialReplyRecipients = [
-              thread.anchorMessage.authorId,
-              ...priorMessages.map((m) => m.authorId),
-            ];
+            const recipientIds = new Set<string>();
+            if (assigneeId) {
+              recipientIds.add(assigneeId);
+            }
+            participants.forEach((p) => {
+              if (p.userId) recipientIds.add(p.userId);
+            });
 
-            // Exclude actor and those who already received mention notifications for this message
-            const replyRecipients = potentialReplyRecipients.filter(
-              (id) => id !== payload.actorId && !notifiedMentionIds.includes(id),
-            );
-            const uniqueReplyRecipients = [...new Set(replyRecipients)];
+            if (payload.actorId) {
+              recipientIds.delete(payload.actorId);
+            }
 
-            if (uniqueReplyRecipients.length > 0) {
-              // Verify active participant status
-              const activeParticipants = await db.conversationParticipant.findMany({
-                where: {
-                  orgId,
-                  conversationId: payload.conversationId,
-                  userId: { in: uniqueReplyRecipients },
-                  leftAt: null,
-                },
-                select: { userId: true },
+            const uniqueRecipients = Array.from(recipientIds);
+            if (uniqueRecipients.length > 0) {
+              const prefs = await db.messagingNotificationPreference.findMany({
+                where: { orgId, userId: { in: uniqueRecipients } },
               });
-
-              const activeReplyUserIds = activeParticipants.map((p) => p.userId);
-
-              // Batch fetch profiles, preferences, and mute states for replies
-              const replyProfiles = await db.profile.findMany({
-                where: { id: { in: activeReplyUserIds } },
-                select: { id: true, email: true },
-              });
-              const replyProfileMap = new Map<string, string | null>(
-                replyProfiles.map((p) => [p.id, p.email])
-              );
-
-              const replyPrefs = await db.messagingNotificationPreference.findMany({
-                where: { orgId, userId: { in: activeReplyUserIds } },
-              });
-              const replyPrefMap = new Map<string, MessagingPreferences>(
-                replyPrefs.map((p) => [p.userId, p])
+              const prefMap = new Map<string, MessagingPreferences>(
+                prefs.map((p) => [p.userId, p])
               );
 
               const readStates = await db.conversationReadState.findMany({
                 where: {
                   conversationId: payload.conversationId,
-                  userId: { in: activeReplyUserIds },
+                  userId: { in: uniqueRecipients },
                 },
                 select: { userId: true, isMuted: true },
               });
@@ -548,31 +551,202 @@ export async function processNotificationEvents(
                 readStates.map((rs) => [rs.userId, rs.isMuted])
               );
 
-              for (const recipientId of activeReplyUserIds) {
-                const pref = replyPrefMap.get(recipientId) || DEFAULT_PREFERENCES;
+              const profiles = await db.profile.findMany({
+                where: { id: { in: uniqueRecipients } },
+                select: { id: true, email: true },
+              });
+              const profileMap = new Map<string, string | null>(
+                profiles.map((p) => [p.id, p.email])
+              );
+
+              for (const recipientId of uniqueRecipients) {
+                const pref = prefMap.get(recipientId) || DEFAULT_PREFERENCES;
                 const isMuted = readStateMap.get(recipientId) ?? false;
 
-                if (
-                  pref.allNotificationsEnabled &&
-                  pref.repliesEnabled &&
-                  !isMuted
-                ) {
-                  const email = replyProfileMap.get(recipientId) || null;
+                if (pref.allNotificationsEnabled && pref.repliesEnabled && !isMuted) {
+                  const email = profileMap.get(recipientId) || null;
                   const inQuietHours = isCurrentlyInQuietHours(pref, timezone);
 
                   await createNotification({
                     userId: recipientId,
                     orgId,
                     type: "REPLY",
-                    title: `New reply in ${message.conversation.name || "conversation"}`,
-                    body: `${actorName}: ${snippet}`,
+                    title: `New portal reply from ${customerName}`,
+                    body: `${customerName}: ${snippet}`,
                     link,
                     emailRequested: !inQuietHours && Boolean(email),
                     recipientEmail: !inQuietHours ? (email ?? undefined) : undefined,
                     sourceModule: "messaging",
                     sourceRef: message.id,
-                    dedupeKey: `reply:${message.id}`,
+                    dedupeKey: `portal-reply-internal:${message.id}:${recipientId}`,
                   });
+                }
+              }
+            }
+          } else if (message.authorId !== null) {
+            // Sent by internal operator -> notify portal client (customer)
+            if (message.audience === "EXTERNAL_VISIBLE") {
+              const customer = await db.customer.findUnique({
+                where: { id: message.conversation.customerId },
+                select: { id: true, name: true, email: true },
+              });
+
+              if (customer && customer.email) {
+                const org = await db.organization.findUnique({
+                  where: { id: orgId },
+                  select: { slug: true, name: true },
+                });
+                const orgSlug = org?.slug;
+                const orgName = org?.name || "Support";
+
+                const clientLink = `${process.env.NEXT_PUBLIC_APP_URL || "https://app.slipwise.app"}/portal/${orgSlug}/client-hub/messages/${message.conversationId}`;
+
+                const alreadyNotified = await db.messagingAuditEvent.findFirst({
+                  where: {
+                    orgId,
+                    conversationId: message.conversationId,
+                    messageId: message.id,
+                    action: "PORTAL_MESSAGE_SENT",
+                    summary: `Client notification email sent for message ${message.id}`,
+                  },
+                });
+
+                if (!alreadyNotified) {
+                  const emailHtml = `
+                    <div style="font-family: Inter, sans-serif; max-width: 480px; margin: 0 auto; padding: 40px 24px;">
+                      <h1 style="font-size: 20px; font-weight: 700; color: #1a1a1a; margin-bottom: 8px;">New message from ${orgName}</h1>
+                      <p style="color: #555; margin-bottom: 24px;">
+                        Hi ${customer.name}, you have received a new message regarding your discussion:
+                      </p>
+                      <div style="background: #f8fafc; border-left: 4px solid #3b82f6; padding: 16px; margin-bottom: 24px; font-style: italic; color: #334155;">
+                        "${snippet}"
+                      </div>
+                      <a href="${clientLink}" style="display: inline-block; background: #2563eb; color: #fff; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 600;">
+                        View Message in Portal
+                      </a>
+                    </div>
+                  `;
+
+                  await sendEmail({
+                    to: customer.email,
+                    subject: `New message from ${orgName}`,
+                    html: emailHtml,
+                  });
+
+                  await logMessagingAudit({
+                    orgId,
+                    actorId: message.authorId,
+                    action: "PORTAL_MESSAGE_SENT",
+                    summary: `Client notification email sent for message ${message.id}`,
+                    conversationId: message.conversationId,
+                    messageId: message.id,
+                    metadata: { type: "client_notification", channel: "email", recipientEmail: customer.email },
+                  });
+                }
+              }
+            }
+          }
+        } else {
+          // B. Handle Thread Reply Notifications (non-portal only)
+          if (event.eventType === "conversation.thread.replied" && payload.threadId) {
+            const thread = await db.conversationThread.findUnique({
+              where: { id: payload.threadId, orgId },
+              include: {
+                anchorMessage: {
+                  select: { authorId: true },
+                },
+              },
+            });
+
+            if (thread) {
+              // Query distinct prior thread authors
+              const priorMessages = await db.conversationMessage.findMany({
+                where: {
+                  orgId,
+                  conversationId: payload.conversationId,
+                  threadId: payload.threadId,
+                },
+                select: { authorId: true },
+              });
+
+              const potentialReplyRecipients = [
+                thread.anchorMessage.authorId,
+                ...priorMessages.map((m) => m.authorId),
+              ];
+
+              // Exclude actor and those who already received mention notifications for this message
+              const replyRecipients = potentialReplyRecipients.filter(
+                (id) => id !== payload.actorId && !notifiedMentionIds.includes(id),
+              );
+              const uniqueReplyRecipients = [...new Set(replyRecipients)];
+
+              if (uniqueReplyRecipients.length > 0) {
+                // Verify active participant status
+                const activeParticipants = await db.conversationParticipant.findMany({
+                  where: {
+                    orgId,
+                    conversationId: payload.conversationId,
+                    userId: { in: uniqueReplyRecipients },
+                    leftAt: null,
+                  },
+                  select: { userId: true },
+                });
+
+                const activeReplyUserIds = activeParticipants.map((p) => p.userId);
+
+                // Batch fetch profiles, preferences, and mute states for replies
+                const replyProfiles = await db.profile.findMany({
+                  where: { id: { in: activeReplyUserIds } },
+                  select: { id: true, email: true },
+                });
+                const replyProfileMap = new Map<string, string | null>(
+                  replyProfiles.map((p) => [p.id, p.email])
+                );
+
+                const replyPrefs = await db.messagingNotificationPreference.findMany({
+                  where: { orgId, userId: { in: activeReplyUserIds } },
+                });
+                const replyPrefMap = new Map<string, MessagingPreferences>(
+                  replyPrefs.map((p) => [p.userId, p])
+                );
+
+                const readStates = await db.conversationReadState.findMany({
+                  where: {
+                    conversationId: payload.conversationId,
+                    userId: { in: activeReplyUserIds },
+                  },
+                  select: { userId: true, isMuted: true },
+                });
+                const readStateMap = new Map<string, boolean>(
+                  readStates.map((rs) => [rs.userId, rs.isMuted])
+                );
+
+                for (const recipientId of activeReplyUserIds) {
+                  const pref = replyPrefMap.get(recipientId) || DEFAULT_PREFERENCES;
+                  const isMuted = readStateMap.get(recipientId) ?? false;
+
+                  if (
+                    pref.allNotificationsEnabled &&
+                    pref.repliesEnabled &&
+                    !isMuted
+                  ) {
+                    const email = replyProfileMap.get(recipientId) || null;
+                    const inQuietHours = isCurrentlyInQuietHours(pref, timezone);
+
+                    await createNotification({
+                      userId: recipientId,
+                      orgId,
+                      type: "REPLY",
+                      title: `New reply in ${message.conversation.name || "conversation"}`,
+                      body: `${actorName}: ${snippet}`,
+                      link,
+                      emailRequested: !inQuietHours && Boolean(email),
+                      recipientEmail: !inQuietHours ? (email ?? undefined) : undefined,
+                      sourceModule: "messaging",
+                      sourceRef: message.id,
+                      dedupeKey: `reply:${message.id}`,
+                    });
+                  }
                 }
               }
             }

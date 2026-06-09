@@ -4,6 +4,8 @@ import { db } from "@/lib/db";
 import { requirePortalSession } from "@/lib/portal-auth";
 import { sendMessage } from "@/lib/messaging";
 import { revalidatePath } from "next/cache";
+import { uploadFileServer, getSignedUrlServer } from "@/lib/storage/upload-server";
+import { mintUploadToken, verifyUploadToken } from "@/lib/messaging/service-helpers";
 
 export type ActionResult<T> =
   | { success: true; data: T }
@@ -153,6 +155,12 @@ export interface PortalConversationDetail {
     createdAt: Date;
     isFromClient: boolean;
     authorName: string;
+    attachments: Array<{
+      id: string;
+      fileName: string;
+      mimeType: string;
+      sizeBytes: number;
+    }>;
   }>;
 }
 
@@ -192,6 +200,14 @@ export async function getPortalConversationDetail(
       orderBy: { createdAt: "asc" },
       include: {
         customer: { select: { name: true } },
+        attachments: {
+          select: {
+            id: true,
+            fileName: true,
+            mimeType: true,
+            sizeBytes: true,
+          },
+        },
       },
     });
 
@@ -226,6 +242,7 @@ export async function getPortalConversationDetail(
         createdAt: m.createdAt,
         isFromClient,
         authorName,
+        attachments: m.attachments,
       };
     });
 
@@ -275,14 +292,21 @@ export async function getPortalConversationDetail(
 export async function submitPortalConversationReply(
   orgSlug: string,
   conversationId: string,
-  body: string
+  body: string,
+  attachments?: Array<{
+    storageRef: string;
+    fileName: string;
+    mimeType: string;
+    sizeBytes: number;
+    uploadToken: string;
+  }>
 ): Promise<ActionResult<{ messageId: string }>> {
   try {
     const session = await requirePortalSession(orgSlug);
     await validateCustomerEligibility(session.customerId, session.orgId, orgSlug);
 
     const trimmedBody = body.trim();
-    if (!trimmedBody) {
+    if (!trimmedBody && (!attachments || attachments.length === 0)) {
       return { success: false, error: "Message content cannot be empty" };
     }
 
@@ -302,6 +326,25 @@ export async function submitPortalConversationReply(
 
     if (conversation.portalState === "CLOSED") {
       return { success: false, error: "This conversation is closed. Replies are disabled." };
+    }
+
+    // Validate upload tokens for all attachments:
+    if (attachments && attachments.length > 0) {
+      for (const att of attachments) {
+        if (!verifyUploadToken(session.orgId, session.customerId, att.storageRef, att.uploadToken)) {
+          // Log access blocked
+          await db.messagingAuditEvent.create({
+            data: {
+              orgId: session.orgId,
+              actorId: session.customerId,
+              action: "PORTAL_CONVERSATION_ACCESS_BLOCKED",
+              summary: `Blocked portal reply: Invalid attachment upload token for ref: ${att.storageRef}`,
+              conversationId,
+            },
+          });
+          return { success: false, error: "Invalid upload token for attachment." };
+        }
+      }
     }
 
     // Idempotency / Double submit protection: check if client sent exact same message in last 10s
@@ -324,6 +367,12 @@ export async function submitPortalConversationReply(
       conversationId,
       authorId: session.customerId,
       body: trimmedBody,
+      attachments: attachments ? attachments.map((att) => ({
+        storageRef: att.storageRef,
+        fileName: att.fileName,
+        mimeType: att.mimeType,
+        sizeBytes: att.sizeBytes,
+      })) : undefined,
     });
 
     revalidatePath(`/portal/${orgSlug}/client-hub/messages`);
@@ -401,5 +450,187 @@ export async function markPortalConversationAsRead(
   } catch (error: any) {
     console.error("[portal-messages] markPortalConversationAsRead error:", error);
     return { success: false, error: error.message || "Failed to update read state" };
+  }
+}
+
+const PORTAL_ALLOWED_MIME_TYPES = new Set([
+  "image/png", "image/jpeg", "image/gif", "image/webp", "image/svg+xml",
+  "application/pdf",
+  "text/plain", "text/csv",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/msword",
+  "application/zip", "application/x-zip-compressed",
+]);
+
+const PORTAL_BLOCKED_EXTENSIONS = new Set([
+  ".exe", ".com", ".bat", ".cmd", ".msi", ".scr",
+  ".vbs", ".ps1", ".sh", ".dll", ".sys",
+]);
+
+const PORTAL_MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
+
+export async function uploadPortalAttachment(
+  orgSlug: string,
+  formData: FormData
+): Promise<ActionResult<{ storageRef: string; uploadToken: string; fileName: string; mimeType: string; sizeBytes: number }>> {
+  try {
+    const session = await requirePortalSession(orgSlug);
+    await validateCustomerEligibility(session.customerId, session.orgId, orgSlug);
+
+    const file = formData.get("file");
+    if (!file || !(file instanceof File)) {
+      return { success: false, error: "No file provided" };
+    }
+
+    const fileName = file.name;
+    const mimeType = file.type;
+    const sizeBytes = file.size;
+
+    if (!PORTAL_ALLOWED_MIME_TYPES.has(mimeType)) {
+      return { success: false, error: `File type "${mimeType}" is not supported.` };
+    }
+
+    const ext = fileName.slice(fileName.lastIndexOf(".")).toLowerCase();
+    if (PORTAL_BLOCKED_EXTENSIONS.has(ext)) {
+      return { success: false, error: "File extension is blocked for security reasons." };
+    }
+
+    if (sizeBytes <= 0) {
+      return { success: false, error: "The uploaded file is empty." };
+    }
+
+    if (sizeBytes > PORTAL_MAX_FILE_SIZE) {
+      return { success: false, error: "File size exceeds the 50 MB limit." };
+    }
+
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
+    const storageKey = `${session.orgId}/messaging/${Date.now()}-${safeName}`;
+
+    const { storageKey: savedKey } = await uploadFileServer(
+      "attachments",
+      storageKey,
+      buffer,
+      mimeType,
+    );
+
+    // Reuse the existing uploadToken mechanism by passing customerId as userId
+    const uploadToken = mintUploadToken(session.orgId, session.customerId, savedKey);
+
+    // Emit audit event
+    await db.messagingAuditEvent.create({
+      data: {
+        orgId: session.orgId,
+        actorId: session.customerId,
+        action: "PORTAL_ATTACHMENT_UPLOADED",
+        summary: `Client uploaded portal attachment: ${fileName}`,
+        metadata: {
+          fileName,
+          mimeType,
+          sizeBytes,
+        },
+      },
+    });
+
+    return {
+      success: true,
+      data: {
+        storageRef: savedKey,
+        uploadToken,
+        fileName,
+        mimeType,
+        sizeBytes,
+      },
+    };
+  } catch (error: any) {
+    console.error("[portal-messages] uploadPortalAttachment error:", error);
+    return { success: false, error: error.message || "Upload failed" };
+  }
+}
+
+export async function getPortalAttachmentDownloadUrl(
+  orgSlug: string,
+  attachmentId: string
+): Promise<ActionResult<{ signedUrl: string; fileName: string; mimeType: string }>> {
+  try {
+    const session = await requirePortalSession(orgSlug);
+    await validateCustomerEligibility(session.customerId, session.orgId, orgSlug);
+
+    const attachment = await db.conversationAttachment.findFirst({
+      where: { id: attachmentId, orgId: session.orgId },
+      select: {
+        id: true,
+        storageRef: true,
+        fileName: true,
+        mimeType: true,
+        messageId: true,
+      },
+    });
+
+    if (!attachment) {
+      return { success: false, error: "Attachment not found or access denied" };
+    }
+
+    // Traverse attachment → message → conversation, then verify membership
+    const message = await db.conversationMessage.findFirst({
+      where: {
+        id: attachment.messageId,
+        orgId: session.orgId,
+        audience: "EXTERNAL_VISIBLE",
+        status: { not: "DELETED" },
+      },
+      select: { conversationId: true },
+    });
+
+    if (!message) {
+      return { success: false, error: "Attachment not found or access denied" };
+    }
+
+    const conversation = await db.conversation.findFirst({
+      where: {
+        id: message.conversationId,
+        orgId: session.orgId,
+        customerId: session.customerId,
+        type: "PORTAL",
+      },
+    });
+
+    if (!conversation) {
+      return { success: false, error: "Attachment not found or access denied" };
+    }
+
+    const participant = await db.conversationParticipant.findFirst({
+      where: {
+        orgId: session.orgId,
+        conversationId: message.conversationId,
+        customerId: session.customerId,
+        leftAt: null,
+      },
+    });
+
+    if (!participant) {
+      return { success: false, error: "Attachment not found or access denied" };
+    }
+
+    const signedUrl = await getSignedUrlServer(
+      "attachments",
+      attachment.storageRef,
+      300, // 5-minute expiry
+      { download: attachment.fileName },
+    );
+
+    return {
+      success: true,
+      data: {
+        signedUrl,
+        fileName: attachment.fileName,
+        mimeType: attachment.mimeType,
+      },
+    };
+  } catch (error: any) {
+    console.error("[portal-messages] getPortalAttachmentDownloadUrl error:", error);
+    return { success: false, error: error.message || "Failed to generate download link" };
   }
 }
