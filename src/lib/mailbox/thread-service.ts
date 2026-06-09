@@ -15,6 +15,8 @@ import { upsertMailboxAttachment, upsertMailboxMessage, upsertMailboxThread, upd
 import { deriveThreadLastMessageAt, deriveThreadPreviewSnippet, computeThreadAttachmentCount } from "./normalization-service";
 import { deriveThreadParticipants } from "./participant-service";
 import type { MailboxFolder } from "@/app/app/mailbox/types";
+import { getBatchMailboxFolderCoverage } from "./folder-coverage-service";
+import { connectionRequiresReconnect } from "./domain-types";
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
@@ -73,6 +75,56 @@ function parseSearchTerms(query: string): {
   return { textSearch, fromFilter, toFilter, folderHint };
 }
 
+interface SearchDiagnostics {
+  query: string;
+  mode: "local" | "gmail_exact" | "hybrid";
+  connectionStates: Array<{
+    connectionId: string;
+    status: string;
+    reason: string;
+    coverageComplete: boolean;
+    providerHitCount: number;
+    localFallbackCount: number;
+    hydrationMissCount: number;
+  }>;
+}
+
+
+/**
+ * Determine whether a connection status represents actual search degradation
+ * for the given search mode, versus an expected capability limitation.
+ *
+ * In local mode, provider_unsupported is informational -- local search IS the
+ * authoritative path for non-Gmail connections and should not trigger degraded UX.
+ * In gmail_exact mode, provider_unsupported means the adapter cannot perform
+ * provider search, which IS a real degradation for that connection.
+ */
+function isSearchModeDegradedStatus(
+  status: string,
+  searchMode: "local" | "gmail_exact" | "hybrid",
+): boolean {
+  if (status === "ok") return false;
+  if (searchMode === "local" && status === "provider_unsupported") return false;
+  return true;
+}
+
+function logSearchDiagnostics(diagnostics: SearchDiagnostics) {
+  console.log("[SearchDiagnostics]", JSON.stringify({
+    timestamp: new Date().toISOString(),
+    queryLength: diagnostics.query.length,
+    mode: diagnostics.mode,
+    connections: diagnostics.connectionStates.map(c => ({
+      connectionId: c.connectionId,
+      status: c.status,
+      reason: c.reason,
+      coverageComplete: c.coverageComplete,
+      providerHitCount: c.providerHitCount,
+      localFallbackCount: c.localFallbackCount,
+      hydrationMissCount: c.hydrationMissCount,
+    })),
+  }));
+}
+
 export interface ListMailboxThreadsParams {
   orgId: string;
   userId: string;
@@ -105,10 +157,22 @@ export interface ListMailboxThreadsResult {
 }
 
 export interface MailboxSearchMeta {
-  mode: "local" | "gmail_exact";
+  mode: "local" | "gmail_exact" | "hybrid";
   totalCountIsExact: boolean;
   partial: boolean;
   partialConnectionIds: string[];
+  coverageState: "complete" | "partial" | "unknown";
+  connectionStates: Array<{
+    connectionId: string;
+    status:
+      | "ok"
+      | "coverage_incomplete"
+      | "auth_expired"
+      | "provider_failed"
+      | "hydration_failed"
+      | "provider_unsupported";
+    reason: string;
+  }>;
 }
 
 type LocalCursorPayload = {
@@ -592,6 +656,8 @@ export async function listMailboxThreads(
             totalCountIsExact: true,
             partial: false,
             partialConnectionIds: [],
+            coverageState: "unknown" as const,
+            connectionStates: [],
           }
         : undefined,
     };
@@ -708,12 +774,62 @@ export async function listMailboxThreads(
         ? decodedCursor
         : null;
 
-    const gmailConnections = connectionIdsToQuery
+    const { coveragesByConnectionId } = await getBatchMailboxFolderCoverage(
+      orgId,
+      connectionIdsToQuery,
+    );
+
+    const connectionStatusMap = new Map<
+      string,
+      {
+        status:
+          | "ok"
+          | "coverage_incomplete"
+          | "auth_expired"
+          | "provider_failed"
+          | "hydration_failed"
+          | "provider_unsupported";
+        reason: string;
+      }
+    >();
+
+    for (const connId of connectionIdsToQuery) {
+      const record = accessibleRecordById.get(connId);
+      if (!record) continue;
+
+      if (record.provider !== "GMAIL") {
+        connectionStatusMap.set(connId, {
+          status: "provider_unsupported",
+          reason: "Provider search is unsupported for this provider",
+        });
+      } else if (connectionRequiresReconnect(record.status)) {
+        connectionStatusMap.set(connId, {
+          status: "auth_expired",
+          reason: "Authentication token is expired or revoked. Reconnect required.",
+        });
+      } else {
+        const overallState = coveragesByConnectionId.get(connId)?.overallState;
+        if (overallState !== "COMPLETE") {
+          connectionStatusMap.set(connId, {
+            status: "coverage_incomplete",
+            reason: `Search coverage still catching up (status: ${overallState ?? "PENDING"})`,
+          });
+        } else {
+          connectionStatusMap.set(connId, {
+            status: "ok",
+            reason: "Mailbox connection is healthy",
+          });
+        }
+      }
+    }
+
+    const requestedGmailConnections = connectionIdsToQuery
       .map((id) => accessibleRecordById.get(id))
-      .filter(
-        (record): record is MailboxConnectionRecord =>
-          !!record && record.provider === "GMAIL" && typeof record.tokenRef === "string",
-      );
+      .filter((record): record is MailboxConnectionRecord => !!record && record.provider === "GMAIL");
+
+    const gmailConnections = requestedGmailConnections.filter(
+      (record) => typeof record.tokenRef === "string" && !connectionRequiresReconnect(record.status)
+    );
 
     if (gmailConnections.length === 0) {
       const where = buildSearchWhere(baseWhere, trimmedQuery);
@@ -769,16 +885,66 @@ export async function listMailboxThreads(
       const mappedThreads = pageRows.map(toMailboxThreadReadShape);
       const threads = await enrichThreadsWithAssigneeNames(mappedThreads);
 
+      const connectionStates = connectionIdsToQuery.map(id => {
+        const state = connectionStatusMap.get(id) || { status: "ok" as const, reason: "Mailbox connection is healthy" };
+        return {
+          connectionId: id,
+          status: state.status,
+          reason: state.reason,
+        };
+      });
+
+      // In local mode, provider_unsupported for non-Gmail connections is
+      // informational only -- local search IS the authoritative path for those
+      // connections. Only flag statuses that genuinely degrade the local search.
+      const hasDegraded = connectionStates.some(cs =>
+        isSearchModeDegradedStatus(cs.status, "local"),
+      );
+      const partialConnectionIds = connectionStates
+        .filter(cs => isSearchModeDegradedStatus(cs.status, "local"))
+        .map(cs => cs.connectionId);
+
+      let coverageState: "complete" | "partial" | "unknown" = "unknown";
+      if (requestedGmailConnections.length > 0) {
+        const allComplete = requestedGmailConnections.every(conn => {
+          const overallState = coveragesByConnectionId.get(conn.id)?.overallState;
+          return overallState === "COMPLETE";
+        });
+        coverageState = allComplete ? "complete" : "partial";
+      }
+
+      const searchMetaResult: MailboxSearchMeta = {
+        mode: "local",
+        totalCountIsExact: true,
+        partial: hasDegraded,
+        partialConnectionIds,
+        coverageState,
+        connectionStates,
+      };
+
+      logSearchDiagnostics({
+        query: trimmedQuery,
+        mode: "local",
+        connectionStates: connectionIdsToQuery.map(id => {
+          const state = connectionStatusMap.get(id) || { status: "ok" as const, reason: "Mailbox connection is healthy" };
+          const overallState = coveragesByConnectionId.get(id)?.overallState;
+          return {
+            connectionId: id,
+            status: state.status,
+            reason: state.reason,
+            coverageComplete: overallState === "COMPLETE",
+            providerHitCount: 0,
+            localFallbackCount: pageRows.filter(r => r.mailboxConnectionId === id).length,
+            hydrationMissCount: 0,
+          };
+        }),
+      });
+
       return {
         threads,
         nextCursor,
         totalCount,
-        searchMeta: {
-          mode: "local",
-          totalCountIsExact: true,
-          partial: false,
-          partialConnectionIds: [],
-        },
+        searchMeta: searchMetaResult,
       };
     }
 
@@ -798,9 +964,22 @@ export async function listMailboxThreads(
 
     const SEARCH_MAX_PROVIDER_RESULTS = Math.min(Math.max(limit * 2, 50), 100);
 
+    const providerHitsCountMap = new Map<string, number>();
+    const localFallbackCountMap = new Map<string, number>();
+    const hydrationMissCountMap = new Map<string, number>();
+
     while (bufferedThreadKeys.length < limit) {
       const bufferedCountBeforeLoop = bufferedThreadKeys.length;
       const pendingConnections = gmailConnections.filter((connection) => {
+        if (connectionRequiresReconnect(connection.status)) {
+          partialConnectionIds.add(connection.id);
+          connectionPageTokens.set(connection.id, undefined);
+          connectionStatusMap.set(connection.id, {
+            status: "auth_expired",
+            reason: "Authentication token is expired or revoked. Reconnect required.",
+          });
+          return false;
+        }
         if (!connectionPageTokens.has(connection.id)) {
           return true;
         }
@@ -823,6 +1002,10 @@ export async function listMailboxThreads(
         if (!adapter.searchThreads) {
           partialConnectionIds.add(connection.id);
           connectionPageTokens.set(connection.id, undefined);
+          connectionStatusMap.set(connection.id, {
+            status: "provider_unsupported",
+            reason: "Provider search is unsupported for this connection",
+          });
           continue;
         }
 
@@ -839,6 +1022,12 @@ export async function listMailboxThreads(
         if (isMailboxProviderError(result)) {
           partialConnectionIds.add(connection.id);
           connectionPageTokens.set(connection.id, undefined);
+
+          const isAuthErr = result.category === "auth_expired" || result.category === "auth_insufficient";
+          connectionStatusMap.set(connection.id, {
+            status: isAuthErr ? "auth_expired" : "provider_failed",
+            reason: result.safeMessage,
+          });
           continue;
         }
 
@@ -859,8 +1048,11 @@ export async function listMailboxThreads(
           appendedFromConnection += 1;
         }
 
-        // Guard against sticky provider pagination loops that keep returning
-        // duplicate hits with the same page token.
+        providerHitsCountMap.set(
+          connection.id,
+          (providerHitsCountMap.get(connection.id) || 0) + result.hits.length
+        );
+
         if (appendedFromConnection === 0 && result.nextPageToken === token) {
           connectionPageTokens.set(connection.id, undefined);
         }
@@ -891,6 +1083,11 @@ export async function listMailboxThreads(
         if (seenThreadKeys.has(key)) continue;
         bufferedThreadKeys.push(key);
         seenThreadKeys.add(key);
+
+        localFallbackCountMap.set(
+          row.mailboxConnectionId,
+          (localFallbackCountMap.get(row.mailboxConnectionId) || 0) + 1
+        );
       }
     }
 
@@ -902,10 +1099,26 @@ export async function listMailboxThreads(
       const parsed = splitThreadKey(key);
       if (!parsed) continue;
       const connection = accessibleRecordById.get(parsed.connectionId);
-      if (!connection || !connection.tokenRef || connection.provider !== "GMAIL") {
+      if (!connection || !connection.tokenRef || connection.provider !== "GMAIL" || connectionRequiresReconnect(connection.status)) {
         partialConnectionIds.add(parsed.connectionId);
+        if (connection && connectionRequiresReconnect(connection.status)) {
+          connectionStatusMap.set(parsed.connectionId, {
+            status: "auth_expired",
+            reason: "Authentication token is expired or revoked. Reconnect required.",
+          });
+        } else {
+          connectionStatusMap.set(parsed.connectionId, {
+            status: "hydration_failed",
+            reason: "Hydration skipped: connection is not operational or has no tokenRef",
+          });
+        }
         continue;
       }
+
+      hydrationMissCountMap.set(
+        parsed.connectionId,
+        (hydrationMissCountMap.get(parsed.connectionId) || 0) + 1
+      );
 
       try {
         await hydrateThreadFromProvider({
@@ -913,8 +1126,12 @@ export async function listMailboxThreads(
           connection,
           providerThreadId: parsed.providerThreadId,
         });
-      } catch {
+      } catch (err) {
         partialConnectionIds.add(parsed.connectionId);
+        connectionStatusMap.set(parsed.connectionId, {
+          status: "hydration_failed",
+          reason: err instanceof Error ? err.message : "Some threads failed to hydrate from provider",
+        });
       }
     }
 
@@ -926,7 +1143,16 @@ export async function listMailboxThreads(
       const thread = resolvedByKey.get(key);
       if (!thread) {
         const parsed = splitThreadKey(key);
-        if (parsed) partialConnectionIds.add(parsed.connectionId);
+        if (parsed) {
+          partialConnectionIds.add(parsed.connectionId);
+          const current = connectionStatusMap.get(parsed.connectionId);
+          if (!current || current.status === "ok") {
+            connectionStatusMap.set(parsed.connectionId, {
+              status: "hydration_failed",
+              reason: "Thread failed to resolve after hydration attempt",
+            });
+          }
+        }
         continue;
       }
 
@@ -957,16 +1183,65 @@ export async function listMailboxThreads(
           })
         : null;
 
+    const connectionStates = connectionIdsToQuery.map(id => {
+      const state = connectionStatusMap.get(id) || { status: "ok" as const, reason: "Mailbox connection is healthy" };
       return {
-        threads: orderedThreads,
-        nextCursor,
-        totalCount: null,
-        searchMeta: {
-          mode: "gmail_exact",
-          totalCountIsExact: false,
-        partial: partialConnectionIds.size > 0,
-        partialConnectionIds: [...partialConnectionIds],
-      },
+        connectionId: id,
+        status: state.status,
+        reason: state.reason,
+      };
+    });
+
+    // In gmail_exact mode, provider_unsupported means the adapter cannot perform
+    // provider search -- this IS a real degradation.
+    const hasDegraded = connectionStates.some(cs =>
+      isSearchModeDegradedStatus(cs.status, "gmail_exact"),
+    );
+    const finalPartialConnectionIds = connectionStates
+      .filter(cs => isSearchModeDegradedStatus(cs.status, "gmail_exact"))
+      .map(cs => cs.connectionId);
+
+    let coverageState: "complete" | "partial" | "unknown" = "unknown";
+    if (gmailConnections.length > 0) {
+      const allComplete = gmailConnections.every(conn => {
+        const overallState = coveragesByConnectionId.get(conn.id)?.overallState;
+        return overallState === "COMPLETE";
+      });
+      coverageState = allComplete ? "complete" : "partial";
+    }
+
+    const searchMetaResult: MailboxSearchMeta = {
+      mode: "gmail_exact",
+      totalCountIsExact: false,
+      partial: hasDegraded,
+      partialConnectionIds: finalPartialConnectionIds,
+      coverageState,
+      connectionStates,
+    };
+
+    logSearchDiagnostics({
+      query: trimmedQuery,
+      mode: "gmail_exact",
+      connectionStates: connectionIdsToQuery.map(id => {
+        const state = connectionStatusMap.get(id) || { status: "ok" as const, reason: "Mailbox connection is healthy" };
+        const overallState = coveragesByConnectionId.get(id)?.overallState;
+        return {
+          connectionId: id,
+          status: state.status,
+          reason: state.reason,
+          coverageComplete: overallState === "COMPLETE",
+          providerHitCount: providerHitsCountMap.get(id) || 0,
+          localFallbackCount: localFallbackCountMap.get(id) || 0,
+          hydrationMissCount: hydrationMissCountMap.get(id) || 0,
+        };
+      }),
+    });
+
+    return {
+      threads: orderedThreads,
+      nextCursor,
+      totalCount: null,
+      searchMeta: searchMetaResult,
     };
   }
 

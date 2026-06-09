@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
 import type { MailboxSearchMeta } from "@/lib/mailbox/thread-service";
+import { getFriendlyDegradedMessage } from "./mailbox-empty-states";
 import {
   Paperclip,
   Flag,
@@ -361,6 +362,7 @@ interface MailboxThreadListProps {
   onLoadMore?: () => void;
   isActionLoading?: boolean;
   onThreadAction?: (threadId: string, action: ThreadAction) => void;
+  connections?: Array<{ id: string; displayName: string; emailAddress: string }>;
 }
 
 export function MailboxThreadList({
@@ -378,6 +380,7 @@ export function MailboxThreadList({
   onLoadMore,
   isActionLoading = false,
   onThreadAction,
+  connections,
 }: MailboxThreadListProps & { isLoading?: boolean }) {
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
@@ -481,8 +484,8 @@ export function MailboxThreadList({
           data-testid="mailbox-thread-list-footer"
         >
           <div className="flex items-center justify-between gap-3">
-            <span data-testid="mailbox-thread-list-footer-count">
-              {searchMeta?.mode === "gmail_exact" && !searchMeta.totalCountIsExact
+             <span data-testid="mailbox-thread-list-footer-count">
+              {((searchMeta?.mode === "gmail_exact" || searchMeta?.mode === "hybrid") && !searchMeta.totalCountIsExact)
                 ? `Loaded ${resolvedLoadedCount} result${resolvedLoadedCount === 1 ? "" : "s"}`
                 : `Loaded ${Math.min(resolvedLoadedCount, resolvedTotalCount)} of ${resolvedTotalCount}`}
             </span>
@@ -509,8 +512,23 @@ export function MailboxThreadList({
               </span>
             )}
           </div>
-          {searchMeta?.partial ? (
-            <p className="mt-1 text-[11px] text-amber-600">
+          {searchMeta?.partial && searchMeta.connectionStates ? (
+            <div className="mt-1.5 space-y-1" data-testid="mailbox-search-degraded-banner">
+              {searchMeta.connectionStates
+                .filter((cs) => cs.status !== "ok")
+                .map((cs) => {
+                  const conn = connections?.find((c) => c.id === cs.connectionId);
+                  const name = conn ? conn.displayName : cs.connectionId;
+                  return (
+                    <p key={cs.connectionId} className="text-[11px] font-medium text-amber-600 flex items-center gap-1">
+                      <span className="h-1 w-1 rounded-full bg-amber-500 shrink-0" />
+                      {getFriendlyDegradedMessage(cs.status, name)}
+                    </p>
+                  );
+                })}
+            </div>
+          ) : searchMeta?.partial ? (
+            <p className="mt-1 text-[11px] text-amber-600" data-testid="mailbox-search-degraded-banner">
               Some mailbox connections could not return complete search results.
             </p>
           ) : null}
