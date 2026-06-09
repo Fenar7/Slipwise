@@ -12,6 +12,20 @@ export interface MessagingDiagnostics {
   reminderHealth: ReminderHealth;
   digestHealth: DigestHealth;
   followUpHealth: FollowUpHealth;
+  portalConversationHealth: PortalConversationHealth;
+}
+
+export interface PortalConversationHealth {
+  totalPortalConversations: number;
+  openCount: number;
+  waitingOnInternalCount: number;
+  waitingOnClientCount: number;
+  closedCount: number;
+  unassignedCount: number;
+  conversationsWithAttachments: number;
+  latestExternalReplyAt: string | null;
+  latestInternalVisibleReplyAt: string | null;
+  incoherentStateCount: number;
 }
 
 export interface SearchIndexHealth {
@@ -96,12 +110,14 @@ export async function getMessagingDiagnostics(
     reminderHealth,
     digestHealth,
     followUpHealth,
+    portalConversationHealth,
   ] = await Promise.all([
     getSearchIndexHealth(orgId),
     getNotificationHealth(orgId),
     getReminderHealth(orgId),
     getDigestHealth(orgId),
     getFollowUpHealth(orgId),
+    getPortalConversationHealth(orgId),
   ]);
 
   return {
@@ -111,12 +127,20 @@ export async function getMessagingDiagnostics(
     reminderHealth,
     digestHealth,
     followUpHealth,
+    portalConversationHealth,
   };
 }
 
 // ─── Sub-query functions ──────────────────────────────────────────────────────
 
 async function getSearchIndexHealth(orgId: string): Promise<SearchIndexHealth> {
+  const activeMessageFilter = {
+    message: {
+      status: { not: "DELETED" },
+      deletedAt: null,
+    },
+  };
+
   const [
     totalAttachments,
     indexedCount,
@@ -127,25 +151,41 @@ async function getSearchIndexHealth(orgId: string): Promise<SearchIndexHealth> {
     blockedCount,
   ] = await Promise.all([
     db.conversationAttachment.count({
-      where: { orgId },
+      where: { orgId, ...activeMessageFilter },
     }),
     db.messagingAttachmentIndex.count({
-      where: { orgId, indexingStatus: AttachmentIndexingStatus.INDEXED },
+      where: {
+        orgId,
+        indexingStatus: AttachmentIndexingStatus.INDEXED,
+        attachment: activeMessageFilter,
+      },
     }),
     db.messagingAttachmentIndex.count({
-      where: { orgId, indexingStatus: AttachmentIndexingStatus.PENDING },
+      where: {
+        orgId,
+        indexingStatus: AttachmentIndexingStatus.PENDING,
+        attachment: activeMessageFilter,
+      },
     }),
     db.messagingAttachmentIndex.count({
-      where: { orgId, indexingStatus: AttachmentIndexingStatus.FAILED },
+      where: {
+        orgId,
+        indexingStatus: AttachmentIndexingStatus.FAILED,
+        attachment: activeMessageFilter,
+      },
     }),
     db.messagingAttachmentIndex.count({
-      where: { orgId, indexingStatus: AttachmentIndexingStatus.UNINDEXED },
+      where: {
+        orgId,
+        indexingStatus: AttachmentIndexingStatus.UNINDEXED,
+        attachment: activeMessageFilter,
+      },
     }),
     db.conversationAttachment.count({
-      where: { orgId, scanStatus: AttachmentScanStatus.PENDING },
+      where: { orgId, scanStatus: AttachmentScanStatus.PENDING, ...activeMessageFilter },
     }),
     db.conversationAttachment.count({
-      where: { orgId, scanStatus: AttachmentScanStatus.BLOCKED },
+      where: { orgId, scanStatus: AttachmentScanStatus.BLOCKED, ...activeMessageFilter },
     }),
   ]);
 
@@ -325,5 +365,82 @@ async function getFollowUpHealth(orgId: string): Promise<FollowUpHealth> {
     totalFollowUps,
     pendingFollowUps,
     resolvedFollowUps,
+  };
+}
+
+async function getPortalConversationHealth(orgId: string): Promise<PortalConversationHealth> {
+  const conversations = (await db.conversation.findMany({
+    where: { orgId, type: "PORTAL" },
+    include: {
+      participants: {
+        where: { kind: "INTERNAL_MEMBER", role: "OWNER", leftAt: null }
+      }
+    }
+  }).catch(() => [])) || [];
+
+  const portalConversationIds = conversations.map(c => c.id);
+
+  const [latestMessages, attachments] = await Promise.all([
+    portalConversationIds.length > 0 ? db.conversationMessage.findMany({
+      where: {
+        orgId,
+        conversationId: { in: portalConversationIds },
+        status: { not: "DELETED" },
+        audience: "EXTERNAL_VISIBLE",
+      },
+      orderBy: { createdAt: "desc" }
+    }).catch(() => []) : Promise.resolve([]),
+
+    portalConversationIds.length > 0 ? db.conversationAttachment.findMany({
+      where: {
+        orgId,
+        message: {
+          conversationId: { in: portalConversationIds },
+          status: { not: "DELETED" },
+          audience: "EXTERNAL_VISIBLE",
+        }
+      },
+      select: { message: { select: { conversationId: true } } }
+    }).catch(() => []) : Promise.resolve([])
+  ]);
+
+  const safeLatestMessages = latestMessages || [];
+  const safeAttachments = attachments || [];
+
+  const conversationsWithAttachments = new Set(
+    safeAttachments.map(a => a.message?.conversationId).filter(Boolean)
+  ).size;
+
+  const externalReplies = safeLatestMessages.filter(m => m.customerId !== null);
+  const latestExternalReplyAt = externalReplies.length > 0 ? externalReplies[0].createdAt.toISOString() : null;
+
+  const internalVisibleReplies = safeLatestMessages.filter(m => m.authorId !== null && m.audience === "EXTERNAL_VISIBLE");
+  const latestInternalVisibleReplyAt = internalVisibleReplies.length > 0 ? internalVisibleReplies[0].createdAt.toISOString() : null;
+
+  let incoherentStateCount = 0;
+  for (const conv of conversations) {
+    const convMsgs = safeLatestMessages.filter(m => m.conversationId === conv.id);
+    if (convMsgs.length > 0) {
+      const lastMsg = convMsgs[0];
+      const lastIsClient = lastMsg.customerId !== null;
+      if (conv.portalState === "WAITING_ON_INTERNAL" && !lastIsClient) {
+        incoherentStateCount++;
+      } else if (conv.portalState === "WAITING_ON_CLIENT" && lastIsClient) {
+        incoherentStateCount++;
+      }
+    }
+  }
+
+  return {
+    totalPortalConversations: conversations.length,
+    openCount: conversations.filter(c => c.portalState === "OPEN").length,
+    waitingOnInternalCount: conversations.filter(c => c.portalState === "WAITING_ON_INTERNAL").length,
+    waitingOnClientCount: conversations.filter(c => c.portalState === "WAITING_ON_CLIENT").length,
+    closedCount: conversations.filter(c => c.portalState === "CLOSED").length,
+    unassignedCount: conversations.filter(c => !c.participants || c.participants.length === 0).length,
+    conversationsWithAttachments,
+    latestExternalReplyAt,
+    latestInternalVisibleReplyAt,
+    incoherentStateCount,
   };
 }
