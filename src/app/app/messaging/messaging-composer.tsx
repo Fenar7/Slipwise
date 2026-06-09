@@ -304,7 +304,7 @@ export interface MessagingComposerProps {
     body: string,
     options?: {
       mentions?: Array<{ userId: string; offsetStart: number; offsetEnd: number }>;
-      attachments?: Array<{ storageRef: string; fileName: string; mimeType: string; sizeBytes: number }>;
+      attachments?: Array<{ storageRef: string; uploadToken: string; fileName: string; mimeType: string; sizeBytes: number }>;
       audience?: "EXTERNAL_VISIBLE" | "INTERNAL_ONLY";
     },
   ) => void | Promise<unknown>;
@@ -445,12 +445,17 @@ export function MessagingComposer({
 
     const attachmentPayload = stagedFiles.map((f) => ({
       storageRef: f.storageRef,
+      uploadToken: f.uploadToken,
       fileName: f.fileName,
       mimeType: f.mimeType,
       sizeBytes: f.sizeBytes,
     }));
 
-    const options: any = {
+    const options: {
+      mentions?: Array<{ userId: string; offsetStart: number; offsetEnd: number }>;
+      attachments?: Array<{ storageRef: string; uploadToken: string; fileName: string; mimeType: string; sizeBytes: number }>;
+      audience?: "EXTERNAL_VISIBLE" | "INTERNAL_ONLY";
+    } = {
       mentions: mentions.length > 0 ? mentions : undefined,
       attachments: attachmentPayload.length > 0 ? attachmentPayload : undefined,
     };

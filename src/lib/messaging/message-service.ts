@@ -2,7 +2,7 @@ import "server-only";
 
 import { db } from "@/lib/db";
 import { Prisma } from "@/generated/prisma/client";
-import type { ConversationMessageRecord } from "./domain-types";
+import type { ConversationMessageRecord, MessagingAuditAction } from "./domain-types";
 import {
   messageOrgSafeWhere,
   messageListOrgSafeWhere,
@@ -323,7 +323,7 @@ export async function sendMessage(
     // Handle portal specific audit events and state transitions
     if (conversation.type === "PORTAL") {
       let nextState: "WAITING_ON_INTERNAL" | "WAITING_ON_CLIENT" | null = null;
-      let auditAction: any = "PORTAL_MESSAGE_SENT";
+      let auditAction: MessagingAuditAction = "PORTAL_MESSAGE_SENT";
       let summary = "Sent portal message";
 
       if (!isUuid) {

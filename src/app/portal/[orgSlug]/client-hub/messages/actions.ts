@@ -126,9 +126,10 @@ export async function listPortalConversations(
     });
 
     return { success: true, data: { conversations: enriched } };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("[portal-messages] listPortalConversations error:", error);
-    return { success: false, error: error.message || "Failed to load conversations" };
+    const errorMessage = error instanceof Error ? error.message : "Failed to load conversations";
+    return { success: false, error: errorMessage };
   }
 }
 
@@ -263,9 +264,10 @@ export async function getPortalConversationDetail(
         messages: formattedMessages,
       },
     };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("[portal-messages] getPortalConversationDetail error:", error);
-    return { success: false, error: error.message || "Failed to load conversation details" };
+    const errorMessage = error instanceof Error ? error.message : "Failed to load conversation details";
+    return { success: false, error: errorMessage };
   }
 }
 
@@ -369,9 +371,10 @@ export async function submitPortalConversationReply(
     revalidatePath(`/portal/${orgSlug}/client-hub/messages/${conversationId}`);
 
     return { success: true, data: { messageId: message.id } };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("[portal-messages] submitPortalConversationReply error:", error);
-    return { success: false, error: error.message || "Failed to send message" };
+    const errorMessage = error instanceof Error ? error.message : "Failed to send message";
+    return { success: false, error: errorMessage };
   }
 }
 
@@ -433,9 +436,10 @@ export async function markPortalConversationAsRead(
     revalidatePath(`/portal/${orgSlug}/client-hub/messages/${conversationId}`);
 
     return { success: true, data: undefined };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("[portal-messages] markPortalConversationAsRead error:", error);
-    return { success: false, error: error.message || "Failed to update read state" };
+    const errorMessage = error instanceof Error ? error.message : "Failed to update read state";
+    return { success: false, error: errorMessage };
   }
 }
 
@@ -528,9 +532,10 @@ export async function uploadPortalAttachment(
         sizeBytes,
       },
     };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("[portal-messages] uploadPortalAttachment error:", error);
-    return { success: false, error: error.message || "Upload failed" };
+    const errorMessage = error instanceof Error ? error.message : "Upload failed";
+    return { success: false, error: errorMessage };
   }
 }
 
@@ -617,8 +622,9 @@ export async function getPortalAttachmentDownloadUrl(
         mimeType: attachment.mimeType,
       },
     };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("[portal-messages] getPortalAttachmentDownloadUrl error:", error);
-    return { success: false, error: error.message || "Failed to generate download link" };
+    const errorMessage = error instanceof Error ? error.message : "Failed to generate download link";
+    return { success: false, error: errorMessage };
   }
 }

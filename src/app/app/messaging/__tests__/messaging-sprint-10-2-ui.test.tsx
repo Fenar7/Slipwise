@@ -3,7 +3,7 @@ import { render, screen, waitFor, fireEvent, within } from "@testing-library/rea
 import React from "react";
 
 // Mock next/navigation
-let mockSearchParamsGet = vi.fn().mockReturnValue(null);
+const mockSearchParamsGet = vi.fn().mockReturnValue(null);
 vi.mock("next/navigation", () => ({
   usePathname: () => "/app/messaging",
   useRouter: () => ({ push: vi.fn() }),

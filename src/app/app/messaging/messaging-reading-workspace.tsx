@@ -1044,8 +1044,8 @@ function MessagingPortalDetail({ conversation, onClose, detail, onRefresh }: Mes
         throw new Error("Failed to update portal state");
       }
       onRefresh();
-    } catch (e: any) {
-      setError(e.message);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "An error occurred");
     } finally {
       setUpdating(false);
     }
@@ -1064,8 +1064,8 @@ function MessagingPortalDetail({ conversation, onClose, detail, onRefresh }: Mes
         throw new Error("Failed to update assignee");
       }
       onRefresh();
-    } catch (e: any) {
-      setError(e.message);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "An error occurred");
     } finally {
       setUpdating(false);
     }
@@ -1222,8 +1222,8 @@ function PortalWorkspace({
       if (onRefreshDetail) {
         onRefreshDetail();
       }
-    } catch (e: any) {
-      setReopenError(e.message);
+    } catch (e: unknown) {
+      setReopenError(e instanceof Error ? e.message : "An error occurred");
     } finally {
       setReopening(false);
     }

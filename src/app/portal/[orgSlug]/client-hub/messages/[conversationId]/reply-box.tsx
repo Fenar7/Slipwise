@@ -50,7 +50,7 @@ export function PortalMessageReplyBox({
         }
       }
       setUploadedFiles((prev) => [...prev, ...results]);
-    } catch (err: any) {
+    } catch {
       setError("File upload failed. Please try again.");
     } finally {
       setIsUploading(false);

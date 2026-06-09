@@ -187,11 +187,11 @@ export function MessagingWorkspace() {
     return conv;
   }, [activeDetail]);
 
-  let searchParams: any = null;
+  let searchParams: ReturnType<typeof nextNavigation.useSearchParams> | null = null;
   try {
-    const useSearchParamsHook = (nextNavigation as any).useSearchParams;
-    if (typeof useSearchParamsHook === "function") {
-      searchParams = useSearchParamsHook();
+    const getSearchParams = nextNavigation.useSearchParams;
+    if (typeof getSearchParams === "function") {
+      searchParams = getSearchParams();
     }
   } catch (e) {
     // Avoid erroring when next/navigation mock lacks useSearchParams
@@ -582,14 +582,14 @@ export function MessagingWorkspace() {
                     body: string,
                     options?: {
                       mentions?: Array<{ userId: string; offsetStart: number; offsetEnd: number }>;
-                      attachments?: Array<{ storageRef: string; fileName: string; mimeType: string; sizeBytes: number }>;
+                      attachments?: Array<{ storageRef: string; uploadToken: string; fileName: string; mimeType: string; sizeBytes: number }>;
                       audience?: "EXTERNAL_VISIBLE" | "INTERNAL_ONLY";
                     },
                   ) => {
                     clearSendError();
                     const result = await sendMessage(activeConvId!, body, null, {
                       mentions: options?.mentions,
-                      attachments: options?.attachments as any,
+                      attachments: options?.attachments,
                       audience: options?.audience,
                     });
                     if (result && activeConvId) {
