@@ -328,7 +328,7 @@ export interface PortalSession {
   orgSlug: string;
 }
 
-export async function getPortalSession(): Promise<PortalSession | null> {
+export async function getPortalSession(orgSlug?: string): Promise<PortalSession | null> {
   try {
     const cookieStore = await cookies();
     const token = cookieStore.get(PORTAL_COOKIE)?.value;
@@ -336,6 +336,11 @@ export async function getPortalSession(): Promise<PortalSession | null> {
 
     const payload = verifyJwtSignature(token);
     if (!payload) return null;
+
+    // Enforce orgSlug mismatch check directly
+    if (orgSlug && payload.orgSlug !== orgSlug) {
+      return null;
+    }
 
     // Check DB session revocation on every request (enforces instant revocation)
     const session = await db.customerPortalSession.findUnique({
@@ -381,8 +386,8 @@ export async function getPortalSession(): Promise<PortalSession | null> {
   }
 }
 
-export async function requirePortalSession(): Promise<PortalSession> {
-  const session = await getPortalSession();
+export async function requirePortalSession(orgSlug?: string): Promise<PortalSession> {
+  const session = await getPortalSession(orgSlug);
   if (!session) {
     redirect("/portal");
   }
