@@ -944,6 +944,8 @@ export function MailboxWorkspace() {
             hasActiveFilters={filterState.filters.length > 0}
             onClearFilters={clearFilters}
             isPartialSearch={threadSearchMeta?.partial === true}
+            searchMeta={threadSearchMeta}
+            connections={connections}
           />
         );
       }
@@ -1175,6 +1177,7 @@ export function MailboxWorkspace() {
                 onLoadMore={loadMoreThreads}
                 isActionLoading={isActionLoading}
                 onThreadAction={handleThreadAction}
+                connections={connections}
               />
             )}
           </div>
