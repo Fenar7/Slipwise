@@ -89,6 +89,25 @@ interface SearchDiagnostics {
   }>;
 }
 
+
+/**
+ * Determine whether a connection status represents actual search degradation
+ * for the given search mode, versus an expected capability limitation.
+ *
+ * In local mode, provider_unsupported is informational -- local search IS the
+ * authoritative path for non-Gmail connections and should not trigger degraded UX.
+ * In gmail_exact mode, provider_unsupported means the adapter cannot perform
+ * provider search, which IS a real degradation for that connection.
+ */
+function isSearchModeDegradedStatus(
+  status: string,
+  searchMode: "local" | "gmail_exact" | "hybrid",
+): boolean {
+  if (status === "ok") return false;
+  if (searchMode === "local" && status === "provider_unsupported") return false;
+  return true;
+}
+
 function logSearchDiagnostics(diagnostics: SearchDiagnostics) {
   console.log("[SearchDiagnostics]", JSON.stringify({
     timestamp: new Date().toISOString(),
@@ -875,8 +894,15 @@ export async function listMailboxThreads(
         };
       });
 
-      const hasDegraded = connectionStates.some(cs => cs.status !== "ok");
-      const partialConnectionIds = connectionStates.filter(cs => cs.status !== "ok").map(cs => cs.connectionId);
+      // In local mode, provider_unsupported for non-Gmail connections is
+      // informational only -- local search IS the authoritative path for those
+      // connections. Only flag statuses that genuinely degrade the local search.
+      const hasDegraded = connectionStates.some(cs =>
+        isSearchModeDegradedStatus(cs.status, "local"),
+      );
+      const partialConnectionIds = connectionStates
+        .filter(cs => isSearchModeDegradedStatus(cs.status, "local"))
+        .map(cs => cs.connectionId);
 
       let coverageState: "complete" | "partial" | "unknown" = "unknown";
       if (requestedGmailConnections.length > 0) {
@@ -1166,8 +1192,14 @@ export async function listMailboxThreads(
       };
     });
 
-    const hasDegraded = connectionStates.some(cs => cs.status !== "ok");
-    const finalPartialConnectionIds = connectionStates.filter(cs => cs.status !== "ok").map(cs => cs.connectionId);
+    // In gmail_exact mode, provider_unsupported means the adapter cannot perform
+    // provider search -- this IS a real degradation.
+    const hasDegraded = connectionStates.some(cs =>
+      isSearchModeDegradedStatus(cs.status, "gmail_exact"),
+    );
+    const finalPartialConnectionIds = connectionStates
+      .filter(cs => isSearchModeDegradedStatus(cs.status, "gmail_exact"))
+      .map(cs => cs.connectionId);
 
     let coverageState: "complete" | "partial" | "unknown" = "unknown";
     if (gmailConnections.length > 0) {

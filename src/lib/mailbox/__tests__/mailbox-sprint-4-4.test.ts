@@ -428,8 +428,8 @@ describe("Sprint 4.4 — listMailboxThreads search", () => {
     expect(result.searchMeta).toEqual({
       mode: "local",
       totalCountIsExact: true,
-      partial: true,
-      partialConnectionIds: ["conn-outlook"],
+      partial: false,
+      partialConnectionIds: [],
       coverageState: "unknown",
       connectionStates: [
         {
