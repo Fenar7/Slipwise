@@ -9,7 +9,7 @@ const SEARCH_DEBOUNCE_MS = 300;
 
 export interface MailboxMessageResultItem {
   id: string | null;
-  threadId: string;
+  threadId: string | null;
   providerThreadId: string;
   providerMessageId: string;
   from: { email: string; displayName: string | null } | null;
@@ -75,6 +75,26 @@ function mergeUniqueThreads(
   }
 
   return mergedThreads;
+}
+
+function mergeUniqueMessages(
+  previousMessages: MailboxMessageResultItem[],
+  nextMessages: MailboxMessageResultItem[],
+): MailboxMessageResultItem[] {
+  const mergedMessages = [...previousMessages];
+  const seenMessageIds = new Set(
+    previousMessages.map((message) => message.providerMessageId),
+  );
+
+  for (const message of nextMessages) {
+    if (seenMessageIds.has(message.providerMessageId)) {
+      continue;
+    }
+    seenMessageIds.add(message.providerMessageId);
+    mergedMessages.push(message);
+  }
+
+  return mergedMessages;
 }
 
 export function useMailboxThreads(
@@ -239,7 +259,9 @@ export function useMailboxThreads(
         setThreads((prev) =>
           append ? mergeUniqueThreads(prev, data.threads) : data.threads,
         );
-        setMessages(data.messages ?? []);
+        setMessages((prev) =>
+          append ? mergeUniqueMessages(prev, data.messages ?? []) : (data.messages ?? []),
+        );
         setTotalCount(data.totalCount);
         setNextCursor(data.nextCursor);
         setSearchMeta(data.searchMeta ?? null);

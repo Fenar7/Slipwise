@@ -168,6 +168,7 @@ function mapMessageToItem(
 
   return {
     id: msg.id,
+    providerMessageId: msg.providerMessageId,
     threadId: msg.threadId,
     direction: msg.direction === "inbound" ? "inbound" : "outbound",
     from: fromName,
@@ -277,6 +278,7 @@ export function mapProviderDraftDetailToUI(
   }));
   const message: MailboxMessageItem = {
     id: detail.providerMessageId,
+    providerMessageId: detail.providerMessageId,
     threadId: detail.threadId,
     direction: "inbound",
     from: fromName,

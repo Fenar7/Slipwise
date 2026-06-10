@@ -22,6 +22,23 @@ function makeThread(id: string) {
   };
 }
 
+function makeMessage(id: string, threadId: string | null = `thread-${id}`) {
+  return {
+    id: null,
+    threadId,
+    providerThreadId: `provider-thread-${id}`,
+    providerMessageId: `provider-message-${id}`,
+    from: { email: `${id}@example.com`, displayName: `Sender ${id}` },
+    subject: `Subject ${id}`,
+    snippet: `Snippet ${id}`,
+    sentAt: "2026-06-01T10:00:00.000Z",
+    threadSubject: `Thread ${id}`,
+    mailboxConnectionId: "conn-1",
+    isShellResult: threadId == null,
+    mailboxDisplayName: "Billing",
+  };
+}
+
 function jsonResponse(body: unknown) {
   return Promise.resolve(
     new Response(JSON.stringify(body), {
@@ -156,6 +173,54 @@ describe("useMailboxThreads pagination", () => {
     });
 
     expect(result.current.isLoadingMore).toBe(false);
+  });
+
+  it("appends and dedupes message-mode results across loadMore()", async () => {
+    mockFetch
+      .mockImplementationOnce(() =>
+        jsonResponse({
+          threads: [],
+          messages: [makeMessage("1"), makeMessage("2")],
+          nextCursor: "cursor-2",
+          totalCount: 3,
+          searchMeta: { searchMode: "messages" },
+        }),
+      )
+      .mockImplementationOnce(() =>
+        jsonResponse({
+          threads: [],
+          messages: [makeMessage("2"), makeMessage("3", null)],
+          nextCursor: null,
+          totalCount: 3,
+          searchMeta: { searchMode: "messages" },
+        }),
+      );
+
+    const { result } = renderHook(() =>
+      useMailboxThreads({ connectionId: "conn-1", searchQuery: "invoice", searchMode: "messages" }),
+    );
+
+    await waitFor(() => {
+      expect(result.current.messages.map((message) => message.providerMessageId)).toEqual([
+        "provider-message-1",
+        "provider-message-2",
+      ]);
+    });
+
+    await act(async () => {
+      result.current.loadMore();
+    });
+
+    await waitFor(() => {
+      expect(result.current.messages.map((message) => message.providerMessageId)).toEqual([
+        "provider-message-1",
+        "provider-message-2",
+        "provider-message-3",
+      ]);
+    });
+
+    expect(result.current.messages[2]?.isShellResult).toBe(true);
+    expect(result.current.hasMore).toBe(false);
   });
 
   it("resets pagination on search changes and ignores stale append responses", async () => {

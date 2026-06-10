@@ -31,7 +31,7 @@ export type SearchMode = "threads" | "messages";
 export interface MailboxMessageResult {
   /** Local message DB ID (if hydrated). */
   id: string | null;
-  threadId: string;
+  threadId: string | null;
   providerThreadId: string;
   providerMessageId: string;
   /** Sender identity. */
@@ -642,6 +642,52 @@ async function resolveThreadsByProviderKeys(
   );
 }
 
+export async function resolveMailboxThreadIdFromProviderRef(params: {
+  orgId: string;
+  userId: string;
+  role: "owner" | "admin" | "member";
+  mailboxConnectionId: string;
+  providerThreadId: string;
+}): Promise<string | null> {
+  const accessible = await listMailboxConnectionsForMember({
+    orgId: params.orgId,
+    userId: params.userId,
+    role: params.role,
+  });
+  if (!accessible.some((connection) => connection.id === params.mailboxConnectionId)) {
+    return null;
+  }
+
+  const threadKey = makeThreadKey(params.mailboxConnectionId, params.providerThreadId);
+  let resolved = await resolveThreadsByProviderKeys(params.orgId, [threadKey]);
+  const existingThread = resolved.get(threadKey);
+  if (existingThread) {
+    return existingThread.id;
+  }
+
+  const allConnectionRecords = await listMailboxConnections(params.orgId);
+  const connection = allConnectionRecords.find(
+    (record) => record.id === params.mailboxConnectionId,
+  );
+  if (
+    !connection ||
+    connection.provider !== "GMAIL" ||
+    !connection.tokenRef ||
+    connectionRequiresReconnect(connection.status)
+  ) {
+    return null;
+  }
+
+  await hydrateThreadFromProvider({
+    orgId: params.orgId,
+    connection,
+    providerThreadId: params.providerThreadId,
+  });
+
+  resolved = await resolveThreadsByProviderKeys(params.orgId, [threadKey]);
+  return resolved.get(threadKey)?.id ?? null;
+}
+
 /**
  * Sprint B: Message-mode search.
  * Searches at the message level using provider searchMessages, then resolves
@@ -665,8 +711,6 @@ async function searchMailboxMessages(params: {
     orgId,
     trimmedQuery,
     searchMode,
-    accessibleConnectionIds,
-    accessibleSet,
     accessibleRecordById,
     connectionIdsToQuery,
     limit,
@@ -795,7 +839,7 @@ async function searchMailboxMessages(params: {
 
     return {
       id: null, // Message-level local DB resolution not yet needed for Sprint B
-      threadId: localThread?.id ?? "",
+      threadId: localThread?.id ?? null,
       providerThreadId: hit.providerThreadId,
       providerMessageId: hit.providerMessageId,
       from: hit.from,

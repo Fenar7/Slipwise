@@ -84,6 +84,7 @@ export interface MailboxAttachmentSummary {
 
 export interface MailboxMessageItem {
   id: string;
+  providerMessageId?: string;
   threadId: string;
   direction: MessageDirection;
   from: string;

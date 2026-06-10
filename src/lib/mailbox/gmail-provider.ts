@@ -1080,30 +1080,45 @@ export const gmailProviderAdapter: IMailboxProviderAdapter = {
     };
 
     const hits: MailboxMessageSearchResult["hits"] = [];
+    const messageRefs = data.messages ?? [];
+    const chunkSize = 10;
 
-    for (const msg of data.messages ?? []) {
-      const msgRes = await safeGmailFetch(
-        `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}?format=metadata&metadataHeaders=Subject,From,Date`,
-        { headers: { Authorization: `Bearer ${accessToken}` } },
+    for (let index = 0; index < messageRefs.length; index += chunkSize) {
+      const chunk = messageRefs.slice(index, index + chunkSize);
+      const chunkHits = await Promise.all(
+        chunk.map(async (msg) => {
+          const msgRes = await safeGmailFetch(
+            `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}?format=metadata&metadataHeaders=Subject,From,Date`,
+            { headers: { Authorization: `Bearer ${accessToken}` } },
+          );
+          if (isProviderError(msgRes) || !msgRes.ok) {
+            return null;
+          }
+
+          const msgData = await msgRes.json() as GmailMessage;
+          const headers = msgData.payload?.headers ?? [];
+          const subject = headers.find((h) => h.name === "Subject")?.value ?? "(No subject)";
+          const fromRaw = headers.find((h) => h.name === "From")?.value ?? "";
+          const from = parseAddressListHeader(fromRaw)[0] ?? { email: "", displayName: null };
+          const dateRaw = headers.find((h) => h.name === "Date")?.value ?? "";
+          const sentAt = dateRaw ? new Date(dateRaw).toISOString() : new Date().toISOString();
+
+          return {
+            providerThreadId: msg.threadId,
+            providerMessageId: msg.id,
+            snippet: msgData.snippet ?? "",
+            subject,
+            from,
+            sentAt,
+          };
+        }),
       );
-      if (isProviderError(msgRes) || !msgRes.ok) continue;
 
-      const msgData = await msgRes.json() as GmailMessage;
-      const headers = msgData.payload?.headers ?? [];
-      const subject = headers.find((h) => h.name === "Subject")?.value ?? "(No subject)";
-      const fromRaw = headers.find((h) => h.name === "From")?.value ?? "";
-      const from = parseAddressListHeader(fromRaw)[0] ?? { email: "", displayName: null };
-      const dateRaw = headers.find((h) => h.name === "Date")?.value ?? "";
-      const sentAt = dateRaw ? new Date(dateRaw).toISOString() : new Date().toISOString();
-
-      hits.push({
-        providerThreadId: msg.threadId,
-        providerMessageId: msg.id,
-        snippet: msgData.snippet ?? "",
-        subject,
-        from,
-        sentAt,
-      });
+      hits.push(
+        ...chunkHits.filter(
+          (hit): hit is MailboxMessageSearchResult["hits"][number] => hit !== null,
+        ),
+      );
     }
 
     const result: MailboxMessageSearchResult = {

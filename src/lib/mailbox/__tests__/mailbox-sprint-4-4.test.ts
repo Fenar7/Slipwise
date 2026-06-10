@@ -332,6 +332,7 @@ describe("Sprint 4.4 — listMailboxThreads search", () => {
     expect(result.totalCount).toBeNull();
     expect(result.searchMeta).toEqual({
       mode: "gmail_exact",
+      searchMode: "threads",
       totalCountIsExact: false,
       partial: false,
       partialConnectionIds: [],
@@ -382,6 +383,7 @@ describe("Sprint 4.4 — listMailboxThreads search", () => {
     ]);
     expect(result.searchMeta).toEqual({
       mode: "gmail_exact",
+      searchMode: "threads",
       totalCountIsExact: false,
       partial: false,
       partialConnectionIds: [],
@@ -427,6 +429,7 @@ describe("Sprint 4.4 — listMailboxThreads search", () => {
     expect(result.totalCount).toBe(1);
     expect(result.searchMeta).toEqual({
       mode: "local",
+      searchMode: "threads",
       totalCountIsExact: true,
       partial: false,
       partialConnectionIds: [],

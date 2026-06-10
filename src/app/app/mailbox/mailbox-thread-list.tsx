@@ -358,7 +358,6 @@ function MessageResultRow({
   onClick: () => void;
 }) {
   const senderName = message.from?.displayName ?? message.from?.email ?? "Unknown";
-  const senderInitial = senderName.charAt(0).toUpperCase();
   const timestamp = formatMessageTimestamp(message.sentAt);
 
   return (
@@ -452,6 +451,7 @@ interface MailboxThreadListProps {
   /** Sprint B: Message-level results for messages mode. */
   messages?: MailboxMessageResultItem[];
   selectedThreadId: string | null;
+  selectedMessageProviderId?: string | null;
   onSelectThread: (id: string) => void;
   /** Sprint B: Called when a message result is clicked. */
   onSelectMessage?: (message: MailboxMessageResultItem) => void;
@@ -474,6 +474,7 @@ export function MailboxThreadList({
   threads = MOCK_THREADS,
   messages = [],
   selectedThreadId,
+  selectedMessageProviderId = null,
   onSelectThread,
   onSelectMessage,
   reconnectBanner,
@@ -509,7 +510,7 @@ export function MailboxThreadList({
       !hasMore ||
       !onLoadMore ||
       isLoading ||
-      threads.length === 0
+      (threads.length === 0 && messages.length === 0)
     ) {
       return;
     }
@@ -540,7 +541,7 @@ export function MailboxThreadList({
 
     observer.observe(sentinel);
     return () => observer.disconnect();
-  }, [hasMore, isLoading, onLoadMore, threads.length]);
+  }, [hasMore, isLoading, messages.length, onLoadMore, threads.length]);
 
   return (
     <div
@@ -566,7 +567,7 @@ export function MailboxThreadList({
             <MessageResultRow
               key={msg.providerMessageId}
               message={msg}
-              isSelected={false}
+              isSelected={selectedMessageProviderId === msg.providerMessageId}
               onClick={() => onSelectMessage?.(msg)}
             />
           ))
@@ -584,7 +585,7 @@ export function MailboxThreadList({
             />
           ))
         )}
-        {threads.length > 0 ? (
+        {threads.length > 0 || messages.length > 0 ? (
           <div
             ref={sentinelRef}
             className="h-px w-full"

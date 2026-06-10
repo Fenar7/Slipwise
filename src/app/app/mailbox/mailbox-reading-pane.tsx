@@ -331,34 +331,53 @@ function normalizeRenderableHtmlText(html: string): string {
 
 function MessageItem({
   message,
+  isMatched = false,
   onReply,
   onPreviewAttachment,
 }: {
   message: MailboxMessageItem;
+  isMatched?: boolean;
   onReply?: (mode: "reply" | "reply-all" | "forward") => void;
   onPreviewAttachment?: (attachment: MailboxAttachmentSummary) => void;
 }) {
   const [collapsed, setCollapsed] = useState(message.isCollapsed);
+  const articleRef = useRef<HTMLElement | null>(null);
   const isOutbound = message.direction === "outbound";
   const safeHtml = sanitizeMessageHtml(message.bodyHtml);
   const hasRenderableHtml = normalizeRenderableHtmlText(safeHtml).length > 0;
   const hasTextFallback = !!message.bodyText?.trim();
+  const isExpanded = isMatched || !collapsed;
+
+  useEffect(() => {
+    if (!isMatched) {
+      return;
+    }
+
+    articleRef.current?.scrollIntoView?.({
+      behavior: "smooth",
+      block: "center",
+    });
+  }, [isMatched]);
 
   return (
     <article
-      className={cn(
-        "rounded-xl border transition-colors",
-        isOutbound ? "border-[#E2E5EA] bg-white" : "border-[#E2E5EA] bg-white"
+      ref={articleRef}
+        className={cn(
+          "rounded-xl border transition-colors",
+          isOutbound ? "border-[#E2E5EA] bg-white" : "border-[#E2E5EA] bg-white",
+          isMatched ? "border-[#818CF8] ring-2 ring-[#4F46E5]/30" : null,
       )}
       data-message-id={message.id}
+      data-provider-message-id={message.providerMessageId}
+      data-highlighted={isMatched ? "true" : "false"}
       data-direction={message.direction}
     >
       {/* Message header — always visible */}
       <button
         className="flex w-full items-start gap-3 px-4 py-3 text-left"
         onClick={() => setCollapsed((v) => !v)}
-        aria-expanded={!collapsed}
-        aria-label={collapsed ? "Expand message" : "Collapse message"}
+        aria-expanded={isExpanded}
+        aria-label={isExpanded ? "Collapse message" : "Expand message"}
       >
         {/* Sender avatar */}
         <span
@@ -381,7 +400,7 @@ function MessageItem({
               {formatSentAt(message.sentAt)}
             </span>
           </div>
-          {collapsed ? (
+          {!isExpanded ? (
             <p className="mt-0.5 truncate text-xs text-[#64748B]">
               {message.to.join(", ")}
             </p>
@@ -402,7 +421,7 @@ function MessageItem({
 
         {/* Collapse toggle */}
         <span className="mt-1 shrink-0 text-[#94A3B8]">
-          {collapsed ? (
+          {!isExpanded ? (
             <ChevronDown className="h-4 w-4" />
           ) : (
             <ChevronUp className="h-4 w-4" />
@@ -411,7 +430,7 @@ function MessageItem({
       </button>
 
       {/* Message body — only when expanded */}
-      {!collapsed && (
+      {isExpanded && (
         <>
           {hasRenderableHtml ? (
             <div
@@ -634,6 +653,7 @@ import type { MailboxComposerState, ComposeMode } from "./types";
 
 interface MailboxReadingPaneProps {
   detail: MailboxThreadDetail;
+  selectedMessageProviderId?: string | null;
   composerState: MailboxComposerState | null;
   onOpenReply: (mode: ComposeMode, threadId: string, messageId: string, subject: string, to: string[]) => void;
   onCloseReply: () => void;
@@ -650,6 +670,7 @@ interface MailboxReadingPaneProps {
 
 export function MailboxReadingPane({
   detail,
+  selectedMessageProviderId = null,
   composerState,
   onOpenReply,
   onCloseReply,
@@ -698,6 +719,7 @@ export function MailboxReadingPane({
             <MessageItem
               key={msg.id}
               message={msg}
+              isMatched={selectedMessageProviderId === msg.providerMessageId}
               onReply={allowReplies ? (mode) => handleOpenReply(mode) : undefined}
               onPreviewAttachment={setPreviewAttachment}
             />
