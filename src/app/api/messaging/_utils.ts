@@ -2,9 +2,10 @@ import "server-only";
 
 import { NextResponse } from "next/server";
 import { getOrgContext, type OrgContext } from "@/lib/auth";
-import { hasPermission, type Resource, type ResourceAction } from "@/lib/auth/rbac/permissions";
+import { type Resource, type ResourceAction } from "@/lib/auth/rbac/permissions";
 import { rateLimitByOrg, rateLimitByIp, RATE_LIMITS } from "@/lib/rate-limit";
 import { ConversationAccessError } from "@/lib/messaging";
+import { getMessagingAccessContext, hasMessagingPermission } from "@/lib/messaging/messaging-access-context";
 
 export const MessagingApiErrorCode = {
   UNAUTHORIZED: "UNAUTHORIZED",
@@ -235,14 +236,21 @@ export async function requireMessagingApiContext(): Promise<OrgContext> {
  * Throws 403 if the user lacks the required permission.
  *
  * Sprint 11.3: messaging permission enforcement at the API layer.
+ * Uses custom-role-aware access context (fetches CustomRole.permissions
+ * from the database for non-owner/non-admin users).
  */
 export async function requireMessagingPermission(
   resource: Resource,
   action: ResourceAction,
 ): Promise<OrgContext> {
   const context = await requireMessagingApiContext();
+  const accessCtx = await getMessagingAccessContext(
+    context.orgId,
+    context.userId,
+    context.role,
+  );
 
-  if (!hasPermission({ systemRole: context.role }, resource, action)) {
+  if (!hasMessagingPermission(accessCtx, resource, action)) {
     throw new MessagingAccessDeniedError(
       "missing_membership",
       `missing permission: ${resource}:${action}`,

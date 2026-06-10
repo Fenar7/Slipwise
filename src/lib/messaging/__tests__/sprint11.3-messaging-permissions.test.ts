@@ -192,8 +192,23 @@ describe("Sprint 11.3 — Messaging permission helper", () => {
       expect(result.allowed).toBe(true);
     });
 
-    it("portal_send maps to messaging:create", () => {
+    it("portal_send maps to messaging:update (stricter than internal send)", () => {
       const ctx: AccessContext = { systemRole: "member" };
+      const result = evaluateMessagingCapability(ctx, "portal_send");
+      expect(result.allowed).toBe(false);
+    });
+
+    it("portal_send allows admin (has messaging:update)", () => {
+      const ctx: AccessContext = { systemRole: "admin" };
+      const result = evaluateMessagingCapability(ctx, "portal_send");
+      expect(result.allowed).toBe(true);
+    });
+
+    it("portal_send allows custom role with update permission", () => {
+      const ctx: AccessContext = {
+        systemRole: "member",
+        customPermissions: { messaging: ["read", "create", "update"] },
+      };
       const result = evaluateMessagingCapability(ctx, "portal_send");
       expect(result.allowed).toBe(true);
     });
@@ -224,8 +239,12 @@ describe("Sprint 11.3 — Messaging permission helper", () => {
       expect(canSendMessage({ systemRole: "member" })).toBe(true);
     });
 
-    it("canSendPortalReply returns true for member", () => {
-      expect(canSendPortalReply({ systemRole: "member" })).toBe(true);
+    it("canSendPortalReply returns false for member (requires manage)", () => {
+      expect(canSendPortalReply({ systemRole: "member" })).toBe(false);
+    });
+
+    it("canSendPortalReply returns true for admin", () => {
+      expect(canSendPortalReply({ systemRole: "admin" })).toBe(true);
     });
 
     it("canManageMessaging returns false for member", () => {
@@ -263,7 +282,7 @@ describe("Sprint 11.3 — Messaging permission helper", () => {
       expect(caps.workspace_access).toBe(true);
       expect(caps.read).toBe(true);
       expect(caps.send).toBe(true);
-      expect(caps.portal_send).toBe(true);
+      expect(caps.portal_send).toBe(false);
       expect(caps.manage).toBe(false);
       expect(caps.governance).toBe(false);
     });
@@ -274,7 +293,7 @@ describe("Sprint 11.3 — Messaging permission helper", () => {
       expect(caps.workspace_access).toBe(true);
       expect(caps.read).toBe(true);
       expect(caps.send).toBe(true);
-      expect(caps.portal_send).toBe(true);
+      expect(caps.portal_send).toBe(false);
       expect(caps.manage).toBe(false);
       expect(caps.governance).toBe(false);
     });
@@ -451,5 +470,76 @@ describe("Sprint 11.3 — Permission separation: read vs write vs governance", (
     expect(canSendMessage(ctx)).toBe(true);
     expect(canManageMessaging(ctx)).toBe(true);
     expect(canGovernMessaging(ctx)).toBe(false);
+  });
+});
+
+// ─── Runtime custom-role enforcement ─────────────────────────────────────────
+
+describe("Sprint 11.3 — Runtime custom-role enforcement", () => {
+  it("hasMessagingPermission checks custom permissions", async () => {
+    const { hasMessagingPermission } = await import("@/lib/messaging/messaging-access-context");
+
+    const ctx: AccessContext = {
+      systemRole: "member",
+      customPermissions: { messaging: ["read", "create"] },
+    };
+    expect(hasMessagingPermission(ctx, "messaging", "read")).toBe(true);
+    expect(hasMessagingPermission(ctx, "messaging", "create")).toBe(true);
+    expect(hasMessagingPermission(ctx, "messaging", "update")).toBe(false);
+    expect(hasMessagingPermission(ctx, "messaging", "delete")).toBe(false);
+  });
+
+  it("hasMessagingPermission falls back to system role defaults when no custom permissions", async () => {
+    const { hasMessagingPermission } = await import("@/lib/messaging/messaging-access-context");
+
+    const ctx: AccessContext = { systemRole: "member" };
+    expect(hasMessagingPermission(ctx, "messaging", "read")).toBe(true);
+    expect(hasMessagingPermission(ctx, "messaging", "create")).toBe(true);
+    expect(hasMessagingPermission(ctx, "messaging", "update")).toBe(false);
+  });
+
+  it("hasMessagingPermission grants full access for owner", async () => {
+    const { hasMessagingPermission } = await import("@/lib/messaging/messaging-access-context");
+
+    const ctx: AccessContext = { systemRole: "owner" };
+    expect(hasMessagingPermission(ctx, "messaging", "read")).toBe(true);
+    expect(hasMessagingPermission(ctx, "messaging", "create")).toBe(true);
+    expect(hasMessagingPermission(ctx, "messaging", "update")).toBe(true);
+    expect(hasMessagingPermission(ctx, "messaging", "delete")).toBe(true);
+  });
+
+  it("custom role with only read denies send and portal_send", async () => {
+    const { hasMessagingPermission } = await import("@/lib/messaging/messaging-access-context");
+
+    const ctx: AccessContext = {
+      systemRole: "member",
+      customPermissions: { messaging: ["read"] },
+    };
+    expect(hasMessagingPermission(ctx, "messaging", "read")).toBe(true);
+    expect(hasMessagingPermission(ctx, "messaging", "create")).toBe(false);
+    expect(hasMessagingPermission(ctx, "messaging", "update")).toBe(false);
+  });
+
+  it("portal_send requires messaging:update (not create)", async () => {
+    const { hasMessagingPermission } = await import("@/lib/messaging/messaging-access-context");
+
+    const ctx: AccessContext = {
+      systemRole: "member",
+      customPermissions: { messaging: ["read", "create"] },
+    };
+    // Can send internal messages
+    expect(hasMessagingPermission(ctx, "messaging", "create")).toBe(true);
+    // But cannot send portal-visible messages (requires update)
+    expect(hasMessagingPermission(ctx, "messaging", "update")).toBe(false);
+  });
+
+  it("custom role with read+create+update allows portal_send", async () => {
+    const { hasMessagingPermission } = await import("@/lib/messaging/messaging-access-context");
+
+    const ctx: AccessContext = {
+      systemRole: "member",
+      customPermissions: { messaging: ["read", "create", "update"] },
+    };
+    expect(hasMessagingPermission(ctx, "messaging", "update")).toBe(true);
   });
 });

@@ -211,6 +211,14 @@ export {
   type MessagingPermissionResult,
 } from "./messaging-permissions";
 
+// Sprint 11.3: Messaging access context (custom-role-aware)
+export {
+  getMessagingAccessContext,
+  requireMessagingAccessContext,
+  hasMessagingPermission,
+  type MessagingAccessContext,
+} from "./messaging-access-context";
+
 // ─── Sprint 2.2: Service implementations ─────────────────────────────────────────
 
 // Conversation service

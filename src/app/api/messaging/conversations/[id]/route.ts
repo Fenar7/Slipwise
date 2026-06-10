@@ -4,8 +4,10 @@ import {
   updatePortalConversationState,
   updatePortalConversationAssignment,
 } from "@/lib/messaging";
+import { MESSAGING_RESOURCE, MESSAGING_ACTIONS } from "@/lib/messaging/messaging-permissions";
 import {
   requireMessagingApiContext,
+  requireMessagingPermission,
   messagingApiResponse,
   handleMessagingApiError,
   parsePagination,
@@ -50,13 +52,15 @@ export async function GET(
 /**
  * PATCH /api/messaging/conversations/:id
  * Update portal lifecycle state or assignment.
+ *
+ * Sprint 11.3: requires messaging:update (manage) permission.
  */
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const context = await requireMessagingApiContext();
+    const context = await requireMessagingPermission(MESSAGING_RESOURCE, MESSAGING_ACTIONS.UPDATE);
     const { orgId, userId, role: actorOrgRole } = context;
     const isPlatformAdmin = isPlatformAdminUser(userId);
     const { id } = await params;

@@ -2,8 +2,10 @@ import { NextRequest } from "next/server";
 import { listThreadReplies, replyToThread } from "@/lib/messaging";
 import { db } from "@/lib/db";
 import { verifyUploadToken } from "@/lib/messaging/service-helpers";
+import { MESSAGING_RESOURCE, MESSAGING_ACTIONS } from "@/lib/messaging/messaging-permissions";
 import {
   requireMessagingApiContext,
+  requireMessagingPermission,
   messagingApiResponse,
   handleMessagingApiError,
   safeRead,
@@ -131,13 +133,14 @@ export async function GET(
  * Reply to a thread.
  *
  * Sprint 5.5 hardening: attachment items must include a valid uploadToken.
+ * Sprint 11.3: requires messaging:create (send) permission.
  */
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; threadId: string }> },
 ) {
   try {
-    const { orgId, userId } = await requireMessagingApiContext();
+    const { orgId, userId } = await requireMessagingPermission(MESSAGING_RESOURCE, MESSAGING_ACTIONS.CREATE);
     await applyMessagingRateLimit(request, orgId, "messagingSend");
     const { id: conversationId, threadId } = await params;
     const body = (await request.json()) as Record<string, unknown>;

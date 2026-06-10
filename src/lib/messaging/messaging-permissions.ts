@@ -47,12 +47,16 @@ export interface MessagingPermissionResult {
 /**
  * Map a messaging capability to the RBAC permission required.
  * Each capability maps to a single resource:action pair.
+ *
+ * Sprint 11.3: portal_send requires messaging:update (manage) instead of
+ * messaging:create (send), because portal-visible messages have external
+ * visibility implications and need a higher privilege level.
  */
 const CAPABILITY_TO_PERMISSION: Record<MessagingCapability, { resource: Resource; action: ResourceAction }> = {
   workspace_access: { resource: "messaging", action: "read" },
   read: { resource: "messaging", action: "read" },
   send: { resource: "messaging", action: "create" },
-  portal_send: { resource: "messaging", action: "create" },
+  portal_send: { resource: "messaging", action: "update" },
   manage: { resource: "messaging", action: "update" },
   governance: { resource: "messaging", action: "delete" },
 };
@@ -104,8 +108,8 @@ export function canSendMessage(ctx: AccessContext): boolean {
 
 /**
  * Check if a user can send portal-visible replies.
- * Currently requires the same permission as internal send,
- * but separated for future stricter portal-specific gating.
+ * Requires messaging:update (manage) permission — stricter than internal send
+ * because portal-visible messages have external visibility implications.
  */
 export function canSendPortalReply(ctx: AccessContext): boolean {
   return evaluateMessagingCapability(ctx, "portal_send").allowed;
