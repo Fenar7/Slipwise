@@ -5,7 +5,6 @@ import { Eye, EyeOff } from "lucide-react";
 import { AuthCard } from "@/features/auth/components/auth-card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { createSupabaseBrowser } from "@/lib/supabase/client";
 import { checkResetPasswordState, updatePassword } from "./actions";
 
 function ResetPasswordContent() {

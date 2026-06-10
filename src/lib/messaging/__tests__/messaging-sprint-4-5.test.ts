@@ -687,4 +687,40 @@ describe("Sprint 4.5 regression guard", () => {
     await closePromise;
     (db as any).member = originalMember;
   });
+
+  it("proactively terminates active session when membership query throws during sweep", async () => {
+    db.conversation.findFirst.mockResolvedValue(makeConversationRow());
+    db.conversationParticipant.findFirst.mockResolvedValue(makeParticipantRow());
+    db.conversationEventLog.findFirst.mockResolvedValue({ id: "anchor", createdAt: new Date() });
+    db.conversationEventLog.findMany.mockResolvedValue([]);
+
+    const originalMember = (db as any).member;
+    const mockFindMany = vi.fn().mockRejectedValue(new Error("Database connection lost"));
+    (db as any).member = {
+      findMany: mockFindMany,
+      findUnique: vi.fn().mockResolvedValue({ role: "member" }),
+    };
+
+    const token = mintTestToken();
+    const ws = await wsConnect(`ws://localhost:${port}`);
+    wsSend(ws, { type: "resume_session", requestId: "r0", payload: { sessionToken: token.token } });
+    await wsNextMessage(ws);
+
+    wsSend(ws, { type: "subscribe_conversation", requestId: "r1", payload: { conversationId: CONV_ID, lastSeenCursor: "100" } });
+    const ack = await wsNextMessage(ws) as Record<string, unknown>;
+    expect(ack.type).toBe("subscription_ack");
+
+    // Wait for the sweep job to run and proactively close the socket
+    const closePromise = new Promise<void>((resolve) => {
+      ws.on("close", (code, reason) => {
+        expect(code).toBe(1008);
+        expect(reason.toString()).toContain("membership verification failed");
+        resolve();
+      });
+    });
+
+    await closePromise;
+    (db as any).member = originalMember;
+  });
 });
+

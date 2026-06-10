@@ -77,7 +77,7 @@ describe("reset-password/actions.ts unit tests", () => {
     expect(res.userEmail).toBe("user@test.com");
   });
 
-  it("succeeds if user has no organization memberships yet", async () => {
+  it("fails if user has no organization memberships", async () => {
     mocks.createSupabaseServer.mockResolvedValueOnce({
       auth: {
         getUser: vi.fn().mockResolvedValueOnce({
@@ -89,8 +89,8 @@ describe("reset-password/actions.ts unit tests", () => {
     mocks.memberFindMany.mockResolvedValueOnce([]);
 
     const res = await checkResetPasswordState();
-    expect(res.success).toBe(true);
-    expect(res.userEmail).toBe("user@test.com");
+    expect(res.success).toBe(false);
+    expect(res.error).toContain("Your account is not associated with any organization");
   });
 
   describe("updatePassword tests", () => {
@@ -125,6 +125,22 @@ describe("reset-password/actions.ts unit tests", () => {
       const res = await updatePassword("newpassword123");
       expect(res.success).toBe(false);
       expect(res.error).toContain("Your account is deactivated");
+    });
+
+    it("fails if user has no organization memberships", async () => {
+      mocks.createSupabaseServer.mockResolvedValueOnce({
+        auth: {
+          getUser: vi.fn().mockResolvedValueOnce({
+            data: { user: { id: "user_123", email: "user@test.com" } },
+            error: null,
+          }),
+        },
+      });
+      mocks.memberFindMany.mockResolvedValueOnce([]);
+
+      const res = await updatePassword("newpassword123");
+      expect(res.success).toBe(false);
+      expect(res.error).toContain("Your account is not associated with any organization");
     });
 
     it("succeeds when user has active membership and Supabase update succeeds", async () => {

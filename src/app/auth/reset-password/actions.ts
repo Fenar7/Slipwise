@@ -26,10 +26,12 @@ export async function checkResetPasswordState(): Promise<ResetPasswordState> {
       select: { role: true },
     });
 
-    if (memberships.length > 0 && memberships.every((m) => m.role === "deactivated")) {
+    if (memberships.length === 0 || memberships.every((m) => m.role === "deactivated")) {
       return {
         success: false,
-        error: "Your account is deactivated. Please contact an administrator.",
+        error: memberships.length === 0
+          ? "Your account is not associated with any organization."
+          : "Your account is deactivated. Please contact an administrator.",
       };
     }
 
@@ -58,10 +60,12 @@ export async function updatePassword(
       select: { role: true },
     });
 
-    if (memberships.length > 0 && memberships.every((m) => m.role === "deactivated")) {
+    if (memberships.length === 0 || memberships.every((m) => m.role === "deactivated")) {
       return {
         success: false,
-        error: "Your account is deactivated. Please contact an administrator.",
+        error: memberships.length === 0
+          ? "Your account is not associated with any organization."
+          : "Your account is deactivated. Please contact an administrator.",
       };
     }
 
