@@ -6,7 +6,7 @@ import { AuthCard } from "@/features/auth/components/auth-card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { createSupabaseBrowser } from "@/lib/supabase/client";
-import { checkResetPasswordState } from "./actions";
+import { checkResetPasswordState, updatePassword } from "./actions";
 
 function ResetPasswordContent() {
   const router = useRouter();
@@ -41,10 +41,9 @@ function ResetPasswordContent() {
     }
     setLoading(true);
     try {
-      const supabase = createSupabaseBrowser();
-      const { error: updateError } = await supabase.auth.updateUser({ password });
-      if (updateError) {
-        setError(updateError.message ?? "Reset failed. The link may have expired.");
+      const res = await updatePassword(password);
+      if (!res.success) {
+        setError(res.error ?? "Reset failed. The link may have expired.");
       } else {
         router.push("/auth/login?reset=success");
       }

@@ -1342,12 +1342,96 @@ export class MessagingGateway {
 
   private startSweepJob(): void {
     if (this.sweepTimer) return;
-    this.sweepTimer = setInterval(() => {
+    this.sweepTimer = setInterval(async () => {
+      // 1. Evict idle / expired sessions
       const evicted = this.sessions.sweepExpiredSessions(this.idleTimeoutMs);
       for (const { sessionId, reason } of evicted) {
         this.diagnostics.emit({ kind: "session_sweep", sessionId, reason });
+        const socket = this.sessionSockets.get(sessionId);
+        if (socket) {
+          try {
+            socket.close(1008, `session swept: ${reason}`);
+          } catch {}
+        }
         this.sessionSockets.delete(sessionId);
         void this.teardownTypingForSession(sessionId);
+      }
+
+      // 2. Proactively validate memberships for remaining active sessions
+      const activeSessions = [];
+      for (const sessionId of this.sessionSockets.keys()) {
+        const session = this.sessions.getSession(sessionId);
+        if (session && !session.closed) {
+          activeSessions.push(session);
+        }
+      }
+
+      if (activeSessions.length > 0) {
+        try {
+          if (!db || !db.member || typeof db.member.findMany !== "function") {
+            // membership lookup infrastructure is missing - fail closed for security
+            for (const session of activeSessions) {
+              const socket = this.sessionSockets.get(session.sessionId);
+              this.sessions.closeSession(session.sessionId, "membership_verification_unavailable");
+              this.diagnostics.emit({
+                kind: "subscription_denied",
+                sessionId: session.sessionId,
+                reason: "membership_verification_unavailable",
+              });
+              if (socket) {
+                try {
+                  socket.close(1008, "membership verification unavailable");
+                } catch {}
+              }
+              this.sessionSockets.delete(session.sessionId);
+              void this.teardownTypingForSession(session.sessionId);
+            }
+            throw new Error("gateway sweep: membership infrastructure unavailable");
+          }
+
+          const members = await db.member.findMany({
+            where: {
+              OR: activeSessions.map((s) => ({
+                organizationId: s.orgId,
+                userId: s.userId,
+              })),
+            },
+            select: {
+              organizationId: true,
+              userId: true,
+              role: true,
+            },
+          });
+
+          const activeKeys = new Set(
+            members
+              .filter((m) => m.role !== "deactivated")
+              .map((m) => `${m.organizationId}:${m.userId}`)
+          );
+
+          for (const session of activeSessions) {
+            const key = `${session.orgId}:${session.userId}`;
+            if (!activeKeys.has(key)) {
+              // User has been deactivated or removed from the org
+              const socket = this.sessionSockets.get(session.sessionId);
+              this.sessions.closeSession(session.sessionId, "membership_deactivated");
+              this.diagnostics.emit({
+                kind: "subscription_denied",
+                sessionId: session.sessionId,
+                reason: "membership_deactivated",
+              });
+              if (socket) {
+                try {
+                  socket.close(1008, "membership deactivated or revoked");
+                } catch {}
+              }
+              this.sessionSockets.delete(session.sessionId);
+              void this.teardownTypingForSession(session.sessionId);
+            }
+          }
+        } catch (err) {
+          console.warn("[gateway] Sweep membership validation failed:", err);
+        }
       }
     }, this.sweepIntervalMs);
   }

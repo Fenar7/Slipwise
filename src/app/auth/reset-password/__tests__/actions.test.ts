@@ -17,7 +17,7 @@ vi.mock("@/lib/db", () => ({
   },
 }));
 
-import { checkResetPasswordState } from "../actions";
+import { checkResetPasswordState, updatePassword } from "../actions";
 
 describe("reset-password/actions.ts unit tests", () => {
   beforeEach(() => {
@@ -91,5 +91,79 @@ describe("reset-password/actions.ts unit tests", () => {
     const res = await checkResetPasswordState();
     expect(res.success).toBe(true);
     expect(res.userEmail).toBe("user@test.com");
+  });
+
+  describe("updatePassword tests", () => {
+    it("fails if user is not authenticated", async () => {
+      mocks.createSupabaseServer.mockResolvedValueOnce({
+        auth: {
+          getUser: vi.fn().mockResolvedValueOnce({
+            data: { user: null },
+            error: new Error("No user"),
+          }),
+        },
+      });
+
+      const res = await updatePassword("newpassword123");
+      expect(res.success).toBe(false);
+      expect(res.error).toBe("Invalid or expired recovery link");
+    });
+
+    it("fails if user is deactivated in all organizations", async () => {
+      mocks.createSupabaseServer.mockResolvedValueOnce({
+        auth: {
+          getUser: vi.fn().mockResolvedValueOnce({
+            data: { user: { id: "user_123", email: "user@test.com" } },
+            error: null,
+          }),
+        },
+      });
+      mocks.memberFindMany.mockResolvedValueOnce([
+        { role: "deactivated" },
+      ]);
+
+      const res = await updatePassword("newpassword123");
+      expect(res.success).toBe(false);
+      expect(res.error).toContain("Your account is deactivated");
+    });
+
+    it("succeeds when user has active membership and Supabase update succeeds", async () => {
+      const mockUpdateUser = vi.fn().mockResolvedValueOnce({ error: null });
+      mocks.createSupabaseServer.mockResolvedValueOnce({
+        auth: {
+          getUser: vi.fn().mockResolvedValueOnce({
+            data: { user: { id: "user_123", email: "user@test.com" } },
+            error: null,
+          }),
+          updateUser: mockUpdateUser,
+        },
+      });
+      mocks.memberFindMany.mockResolvedValueOnce([
+        { role: "viewer" },
+      ]);
+
+      const res = await updatePassword("newpassword123");
+      expect(res.success).toBe(true);
+      expect(mockUpdateUser).toHaveBeenCalledWith({ password: "newpassword123" });
+    });
+
+    it("fails when Supabase update fails", async () => {
+      mocks.createSupabaseServer.mockResolvedValueOnce({
+        auth: {
+          getUser: vi.fn().mockResolvedValueOnce({
+            data: { user: { id: "user_123", email: "user@test.com" } },
+            error: null,
+          }),
+          updateUser: vi.fn().mockResolvedValueOnce({ error: new Error("Failed to update password") }),
+        },
+      });
+      mocks.memberFindMany.mockResolvedValueOnce([
+        { role: "viewer" },
+      ]);
+
+      const res = await updatePassword("newpassword123");
+      expect(res.success).toBe(false);
+      expect(res.error).toBe("Failed to update password");
+    });
   });
 });
