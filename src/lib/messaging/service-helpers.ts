@@ -38,28 +38,7 @@ export async function requireActiveOrgMember(
   const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId);
   if (!isUuid) return;
 
-  // Graceful handling for mocked database clients in unit tests
-  if (process.env.NODE_ENV === "test" || process.env.VITEST === "true" || typeof vi !== "undefined") {
-    let isHardeningTest = false;
-    try {
-      if (typeof expect !== "undefined" && typeof expect.getState === "function") {
-        const testPath = expect.getState().testPath || "";
-        if (
-          testPath.includes("sprint11") ||
-          testPath.includes("sprint-11") ||
-          testPath.includes("deactivation")
-        ) {
-          isHardeningTest = true;
-        }
-      }
-    } catch {
-      // Fallback
-    }
 
-    if (!isHardeningTest) {
-      return;
-    }
-  }
 
   if (!tx.member || (typeof tx.member.findUnique !== "function" && typeof tx.member.findFirst !== "function")) {
     throw new Error("requireActiveOrgMember: membership infrastructure unavailable");

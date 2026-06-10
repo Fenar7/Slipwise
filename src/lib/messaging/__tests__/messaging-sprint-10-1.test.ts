@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import "./local-setup";
 
 vi.mock("server-only", () => ({}));
 

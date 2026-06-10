@@ -14,6 +14,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import "./local-setup";
 import { WebSocketServer, WebSocket } from "ws";
 import { randomUUID } from "crypto";
 

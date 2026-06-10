@@ -1369,25 +1369,6 @@ export class MessagingGateway {
       if (activeSessions.length > 0) {
         try {
           if (!db || !db.member || typeof db.member.findMany !== "function") {
-            let shouldBypass = false;
-            if (process.env.NODE_ENV === "test" || process.env.VITEST === "true") {
-              shouldBypass = true;
-              try {
-                if (typeof expect !== "undefined" && typeof expect.getState === "function") {
-                  const testPath = expect.getState().testPath || "";
-                  if (
-                    testPath.includes("sprint-4-5") ||
-                    testPath.includes("eviction") ||
-                    testPath.includes("deactivation")
-                  ) {
-                    shouldBypass = false;
-                  }
-                }
-              } catch {}
-            }
-            if (shouldBypass) {
-              return;
-            }
             throw new Error("membership_verification_unavailable");
           }
 

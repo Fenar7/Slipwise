@@ -51,10 +51,7 @@ export async function getMessagingAccessContext(
   }
 
   if (!db.member || typeof db.member.findUnique !== "function") {
-    return {
-      systemRole,
-      customPermissions: null,
-    };
+    throw new Error("Messaging access context: membership database infrastructure unavailable");
   }
 
   const member = await db.member.findUnique({
@@ -68,7 +65,11 @@ export async function getMessagingAccessContext(
     },
   });
 
-  const customPermissions = member?.customRole?.permissions as PermissionSet | undefined;
+  if (!member) {
+    throw new Error("Messaging access context: member not found");
+  }
+
+  const customPermissions = member.customRole?.permissions as PermissionSet | undefined;
 
   return {
     systemRole,
