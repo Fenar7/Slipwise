@@ -77,7 +77,28 @@ function AcceptInviteContent() {
     );
   }
 
-  if (invitation.status !== "pending") {
+  if (invitation.status === "cancelled") {
+    return (
+      <AuthCard title="Invitation Cancelled" subtitle="This invitation has been cancelled by the administrator.">
+        <div className="text-center space-y-5">
+          <div
+            className="mx-auto h-12 w-12 rounded-full flex items-center justify-center"
+            style={{ background: "#F9DEDC" }}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#B3261E" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M18 6 6 18" />
+              <path d="m6 6 12 12" />
+            </svg>
+          </div>
+          <Button variant="secondary" className="w-full" onClick={() => router.push("/auth/login")}>
+            Go to Login
+          </Button>
+        </div>
+      </AuthCard>
+    );
+  }
+
+  if (invitation.status === "accepted") {
     return (
       <AuthCard title="Already Accepted" subtitle="This invitation has already been accepted.">
         <div className="text-center space-y-5">
@@ -92,6 +113,27 @@ function AcceptInviteContent() {
           </div>
           <Button className="w-full" onClick={() => router.push("/app/home")}>
             Go to Dashboard
+          </Button>
+        </div>
+      </AuthCard>
+    );
+  }
+
+  if (invitation.status !== "pending") {
+    return (
+      <AuthCard title="Invalid Invitation" subtitle="This invitation is no longer valid.">
+        <div className="text-center space-y-5">
+          <div
+            className="mx-auto h-12 w-12 rounded-full flex items-center justify-center"
+            style={{ background: "#F9DEDC" }}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#B3261E" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M18 6 6 18" />
+              <path d="m6 6 12 12" />
+            </svg>
+          </div>
+          <Button variant="secondary" className="w-full" onClick={() => router.push("/auth/login")}>
+            Go to Login
           </Button>
         </div>
       </AuthCard>
@@ -113,6 +155,81 @@ function AcceptInviteContent() {
           </div>
           <Button variant="secondary" className="w-full" onClick={() => router.push("/auth/login")}>
             Go to Login
+          </Button>
+        </div>
+      </AuthCard>
+    );
+  }
+
+  if (!invitation.currentUserEmail) {
+    const loginUrl = `/auth/login?callbackUrl=${encodeURIComponent(`/auth/accept-invite?token=${token}`)}`;
+    return (
+      <AuthCard title="Authentication Required" subtitle="You must be signed in to accept this invitation.">
+        <div className="text-center space-y-5">
+          <div className="rounded-lg border p-3 text-sm" style={{ background: "#FFF8E1", borderColor: "#FFE082", color: "#5D4037" }}>
+            This invitation was sent to <strong className="font-semibold">{invitation.email}</strong>. Please sign in with this account.
+          </div>
+          <Button className="w-full" onClick={() => router.push(loginUrl)}>
+            Sign In to Accept
+          </Button>
+        </div>
+      </AuthCard>
+    );
+  }
+
+  if (!invitation.currentUserMatches) {
+    const loginUrl = `/auth/login?callbackUrl=${encodeURIComponent(`/auth/accept-invite?token=${token}`)}`;
+    return (
+      <AuthCard title="Wrong Account" subtitle="You are currently signed in with a different account.">
+        <div className="text-center space-y-5">
+          <div className="rounded-lg border p-3 text-sm text-left space-y-2" style={{ background: "#F9DEDC", borderColor: "#F2B8B5", color: "#410E0B" }}>
+            <p>Currently signed in as: <strong className="font-semibold">{invitation.currentUserEmail}</strong></p>
+            <p>Invitation sent to: <strong className="font-semibold">{invitation.email}</strong></p>
+          </div>
+          <Button className="w-full" onClick={() => router.push(loginUrl)}>
+            Switch Account
+          </Button>
+        </div>
+      </AuthCard>
+    );
+  }
+
+  if (invitation.isDeactivatedMember) {
+    return (
+      <AuthCard title="Account Deactivated" subtitle="Your membership in this organization is deactivated. Please contact an administrator.">
+        <div className="text-center space-y-5">
+          <div
+            className="mx-auto h-12 w-12 rounded-full flex items-center justify-center"
+            style={{ background: "#F9DEDC" }}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#B3261E" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M18 6 6 18" />
+              <path d="m6 6 12 12" />
+            </svg>
+          </div>
+          <Button variant="secondary" className="w-full" onClick={() => router.push("/auth/login")}>
+            Go to Login
+          </Button>
+        </div>
+      </AuthCard>
+    );
+  }
+
+  if (invitation.isAlreadyMember) {
+    return (
+      <AuthCard title="Already a Member" subtitle="You are already a member of this organization.">
+        <div className="text-center space-y-5">
+          <div
+            className="mx-auto h-12 w-12 rounded-full flex items-center justify-center"
+            style={{ background: "#E8F5E9" }}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2E7D32" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+              <polyline points="22 4 12 14.01 9 11.01" />
+            </svg>
+          </div>
+          <Button className="w-full" onClick={() => router.push("/app/home")}>
+            Go to Dashboard
           </Button>
         </div>
       </AuthCard>

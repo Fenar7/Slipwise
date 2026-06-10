@@ -16,6 +16,7 @@ import type {
 } from "./service-contracts";
 import {
   assertConversationAction,
+  requireActiveOrgMember,
 } from "./service-helpers";
 import { rateLimit } from "@/lib/rate-limit";
 import { getRealtimePublisherOrNoop } from "./realtime/publisher";
@@ -79,6 +80,8 @@ export async function listConversationMessages(
   options?: { limit?: number; cursor?: string },
 ): Promise<ConversationMessageRecord[]> {
   const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId);
+
+  await requireActiveOrgMember(db, orgId, userId, "listConversationMessages");
 
   const participant = await db.conversationParticipant.findFirst({
     where: {

@@ -3,6 +3,7 @@ import "server-only";
 import { db } from "@/lib/db";
 import { toConversationRecord, toParticipantRecord } from "../mappers";
 import { evaluateConversationAccess } from "../authorization";
+import { requireActiveOrgMember } from "../service-helpers";
 import type { RealtimeSession } from "./session";
 
 /**
@@ -61,6 +62,19 @@ export async function authorizeConversationSubscription(
           code: "subscription_denied",
         },
         diagnostic: "not_found",
+      };
+    }
+
+    try {
+      await requireActiveOrgMember(db, session.orgId, session.userId, "authorizeConversationSubscription");
+    } catch {
+      return {
+        result: {
+          allowed: false,
+          reason: "active membership required",
+          code: "subscription_denied",
+        },
+        diagnostic: "not_member",
       };
     }
 

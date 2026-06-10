@@ -10,6 +10,11 @@ export interface InvitationDetails {
   role: string;
   status: string;
   expired: boolean;
+  email: string;
+  currentUserEmail?: string | null;
+  currentUserMatches?: boolean;
+  isAlreadyMember?: boolean;
+  isDeactivatedMember?: boolean;
 }
 
 export type AcceptResult = { success: boolean; error?: string };
@@ -27,12 +32,55 @@ export async function getInvitationDetails(
 
     if (!invitation) return null;
 
+    let currentUserEmail: string | null = null;
+    let currentUserMatches = false;
+    let isAlreadyMember = false;
+    let isDeactivatedMember = false;
+
+    try {
+      const supabase = await createSupabaseServer();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (user) {
+        currentUserEmail = user.email || null;
+        if (user.email && invitation.email) {
+          currentUserMatches =
+            user.email.trim().toLowerCase() === invitation.email.trim().toLowerCase();
+        }
+
+        const existingMember = await db.member.findUnique({
+          where: {
+            organizationId_userId: {
+              organizationId: invitation.organizationId,
+              userId: user.id,
+            },
+          },
+        });
+
+        if (existingMember) {
+          isAlreadyMember = true;
+          if (existingMember.role === "deactivated") {
+            isDeactivatedMember = true;
+          }
+        }
+      }
+    } catch {
+      // Ignore auth error in details fetching
+    }
+
     return {
       id: invitation.id,
       orgName: invitation.organization.name,
       role: invitation.role ?? "viewer",
       status: invitation.status,
       expired: new Date(invitation.expiresAt) < new Date(),
+      email: invitation.email,
+      currentUserEmail,
+      currentUserMatches,
+      isAlreadyMember,
+      isDeactivatedMember,
     };
   } catch {
     return null;
@@ -73,7 +121,7 @@ export async function acceptInvitation(
       return { success: false, error: "This invitation has expired" };
     }
 
-    if (!user.email) {
+    if (!user.email || user.email.trim() === "") {
       return { success: false, error: "Authenticated user email not found" };
     }
 
@@ -137,9 +185,16 @@ export async function acceptInvitation(
 
     return { success: true };
   } catch (err) {
+    // Fail closed, prevent raw db error leakage
+    if (err && typeof err === "object" && "code" in err && err.code === "P2002") {
+      return {
+        success: false,
+        error: "You are already a member of this organization",
+      };
+    }
     return {
       success: false,
-      error: err instanceof Error ? err.message : "Failed to accept invitation",
+      error: "Failed to accept invitation",
     };
   }
 }

@@ -88,6 +88,11 @@ vi.mock("@/lib/db", () => {
     findMany: makeFn(),
   };
 
+  const member = {
+    findUnique: makeFn(),
+    findMany: makeFn(),
+  };
+
   const db = {
     ...{
       conversation,
@@ -99,6 +104,7 @@ vi.mock("@/lib/db", () => {
       conversationReadState,
       messagingAuditEvent,
       conversationAttachment,
+      member,
     },
     $transaction: makeFn().mockImplementation(async (fn: (tx: typeof db) => Promise<unknown>) => {
       return fn(db);
@@ -289,6 +295,10 @@ function makeRequest(url: string, init?: RequestInit): NextRequest {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // clearAllMocks does NOT reset mockResolvedValueOnce queues.
+  // If a previous test throws before consuming all once-values, they leak.
+  // Reset the specific mocks that use mockResolvedValueOnce across tests.
+  (db.conversationParticipant.findFirst as ReturnType<typeof vi.fn>).mockReset();
   (getOrgContext as ReturnType<typeof vi.fn>).mockResolvedValue({
     userId: USER_1,
     orgId: ORG_A,
@@ -296,6 +306,10 @@ beforeEach(() => {
     representedId: null,
     proxyGrantId: null,
     proxyScope: [],
+  });
+  (db.member.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({
+    userId: USER_1,
+    role: "admin",
   });
 });
 
@@ -430,6 +444,8 @@ describe("Sprint 3.4 — Governance audit emission completeness", () => {
   });
 
   it("addParticipant emits PARTICIPANT_ADDED", async () => {
+    db.conversation.findFirst.mockResolvedValue(makeConversationRow());
+    db.member.findMany.mockResolvedValue([{ userId: USER_3, role: "member" }]);
     db.conversationParticipant.findFirst
       .mockResolvedValueOnce(makeParticipantRow({ role: "OWNER" })) // actor check
       .mockResolvedValueOnce(null); // target user check
@@ -440,6 +456,7 @@ describe("Sprint 3.4 — Governance audit emission completeness", () => {
   });
 
   it("removeParticipant emits PARTICIPANT_REMOVED", async () => {
+    db.conversation.findFirst.mockResolvedValue(makeConversationRow());
     db.conversationParticipant.findFirst
       .mockResolvedValueOnce(makeParticipantRow({ role: "OWNER" }))
       .mockResolvedValueOnce(makeParticipantRow({ userId: USER_2, role: "MEMBER" }));

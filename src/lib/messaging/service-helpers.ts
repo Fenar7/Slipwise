@@ -29,6 +29,30 @@ export async function getConversationInOrg(
   return conversation;
 }
 
+export async function requireActiveOrgMember(
+  tx: Prisma.TransactionClient,
+  orgId: string,
+  userId: string,
+  context: string,
+): Promise<void> {
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId);
+  if (!isUuid) return;
+
+  const member = await tx.member.findUnique({
+    where: {
+      organizationId_userId: {
+        organizationId: orgId,
+        userId,
+      },
+    },
+    select: { role: true },
+  });
+
+  if (!member || member.role === "deactivated") {
+    throw new Error(`${context}: active membership required`);
+  }
+}
+
 export async function assertActiveParticipant(
   tx: Prisma.TransactionClient,
   orgId: string,
@@ -36,6 +60,8 @@ export async function assertActiveParticipant(
   userId: string,
   context: string,
 ): Promise<Prisma.ConversationParticipantGetPayload<Record<string, never>>> {
+  await requireActiveOrgMember(tx, orgId, userId, context);
+
   const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId);
 
   const participant = await tx.conversationParticipant.findFirst({
@@ -151,6 +177,10 @@ export async function assertGovernanceAction(
   conversation: Prisma.ConversationGetPayload<Record<string, never>>;
   participant: Prisma.ConversationParticipantGetPayload<Record<string, never>> | null;
 }> {
+  if (!actor.isPlatformAdmin) {
+    await requireActiveOrgMember(tx, orgId, userId, context);
+  }
+
   const conversation = await getConversationInOrg(tx, orgId, conversationId, context);
   const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId);
   const participant = await tx.conversationParticipant.findFirst({
