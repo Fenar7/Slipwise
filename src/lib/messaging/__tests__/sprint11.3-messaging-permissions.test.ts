@@ -701,4 +701,104 @@ describe("Sprint 11.3 — Route-level permission enforcement", () => {
       expect(hasPermission(ctx, "messaging", "update")).toBe(false);
     });
   });
+
+  describe("thread-reply portal-send enforcement", () => {
+    it("thread replies require messaging:update (not create) because they default to EXTERNAL_VISIBLE", () => {
+      // Thread replies create messages with default EXTERNAL_VISIBLE audience
+      // Therefore they require the stricter messaging:update permission
+      const createOnlyCtx: AccessContext = {
+        systemRole: "member",
+        customPermissions: { messaging: ["read", "create"] },
+      };
+      // create-only user cannot send thread replies
+      expect(hasPermission(createOnlyCtx, "messaging", "update")).toBe(false);
+
+      const manageCtx: AccessContext = {
+        systemRole: "member",
+        customPermissions: { messaging: ["read", "create", "update"] },
+      };
+      // manage user can send thread replies
+      expect(hasPermission(manageCtx, "messaging", "update")).toBe(true);
+    });
+
+    it("admin can always send thread replies", () => {
+      const ctx: AccessContext = { systemRole: "admin" };
+      expect(hasPermission(ctx, "messaging", "update")).toBe(true);
+    });
+  });
+
+  describe("draft route permission enforcement", () => {
+    it("draft GET requires messaging:read", () => {
+      const ctx: AccessContext = {
+        systemRole: "member",
+        customPermissions: { messaging: ["read"] },
+      };
+      expect(hasPermission(ctx, "messaging", "read")).toBe(true);
+    });
+
+    it("draft GET denied without messaging:read", () => {
+      const ctx: AccessContext = {
+        systemRole: "member",
+        customPermissions: {},
+      };
+      expect(hasPermission(ctx, "messaging", "read")).toBe(false);
+    });
+
+    it("draft DELETE requires messaging:create", () => {
+      const ctx: AccessContext = {
+        systemRole: "member",
+        customPermissions: { messaging: ["read", "create"] },
+      };
+      expect(hasPermission(ctx, "messaging", "create")).toBe(true);
+    });
+
+    it("draft DELETE denied without messaging:create", () => {
+      const ctx: AccessContext = {
+        systemRole: "member",
+        customPermissions: { messaging: ["read"] },
+      };
+      expect(hasPermission(ctx, "messaging", "create")).toBe(false);
+    });
+  });
+
+  describe("mute route permission enforcement", () => {
+    it("mute requires messaging:read", () => {
+      const ctx: AccessContext = {
+        systemRole: "member",
+        customPermissions: { messaging: ["read"] },
+      };
+      expect(hasPermission(ctx, "messaging", "read")).toBe(true);
+    });
+
+    it("mute denied without messaging:read", () => {
+      const ctx: AccessContext = {
+        systemRole: "member",
+        customPermissions: {},
+      };
+      expect(hasPermission(ctx, "messaging", "read")).toBe(false);
+    });
+  });
+
+  describe("participant removal permission enforcement", () => {
+    it("participant removal requires messaging:update", () => {
+      const ctx: AccessContext = {
+        systemRole: "member",
+        customPermissions: { messaging: ["read", "create", "update"] },
+      };
+      expect(hasPermission(ctx, "messaging", "update")).toBe(true);
+    });
+
+    it("participant removal denied without messaging:update", () => {
+      const ctx: AccessContext = {
+        systemRole: "member",
+        customPermissions: { messaging: ["read", "create"] },
+      };
+      expect(hasPermission(ctx, "messaging", "update")).toBe(false);
+    });
+
+    it("admin can always remove participants", () => {
+      const ctx: AccessContext = { systemRole: "admin" };
+      expect(hasPermission(ctx, "messaging", "update")).toBe(true);
+    });
+  });
 });

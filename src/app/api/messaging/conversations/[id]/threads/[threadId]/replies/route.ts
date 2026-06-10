@@ -135,14 +135,18 @@ export async function GET(
  * Reply to a thread.
  *
  * Sprint 5.5 hardening: attachment items must include a valid uploadToken.
- * Sprint 11.3: requires messaging:create (send) permission.
+ * Sprint 11.3: thread replies default to EXTERNAL_VISIBLE audience
+ * (per ConversationMessage schema default). Because portal-visible sends
+ * require stricter messaging:update permission, all thread replies require
+ * messaging:update. This is consistent with the main send route's
+ * portal-send enforcement.
  */
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; threadId: string }> },
 ) {
   try {
-    const { orgId, userId } = await requireMessagingPermission(MESSAGING_RESOURCE, MESSAGING_ACTIONS.CREATE);
+    const { orgId, userId } = await requireMessagingPermission(MESSAGING_RESOURCE, MESSAGING_ACTIONS.UPDATE);
     await applyMessagingRateLimit(request, orgId, "messagingSend");
     const { id: conversationId, threadId } = await params;
     const body = (await request.json()) as Record<string, unknown>;
