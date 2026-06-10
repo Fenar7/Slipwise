@@ -4,8 +4,9 @@ import {
   createConversation,
 } from "@/lib/messaging";
 import { isValidConversationType, isValidConversationVisibility } from "@/lib/messaging";
+import { MESSAGING_RESOURCE, MESSAGING_ACTIONS } from "@/lib/messaging/messaging-permissions";
 import {
-  requireMessagingApiContext,
+  requireMessagingPermission,
   messagingApiResponse,
   handleMessagingApiError,
   parsePagination,
@@ -18,10 +19,12 @@ export const runtime = "nodejs";
 /**
  * GET /api/messaging/conversations
  * List conversation summaries for the current user in their active org.
+ *
+ * Sprint 11.3: requires messaging:read permission.
  */
 export async function GET(request: NextRequest) {
   try {
-    const { orgId, userId } = await requireMessagingApiContext();
+    const { orgId, userId } = await requireMessagingPermission(MESSAGING_RESOURCE, MESSAGING_ACTIONS.READ);
     const { limit, cursor } = parsePagination(request.nextUrl.searchParams);
 
     const conversations = await listConversationSummariesForUser(orgId, userId, {
@@ -44,10 +47,12 @@ export async function GET(request: NextRequest) {
 /**
  * POST /api/messaging/conversations
  * Create a new conversation.
+ *
+ * Sprint 11.3: requires messaging:create permission.
  */
 export async function POST(request: NextRequest) {
   try {
-    const { orgId, userId } = await requireMessagingApiContext();
+    const { orgId, userId } = await requireMessagingPermission(MESSAGING_RESOURCE, MESSAGING_ACTIONS.CREATE);
     const body = (await request.json()) as Record<string, unknown>;
 
     const type = requireEnumField(body.type, "type", ["CHANNEL", "DM", "GROUP", "PORTAL"] as const);

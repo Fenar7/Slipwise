@@ -1,7 +1,8 @@
 import { NextRequest } from "next/server";
 import { addReaction, removeReaction } from "@/lib/messaging";
+import { MESSAGING_RESOURCE, MESSAGING_ACTIONS } from "@/lib/messaging/messaging-permissions";
 import {
-  requireMessagingApiContext,
+  requireMessagingPermission,
   messagingApiResponse,
   handleMessagingApiError,
   requireStringField,
@@ -12,13 +13,15 @@ export const runtime = "nodejs";
 /**
  * POST /api/messaging/conversations/:id/messages/:messageId/reactions
  * Add or remove a reaction.
+ *
+ * Sprint 11.3: requires messaging:create (send) permission.
  */
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; messageId: string }> },
 ) {
   try {
-    const { orgId, userId } = await requireMessagingApiContext();
+    const { orgId, userId } = await requireMessagingPermission(MESSAGING_RESOURCE, MESSAGING_ACTIONS.CREATE);
     const { messageId } = await params;
     const body = (await request.json()) as Record<string, unknown>;
 

@@ -195,6 +195,30 @@ export {
   assertGovernanceAction,
 } from "./service-helpers";
 
+// Sprint 11.3: Messaging permission layer
+export {
+  evaluateMessagingCapability,
+  canAccessMessagingWorkspace,
+  canReadMessaging,
+  canSendMessage,
+  canSendPortalReply,
+  canManageMessaging,
+  canGovernMessaging,
+  evaluateAllMessagingCapabilities,
+  MESSAGING_RESOURCE,
+  MESSAGING_ACTIONS,
+  type MessagingCapability,
+  type MessagingPermissionResult,
+} from "./messaging-permissions";
+
+// Sprint 11.3: Messaging access context (custom-role-aware)
+export {
+  getMessagingAccessContext,
+  requireMessagingAccessContext,
+  hasMessagingPermission,
+  type MessagingAccessContext,
+} from "./messaging-access-context";
+
 // ─── Sprint 2.2: Service implementations ─────────────────────────────────────────
 
 // Conversation service

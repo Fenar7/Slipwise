@@ -1,7 +1,8 @@
 import { NextRequest } from "next/server";
 import { listParticipantsForConversation, addParticipant, isValidParticipantRole } from "@/lib/messaging";
+import { MESSAGING_RESOURCE, MESSAGING_ACTIONS } from "@/lib/messaging/messaging-permissions";
 import {
-  requireMessagingApiContext,
+  requireMessagingPermission,
   messagingApiResponse,
   handleMessagingApiError,
   safeRead,
@@ -15,13 +16,15 @@ export const runtime = "nodejs";
  *
  * Hardening (Sprint 3.3): unauthorized access returns 404 to prevent existence
  * leakage. Only active participants can enumerate members.
+ *
+ * Sprint 11.3: requires messaging:read permission.
  */
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const { orgId, userId } = await requireMessagingApiContext();
+    const { orgId, userId } = await requireMessagingPermission(MESSAGING_RESOURCE, MESSAGING_ACTIONS.READ);
     const { id } = await params;
 
     const participants = await safeRead(
@@ -37,13 +40,15 @@ export async function GET(
 /**
  * POST /api/messaging/conversations/:id/participants
  * Add a participant to a conversation.
+ *
+ * Sprint 11.3: requires messaging:update (manage) permission.
  */
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const { orgId, userId } = await requireMessagingApiContext();
+    const { orgId, userId } = await requireMessagingPermission(MESSAGING_RESOURCE, MESSAGING_ACTIONS.UPDATE);
     const { id } = await params;
     const body = (await request.json()) as Record<string, unknown>;
 

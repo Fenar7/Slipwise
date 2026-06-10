@@ -1342,12 +1342,110 @@ export class MessagingGateway {
 
   private startSweepJob(): void {
     if (this.sweepTimer) return;
-    this.sweepTimer = setInterval(() => {
+    this.sweepTimer = setInterval(async () => {
+      // 1. Evict idle / expired sessions
       const evicted = this.sessions.sweepExpiredSessions(this.idleTimeoutMs);
       for (const { sessionId, reason } of evicted) {
         this.diagnostics.emit({ kind: "session_sweep", sessionId, reason });
+        const socket = this.sessionSockets.get(sessionId);
+        if (socket) {
+          try {
+            socket.close(1008, `session swept: ${reason}`);
+          } catch {}
+        }
         this.sessionSockets.delete(sessionId);
         void this.teardownTypingForSession(sessionId);
+      }
+
+      // 2. Proactively validate memberships for remaining active sessions
+      const activeSessions = [];
+      for (const sessionId of this.sessionSockets.keys()) {
+        const session = this.sessions.getSession(sessionId);
+        if (session && !session.closed) {
+          activeSessions.push(session);
+        }
+      }
+
+      if (activeSessions.length > 0) {
+        try {
+          if (!db || !db.member || typeof db.member.findMany !== "function") {
+            throw new Error("membership_verification_unavailable");
+          }
+
+          let members;
+          try {
+            members = await db.member.findMany({
+              where: {
+                OR: activeSessions.map((s) => ({
+                  organizationId: s.orgId,
+                  userId: s.userId,
+                })),
+              },
+              select: {
+                organizationId: true,
+                userId: true,
+                role: true,
+              },
+            });
+          } catch {
+            throw new Error("membership_verification_failed");
+          }
+
+          const activeKeys = new Set(
+            members
+              .filter((m) => m.role !== "deactivated")
+              .map((m) => `${m.organizationId}:${m.userId}`)
+          );
+
+          for (const session of activeSessions) {
+            const key = `${session.orgId}:${session.userId}`;
+            if (!activeKeys.has(key)) {
+              // User has been deactivated or removed from the org
+              const socket = this.sessionSockets.get(session.sessionId);
+              this.sessions.closeSession(session.sessionId, "membership_deactivated");
+              this.diagnostics.emit({
+                kind: "subscription_denied",
+                sessionId: session.sessionId,
+                reason: "membership_deactivated",
+              });
+              if (socket) {
+                try {
+                  socket.close(1008, "membership deactivated or revoked");
+                } catch {}
+              }
+              this.sessionSockets.delete(session.sessionId);
+              void this.teardownTypingForSession(session.sessionId);
+            }
+          }
+        } catch (err) {
+          const reason =
+            err instanceof Error && err.message === "membership_verification_unavailable"
+              ? "membership_verification_unavailable"
+              : "membership_verification_failed";
+          const socketMessage = reason === "membership_verification_unavailable"
+            ? "membership verification unavailable"
+            : "membership verification failed";
+
+          console.warn(`[gateway] Sweep membership validation failed (${reason}):`, err);
+
+          // Fail closed for all active sessions since we cannot verify their membership state
+          for (const session of activeSessions) {
+            const socket = this.sessionSockets.get(session.sessionId);
+            this.sessions.closeSession(session.sessionId, reason);
+            this.diagnostics.emit({
+              kind: "subscription_denied",
+              sessionId: session.sessionId,
+              reason,
+            });
+            if (socket) {
+              try {
+                socket.close(1008, socketMessage);
+              } catch {}
+            }
+            this.sessionSockets.delete(session.sessionId);
+            void this.teardownTypingForSession(session.sessionId);
+          }
+        }
       }
     }, this.sweepIntervalMs);
   }

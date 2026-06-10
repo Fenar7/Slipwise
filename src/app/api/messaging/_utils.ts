@@ -2,8 +2,10 @@ import "server-only";
 
 import { NextResponse } from "next/server";
 import { getOrgContext, type OrgContext } from "@/lib/auth";
+import { type Resource, type ResourceAction } from "@/lib/auth/rbac/permissions";
 import { rateLimitByOrg, rateLimitByIp, RATE_LIMITS } from "@/lib/rate-limit";
 import { ConversationAccessError } from "@/lib/messaging";
+import { getMessagingAccessContext, hasMessagingPermission } from "@/lib/messaging/messaging-access-context";
 
 export const MessagingApiErrorCode = {
   UNAUTHORIZED: "UNAUTHORIZED",
@@ -179,7 +181,8 @@ export function handleMessagingApiError(error: unknown): NextResponse {
       msg.includes("can only delete your own messages") ||
       msg.includes("cannot remove the sole owner") ||
       msg.includes("cannot demote the sole owner") ||
-      msg.includes("not allowed on DM conversations")
+      msg.includes("not allowed on DM conversations") ||
+      msg.includes("active membership required")
     ) {
       return messagingApiError(
         MessagingApiErrorCode.FORBIDDEN,
@@ -223,6 +226,35 @@ export async function requireMessagingApiContext(): Promise<OrgContext> {
       MessagingApiErrorCode.UNAUTHORIZED,
       "Unauthorized",
       STATUS_MAP[MessagingApiErrorCode.UNAUTHORIZED],
+    );
+  }
+
+  return context;
+}
+
+/**
+ * Require a specific messaging permission for the current user.
+ * Throws 403 if the user lacks the required permission.
+ *
+ * Sprint 11.3: messaging permission enforcement at the API layer.
+ * Uses custom-role-aware access context (fetches CustomRole.permissions
+ * from the database for non-owner/non-admin users).
+ */
+export async function requireMessagingPermission(
+  resource: Resource,
+  action: ResourceAction,
+): Promise<OrgContext> {
+  const context = await requireMessagingApiContext();
+  const accessCtx = await getMessagingAccessContext(
+    context.orgId,
+    context.userId,
+    context.role,
+  );
+
+  if (!hasMessagingPermission(accessCtx, resource, action)) {
+    throw new MessagingAccessDeniedError(
+      "missing_membership",
+      `missing permission: ${resource}:${action}`,
     );
   }
 

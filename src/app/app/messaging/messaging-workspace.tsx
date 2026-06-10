@@ -29,6 +29,7 @@ import { useSendMessage } from "./lib/use-send-message";
 import { useSendThreadReply } from "./lib/use-send-thread-reply";
 import { useMarkRead } from "./lib/use-mark-read";
 import { useRealtimeBootstrap } from "./lib/use-realtime-bootstrap";
+import { useMessagingPermissions } from "./lib/use-messaging-permissions";
 import {
   toFrontendChannel,
   toFrontendDM,
@@ -178,6 +179,7 @@ export function MessagingWorkspace() {
   const lastMarkedRef = React.useRef<Record<string, number>>({});
 
   const { degraded: realtimeDegraded } = useRealtimeBootstrap();
+  const { canSend: rbacCanSend, canManage: rbacCanManage, canGovern: rbacCanGovern } = useMessagingPermissions();
 
   const enrichSelected = React.useCallback((summary: ApiConversationSummary, kind: "channel" | "dm" | "group" | "portal"): ActiveConversation => {
     const conv = toActiveConversation(summary, kind);
@@ -575,7 +577,7 @@ export function MessagingWorkspace() {
                   pendingPortalParams={state.activeSection === "portals" ? pendingPortalParams : null}
                   onCreatePortalFromPrompt={handleCreatePortalFromPrompt}
                   creatingPortalFromPrompt={autoCreating}
-                  canSend={activeDetail?.canSend ?? activeConversation?.canSend ?? true}
+                  canSend={(activeDetail?.canSend ?? activeConversation?.canSend ?? true) && rbacCanSend}
                   sending={sendingMessage}
                   sendError={sendError}
                   onSend={async (

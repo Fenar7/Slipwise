@@ -1,7 +1,9 @@
 import { NextRequest } from "next/server";
 import { getDraft, saveDraft, deleteDraft } from "@/lib/messaging/draft-service";
+import { MESSAGING_RESOURCE, MESSAGING_ACTIONS } from "@/lib/messaging/messaging-permissions";
 import {
   requireMessagingApiContext,
+  requireMessagingPermission,
   messagingApiResponse,
   handleMessagingApiError,
   requireStringField,
@@ -13,13 +15,17 @@ export const runtime = "nodejs";
 /**
  * GET /api/messaging/conversations/:id/draft
  * Retrieve the current user's draft for this conversation/thread.
+ *
+ * Sprint 11.3: requires messaging:read permission.
+ * Draft read is a read-path capability — user must have read access
+ * to the conversation to retrieve their draft.
  */
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const { orgId, userId } = await requireMessagingApiContext();
+    const { orgId, userId } = await requireMessagingPermission(MESSAGING_RESOURCE, MESSAGING_ACTIONS.READ);
     const { id } = await params;
     const threadId = request.nextUrl.searchParams.get("threadId");
 
@@ -41,13 +47,15 @@ export async function GET(
 /**
  * POST /api/messaging/conversations/:id/draft
  * Upsert the current user's draft for this conversation/thread.
+ *
+ * Sprint 11.3: requires messaging:create (send) permission.
  */
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const { orgId, userId } = await requireMessagingApiContext();
+    const { orgId, userId } = await requireMessagingPermission(MESSAGING_RESOURCE, MESSAGING_ACTIONS.CREATE);
     const { id } = await params;
     const body = (await request.json()) as Record<string, unknown>;
 
@@ -74,13 +82,16 @@ export async function POST(
 /**
  * DELETE /api/messaging/conversations/:id/draft
  * Remove the current user's draft for this conversation/thread.
+ *
+ * Sprint 11.3: requires messaging:create (send) permission.
+ * Draft delete is a write operation on a send-path resource.
  */
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const { orgId, userId } = await requireMessagingApiContext();
+    const { orgId, userId } = await requireMessagingPermission(MESSAGING_RESOURCE, MESSAGING_ACTIONS.CREATE);
     const { id } = await params;
     const threadId = request.nextUrl.searchParams.get("threadId");
 

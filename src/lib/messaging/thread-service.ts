@@ -16,6 +16,7 @@ import type {
 } from "./service-contracts";
 import {
   assertConversationAction,
+  requireActiveOrgMember,
 } from "./service-helpers";
 import { getRealtimePublisherOrNoop } from "./realtime/publisher";
 import { appendConversationEvent } from "./realtime/event-log-service";
@@ -61,6 +62,8 @@ export async function listThreadsForConversation(
   conversationId: string,
   userId: string,
 ): Promise<ConversationThreadRecord[]> {
+  await requireActiveOrgMember(db, orgId, userId, "listThreadsForConversation");
+
   const participant = await db.conversationParticipant.findFirst({
     where: {
       orgId,
