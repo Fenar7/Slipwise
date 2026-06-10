@@ -11,6 +11,8 @@ import {
   safeRead,
   requireStringField,
   applyMessagingRateLimit,
+  MessagingApiErrorCode,
+  messagingApiError,
 } from "../../../../../_utils";
 
 export const runtime = "nodejs";
@@ -146,9 +148,31 @@ export async function POST(
   { params }: { params: Promise<{ id: string; threadId: string }> },
 ) {
   try {
-    const { orgId, userId } = await requireMessagingPermission(MESSAGING_RESOURCE, MESSAGING_ACTIONS.UPDATE);
-    await applyMessagingRateLimit(request, orgId, "messagingSend");
     const { id: conversationId, threadId } = await params;
+    const { orgId, userId } = await requireMessagingApiContext();
+
+    // Fetch conversation to determine visibility semantics
+    const conversation = await db.conversation.findFirst({
+      where: { id: conversationId, orgId },
+    });
+    if (!conversation) {
+      return messagingApiError(
+        MessagingApiErrorCode.NOT_FOUND,
+        "Conversation not found or access denied.",
+        404,
+      );
+    }
+
+    // Portal-visible thread replies (in PORTAL conversations) require the stricter portal-send permission (UPDATE).
+    // Ordinary internal thread replies require only the normal send-level permission (CREATE).
+    const requiredAction =
+      conversation.type === "PORTAL"
+        ? MESSAGING_ACTIONS.UPDATE
+        : MESSAGING_ACTIONS.CREATE;
+
+    await requireMessagingPermission(MESSAGING_RESOURCE, requiredAction);
+    await applyMessagingRateLimit(request, orgId, "messagingSend");
+
     const body = (await request.json()) as Record<string, unknown>;
 
     const messageBody = requireStringField(body.body, "body", 10000);

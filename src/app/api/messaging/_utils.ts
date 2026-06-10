@@ -181,7 +181,8 @@ export function handleMessagingApiError(error: unknown): NextResponse {
       msg.includes("can only delete your own messages") ||
       msg.includes("cannot remove the sole owner") ||
       msg.includes("cannot demote the sole owner") ||
-      msg.includes("not allowed on DM conversations")
+      msg.includes("not allowed on DM conversations") ||
+      msg.includes("active membership required")
     ) {
       return messagingApiError(
         MessagingApiErrorCode.FORBIDDEN,

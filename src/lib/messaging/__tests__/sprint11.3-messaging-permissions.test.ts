@@ -15,6 +15,68 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { NextRequest } from "next/server";
+
+vi.mock("server-only", () => ({}));
+
+const dbMocks = {
+  conversation: {
+    findFirst: vi.fn(),
+    findMany: vi.fn(),
+  },
+  conversationParticipant: {
+    findFirst: vi.fn(),
+    count: vi.fn(),
+  },
+  conversationThread: {
+    findFirst: vi.fn(),
+    findMany: vi.fn(),
+    create: vi.fn(),
+    update: vi.fn(),
+  },
+  conversationMessage: {
+    create: vi.fn(),
+    findMany: vi.fn(),
+  },
+  member: {
+    findUnique: vi.fn(),
+  },
+  messageMention: {
+    findMany: vi.fn(),
+    createMany: vi.fn(),
+  },
+  conversationAttachment: {
+    findMany: vi.fn(),
+    createMany: vi.fn(),
+  },
+  messagingAuditEvent: {
+    create: vi.fn(),
+  },
+  conversationEventLog: {
+    findFirst: vi.fn().mockResolvedValue(null),
+    findMany: vi.fn().mockResolvedValue([]),
+    create: vi.fn().mockResolvedValue({ id: "event-001", cursor: 1n }),
+    count: vi.fn().mockResolvedValue(0),
+  },
+  $transaction: vi.fn(async (cb) => cb(dbMocks)),
+};
+
+vi.mock("@/lib/db", () => ({
+  db: dbMocks,
+}));
+
+const getOrgContextMock = vi.fn();
+vi.mock("@/lib/auth", () => ({
+  getOrgContext: getOrgContextMock,
+}));
+
+vi.mock("@/lib/rate-limit", () => ({
+  rateLimitByOrg: vi.fn().mockResolvedValue({ success: true, remaining: 999 }),
+  rateLimitByIp: vi.fn().mockResolvedValue({ success: true, remaining: 999 }),
+  RATE_LIMITS: {
+    messagingSend: { maxRequests: 60, window: "60 s" },
+  },
+}));
 
 // ─── RBAC Permission Engine Tests ────────────────────────────────────────────
 
@@ -703,27 +765,37 @@ describe("Sprint 11.3 — Route-level permission enforcement", () => {
   });
 
   describe("thread-reply portal-send enforcement", () => {
-    it("thread replies require messaging:update (not create) because they default to EXTERNAL_VISIBLE", () => {
-      // Thread replies create messages with default EXTERNAL_VISIBLE audience
+    it("portal-visible thread replies (in PORTAL conversations) require messaging:update (not create)", () => {
+      // Thread replies in PORTAL conversations default to EXTERNAL_VISIBLE
       // Therefore they require the stricter messaging:update permission
       const createOnlyCtx: AccessContext = {
         systemRole: "member",
         customPermissions: { messaging: ["read", "create"] },
       };
-      // create-only user cannot send thread replies
+      // create-only user cannot send portal thread replies
       expect(hasPermission(createOnlyCtx, "messaging", "update")).toBe(false);
 
       const manageCtx: AccessContext = {
         systemRole: "member",
         customPermissions: { messaging: ["read", "create", "update"] },
       };
-      // manage user can send thread replies
+      // manage user can send portal thread replies
       expect(hasPermission(manageCtx, "messaging", "update")).toBe(true);
+    });
+
+    it("ordinary internal thread replies (in non-PORTAL conversations) require only messaging:create", () => {
+      const createOnlyCtx: AccessContext = {
+        systemRole: "member",
+        customPermissions: { messaging: ["read", "create"] },
+      };
+      // create-only user can send ordinary internal thread replies
+      expect(hasPermission(createOnlyCtx, "messaging", "create")).toBe(true);
     });
 
     it("admin can always send thread replies", () => {
       const ctx: AccessContext = { systemRole: "admin" };
       expect(hasPermission(ctx, "messaging", "update")).toBe(true);
+      expect(hasPermission(ctx, "messaging", "create")).toBe(true);
     });
   });
 
@@ -799,6 +871,330 @@ describe("Sprint 11.3 — Route-level permission enforcement", () => {
     it("admin can always remove participants", () => {
       const ctx: AccessContext = { systemRole: "admin" };
       expect(hasPermission(ctx, "messaging", "update")).toBe(true);
+    });
+  });
+
+  // ─── Route-level tests ────────────────────────────────────────────────────────
+
+  describe("Sprint 11.3 Remediation — Route-level permission enforcement (GET threads & POST replies)", () => {
+    const ORG_A = "org-aaa";
+    const USER_1 = "00000000-0000-0000-0000-000000000001";
+    const CONV_ID = "conv-001";
+    const THREAD_ID = "thread-001";
+
+    beforeEach(() => {
+      vi.clearAllMocks();
+    });
+
+    function makeRequest(url: string, init?: RequestInit): NextRequest {
+      return new NextRequest(new URL(url), init);
+    }
+
+    function makeParticipantRow(overrides: Partial<any> = {}) {
+      return {
+        id: "part-001",
+        orgId: ORG_A,
+        conversationId: CONV_ID,
+        userId: USER_1,
+        leftAt: null,
+        role: "MEMBER" as const,
+        kind: "INTERNAL_MEMBER" as const,
+        ...overrides,
+      };
+    }
+
+    describe("GET /api/messaging/conversations/:id/threads", () => {
+      it("requires messaging:read and allows user with messaging:read + active participant", async () => {
+        // Mock auth: user is a member with messaging:read
+        getOrgContextMock.mockResolvedValue({
+          userId: USER_1,
+          orgId: ORG_A,
+          role: "member",
+        });
+        dbMocks.member.findUnique.mockResolvedValue({
+          customRole: { permissions: { messaging: ["read"] } },
+        });
+        dbMocks.conversationParticipant.findFirst.mockResolvedValue(makeParticipantRow());
+        dbMocks.conversationThread.findMany.mockResolvedValue([
+          { id: THREAD_ID, orgId: ORG_A, conversationId: CONV_ID, title: "Thread 1" },
+        ]);
+
+        const { GET: getThreads } = await import("@/app/api/messaging/conversations/[id]/threads/route");
+        const request = makeRequest(`http://localhost/api/messaging/conversations/${CONV_ID}/threads`);
+        const response = await getThreads(request, { params: Promise.resolve({ id: CONV_ID }) });
+
+        expect(response.status).toBe(200);
+        const body = await response.json();
+        expect(body.success).toBe(true);
+        expect(body.data.threads).toHaveLength(1);
+      });
+
+      it("denies access (403) for user without messaging:read", async () => {
+        getOrgContextMock.mockResolvedValue({
+          userId: USER_1,
+          orgId: ORG_A,
+          role: "member",
+        });
+        dbMocks.member.findUnique.mockResolvedValue({
+          customRole: { permissions: { messaging: [] } },
+        });
+
+        const { GET: getThreads } = await import("@/app/api/messaging/conversations/[id]/threads/route");
+        const request = makeRequest(`http://localhost/api/messaging/conversations/${CONV_ID}/threads`);
+        const response = await getThreads(request, { params: Promise.resolve({ id: CONV_ID }) });
+
+        expect(response.status).toBe(403);
+        const body = await response.json();
+        expect(body.success).toBe(false);
+        expect(body.error.code).toBe("FORBIDDEN");
+      });
+
+      it("hides existence (404) for user with messaging:read who is NOT a participant", async () => {
+        getOrgContextMock.mockResolvedValue({
+          userId: USER_1,
+          orgId: ORG_A,
+          role: "member",
+        });
+        dbMocks.member.findUnique.mockResolvedValue({
+          customRole: { permissions: { messaging: ["read"] } },
+        });
+        // Participant check fails
+        dbMocks.conversationParticipant.findFirst.mockResolvedValue(null);
+
+        const { GET: getThreads } = await import("@/app/api/messaging/conversations/[id]/threads/route");
+        const request = makeRequest(`http://localhost/api/messaging/conversations/${CONV_ID}/threads`);
+        const response = await getThreads(request, { params: Promise.resolve({ id: CONV_ID }) });
+
+        expect(response.status).toBe(404);
+        const body = await response.json();
+        expect(body.success).toBe(false);
+        expect(body.error.code).toBe("NOT_FOUND");
+      });
+
+      it("denies access (403) for deactivated member", async () => {
+        getOrgContextMock.mockResolvedValue({
+          userId: USER_1,
+          orgId: ORG_A,
+          role: "deactivated",
+        });
+        // Fallback in RBAC grants read default, but requireActiveOrgMember check in service layer blocks:
+        dbMocks.member.findUnique.mockResolvedValue({
+          role: "deactivated",
+        });
+
+        const { GET: getThreads } = await import("@/app/api/messaging/conversations/[id]/threads/route");
+        const request = makeRequest(`http://localhost/api/messaging/conversations/${CONV_ID}/threads`);
+        const response = await getThreads(request, { params: Promise.resolve({ id: CONV_ID }) });
+
+        expect(response.status).toBe(403);
+        const body = await response.json();
+        expect(body.success).toBe(false);
+        expect(body.error.code).toBe("FORBIDDEN");
+      });
+    });
+
+    describe("POST /api/messaging/conversations/:id/threads/:threadId/replies", () => {
+      it("allows ordinary internal thread replies (non-portal) for a user with messaging:create", async () => {
+        getOrgContextMock.mockResolvedValue({
+          userId: USER_1,
+          orgId: ORG_A,
+          role: "member",
+        });
+        // User has messaging:create but NOT messaging:update
+        dbMocks.member.findUnique.mockResolvedValue({
+          customRole: { permissions: { messaging: ["read", "create"] } },
+          role: "member",
+        });
+        // Internal conversation
+        dbMocks.conversation.findFirst.mockResolvedValue({
+          id: CONV_ID,
+          orgId: ORG_A,
+          type: "CHANNEL",
+          portalState: null,
+        });
+        dbMocks.conversationParticipant.findFirst.mockResolvedValue(makeParticipantRow());
+        dbMocks.conversationThread.findFirst.mockResolvedValue({
+          id: THREAD_ID,
+          orgId: ORG_A,
+          conversationId: CONV_ID,
+        });
+        dbMocks.conversationParticipant.count.mockResolvedValue(2);
+        dbMocks.conversationMessage.create.mockResolvedValue({
+          id: "msg-002",
+          orgId: ORG_A,
+          conversationId: CONV_ID,
+          threadId: THREAD_ID,
+          body: "Internal reply body",
+          createdAt: new Date(),
+        });
+
+        const { POST: postThreadReply } = await import("@/app/api/messaging/conversations/[id]/threads/[threadId]/replies/route");
+        const request = makeRequest(`http://localhost/api/messaging/conversations/${CONV_ID}/threads/${THREAD_ID}/replies`, {
+          method: "POST",
+          body: JSON.stringify({ body: "Internal reply body" }),
+        });
+        const response = await postThreadReply(request, { params: Promise.resolve({ id: CONV_ID, threadId: THREAD_ID }) });
+
+        expect(response.status).toBe(201);
+        const body = await response.json();
+        expect(body.success).toBe(true);
+        expect(body.data.body).toBe("Internal reply body");
+      });
+
+      it("denies ordinary internal thread replies (non-portal) for a user without messaging:create", async () => {
+        getOrgContextMock.mockResolvedValue({
+          userId: USER_1,
+          orgId: ORG_A,
+          role: "member",
+        });
+        // User only has messaging:read
+        dbMocks.member.findUnique.mockResolvedValue({
+          customRole: { permissions: { messaging: ["read"] } },
+          role: "member",
+        });
+        dbMocks.conversation.findFirst.mockResolvedValue({
+          id: CONV_ID,
+          orgId: ORG_A,
+          type: "CHANNEL",
+          portalState: null,
+        });
+
+        const { POST: postThreadReply } = await import("@/app/api/messaging/conversations/[id]/threads/[threadId]/replies/route");
+        const request = makeRequest(`http://localhost/api/messaging/conversations/${CONV_ID}/threads/${THREAD_ID}/replies`, {
+          method: "POST",
+          body: JSON.stringify({ body: "Internal reply body" }),
+        });
+        const response = await postThreadReply(request, { params: Promise.resolve({ id: CONV_ID, threadId: THREAD_ID }) });
+
+        expect(response.status).toBe(403);
+        const body = await response.json();
+        expect(body.success).toBe(false);
+        expect(body.error.code).toBe("FORBIDDEN");
+      });
+
+      it("allows portal-visible thread replies for a user with messaging:update", async () => {
+        getOrgContextMock.mockResolvedValue({
+          userId: USER_1,
+          orgId: ORG_A,
+          role: "member",
+        });
+        // User has messaging:update
+        dbMocks.member.findUnique.mockResolvedValue({
+          customRole: { permissions: { messaging: ["read", "create", "update"] } },
+          role: "member",
+        });
+        // Portal conversation
+        dbMocks.conversation.findFirst.mockResolvedValue({
+          id: CONV_ID,
+          orgId: ORG_A,
+          type: "PORTAL",
+          portalState: "OPEN",
+          customerId: "cust-001",
+        });
+        dbMocks.conversationParticipant.findFirst.mockResolvedValue(makeParticipantRow());
+        dbMocks.conversationThread.findFirst.mockResolvedValue({
+          id: THREAD_ID,
+          orgId: ORG_A,
+          conversationId: CONV_ID,
+        });
+        dbMocks.conversationParticipant.count.mockResolvedValue(2);
+        dbMocks.conversationMessage.create.mockResolvedValue({
+          id: "msg-003",
+          orgId: ORG_A,
+          conversationId: CONV_ID,
+          threadId: THREAD_ID,
+          body: "Portal reply body",
+          createdAt: new Date(),
+        });
+
+        const { POST: postThreadReply } = await import("@/app/api/messaging/conversations/[id]/threads/[threadId]/replies/route");
+        const request = makeRequest(`http://localhost/api/messaging/conversations/${CONV_ID}/threads/${THREAD_ID}/replies`, {
+          method: "POST",
+          body: JSON.stringify({ body: "Portal reply body" }),
+        });
+        const response = await postThreadReply(request, { params: Promise.resolve({ id: CONV_ID, threadId: THREAD_ID }) });
+
+        expect(response.status).toBe(201);
+        const body = await response.json();
+        expect(body.success).toBe(true);
+        expect(body.data.body).toBe("Portal reply body");
+      });
+
+      it("denies portal-visible thread replies for a user with only messaging:create", async () => {
+        getOrgContextMock.mockResolvedValue({
+          userId: USER_1,
+          orgId: ORG_A,
+          role: "member",
+        });
+        // User has messaging:create but NOT update
+        dbMocks.member.findUnique.mockResolvedValue({
+          customRole: { permissions: { messaging: ["read", "create"] } },
+          role: "member",
+        });
+        // Portal conversation
+        dbMocks.conversation.findFirst.mockResolvedValue({
+          id: CONV_ID,
+          orgId: ORG_A,
+          type: "PORTAL",
+          portalState: "OPEN",
+          customerId: "cust-001",
+        });
+
+        const { POST: postThreadReply } = await import("@/app/api/messaging/conversations/[id]/threads/[threadId]/replies/route");
+        const request = makeRequest(`http://localhost/api/messaging/conversations/${CONV_ID}/threads/${THREAD_ID}/replies`, {
+          method: "POST",
+          body: JSON.stringify({ body: "Portal reply body" }),
+        });
+        const response = await postThreadReply(request, { params: Promise.resolve({ id: CONV_ID, threadId: THREAD_ID }) });
+
+        expect(response.status).toBe(403);
+        const body = await response.json();
+        expect(body.success).toBe(false);
+        expect(body.error.code).toBe("FORBIDDEN");
+      });
+
+      it("allows platform-admin governance / owner bypass to reply to portal thread without update permission", async () => {
+        getOrgContextMock.mockResolvedValue({
+          userId: USER_1,
+          orgId: ORG_A,
+          role: "owner", // owner bypass
+        });
+        // Portal conversation
+        dbMocks.conversation.findFirst.mockResolvedValue({
+          id: CONV_ID,
+          orgId: ORG_A,
+          type: "PORTAL",
+          portalState: "OPEN",
+          customerId: "cust-001",
+        });
+        dbMocks.conversationParticipant.findFirst.mockResolvedValue(makeParticipantRow({ role: "OWNER" }));
+        dbMocks.conversationThread.findFirst.mockResolvedValue({
+          id: THREAD_ID,
+          orgId: ORG_A,
+          conversationId: CONV_ID,
+        });
+        dbMocks.conversationParticipant.count.mockResolvedValue(2);
+        dbMocks.conversationMessage.create.mockResolvedValue({
+          id: "msg-004",
+          orgId: ORG_A,
+          conversationId: CONV_ID,
+          threadId: THREAD_ID,
+          body: "Owner reply body",
+          createdAt: new Date(),
+        });
+
+        const { POST: postThreadReply } = await import("@/app/api/messaging/conversations/[id]/threads/[threadId]/replies/route");
+        const request = makeRequest(`http://localhost/api/messaging/conversations/${CONV_ID}/threads/${THREAD_ID}/replies`, {
+          method: "POST",
+          body: JSON.stringify({ body: "Owner reply body" }),
+        });
+        const response = await postThreadReply(request, { params: Promise.resolve({ id: CONV_ID, threadId: THREAD_ID }) });
+
+        expect(response.status).toBe(201);
+        const body = await response.json();
+        expect(body.success).toBe(true);
+        expect(body.data.body).toBe("Owner reply body");
+      });
     });
   });
 });
