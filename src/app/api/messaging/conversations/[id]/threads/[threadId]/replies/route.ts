@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { listThreadReplies, replyToThread } from "@/lib/messaging";
+import { listThreadReplies, replyToThread, getMessagingAccessContext, hasMessagingPermission } from "@/lib/messaging";
 import { db } from "@/lib/db";
 import { verifyUploadToken } from "@/lib/messaging/service-helpers";
 import { MESSAGING_RESOURCE, MESSAGING_ACTIONS } from "@/lib/messaging/messaging-permissions";
@@ -13,6 +13,7 @@ import {
   applyMessagingRateLimit,
   MessagingApiErrorCode,
   messagingApiError,
+  MessagingAccessDeniedError,
 } from "../../../../../_utils";
 
 export const runtime = "nodejs";
@@ -149,13 +150,38 @@ export async function POST(
 ) {
   try {
     const { id: conversationId, threadId } = await params;
-    const { orgId, userId } = await requireMessagingApiContext();
+    const context = await requireMessagingApiContext();
+    const { orgId, userId, role: systemRole } = context;
 
-    // Fetch conversation to determine visibility semantics
-    const conversation = await db.conversation.findFirst({
-      where: { id: conversationId, orgId },
-    });
-    if (!conversation) {
+    // 1. Resolve access context first to check baseline messaging permissions (create/update)
+    const accessCtx = await getMessagingAccessContext(orgId, userId, systemRole);
+    const hasCreate = hasMessagingPermission(accessCtx, MESSAGING_RESOURCE, MESSAGING_ACTIONS.CREATE);
+    const hasUpdate = hasMessagingPermission(accessCtx, MESSAGING_RESOURCE, MESSAGING_ACTIONS.UPDATE);
+
+    if (!hasCreate && !hasUpdate) {
+      throw new MessagingAccessDeniedError(
+        "missing_membership",
+        `missing permission: ${MESSAGING_RESOURCE}:${MESSAGING_ACTIONS.CREATE}`,
+      );
+    }
+
+    // 2. Fetch conversation and participant record in parallel to enforce existence-hiding.
+    // If user is not an active participant (or conversation does not exist), return 404.
+    const [conversation, participant] = await Promise.all([
+      db.conversation.findFirst({
+        where: { id: conversationId, orgId },
+      }),
+      db.conversationParticipant.findFirst({
+        where: {
+          orgId,
+          conversationId,
+          userId,
+          leftAt: null,
+        },
+      }),
+    ]);
+
+    if (!conversation || !participant) {
       return messagingApiError(
         MessagingApiErrorCode.NOT_FOUND,
         "Conversation not found or access denied.",
@@ -163,6 +189,7 @@ export async function POST(
       );
     }
 
+    // 3. Perform type-based action permission check for authorized participant
     // Portal-visible thread replies (in PORTAL conversations) require the stricter portal-send permission (UPDATE).
     // Ordinary internal thread replies require only the normal send-level permission (CREATE).
     const requiredAction =
@@ -170,7 +197,13 @@ export async function POST(
         ? MESSAGING_ACTIONS.UPDATE
         : MESSAGING_ACTIONS.CREATE;
 
-    await requireMessagingPermission(MESSAGING_RESOURCE, requiredAction);
+    if (!hasMessagingPermission(accessCtx, MESSAGING_RESOURCE, requiredAction)) {
+      throw new MessagingAccessDeniedError(
+        "missing_membership",
+        `missing permission: ${MESSAGING_RESOURCE}:${requiredAction}`,
+      );
+    }
+
     await applyMessagingRateLimit(request, orgId, "messagingSend");
 
     const body = (await request.json()) as Record<string, unknown>;

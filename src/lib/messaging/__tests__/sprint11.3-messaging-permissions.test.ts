@@ -1139,6 +1139,7 @@ describe("Sprint 11.3 — Route-level permission enforcement", () => {
           portalState: "OPEN",
           customerId: "cust-001",
         });
+        dbMocks.conversationParticipant.findFirst.mockResolvedValue(makeParticipantRow());
 
         const { POST: postThreadReply } = await import("@/app/api/messaging/conversations/[id]/threads/[threadId]/replies/route");
         const request = makeRequest(`http://localhost/api/messaging/conversations/${CONV_ID}/threads/${THREAD_ID}/replies`, {
@@ -1194,6 +1195,124 @@ describe("Sprint 11.3 — Route-level permission enforcement", () => {
         const body = await response.json();
         expect(body.success).toBe(true);
         expect(body.data.body).toBe("Owner reply body");
+      });
+
+      describe("existence-leak hardening", () => {
+        it("unauthorized caller without any messaging permission gets 403 for both valid and invalid conversation IDs", async () => {
+          getOrgContextMock.mockResolvedValue({
+            userId: USER_1,
+            orgId: ORG_A,
+            role: "member",
+          });
+          dbMocks.member.findUnique.mockResolvedValue({
+            customRole: { permissions: { messaging: [] } },
+            role: "member",
+          });
+
+          const { POST: postThreadReply } = await import("@/app/api/messaging/conversations/[id]/threads/[threadId]/replies/route");
+
+          // 1. Valid conversation ID (but unauthorized)
+          dbMocks.conversation.findFirst.mockResolvedValue({
+            id: CONV_ID,
+            orgId: ORG_A,
+            type: "CHANNEL",
+            portalState: null,
+          });
+          dbMocks.conversationParticipant.findFirst.mockResolvedValue(makeParticipantRow());
+
+          const req1 = makeRequest(`http://localhost/api/messaging/conversations/${CONV_ID}/threads/${THREAD_ID}/replies`, {
+            method: "POST",
+            body: JSON.stringify({ body: "Reply body" }),
+          });
+          const res1 = await postThreadReply(req1, { params: Promise.resolve({ id: CONV_ID, threadId: THREAD_ID }) });
+          expect(res1.status).toBe(403);
+
+          // 2. Invalid conversation ID
+          dbMocks.conversation.findFirst.mockResolvedValue(null);
+          dbMocks.conversationParticipant.findFirst.mockResolvedValue(null);
+
+          const req2 = makeRequest(`http://localhost/api/messaging/conversations/non-existent/threads/${THREAD_ID}/replies`, {
+            method: "POST",
+            body: JSON.stringify({ body: "Reply body" }),
+          });
+          const res2 = await postThreadReply(req2, { params: Promise.resolve({ id: "non-existent", threadId: THREAD_ID }) });
+          expect(res2.status).toBe(403);
+        });
+
+        it("create-only user without portal permission gets 404 for both non-existent conversations and portal conversations they are not in", async () => {
+          getOrgContextMock.mockResolvedValue({
+            userId: USER_1,
+            orgId: ORG_A,
+            role: "member",
+          });
+          dbMocks.member.findUnique.mockResolvedValue({
+            customRole: { permissions: { messaging: ["read", "create"] } },
+            role: "member",
+          });
+
+          const { POST: postThreadReply } = await import("@/app/api/messaging/conversations/[id]/threads/[threadId]/replies/route");
+
+          // 1. Non-existent conversation ID
+          dbMocks.conversation.findFirst.mockResolvedValue(null);
+          dbMocks.conversationParticipant.findFirst.mockResolvedValue(null);
+
+          const req1 = makeRequest(`http://localhost/api/messaging/conversations/non-existent/threads/${THREAD_ID}/replies`, {
+            method: "POST",
+            body: JSON.stringify({ body: "Reply body" }),
+          });
+          const res1 = await postThreadReply(req1, { params: Promise.resolve({ id: "non-existent", threadId: THREAD_ID }) });
+          expect(res1.status).toBe(404);
+
+          // 2. Valid portal conversation ID they are not in
+          dbMocks.conversation.findFirst.mockResolvedValue({
+            id: CONV_ID,
+            orgId: ORG_A,
+            type: "PORTAL",
+            portalState: "OPEN",
+            customerId: "cust-001",
+          });
+          dbMocks.conversationParticipant.findFirst.mockResolvedValue(null); // not a participant
+
+          const req2 = makeRequest(`http://localhost/api/messaging/conversations/${CONV_ID}/threads/${THREAD_ID}/replies`, {
+            method: "POST",
+            body: JSON.stringify({ body: "Reply body" }),
+          });
+          const res2 = await postThreadReply(req2, { params: Promise.resolve({ id: CONV_ID, threadId: THREAD_ID }) });
+          expect(res2.status).toBe(404);
+        });
+
+        it("create-only user without portal permission gets 403 for a portal conversation they ARE a participant in", async () => {
+          getOrgContextMock.mockResolvedValue({
+            userId: USER_1,
+            orgId: ORG_A,
+            role: "member",
+          });
+          dbMocks.member.findUnique.mockResolvedValue({
+            customRole: { permissions: { messaging: ["read", "create"] } },
+            role: "member",
+          });
+
+          const { POST: postThreadReply } = await import("@/app/api/messaging/conversations/[id]/threads/[threadId]/replies/route");
+
+          dbMocks.conversation.findFirst.mockResolvedValue({
+            id: CONV_ID,
+            orgId: ORG_A,
+            type: "PORTAL",
+            portalState: "OPEN",
+            customerId: "cust-001",
+          });
+          dbMocks.conversationParticipant.findFirst.mockResolvedValue(makeParticipantRow());
+
+          const req = makeRequest(`http://localhost/api/messaging/conversations/${CONV_ID}/threads/${THREAD_ID}/replies`, {
+            method: "POST",
+            body: JSON.stringify({ body: "Reply body" }),
+          });
+          const res = await postThreadReply(req, { params: Promise.resolve({ id: CONV_ID, threadId: THREAD_ID }) });
+          expect(res.status).toBe(403);
+          const body = await res.json();
+          expect(body.success).toBe(false);
+          expect(body.error.code).toBe("FORBIDDEN");
+        });
       });
     });
   });
