@@ -38,6 +38,10 @@ export async function requireActiveOrgMember(
   const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId);
   if (!isUuid) return;
 
+  if (!tx.member || typeof tx.member.findUnique !== "function") {
+    throw new Error("requireActiveOrgMember: membership infrastructure unavailable");
+  }
+
   const member = await tx.member.findUnique({
     where: {
       organizationId_userId: {
