@@ -76,13 +76,15 @@ function parseMentions(raw: unknown): Array<{ userId: string; offsetStart: numbe
 /**
  * GET /api/messaging/conversations/:id/threads/:threadId/replies
  * List replies for a specific thread.
+ *
+ * Sprint 11.3: requires messaging:read permission.
  */
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string; threadId: string }> },
 ) {
   try {
-    const { orgId, userId } = await requireMessagingApiContext();
+    const { orgId, userId } = await requireMessagingPermission(MESSAGING_RESOURCE, MESSAGING_ACTIONS.READ);
     const { id: conversationId, threadId } = await params;
 
     const replies = await safeRead(

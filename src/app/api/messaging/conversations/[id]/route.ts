@@ -24,13 +24,15 @@ export const runtime = "nodejs";
  *
  * Hardening (Sprint 3.3): returns 404 for any unauthorized access to prevent
  * existence leakage. Only active participants can read conversation detail.
+ *
+ * Sprint 11.3: requires messaging:read permission.
  */
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const { orgId, userId } = await requireMessagingApiContext();
+    const { orgId, userId } = await requireMessagingPermission(MESSAGING_RESOURCE, MESSAGING_ACTIONS.READ);
     const { id } = await params;
     const { limit, cursor } = parsePagination(request.nextUrl.searchParams);
 

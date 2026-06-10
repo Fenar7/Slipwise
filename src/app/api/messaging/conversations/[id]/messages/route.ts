@@ -3,6 +3,7 @@ import { listConversationMessages, sendMessage } from "@/lib/messaging";
 import { verifyUploadToken } from "@/lib/messaging/service-helpers";
 import { MESSAGING_RESOURCE, MESSAGING_ACTIONS } from "@/lib/messaging/messaging-permissions";
 import {
+  requireMessagingApiContext,
   requireMessagingPermission,
   messagingApiResponse,
   handleMessagingApiError,
@@ -114,14 +115,18 @@ function parseMentions(raw: unknown): Array<{ userId: string; offsetStart: numbe
  * proven to originate from an authorized messaging upload for the current
  * user and org. Client-supplied storageRef/metadata alone are not trusted.
  *
- * Sprint 11.3: requires messaging:create permission.
+ * Sprint 11.3: portal-visible sends (audience !== INTERNAL_ONLY) require
+ * the stricter messaging:update permission. Internal-only sends require
+ * only messaging:create. This enforces the capability distinction at the
+ * route boundary before the service layer.
  */
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const { orgId, userId } = await requireMessagingPermission(MESSAGING_RESOURCE, MESSAGING_ACTIONS.CREATE);
+    const context = await requireMessagingApiContext();
+    const { orgId, userId } = context;
     await applyMessagingRateLimit(request, orgId, "messagingSend");
     const { id } = await params;
     const body = (await request.json()) as Record<string, unknown>;
@@ -138,6 +143,14 @@ export async function POST(
       body.audience === "INTERNAL_ONLY"
         ? "INTERNAL_ONLY"
         : "EXTERNAL_VISIBLE";
+
+    // Sprint 11.3: portal-visible sends require stricter messaging:update permission.
+    // Internal-only sends require only messaging:create.
+    if (audience === "EXTERNAL_VISIBLE") {
+      await requireMessagingPermission(MESSAGING_RESOURCE, MESSAGING_ACTIONS.UPDATE);
+    } else {
+      await requireMessagingPermission(MESSAGING_RESOURCE, MESSAGING_ACTIONS.CREATE);
+    }
 
     const message = await sendMessage({
       orgId,
