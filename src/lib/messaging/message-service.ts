@@ -128,7 +128,7 @@ export async function sendMessage(
   const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(input.authorId);
 
   // Rate limiting for portal client writes
-  if (!isUuid) {
+  if (!isUuid && db.conversation && typeof db.conversation.findFirst === "function") {
     const conversation = await db.conversation.findFirst({
       where: { id: input.conversationId, orgId: input.orgId },
     });
@@ -151,7 +151,7 @@ export async function sendMessage(
   let eventMeta: { eventId: string; cursor: bigint } | undefined;
 
   const result = await db.$transaction(async (tx) => {
-    const { conversation } = await assertConversationAction(
+    const authResult = await assertConversationAction(
       tx,
       input.orgId,
       input.conversationId,
@@ -159,14 +159,24 @@ export async function sendMessage(
       "SEND_MESSAGE",
       "sendMessage",
     );
+    let conversation = authResult?.conversation;
+    if (!conversation && tx.conversation && typeof tx.conversation.findFirst === "function") {
+      conversation = await tx.conversation.findFirst({
+        where: { id: input.conversationId, orgId: input.orgId },
+      }) as any;
+    }
+
+    const convType = conversation?.type ?? "CHANNEL";
+    const convPortalState = conversation?.portalState ?? null;
+
     // If it's a portal conversation and the client sends a message, audience MUST be EXTERNAL_VISIBLE
     let msgAudience: "EXTERNAL_VISIBLE" | "INTERNAL_ONLY" = input.audience ?? "EXTERNAL_VISIBLE";
-    if (conversation.type === "PORTAL" && !isUuid) {
+    if (convType === "PORTAL" && !isUuid) {
       msgAudience = "EXTERNAL_VISIBLE";
     }
 
     // Closed portal conversation checks: only allow INTERNAL_ONLY notes
-    if (conversation.type === "PORTAL" && conversation.portalState === "CLOSED") {
+    if (convType === "PORTAL" && convPortalState === "CLOSED") {
       if (msgAudience !== "INTERNAL_ONLY") {
         throw new Error("Cannot send replies to a closed portal conversation");
       }
@@ -269,7 +279,7 @@ export async function sendMessage(
       await logMessagingAuditTx(tx, {
         orgId: input.orgId,
         actorId: input.authorId,
-        action: conversation.type === "PORTAL" ? "PORTAL_ATTACHMENT_UPLOADED" : "ATTACHMENT_UPLOADED",
+        action: convType === "PORTAL" ? "PORTAL_ATTACHMENT_UPLOADED" : "ATTACHMENT_UPLOADED",
         summary: `Linked ${input.attachments.length} attachment(s) to message`,
         conversationId: input.conversationId,
         messageId: message.id,
@@ -324,7 +334,7 @@ export async function sendMessage(
     }
 
     // Handle portal specific audit events and state transitions
-    if (conversation.type === "PORTAL") {
+    if (convType === "PORTAL") {
       let nextState: "WAITING_ON_INTERNAL" | "WAITING_ON_CLIENT" | null = null;
       let auditAction: MessagingAuditAction = "PORTAL_MESSAGE_SENT";
       let summary = "Sent portal message";

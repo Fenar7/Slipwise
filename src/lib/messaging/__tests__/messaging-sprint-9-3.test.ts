@@ -128,6 +128,7 @@ vi.mock("@/app/api/messaging/_utils", async (importOriginal) => {
   return {
     ...actual,
     requireMessagingApiContext: vi.fn().mockResolvedValue({ userId: "user-1", orgId: "org-1" }),
+    requireMessagingPermission: vi.fn().mockResolvedValue({ userId: "user-1", orgId: "org-1" }),
     messagingApiResponse: (data: any) => ({ success: true, data }),
     messagingApiError: (code: string, message: string, status?: number) => ({ success: false, error: { code, message }, status }),
     handleMessagingApiError: (err: any) => ({ success: false, error: err.message }),

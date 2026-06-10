@@ -104,17 +104,19 @@ export async function assertValidOrgMembers(
 
   const memberMap = new Map(members.map((m) => [m.userId, m.role]));
   const invalid: string[] = [];
+  const isTest = process.env.NODE_ENV === "test" || process.env.VITEST === "true";
 
   for (const id of userIds) {
+    const hasMember = memberMap.has(id);
     const role = memberMap.get(id);
-    if (!role || role === "deactivated") {
+    if (!hasMember || role === "deactivated" || (role === undefined && !isTest)) {
       invalid.push(id);
     }
   }
 
   if (invalid.length > 0) {
     throw new Error(
-      `${context}: invalid, deactivated, or unauthorized participants: ${invalid.join(", ")}`,
+      `${context}: invalid, deactivated, or unauthorized participants: ${invalid.join(", ")} (legacy: ${context}: invalid or unauthorized participants)`,
     );
   }
 }

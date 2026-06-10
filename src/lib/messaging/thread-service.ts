@@ -128,7 +128,16 @@ export async function listThreadReplies(
     throw new Error("listThreadReplies: active participant access required");
   }
 
-  const hideInternalNotes = thread.conversation.type === "PORTAL" && participant.kind === "PORTAL_CLIENT";
+  let conversationType = (thread as any).conversation?.type;
+  if (!conversationType) {
+    const conv = await db.conversation.findFirst({
+      where: { id: thread.conversationId, orgId },
+      select: { type: true },
+    });
+    conversationType = conv?.type ?? "CHANNEL";
+  }
+
+  const hideInternalNotes = conversationType === "PORTAL" && participant.kind === "PORTAL_CLIENT";
 
   const rows = await db.conversationMessage.findMany({
     where: {

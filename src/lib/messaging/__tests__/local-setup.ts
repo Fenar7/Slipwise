@@ -12,6 +12,7 @@ beforeEach(() => {
           return userIds.map((userId: string) => ({
             userId,
             organizationId: args?.where?.organizationId ?? "org-aaa",
+            role: "MEMBER",
           }));
         }),
         findFirst: vi.fn().mockResolvedValue(null),

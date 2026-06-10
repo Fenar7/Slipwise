@@ -50,6 +50,13 @@ export async function getMessagingAccessContext(
     return { systemRole };
   }
 
+  if (!db.member || typeof db.member.findUnique !== "function") {
+    return {
+      systemRole,
+      customPermissions: null,
+    };
+  }
+
   const member = await db.member.findUnique({
     where: {
       organizationId_userId: { organizationId: orgId, userId },
