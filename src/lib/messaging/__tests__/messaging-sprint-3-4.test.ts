@@ -23,6 +23,10 @@ vi.mock("server-only", () => ({}));
 
 import "./local-setup";
 
+beforeEach(() => {
+  (global as any).__mockActiveMembership = true;
+});
+
 function makeFn() {
   return vi.fn();
 }

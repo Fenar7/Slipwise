@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 import { getOrgContext, type OrgContext } from "@/lib/auth";
 import { type Resource, type ResourceAction } from "@/lib/auth/rbac/permissions";
 import { rateLimitByOrg, rateLimitByIp, RATE_LIMITS } from "@/lib/rate-limit";
-import { ConversationAccessError } from "@/lib/messaging";
+import { ConversationAccessError, MessagingAccessContextError } from "@/lib/messaging";
 import { getMessagingAccessContext, hasMessagingPermission } from "@/lib/messaging/messaging-access-context";
 
 export const MessagingApiErrorCode = {
@@ -121,6 +121,18 @@ export async function safeRead<T>(promise: Promise<T>): Promise<T> {
 export function handleMessagingApiError(error: unknown): NextResponse {
   if (error instanceof MessagingApiError) {
     return messagingApiError(error.code, error.message, error.status);
+  }
+
+  if (error instanceof MessagingAccessContextError) {
+    console.warn(
+      `[api/messaging] Access context resolution failed:`,
+      error.message,
+    );
+    return messagingApiError(
+      MessagingApiErrorCode.FORBIDDEN,
+      "Access denied.",
+      STATUS_MAP[MessagingApiErrorCode.FORBIDDEN],
+    );
   }
 
   if (error instanceof MessagingAccessDeniedError) {

@@ -452,7 +452,7 @@ export {
 } from "./task-reminders";
 
 // Errors
-export { ConversationAccessError, InvalidInputError, NotFoundError } from "./errors";
+export { ConversationAccessError, InvalidInputError, NotFoundError, MessagingAccessContextError } from "./errors";
 
 // Search Indexing
 export { indexAttachment, indexAttachmentsForMessage, updateAttachmentScanStatus, processSearchIndexEvents } from "./indexing-service";

@@ -13,11 +13,11 @@ const { _db } = vi.hoisted(() => {
       groupBy: vi.fn(),
     },
     conversation: {
-      findMany: vi.fn(),
+      findMany: vi.fn().mockResolvedValue([]),
       count: vi.fn(),
     },
     conversationMessage: {
-      findMany: vi.fn(),
+      findMany: vi.fn().mockResolvedValue([]),
       findUnique: vi.fn(),
       count: vi.fn(),
     },
@@ -44,7 +44,7 @@ const { _db } = vi.hoisted(() => {
       upsert: vi.fn(),
     },
     conversationAttachment: {
-      findMany: vi.fn(),
+      findMany: vi.fn().mockResolvedValue([]),
       count: vi.fn(),
     },
     messagingNotificationPreference: {
@@ -69,8 +69,9 @@ const { _db } = vi.hoisted(() => {
       upsert: vi.fn(),
     },
     member: {
-      findFirst: vi.fn(),
-      findMany: vi.fn(),
+      findFirst: vi.fn().mockResolvedValue({ role: "MEMBER" }),
+      findUnique: vi.fn().mockResolvedValue({ role: "MEMBER" }),
+      findMany: vi.fn().mockResolvedValue([]),
     },
     messagingFollowUp: {
       count: vi.fn(),

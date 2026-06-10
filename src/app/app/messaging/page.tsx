@@ -1,6 +1,7 @@
 import { requireOrgContext } from "@/lib/auth";
 import { MESSAGING_RESOURCE, MESSAGING_ACTIONS } from "@/lib/messaging/messaging-permissions";
 import { getMessagingAccessContext, hasMessagingPermission } from "@/lib/messaging/messaging-access-context";
+import { MessagingAccessContextError } from "@/lib/messaging/errors";
 import { MessagingWorkspace } from "./messaging-workspace";
 import { MessagingAccessDenied } from "./messaging-access-denied";
 
@@ -19,17 +20,26 @@ export const metadata = {
  */
 export default async function MessagingPage() {
   const context = await requireOrgContext();
-  const accessCtx = await getMessagingAccessContext(
-    context.orgId,
-    context.userId,
-    context.role,
-  );
 
-  const hasMessagingAccess = hasMessagingPermission(
-    accessCtx,
-    MESSAGING_RESOURCE,
-    MESSAGING_ACTIONS.READ,
-  );
+  let hasMessagingAccess = false;
+  try {
+    const accessCtx = await getMessagingAccessContext(
+      context.orgId,
+      context.userId,
+      context.role,
+    );
+    hasMessagingAccess = hasMessagingPermission(
+      accessCtx,
+      MESSAGING_RESOURCE,
+      MESSAGING_ACTIONS.READ,
+    );
+  } catch (err) {
+    if (err instanceof MessagingAccessContextError) {
+      hasMessagingAccess = false;
+    } else {
+      throw err;
+    }
+  }
 
   if (!hasMessagingAccess) {
     return <MessagingAccessDenied />;

@@ -15,6 +15,8 @@ import { requireOrgContext } from "@/lib/auth";
 import { MESSAGING_RESOURCE, MESSAGING_ACTIONS } from "@/lib/messaging/messaging-permissions";
 import { getMessagingAccessContext, hasMessagingPermission } from "@/lib/messaging/messaging-access-context";
 
+import { MessagingAccessContextError } from "@/lib/messaging/errors";
+
 export type MessagingPermissions = {
   canAccessWorkspace: boolean;
   canRead: boolean;
@@ -29,17 +31,30 @@ export type MessagingPermissions = {
  */
 export async function getMessagingPermissions(): Promise<MessagingPermissions> {
   const context = await requireOrgContext();
-  const accessCtx = await getMessagingAccessContext(
-    context.orgId,
-    context.userId,
-    context.role,
-  );
+  try {
+    const accessCtx = await getMessagingAccessContext(
+      context.orgId,
+      context.userId,
+      context.role,
+    );
 
-  return {
-    canAccessWorkspace: hasMessagingPermission(accessCtx, MESSAGING_RESOURCE, MESSAGING_ACTIONS.READ),
-    canRead: hasMessagingPermission(accessCtx, MESSAGING_RESOURCE, MESSAGING_ACTIONS.READ),
-    canSend: hasMessagingPermission(accessCtx, MESSAGING_RESOURCE, MESSAGING_ACTIONS.CREATE),
-    canManage: hasMessagingPermission(accessCtx, MESSAGING_RESOURCE, MESSAGING_ACTIONS.UPDATE),
-    canGovern: hasMessagingPermission(accessCtx, MESSAGING_RESOURCE, MESSAGING_ACTIONS.DELETE),
-  };
+    return {
+      canAccessWorkspace: hasMessagingPermission(accessCtx, MESSAGING_RESOURCE, MESSAGING_ACTIONS.READ),
+      canRead: hasMessagingPermission(accessCtx, MESSAGING_RESOURCE, MESSAGING_ACTIONS.READ),
+      canSend: hasMessagingPermission(accessCtx, MESSAGING_RESOURCE, MESSAGING_ACTIONS.CREATE),
+      canManage: hasMessagingPermission(accessCtx, MESSAGING_RESOURCE, MESSAGING_ACTIONS.UPDATE),
+      canGovern: hasMessagingPermission(accessCtx, MESSAGING_RESOURCE, MESSAGING_ACTIONS.DELETE),
+    };
+  } catch (err) {
+    if (err instanceof MessagingAccessContextError) {
+      return {
+        canAccessWorkspace: false,
+        canRead: false,
+        canSend: false,
+        canManage: false,
+        canGovern: false,
+      };
+    }
+    throw err;
+  }
 }

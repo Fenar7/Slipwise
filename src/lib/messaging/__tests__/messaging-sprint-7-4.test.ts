@@ -2,6 +2,10 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
+vi.mock("@/lib/notifications", () => ({
+  createNotification: vi.fn().mockResolvedValue({ id: "notif-id-123" }),
+}));
+
 vi.mock("@/lib/db", () => {
   const db = {
     messagingTask: {
@@ -15,7 +19,31 @@ vi.mock("@/lib/db", () => {
     },
     conversationParticipant: {
       findFirst: vi.fn(),
-      findMany: vi.fn(),
+      findMany: vi.fn().mockImplementation(async (args: any) => {
+        const orList = args?.where?.OR;
+        if (Array.isArray(orList)) {
+          const results = [];
+          for (const item of orList) {
+            const p = await db.conversationParticipant.findFirst({
+              where: {
+                orgId: item.orgId,
+                conversationId: item.conversationId,
+                userId: item.userId,
+                leftAt: null,
+              }
+            });
+            if (p) {
+              results.push({
+                orgId: item.orgId,
+                conversationId: item.conversationId,
+                userId: item.userId,
+              });
+            }
+          }
+          return results;
+        }
+        return [];
+      }),
     },
     conversation: {
       findUnique: vi.fn(),
@@ -26,13 +54,24 @@ vi.mock("@/lib/db", () => {
       create: vi.fn(),
     },
     member: {
-      findFirst: vi.fn(),
+      findFirst: vi.fn().mockResolvedValue({ role: "MEMBER" }),
+      findUnique: vi.fn().mockResolvedValue({ role: "MEMBER" }),
+      findMany: vi.fn().mockResolvedValue([]),
     },
     profile: {
       findMany: vi.fn(),
     },
     notification: {
       create: vi.fn(),
+    },
+    orgDefaults: {
+      findMany: vi.fn().mockResolvedValue([]),
+    },
+    conversationReadState: {
+      findMany: vi.fn().mockResolvedValue([]),
+    },
+    messagingNotificationPreference: {
+      findMany: vi.fn().mockResolvedValue([]),
     },
     $transaction: vi.fn((cb: unknown) => {
       if (typeof cb === "function") {

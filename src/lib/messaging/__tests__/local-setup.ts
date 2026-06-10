@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { vi, beforeEach } from "vitest";
 
 beforeEach(() => {
+  (global as any).__mockActiveMembership = false;
   if (db && typeof db === "object") {
     // 1. Mock member model
     if (!("member" in db)) {
@@ -24,6 +25,9 @@ beforeEach(() => {
     };
 
     setupMock("findMany", async (args: any) => {
+      if (!(global as any).__mockActiveMembership) {
+        return [];
+      }
       const orList = args?.where?.OR;
       if (Array.isArray(orList)) {
         return orList.map((item: any) => ({
@@ -41,6 +45,9 @@ beforeEach(() => {
     });
 
     setupMock("findFirst", async (args: any) => {
+      if (!(global as any).__mockActiveMembership) {
+        return null;
+      }
       const userId = args?.where?.userId ?? "user-1";
       const orgId = args?.where?.organizationId ?? "org-aaa";
       return {
@@ -52,6 +59,9 @@ beforeEach(() => {
     });
 
     setupMock("findUnique", async (args: any) => {
+      if (!(global as any).__mockActiveMembership) {
+        return null;
+      }
       const orgUserId = args?.where?.organizationId_userId;
       const userId = orgUserId?.userId ?? args?.where?.userId ?? "user-1";
       const orgId = orgUserId?.organizationId ?? args?.where?.organizationId ?? "org-aaa";

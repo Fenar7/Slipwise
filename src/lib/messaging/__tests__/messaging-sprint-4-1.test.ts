@@ -21,6 +21,10 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import "./local-setup";
+
+beforeEach(() => {
+  (global as any).__mockActiveMembership = true;
+});
 import { NextRequest } from "next/server";
 import { WebSocketServer, WebSocket } from "ws";
 import { randomUUID, createHmac } from "crypto";

@@ -18,6 +18,10 @@ vi.mock("server-only", () => ({}));
 
 import "./local-setup";
 
+beforeEach(() => {
+  (global as any).__mockActiveMembership = true;
+});
+
 // ─── Mock Prisma client ───────────────────────────────────────────────────────
 
 function makeFn() {

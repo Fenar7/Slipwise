@@ -20,6 +20,8 @@ import {
   type ResourceAction,
 } from "@/lib/auth/rbac/permissions";
 
+import { MessagingAccessContextError } from "./errors";
+
 /**
  * Messaging-specific access context that carries both the org context
  * and a properly-built AccessContext including custom permissions.
@@ -51,7 +53,7 @@ export async function getMessagingAccessContext(
   }
 
   if (!db.member || typeof db.member.findUnique !== "function") {
-    throw new Error("Messaging access context: membership database infrastructure unavailable");
+    throw new MessagingAccessContextError("Messaging access context: membership database infrastructure unavailable");
   }
 
   const member = await db.member.findUnique({
@@ -66,7 +68,7 @@ export async function getMessagingAccessContext(
   });
 
   if (!member) {
-    throw new Error("Messaging access context: member not found");
+    throw new MessagingAccessContextError("Messaging access context: member not found");
   }
 
   const customPermissions = member.customRole?.permissions as PermissionSet | undefined;

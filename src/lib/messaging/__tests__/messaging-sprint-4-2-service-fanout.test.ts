@@ -13,6 +13,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import "./local-setup";
 
+beforeEach(() => {
+  (global as any).__mockActiveMembership = true;
+});
+
 vi.mock("server-only", () => ({}));
 
 function makeFn() {
