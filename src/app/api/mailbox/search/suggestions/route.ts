@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
   const auth = await requireIntegrationMemberRoute();
   if (!auth.ok) return auth.response;
 
-  const rl = await rateLimitByOrg(auth.ctx.orgId, RATE_LIMITS.SEARCH);
+  const rl = await rateLimitByOrg(auth.ctx.orgId, RATE_LIMITS.search);
   if (!rl.success) {
     return NextResponse.json(
       { error: "Rate limit exceeded" },
@@ -49,7 +49,6 @@ export async function GET(request: NextRequest) {
   // 1. If typing an operator, suggest completions
   const activeOp = getActiveOperator(query, cursorPos);
   if (activeOp && activeOp.partialValue.length < 3) {
-    // Suggest matching filter values
     const matchingFilters = GMAIL_SEARCH_FILTERS.filter((f) =>
       f.value.toLowerCase().startsWith(`${activeOp.operator}:${activeOp.partialValue}`) &&
       f.value.toLowerCase() !== `${activeOp.operator}:${activeOp.partialValue}`,
@@ -128,6 +127,7 @@ export async function GET(request: NextRequest) {
 /**
  * Search local MailboxMessage table for matching contacts.
  * Uses ILIKE on sender email and display name.
+ * Quoted identifiers for PostgreSQL reserved words.
  */
 async function searchContactSuggestions(
   orgId: string,
@@ -138,34 +138,49 @@ async function searchContactSuggestions(
 
   const pattern = `%${query}%`;
 
-  // Search distinct senders from messages the user's org has received
-  const rows = await db.$queryRawUnsafe<
-    Array<{ email: string; display_name: string | null; count: bigint }>
-  >(
-    `SELECT DISTINCT
-       (m.from->>'email') AS email,
-       (m.from->>'displayName') AS display_name,
-       COUNT(*) OVER (PARTITION BY (m.from->>'email')) AS count
-     FROM mailbox_message m
-     JOIN mailbox_thread t ON t.id = m.thread_id
-     WHERE t.org_id = $1
-       AND (
-         (m.from->>'email') ILIKE $2
-         OR (m.from->>'displayName') ILIKE $2
-       )
-     ORDER BY count DESC
-     LIMIT $3`,
-    orgId,
-    pattern,
-    limit,
-  );
+  // Use Prisma's typed query to avoid raw SQL reserved-word issues
+  const rows = await db.mailboxMessage.findMany({
+    where: {
+      orgId,
+      thread: { orgId },
+      OR: [
+        { from: { path: ["email"], string_contains: query, mode: "insensitive" } },
+        { from: { path: ["displayName"], string_contains: query, mode: "insensitive" } },
+      ],
+    },
+    select: {
+      from: true,
+    },
+    take: 20,
+    orderBy: { sentAt: "desc" },
+  });
 
-  return rows.map((row) => ({
-    id: `contact:${row.email}`,
-    text: `from:${row.email}`,
-    label: row.display_name ? `${row.display_name} <${row.email}>` : row.email,
-    category: "contact" as const,
-  }));
+  // Deduplicate by email
+  const seen = new Map<string, { email: string; displayName: string | null; count: number }>();
+  for (const row of rows) {
+    const sender = row.from as { email: string; displayName: string | null } | null;
+    if (!sender?.email) continue;
+    const existing = seen.get(sender.email);
+    if (existing) {
+      existing.count++;
+    } else {
+      seen.set(sender.email, {
+        email: sender.email,
+        displayName: sender.displayName ?? null,
+        count: 1,
+      });
+    }
+  }
+
+  return [...seen.values()]
+    .sort((a, b) => b.count - a.count)
+    .slice(0, limit)
+    .map((s) => ({
+      id: `contact:${s.email}`,
+      text: `from:${s.email}`,
+      label: s.displayName ? `${s.displayName} <${s.email}>` : s.email,
+      category: "contact" as const,
+    }));
 }
 
 /**
@@ -183,7 +198,6 @@ async function searchHistorySuggestions(
   const key = `${SEARCH_HISTORY_KEY_PREFIX}:${orgId}:${userId}`;
 
   try {
-    // Try Redis lrange first
     const history = await redis.lrange(key, 0, SEARCH_HISTORY_MAX - 1);
     if (!history || history.length === 0) return [];
 
@@ -198,7 +212,6 @@ async function searchHistorySuggestions(
       category: "history" as const,
     }));
   } catch {
-    // Redis unavailable — return empty
     return [];
   }
 }
@@ -218,7 +231,6 @@ export async function recordSearchHistory(
   const key = `${SEARCH_HISTORY_KEY_PREFIX}:${orgId}:${userId}`;
 
   try {
-    // Add to front of list, trim to max size
     await redis.lpush(key, trimmed);
     await redis.ltrim(key, 0, SEARCH_HISTORY_MAX - 1);
   } catch {
