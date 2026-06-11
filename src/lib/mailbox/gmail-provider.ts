@@ -1081,44 +1081,14 @@ export const gmailProviderAdapter: IMailboxProviderAdapter = {
 
     const hits: MailboxMessageSearchResult["hits"] = [];
     const messageRefs = data.messages ?? [];
-    const chunkSize = 10;
 
-    for (let index = 0; index < messageRefs.length; index += chunkSize) {
-      const chunk = messageRefs.slice(index, index + chunkSize);
-      const chunkHits = await Promise.all(
-        chunk.map(async (msg) => {
-          const msgRes = await safeGmailFetch(
-            `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}?format=metadata&metadataHeaders=Subject,From,Date`,
-            { headers: { Authorization: `Bearer ${accessToken}` } },
-          );
-          if (isProviderError(msgRes) || !msgRes.ok) {
-            return null;
-          }
-
-          const msgData = await msgRes.json() as GmailMessage;
-          const headers = msgData.payload?.headers ?? [];
-          const subject = headers.find((h) => h.name === "Subject")?.value ?? "(No subject)";
-          const fromRaw = headers.find((h) => h.name === "From")?.value ?? "";
-          const from = parseAddressListHeader(fromRaw)[0] ?? { email: "", displayName: null };
-          const dateRaw = headers.find((h) => h.name === "Date")?.value ?? "";
-          const sentAt = dateRaw ? new Date(dateRaw).toISOString() : new Date().toISOString();
-
-          return {
-            providerThreadId: msg.threadId,
-            providerMessageId: msg.id,
-            snippet: msgData.snippet ?? "",
-            subject,
-            from,
-            sentAt,
-          };
-        }),
-      );
-
-      hits.push(
-        ...chunkHits.filter(
-          (hit): hit is MailboxMessageSearchResult["hits"][number] => hit !== null,
-        ),
-      );
+    // Gmail HTTP Batch Request: fetch all message metadata in a single HTTP call
+    // instead of N individual requests. Max 100 per batch per Google spec.
+    const BATCH_SIZE = 50;
+    for (let index = 0; index < messageRefs.length; index += BATCH_SIZE) {
+      const batch = messageRefs.slice(index, index + BATCH_SIZE);
+      const batchHits = await fetchMessageBatch(batch, accessToken);
+      hits.push(...batchHits);
     }
 
     const result: MailboxMessageSearchResult = {
@@ -1220,6 +1190,92 @@ function parseGmailDate(internalDate: string | null | undefined): Date {
   const d = new Date(ms);
   if (isNaN(d.getTime())) return new Date();
   return d;
+}
+
+/**
+ * Gmail HTTP Batch Request: fetch multiple message metadata in a single
+ * HTTP call using the Gmail Batch API. This replaces the previous N+1
+ * pattern of individual fetches per message.
+ *
+ * @see https://developers.google.com/gmail/api/guides/batch
+ */
+async function fetchMessageBatch(
+  messages: Array<{ id: string; threadId: string }>,
+  accessToken: string,
+): Promise<MailboxMessageSearchResult["hits"]> {
+  if (messages.length === 0) return [];
+
+  const boundary = `batch_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+
+  // Build multipart/mixed body
+  const parts: string[] = [];
+  for (const msg of messages) {
+    parts.push(
+      `--${boundary}\r\n` +
+      `Content-Type: application/http\r\n\r\n` +
+      `GET /gmail/v1/users/me/messages/${msg.id}?format=metadata&metadataHeaders=Subject,From,Date HTTP/1.1\r\n` +
+      `Host: gmail.googleapis.com\r\n\r\n`,
+    );
+  }
+  parts.push(`--${boundary}--`);
+
+  const body = parts.join("\r\n");
+
+  const res = await safeGmailFetch(
+    "https://gmail.googleapis.com/batch/gmail/v1",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": `multipart/mixed; boundary=${boundary}`,
+      },
+      body,
+    },
+  );
+
+  if (isProviderError(res)) return [];
+  if (!res.ok) {
+    // Fallback: on batch failure, return empty (individual fetch not worth retrying)
+    return [];
+  }
+
+  // Parse multipart response
+  const responseText = await res.text();
+  const hits: MailboxMessageSearchResult["hits"] = [];
+
+  // Split by boundary and parse each JSON response
+  const responseParts = responseText.split(`--${boundary}`);
+  for (const part of responseParts) {
+    // Find the JSON body in each part
+    const jsonStart = part.indexOf("{");
+    const jsonEnd = part.lastIndexOf("}");
+    if (jsonStart === -1 || jsonEnd === -1) continue;
+
+    try {
+      const msgData = JSON.parse(part.slice(jsonStart, jsonEnd + 1)) as GmailMessage;
+      if (!msgData.id || !msgData.threadId) continue;
+
+      const headers = msgData.payload?.headers ?? [];
+      const subject = headers.find((h) => h.name === "Subject")?.value ?? "(No subject)";
+      const fromRaw = headers.find((h) => h.name === "From")?.value ?? "";
+      const from = parseAddressListHeader(fromRaw)[0] ?? { email: "", displayName: null };
+      const dateRaw = headers.find((h) => h.name === "Date")?.value ?? "";
+      const sentAt = dateRaw ? new Date(dateRaw).toISOString() : new Date().toISOString();
+
+      hits.push({
+        providerThreadId: msgData.threadId,
+        providerMessageId: msgData.id,
+        snippet: msgData.snippet ?? "",
+        subject,
+        from,
+        sentAt,
+      });
+    } catch {
+      // Skip malformed response parts
+    }
+  }
+
+  return hits;
 }
 
 async function fetchBoundedThreadRefsForQuery(

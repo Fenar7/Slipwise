@@ -721,6 +721,23 @@ async function searchMailboxMessages(params: {
     connectionIdsToQuery,
   );
 
+  // ── LOCAL-FIRST: If ALL connections have complete coverage, search locally ──
+  const allCoveragesComplete = connectionIdsToQuery.every((connId) => {
+    const overallState = coveragesByConnectionId.get(connId)?.overallState;
+    return overallState === "COMPLETE";
+  });
+
+  if (allCoveragesComplete && connectionIdsToQuery.length > 0) {
+    return searchMailboxMessagesLocal({
+      orgId,
+      trimmedQuery,
+      accessibleConnectionIds: connectionIdsToQuery,
+      accessibleRecordById,
+      limit,
+    });
+  }
+
+  // ── FALLBACK: Coverage incomplete — use Gmail API search ──────────────────
   const connectionStatusMap = new Map<
     string,
     {
@@ -894,6 +911,128 @@ async function searchMailboxMessages(params: {
       partial: hasDegraded,
       partialConnectionIds: [...partialConnectionIds],
       coverageState,
+      connectionStates,
+    },
+  };
+}
+
+/**
+ * Local DB message search — queries PostgreSQL MailboxMessage using ILIKE.
+ * Used when all connections have COMPLETE folder coverage, avoiding
+ * the N+1 Gmail API calls entirely. Target: <50ms response time.
+ */
+async function searchMailboxMessagesLocal(params: {
+  orgId: string;
+  trimmedQuery: string;
+  accessibleConnectionIds: string[];
+  accessibleRecordById: Map<string, MailboxConnectionRecord>;
+  limit: number;
+}): Promise<ListMailboxThreadsResult> {
+  const { orgId, trimmedQuery, accessibleConnectionIds, accessibleRecordById, limit } = params;
+
+  // Parse search terms for structured filtering
+  const parsed = parseSearchTerms(trimmedQuery);
+
+  // Build WHERE clause for local message search
+  const conditions: Prisma.MailboxMessageWhereInput[] = [
+    { orgId },
+    { thread: { mailboxConnectionId: { in: accessibleConnectionIds } } },
+  ];
+
+  // Text search across subject, snippet, textBody, from
+  if (parsed.textSearch) {
+    conditions.push({
+      OR: [
+        { subject: { contains: parsed.textSearch, mode: "insensitive" } },
+        { snippet: { contains: parsed.textSearch, mode: "insensitive" } },
+        { textBody: { contains: parsed.textSearch, mode: "insensitive" } },
+        { from: { path: ["email"], string_contains: parsed.textSearch, mode: "insensitive" } },
+        { from: { path: ["displayName"], string_contains: parsed.textSearch, mode: "insensitive" } },
+      ],
+    });
+  }
+
+  // From filter
+  if (parsed.fromFilter) {
+    conditions.push({
+      OR: [
+        { from: { path: ["email"], string_contains: parsed.fromFilter, mode: "insensitive" } },
+        { from: { path: ["displayName"], string_contains: parsed.fromFilter, mode: "insensitive" } },
+      ],
+    });
+  }
+
+  // To filter
+  if (parsed.toFilter) {
+    conditions.push({
+      OR: [
+        { to: { array_contains: [{ email: parsed.toFilter }] } },
+        { cc: { array_contains: [{ email: parsed.toFilter }] } },
+        { bcc: { array_contains: [{ email: parsed.toFilter }] } },
+      ],
+    });
+  }
+
+  const where: Prisma.MailboxMessageWhereInput = { AND: conditions };
+
+  const rows = await db.mailboxMessage.findMany({
+    where,
+    orderBy: { sentAt: "desc" },
+    take: limit,
+    select: {
+      id: true,
+      threadId: true,
+      providerMessageId: true,
+      subject: true,
+      snippet: true,
+      from: true,
+      sentAt: true,
+      thread: {
+        select: {
+          id: true,
+          providerThreadId: true,
+          subject: true,
+          mailboxConnectionId: true,
+        },
+      },
+    },
+  });
+
+  const messageResults: MailboxMessageResult[] = rows.map((row) => ({
+    id: row.id,
+    threadId: row.threadId,
+    providerThreadId: row.thread.providerThreadId,
+    providerMessageId: row.providerMessageId,
+    from: row.from as { email: string; displayName: string | null } | null,
+    subject: row.subject,
+    snippet: row.snippet,
+    sentAt: row.sentAt.toISOString(),
+    threadSubject: row.thread.subject,
+    mailboxConnectionId: row.thread.mailboxConnectionId,
+    isShellResult: false,
+    mailboxDisplayName: accessibleRecordById.get(row.thread.mailboxConnectionId)?.displayName ?? null,
+  }));
+
+  const totalCount = await db.mailboxMessage.count({ where });
+
+  const connectionStates = accessibleConnectionIds.map((id) => ({
+    connectionId: id,
+    status: "ok" as const,
+    reason: "Local search — all coverage complete",
+  }));
+
+  return {
+    threads: [],
+    messages: messageResults,
+    nextCursor: null,
+    totalCount,
+    searchMeta: {
+      mode: "local",
+      searchMode: "messages",
+      totalCountIsExact: true,
+      partial: false,
+      partialConnectionIds: [],
+      coverageState: "complete",
       connectionStates,
     },
   };

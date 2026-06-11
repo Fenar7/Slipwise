@@ -19,6 +19,10 @@ vi.mock("@/lib/db", () => ({
     mailboxFolderCoverage: {
       findMany: vi.fn(),
     },
+    mailboxMessage: {
+      findMany: vi.fn().mockResolvedValue([]),
+      count: vi.fn().mockResolvedValue(0),
+    },
   },
 }));
 
@@ -35,6 +39,10 @@ const mockDb = db as unknown as {
   };
   mailboxFolderCoverage: {
     findMany: ReturnType<typeof vi.fn>;
+  };
+  mailboxMessage: {
+    findMany: ReturnType<typeof vi.fn>;
+    count: ReturnType<typeof vi.fn>;
   };
 };
 
@@ -167,13 +175,9 @@ describe("Mailbox Gmail-Grade Search Sprint B — Dual-Mode Retrieval and Render
 
     it("3. searchMode persists correctly in query state (messages)", async () => {
       mockDb.mailboxConnection.findMany.mockResolvedValue([makeConnectionRecord()]);
+      // Use INCOMPLETE coverage so the test exercises the provider search path
       mockDb.mailboxFolderCoverage.findMany.mockResolvedValue([
-        { mailboxConnectionId: CONN_1, folder: "INBOX", state: "COMPLETE" },
-        { mailboxConnectionId: CONN_1, folder: "SENT", state: "COMPLETE" },
-        { mailboxConnectionId: CONN_1, folder: "SPAM", state: "COMPLETE" },
-        { mailboxConnectionId: CONN_1, folder: "DRAFT", state: "COMPLETE" },
-        { mailboxConnectionId: CONN_1, folder: "STARRED", state: "COMPLETE" },
-        { mailboxConnectionId: CONN_1, folder: "TRASH", state: "COMPLETE" },
+        { mailboxConnectionId: CONN_1, folder: "INBOX", state: "BOOTSTRAPPING" },
       ]);
       mockSearchMessages.mockResolvedValue({
         hits: [],
@@ -269,13 +273,9 @@ describe("Mailbox Gmail-Grade Search Sprint B — Dual-Mode Retrieval and Render
   describe("Messages mode behavior", () => {
     it("5. messages mode returns message-level results", async () => {
       mockDb.mailboxConnection.findMany.mockResolvedValue([makeConnectionRecord()]);
+      // Use INCOMPLETE coverage so the test exercises the provider search path
       mockDb.mailboxFolderCoverage.findMany.mockResolvedValue([
-        { mailboxConnectionId: CONN_1, folder: "INBOX", state: "COMPLETE" },
-        { mailboxConnectionId: CONN_1, folder: "SENT", state: "COMPLETE" },
-        { mailboxConnectionId: CONN_1, folder: "SPAM", state: "COMPLETE" },
-        { mailboxConnectionId: CONN_1, folder: "DRAFT", state: "COMPLETE" },
-        { mailboxConnectionId: CONN_1, folder: "STARRED", state: "COMPLETE" },
-        { mailboxConnectionId: CONN_1, folder: "TRASH", state: "COMPLETE" },
+        { mailboxConnectionId: CONN_1, folder: "INBOX", state: "BOOTSTRAPPING" },
       ]);
       mockSearchMessages.mockResolvedValue({
         hits: [
@@ -347,13 +347,9 @@ describe("Mailbox Gmail-Grade Search Sprint B — Dual-Mode Retrieval and Render
 
     it("6. multiple matching messages in one thread appear separately in messages mode", async () => {
       mockDb.mailboxConnection.findMany.mockResolvedValue([makeConnectionRecord()]);
+      // Use INCOMPLETE coverage so the test exercises the provider search path
       mockDb.mailboxFolderCoverage.findMany.mockResolvedValue([
-        { mailboxConnectionId: CONN_1, folder: "INBOX", state: "COMPLETE" },
-        { mailboxConnectionId: CONN_1, folder: "SENT", state: "COMPLETE" },
-        { mailboxConnectionId: CONN_1, folder: "SPAM", state: "COMPLETE" },
-        { mailboxConnectionId: CONN_1, folder: "DRAFT", state: "COMPLETE" },
-        { mailboxConnectionId: CONN_1, folder: "STARRED", state: "COMPLETE" },
-        { mailboxConnectionId: CONN_1, folder: "TRASH", state: "COMPLETE" },
+        { mailboxConnectionId: CONN_1, folder: "INBOX", state: "BOOTSTRAPPING" },
       ]);
       mockSearchMessages.mockResolvedValue({
         hits: [
@@ -407,10 +403,9 @@ describe("Mailbox Gmail-Grade Search Sprint B — Dual-Mode Retrieval and Render
   describe("Provider-hit shell rendering", () => {
     it("7. shell results render when hydration is pending", async () => {
       mockDb.mailboxConnection.findMany.mockResolvedValue([makeConnectionRecord()]);
+      // Use INCOMPLETE coverage so the test exercises the provider search path
       mockDb.mailboxFolderCoverage.findMany.mockResolvedValue([
-        { mailboxConnectionId: CONN_1, folder: "INBOX", state: "COMPLETE" },
-        { mailboxConnectionId: CONN_1, folder: "SENT", state: "COMPLETE" },
-        { mailboxConnectionId: CONN_1, folder: "SPAM", state: "COMPLETE" },
+        { mailboxConnectionId: CONN_1, folder: "INBOX", state: "BOOTSTRAPPING" },
         { mailboxConnectionId: CONN_1, folder: "DRAFT", state: "COMPLETE" },
         { mailboxConnectionId: CONN_1, folder: "STARRED", state: "COMPLETE" },
         { mailboxConnectionId: CONN_1, folder: "TRASH", state: "COMPLETE" },
@@ -450,11 +445,9 @@ describe("Mailbox Gmail-Grade Search Sprint B — Dual-Mode Retrieval and Render
 
     it("8. shell results reconcile correctly after hydration (thread resolved locally)", async () => {
       mockDb.mailboxConnection.findMany.mockResolvedValue([makeConnectionRecord()]);
+      // Use INCOMPLETE coverage so the test exercises the provider search path
       mockDb.mailboxFolderCoverage.findMany.mockResolvedValue([
-        { mailboxConnectionId: CONN_1, folder: "INBOX", state: "COMPLETE" },
-        { mailboxConnectionId: CONN_1, folder: "SENT", state: "COMPLETE" },
-        { mailboxConnectionId: CONN_1, folder: "SPAM", state: "COMPLETE" },
-        { mailboxConnectionId: CONN_1, folder: "DRAFT", state: "COMPLETE" },
+        { mailboxConnectionId: CONN_1, folder: "INBOX", state: "BOOTSTRAPPING" },
         { mailboxConnectionId: CONN_1, folder: "STARRED", state: "COMPLETE" },
         { mailboxConnectionId: CONN_1, folder: "TRASH", state: "COMPLETE" },
       ]);
@@ -535,13 +528,9 @@ describe("Mailbox Gmail-Grade Search Sprint B — Dual-Mode Retrieval and Render
 
     it("10. no cross-org or cross-connection leakage in message-mode rendering", async () => {
       mockDb.mailboxConnection.findMany.mockResolvedValue([makeConnectionRecord()]);
+      // Use INCOMPLETE coverage so the test exercises the provider search path
       mockDb.mailboxFolderCoverage.findMany.mockResolvedValue([
-        { mailboxConnectionId: CONN_1, folder: "INBOX", state: "COMPLETE" },
-        { mailboxConnectionId: CONN_1, folder: "SENT", state: "COMPLETE" },
-        { mailboxConnectionId: CONN_1, folder: "SPAM", state: "COMPLETE" },
-        { mailboxConnectionId: CONN_1, folder: "DRAFT", state: "COMPLETE" },
-        { mailboxConnectionId: CONN_1, folder: "STARRED", state: "COMPLETE" },
-        { mailboxConnectionId: CONN_1, folder: "TRASH", state: "COMPLETE" },
+        { mailboxConnectionId: CONN_1, folder: "INBOX", state: "BOOTSTRAPPING" },
       ]);
       mockSearchMessages.mockResolvedValue({
         hits: [

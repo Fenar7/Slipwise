@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useCallback } from "react";
 import { Search, X, SlidersHorizontal, PenSquare, Bookmark, MessageSquare, Layers } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { MailboxSearchMeta } from "@/lib/mailbox/thread-service";
 import type { ActiveFilter, ActiveFilterState, SupportedSavedViewSmartViewId, MailboxSearchMode } from "./types";
 import type { MailboxSyncPresentation } from "@/lib/mailbox/sync-presentation-shape";
 import { MailboxSyncStateChip } from "./mailbox-sync-status";
+import { MailboxSearchSuggestions } from "./mailbox-search-suggestions";
 
 interface MailboxCommandBarProps {
   activeViewLabel: string;
@@ -54,9 +55,37 @@ export function MailboxCommandBar({
   isSyncPending = false,
 }: MailboxCommandBarProps) {
   const [focused, setFocused] = useState(false);
+  const [suggestionsOpen, setSuggestionsOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const isSearching = searchQuery.length > 0;
+
+  const handleFocus = useCallback(() => {
+    setFocused(true);
+    setSuggestionsOpen(true);
+  }, []);
+
+  const handleBlur = useCallback(() => {
+    // Delay to allow click on suggestion before closing
+    setTimeout(() => {
+      setFocused(false);
+      setSuggestionsOpen(false);
+    }, 150);
+  }, []);
+
+  const handleSuggestionSelect = useCallback(
+    (text: string) => {
+      onSearchQueryChange?.(text);
+      setSuggestionsOpen(false);
+      // Refocus input and place cursor at end
+      requestAnimationFrame(() => {
+        inputRef.current?.focus();
+        const len = inputRef.current?.value.length ?? 0;
+        inputRef.current?.setSelectionRange(len, len);
+      });
+    },
+    [onSearchQueryChange],
+  );
 
   return (
     <div
@@ -100,10 +129,10 @@ export function MailboxCommandBar({
         </div>
       )}
 
-      {/* Search input */}
+      {/* Search input with suggestions dropdown */}
       <div
         className={cn(
-          "flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 transition-all",
+          "relative flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 transition-all",
           focused || isSearching
             ? "flex-1 border-[#16294D] bg-white ring-2 ring-[rgba(22,41,77,0.12)]"
             : "w-48 border-[#E2E5EA] bg-[#F7F8FB] hover:border-[#D1D5DB]"
@@ -119,12 +148,24 @@ export function MailboxCommandBar({
           ref={inputRef}
           type="text"
           value={searchQuery}
-          onChange={(e) => onSearchQueryChange?.(e.target.value)}
-          onFocus={() => setFocused(true)}
-          onBlur={() => setFocused(false)}
+          onChange={(e) => {
+            onSearchQueryChange?.(e.target.value);
+            setSuggestionsOpen(true);
+          }}
+          onFocus={handleFocus}
+          onBlur={handleBlur}
+          onKeyDown={(e) => {
+            // Let suggestions handle keyboard events when open
+            if (suggestionsOpen && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+              // Suggestions component handles this
+            }
+          }}
           placeholder="Search threads…"
           className="flex-1 bg-transparent text-sm text-[#0F172A] placeholder-[#94A3B8] outline-none"
           aria-label="Search mailbox threads"
+          aria-autocomplete="list"
+          aria-expanded={suggestionsOpen}
+          role="combobox"
         />
         {isSearching && (
           <button
@@ -138,6 +179,15 @@ export function MailboxCommandBar({
             <X className="h-2.5 w-2.5 text-[#64748B]" />
           </button>
         )}
+
+        {/* Search suggestions dropdown */}
+        <MailboxSearchSuggestions
+          query={searchQuery}
+          isOpen={suggestionsOpen && focused}
+          onSelect={handleSuggestionSelect}
+          onClose={() => setSuggestionsOpen(false)}
+          inputRef={inputRef}
+        />
       </div>
 
       {/* Sprint B: Search mode switch — visible when searching */}
