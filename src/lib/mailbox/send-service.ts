@@ -198,7 +198,7 @@ export async function sendDraft(input: SendDraftInput): Promise<SendDraftResult>
     throw new SendServiceError("Mailbox connection not found", 404);
   }
 
-  if (connection.status !== "ACTIVE") {
+  if (connection.status !== "ACTIVE" && connection.status !== "DEGRADED") {
     throw new SendServiceError("Mailbox connection is not active; cannot send", 403);
   }
 
