@@ -265,6 +265,7 @@ model Organization {
   mailboxMessages              MailboxMessage[]
   mailboxSyncRuns              MailboxSyncRun[]
   mailboxDraftAttachments      MailboxDraftAttachment[]
+  mailboxSearchDocuments       MailboxSearchDocument[]
 
   @@index([entityGroupId])
   @@map("organization")
@@ -6008,6 +6009,7 @@ model MailboxConnection {
   mailboxThreads         MailboxThread[]
   mailboxSyncRuns        MailboxSyncRun[]
   mailboxFolderCoverages MailboxFolderCoverage[]
+  mailboxSearchDocuments MailboxSearchDocument[]
 
   /// One active connection per org per provider account.
   @@unique([orgId, provider, providerAccountId])
@@ -6403,4 +6405,38 @@ model MailboxFolderCoverage {
   @@index([orgId, mailboxConnectionId])
   @@index([orgId, mailboxConnectionId, state])
   @@map("mailbox_folder_coverage")
+}
+
+model MailboxSearchDocument {
+  id                  String   @id @default(cuid())
+  orgId               String
+  mailboxConnectionId String
+  threadId            String
+  messageId           String   @default("")
+  documentType        String   // "THREAD" | "MESSAGE"
+  providerThreadId    String
+  providerMessageId   String?
+  searchText          String   @db.Text
+  subjectText         String
+  snippetText         String
+  fromDisplayName     String?
+  fromEmail           String?
+  toRecipients        String   @default("") @db.Text
+  lastActivityAt      DateTime
+  sentAt              DateTime?
+  isUnread            Boolean  @default(false)
+  isFlagged           Boolean  @default(false)
+  status              String   @default("OPEN")
+  assigneeId          String?  @db.Uuid
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  organization      Organization      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  mailboxConnection MailboxConnection @relation(fields: [mailboxConnectionId, orgId], references: [id, orgId], onDelete: Cascade)
+
+  @@unique([orgId, mailboxConnectionId, threadId, messageId])
+  @@index([orgId, mailboxConnectionId])
+  @@index([orgId, mailboxConnectionId, documentType])
+  @@index([orgId, lastActivityAt])
+  @@map("mailbox_search_document")
 }

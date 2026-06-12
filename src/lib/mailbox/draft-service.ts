@@ -18,6 +18,8 @@ import { isMailboxProviderError } from "./provider-contracts";
 import { logMailboxAuditTx } from "./audit";
 import type { MailboxDraftMode, MailboxDraftStatus } from "./domain-types";
 import { cleanupDraftAttachments } from "./attachment-service";
+import { indexMailboxThread } from "./search-indexing-service";
+
 
 // ─── Errors ───────────────────────────────────────────────────────────────────
 
@@ -366,6 +368,10 @@ export async function createOrRestoreDraft(
     return created;
   });
 
+  if (draft.threadId) {
+    await indexMailboxThread(orgId, draft.threadId);
+  }
+
   return {
     draft: toMailboxDraftReadShape(draft as unknown as import("./domain-types").MailboxDraftRecord),
     created: true,
@@ -441,6 +447,10 @@ export async function autosaveDraft(
     data: updateData,
   });
 
+  if (updated.threadId) {
+    await indexMailboxThread(input.orgId, updated.threadId);
+  }
+
   return {
     draft: toMailboxDraftReadShape(updated as unknown as import("./domain-types").MailboxDraftRecord),
     stale: false,
@@ -493,6 +503,10 @@ export async function discardDraft(
     await cleanupDraftAttachments(orgId, draftId);
   } catch {
     // Non-fatal: attachments may be garbage-collected later
+  }
+
+  if (draft.threadId) {
+    await indexMailboxThread(orgId, draft.threadId);
   }
 
   return { success: true, draftId };

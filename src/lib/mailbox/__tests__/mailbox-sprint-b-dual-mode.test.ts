@@ -6,8 +6,59 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
+const mockQueryRaw = vi.fn().mockImplementation(async (sql, ...values) => {
+  const queryStr = (Array.isArray(sql) ? sql.join(" ") : String(sql)).toUpperCase();
+  const allValues = values.map(v => String(v).toUpperCase());
+  const hasThread = queryStr.includes("THREAD") || allValues.some(v => v.includes("THREAD"));
+  const hasMessage = queryStr.includes("MESSAGE") || allValues.some(v => v.includes("MESSAGE"));
+
+  if (queryStr.includes("COUNT")) {
+    if (hasThread) {
+      return [{ count: 11n }];
+    }
+    if (hasMessage) {
+      return [{ count: 10n }];
+    }
+    return [{ count: 0n }];
+  }
+
+  if (hasThread) {
+    return [
+      { threadId: "local-t-1" },
+      { threadId: "local-t-2" },
+      { threadId: "t-1" },
+      { threadId: "t-2" },
+      { threadId: "thread-123" },
+      { threadId: "thread-456" },
+      { threadId: "thread-789" },
+      { threadId: "thread-abc" },
+      { threadId: "thread-def" },
+      { threadId: "thread-xyz" },
+      { threadId: "restricted-t-1" },
+    ];
+  }
+
+  if (hasMessage) {
+    return [
+      { messageId: "local-m-1" },
+      { messageId: "local-m-2" },
+      { messageId: "m-1" },
+      { messageId: "m-2" },
+      { messageId: "msg-123" },
+      { messageId: "msg-456" },
+      { messageId: "msg-789" },
+      { messageId: "msg-abc" },
+      { messageId: "msg-def" },
+      { messageId: "msg-xyz" },
+    ];
+  }
+
+  return [];
+});
+
 vi.mock("@/lib/db", () => ({
   db: {
+    $queryRaw: (...args: any[]) => mockQueryRaw(...args),
     mailboxThread: {
       findMany: vi.fn(),
       findFirst: vi.fn(),
