@@ -112,6 +112,7 @@ async function ingestSyncedThreads(params: {
       orgId: params.orgId,
       tokenRef: params.tokenRef,
       providerThreadId: threadEnvelope.providerThreadId,
+      cachedThreadData: threadEnvelope.cachedThreadData,
     });
     if (isMailboxProviderError(detail)) {
       throw toProviderErrorException(detail);

@@ -6,8 +6,10 @@ import { MailboxWorkspace } from "../mailbox-workspace";
 let mockPathname = "/app/mailbox";
 let mockThreadHookState = {
   threads: [] as Array<Record<string, unknown>>,
+  messages: [] as Array<Record<string, unknown>>,
   totalCount: 0,
   nextCursor: null as string | null,
+  searchMeta: null as Record<string, unknown> | null,
   hasMore: false,
   isLoading: false,
   isLoadingMore: false,
@@ -210,13 +212,46 @@ const threadRows: ThreadRowData[] = [
   },
 ];
 
+const messageRows = [
+  {
+    id: null,
+    threadId: "thread-1",
+    providerThreadId: "provider-thread-1",
+    providerMessageId: "provider-message-1",
+    from: { email: "priya@example.com", displayName: "Priya Sharma" },
+    subject: "Invoice follow-up",
+    snippet: "Please confirm payment timing.",
+    sentAt: "2026-06-01T10:00:00.000Z",
+    threadSubject: "Invoice follow-up",
+    mailboxConnectionId: "conn-1",
+    isShellResult: false,
+    mailboxDisplayName: "Billing",
+  },
+  {
+    id: null,
+    threadId: null,
+    providerThreadId: "provider-thread-2",
+    providerMessageId: "provider-message-2",
+    from: { email: "arjun@example.com", displayName: "Arjun Mehta" },
+    subject: "Quote approval",
+    snippet: "Can we approve this revision?",
+    sentAt: "2026-06-01T11:00:00.000Z",
+    threadSubject: "Quote approval",
+    mailboxConnectionId: "conn-1",
+    isShellResult: true,
+    mailboxDisplayName: "Billing",
+  },
+];
+
 describe("Mailbox thread pagination UI", () => {
   beforeEach(() => {
     mockPathname = "/app/mailbox";
     mockThreadHookState = {
       threads: [],
+      messages: [],
       totalCount: 0,
       nextCursor: null,
+      searchMeta: null,
       hasMore: false,
       isLoading: false,
       isLoadingMore: false,
@@ -323,6 +358,41 @@ describe("Mailbox thread pagination UI", () => {
     });
   });
 
+  it("supports infinite scroll and selection state in messages mode", async () => {
+    const onLoadMore = vi.fn();
+    const onSelectMessage = vi.fn();
+
+    render(
+      <MailboxThreadList
+        threads={[]}
+        messages={messageRows}
+        selectedThreadId={null}
+        selectedMessageProviderId="provider-message-2"
+        onSelectThread={vi.fn()}
+        onSelectMessage={onSelectMessage}
+        totalCount={4}
+        loadedCount={2}
+        hasMore={true}
+        onLoadMore={onLoadMore}
+        searchMeta={{ mode: "gmail_exact", searchMode: "messages", totalCountIsExact: false, partial: false, partialConnectionIds: [], coverageState: "complete", connectionStates: [] }}
+      />,
+    );
+
+    const observer = MockIntersectionObserver.instances[0];
+    expect(observer).toBeDefined();
+    observer.triggerIntersect(screen.getByTestId("mailbox-thread-list-sentinel"));
+
+    await waitFor(() => {
+      expect(onLoadMore).toHaveBeenCalledTimes(1);
+    });
+
+    const selectedRow = screen.getByText("Arjun Mehta").closest("[role='option']");
+    expect(selectedRow).toHaveAttribute("aria-selected", "true");
+
+    fireEvent.click(screen.getByText("Priya Sharma"));
+    expect(onSelectMessage).toHaveBeenCalledTimes(1);
+  });
+
   it("wires pagination state into the workspace thread pane", () => {
     const loadMore = vi.fn();
     mockThreadHookState = {
@@ -345,8 +415,10 @@ describe("Mailbox thread pagination UI", () => {
           updatedAt: "2026-06-01T10:00:00.000Z",
         },
       ],
+      messages: [],
       totalCount: 3,
       nextCursor: "cursor-2",
+      searchMeta: null,
       hasMore: true,
       isLoading: false,
       isLoadingMore: false,
@@ -370,8 +442,10 @@ describe("Mailbox thread pagination UI", () => {
     const loadMore = vi.fn();
     mockThreadHookState = {
       threads: [],
+      messages: [],
       totalCount: 99,
       nextCursor: "cursor-2",
+      searchMeta: null,
       hasMore: true,
       isLoading: false,
       isLoadingMore: false,

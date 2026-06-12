@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useRef } from "react";
+import { toast } from "sonner";
 
 export type DraftModeUppercase = "NEW" | "REPLY" | "REPLY_ALL" | "FORWARD";
 
@@ -79,6 +80,7 @@ export interface UseMailboxDraftResult {
   clearCurrentDraft: () => void;
   createDraft: (payload: CreateDraftPayload) => Promise<DraftResponse | null>;
   autosave: (payload: AutosavePayload) => Promise<AutosaveResult | null>;
+  flushAutosave: () => Promise<AutosaveResult | null>;
   sendDraft: () => Promise<SendDraftResult | null>;
   discardDraft: () => Promise<boolean>;
   cancelAutosave: () => void;
@@ -239,6 +241,30 @@ export function useMailboxDraft(): UseMailboxDraftResult {
     });
   }, [lastKnownUpdatedAt, performAutosave]);
 
+  const flushAutosave = useCallback(async (): Promise<AutosaveResult | null> => {
+    const currentId = currentDraftIdRef.current;
+    const pending = pendingAutosaveRef.current;
+
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+      debounceRef.current = null;
+    }
+    pendingAutosaveRef.current = null;
+
+    if (currentId && pending) {
+      const guardPayload: AutosavePayload = {
+        ...pending,
+        lastKnownUpdatedAt: lastKnownUpdatedAt ?? pending.lastKnownUpdatedAt,
+      };
+      const result = await performAutosave(currentId, guardPayload);
+      if (!result) {
+        throw new Error("Failed to save draft content.");
+      }
+      return result;
+    }
+    return null;
+  }, [lastKnownUpdatedAt, performAutosave]);
+
   const sendDraft = useCallback(async (): Promise<SendDraftResult | null> => {
     const currentId = currentDraftIdRef.current;
     if (!currentId) {
@@ -246,14 +272,13 @@ export function useMailboxDraft(): UseMailboxDraftResult {
       return null;
     }
 
-    // Cancel any pending autosave before sending so a delayed save
-    // does not overwrite the draft after it has been sent.
-    cancelAutosave();
-
     setIsLoading(true);
     setError(null);
 
     try {
+      // Flush any pending changes first
+      await flushAutosave();
+
       const res = await fetch(`/api/mailbox/drafts/${encodeURIComponent(currentId)}/send`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -263,17 +288,35 @@ export function useMailboxDraft(): UseMailboxDraftResult {
         const body = (await res.json().catch(() => ({ error: "Unknown error" }))) as {
           error?: string;
         };
-        throw new Error(body.error ?? `HTTP ${res.status}`);
+        const errorMsg = body.error ?? `HTTP ${res.status}`;
+        
+        // Edge case: if the draft has already been marked as SENT (e.g., due to a previous
+        // retry or network timeout that actually succeeded on the server), handle it as success.
+        if (res.status === 409 && errorMsg.includes("status SENT")) {
+          setDraftId(null);
+          setLastKnownUpdatedAt(null);
+          setLastAutosavedAt(null);
+          toast.success("Message already sent successfully");
+          return {
+            draft: { id: currentId, status: "SENT" } as any,
+            providerMessageId: null,
+            providerThreadId: null,
+          };
+        }
+        
+        throw new Error(errorMsg);
       }
 
       const data = (await res.json()) as SendDraftResult;
       setDraftId(null);
       setLastKnownUpdatedAt(null);
       setLastAutosavedAt(null);
+      toast.success("Message sent successfully");
       return data;
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to send draft";
       setError(message);
+      toast.error(message);
       return null;
     } finally {
       setIsLoading(false);
@@ -327,6 +370,7 @@ export function useMailboxDraft(): UseMailboxDraftResult {
     clearCurrentDraft,
     createDraft,
     autosave,
+    flushAutosave,
     sendDraft,
     discardDraft,
     cancelAutosave,

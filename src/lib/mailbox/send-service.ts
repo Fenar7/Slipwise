@@ -123,14 +123,31 @@ async function assertCanSendFromConnection(
   userId: string,
   role: "owner" | "admin" | "member",
   connectionId: string,
+  threadId?: string | null,
 ): Promise<void> {
   const { accessible } = await listMailboxConnectionsForMember(orgId, userId, role);
   const connection = accessible.find((c) => c.id === connectionId);
   if (!connection) {
     throw new SendServiceError("Mailbox connection not accessible", 403);
   }
+
+  // Connection owner bypass
+  if (connection.connectedBy === userId) {
+    return;
+  }
+
   const isReadOnly = role === "member" && connection.visibilityPolicy === "org_shared";
   if (isReadOnly) {
+    // Thread assignee bypass
+    if (threadId) {
+      const thread = await db.mailboxThread.findFirst({
+        where: { id: threadId, orgId },
+        select: { assigneeId: true },
+      });
+      if (thread && thread.assigneeId === userId) {
+        return;
+      }
+    }
     throw new SendServiceError("You do not have permission to send from this mailbox", 403);
   }
 }
@@ -171,7 +188,7 @@ export async function sendDraft(input: SendDraftInput): Promise<SendDraftResult>
     throw new SendServiceError(`Cannot send draft with status ${draft.status}`, 409);
   }
 
-  await assertCanSendFromConnection(orgId, userId, role, draft.mailboxConnectionId);
+  await assertCanSendFromConnection(orgId, userId, role, draft.mailboxConnectionId, draft.threadId);
 
   const connection = await db.mailboxConnection.findFirst({
     where: { id: draft.mailboxConnectionId, orgId },
@@ -181,7 +198,7 @@ export async function sendDraft(input: SendDraftInput): Promise<SendDraftResult>
     throw new SendServiceError("Mailbox connection not found", 404);
   }
 
-  if (connection.status !== "ACTIVE") {
+  if (connection.status !== "ACTIVE" && connection.status !== "DEGRADED") {
     throw new SendServiceError("Mailbox connection is not active; cannot send", 403);
   }
 

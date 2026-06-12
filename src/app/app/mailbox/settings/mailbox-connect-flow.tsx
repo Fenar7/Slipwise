@@ -24,6 +24,7 @@ interface MailboxConnectFlowProps {
 
 const GMAIL_PERMISSIONS = [
   { label: "Read email messages and metadata", scope: "gmail.readonly" },
+  { label: "Send email on your behalf", scope: "gmail.send" },
   { label: "View the Google account email address", scope: "userinfo.email" },
   { label: "View the Google account profile name", scope: "userinfo.profile" },
 ];

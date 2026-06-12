@@ -84,6 +84,7 @@ export interface MailboxAttachmentSummary {
 
 export interface MailboxMessageItem {
   id: string;
+  providerMessageId?: string;
   threadId: string;
   direction: MessageDirection;
   from: string;
@@ -311,9 +312,18 @@ export interface ActiveFilter {
 export interface ActiveFilterState {
   filters: ActiveFilter[];
   searchQuery: string;
+  /** Sprint B: Search mode persists in query state. Defaults to "threads". */
+  searchMode: MailboxSearchMode;
 }
 
 // ─── Sprint 1.6 additions ────────────────────────────────────────────────────
+
+/**
+ * Sprint B: Explicit search mode for mailbox search.
+ * - "threads" (default): returns thread-level results, collapsing multiple matching messages
+ * - "messages": returns message-level results, showing each matching message separately
+ */
+export type MailboxSearchMode = "threads" | "messages";
 
 /**
  * Coarse loading state for major mailbox surfaces.
