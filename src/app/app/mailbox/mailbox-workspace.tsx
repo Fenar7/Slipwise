@@ -33,6 +33,7 @@ import {
   MOCK_LINKED_CONTEXT,
 } from "./mock-data";
 import { useMailboxConnections } from "./use-mailbox-connections";
+import { useMailboxCounts } from "./use-mailbox-counts";
 import { useMailboxThreads, type UseMailboxThreadsParams } from "./use-mailbox-threads";
 import {
   mapDraftToRowData,
@@ -361,6 +362,7 @@ export function MailboxWorkspace() {
     isLoading: connectionsLoading,
     refetch: refetchConnections,
   } = useMailboxConnections();
+  const { counts: mailboxCounts } = useMailboxCounts();
   const activeConnection = resolveActiveConnection(pathname, connections);
   const inDraftsMode = !!activeConnection && isDraftsFolder(pathname);
 
@@ -1103,13 +1105,27 @@ export function MailboxWorkspace() {
         {/* ── Desktop left rail (xl+) — single instance, always in DOM ── */}
         {/* On xl+: shown inline. On <xl: hidden (drawer has its own copy via portal). */}
         <div className="hidden xl:flex xl:shrink-0" aria-hidden="false">
-          <MailboxLeftRail connections={connections} onCompose={openNewCompose} savedViews={savedViews} onDeleteSavedView={deleteView} />
+          <MailboxLeftRail
+            connections={connections}
+            onCompose={openNewCompose}
+            savedViews={savedViews}
+            onDeleteSavedView={deleteView}
+            smartViewCounts={mailboxCounts?.smartViews}
+            folderCounts={mailboxCounts?.folders}
+          />
         </div>
 
         {/* ── Rail drawer for tablet + mobile — separate instance, aria-hidden when closed ── */}
         <div className="xl:hidden" aria-hidden={!isRailOpen}>
           <MailboxRailDrawer isOpen={isRailOpen} onClose={() => setIsRailOpen(false)}>
-            <MailboxLeftRail connections={connections} onCompose={openNewCompose} savedViews={savedViews} onDeleteSavedView={deleteView} />
+            <MailboxLeftRail
+              connections={connections}
+              onCompose={openNewCompose}
+              savedViews={savedViews}
+              onDeleteSavedView={deleteView}
+              smartViewCounts={mailboxCounts?.smartViews}
+              folderCounts={mailboxCounts?.folders}
+            />
           </MailboxRailDrawer>
         </div>
 
