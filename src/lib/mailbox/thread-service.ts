@@ -1,9 +1,10 @@
 import "server-only";
 
 import { db } from "@/lib/db";
-import type { Prisma } from "@/generated/prisma/client";
+import { Prisma } from "@/generated/prisma/client";
 import { listMailboxConnectionsForMember } from "./visibility-service";
 import { listMailboxConnections } from "./connection-service";
+import { indexMailboxThread, indexMailboxMessage } from "./search-indexing-service";
 import { getMailboxProviderAdapter } from "./provider-registry";
 import type { MailboxMessageEnvelope, MailboxThreadEnvelope } from "./provider-contracts";
 import { isMailboxProviderError } from "./provider-contracts";
@@ -536,7 +537,7 @@ function buildSearchWhere(
   return conditions.length > 1 ? { AND: conditions } : baseWhere;
 }
 
-async function hydrateThreadFromProvider(params: {
+export async function hydrateThreadFromProvider(params: {
   orgId: string;
   connection: MailboxConnectionRecord;
   providerThreadId: string;
@@ -601,6 +602,11 @@ async function hydrateThreadFromProvider(params: {
       isFlagged: detail.messages.some((message) => isStarredMessage(message)),
     },
   });
+
+  await indexMailboxThread(params.orgId, thread.id);
+  for (const message of threadMessages) {
+    await indexMailboxMessage(params.orgId, message.id);
+  }
 }
 
 async function resolveThreadsByProviderKeys(
@@ -706,6 +712,7 @@ async function searchMailboxMessages(params: {
   accessibleRecordById: Map<string, MailboxConnectionRecord>;
   connectionIdsToQuery: string[];
   limit: number;
+  cursor?: string | null;
 }): Promise<ListMailboxThreadsResult> {
   const {
     orgId,
@@ -714,6 +721,7 @@ async function searchMailboxMessages(params: {
     accessibleRecordById,
     connectionIdsToQuery,
     limit,
+    cursor,
   } = params;
 
   const { coveragesByConnectionId } = await getBatchMailboxFolderCoverage(
@@ -792,7 +800,30 @@ async function searchMailboxMessages(params: {
         !connectionRequiresReconnect(record.status),
     );
 
-  const allMessageHits: Array<{
+  const decodedCursor = cursor ? decodeCursor(cursor) : null;
+  const providerCursor =
+    decodedCursor?.kind === "provider_search" &&
+    decodedCursor.query === trimmedQuery
+      ? decodedCursor
+      : null;
+
+  const partialConnectionIds = new Set<string>(
+    providerCursor?.partialConnectionIds ?? [],
+  );
+  const bufferedMessageKeys = [...(providerCursor?.bufferedThreadKeys ?? [])];
+  const seenMessageKeys = new Set<string>(providerCursor?.seenThreadKeys ?? []);
+  const connectionPageTokens = new Map<string, string | null | undefined>();
+
+  for (const connection of gmailConnections) {
+    connectionPageTokens.set(
+      connection.id,
+      providerCursor?.connectionPageTokens[connection.id] ?? null,
+    );
+  }
+
+  const SEARCH_MAX_PROVIDER_RESULTS = Math.min(Math.max(limit * 2, 50), 100);
+
+  const providerHitsMap = new Map<string, Array<{
     providerThreadId: string;
     providerMessageId: string;
     snippet: string;
@@ -800,71 +831,310 @@ async function searchMailboxMessages(params: {
     from: { email: string; displayName: string | null } | null;
     sentAt: string;
     connectionId: string;
-  }> = [];
+  }>>();
 
-  const partialConnectionIds = new Set<string>();
-  let nextPageToken: string | null = null;
+  const providerHitsCountMap = new Map<string, number>();
+  const localFallbackCountMap = new Map<string, number>();
+  const hydrationMissCountMap = new Map<string, number>();
 
-  for (const connection of gmailConnections) {
-    const adapter = getMailboxProviderAdapter(connection.provider);
-    if (!adapter.searchMessages) {
-      partialConnectionIds.add(connection.id);
-      connectionStatusMap.set(connection.id, {
-        status: "provider_unsupported",
-        reason: "Provider message search is unsupported",
-      });
-      continue;
-    }
-
-    const result = await adapter.searchMessages({
-      orgId,
-      tokenRef: connection.tokenRef,
-      query: trimmedQuery,
-      maxResults: limit,
+  while (bufferedMessageKeys.length < limit) {
+    const bufferedCountBeforeLoop = bufferedMessageKeys.length;
+    const pendingConnections = gmailConnections.filter((connection) => {
+      if (connectionRequiresReconnect(connection.status)) {
+        partialConnectionIds.add(connection.id);
+        connectionPageTokens.set(connection.id, undefined);
+        connectionStatusMap.set(connection.id, {
+          status: "auth_expired",
+          reason: "Authentication token is expired or revoked. Reconnect required.",
+        });
+        return false;
+      }
+      if (!connectionPageTokens.has(connection.id)) {
+        return true;
+      }
+      return connectionPageTokens.get(connection.id) !== undefined;
     });
 
-    if (isMailboxProviderError(result)) {
-      partialConnectionIds.add(connection.id);
-      const isAuthErr = result.category === "auth_expired" || result.category === "auth_insufficient";
-      connectionStatusMap.set(connection.id, {
-        status: isAuthErr ? "auth_expired" : "provider_failed",
-        reason: result.safeMessage,
+    if (pendingConnections.length === 0) {
+      break;
+    }
+
+    let fetchedAnyPage = false;
+
+    for (const connection of pendingConnections) {
+      const token = connectionPageTokens.get(connection.id);
+      if (token === undefined) {
+        continue;
+      }
+
+      const adapter = getMailboxProviderAdapter(connection.provider);
+      if (!adapter.searchMessages) {
+        partialConnectionIds.add(connection.id);
+        connectionPageTokens.set(connection.id, undefined);
+        connectionStatusMap.set(connection.id, {
+          status: "provider_unsupported",
+          reason: "Provider message search is unsupported",
+        });
+        continue;
+      }
+
+      const result = await adapter.searchMessages({
+        orgId,
+        tokenRef: connection.tokenRef!,
+        query: trimmedQuery,
+        pageToken: token ?? undefined,
+        maxResults: SEARCH_MAX_PROVIDER_RESULTS,
       });
-      continue;
+
+      fetchedAnyPage = true;
+
+      if (isMailboxProviderError(result)) {
+        partialConnectionIds.add(connection.id);
+        connectionPageTokens.set(connection.id, undefined);
+
+        const isAuthErr = result.category === "auth_expired" || result.category === "auth_insufficient";
+        connectionStatusMap.set(connection.id, {
+          status: isAuthErr ? "auth_expired" : "provider_failed",
+          reason: result.safeMessage,
+        });
+        continue;
+      }
+
+      if (result.nextPageToken) {
+        connectionPageTokens.set(connection.id, result.nextPageToken);
+      } else {
+        connectionPageTokens.set(connection.id, undefined);
+      }
+
+      let appendedFromConnection = 0;
+      for (const hit of result.hits) {
+        const key = `${connection.id}:${hit.providerMessageId}`;
+        if (seenMessageKeys.has(key)) {
+          continue;
+        }
+        seenMessageKeys.add(key);
+        bufferedMessageKeys.push(key);
+        appendedFromConnection += 1;
+
+        if (!providerHitsMap.has(key)) {
+          providerHitsMap.set(key, []);
+        }
+        providerHitsMap.get(key)!.push({ ...hit, connectionId: connection.id });
+      }
+
+      providerHitsCountMap.set(
+        connection.id,
+        (providerHitsCountMap.get(connection.id) || 0) + result.hits.length
+      );
+
+      if (appendedFromConnection === 0 && result.nextPageToken === token) {
+        connectionPageTokens.set(connection.id, undefined);
+      }
     }
 
-    for (const hit of result.hits) {
-      allMessageHits.push({ ...hit, connectionId: connection.id });
+    if (!fetchedAnyPage) {
+      break;
     }
 
-    if (result.nextPageToken) {
-      nextPageToken = result.nextPageToken;
+    if (bufferedMessageKeys.length === bufferedCountBeforeLoop) {
+      break;
     }
   }
 
-  // Resolve parent threads from local DB for context
-  const threadKeys = allMessageHits.map((hit) =>
-    makeThreadKey(hit.connectionId, hit.providerThreadId),
-  );
-  const resolvedThreads = await resolveThreadsByProviderKeys(orgId, [...new Set(threadKeys)]);
+  // ── LOCAL FALLBACK: If not already fetched, query local FTS for this query ──
+  if (!providerCursor?.localFallbackFetched) {
+    const parsed = parseSearchTerms(trimmedQuery);
+    const conditions: Prisma.Sql[] = [
+      Prisma.sql`"orgId" = ${orgId}`,
+      Prisma.sql`"mailboxConnectionId" IN (${Prisma.join(connectionIdsToQuery)})`,
+      Prisma.sql`"documentType" = 'MESSAGE'`,
+    ];
 
-  // Build message results
-  const messageResults: MailboxMessageResult[] = allMessageHits.slice(0, limit).map((hit) => {
-    const threadKey = makeThreadKey(hit.connectionId, hit.providerThreadId);
-    const localThread = resolvedThreads.get(threadKey);
-    const connection = accessibleRecordById.get(hit.connectionId);
+    if (parsed.fromFilter) {
+      const fromPattern = `%${parsed.fromFilter}%`;
+      conditions.push(Prisma.sql`("fromEmail" ILIKE ${fromPattern} OR "fromDisplayName" ILIKE ${fromPattern})`);
+    }
+
+    if (parsed.toFilter) {
+      const toPattern = `%${parsed.toFilter}%`;
+      conditions.push(Prisma.sql`"toRecipients" ILIKE ${toPattern}`);
+    }
+
+    if (parsed.textSearch && parsed.textSearch.trim()) {
+      conditions.push(
+        Prisma.sql`to_tsvector('english', "searchText") @@ websearch_to_tsquery('english', ${parsed.textSearch})`
+      );
+    }
+
+    const whereClause = Prisma.sql`${Prisma.join(conditions, " AND ")}`;
+
+    const localMatchingDocs = await db.$queryRaw<Array<{ messageId: string }>>`
+      SELECT "messageId"
+      FROM "mailbox_search_document"
+      WHERE ${whereClause}
+      LIMIT 2000
+    `;
+
+    const localMessageIds = localMatchingDocs.map((d) => d.messageId).filter(Boolean);
+
+    if (localMessageIds.length > 0) {
+      const rows = await db.mailboxMessage.findMany({
+        where: { id: { in: localMessageIds } },
+        select: {
+          id: true,
+          threadId: true,
+          providerMessageId: true,
+          subject: true,
+          snippet: true,
+          from: true,
+          sentAt: true,
+          thread: {
+            select: {
+              id: true,
+              providerThreadId: true,
+              subject: true,
+              mailboxConnectionId: true,
+            },
+          },
+        },
+      });
+
+      for (const row of rows) {
+        const key = `${row.thread.mailboxConnectionId}:${row.providerMessageId}`;
+        if (seenMessageKeys.has(key)) continue;
+        bufferedMessageKeys.push(key);
+        seenMessageKeys.add(key);
+
+        if (!providerHitsMap.has(key)) {
+          providerHitsMap.set(key, []);
+        }
+        providerHitsMap.get(key)!.push({
+          providerThreadId: row.thread.providerThreadId,
+          providerMessageId: row.providerMessageId,
+          snippet: row.snippet,
+          subject: row.subject,
+          from: row.from as { email: string; displayName: string | null } | null,
+          sentAt: row.sentAt.toISOString(),
+          connectionId: row.thread.mailboxConnectionId,
+        });
+
+        localFallbackCountMap.set(
+          row.thread.mailboxConnectionId,
+          (localFallbackCountMap.get(row.thread.mailboxConnectionId) || 0) + 1
+        );
+      }
+    }
+  }
+
+  // Resolve matching messages/threads locally
+  const pageKeys = bufferedMessageKeys.slice(0, limit);
+  const remainderKeys = bufferedMessageKeys.slice(limit);
+
+  const providerMessageIds = pageKeys.map((k) => k.split(":")[1]).filter(Boolean);
+
+  const localMessages = providerMessageIds.length === 0 ? [] : await db.mailboxMessage.findMany({
+    where: {
+      orgId,
+      providerMessageId: { in: providerMessageIds },
+      thread: { mailboxConnectionId: { in: connectionIdsToQuery } },
+    },
+    include: { thread: true },
+  });
+
+  const localMessageMap = new Map(localMessages.map((m) => [`${m.thread.mailboxConnectionId}:${m.providerMessageId}`, m]));
+
+  const missingKeys = pageKeys.filter((key) => !localMessageMap.has(key));
+
+  for (const key of missingKeys) {
+    const parts = key.split(":");
+    const connId = parts[0];
+    const hit = providerHitsMap.get(key)?.[0];
+    if (!hit) continue;
+
+    const connection = accessibleRecordById.get(connId);
+    if (!connection || !connection.tokenRef || connection.provider !== "GMAIL" || connectionRequiresReconnect(connection.status)) {
+      partialConnectionIds.add(connId);
+      continue;
+    }
+
+    hydrationMissCountMap.set(
+      connId,
+      (hydrationMissCountMap.get(connId) || 0) + 1
+    );
+
+    try {
+      await hydrateThreadFromProvider({
+        orgId,
+        connection,
+        providerThreadId: hit.providerThreadId,
+      });
+    } catch (err) {
+      partialConnectionIds.add(connId);
+      connectionStatusMap.set(connId, {
+        status: "hydration_failed",
+        reason: err instanceof Error ? err.message : "Some threads failed to hydrate from provider",
+      });
+    }
+  }
+
+  const reloadedMessages = providerMessageIds.length === 0 ? [] : await db.mailboxMessage.findMany({
+    where: {
+      orgId,
+      providerMessageId: { in: providerMessageIds },
+      thread: { mailboxConnectionId: { in: connectionIdsToQuery } },
+    },
+    include: { thread: true },
+  });
+
+  const reloadedMap = new Map(reloadedMessages.map((m) => [`${m.thread.mailboxConnectionId}:${m.providerMessageId}`, m]));
+
+  const threadKeys = pageKeys.map((key) => {
+    const hit = providerHitsMap.get(key)?.[0];
+    const parts = key.split(":");
+    return makeThreadKey(parts[0], hit?.providerThreadId ?? "");
+  }).filter((k) => !k.endsWith(":"));
+
+  const resolvedThreadsByThreadKey = await resolveThreadsByProviderKeys(orgId, [...new Set(threadKeys)]);
+
+  const messageResults: MailboxMessageResult[] = pageKeys.map((key) => {
+    const localMsg = reloadedMap.get(key);
+    const parts = key.split(":");
+    const connId = parts[0];
+    const providerMsgId = parts[1];
+    const hit = providerHitsMap.get(key)?.[0];
+    const connection = accessibleRecordById.get(connId);
+
+    const threadKey = makeThreadKey(connId, hit?.providerThreadId ?? (localMsg ? localMsg.thread.providerThreadId : ""));
+    const localThread = resolvedThreadsByThreadKey.get(threadKey);
+
+    if (localMsg) {
+      return {
+        id: localMsg.id,
+        threadId: localMsg.threadId,
+        providerThreadId: localMsg.thread.providerThreadId,
+        providerMessageId: localMsg.providerMessageId,
+        from: localMsg.from as { email: string; displayName: string | null } | null,
+        subject: localMsg.subject,
+        snippet: localMsg.snippet,
+        sentAt: localMsg.sentAt.toISOString(),
+        threadSubject: localMsg.thread.subject,
+        mailboxConnectionId: connId,
+        isShellResult: false,
+        mailboxDisplayName: connection?.displayName ?? null,
+      };
+    }
 
     return {
-      id: null, // Message-level local DB resolution not yet needed for Sprint B
+      id: null,
       threadId: localThread?.id ?? null,
-      providerThreadId: hit.providerThreadId,
-      providerMessageId: hit.providerMessageId,
-      from: hit.from,
-      subject: hit.subject,
-      snippet: hit.snippet,
-      sentAt: hit.sentAt,
-      threadSubject: localThread?.subject ?? hit.subject,
-      mailboxConnectionId: hit.connectionId,
+      providerThreadId: hit?.providerThreadId ?? "",
+      providerMessageId: providerMsgId,
+      from: hit?.from ?? null,
+      subject: hit?.subject ?? "",
+      snippet: hit?.snippet ?? "",
+      sentAt: hit?.sentAt ?? new Date().toISOString(),
+      threadSubject: localThread?.subject ?? hit?.subject ?? "",
+      mailboxConnectionId: connId,
       isShellResult: !localThread,
       mailboxDisplayName: connection?.displayName ?? null,
     };
@@ -888,24 +1158,51 @@ async function searchMailboxMessages(params: {
     coverageState = allComplete ? "complete" : "partial";
   }
 
-  return {
-    threads: [],
-    messages: messageResults,
-    nextCursor: nextPageToken
+  const nextPageTokenEntries = Object.entries(
+    Object.fromEntries(connectionPageTokens.entries()),
+  ).filter(([, value]) => value !== undefined);
+
+  const nextCursor =
+    remainderKeys.length > 0 || nextPageTokenEntries.length > 0
       ? encodeProviderSearchCursor({
           kind: "provider_search",
           query: trimmedQuery,
-          bufferedThreadKeys: [],
-          seenThreadKeys: [],
-          connectionPageTokens: {},
+          bufferedThreadKeys: remainderKeys,
+          seenThreadKeys: [...seenMessageKeys],
+          connectionPageTokens: Object.fromEntries(
+            nextPageTokenEntries.map(([key, value]) => [key, value ?? null]),
+          ),
           localFallbackFetched: true,
           partialConnectionIds: [...partialConnectionIds],
           estimatedTotal: null,
         })
-      : null,
+      : null;
+
+  logSearchDiagnostics({
+    query: trimmedQuery,
+    mode: "gmail_exact",
+    connectionStates: connectionIdsToQuery.map(id => {
+      const state = connectionStatusMap.get(id) || { status: "ok" as const, reason: "Mailbox connection is healthy" };
+      const overallState = coveragesByConnectionId.get(id)?.overallState;
+      return {
+        connectionId: id,
+        status: state.status,
+        reason: state.reason,
+        coverageComplete: overallState === "COMPLETE",
+        providerHitCount: providerHitsCountMap.get(id) || 0,
+        localFallbackCount: localFallbackCountMap.get(id) || 0,
+        hydrationMissCount: hydrationMissCountMap.get(id) || 0,
+      };
+    }),
+  });
+
+  return {
+    threads: [],
+    messages: messageResults,
+    nextCursor,
     totalCount: null,
     searchMeta: {
-      mode: gmailConnections.length > 0 ? "gmail_exact" : "local",
+      mode: "gmail_exact",
       searchMode,
       totalCountIsExact: false,
       partial: hasDegraded,
@@ -917,7 +1214,7 @@ async function searchMailboxMessages(params: {
 }
 
 /**
- * Local DB message search — queries PostgreSQL MailboxMessage using ILIKE.
+ * Local DB message search — queries PostgreSQL MailboxMessage using FTS.
  * Used when all connections have COMPLETE folder coverage, avoiding
  * the N+1 Gmail API calls entirely. Target: <50ms response time.
  */
@@ -930,90 +1227,112 @@ async function searchMailboxMessagesLocal(params: {
 }): Promise<ListMailboxThreadsResult> {
   const { orgId, trimmedQuery, accessibleConnectionIds, accessibleRecordById, limit } = params;
 
+  if (accessibleConnectionIds.length === 0) {
+    return {
+      threads: [],
+      messages: [],
+      nextCursor: null,
+      totalCount: 0,
+      searchMeta: {
+        mode: "local",
+        searchMode: "messages",
+        totalCountIsExact: true,
+        partial: false,
+        partialConnectionIds: [],
+        coverageState: "complete",
+        connectionStates: [],
+      },
+    };
+  }
+
   // Parse search terms for structured filtering
   const parsed = parseSearchTerms(trimmedQuery);
 
-  // Build WHERE clause for local message search
-  const conditions: Prisma.MailboxMessageWhereInput[] = [
-    { orgId },
-    { thread: { mailboxConnectionId: { in: accessibleConnectionIds } } },
+  const conditions: Prisma.Sql[] = [
+    Prisma.sql`"orgId" = ${orgId}`,
+    Prisma.sql`"mailboxConnectionId" IN (${Prisma.join(accessibleConnectionIds)})`,
+    Prisma.sql`"documentType" = 'MESSAGE'`,
   ];
 
-  // Text search across subject, snippet, textBody, from
-  if (parsed.textSearch) {
-    conditions.push({
-      OR: [
-        { subject: { contains: parsed.textSearch, mode: "insensitive" } },
-        { snippet: { contains: parsed.textSearch, mode: "insensitive" } },
-        { textBody: { contains: parsed.textSearch, mode: "insensitive" } },
-        { from: { path: ["email"], string_contains: parsed.textSearch, mode: "insensitive" } },
-        { from: { path: ["displayName"], string_contains: parsed.textSearch, mode: "insensitive" } },
-      ],
-    });
-  }
-
-  // From filter
   if (parsed.fromFilter) {
-    conditions.push({
-      OR: [
-        { from: { path: ["email"], string_contains: parsed.fromFilter, mode: "insensitive" } },
-        { from: { path: ["displayName"], string_contains: parsed.fromFilter, mode: "insensitive" } },
-      ],
-    });
+    const fromPattern = `%${parsed.fromFilter}%`;
+    conditions.push(Prisma.sql`("fromEmail" ILIKE ${fromPattern} OR "fromDisplayName" ILIKE ${fromPattern})`);
   }
 
-  // To filter
   if (parsed.toFilter) {
-    conditions.push({
-      OR: [
-        { to: { array_contains: [{ email: parsed.toFilter }] } },
-        { cc: { array_contains: [{ email: parsed.toFilter }] } },
-        { bcc: { array_contains: [{ email: parsed.toFilter }] } },
-      ],
-    });
+    const toPattern = `%${parsed.toFilter}%`;
+    conditions.push(Prisma.sql`"toRecipients" ILIKE ${toPattern}`);
   }
 
-  const where: Prisma.MailboxMessageWhereInput = { AND: conditions };
+  if (parsed.textSearch && parsed.textSearch.trim()) {
+    conditions.push(
+      Prisma.sql`to_tsvector('english', "searchText") @@ websearch_to_tsquery('english', ${parsed.textSearch})`
+    );
+  }
 
-  const rows = await db.mailboxMessage.findMany({
-    where,
-    orderBy: { sentAt: "desc" },
-    take: limit,
-    select: {
-      id: true,
-      threadId: true,
-      providerMessageId: true,
-      subject: true,
-      snippet: true,
-      from: true,
-      sentAt: true,
-      thread: {
-        select: {
-          id: true,
-          providerThreadId: true,
-          subject: true,
-          mailboxConnectionId: true,
+  const whereClause = Prisma.sql`${Prisma.join(conditions, " AND ")}`;
+
+  // Retrieve messageId from search index
+  const matchingDocs = await db.$queryRaw<Array<{ messageId: string }>>`
+    SELECT "messageId"
+    FROM "mailbox_search_document"
+    WHERE ${whereClause}
+    ORDER BY "sentAt" DESC, "id" DESC
+    LIMIT ${limit}
+  `;
+
+  const messageIds = matchingDocs.map((d) => d.messageId).filter(Boolean);
+
+  let messageResults: MailboxMessageResult[] = [];
+  if (messageIds.length > 0) {
+    const rows = await db.mailboxMessage.findMany({
+      where: { id: { in: messageIds } },
+      select: {
+        id: true,
+        threadId: true,
+        providerMessageId: true,
+        subject: true,
+        snippet: true,
+        from: true,
+        sentAt: true,
+        thread: {
+          select: {
+            id: true,
+            providerThreadId: true,
+            subject: true,
+            mailboxConnectionId: true,
+          },
         },
       },
-    },
-  });
+    });
 
-  const messageResults: MailboxMessageResult[] = rows.map((row) => ({
-    id: row.id,
-    threadId: row.threadId,
-    providerThreadId: row.thread.providerThreadId,
-    providerMessageId: row.providerMessageId,
-    from: row.from as { email: string; displayName: string | null } | null,
-    subject: row.subject,
-    snippet: row.snippet,
-    sentAt: row.sentAt.toISOString(),
-    threadSubject: row.thread.subject,
-    mailboxConnectionId: row.thread.mailboxConnectionId,
-    isShellResult: false,
-    mailboxDisplayName: accessibleRecordById.get(row.thread.mailboxConnectionId)?.displayName ?? null,
-  }));
+    // Sort to match index order
+    const messageMap = new Map(rows.map((row) => [row.id, row]));
+    messageResults = messageIds
+      .map((id) => messageMap.get(id))
+      .filter((row): row is NonNullable<typeof row> => !!row)
+      .map((row) => ({
+        id: row.id,
+        threadId: row.threadId,
+        providerThreadId: row.thread.providerThreadId,
+        providerMessageId: row.providerMessageId,
+        from: row.from as { email: string; displayName: string | null } | null,
+        subject: row.subject,
+        snippet: row.snippet,
+        sentAt: row.sentAt.toISOString(),
+        threadSubject: row.thread.subject,
+        mailboxConnectionId: row.thread.mailboxConnectionId,
+        isShellResult: false,
+        mailboxDisplayName: accessibleRecordById.get(row.thread.mailboxConnectionId)?.displayName ?? null,
+      }));
+  }
 
-  const totalCount = await db.mailboxMessage.count({ where });
+  const countResult = await db.$queryRaw<Array<{ count: bigint }>>`
+    SELECT COUNT(*) as count
+    FROM "mailbox_search_document"
+    WHERE ${whereClause}
+  `;
+  const totalCount = Number(countResult[0]?.count ?? 0);
 
   const connectionStates = accessibleConnectionIds.map((id) => ({
     connectionId: id,
@@ -1284,9 +1603,47 @@ export async function listMailboxThreads(
       (record) => typeof record.tokenRef === "string" && !connectionRequiresReconnect(record.status)
     );
 
-    if (gmailConnections.length === 0) {
-      const where = buildSearchWhere(baseWhere, trimmedQuery);
+    const allCoveragesComplete = connectionIdsToQuery.every((connId) => {
+      const overallState = coveragesByConnectionId.get(connId)?.overallState;
+      return overallState === "COMPLETE";
+    });
 
+    if (gmailConnections.length === 0) {
+      // 1. Run local FTS on MailboxSearchDocument to match threads
+      const parsed = parseSearchTerms(trimmedQuery);
+      const conditions: Prisma.Sql[] = [
+        Prisma.sql`"orgId" = ${orgId}`,
+        Prisma.sql`"mailboxConnectionId" IN (${Prisma.join(connectionIdsToQuery)})`,
+        Prisma.sql`"documentType" = 'THREAD'`,
+      ];
+
+      if (parsed.fromFilter) {
+        const fromPattern = `%${parsed.fromFilter}%`;
+        conditions.push(Prisma.sql`("fromEmail" ILIKE ${fromPattern} OR "fromDisplayName" ILIKE ${fromPattern})`);
+      }
+
+      if (parsed.toFilter) {
+        const toPattern = `%${parsed.toFilter}%`;
+        conditions.push(Prisma.sql`"toRecipients" ILIKE ${toPattern}`);
+      }
+
+      if (parsed.textSearch && parsed.textSearch.trim()) {
+        conditions.push(
+          Prisma.sql`to_tsvector('english', "searchText") @@ websearch_to_tsquery('english', ${parsed.textSearch})`
+        );
+      }
+
+      const whereClause = Prisma.sql`${Prisma.join(conditions, " AND ")}`;
+
+      const matchingDocs = await db.$queryRaw<Array<{ threadId: string }>>`
+        SELECT DISTINCT "threadId"
+        FROM "mailbox_search_document"
+        WHERE ${whereClause}
+        LIMIT 2000
+      `;
+      const matchedThreadIds = matchingDocs.map((d) => d.threadId);
+
+      // 2. Query matching threads with standard baseWhere constraints and cursors
       let cursorCondition: Prisma.MailboxThreadWhereInput | undefined;
       if (cursor) {
         const decoded = decodeCursor(cursor);
@@ -1309,11 +1666,15 @@ export async function listMailboxThreads(
         }
       }
 
-      const finalWhere: Prisma.MailboxThreadWhereInput = cursorCondition
-        ? { AND: [where, cursorCondition] }
-        : where;
+      const finalWhere: Prisma.MailboxThreadWhereInput = {
+        AND: [
+          baseWhere,
+          { id: { in: matchedThreadIds } },
+          ...(cursorCondition ? [cursorCondition] : []),
+        ],
+      };
 
-      const rows = await db.mailboxThread.findMany({
+      const rows = matchedThreadIds.length === 0 ? [] : await db.mailboxThread.findMany({
         where: finalWhere,
         orderBy: [
           { unreadCount: "desc" as const },
@@ -1334,7 +1695,14 @@ export async function listMailboxThreads(
             )
           : null;
 
-      const totalCount = await db.mailboxThread.count({ where });
+      const totalCount = matchedThreadIds.length === 0 ? 0 : await db.mailboxThread.count({
+        where: {
+          AND: [
+            baseWhere,
+            { id: { in: matchedThreadIds } },
+          ],
+        },
+      });
       const mappedThreads = pageRows.map(toMailboxThreadReadShape);
       const threads = await enrichThreadsWithAssigneeNames(mappedThreads);
 
@@ -1522,9 +1890,46 @@ export async function listMailboxThreads(
     }
 
     if (!providerCursor?.localFallbackFetched) {
-      const localSearchWhere = buildSearchWhere(baseWhere, trimmedQuery);
-      const rows = await db.mailboxThread.findMany({
-        where: localSearchWhere,
+      const parsed = parseSearchTerms(trimmedQuery);
+      const conditions: Prisma.Sql[] = [
+        Prisma.sql`"orgId" = ${orgId}`,
+        Prisma.sql`"mailboxConnectionId" IN (${Prisma.join(connectionIdsToQuery)})`,
+        Prisma.sql`"documentType" = 'THREAD'`,
+      ];
+
+      if (parsed.fromFilter) {
+        const fromPattern = `%${parsed.fromFilter}%`;
+        conditions.push(Prisma.sql`("fromEmail" ILIKE ${fromPattern} OR "fromDisplayName" ILIKE ${fromPattern})`);
+      }
+
+      if (parsed.toFilter) {
+        const toPattern = `%${parsed.toFilter}%`;
+        conditions.push(Prisma.sql`"toRecipients" ILIKE ${toPattern}`);
+      }
+
+      if (parsed.textSearch && parsed.textSearch.trim()) {
+        conditions.push(
+          Prisma.sql`to_tsvector('english', "searchText") @@ websearch_to_tsquery('english', ${parsed.textSearch})`
+        );
+      }
+
+      const whereClause = Prisma.sql`${Prisma.join(conditions, " AND ")}`;
+
+      const matchingDocs = await db.$queryRaw<Array<{ threadId: string }>>`
+        SELECT DISTINCT "threadId"
+        FROM "mailbox_search_document"
+        WHERE ${whereClause}
+        LIMIT 2000
+      `;
+      const matchedThreadIds = matchingDocs.map((d) => d.threadId);
+
+      const rows = matchedThreadIds.length === 0 ? [] : await db.mailboxThread.findMany({
+        where: {
+          AND: [
+            baseWhere,
+            { id: { in: matchedThreadIds } },
+          ],
+        },
         orderBy: [
           { lastMessageAt: "desc" as const },
           { id: "desc" as const },
@@ -1842,6 +2247,7 @@ async function repairMessageBodies(
           ...(recoveredText ? { textBody: recoveredText } : {}),
         },
       });
+      await indexMailboxMessage(orgId, msg.id);
     } catch {
       // Best-effort repair
     }

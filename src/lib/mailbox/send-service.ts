@@ -18,7 +18,7 @@ import "server-only";
 import { db } from "@/lib/db";
 import { Prisma } from "@/generated/prisma/client";
 import { listMailboxConnectionsForMember } from "./visibility-service";
-import { getMailboxThreadDetail } from "./thread-service";
+import { getMailboxThreadDetail, hydrateThreadFromProvider } from "./thread-service";
 import { getMailboxProviderAdapter } from "./provider-registry";
 import { isMailboxProviderError } from "./provider-contracts";
 import { logMailboxAuditTx } from "./audit";
@@ -445,6 +445,18 @@ export async function sendDraft(input: SendDraftInput): Promise<SendDraftResult>
 
     return draftSent;
   });
+
+  if (sendResult.providerThreadId) {
+    try {
+      await hydrateThreadFromProvider({
+        orgId,
+        connection,
+        providerThreadId: sendResult.providerThreadId,
+      });
+    } catch (hydrateErr) {
+      console.error("[sendDraft] Post-send hydration failed:", hydrateErr);
+    }
+  }
 
   // Best-effort cleanup of staged attachments after send
   try {

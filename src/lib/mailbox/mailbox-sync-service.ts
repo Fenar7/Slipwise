@@ -18,6 +18,11 @@ import {
   upsertMailboxThread,
   updateMailboxThreadSummary,
 } from "./ingestion-service";
+import {
+  indexMailboxThread,
+  indexMailboxMessage,
+  deleteMailboxSearchDocumentsForThread,
+} from "./search-indexing-service";
 import { getMailboxProviderAdapter } from "./provider-registry";
 import { isMailboxProviderError } from "./provider-contracts";
 import type { MailboxProviderError, MailboxThreadEnvelope } from "./provider-contracts";
@@ -162,6 +167,11 @@ async function ingestSyncedThreads(params: {
         isFlagged: isStarred,
       },
     });
+
+    await indexMailboxThread(params.orgId, thread.id);
+    for (const msg of threadMessages) {
+      await indexMailboxMessage(params.orgId, msg.id);
+    }
   }
 
   return {
@@ -210,6 +220,8 @@ async function ingestSyncedDrafts(params: {
       previewSnippet: deriveThreadPreviewSnippet([message]),
       attachmentCount: computeThreadAttachmentCount([message]),
     });
+
+    await indexMailboxMessage(params.orgId, message.id);
   }
 
   return {
@@ -636,6 +648,14 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
           providerMessageId: { in: delta.deletedMessageIds },
         },
       });
+      await db.mailboxSearchDocument.deleteMany({
+        where: {
+          orgId: params.orgId,
+          mailboxConnectionId: connection.id,
+          providerMessageId: { in: delta.deletedMessageIds },
+          documentType: "MESSAGE",
+        },
+      });
     }
 
     // Re-fetch threads affected by deletion events to reconcile thread state.
@@ -647,19 +667,26 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
           orgId: params.orgId,
           tokenRef: connection.tokenRef,
           providerThreadId,
+          cachedThreadData: undefined,
         });
         if (isMailboxProviderError(detail)) {
           // Not found or other error: the thread is gone. Soft-delete it.
           if (detail.category === "not_found") {
-            await db.mailboxThread.updateMany({
+            const threadToSoftDelete = await db.mailboxThread.findFirst({
               where: {
                 orgId: params.orgId,
                 mailboxConnectionId: connection.id,
                 providerThreadId,
-                status: { not: "DELETED" },
               },
-              data: { status: "DELETED", updatedAt: new Date() },
+              select: { id: true }
             });
+            if (threadToSoftDelete) {
+              await db.mailboxThread.updateMany({
+                where: { id: threadToSoftDelete.id },
+                data: { status: "DELETED", updatedAt: new Date() },
+              });
+              await deleteMailboxSearchDocumentsForThread(params.orgId, connection.id, threadToSoftDelete.id);
+            }
           }
           continue;
         }
@@ -668,15 +695,21 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
         // If there are no messages left in the provider response, the
         // thread is effectively empty and should be soft-deleted.
         if (detail.messages.length === 0) {
-          await db.mailboxThread.updateMany({
+          const threadToSoftDelete = await db.mailboxThread.findFirst({
             where: {
               orgId: params.orgId,
               mailboxConnectionId: connection.id,
               providerThreadId,
-              status: { not: "DELETED" },
             },
-            data: { status: "DELETED", updatedAt: new Date() },
+            select: { id: true }
           });
+          if (threadToSoftDelete) {
+            await db.mailboxThread.updateMany({
+              where: { id: threadToSoftDelete.id },
+              data: { status: "DELETED", updatedAt: new Date() },
+            });
+            await deleteMailboxSearchDocumentsForThread(params.orgId, connection.id, threadToSoftDelete.id);
+          }
         }
       }
     }
@@ -1028,10 +1061,13 @@ async function reconcileStarredTrashStatus(params: {
       const isInTrash = trashedIds.has(thread.providerThreadId);
       if (isInTrash) {
         // Thread is in trash on provider — soft-delete locally.
-        await db.mailboxThread.updateMany({
+        const result = await db.mailboxThread.updateMany({
           where: { id: thread.id, orgId, status: { not: "DELETED" } },
           data: { status: "DELETED", updatedAt: new Date() },
         });
+        if (result.count > 0) {
+          await deleteMailboxSearchDocumentsForThread(orgId, connectionId, thread.id);
+        }
       }
     }
   }
