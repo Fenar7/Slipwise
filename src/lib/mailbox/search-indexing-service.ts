@@ -75,7 +75,7 @@ export async function indexMailboxThread(
           orgId,
           mailboxConnectionId: thread.mailboxConnectionId,
           threadId: thread.id,
-          messageId: null,
+          messageId: "",
         },
       },
       update: {
@@ -99,7 +99,7 @@ export async function indexMailboxThread(
         orgId,
         mailboxConnectionId: thread.mailboxConnectionId,
         threadId: thread.id,
-        messageId: null,
+        messageId: "",
         documentType: "THREAD",
         providerThreadId: thread.providerThreadId,
         providerMessageId: null,

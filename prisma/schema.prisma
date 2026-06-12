@@ -6412,7 +6412,7 @@ model MailboxSearchDocument {
   orgId               String
   mailboxConnectionId String
   threadId            String
-  messageId           String?
+  messageId           String   @default("")
   documentType        String   // "THREAD" | "MESSAGE"
   providerThreadId    String
   providerMessageId   String?
