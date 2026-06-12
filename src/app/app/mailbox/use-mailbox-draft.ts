@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useRef } from "react";
+import { toast } from "sonner";
 
 export type DraftModeUppercase = "NEW" | "REPLY" | "REPLY_ALL" | "FORWARD";
 
@@ -270,10 +271,12 @@ export function useMailboxDraft(): UseMailboxDraftResult {
       setDraftId(null);
       setLastKnownUpdatedAt(null);
       setLastAutosavedAt(null);
+      toast.success("Message sent successfully");
       return data;
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to send draft";
       setError(message);
+      toast.error(message);
       return null;
     } finally {
       setIsLoading(false);
