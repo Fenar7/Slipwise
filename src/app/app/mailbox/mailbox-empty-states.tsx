@@ -433,6 +433,55 @@ function SyncAwareFolderEmpty({
     }
     return `Your mailbox is connected but ${folder} haven't been imported yet. Click Sync now to start importing.`;
   })();
+
+  if (syncStatus.state === "running") {
+    const elapsed = formatSyncElapsed(syncStatus.currentRunStartedAt);
+    return (
+      <div className="flex h-full flex-col bg-white">
+        {/* Compact, elegant inline sync info box */}
+        <div className="mx-4 my-3 p-3.5 rounded-xl border bg-slate-50/50 border-slate-100 flex items-start gap-3 text-left">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-50">
+            <Loader2 className="h-4.5 w-4.5 animate-spin text-blue-600" />
+          </div>
+          <div className="min-w-0 flex-1 space-y-1">
+            <p className="text-xs font-semibold text-slate-800 leading-none">
+              {heading}
+            </p>
+            <p className="text-[11px] text-slate-500 leading-normal">
+              {body}
+            </p>
+            {elapsed && (
+              <p className="text-[10px] font-medium text-slate-400">
+                {elapsed}
+              </p>
+            )}
+          </div>
+        </div>
+
+        {/* Shimmering Skeletons representing the active thread list */}
+        <div className="flex-1 overflow-hidden border-t border-slate-100">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div
+              key={i}
+              className="flex items-start gap-3 border-b px-4 py-3.5"
+              style={{ borderColor: "#F1F3F7" }}
+            >
+              <div className="mt-0.5 h-8 w-8 shrink-0 animate-pulse rounded-full bg-slate-100" />
+              <div className="min-w-0 flex-1 space-y-2.5">
+                <div className="flex items-center gap-2">
+                  <div className="h-3 w-24 animate-pulse rounded-md bg-slate-100" />
+                  <div className="ml-auto h-2.5 w-10 animate-pulse rounded-md bg-slate-100" />
+                </div>
+                <div className="h-3 w-4/5 animate-pulse rounded-md bg-slate-100" />
+                <div className="h-2.5 w-full animate-pulse rounded-md bg-slate-100" />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   const showSyncCta = !!onSyncNow && !isActivelyRunning;
 
   const iconBg = syncStatus.state === "failed"
@@ -535,6 +584,56 @@ function SyncAwareInboxEmpty({
     // completed_never_imported
     return "Your mailbox is connected. The first sync hasn't completed yet — click Sync now to start importing.";
   })();
+
+  if (syncStatus.state === "running") {
+    const elapsed = syncStatus.currentRunStartedAt
+      ? formatSyncElapsed(syncStatus.currentRunStartedAt)
+      : null;
+    return (
+      <div className="flex h-full flex-col bg-white" data-testid={testId}>
+        {/* Compact, elegant inline sync info box */}
+        <div className="mx-4 my-3 p-3.5 rounded-xl border bg-slate-50/50 border-slate-100 flex items-start gap-3 text-left">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-50">
+            <Loader2 className="h-4.5 w-4.5 animate-spin text-blue-600" />
+          </div>
+          <div className="min-w-0 flex-1 space-y-1">
+            <p className="text-xs font-semibold text-slate-800 leading-none">
+              {heading}
+            </p>
+            <p className="text-[11px] text-slate-500 leading-normal">
+              {body}
+            </p>
+            {elapsed && (
+              <p className="text-[10px] font-medium text-slate-400">
+                {elapsed}
+              </p>
+            )}
+          </div>
+        </div>
+
+        {/* Shimmering Skeletons representing the active thread list */}
+        <div className="flex-1 overflow-hidden border-t border-slate-100">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div
+              key={i}
+              className="flex items-start gap-3 border-b px-4 py-3.5"
+              style={{ borderColor: "#F1F3F7" }}
+            >
+              <div className="mt-0.5 h-8 w-8 shrink-0 animate-pulse rounded-full bg-slate-100" />
+              <div className="min-w-0 flex-1 space-y-2.5">
+                <div className="flex items-center gap-2">
+                  <div className="h-3 w-24 animate-pulse rounded-md bg-slate-100" />
+                  <div className="ml-auto h-2.5 w-10 animate-pulse rounded-md bg-slate-100" />
+                </div>
+                <div className="h-3 w-4/5 animate-pulse rounded-md bg-slate-100" />
+                <div className="h-2.5 w-full animate-pulse rounded-md bg-slate-100" />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   const iconBg = (() => {
     if (syncStatus.state === "failed") return "rgba(245,158,11,0.08)";

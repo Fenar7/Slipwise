@@ -37,6 +37,7 @@ import type {
   MailboxDraftSyncResult,
   MailboxDraftEnvelope,
   MailboxThreadSearchResult,
+  MailboxMessageSearchResult,
 } from "./provider-contracts";
 import { storeMailboxCredential, readMailboxCredential, rotateMailboxCredential, revokeMailboxCredential } from "./credential-store";
 import type { MailboxCredentialPayload } from "./credential-store";
@@ -71,6 +72,7 @@ const GMAIL_WATCH_LABEL_IDS = ["INBOX", "SENT", "SPAM", "DRAFT", "STARRED", "TRA
  */
 export const GMAIL_OAUTH_SCOPES = [
   "https://www.googleapis.com/auth/gmail.readonly",
+  "https://www.googleapis.com/auth/gmail.send",
   "https://www.googleapis.com/auth/userinfo.email",
   "https://www.googleapis.com/auth/userinfo.profile",
 ].join(" ");
@@ -622,8 +624,12 @@ export const gmailProviderAdapter: IMailboxProviderAdapter = {
     const activeDraftIds: string[] = [];
     const failedDraftIds: string[] = [];
 
-    for (const draftId of draftIds) {
+    const draftsResults = await fetchInParallelLimit(draftIds, 15, async (draftId) => {
       const draft = await fetchDraftWithRetry(accessToken, draftId);
+      return { draftId, draft };
+    });
+
+    for (const { draftId, draft } of draftsResults) {
       if (isProviderError(draft)) {
         if (draft.category === "not_found") {
           continue;
@@ -724,7 +730,12 @@ export const gmailProviderAdapter: IMailboxProviderAdapter = {
   /**
    * Fetch full thread detail including message bodies and attachments.
    */
-  async fetchThreadDetail({ orgId, tokenRef, providerThreadId }) {
+  async fetchThreadDetail({ orgId, tokenRef, providerThreadId, cachedThreadData }) {
+    if (cachedThreadData) {
+      const messages = (cachedThreadData.messages ?? []).map(toMessageEnvelope).filter(Boolean) as (MailboxMessageEnvelope & { htmlBody: string; textBody: string | null })[];
+      return { messages };
+    }
+
     const credential = await readMailboxCredential(orgId, tokenRef);
     if (!credential) {
       return { category: "auth_expired", safeMessage: "Credential not found for tokenRef", retryable: false };
@@ -1033,6 +1044,74 @@ export const gmailProviderAdapter: IMailboxProviderAdapter = {
 
     return result;
   },
+
+  /**
+   * Sprint B: Search Gmail at the message level.
+   * Uses messages.list with format=metadata to get subject, from, snippet, and date
+   * for each matching message, including the parent thread ID.
+   */
+  async searchMessages({ orgId, tokenRef, query, pageToken, maxResults }) {
+    const credential = await readMailboxCredential(orgId, tokenRef);
+    if (!credential) {
+      return { category: "auth_expired", safeMessage: "Credential not found for tokenRef", retryable: false };
+    }
+
+    const accessToken = await ensureValidAccessToken(orgId, tokenRef, credential);
+    if (isProviderError(accessToken)) return accessToken;
+
+    const params = new URLSearchParams({
+      q: query,
+      maxResults: String(
+        Math.min(
+          Math.max(1, maxResults ?? 50),
+          100,
+        ),
+      ),
+      format: "metadata",
+      metadataHeaders: "Subject,From,Date",
+    });
+    if (pageToken) {
+      params.set("pageToken", pageToken);
+    }
+
+    const res = await safeGmailFetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages?${params.toString()}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (isProviderError(res)) return res;
+    if (!res.ok) {
+      const errorCode = await parseGoogleErrorCode(res);
+      return mapGoogleError(res.status, errorCode);
+    }
+
+    const data = await res.json() as {
+      messages?: Array<{ id: string; threadId: string }>;
+      nextPageToken?: string;
+      resultSizeEstimate?: number;
+    };
+
+    const hits: MailboxMessageSearchResult["hits"] = [];
+    const messageRefs = data.messages ?? [];
+
+    // Gmail HTTP Batch Request: fetch all message metadata in a single HTTP call
+    // instead of N individual requests. Max 100 per batch per Google spec.
+    const BATCH_SIZE = 50;
+    for (let index = 0; index < messageRefs.length; index += BATCH_SIZE) {
+      const batch = messageRefs.slice(index, index + BATCH_SIZE);
+      const batchHits = await fetchMessageBatch(batch, accessToken);
+      hits.push(...batchHits);
+    }
+
+    const result: MailboxMessageSearchResult = {
+      hits,
+      nextPageToken: data.nextPageToken ?? null,
+      estimatedTotal:
+        typeof data.resultSizeEstimate === "number"
+          ? data.resultSizeEstimate
+          : null,
+    };
+
+    return result;
+  },
 };
 
 // ─── Gmail API types ──────────────────────────────────────────────────────────
@@ -1121,6 +1200,92 @@ function parseGmailDate(internalDate: string | null | undefined): Date {
   const d = new Date(ms);
   if (isNaN(d.getTime())) return new Date();
   return d;
+}
+
+/**
+ * Gmail HTTP Batch Request: fetch multiple message metadata in a single
+ * HTTP call using the Gmail Batch API. This replaces the previous N+1
+ * pattern of individual fetches per message.
+ *
+ * @see https://developers.google.com/gmail/api/guides/batch
+ */
+async function fetchMessageBatch(
+  messages: Array<{ id: string; threadId: string }>,
+  accessToken: string,
+): Promise<MailboxMessageSearchResult["hits"]> {
+  if (messages.length === 0) return [];
+
+  const boundary = `batch_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+
+  // Build multipart/mixed body
+  const parts: string[] = [];
+  for (const msg of messages) {
+    parts.push(
+      `--${boundary}\r\n` +
+      `Content-Type: application/http\r\n\r\n` +
+      `GET /gmail/v1/users/me/messages/${msg.id}?format=metadata&metadataHeaders=Subject,From,Date HTTP/1.1\r\n` +
+      `Host: gmail.googleapis.com\r\n\r\n`,
+    );
+  }
+  parts.push(`--${boundary}--`);
+
+  const body = parts.join("\r\n");
+
+  const res = await safeGmailFetch(
+    "https://gmail.googleapis.com/batch/gmail/v1",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": `multipart/mixed; boundary=${boundary}`,
+      },
+      body,
+    },
+  );
+
+  if (isProviderError(res)) return [];
+  if (!res.ok) {
+    // Fallback: on batch failure, return empty (individual fetch not worth retrying)
+    return [];
+  }
+
+  // Parse multipart response
+  const responseText = await res.text();
+  const hits: MailboxMessageSearchResult["hits"] = [];
+
+  // Split by boundary and parse each JSON response
+  const responseParts = responseText.split(`--${boundary}`);
+  for (const part of responseParts) {
+    // Find the JSON body in each part
+    const jsonStart = part.indexOf("{");
+    const jsonEnd = part.lastIndexOf("}");
+    if (jsonStart === -1 || jsonEnd === -1) continue;
+
+    try {
+      const msgData = JSON.parse(part.slice(jsonStart, jsonEnd + 1)) as GmailMessage;
+      if (!msgData.id || !msgData.threadId) continue;
+
+      const headers = msgData.payload?.headers ?? [];
+      const subject = headers.find((h) => h.name === "Subject")?.value ?? "(No subject)";
+      const fromRaw = headers.find((h) => h.name === "From")?.value ?? "";
+      const from = parseAddressListHeader(fromRaw)[0] ?? { email: "", displayName: null };
+      const dateRaw = headers.find((h) => h.name === "Date")?.value ?? "";
+      const sentAt = dateRaw ? new Date(dateRaw).toISOString() : new Date().toISOString();
+
+      hits.push({
+        providerThreadId: msgData.threadId,
+        providerMessageId: msgData.id,
+        snippet: msgData.snippet ?? "",
+        subject,
+        from,
+        sentAt,
+      });
+    } catch {
+      // Skip malformed response parts
+    }
+  }
+
+  return hits;
 }
 
 async function fetchBoundedThreadRefsForQuery(
@@ -1257,13 +1422,20 @@ async function fetchThreadEnvelopes(
   const threads: MailboxThreadEnvelope[] = [];
   let highestHistoryId = initialHighestHistoryId;
 
-  for (const threadId of threadIds) {
+  const results = await fetchInParallelLimit(threadIds, 15, async (threadId) => {
     const threadRes = await safeGmailFetch(`${GMAIL_THREAD_URL}/${threadId}`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
-    if (isProviderError(threadRes) || !threadRes.ok) continue;
+    if (isProviderError(threadRes) || !threadRes.ok) return null;
+    try {
+      return await threadRes.json() as GmailThreadResponse;
+    } catch {
+      return null;
+    }
+  });
 
-    const threadData = await threadRes.json() as GmailThreadResponse;
+  for (const threadData of results) {
+    if (!threadData) continue;
     highestHistoryId = maxHistoryId(highestHistoryId, threadData.historyId);
 
     const envelope = toThreadEnvelope(threadData);
@@ -1294,6 +1466,7 @@ function toThreadEnvelope(thread: GmailThreadResponse): MailboxThreadEnvelope | 
     unreadCount,
     participants,
     providerMetadata: { gmailHistoryId: thread.historyId, messageCount: thread.messages?.length ?? 0 },
+    cachedThreadData: thread,
   };
 }
 
@@ -1830,4 +2003,30 @@ export function buildGmailAuthUrl(state: string): string {
     state,
   });
   return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+}
+
+// ─── Parallel concurrency limiter helper ──────────────────────────────────────
+
+async function fetchInParallelLimit<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = [];
+  const executing: Promise<any>[] = [];
+
+  for (const item of items) {
+    const p = Promise.resolve().then(() => fn(item));
+    results.push(p as any);
+
+    if (limit <= items.length) {
+      const e: Promise<any> = p.then(() => executing.splice(executing.indexOf(e), 1));
+      executing.push(e);
+      if (executing.length >= limit) {
+        await Promise.race(executing);
+      }
+    }
+  }
+
+  return Promise.all(results);
 }

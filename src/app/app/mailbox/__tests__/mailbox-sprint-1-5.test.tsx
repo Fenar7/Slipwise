@@ -463,7 +463,7 @@ describe("MailboxWorkspace — Sprint 1.5 filter integration", () => {
 
   it("workspace search input updates filter state", () => {
     renderWorkspaceAtPath();
-    const searchInput = screen.getByRole("textbox", { name: /search mailbox threads/i });
+    const searchInput = screen.getByRole("combobox", { name: /search mailbox threads/i });
     fireEvent.change(searchInput, { target: { value: "Sunita" } });
     // Sprint 4.4: search is backend-driven; UI state updates immediately
     expect(searchInput).toHaveValue("Sunita");
@@ -472,7 +472,7 @@ describe("MailboxWorkspace — Sprint 1.5 filter integration", () => {
 
   it("clearing search restores the current result set", () => {
     renderWorkspaceAtPath();
-    const searchInput = screen.getByRole("textbox", { name: /search mailbox threads/i });
+    const searchInput = screen.getByRole("combobox", { name: /search mailbox threads/i });
     fireEvent.change(searchInput, { target: { value: "Sunita" } });
     fireEvent.click(screen.getByRole("button", { name: /clear search/i }));
     expect(screen.getByText("Sunita Rao")).toBeInTheDocument();

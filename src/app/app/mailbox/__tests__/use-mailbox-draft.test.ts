@@ -161,3 +161,124 @@ describe("useMailboxDraft autosave lifecycle", () => {
     expect(result.current.draftId).toBe("draft-002");
   });
 });
+
+describe("useMailboxDraft sendDraft edge cases", () => {
+  beforeEach(() => {
+    mockFetch.mockReset();
+  });
+
+  it("handles 409 conflict 'Cannot send draft with status SENT' as a success case", async () => {
+    const { result } = renderHook(() => useMailboxDraft());
+
+    // Seed draftId
+    mockFetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          draft: { id: "draft-409", status: "ACTIVE", updatedAt: "2026-05-10T10:00:00Z" },
+          created: true,
+        }),
+        { status: 200 }
+      )
+    );
+
+    await act(async () => {
+      await result.current.createDraft({
+        mailboxConnectionId: "conn-1",
+        mode: "NEW",
+      });
+    });
+
+    expect(result.current.draftId).toBe("draft-409");
+
+    // Mock sendDraft returning 409 with already sent message
+    mockFetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({ error: "Cannot send draft with status SENT" }),
+        { status: 409 }
+      )
+    );
+
+    let sendResult: any = null;
+    await act(async () => {
+      sendResult = await result.current.sendDraft();
+    });
+
+    expect(sendResult).not.toBeNull();
+    expect(sendResult.draft.status).toBe("SENT");
+    expect(result.current.draftId).toBeNull();
+    expect(result.current.error).toBeNull();
+  });
+
+  it("flushes pending autosave changes before sending the draft", async () => {
+    const { result } = renderHook(() => useMailboxDraft());
+
+    // Seed draftId
+    mockFetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          draft: { id: "draft-flush", status: "ACTIVE", updatedAt: "2026-05-10T10:00:00Z" },
+          created: true,
+        }),
+        { status: 200 }
+      )
+    );
+
+    await act(async () => {
+      await result.current.createDraft({
+        mailboxConnectionId: "conn-1",
+        mode: "NEW",
+      });
+    });
+
+    expect(result.current.draftId).toBe("draft-flush");
+
+    // Trigger an autosave to queue a pending change
+    await act(async () => {
+      void result.current.autosave({ subject: "Flush me before send" });
+    });
+
+    // Mock performAutosave (PATCH) and sendDraft (POST /send)
+    mockFetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          draft: { id: "draft-flush", status: "ACTIVE", updatedAt: "2026-05-10T10:00:01Z", lastAutosavedAt: "2026-05-10T10:00:01Z" },
+          stale: false,
+        }),
+        { status: 200 }
+      )
+    );
+    mockFetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          draft: { id: "draft-flush", status: "SENT" },
+          providerMessageId: "msg-123",
+          providerThreadId: "thread-123",
+        }),
+        { status: 200 }
+      )
+    );
+
+    // Call sendDraft
+    let sendResult: any = null;
+    await act(async () => {
+      sendResult = await result.current.sendDraft();
+    });
+
+    expect(sendResult).not.toBeNull();
+    expect(sendResult.draft.status).toBe("SENT");
+
+    // Verify PATCH was called before POST /send
+    const patchCallIndex = mockFetch.mock.calls.findIndex(
+      ([url, init]: [string, RequestInit | undefined]) =>
+        typeof url === "string" && url.includes("draft-flush") && init?.method === "PATCH"
+    );
+    const postCallIndex = mockFetch.mock.calls.findIndex(
+      ([url, init]: [string, RequestInit | undefined]) =>
+        typeof url === "string" && url.includes("draft-flush/send") && init?.method === "POST"
+    );
+
+    expect(patchCallIndex).toBeGreaterThan(-1);
+    expect(postCallIndex).toBeGreaterThan(-1);
+    expect(patchCallIndex).toBeLessThan(postCallIndex);
+  });
+});

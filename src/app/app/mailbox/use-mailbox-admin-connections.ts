@@ -65,10 +65,13 @@ export function useMailboxAdminConnections(): UseMailboxAdminConnectionsResult {
   const [error, setError] = useState<string | null>(null);
   const [errorType, setErrorType] = useState<MailboxAdminConnectionsErrorType>(null);
 
-  const fetchConnections = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
-    setErrorType(null);
+  const fetchConnections = useCallback(async (options?: { silent?: boolean }) => {
+    const silent = options?.silent ?? false;
+    if (!silent) {
+      setIsLoading(true);
+      setError(null);
+      setErrorType(null);
+    }
     try {
       const res = await fetch("/api/mailbox/connections");
       if (!res.ok) {
@@ -88,10 +91,14 @@ export function useMailboxAdminConnections(): UseMailboxAdminConnectionsResult {
       const list = data.connections ?? [];
       setConnections(list.map(mapApiToAdminConnection));
     } catch (err) {
-      setErrorType("server");
-      setError(err instanceof Error ? err.message : "Unknown error");
+      if (!silent) {
+        setErrorType("server");
+        setError(err instanceof Error ? err.message : "Unknown error");
+      }
     } finally {
-      setIsLoading(false);
+      if (!silent) {
+        setIsLoading(false);
+      }
     }
   }, []);
 
@@ -105,7 +112,8 @@ export function useMailboxAdminConnections(): UseMailboxAdminConnectionsResult {
     if (!hasActiveSync) return;
 
     const timer = window.setInterval(() => {
-      void fetchConnections();
+      if (document.visibilityState !== "visible") return;
+      void fetchConnections({ silent: true });
     }, SYNC_POLL_INTERVAL_MS);
 
     return () => window.clearInterval(timer);

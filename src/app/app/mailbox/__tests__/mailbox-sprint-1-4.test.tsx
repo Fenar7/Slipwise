@@ -355,9 +355,9 @@ describe("MailboxConnectFlow — pre_connect step", () => {
     render(<MailboxConnectFlow onClose={vi.fn()} />);
     const permissions = screen.getByLabelText(/gmail permissions requested/i);
     expect(permissions).toHaveTextContent(/read email messages and metadata/i);
+    expect(permissions).toHaveTextContent(/send email on your behalf/i);
     expect(permissions).toHaveTextContent(/view the google account email address/i);
     expect(permissions).toHaveTextContent(/view the google account profile name/i);
-    expect(permissions).not.toHaveTextContent(/send email on your behalf/i);
     expect(permissions).not.toHaveTextContent(/manage labels and mailbox settings/i);
     expect(permissions).not.toHaveTextContent(/mailbox history and changes/i);
   });

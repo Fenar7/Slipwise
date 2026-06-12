@@ -320,7 +320,7 @@ describe("MailboxCommandBar", () => {
 
   it("renders the search input", () => {
     render(<MailboxCommandBar activeViewLabel="All Inboxes" />);
-    expect(screen.getByRole("textbox", { name: /search mailbox threads/i })).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: /search mailbox threads/i })).toBeInTheDocument();
   });
 
   it("renders the filter button", () => {

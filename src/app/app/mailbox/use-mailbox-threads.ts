@@ -3,12 +3,28 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import type { MailboxThreadReadShape } from "@/lib/mailbox/read-shapes";
 import type { MailboxSearchMeta } from "@/lib/mailbox/thread-service";
-import type { MailboxFolder } from "./types";
+import type { MailboxFolder, MailboxSearchMode } from "./types";
 
 const SEARCH_DEBOUNCE_MS = 300;
 
+export interface MailboxMessageResultItem {
+  id: string | null;
+  threadId: string | null;
+  providerThreadId: string;
+  providerMessageId: string;
+  from: { email: string; displayName: string | null } | null;
+  subject: string;
+  snippet: string;
+  sentAt: string;
+  threadSubject: string;
+  mailboxConnectionId: string;
+  isShellResult: boolean;
+  mailboxDisplayName: string | null;
+}
+
 export interface MailboxThreadListResponse {
   threads: MailboxThreadReadShape[];
+  messages?: MailboxMessageResultItem[];
   nextCursor: string | null;
   totalCount: number | null;
   searchMeta?: MailboxSearchMeta;
@@ -22,12 +38,16 @@ export interface UseMailboxThreadsParams {
   isFlagged?: boolean;
   assignee?: "me" | "none";
   searchQuery?: string;
+  /** Sprint B: Search mode — "threads" (default) or "messages". */
+  searchMode?: MailboxSearchMode;
   limit?: number;
   enabled?: boolean;
 }
 
 export interface UseMailboxThreadsResult {
   threads: MailboxThreadReadShape[];
+  /** Sprint B: Message-level results when in messages mode. */
+  messages: MailboxMessageResultItem[];
   totalCount: number | null;
   nextCursor: string | null;
   searchMeta: MailboxSearchMeta | null;
@@ -57,10 +77,31 @@ function mergeUniqueThreads(
   return mergedThreads;
 }
 
+function mergeUniqueMessages(
+  previousMessages: MailboxMessageResultItem[],
+  nextMessages: MailboxMessageResultItem[],
+): MailboxMessageResultItem[] {
+  const mergedMessages = [...previousMessages];
+  const seenMessageIds = new Set(
+    previousMessages.map((message) => message.providerMessageId),
+  );
+
+  for (const message of nextMessages) {
+    if (seenMessageIds.has(message.providerMessageId)) {
+      continue;
+    }
+    seenMessageIds.add(message.providerMessageId);
+    mergedMessages.push(message);
+  }
+
+  return mergedMessages;
+}
+
 export function useMailboxThreads(
   params: UseMailboxThreadsParams,
 ): UseMailboxThreadsResult {
   const [threads, setThreads] = useState<MailboxThreadReadShape[]>([]);
+  const [messages, setMessages] = useState<MailboxMessageResultItem[]>([]);
   const [totalCount, setTotalCount] = useState<number | null>(0);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [searchMeta, setSearchMeta] = useState<MailboxSearchMeta | null>(null);
@@ -112,6 +153,10 @@ export function useMailboxThreads(
       if (trimmedQuery) {
         url.searchParams.set("searchQuery", trimmedQuery);
       }
+      // Sprint B: pass searchMode to API
+      if (params.searchMode === "messages") {
+        url.searchParams.set("searchMode", "messages");
+      }
       if (params.limit) {
         url.searchParams.set("limit", String(params.limit));
       }
@@ -127,6 +172,7 @@ export function useMailboxThreads(
       params.unreadOnly,
       params.isFlagged,
       params.assignee,
+      params.searchMode,
       params.limit,
       debouncedSearchQuery,
     ],
@@ -142,6 +188,7 @@ export function useMailboxThreads(
         isFlagged: params.isFlagged ?? null,
         assignee: params.assignee ?? null,
         searchQuery: debouncedSearchQuery?.trim() ?? "",
+        searchMode: params.searchMode ?? "threads",
         limit: params.limit ?? null,
         enabled: params.enabled ?? true,
       }),
@@ -152,6 +199,7 @@ export function useMailboxThreads(
       params.unreadOnly,
       params.isFlagged,
       params.assignee,
+      params.searchMode,
       params.limit,
       params.enabled,
       debouncedSearchQuery,
@@ -210,6 +258,9 @@ export function useMailboxThreads(
 
         setThreads((prev) =>
           append ? mergeUniqueThreads(prev, data.threads) : data.threads,
+        );
+        setMessages((prev) =>
+          append ? mergeUniqueMessages(prev, data.messages ?? []) : (data.messages ?? []),
         );
         setTotalCount(data.totalCount);
         setNextCursor(data.nextCursor);
@@ -272,6 +323,7 @@ export function useMailboxThreads(
     activeQueryVersionRef.current = queryVersion;
 
     setThreads([]);
+    setMessages([]);
     setTotalCount(0);
     setNextCursor(null);
     setSearchMeta(null);
@@ -321,6 +373,7 @@ export function useMailboxThreads(
 
   return {
     threads,
+    messages,
     totalCount,
     nextCursor,
     searchMeta,
