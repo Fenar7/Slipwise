@@ -2,6 +2,7 @@ import "server-only";
 
 import { Prisma } from "@/generated/prisma/client";
 import { db } from "@/lib/db";
+import { indexMailboxThread } from "./search-indexing-service";
 import type {
   MailboxAttachmentRecord,
   MailboxMessageRecord,
@@ -198,6 +199,7 @@ export async function updateMailboxThreadSummary(params: {
       attachmentCount: params.attachmentCount,
     },
   });
+  await indexMailboxThread(params.orgId, params.threadId);
 }
 
 function toThreadRecord(record: Awaited<ReturnType<typeof db.mailboxThread.upsert>>): MailboxThreadRecord {

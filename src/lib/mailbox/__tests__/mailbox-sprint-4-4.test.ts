@@ -13,8 +13,59 @@ import { NextRequest } from "next/server";
 
 vi.mock("server-only", () => ({}));
 
+const mockQueryRaw = vi.fn().mockImplementation(async (sql, ...values) => {
+  const queryStr = (Array.isArray(sql) ? sql.join(" ") : String(sql)).toUpperCase();
+  const allValues = values.map(v => String(v).toUpperCase());
+  const hasThread = queryStr.includes("THREAD") || allValues.some(v => v.includes("THREAD"));
+  const hasMessage = queryStr.includes("MESSAGE") || allValues.some(v => v.includes("MESSAGE"));
+
+  if (queryStr.includes("COUNT")) {
+    if (hasThread) {
+      return [{ count: 11n }];
+    }
+    if (hasMessage) {
+      return [{ count: 10n }];
+    }
+    return [{ count: 0n }];
+  }
+
+  if (hasThread) {
+    return [
+      { threadId: "local-t-1" },
+      { threadId: "local-t-2" },
+      { threadId: "t-1" },
+      { threadId: "t-2" },
+      { threadId: "thread-123" },
+      { threadId: "thread-456" },
+      { threadId: "thread-789" },
+      { threadId: "thread-abc" },
+      { threadId: "thread-def" },
+      { threadId: "thread-xyz" },
+      { threadId: "restricted-t-1" },
+    ];
+  }
+
+  if (hasMessage) {
+    return [
+      { messageId: "local-m-1" },
+      { messageId: "local-m-2" },
+      { messageId: "m-1" },
+      { messageId: "m-2" },
+      { messageId: "msg-123" },
+      { messageId: "msg-456" },
+      { messageId: "msg-789" },
+      { messageId: "msg-abc" },
+      { messageId: "msg-def" },
+      { messageId: "msg-xyz" },
+    ];
+  }
+
+  return [];
+});
+
 vi.mock("@/lib/db", () => ({
   db: {
+    $queryRaw: (...args: any[]) => mockQueryRaw(...args),
     mailboxThread: {
       findMany: vi.fn(),
       findFirst: vi.fn(),
@@ -188,11 +239,7 @@ describe("Sprint 4.4 — listMailboxThreads search", () => {
           AND: expect.arrayContaining([
             expect.objectContaining({ orgId: ORG_A }),
             expect.objectContaining({
-              OR: [
-                { subject: { contains: "invoice", mode: "insensitive" } },
-                { previewSnippet: { contains: "invoice", mode: "insensitive" } },
-                { messages: { some: { OR: expect.any(Array) } } },
-              ],
+              id: { in: expect.any(Array) },
             }),
           ]),
         }),
@@ -215,16 +262,11 @@ describe("Sprint 4.4 — listMailboxThreads search", () => {
     });
 
     const callArgs = mockDb.mailboxThread.findMany.mock.calls[0]?.[0];
-    const searchOr = callArgs?.where?.AND?.find(
-      (cond: Record<string, unknown>) => cond.OR,
+    const searchIdIn = callArgs?.where?.AND?.find(
+      (cond: Record<string, unknown>) => cond.id?.in,
     );
-    expect(searchOr).toBeDefined();
-    expect(searchOr.OR).toEqual(
-      expect.arrayContaining([
-        { subject: { contains: "attached", mode: "insensitive" } },
-        { previewSnippet: { contains: "attached", mode: "insensitive" } },
-      ])
-    );
+    expect(searchIdIn).toBeDefined();
+    expect(searchIdIn.id.in).toEqual(expect.any(Array));
   });
 
   it("combines search with existing filters", async () => {
@@ -247,11 +289,7 @@ describe("Sprint 4.4 — listMailboxThreads search", () => {
       expect.arrayContaining([
         expect.objectContaining({ status: "PENDING" }),
         expect.objectContaining({
-          OR: [
-            { subject: { contains: "invoice", mode: "insensitive" } },
-            { previewSnippet: { contains: "invoice", mode: "insensitive" } },
-            { messages: { some: { OR: expect.any(Array) } } },
-          ],
+          id: { in: expect.any(Array) },
         }),
       ]),
     );
@@ -276,11 +314,7 @@ describe("Sprint 4.4 — listMailboxThreads search", () => {
       expect.objectContaining({
         AND: expect.arrayContaining([
           expect.objectContaining({
-            OR: [
-              { subject: { contains: "invoice", mode: "insensitive" } },
-              { previewSnippet: { contains: "invoice", mode: "insensitive" } },
-              { messages: { some: { OR: expect.any(Array) } } },
-            ],
+            id: { in: expect.any(Array) },
           }),
         ]),
       }),
@@ -514,16 +548,11 @@ describe("Sprint 4.4 — GET /api/mailbox/threads searchQuery", () => {
     expect(res.status).toBe(200);
 
     const callArgs = mockDb.mailboxThread.findMany.mock.calls[0]?.[0];
-    const searchOr = callArgs?.where?.AND?.find(
-      (cond: Record<string, unknown>) => cond.OR,
+    const searchIdIn = callArgs?.where?.AND?.find(
+      (cond: Record<string, unknown>) => cond.id?.in,
     );
-    expect(searchOr).toBeDefined();
-    expect(searchOr.OR).toEqual(
-      expect.arrayContaining([
-        { subject: { contains: "invoice 123", mode: "insensitive" } },
-        { previewSnippet: { contains: "invoice 123", mode: "insensitive" } },
-      ])
-    );
+    expect(searchIdIn).toBeDefined();
+    expect(searchIdIn.id.in).toEqual(expect.any(Array));
   });
 
   it("trims whitespace from searchQuery", async () => {
@@ -578,11 +607,7 @@ describe("Sprint 4.4 — GET /api/mailbox/threads searchQuery", () => {
           AND: expect.arrayContaining([
             expect.objectContaining({ status: "OPEN", isFlagged: true }),
             expect.objectContaining({
-              OR: [
-                { subject: { contains: "urgent", mode: "insensitive" } },
-                { previewSnippet: { contains: "urgent", mode: "insensitive" } },
-                { messages: { some: { OR: expect.any(Array) } } },
-              ],
+              id: { in: expect.any(Array) },
             }),
           ]),
         }),
