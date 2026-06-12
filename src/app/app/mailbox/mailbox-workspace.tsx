@@ -553,6 +553,7 @@ export function MailboxWorkspace() {
     refetchDetail,
   ]);
 
+
   // Sprint 5.1: Draft persistence hook
   const {
     isLoading: isDraftLoading,
@@ -615,6 +616,39 @@ export function MailboxWorkspace() {
   const activeSyncError = activeConnection ? getSyncError(activeConnection.id) : null;
   const canSyncActiveMailbox =
     activeConnection ? canManuallySyncMailbox(activeConnection.status) : false;
+
+  // Hybrid sync: refetch threads and drafts when active sync counts update during a run
+  const lastThreadCountRef = useRef<Record<string, number>>({});
+  const lastMessageCountRef = useRef<Record<string, number>>({});
+
+  useEffect(() => {
+    if (!activeConnection || !effectiveActiveSync || effectiveActiveSync.state !== "running") {
+      return;
+    }
+    const connectionId = activeConnection.id;
+    const currentThreadCount = effectiveActiveSync.lastRunThreadCount ?? 0;
+    const currentMessageCount = effectiveActiveSync.lastRunMessageCount ?? 0;
+
+    const prevThreadCount = lastThreadCountRef.current[connectionId] ?? 0;
+    const prevMessageCount = lastMessageCountRef.current[connectionId] ?? 0;
+
+    if (currentThreadCount !== prevThreadCount || currentMessageCount !== prevMessageCount) {
+      lastThreadCountRef.current[connectionId] = currentThreadCount;
+      lastMessageCountRef.current[connectionId] = currentMessageCount;
+
+      if (inDraftsMode) {
+        refetchDrafts();
+      } else {
+        refetchThreads();
+      }
+    }
+  }, [
+    activeConnection,
+    effectiveActiveSync,
+    inDraftsMode,
+    refetchDrafts,
+    refetchThreads,
+  ]);
 
   const selectedContext: LinkedContextState | null = selectedProviderDraftActive
     ? null
