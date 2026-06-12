@@ -562,6 +562,7 @@ export function MailboxWorkspace() {
     clearCurrentDraft,
     createDraft,
     autosave,
+    flushAutosave,
     sendDraft,
     discardDraft,
     cancelAutosave,
@@ -712,9 +713,12 @@ export function MailboxWorkspace() {
     setSelectedMessageProviderId(null);
   }, [mobilePanel]);
 
-  const handleSelectDraft = useCallback((draftId: string) => {
+  const handleSelectDraft = useCallback(async (draftId: string) => {
     const draft = rawDrafts.find((candidate) => candidate.id === draftId);
     if (!draft) return;
+
+    // Flush any pending changes to the current draft before selecting a new one
+    await flushAutosave();
 
     if (draft.source === "provider") {
       setSelectedDraftId(draftId);
@@ -821,14 +825,14 @@ export function MailboxWorkspace() {
     [connections, defaultComposeConnection, selectedDetail, createDraft]
   );
 
-  const closeComposer = useCallback(() => {
-    cancelAutosave();
+  const closeComposer = useCallback(async () => {
+    await flushAutosave();
     setComposer(null);
     if (inDraftsMode) {
       clearCurrentDraft();
       setSelectedDraftId(null);
     }
-  }, [cancelAutosave, clearCurrentDraft, inDraftsMode]);
+  }, [flushAutosave, clearCurrentDraft, inDraftsMode]);
   const expandComposer = useCallback(() => setComposer((p) => p ? { ...p, layout: "expanded" } : p), []);
   const collapseComposer = useCallback(
     () => setComposer((p) => p ? { ...p, layout: p.threadId ? "inline" : "floating" } : p),

@@ -80,6 +80,7 @@ export interface UseMailboxDraftResult {
   clearCurrentDraft: () => void;
   createDraft: (payload: CreateDraftPayload) => Promise<DraftResponse | null>;
   autosave: (payload: AutosavePayload) => Promise<AutosaveResult | null>;
+  flushAutosave: () => Promise<AutosaveResult | null>;
   sendDraft: () => Promise<SendDraftResult | null>;
   discardDraft: () => Promise<boolean>;
   cancelAutosave: () => void;
@@ -240,6 +241,30 @@ export function useMailboxDraft(): UseMailboxDraftResult {
     });
   }, [lastKnownUpdatedAt, performAutosave]);
 
+  const flushAutosave = useCallback(async (): Promise<AutosaveResult | null> => {
+    const currentId = currentDraftIdRef.current;
+    const pending = pendingAutosaveRef.current;
+
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+      debounceRef.current = null;
+    }
+    pendingAutosaveRef.current = null;
+
+    if (currentId && pending) {
+      const guardPayload: AutosavePayload = {
+        ...pending,
+        lastKnownUpdatedAt: lastKnownUpdatedAt ?? pending.lastKnownUpdatedAt,
+      };
+      const result = await performAutosave(currentId, guardPayload);
+      if (!result) {
+        throw new Error("Failed to save draft content.");
+      }
+      return result;
+    }
+    return null;
+  }, [lastKnownUpdatedAt, performAutosave]);
+
   const sendDraft = useCallback(async (): Promise<SendDraftResult | null> => {
     const currentId = currentDraftIdRef.current;
     if (!currentId) {
@@ -247,14 +272,13 @@ export function useMailboxDraft(): UseMailboxDraftResult {
       return null;
     }
 
-    // Cancel any pending autosave before sending so a delayed save
-    // does not overwrite the draft after it has been sent.
-    cancelAutosave();
-
     setIsLoading(true);
     setError(null);
 
     try {
+      // Flush any pending changes first
+      await flushAutosave();
+
       const res = await fetch(`/api/mailbox/drafts/${encodeURIComponent(currentId)}/send`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -346,6 +370,7 @@ export function useMailboxDraft(): UseMailboxDraftResult {
     clearCurrentDraft,
     createDraft,
     autosave,
+    flushAutosave,
     sendDraft,
     discardDraft,
     cancelAutosave,
