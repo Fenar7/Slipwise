@@ -1260,6 +1260,7 @@ export function MailboxWorkspace() {
                 isActionLoading={isActionLoading}
                 onThreadAction={handleThreadAction}
                 connections={connections}
+                syncStatus={effectiveActiveSync}
               />
             )}
           </div>

@@ -2,6 +2,8 @@
 
 import { useEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
+import type { MailboxSyncPresentation } from "@/lib/mailbox/sync-presentation-shape";
+import { formatSyncElapsed } from "./mailbox-sync-ui";
 import type { MailboxSearchMeta } from "@/lib/mailbox/thread-service";
 import { getFriendlyDegradedMessage } from "./mailbox-empty-states";
 import {
@@ -468,6 +470,7 @@ interface MailboxThreadListProps {
   isActionLoading?: boolean;
   onThreadAction?: (threadId: string, action: ThreadAction) => void;
   connections?: Array<{ id: string; displayName: string; emailAddress: string }>;
+  syncStatus?: MailboxSyncPresentation;
 }
 
 export function MailboxThreadList({
@@ -489,6 +492,7 @@ export function MailboxThreadList({
   isActionLoading = false,
   onThreadAction,
   connections,
+  syncStatus,
 }: MailboxThreadListProps & { isLoading?: boolean }) {
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
@@ -552,6 +556,40 @@ export function MailboxThreadList({
       aria-multiselectable="false"
     >
       {reconnectBanner}
+      {syncStatus?.state === "running" && (
+        <div 
+          className="border-b px-4 py-2.5 bg-blue-50/70 border-blue-100 flex flex-col gap-1.5 transition-all shrink-0"
+          data-testid="thread-list-sync-banner"
+        >
+          <div className="flex items-center justify-between text-[11px] font-semibold text-blue-700">
+            <span className="flex items-center gap-1.5">
+              <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-600" />
+              {syncStatus.lastRunThreadCount && syncStatus.lastRunThreadCount > 0
+                ? `Syncing mailbox (${syncStatus.lastRunThreadCount} threads imported so far)…`
+                : "Syncing mailbox…"}
+            </span>
+            {syncStatus.currentRunStartedAt && (
+              <span className="text-[10px] text-blue-500 font-medium">
+                {formatSyncElapsed(syncStatus.currentRunStartedAt)}
+              </span>
+            )}
+          </div>
+          
+          {/* Sleek, Glowing Animated Progress Bar */}
+          <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-blue-100/80">
+            <style>{`
+              @keyframes progress-shimmer {
+                0% { transform: translateX(-100%); }
+                100% { transform: translateX(100%); }
+              }
+            `}</style>
+            <div
+              className="absolute h-full w-1/2 rounded-full bg-blue-600 shadow-[0_0_8px_rgba(37,99,235,0.4)]"
+              style={{ animation: "progress-shimmer 1.5s infinite linear" }}
+            />
+          </div>
+        </div>
+      )}
       <div
         ref={scrollContainerRef}
         className="flex-1 overflow-y-auto"
