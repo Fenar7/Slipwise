@@ -161,3 +161,51 @@ describe("useMailboxDraft autosave lifecycle", () => {
     expect(result.current.draftId).toBe("draft-002");
   });
 });
+
+describe("useMailboxDraft sendDraft edge cases", () => {
+  beforeEach(() => {
+    mockFetch.mockReset();
+  });
+
+  it("handles 409 conflict 'Cannot send draft with status SENT' as a success case", async () => {
+    const { result } = renderHook(() => useMailboxDraft());
+
+    // Seed draftId
+    mockFetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          draft: { id: "draft-409", status: "ACTIVE", updatedAt: "2026-05-10T10:00:00Z" },
+          created: true,
+        }),
+        { status: 200 }
+      )
+    );
+
+    await act(async () => {
+      await result.current.createDraft({
+        mailboxConnectionId: "conn-1",
+        mode: "NEW",
+      });
+    });
+
+    expect(result.current.draftId).toBe("draft-409");
+
+    // Mock sendDraft returning 409 with already sent message
+    mockFetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({ error: "Cannot send draft with status SENT" }),
+        { status: 409 }
+      )
+    );
+
+    let sendResult: any = null;
+    await act(async () => {
+      sendResult = await result.current.sendDraft();
+    });
+
+    expect(sendResult).not.toBeNull();
+    expect(sendResult.draft.status).toBe("SENT");
+    expect(result.current.draftId).toBeNull();
+    expect(result.current.error).toBeNull();
+  });
+});

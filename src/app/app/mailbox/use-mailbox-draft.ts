@@ -264,7 +264,23 @@ export function useMailboxDraft(): UseMailboxDraftResult {
         const body = (await res.json().catch(() => ({ error: "Unknown error" }))) as {
           error?: string;
         };
-        throw new Error(body.error ?? `HTTP ${res.status}`);
+        const errorMsg = body.error ?? `HTTP ${res.status}`;
+        
+        // Edge case: if the draft has already been marked as SENT (e.g., due to a previous
+        // retry or network timeout that actually succeeded on the server), handle it as success.
+        if (res.status === 409 && errorMsg.includes("status SENT")) {
+          setDraftId(null);
+          setLastKnownUpdatedAt(null);
+          setLastAutosavedAt(null);
+          toast.success("Message already sent successfully");
+          return {
+            draft: { id: currentId, status: "SENT" } as any,
+            providerMessageId: null,
+            providerThreadId: null,
+          };
+        }
+        
+        throw new Error(errorMsg);
       }
 
       const data = (await res.json()) as SendDraftResult;
