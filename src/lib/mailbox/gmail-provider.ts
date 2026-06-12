@@ -624,8 +624,12 @@ export const gmailProviderAdapter: IMailboxProviderAdapter = {
     const activeDraftIds: string[] = [];
     const failedDraftIds: string[] = [];
 
-    for (const draftId of draftIds) {
+    const draftsResults = await fetchInParallelLimit(draftIds, 15, async (draftId) => {
       const draft = await fetchDraftWithRetry(accessToken, draftId);
+      return { draftId, draft };
+    });
+
+    for (const { draftId, draft } of draftsResults) {
       if (isProviderError(draft)) {
         if (draft.category === "not_found") {
           continue;
@@ -726,7 +730,12 @@ export const gmailProviderAdapter: IMailboxProviderAdapter = {
   /**
    * Fetch full thread detail including message bodies and attachments.
    */
-  async fetchThreadDetail({ orgId, tokenRef, providerThreadId }) {
+  async fetchThreadDetail({ orgId, tokenRef, providerThreadId, cachedThreadData }) {
+    if (cachedThreadData) {
+      const messages = (cachedThreadData.messages ?? []).map(toMessageEnvelope).filter(Boolean) as (MailboxMessageEnvelope & { htmlBody: string; textBody: string | null })[];
+      return { messages };
+    }
+
     const credential = await readMailboxCredential(orgId, tokenRef);
     if (!credential) {
       return { category: "auth_expired", safeMessage: "Credential not found for tokenRef", retryable: false };
@@ -1413,13 +1422,20 @@ async function fetchThreadEnvelopes(
   const threads: MailboxThreadEnvelope[] = [];
   let highestHistoryId = initialHighestHistoryId;
 
-  for (const threadId of threadIds) {
+  const results = await fetchInParallelLimit(threadIds, 15, async (threadId) => {
     const threadRes = await safeGmailFetch(`${GMAIL_THREAD_URL}/${threadId}`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
-    if (isProviderError(threadRes) || !threadRes.ok) continue;
+    if (isProviderError(threadRes) || !threadRes.ok) return null;
+    try {
+      return await threadRes.json() as GmailThreadResponse;
+    } catch {
+      return null;
+    }
+  });
 
-    const threadData = await threadRes.json() as GmailThreadResponse;
+  for (const threadData of results) {
+    if (!threadData) continue;
     highestHistoryId = maxHistoryId(highestHistoryId, threadData.historyId);
 
     const envelope = toThreadEnvelope(threadData);
@@ -1450,6 +1466,7 @@ function toThreadEnvelope(thread: GmailThreadResponse): MailboxThreadEnvelope | 
     unreadCount,
     participants,
     providerMetadata: { gmailHistoryId: thread.historyId, messageCount: thread.messages?.length ?? 0 },
+    cachedThreadData: thread,
   };
 }
 
@@ -1986,4 +2003,30 @@ export function buildGmailAuthUrl(state: string): string {
     state,
   });
   return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+}
+
+// ─── Parallel concurrency limiter helper ──────────────────────────────────────
+
+async function fetchInParallelLimit<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = [];
+  const executing: Promise<any>[] = [];
+
+  for (const item of items) {
+    const p = Promise.resolve().then(() => fn(item));
+    results.push(p as any);
+
+    if (limit <= items.length) {
+      const e: Promise<any> = p.then(() => executing.splice(executing.indexOf(e), 1));
+      executing.push(e);
+      if (executing.length >= limit) {
+        await Promise.race(executing);
+      }
+    }
+  }
+
+  return Promise.all(results);
 }

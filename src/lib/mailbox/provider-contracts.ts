@@ -104,6 +104,8 @@ export interface MailboxThreadEnvelope {
   participants: MailboxParticipantRef[];
   /** Provider-specific metadata. Must not be used by core mailbox logic. */
   providerMetadata: Record<string, unknown>;
+  /** Optional cached raw thread response for sync optimizations (never persisted). */
+  cachedThreadData?: any;
 }
 
 /**
@@ -332,6 +334,7 @@ export interface IMailboxProviderAdapter {
     orgId: string;
     tokenRef: string;
     providerThreadId: string;
+    cachedThreadData?: any;
   }): Promise<
     | { messages: (MailboxMessageEnvelope & { htmlBody: string; textBody: string | null })[] }
     | MailboxProviderError

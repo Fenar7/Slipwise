@@ -718,7 +718,7 @@ export function MailboxWorkspace() {
     if (!draft) return;
 
     // Flush any pending changes to the current draft before selecting a new one
-    await flushAutosave();
+    await flushAutosave?.();
 
     if (draft.source === "provider") {
       setSelectedDraftId(draftId);
@@ -826,7 +826,7 @@ export function MailboxWorkspace() {
   );
 
   const closeComposer = useCallback(async () => {
-    await flushAutosave();
+    await flushAutosave?.();
     setComposer(null);
     if (inDraftsMode) {
       clearCurrentDraft();
