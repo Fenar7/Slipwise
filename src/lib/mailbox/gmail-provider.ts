@@ -72,6 +72,7 @@ const GMAIL_WATCH_LABEL_IDS = ["INBOX", "SENT", "SPAM", "DRAFT", "STARRED", "TRA
  */
 export const GMAIL_OAUTH_SCOPES = [
   "https://www.googleapis.com/auth/gmail.readonly",
+  "https://www.googleapis.com/auth/gmail.send",
   "https://www.googleapis.com/auth/userinfo.email",
   "https://www.googleapis.com/auth/userinfo.profile",
 ].join(" ");
