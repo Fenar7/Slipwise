@@ -70,6 +70,10 @@ vi.mock("@/lib/db", () => ({
     mailboxFolderCoverage: {
       findMany: vi.fn(),
     },
+    mailboxMessage: {
+      findMany: vi.fn().mockResolvedValue([]),
+      count: vi.fn().mockResolvedValue(0),
+    },
   },
 }));
 
