@@ -242,20 +242,54 @@ async function resolveSpamThreadIds(
 ): Promise<string[]> {
   if (connectionIds.length === 0) return [];
 
-  const rows = await db.mailboxMessage.findMany({
-    where: {
-      orgId,
-      thread: {
-        mailboxConnectionId: { in: connectionIds },
+  if (typeof db.$queryRaw !== "function") {
+    const rows = await db.mailboxMessage.findMany({
+      where: {
+        orgId,
+        thread: { mailboxConnectionId: { in: connectionIds } },
       },
-    },
-    select: {
-      threadId: true,
-      providerMetadata: true,
-    },
-  });
+      select: { threadId: true, providerMetadata: true },
+    });
+    return [...new Set(rows.filter((row) => hasSpamLabel(row.providerMetadata)).map((row) => row.threadId))];
+  }
 
-  return [...new Set(rows.filter((row) => hasSpamLabel(row.providerMetadata)).map((row) => row.threadId))];
+  const rows = await db.$queryRaw<Array<{ threadId: string }>>`
+    SELECT DISTINCT m."threadId"
+    FROM "mailbox_message" m
+    JOIN "mailbox_thread" t ON t."id" = m."threadId"
+    WHERE m."orgId" = ${orgId}
+      AND t."mailboxConnectionId" IN (${Prisma.join(connectionIds)})
+      AND (m."providerMetadata"->'labelIds')::jsonb @> '["SPAM"]'::jsonb
+  `;
+  return rows.map((r) => r.threadId);
+}
+
+async function resolveTrashThreadIds(
+  orgId: string,
+  connectionIds: string[],
+): Promise<string[]> {
+  if (connectionIds.length === 0) return [];
+
+  if (typeof db.$queryRaw !== "function") {
+    const rows = await db.mailboxMessage.findMany({
+      where: {
+        orgId,
+        thread: { mailboxConnectionId: { in: connectionIds } },
+      },
+      select: { threadId: true, providerMetadata: true },
+    });
+    return [...new Set(rows.filter((row) => hasTrashLabel(row.providerMetadata)).map((row) => row.threadId))];
+  }
+
+  const rows = await db.$queryRaw<Array<{ threadId: string }>>`
+    SELECT DISTINCT m."threadId"
+    FROM "mailbox_message" m
+    JOIN "mailbox_thread" t ON t."id" = m."threadId"
+    WHERE m."orgId" = ${orgId}
+      AND t."mailboxConnectionId" IN (${Prisma.join(connectionIds)})
+      AND (m."providerMetadata"->'labelIds')::jsonb @> '["TRASH"]'::jsonb
+  `;
+  return rows.map((r) => r.threadId);
 }
 
 function decodeCursor(cursor: string): DecodedCursor | null {
@@ -960,25 +994,11 @@ async function searchMailboxMessages(params: {
 
   // ── LOCAL FALLBACK: If not already fetched, query local FTS for this query ──
   if (!providerCursor?.localFallbackFetched) {
-    const spamThreadIds = await resolveSpamThreadIds(orgId, connectionIdsToQuery);
-    const trashRows = await db.mailboxMessage.findMany({
-      where: {
-        orgId,
-        thread: { mailboxConnectionId: { in: connectionIdsToQuery } },
-      },
-      select: { threadId: true, providerMetadata: true },
-    });
-    const trashThreadIds = [...new Set(trashRows
-      .filter((row) => hasTrashLabel(row.providerMetadata))
-      .map((row) => row.threadId))];
-
     const { whereClause, relevanceSql, parsed } = await buildLocalSearchQuery({
       orgId,
       connectionIdsToQuery,
       trimmedQuery,
       documentType: "MESSAGE",
-      spamThreadIds,
-      trashThreadIds,
     });
 
     const needsJoin = parsed.has.includes("attachment") || parsed.in?.toUpperCase() === "SENT";
@@ -1331,25 +1351,57 @@ async function buildLocalSearchQuery(params: {
       if (documentType === "THREAD") {
         conditions.push(Prisma.sql`EXISTS (
           SELECT 1 FROM "mailbox_message" msg
-          WHERE msg."threadId" = d."threadId" AND msg."direction" = 'outbound'
+          WHERE msg."threadId" = d."threadId" AND msg."orgId" = d."orgId"
+            AND msg."direction" = 'outbound'
         )`);
       } else {
         conditions.push(Prisma.sql`m."direction" = 'outbound'`);
       }
     } else if (rawIn === "SPAM") {
-      const spamIds = params.spamThreadIds || [];
-      if (spamIds.length > 0) {
-        conditions.push(Prisma.sql`d."threadId" IN (${Prisma.join(spamIds)})`);
+      if (documentType === "THREAD") {
+        conditions.push(Prisma.sql`EXISTS (
+          SELECT 1 FROM "mailbox_message" msg
+          WHERE msg."threadId" = d."threadId" AND msg."orgId" = d."orgId"
+            AND (msg."providerMetadata"->'labelIds')::jsonb @> '["SPAM"]'::jsonb
+        )`);
       } else {
-        conditions.push(Prisma.sql`1=0`);
+        conditions.push(Prisma.sql`EXISTS (
+          SELECT 1 FROM "mailbox_message" msg
+          WHERE msg."id" = d."messageId" AND msg."orgId" = d."orgId"
+            AND (msg."providerMetadata"->'labelIds')::jsonb @> '["SPAM"]'::jsonb
+        )`);
       }
     } else if (rawIn === "TRASH") {
-      const trashIds = params.trashThreadIds || [];
-      if (trashIds.length > 0) {
-        conditions.push(Prisma.sql`d."threadId" IN (${Prisma.join(trashIds)})`);
+      if (documentType === "THREAD") {
+        conditions.push(Prisma.sql`EXISTS (
+          SELECT 1 FROM "mailbox_message" msg
+          WHERE msg."threadId" = d."threadId" AND msg."orgId" = d."orgId"
+            AND (msg."providerMetadata"->'labelIds')::jsonb @> '["TRASH"]'::jsonb
+        )`);
       } else {
-        conditions.push(Prisma.sql`1=0`);
+        conditions.push(Prisma.sql`EXISTS (
+          SELECT 1 FROM "mailbox_message" msg
+          WHERE msg."id" = d."messageId" AND msg."orgId" = d."orgId"
+            AND (msg."providerMetadata"->'labelIds')::jsonb @> '["TRASH"]'::jsonb
+        )`);
       }
+    }
+  }
+
+  // Exclude SPAM and TRASH by default if not explicitly searched
+  if (!parsed.in || (parsed.in.toUpperCase() !== "SPAM" && parsed.in.toUpperCase() !== "TRASH")) {
+    if (documentType === "THREAD") {
+      conditions.push(Prisma.sql`NOT EXISTS (
+        SELECT 1 FROM "mailbox_message" msg
+        WHERE msg."threadId" = d."threadId" AND msg."orgId" = d."orgId"
+          AND ((msg."providerMetadata"->'labelIds')::jsonb @> '["SPAM"]'::jsonb OR (msg."providerMetadata"->'labelIds')::jsonb @> '["TRASH"]'::jsonb)
+      )`);
+    } else {
+      conditions.push(Prisma.sql`NOT EXISTS (
+        SELECT 1 FROM "mailbox_message" msg
+        WHERE msg."id" = d."messageId" AND msg."orgId" = d."orgId"
+          AND ((msg."providerMetadata"->'labelIds')::jsonb @> '["SPAM"]'::jsonb OR (msg."providerMetadata"->'labelIds')::jsonb @> '["TRASH"]'::jsonb)
+      )`);
     }
   }
 
@@ -1408,26 +1460,11 @@ async function searchMailboxMessagesLocal(params: {
     };
   }
 
-  // Resolve spam/trash IDs for operators
-  const spamThreadIds = await resolveSpamThreadIds(orgId, accessibleConnectionIds);
-  const trashRows = await db.mailboxMessage.findMany({
-    where: {
-      orgId,
-      thread: { mailboxConnectionId: { in: accessibleConnectionIds } },
-    },
-    select: { threadId: true, providerMetadata: true },
-  });
-  const trashThreadIds = [...new Set(trashRows
-    .filter((row) => hasTrashLabel(row.providerMetadata))
-    .map((row) => row.threadId))];
-
   const { whereClause, relevanceSql, parsed } = await buildLocalSearchQuery({
     orgId,
     connectionIdsToQuery: accessibleConnectionIds,
     trimmedQuery,
     documentType: "MESSAGE",
-    spamThreadIds,
-    trashThreadIds,
   });
 
   // Decode pagination cursor
@@ -1525,6 +1562,20 @@ async function searchMailboxMessagesLocal(params: {
     status: "ok" as const,
     reason: "Local search — all coverage complete",
   }));
+
+  logSearchDiagnostics({
+    query: trimmedQuery,
+    mode: "local",
+    connectionStates: accessibleConnectionIds.map((id) => ({
+      connectionId: id,
+      status: "ok" as const,
+      reason: "Local search — all coverage complete",
+      coverageComplete: true,
+      providerHitCount: 0,
+      localFallbackCount: finalMessageResults.filter((r) => r.mailboxConnectionId === id).length,
+      hydrationMissCount: 0,
+    })),
+  });
 
   return {
     threads: [],
@@ -1669,16 +1720,7 @@ export async function listMailboxThreads(
     }
     baseWhere.id = { in: spamThreadIds };
   } else if (folder === "TRASH") {
-    const trashRows = await db.mailboxMessage.findMany({
-      where: {
-        orgId,
-        thread: { mailboxConnectionId: { in: connectionIdsToQuery } },
-      },
-      select: { threadId: true, providerMetadata: true },
-    });
-    const trashThreadIds = [...new Set(trashRows
-      .filter((row) => hasTrashLabel(row.providerMetadata))
-      .map((row) => row.threadId))];
+    const trashThreadIds = await resolveTrashThreadIds(orgId, connectionIdsToQuery);
     if (trashThreadIds.length === 0) {
       return { threads: [], nextCursor: null, totalCount: 0 };
     }
@@ -1725,19 +1767,6 @@ export async function listMailboxThreads(
         cursor,
       });
     }
-
-    // Resolve spam/trash IDs for local search operators
-    const spamThreadIds = await resolveSpamThreadIds(orgId, connectionIdsToQuery);
-    const trashRows = await db.mailboxMessage.findMany({
-      where: {
-        orgId,
-        thread: { mailboxConnectionId: { in: connectionIdsToQuery } },
-      },
-      select: { threadId: true, providerMetadata: true },
-    });
-    const trashThreadIds = [...new Set(trashRows
-      .filter((row) => hasTrashLabel(row.providerMetadata))
-      .map((row) => row.threadId))];
 
     const decodedCursor = cursor ? decodeCursor(cursor) : null;
     const providerCursor =
@@ -1815,8 +1844,6 @@ export async function listMailboxThreads(
         connectionIdsToQuery,
         trimmedQuery,
         documentType: "THREAD",
-        spamThreadIds,
-        trashThreadIds,
       });
 
       // Extract the offset from the search cursor if present
@@ -2082,8 +2109,6 @@ export async function listMailboxThreads(
         connectionIdsToQuery,
         trimmedQuery,
         documentType: "THREAD",
-        spamThreadIds,
-        trashThreadIds,
       });
 
       const needsJoin = parsed.has.includes("attachment");
