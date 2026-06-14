@@ -20,6 +20,8 @@ vi.mock("@/lib/db", () => ({
       upsert: vi.fn(),
       findUnique: vi.fn(),
       findFirst: vi.fn(),
+      findMany: vi.fn(),
+      update: vi.fn(),
       count: vi.fn(),
     },
     mailboxAttachment: {
@@ -80,6 +82,7 @@ vi.mock("@/lib/mailbox/gmail-provider", async () => {
       refreshAuthorization: vi.fn(),
       verifyConnection: vi.fn(),
       syncDelta: vi.fn(),
+      syncDrafts: vi.fn(),
       fetchThreadDetail: vi.fn(),
       disconnect: vi.fn(),
       renewWatch: vi.fn(),
@@ -134,6 +137,8 @@ const mockDb = db as unknown as {
     upsert: ReturnType<typeof vi.fn>;
     findUnique: ReturnType<typeof vi.fn>;
     findFirst: ReturnType<typeof vi.fn>;
+    findMany: ReturnType<typeof vi.fn>;
+    update: ReturnType<typeof vi.fn>;
   };
   mailboxProviderCursor: {
     upsert: ReturnType<typeof vi.fn>;
@@ -148,6 +153,7 @@ describe("Sprint 3.2 — Incremental sync and provider cursors", () => {
     mockDb.mailboxSyncRun.findFirst.mockResolvedValue(null);
     mockDb.mailboxConnection.updateMany.mockResolvedValue({ count: 1 });
     mockDb.mailboxThread.updateMany.mockResolvedValue({ count: 1 });
+    mockDb.mailboxMessage.findMany.mockResolvedValue([]);
   });
 
   // ─── Domain helpers ──────────────────────────────────────────────────────
@@ -387,6 +393,126 @@ describe("Sprint 3.2 — Incremental sync and provider cursors", () => {
 
       expect(result.success).toBe(false);
       expect(upsertMailboxCursor).not.toHaveBeenCalled();
+    });
+
+    it("runs a bounded Gmail coverage recovery before delta for old inbox-only connections", async () => {
+      const { getMailboxConnection } = await import("@/lib/mailbox/connection-service");
+      const { getMailboxProviderAdapter } = await import("@/lib/mailbox/provider-registry");
+      const { getMailboxCursor, upsertMailboxCursor } = await import("@/lib/mailbox/cursor-service");
+
+      vi.mocked(getMailboxConnection).mockResolvedValue(
+        makeConnectionRecord({
+          watchExpiresAt: new Date("2099-01-01"),
+          watchMetadata: { gmailHistoryId: "hist-1" },
+        }),
+      );
+      vi.mocked(getMailboxCursor).mockResolvedValue(makeCursorRecord());
+
+      const mockAdapter = makeMockAdapter();
+      mockAdapter.syncDelta
+        .mockResolvedValueOnce({
+          threads: [{
+            providerThreadId: "gmail-thread-recovery",
+            subject: "Recovered Sent",
+            lastMessageAt: new Date().toISOString(),
+            unreadCount: 0,
+            participants: [{ email: "sent@example.com", displayName: "Sent" }],
+            providerMetadata: {},
+          }],
+          nextCursor: { value: "bootstrap-now", expiresAt: null },
+        })
+        .mockResolvedValueOnce({
+          threads: [{
+            providerThreadId: "gmail-thread-delta",
+            subject: "Fresh Delta",
+            lastMessageAt: new Date().toISOString(),
+            unreadCount: 0,
+            participants: [{ email: "delta@example.com", displayName: "Delta" }],
+            providerMetadata: {},
+          }],
+          nextCursor: { value: "cursor-next", expiresAt: null },
+        });
+      vi.mocked(getMailboxProviderAdapter).mockReturnValue(mockAdapter as never);
+
+      mockDb.mailboxSyncRun.findFirst.mockResolvedValue(null);
+      mockDb.mailboxSyncRun.create.mockResolvedValue(makeSyncRunRow({ id: "run-delta", syncMode: "DELTA" }));
+      mockDb.mailboxSyncRun.update.mockResolvedValue({});
+      mockDb.mailboxConnection.update.mockResolvedValue({});
+      mockDb.mailboxThread.upsert.mockResolvedValue(makeThreadRow());
+      mockDb.mailboxMessage.upsert.mockResolvedValue(makeMessageRow());
+
+      const result = await runMailboxSync({
+        orgId: "org-1",
+        connectionId: "conn-1",
+        actorId: "user-1",
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.syncMode).toBe("DELTA");
+      expect(result.threadCount).toBe(2);
+      expect(mockAdapter.syncDelta).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({ cursor: null }),
+      );
+      expect(mockAdapter.syncDelta).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          cursor: expect.objectContaining({ value: "1000" }),
+        }),
+      );
+      expect(upsertMailboxCursor).toHaveBeenCalledWith(
+        expect.objectContaining({ cursorValue: "cursor-next" }),
+      );
+      expect(mockDb.mailboxConnection.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            watchMetadata: expect.objectContaining({
+              gmailCoverageVersion: 4,
+              gmailCoveredSystemLabels: ["INBOX", "SENT", "SPAM", "DRAFT"],
+            }),
+          }),
+        }),
+      );
+    });
+
+    it("skips Gmail coverage recovery once required coverage metadata already exists", async () => {
+      const { getMailboxConnection } = await import("@/lib/mailbox/connection-service");
+      const { getMailboxProviderAdapter } = await import("@/lib/mailbox/provider-registry");
+      const { getMailboxCursor } = await import("@/lib/mailbox/cursor-service");
+
+      vi.mocked(getMailboxConnection).mockResolvedValue(
+        makeConnectionRecord({
+          watchExpiresAt: new Date("2099-01-01"),
+          watchMetadata: {
+            gmailCoverageVersion: 4,
+            gmailCoveredSystemLabels: ["INBOX", "SENT", "SPAM", "DRAFT"],
+          },
+        }),
+      );
+      vi.mocked(getMailboxCursor).mockResolvedValue(makeCursorRecord());
+      const mockAdapter = makeMockAdapter();
+      vi.mocked(getMailboxProviderAdapter).mockReturnValue(mockAdapter as never);
+
+      mockDb.mailboxSyncRun.findFirst.mockResolvedValue(null);
+      mockDb.mailboxSyncRun.create.mockResolvedValue(makeSyncRunRow({ id: "run-delta", syncMode: "DELTA" }));
+      mockDb.mailboxSyncRun.update.mockResolvedValue({});
+      mockDb.mailboxConnection.update.mockResolvedValue({});
+      mockDb.mailboxThread.upsert.mockResolvedValue(makeThreadRow());
+      mockDb.mailboxMessage.upsert.mockResolvedValue(makeMessageRow());
+
+      const result = await runMailboxSync({
+        orgId: "org-1",
+        connectionId: "conn-1",
+        actorId: "user-1",
+      });
+
+      expect(result.success).toBe(true);
+      expect(mockAdapter.syncDelta).toHaveBeenCalledTimes(1);
+      expect(mockAdapter.syncDelta).toHaveBeenCalledWith(
+        expect.objectContaining({
+          cursor: expect.objectContaining({ value: "1000" }),
+        }),
+      );
     });
   });
 
@@ -678,7 +804,12 @@ describe("Sprint 3.2 — Incremental sync and provider cursors", () => {
       const { getMailboxProviderAdapter } = await import("@/lib/mailbox/provider-registry");
       const { getMailboxCursor } = await import("@/lib/mailbox/cursor-service");
 
-      vi.mocked(getMailboxConnection).mockResolvedValue(makeConnectionRecord());
+      vi.mocked(getMailboxConnection).mockResolvedValue(makeConnectionRecord({
+        watchMetadata: {
+          gmailCoverageVersion: 4,
+          gmailCoveredSystemLabels: ["INBOX", "SENT", "SPAM", "DRAFT"],
+        },
+      }));
       vi.mocked(getMailboxCursor).mockResolvedValue(makeCursorRecord());
       const mockAdapter = makeMockAdapter();
       vi.mocked(getMailboxProviderAdapter).mockReturnValue(mockAdapter as never);
@@ -700,6 +831,45 @@ describe("Sprint 3.2 — Incremental sync and provider cursors", () => {
       expect(r2.success).toBe(true);
       // Upsert semantics in ingestion-service guarantee idempotency.
       expect(mockDb.mailboxThread.upsert).toHaveBeenCalledTimes(2);
+      expect(mockAdapter.syncDrafts).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe("Gmail coverage metadata", () => {
+    it("persists required Gmail folder coverage after a successful initial sync", async () => {
+      const { getMailboxConnection } = await import("@/lib/mailbox/connection-service");
+      const { getMailboxProviderAdapter } = await import("@/lib/mailbox/provider-registry");
+      const { getMailboxCursor } = await import("@/lib/mailbox/cursor-service");
+
+      vi.mocked(getMailboxConnection).mockResolvedValue(makeConnectionRecord());
+      vi.mocked(getMailboxCursor).mockResolvedValue(null);
+      const mockAdapter = makeMockAdapter();
+      vi.mocked(getMailboxProviderAdapter).mockReturnValue(mockAdapter as never);
+
+      mockDb.mailboxSyncRun.findFirst.mockResolvedValue(null);
+      mockDb.mailboxSyncRun.create.mockResolvedValue(makeSyncRunRow({ syncMode: "INITIAL" }));
+      mockDb.mailboxSyncRun.update.mockResolvedValue({});
+      mockDb.mailboxConnection.update.mockResolvedValue({});
+      mockDb.mailboxThread.upsert.mockResolvedValue(makeThreadRow());
+      mockDb.mailboxMessage.upsert.mockResolvedValue(makeMessageRow());
+
+      const result = await runMailboxSync({
+        orgId: "org-1",
+        connectionId: "conn-1",
+        actorId: "user-1",
+      });
+
+      expect(result.success).toBe(true);
+      expect(mockDb.mailboxConnection.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            watchMetadata: expect.objectContaining({
+              gmailCoverageVersion: 4,
+              gmailCoveredSystemLabels: ["INBOX", "SENT", "SPAM", "DRAFT"],
+            }),
+          }),
+        }),
+      );
     });
   });
 
@@ -868,6 +1038,10 @@ function makeMockAdapter(overrides: { snippet?: string; attachmentCount?: number
       }],
       nextCursor: { value: "cursor-next", expiresAt: null },
     }),
+    syncDrafts: vi.fn().mockResolvedValue({
+      drafts: [],
+      activeDraftMessageIds: [],
+    }),
     fetchThreadDetail: vi.fn().mockResolvedValue({
       messages: [{
         providerMessageId: "gmail-msg-1",
@@ -889,7 +1063,10 @@ function makeMockAdapter(overrides: { snippet?: string; attachmentCount?: number
       }],
     }),
     disconnect: vi.fn(),
-    renewWatch: vi.fn(),
+    renewWatch: vi.fn().mockResolvedValue({
+      expiresAt: new Date("2099-01-01T00:00:00Z"),
+      metadata: { gmailHistoryId: "hist-bootstrap", gmailWatchExpiration: "4102444800000" },
+    }),
   };
 }
 

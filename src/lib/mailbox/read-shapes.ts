@@ -542,6 +542,47 @@ export interface MailboxDraftReadShape {
   updatedAt: string;
 }
 
+export interface MailboxProviderDraftReadShape {
+  id: string;
+  orgId: string;
+  mailboxConnectionId: string;
+  threadId: string;
+  providerDraftId: string | null;
+  providerMessageId: string;
+  subject: string;
+  snippet: string;
+  to: string[];
+  cc: string[];
+  bcc: string[];
+  updatedAt: string;
+  source: "provider";
+}
+
+export interface MailboxProviderDraftDetailReadShape {
+  id: string;
+  orgId: string;
+  mailboxConnectionId: string;
+  threadId: string;
+  providerDraftId: string | null;
+  providerMessageId: string;
+  from: MailboxParticipantReadShape | null;
+  to: MailboxParticipantReadShape[];
+  cc: MailboxParticipantReadShape[];
+  bcc: MailboxParticipantReadShape[];
+  subject: string;
+  snippet: string;
+  htmlBody: string;
+  textBody: string | null;
+  sentAt: string;
+  updatedAt: string;
+  attachments: MailboxAttachmentReadShape[];
+  source: "provider";
+}
+
+export type MailboxDraftListEntryReadShape =
+  | (MailboxDraftReadShape & { source: "local" })
+  | MailboxProviderDraftReadShape;
+
 function toMailboxDraftAttachmentReadShape(
   record: import("./domain-types").MailboxDraftAttachmentRecord,
 ): MailboxDraftAttachmentReadShape {

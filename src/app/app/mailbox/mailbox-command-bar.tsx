@@ -11,6 +11,7 @@ interface MailboxCommandBarProps {
   activeViewLabel: string;
   totalCount?: number;
   unreadCount?: number;
+  itemLabel?: "thread" | "draft";
   onCompose?: () => void;
   searchQuery?: string;
   onSearchQueryChange?: (query: string) => void;
@@ -29,6 +30,7 @@ export function MailboxCommandBar({
   activeViewLabel,
   totalCount,
   unreadCount,
+  itemLabel = "thread",
   onCompose,
   searchQuery = "",
   onSearchQueryChange,
@@ -60,7 +62,13 @@ export function MailboxCommandBar({
           <h2 className="truncate text-sm font-bold text-[#0F172A]">{activeViewLabel}</h2>
           {totalCount !== undefined && (
             <span className="shrink-0 text-xs text-[#94A3B8]">
-              {totalCount} thread{totalCount !== 1 ? "s" : ""}
+              {totalCount} {itemLabel === "draft"
+                ? totalCount === 1
+                  ? "draft"
+                  : "drafts"
+                : totalCount === 1
+                ? "thread"
+                : "threads"}
               {unreadCount ? (
                 <span className="ml-1 font-semibold text-[#DC2626]">· {unreadCount} unread</span>
               ) : null}
@@ -177,7 +185,6 @@ export function MailboxCommandBar({
           {syncStatus.isSyncing || isSyncPending ? "Syncing…" : "Sync now"}
         </button>
       )}
-
       {/* Compose button */}
       <button
         onClick={onCompose}

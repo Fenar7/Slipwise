@@ -30,6 +30,7 @@ export interface MailboxConnection {
 }
 
 export type ThreadStatus = "open" | "pending" | "closed" | "archived";
+export type MailboxFolder = "INBOX" | "SENT" | "SPAM" | "ARCHIVE";
 
 export interface MailboxTreeItem {
   id: string;
@@ -98,6 +99,18 @@ export interface MailboxMessageItem {
   /** Collapsed by default for older messages in a thread */
   isCollapsed: boolean;
   attachments: MailboxAttachmentSummary[];
+}
+
+export interface DraftRowData {
+  id: string;
+  mailboxConnectionId: string;
+  source: "local" | "provider";
+  subject: string;
+  snippet: string;
+  to: string[];
+  mailboxLabel: string;
+  mailboxColor: string;
+  updatedAt: string;
 }
 
 export interface MailboxThreadDetail {

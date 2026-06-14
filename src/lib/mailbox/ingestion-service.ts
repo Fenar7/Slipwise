@@ -9,7 +9,6 @@ import type {
 } from "./domain-types";
 import type { MailboxMessageEnvelope, MailboxThreadEnvelope, MailboxAttachmentEnvelope } from "./provider-contracts";
 import {
-  classifyMessageDirection,
   normalizeParticipant,
   normalizeParticipants,
 } from "./participant-service";
@@ -59,8 +58,8 @@ export async function upsertMailboxMessage(params: {
   const normalizedCc = normalizeParticipants(params.envelope.cc);
   const normalizedBcc = normalizeParticipants(params.envelope.bcc);
 
-  const senderEmail = normalizedFrom?.email ?? "";
-  const direction = classifyMessageDirection(params.mailboxEmail, senderEmail);
+  // Provider-set direction is authoritative; email comparison is fallback-only
+  const direction = params.envelope.direction;
   const snippet = normalizeSnippet(params.envelope.snippet);
 
   // Look up the existing row so we can preserve good body content if the

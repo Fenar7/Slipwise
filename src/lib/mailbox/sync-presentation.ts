@@ -29,6 +29,31 @@ function parseSyncStats(stats: Record<string, unknown> | null): {
   return { threadCount, messageCount };
 }
 
+
+const GMAIL_PRESENTATION_COVERAGE_VERSION = 4;
+
+function hasStaleGmailCoverage(record: MailboxConnectionRecord): boolean {
+  if (record.provider !== "GMAIL") return false;
+  if (!record.watchMetadata || typeof record.watchMetadata !== "object" || Array.isArray(record.watchMetadata)) {
+    return true;
+  }
+  const meta = record.watchMetadata as Record<string, unknown>;
+  const version = meta.gmailCoverageVersion;
+  if (typeof version !== "number" || version < GMAIL_PRESENTATION_COVERAGE_VERSION) {
+    return true;
+  }
+  const coveredLabels = meta.gmailCoveredSystemLabels;
+  if (!Array.isArray(coveredLabels)) return true;
+  const coveredSet = new Set(
+    coveredLabels.filter((value): value is string => typeof value === "string"),
+  );
+  return !(
+    coveredSet.has("INBOX") &&
+    coveredSet.has("SENT") &&
+    coveredSet.has("SPAM") &&
+    coveredSet.has("DRAFT")
+  );
+}
 export function buildMailboxSyncPresentation(
   record: MailboxConnectionRecord,
   syncRuns: Partial<MailboxSyncRunLookup> = {},
@@ -77,6 +102,7 @@ export function buildMailboxSyncPresentation(
       detailLabel:
         failedSummary ??
         "Reconnect this mailbox to resume syncing and importing new messages.",
+      staleGmailCoverage: false,
     };
   }
 
@@ -99,6 +125,7 @@ export function buildMailboxSyncPresentation(
       detailLabel: isInitial
         ? "Importing recent threads. Messages will appear automatically."
         : "Checking Gmail for new messages and updates.",
+      staleGmailCoverage: false,
     };
   }
 
@@ -127,6 +154,7 @@ export function buildMailboxSyncPresentation(
       lastRunMessageCount: latestRunStats.messageCount,
       stageLabel: "Sync needs attention",
       detailLabel: failedSummary ?? "Mailbox sync failed.",
+      staleGmailCoverage: false,
     };
   }
 
@@ -147,11 +175,14 @@ export function buildMailboxSyncPresentation(
       stageLabel: "Connected, waiting for first sync",
       detailLabel:
         "This mailbox is connected. The first sync has not completed yet.",
+      staleGmailCoverage: false,
     };
   }
 
   const hasStats =
     latestRunStats.threadCount !== null && latestRunStats.messageCount !== null;
+
+  const staleCoverage = hasStaleGmailCoverage(record);
 
   return {
     state: "completed",
@@ -166,9 +197,12 @@ export function buildMailboxSyncPresentation(
     lastErrorSummary: null,
     lastRunThreadCount: latestRunStats.threadCount,
     lastRunMessageCount: latestRunStats.messageCount,
-    stageLabel: "Mailbox up to date",
-    detailLabel: hasStats
-      ? `Last sync imported ${latestRunStats.threadCount} threads and ${latestRunStats.messageCount} messages.`
-      : "Recent messages are available in this mailbox.",
+    stageLabel: staleCoverage ? "Sync recommended" : "Mailbox up to date",
+    detailLabel: staleCoverage
+      ? "Sent, spam, and drafts coverage needs to be refreshed. Start a sync to import all folders."
+      : hasStats
+        ? `Last sync imported ${latestRunStats.threadCount} threads and ${latestRunStats.messageCount} messages.`
+        : "Recent messages are available in this mailbox.",
+    staleGmailCoverage: staleCoverage,
   };
 }

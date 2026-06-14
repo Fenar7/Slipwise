@@ -13,7 +13,7 @@
  * - Workspace integration (empty thread list, reconnect banner wiring)
  */
 
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 let mockPathname = "/app/mailbox";
@@ -33,7 +33,7 @@ vi.mock("../use-mailbox-query-sync", () => ({
 
 // Mock mailbox data hooks for workspace tests
 vi.mock("../use-mailbox-connections", () => ({
-  useMailboxConnections: () => ({
+  useMailboxConnections: vi.fn(() => ({
     connections: [
       { id: "conn_billing", orgId: "org_1", provider: "gmail", slug: "billing", emailAddress: "billing@acmecorp.com", displayName: "Billing", status: "connected", lastSyncAt: "2026-05-08T14:30:00Z", lastSyncError: null, lastSyncErrorCategory: null, unreadCount: 14, inboxCount: 47 },
       { id: "conn_support", orgId: "org_1", provider: "gmail", slug: "support", emailAddress: "support@acmecorp.com", displayName: "Support", status: "connected", lastSyncAt: "2026-05-08T14:28:00Z", lastSyncError: null, lastSyncErrorCategory: null, unreadCount: 6, inboxCount: 23 },
@@ -42,7 +42,7 @@ vi.mock("../use-mailbox-connections", () => ({
     isLoading: false,
     error: null,
     refetch: vi.fn(),
-  }),
+  })),
 }));
 
 vi.mock("../use-mailbox-sync-action", () => ({
@@ -68,6 +68,15 @@ vi.mock("../use-mailbox-threads", () => ({
     let threads = ALL_MOCK_THREADS;
     if (params?.connectionId) {
       threads = threads.filter((t) => t.mailboxConnectionId === params.connectionId);
+    }
+    if (params?.folder === "SENT") {
+      threads = [];
+    }
+    if (params?.folder === "SPAM") {
+      threads = [];
+    }
+    if (params?.folder === "ARCHIVE") {
+      threads = threads.filter((t) => t.status === "ARCHIVED");
     }
     if (params?.status) {
       const rawStatuses = Array.isArray(params.status)
@@ -98,6 +107,15 @@ vi.mock("../use-mailbox-threads", () => ({
       loadMore: vi.fn(),
     };
   }),
+}));
+
+vi.mock("../use-mailbox-drafts", () => ({
+  useMailboxDrafts: vi.fn(() => ({
+    drafts: [],
+    isLoading: false,
+    error: null,
+    refetch: vi.fn(),
+  })),
 }));
 
 vi.mock("@/hooks/use-supabase-session", () => ({
@@ -163,6 +181,16 @@ function buildThreadDetail(threadId: string) {
 vi.mock("../use-mailbox-thread-detail", () => ({
   useMailboxThreadDetail: vi.fn((threadId: string | null) => ({
     detail: threadId ? buildThreadDetail(threadId) : null,
+    isLoading: false,
+    error: null,
+    isNotFound: false,
+    refetch: vi.fn(),
+  })),
+}));
+
+vi.mock("../use-mailbox-provider-draft-detail", () => ({
+  useMailboxProviderDraftDetail: vi.fn(() => ({
+    detail: null,
     isLoading: false,
     error: null,
     isNotFound: false,
@@ -1105,12 +1133,12 @@ describe("MailboxWorkspace Sprint 1.6 integration", () => {
 
   it("shows a mailbox empty state for drafts routes instead of a blank list", () => {
     renderWorkspaceAtPath("/app/mailbox/billing/drafts");
-    expect(screen.getByText(/billing · drafts is empty/i)).toBeInTheDocument();
+    expect(screen.getByText(/billing · drafts has no drafts/i)).toBeInTheDocument();
   });
 
   it("shows a mailbox empty state for spam routes instead of a blank list", () => {
     renderWorkspaceAtPath("/app/mailbox/support/spam");
-    expect(screen.getByText(/support · spam is empty/i)).toBeInTheDocument();
+    expect(screen.getByText(/support · spam has no spam conversations/i)).toBeInTheDocument();
   });
 
   it("opens a narrow-viewport context panel from the reading pane", async () => {
@@ -1132,6 +1160,119 @@ describe("MailboxWorkspace Sprint 1.6 integration", () => {
 
     await waitFor(() => {
       expect(screen.getByTestId("mailbox-reading-pane-active")).toBeInTheDocument();
+    });
+  });
+
+  it("opens provider drafts from draft detail instead of thread detail", async () => {
+    const { useMailboxDrafts } = await import("../use-mailbox-drafts");
+    const { useMailboxProviderDraftDetail } = await import("../use-mailbox-provider-draft-detail");
+    vi.mocked(useMailboxDrafts).mockReturnValue({
+      drafts: [
+        {
+          id: "provider:draft-123",
+          orgId: "org_1",
+          mailboxConnectionId: "conn_billing",
+          threadId: "thread-draft-123",
+          providerDraftId: "draft-123",
+          providerMessageId: "msg-draft-123",
+          subject: "Draft from Gmail",
+          snippet: "draft snippet",
+          to: ["client@example.com"],
+          cc: [],
+          bcc: [],
+          updatedAt: "2026-05-25T08:51:00Z",
+          source: "provider",
+        },
+      ],
+      isLoading: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+    vi.mocked(useMailboxProviderDraftDetail).mockReturnValue({
+      detail: {
+        id: "provider:draft-123",
+        orgId: "org_1",
+        mailboxConnectionId: "conn_billing",
+        threadId: "thread-draft-123",
+        providerDraftId: "draft-123",
+        providerMessageId: "msg-draft-123",
+        from: { email: "billing@acmecorp.com", displayName: "Billing" },
+        to: [{ email: "client@example.com", displayName: null }],
+        cc: [],
+        bcc: [],
+        subject: "Draft from Gmail",
+        snippet: "draft snippet",
+        htmlBody: "<p>Real provider draft body</p>",
+        textBody: "Real provider draft body",
+        sentAt: "2026-05-25T08:51:00Z",
+        updatedAt: "2026-05-25T08:51:00Z",
+        attachments: [],
+        source: "provider",
+      },
+      isLoading: false,
+      error: null,
+      isNotFound: false,
+      refetch: vi.fn(),
+    });
+
+    renderWorkspaceAtPath("/app/mailbox/billing/drafts");
+    fireEvent.click(screen.getByRole("button", { name: /draft from gmail/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Real provider draft body")).toBeInTheDocument();
+    });
+    expect(screen.queryByText(/message body unavailable/i)).not.toBeInTheDocument();
+    expect(screen.queryByTestId("reply-prompt")).not.toBeInTheDocument();
+  });
+
+  it("refreshes the active drafts view when the mailbox sync timestamp changes", async () => {
+    const draftsRefetch = vi.fn();
+    let currentConnections = [
+      {
+        id: "conn_billing",
+        orgId: "org_1",
+        provider: "gmail",
+        slug: "billing",
+        emailAddress: "billing@acmecorp.com",
+        displayName: "Billing",
+        status: "connected" as const,
+        lastSyncAt: "2026-05-08T14:30:00Z",
+        lastSyncError: null,
+        lastSyncErrorCategory: null,
+        unreadCount: 14,
+        inboxCount: 47,
+      },
+    ];
+
+    const { useMailboxConnections } = await import("../use-mailbox-connections");
+    const { useMailboxDrafts } = await import("../use-mailbox-drafts");
+
+    vi.mocked(useMailboxConnections).mockImplementation(() => ({
+      connections: currentConnections,
+      isLoading: false,
+      error: null,
+      refetch: vi.fn(),
+    }));
+    vi.mocked(useMailboxDrafts).mockReturnValue({
+      drafts: [],
+      isLoading: false,
+      error: null,
+      refetch: draftsRefetch,
+    });
+
+    const view = renderWorkspaceAtPath("/app/mailbox/billing/drafts");
+    expect(draftsRefetch).not.toHaveBeenCalled();
+
+    currentConnections = [
+      {
+        ...currentConnections[0],
+        lastSyncAt: "2026-05-08T14:35:00Z",
+      },
+    ];
+    view.rerender(<MailboxWorkspace />);
+
+    await waitFor(() => {
+      expect(draftsRefetch).toHaveBeenCalledTimes(1);
     });
   });
 });

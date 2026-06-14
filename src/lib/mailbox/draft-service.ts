@@ -3,9 +3,18 @@ import "server-only";
 import { db } from "@/lib/db";
 import { Prisma } from "@/generated/prisma/client";
 import { listMailboxConnectionsForMember } from "./visibility-service";
+import { getMailboxConnection } from "./connection-service";
+import { getMailboxProviderAdapter } from "./provider-registry";
 import { getMailboxThreadDetail } from "./thread-service";
 import { toMailboxDraftReadShape } from "./read-shapes";
-import type { MailboxDraftReadShape } from "./read-shapes";
+import type {
+  MailboxDraftListEntryReadShape,
+  MailboxDraftReadShape,
+  MailboxProviderDraftDetailReadShape,
+  MailboxProviderDraftReadShape,
+} from "./read-shapes";
+import type { MailboxDraftEnvelope } from "./provider-contracts";
+import { isMailboxProviderError } from "./provider-contracts";
 import { logMailboxAuditTx } from "./audit";
 import type { MailboxDraftMode, MailboxDraftStatus } from "./domain-types";
 import { cleanupDraftAttachments } from "./attachment-service";
@@ -630,6 +639,380 @@ export interface ListActiveDraftsInput {
   mailboxConnectionId?: string;
 }
 
+function hasDraftLabel(metadata: unknown): boolean {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return false;
+  const labelIds = (metadata as Record<string, unknown>).labelIds;
+  return Array.isArray(labelIds) && labelIds.includes("DRAFT");
+}
+
+function getGmailDraftId(metadata: unknown): string | null {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return null;
+  const draftId = (metadata as Record<string, unknown>).gmailDraftId;
+  return typeof draftId === "string" && draftId.length > 0 ? draftId : null;
+}
+
+function toParticipantEmails(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((participant) => {
+      if (!participant || typeof participant !== "object" || Array.isArray(participant)) return null;
+      const email = (participant as Record<string, unknown>).email;
+      return typeof email === "string" ? email : null;
+    })
+    .filter((email): email is string => !!email);
+}
+
+function mapLiveProviderDraft(
+  orgId: string,
+  mailboxConnectionId: string,
+  envelope: MailboxDraftEnvelope,
+): MailboxProviderDraftReadShape {
+  const fromAddress = envelope.message.from.email;
+  const updatedAt = envelope.message.sentAt ?? new Date().toISOString();
+
+  return {
+    id: `provider:${envelope.draftId}`,
+    orgId,
+    mailboxConnectionId,
+    threadId: envelope.thread.providerThreadId,
+    providerDraftId: envelope.draftId,
+    providerMessageId: envelope.message.providerMessageId,
+    subject: envelope.message.subject.trim() || "(No subject)",
+    snippet: envelope.message.snippet.trim() || fromAddress || "Draft not started yet",
+    to: envelope.message.to.map((participant) => participant.email).filter(Boolean),
+    cc: envelope.message.cc.map((participant) => participant.email).filter(Boolean),
+    bcc: envelope.message.bcc.map((participant) => participant.email).filter(Boolean),
+    updatedAt,
+    source: "provider",
+  };
+}
+
+function mapLiveProviderDraftDetail(
+  orgId: string,
+  mailboxConnectionId: string,
+  envelope: MailboxDraftEnvelope,
+): MailboxProviderDraftDetailReadShape {
+  const isUnavailable = !!(envelope.message.providerMetadata?.isUnavailable);
+  const finalHtmlBody = isUnavailable
+    ? `<div style="padding: 24px; text-align: center; color: #64748b;"><p style="font-weight: 500; margin-bottom: 8px;">Draft detail unavailable</p><p style="font-size: 14px;">This draft has no message content in the connected Gmail account.</p></div>`
+    : (envelope.message.htmlBody?.trim() || "");
+
+  const finalTextBody = isUnavailable
+    ? "Draft detail unavailable"
+    : (envelope.message.textBody?.trim() || null);
+
+  const finalTo = (envelope.message.to.length > 0)
+    ? envelope.message.to
+    : (envelope.message.cc.length > 0 || envelope.message.bcc.length > 0)
+      ? []
+      : [{ email: "", displayName: "(No recipients)" }];
+
+  return {
+    id: `provider:${envelope.draftId}`,
+    orgId,
+    mailboxConnectionId,
+    threadId: envelope.thread.providerThreadId,
+    providerDraftId: envelope.draftId,
+    providerMessageId: envelope.message.providerMessageId,
+    from: envelope.message.from,
+    to: finalTo,
+    cc: envelope.message.cc,
+    bcc: envelope.message.bcc,
+    subject: envelope.message.subject.trim() || "(No subject)",
+    snippet: envelope.message.snippet.trim() || "Draft not started yet",
+    htmlBody: finalHtmlBody,
+    textBody: finalTextBody,
+    sentAt: envelope.message.sentAt,
+    updatedAt: envelope.message.sentAt ?? new Date().toISOString(),
+    attachments: (envelope.message.attachments ?? []).map((attachment) => ({
+      id: `${envelope.draftId}:${attachment.providerAttachmentId}`,
+      filename: attachment.filename,
+      mimeType: attachment.mimeType,
+      size: attachment.size,
+      isInline: attachment.isInline,
+      createdAt: envelope.message.sentAt,
+    })),
+    source: "provider",
+  };
+}
+
+async function listLiveGmailProviderDrafts(input: ListActiveDraftsInput): Promise<{
+  drafts: MailboxProviderDraftReadShape[];
+  attempted: boolean;
+}> {
+  const { orgId, userId, role, mailboxConnectionId } = input;
+  const { accessible } = await listMailboxConnectionsForMember(orgId, userId, role);
+  const accessibleConnections = mailboxConnectionId
+    ? accessible.filter((connection) => connection.id === mailboxConnectionId)
+    : accessible;
+
+  if (accessibleConnections.length === 0) return { drafts: [], attempted: false };
+
+  const drafts: MailboxProviderDraftReadShape[] = [];
+  let attempted = false;
+  for (const visibleConnection of accessibleConnections) {
+    const connection = await getMailboxConnection(orgId, visibleConnection.id);
+    if (!connection || connection.provider !== "GMAIL" || !connection.tokenRef) continue;
+    if (connection.status !== "ACTIVE" && connection.status !== "DEGRADED") continue;
+
+    attempted = true;
+    const adapter = getMailboxProviderAdapter(connection.provider);
+    const syncResult = await adapter.syncDrafts({
+      orgId,
+      tokenRef: connection.tokenRef,
+    });
+    if (isMailboxProviderError(syncResult)) {
+      continue;
+    }
+
+    for (const draft of syncResult.drafts) {
+      drafts.push(mapLiveProviderDraft(orgId, connection.id, draft));
+    }
+  }
+
+  return { drafts, attempted };
+}
+
+async function listProviderDrafts(input: ListActiveDraftsInput): Promise<MailboxProviderDraftReadShape[]> {
+  const liveGmailDrafts = await listLiveGmailProviderDrafts(input);
+  if (liveGmailDrafts.attempted) {
+    return liveGmailDrafts.drafts;
+  }
+
+  const { orgId, userId, role, mailboxConnectionId } = input;
+  const { accessible } = await listMailboxConnectionsForMember(orgId, userId, role);
+  const accessibleIds = accessible.map((connection) => connection.id);
+
+  if (accessibleIds.length === 0) return [];
+
+  const connectionIds = mailboxConnectionId
+    ? accessibleIds.includes(mailboxConnectionId)
+      ? [mailboxConnectionId]
+      : []
+    : accessibleIds;
+
+  if (connectionIds.length === 0) return [];
+
+  const rows = await db.mailboxMessage.findMany({
+    where: {
+      orgId,
+      thread: {
+        mailboxConnectionId: { in: connectionIds },
+      },
+    },
+    select: {
+      id: true,
+      threadId: true,
+      providerMessageId: true,
+      subject: true,
+      snippet: true,
+      from: true,
+      to: true,
+      cc: true,
+      bcc: true,
+      sentAt: true,
+      updatedAt: true,
+      providerMetadata: true,
+      thread: {
+        select: {
+          mailboxConnectionId: true,
+        },
+      },
+    },
+    orderBy: [{ sentAt: "desc" }, { id: "desc" }],
+  });
+
+  const providerDrafts: MailboxProviderDraftReadShape[] = [];
+  for (const row of rows) {
+    if (!hasDraftLabel(row.providerMetadata)) continue;
+    const providerDraftId = getGmailDraftId(row.providerMetadata);
+    const fromAddress = toParticipantEmails(row.from)[0];
+
+    providerDrafts.push({
+      id: `provider:${providerDraftId ?? row.providerMessageId}`,
+      orgId,
+      mailboxConnectionId: row.thread.mailboxConnectionId,
+      threadId: row.threadId,
+      providerDraftId,
+      providerMessageId: row.providerMessageId,
+      subject: row.subject.trim() || "(No subject)",
+      snippet: row.snippet.trim() || fromAddress || "Draft not started yet",
+      to: toParticipantEmails(row.to),
+      cc: toParticipantEmails(row.cc),
+      bcc: toParticipantEmails(row.bcc),
+      updatedAt: row.updatedAt.toISOString(),
+      source: "provider",
+    });
+  }
+
+  return providerDrafts;
+}
+
+export async function getProviderDraftDetail(input: {
+  orgId: string;
+  userId: string;
+  role: "owner" | "admin" | "member";
+  draftId: string;
+}): Promise<MailboxProviderDraftDetailReadShape | null> {
+  const { orgId, userId, role, draftId } = input;
+  const providerKey = draftId.startsWith("provider:") ? draftId.slice("provider:".length) : draftId;
+  if (!providerKey) {
+    throw new DraftServiceError("Invalid provider draft ID", 400);
+  }
+
+  const { accessible } = await listMailboxConnectionsForMember(orgId, userId, role);
+  const accessibleIds = accessible.map((connection) => connection.id);
+  if (accessibleIds.length === 0) return null;
+
+  let attemptedLiveGmail = false;
+  for (const visibleConnection of accessible) {
+    const connection = await getMailboxConnection(orgId, visibleConnection.id);
+    if (!connection || connection.provider !== "GMAIL" || !connection.tokenRef) continue;
+    if (connection.status !== "ACTIVE" && connection.status !== "DEGRADED") continue;
+
+    attemptedLiveGmail = true;
+    const adapter = getMailboxProviderAdapter(connection.provider);
+    const syncResult = await adapter.syncDrafts({
+      orgId,
+      tokenRef: connection.tokenRef,
+    });
+    if (isMailboxProviderError(syncResult)) {
+      continue;
+    }
+
+    const liveDraft = syncResult.drafts.find(
+      (draft) =>
+        draft.draftId === providerKey || draft.message.providerMessageId === providerKey,
+    );
+    if (liveDraft) {
+      return mapLiveProviderDraftDetail(orgId, connection.id, liveDraft);
+    }
+  }
+  if (attemptedLiveGmail) {
+    return null;
+  }
+
+  const row = await db.mailboxMessage.findFirst({
+    where: {
+      orgId,
+      thread: {
+        mailboxConnectionId: { in: accessibleIds },
+      },
+      OR: [
+        { providerMessageId: providerKey },
+        { providerMetadata: { path: ["gmailDraftId"], equals: providerKey } },
+      ],
+    },
+    select: {
+      id: true,
+      threadId: true,
+      providerMessageId: true,
+      subject: true,
+      snippet: true,
+      htmlBody: true,
+      textBody: true,
+      from: true,
+      to: true,
+      cc: true,
+      bcc: true,
+      sentAt: true,
+      updatedAt: true,
+      providerMetadata: true,
+      attachments: {
+        select: {
+          id: true,
+          filename: true,
+          mimeType: true,
+          size: true,
+          isInline: true,
+          createdAt: true,
+        },
+      },
+      thread: {
+        select: {
+          mailboxConnectionId: true,
+        },
+      },
+    },
+  });
+
+  if (!row || !hasDraftLabel(row.providerMetadata)) return null;
+
+  const isUnavailable = !!(row.providerMetadata && typeof row.providerMetadata === "object" && !Array.isArray(row.providerMetadata) && (row.providerMetadata as Record<string, unknown>).isUnavailable);
+  const finalHtmlBody = isUnavailable
+    ? `<div style="padding: 24px; text-align: center; color: #64748b;"><p style="font-weight: 500; margin-bottom: 8px;">Draft detail unavailable</p><p style="font-size: 14px;">This draft has no message content in the connected Gmail account.</p></div>`
+    : (row.htmlBody?.trim() || "");
+
+  const finalTextBody = isUnavailable
+    ? "Draft detail unavailable"
+    : (row.textBody?.trim() || null);
+
+  const mappedTo = toParticipants(row.to);
+  const mappedCc = toParticipants(row.cc);
+  const mappedBcc = toParticipants(row.bcc);
+  const finalTo = (mappedTo.length > 0)
+    ? mappedTo
+    : (mappedCc.length > 0 || mappedBcc.length > 0)
+      ? []
+      : [{ email: "", displayName: "(No recipients)" }];
+
+  return {
+    id: draftId.startsWith("provider:") ? draftId : `provider:${providerKey}`,
+    orgId,
+    mailboxConnectionId: row.thread.mailboxConnectionId,
+    threadId: row.threadId,
+    providerDraftId: getGmailDraftId(row.providerMetadata),
+    providerMessageId: row.providerMessageId,
+    from: toParticipant(row.from),
+    to: finalTo,
+    cc: mappedCc,
+    bcc: mappedBcc,
+    subject: row.subject.trim() || "(No subject)",
+    snippet: row.snippet.trim() || "Draft not started yet",
+    htmlBody: finalHtmlBody,
+    textBody: finalTextBody,
+    sentAt: row.sentAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+    attachments: row.attachments.map((attachment) => ({
+      id: attachment.id,
+      filename: attachment.filename,
+      mimeType: attachment.mimeType,
+      size: attachment.size,
+      isInline: attachment.isInline,
+      createdAt: attachment.createdAt.toISOString(),
+    })),
+    source: "provider",
+  };
+}
+
+function toParticipant(
+  value: Prisma.JsonValue | null,
+): MailboxProviderDraftDetailReadShape["from"] {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const email = typeof value.email === "string" ? value.email : null;
+  if (!email) return null;
+  return {
+    email,
+    displayName: typeof value.displayName === "string" ? value.displayName : null,
+  };
+}
+
+function toParticipants(value: Prisma.JsonValue | null): MailboxProviderDraftDetailReadShape["to"] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((participant) => {
+      if (!participant || typeof participant !== "object" || Array.isArray(participant)) return null;
+      const email = typeof participant.email === "string" ? participant.email : null;
+      if (!email) return null;
+      return {
+        email,
+        displayName:
+          typeof participant.displayName === "string" ? participant.displayName : null,
+      };
+    })
+    .filter((participant): participant is NonNullable<typeof participant> => participant !== null);
+}
+
 export async function listActiveDrafts(
   input: ListActiveDraftsInput,
 ): Promise<MailboxDraftReadShape[]> {
@@ -660,4 +1043,25 @@ export async function listActiveDrafts(
   });
 
   return rows.map((r) => toMailboxDraftReadShape(r as unknown as import("./domain-types").MailboxDraftRecord));
+}
+
+export async function listDraftEntries(
+  input: ListActiveDraftsInput,
+): Promise<MailboxDraftListEntryReadShape[]> {
+  const [localDrafts, providerDrafts] = await Promise.all([
+    listActiveDrafts(input),
+    listProviderDrafts(input),
+  ]);
+
+  return [
+    ...localDrafts.map((draft) => ({
+      ...draft,
+      source: "local" as const,
+    })),
+    ...providerDrafts,
+  ].sort((left, right) => {
+    const leftTime = new Date(left.updatedAt).getTime();
+    const rightTime = new Date(right.updatedAt).getTime();
+    return rightTime - leftTime;
+  });
 }

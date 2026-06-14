@@ -244,11 +244,13 @@ function ThreadHeader({
   onOpenContext,
   isActionLoading,
   onAction,
+  allowThreadActions = true,
 }: {
   detail: MailboxThreadDetail;
   onOpenContext?: () => void;
   isActionLoading: boolean;
   onAction: (action: ThreadAction) => void;
+  allowThreadActions?: boolean;
 }) {
   const isArchived = detail.status === "archived";
   return (
@@ -261,6 +263,7 @@ function ThreadHeader({
         <h2 className="flex-1 text-base font-bold leading-snug text-[#0F172A]">
           {detail.subject}
         </h2>
+        {allowThreadActions ? (
         <div className="flex shrink-0 items-center gap-1">
           {onOpenContext && (
             <button
@@ -312,6 +315,7 @@ function ThreadHeader({
             <MoreHorizontal className="h-4 w-4" />
           </button>
         </div>
+        ) : null}
       </div>
 
       {/* Meta row: mailbox source, status, assignee, participants, attachments */}
@@ -377,6 +381,8 @@ interface MailboxReadingPaneProps {
   onOpenContext?: () => void;
   isActionLoading: boolean;
   onThreadAction: (action: ThreadAction) => void;
+  allowReplies?: boolean;
+  allowThreadActions?: boolean;
 }
 
 export function MailboxReadingPane({
@@ -391,6 +397,8 @@ export function MailboxReadingPane({
   onOpenContext,
   isActionLoading,
   onThreadAction,
+  allowReplies = true,
+  allowThreadActions = true,
 }: MailboxReadingPaneProps) {
   const lastMessage = detail.messages[detail.messages.length - 1];
 
@@ -416,6 +424,7 @@ export function MailboxReadingPane({
         onOpenContext={onOpenContext}
         isActionLoading={isActionLoading}
         onAction={onThreadAction}
+        allowThreadActions={allowThreadActions}
       />
 
       {/* Message stack + inline reply */}
@@ -425,12 +434,12 @@ export function MailboxReadingPane({
             <MessageItem
               key={msg.id}
               message={msg}
-              onReply={(mode) => handleOpenReply(mode)}
+              onReply={allowReplies ? (mode) => handleOpenReply(mode) : undefined}
             />
           ))}
 
           {/* Inline reply — rendered below message stack */}
-          {showInlineReply && composerState ? (
+          {allowReplies && showInlineReply && composerState ? (
             <InlineReply
               state={composerState}
               onClose={onCloseReply}
@@ -443,7 +452,7 @@ export function MailboxReadingPane({
               }}
               onChange={onPatchComposer}
             />
-          ) : (
+          ) : allowReplies ? (
             /* Quick-reply prompt when no inline reply is open */
             <div
               className="flex items-center gap-2 rounded-xl border border-dashed border-[#D1D5DB] bg-white px-4 py-3 text-sm text-[#94A3B8] cursor-pointer hover:border-[#16294D] hover:text-[#16294D] transition-colors"
@@ -461,7 +470,8 @@ export function MailboxReadingPane({
             >
               <span className="text-xs">Click to reply…</span>
             </div>
-          )}
+          ) : null
+          }
         </div>
       </div>
     </div>

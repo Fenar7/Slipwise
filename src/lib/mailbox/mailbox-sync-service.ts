@@ -20,7 +20,7 @@ import {
 } from "./ingestion-service";
 import { getMailboxProviderAdapter } from "./provider-registry";
 import { isMailboxProviderError } from "./provider-contracts";
-import type { MailboxProviderError } from "./provider-contracts";
+import type { MailboxProviderError, MailboxThreadEnvelope } from "./provider-contracts";
 import {
   classifyProviderError,
   resolveStatusAfterFailure,
@@ -60,6 +60,236 @@ export interface RunMailboxSyncResult {
 
 const MAILBOX_SYNC_MAX_RUNNING_AGE_MINUTES = 30;
 const MAILBOX_SYNC_LEASE_DURATION_MS = MAILBOX_SYNC_MAX_RUNNING_AGE_MINUTES * 60 * 1000;
+const GMAIL_REQUIRED_FOLDER_COVERAGE = ["INBOX", "SENT", "SPAM", "DRAFT"] as const;
+const GMAIL_FOLDER_COVERAGE_VERSION = 4;
+
+function toMetadataRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  return { ...(value as Record<string, unknown>) };
+}
+
+function mergeWatchMetadata(
+  current: unknown,
+  patch: Record<string, unknown>,
+): Record<string, unknown> {
+  return {
+    ...(toMetadataRecord(current) ?? {}),
+    ...patch,
+  };
+}
+
+function hasRequiredGmailCoverage(metadata: unknown): boolean {
+  const record = toMetadataRecord(metadata);
+  if (!record) return false;
+
+  const version = record.gmailCoverageVersion;
+  if (typeof version !== "number" || version < GMAIL_FOLDER_COVERAGE_VERSION) {
+    return false;
+  }
+
+  const coveredLabels = record.gmailCoveredSystemLabels;
+  if (!Array.isArray(coveredLabels)) {
+    return false;
+  }
+
+  const coveredSet = new Set(
+    coveredLabels.filter((value): value is string => typeof value === "string"),
+  );
+  return GMAIL_REQUIRED_FOLDER_COVERAGE.every((label) => coveredSet.has(label));
+}
+
+function withRequiredGmailCoverage(metadata: unknown): Record<string, unknown> {
+  return mergeWatchMetadata(metadata, {
+    gmailCoverageVersion: GMAIL_FOLDER_COVERAGE_VERSION,
+    gmailCoveredSystemLabels: [...GMAIL_REQUIRED_FOLDER_COVERAGE],
+    gmailCoverageRecoveredAt: new Date().toISOString(),
+  });
+}
+
+async function ingestSyncedThreads(params: {
+  orgId: string;
+  connectionId: string;
+  mailboxEmail: string;
+  tokenRef: string;
+  adapter: ReturnType<typeof getMailboxProviderAdapter>;
+  threads: MailboxThreadEnvelope[];
+}): Promise<{ threadCount: number; messageCount: number }> {
+  let messageCount = 0;
+
+  for (const threadEnvelope of params.threads) {
+    const thread = await upsertMailboxThread({
+      orgId: params.orgId,
+      mailboxConnectionId: params.connectionId,
+      envelope: threadEnvelope,
+    });
+    const detail = await params.adapter.fetchThreadDetail({
+      orgId: params.orgId,
+      tokenRef: params.tokenRef,
+      providerThreadId: threadEnvelope.providerThreadId,
+    });
+    if (isMailboxProviderError(detail)) {
+      throw toProviderErrorException(detail);
+    }
+
+    const threadMessages: MailboxMessageRecord[] = [];
+    for (const messageEnvelope of detail.messages) {
+      const message = await upsertMailboxMessage({
+        orgId: params.orgId,
+        threadId: thread.id,
+        envelope: messageEnvelope,
+        mailboxEmail: params.mailboxEmail,
+      });
+      messageCount += 1;
+      threadMessages.push(message);
+      for (const attachment of messageEnvelope.attachments ?? []) {
+        await upsertMailboxAttachment({
+          messageId: message.id,
+          envelope: attachment,
+        });
+      }
+    }
+
+    const participantsSummary = deriveThreadParticipants(threadMessages);
+    const lastMessageAt = deriveThreadLastMessageAt(
+      threadMessages,
+      thread.lastMessageAt,
+    );
+    const previewSnippet = deriveThreadPreviewSnippet(threadMessages);
+    const attachmentCount = computeThreadAttachmentCount(threadMessages);
+    await updateMailboxThreadSummary({
+      orgId: params.orgId,
+      threadId: thread.id,
+      participantsSummary: participantsSummary as unknown as Prisma.InputJsonValue,
+      lastMessageAt,
+      previewSnippet,
+      attachmentCount,
+    });
+  }
+
+  return {
+    threadCount: params.threads.length,
+    messageCount,
+  };
+}
+
+async function ingestSyncedDrafts(params: {
+  orgId: string;
+  connectionId: string;
+  mailboxEmail: string;
+  drafts: import("./provider-contracts").MailboxDraftEnvelope[];
+}): Promise<{ threadCount: number; messageCount: number }> {
+  let messageCount = 0;
+  const syncedThreadIds = new Set<string>();
+
+  for (const draftEnvelope of params.drafts) {
+    const thread = await upsertMailboxThread({
+      orgId: params.orgId,
+      mailboxConnectionId: params.connectionId,
+      envelope: draftEnvelope.thread,
+    });
+    syncedThreadIds.add(thread.id);
+
+    const message = await upsertMailboxMessage({
+      orgId: params.orgId,
+      threadId: thread.id,
+      envelope: draftEnvelope.message,
+      mailboxEmail: params.mailboxEmail,
+    });
+    messageCount += 1;
+
+    for (const attachment of draftEnvelope.message.attachments ?? []) {
+      await upsertMailboxAttachment({
+        messageId: message.id,
+        envelope: attachment,
+      });
+    }
+
+    await updateMailboxThreadSummary({
+      orgId: params.orgId,
+      threadId: thread.id,
+      participantsSummary: deriveThreadParticipants([message]) as unknown as Prisma.InputJsonValue,
+      lastMessageAt: deriveThreadLastMessageAt([message], thread.lastMessageAt),
+      previewSnippet: deriveThreadPreviewSnippet([message]),
+      attachmentCount: computeThreadAttachmentCount([message]),
+    });
+  }
+
+  return {
+    threadCount: syncedThreadIds.size,
+    messageCount,
+  };
+}
+
+function hasDraftLabel(metadata: unknown): boolean {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return false;
+  const labelIds = (metadata as Record<string, unknown>).labelIds;
+  return Array.isArray(labelIds) && labelIds.includes("DRAFT");
+}
+
+function removeDraftLabel(metadata: unknown): Record<string, unknown> | null {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return null;
+  const next = { ...(metadata as Record<string, unknown>) };
+  const labelIds = Array.isArray(next.labelIds)
+    ? next.labelIds.filter((value): value is string => typeof value === "string" && value !== "DRAFT")
+    : [];
+  next.labelIds = labelIds;
+  delete next.gmailDraftId;
+  return next;
+}
+
+async function reconcileProviderDraftMarkers(params: {
+  orgId: string;
+  connectionId: string;
+  activeDraftIds: string[];
+  /** Draft IDs that failed to fetch in this sync run. Their DRAFT labels
+   * must NOT be removed — they likely still exist on the provider. */
+  failedDraftIds?: string[];
+}): Promise<void> {
+  const rows = await db.mailboxMessage.findMany({
+    where: {
+      orgId: params.orgId,
+      thread: {
+        mailboxConnectionId: params.connectionId,
+      },
+    },
+    select: {
+      id: true,
+      providerMessageId: true,
+      providerMetadata: true,
+    },
+  });
+
+  const activeSet = new Set(params.activeDraftIds);
+  const failedSet = new Set(params.failedDraftIds ?? []);
+  const staleRows = rows.filter(
+    (row) => {
+      if (!hasDraftLabel(row.providerMetadata)) return false;
+      const metadata = row.providerMetadata as Record<string, unknown> | null;
+      const gmailDraftId =
+        metadata && typeof metadata.gmailDraftId === "string"
+          ? metadata.gmailDraftId
+          : null;
+      const candidateId = gmailDraftId ?? row.providerMessageId;
+      // Do NOT remove DRAFT label if the draft failed to fetch this run
+      // (it likely still exists on the provider).
+      if (failedSet.has(candidateId) || (gmailDraftId && failedSet.has(gmailDraftId))) {
+        return false;
+      }
+      return !activeSet.has(candidateId);
+    },
+  );
+
+  for (const row of staleRows) {
+    await db.mailboxMessage.update({
+      where: { id: row.id },
+      data: {
+        providerMetadata: removeDraftLabel(row.providerMetadata) as Prisma.InputJsonValue,
+      },
+    });
+  }
+}
 
 /**
  * Check whether a sync is already running for this mailbox.
@@ -194,6 +424,7 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
   const startedAt = new Date();
   let effectiveMode: MailboxSyncMode = requestedMode;
   let effectiveCursor = cursor;
+  let effectiveWatchMetadata = toMetadataRecord(connection.watchMetadata);
   let run:
     | {
         id: string;
@@ -263,10 +494,11 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
           data: {
             watchExpiresAt: renewal.expiresAt,
             watchRenewedAt: new Date(),
-            watchMetadata: renewal.metadata as Prisma.InputJsonValue,
+            watchMetadata: mergeWatchMetadata(effectiveWatchMetadata, renewal.metadata) as Prisma.InputJsonValue,
             lastSyncError: null,
           },
         });
+        effectiveWatchMetadata = mergeWatchMetadata(effectiveWatchMetadata, renewal.metadata);
         await logMailboxAudit({
           orgId: params.orgId,
           actorId: params.actorId,
@@ -278,6 +510,38 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
       }
     }
 
+    const needsGmailCoverageRecovery =
+      connection.provider === "GMAIL" &&
+      effectiveMode === "DELTA" &&
+      !!effectiveCursor &&
+      !hasRequiredGmailCoverage(effectiveWatchMetadata);
+
+    let threadCount = 0;
+    let messageCount = 0;
+    let recoveredGmailCoverage = false;
+    if (needsGmailCoverageRecovery) {
+      const recovery = await adapter.syncDelta({
+        orgId: params.orgId,
+        tokenRef: connection.tokenRef,
+        cursor: null,
+      });
+      if (isMailboxProviderError(recovery)) {
+        throw toProviderErrorException(recovery);
+      }
+
+      const recoveryStats = await ingestSyncedThreads({
+        orgId: params.orgId,
+        connectionId: connection.id,
+        mailboxEmail: connection.emailAddress,
+        tokenRef: connection.tokenRef,
+        adapter,
+        threads: recovery.threads,
+      });
+      threadCount += recoveryStats.threadCount;
+      messageCount += recoveryStats.messageCount;
+      recoveredGmailCoverage = true;
+    }
+
     const delta = await adapter.syncDelta({
       orgId: params.orgId,
       tokenRef: connection.tokenRef,
@@ -287,53 +551,44 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
       throw toProviderErrorException(delta);
     }
 
-    let messageCount = 0;
-    for (const threadEnvelope of delta.threads) {
-      const thread = await upsertMailboxThread({
-        orgId: params.orgId,
-        mailboxConnectionId: connection.id,
-        envelope: threadEnvelope,
-      });
-      const detail = await adapter.fetchThreadDetail({
+    const deltaStats = await ingestSyncedThreads({
+      orgId: params.orgId,
+      connectionId: connection.id,
+      mailboxEmail: connection.emailAddress,
+      tokenRef: connection.tokenRef,
+      adapter,
+      threads: delta.threads,
+    });
+    threadCount += deltaStats.threadCount;
+    messageCount += deltaStats.messageCount;
+    let syncedDrafts = false;
+    if (connection.provider === "GMAIL") {
+      const draftSync = await adapter.syncDrafts({
         orgId: params.orgId,
         tokenRef: connection.tokenRef,
-        providerThreadId: threadEnvelope.providerThreadId,
       });
-      if (isMailboxProviderError(detail)) {
-        throw toProviderErrorException(detail);
+      if (isMailboxProviderError(draftSync)) {
+        throw toProviderErrorException(draftSync);
       }
-      const threadMessages: MailboxMessageRecord[] = [];
-      for (const messageEnvelope of detail.messages) {
-        const message = await upsertMailboxMessage({
+
+      if (draftSync.drafts.length > 0) {
+        const draftStats = await ingestSyncedDrafts({
           orgId: params.orgId,
-          threadId: thread.id,
-          envelope: messageEnvelope,
+          connectionId: connection.id,
           mailboxEmail: connection.emailAddress,
+          drafts: draftSync.drafts,
         });
-        messageCount += 1;
-        threadMessages.push(message);
-        for (const attachment of messageEnvelope.attachments ?? []) {
-          await upsertMailboxAttachment({
-            messageId: message.id,
-            envelope: attachment,
-          });
-        }
+        threadCount += draftStats.threadCount;
+        messageCount += draftStats.messageCount;
       }
-      const participantsSummary = deriveThreadParticipants(threadMessages);
-      const lastMessageAt = deriveThreadLastMessageAt(
-        threadMessages,
-        thread.lastMessageAt,
-      );
-      const previewSnippet = deriveThreadPreviewSnippet(threadMessages);
-      const attachmentCount = computeThreadAttachmentCount(threadMessages);
-      await updateMailboxThreadSummary({
+
+      await reconcileProviderDraftMarkers({
         orgId: params.orgId,
-        threadId: thread.id,
-        participantsSummary: participantsSummary as unknown as Prisma.InputJsonValue,
-        lastMessageAt,
-        previewSnippet,
-        attachmentCount,
+        connectionId: connection.id,
+        activeDraftIds: draftSync.activeDraftIds,
+        failedDraftIds: draftSync.failedDraftIds,
       });
+      syncedDrafts = true;
     }
 
     // ─── Cursor advancement only after successful ingestion ─────────────────
@@ -348,7 +603,57 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
       });
     }
 
-    const stats = { threadCount: delta.threads.length, messageCount };
+    const shouldPersistGmailCoverage =
+      connection.provider === "GMAIL" &&
+      syncedDrafts &&
+      (effectiveMode === "INITIAL" ||
+        recoveredGmailCoverage ||
+        !hasRequiredGmailCoverage(effectiveWatchMetadata));
+    if (shouldPersistGmailCoverage) {
+      effectiveWatchMetadata = withRequiredGmailCoverage(effectiveWatchMetadata);
+    }
+
+    let watchUpdateData:
+      | {
+          watchExpiresAt: Date | null;
+          watchRenewedAt: Date;
+        }
+      | undefined;
+    const shouldBootstrapWatch =
+      connection.provider === "GMAIL" &&
+      (!connection.watchExpiresAt || effectiveMode === "INITIAL");
+    if (shouldBootstrapWatch) {
+      const renewal = await adapter.renewWatch({
+        orgId: params.orgId,
+        tokenRef: connection.tokenRef,
+      });
+      if (isMailboxProviderError(renewal)) {
+        await logMailboxAudit({
+          orgId: params.orgId,
+          actorId: params.actorId,
+          action: "WATCH_EXPIRED_DETECTED",
+          summary: `Watch bootstrap failed after sync: ${renewal.safeMessage}`,
+          mailboxConnectionId: connection.id,
+          metadata: { errorCategory: renewal.category, runId: run.id },
+        });
+      } else {
+        effectiveWatchMetadata = mergeWatchMetadata(effectiveWatchMetadata, renewal.metadata);
+        watchUpdateData = {
+          watchExpiresAt: renewal.expiresAt,
+          watchRenewedAt: new Date(),
+        };
+        await logMailboxAudit({
+          orgId: params.orgId,
+          actorId: params.actorId,
+          action: "WATCH_RENEWED",
+          summary: "Mailbox watch established successfully",
+          mailboxConnectionId: connection.id,
+          metadata: { expiresAt: renewal.expiresAt?.toISOString(), runId: run.id },
+        });
+      }
+    }
+
+    const stats = { threadCount, messageCount };
     const nextStatus = resolveStatusAfterSuccess(connection.status);
     await db.mailboxConnection.update({
       where: { id: connection.id },
@@ -357,6 +662,12 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
         lastSyncAt: new Date(),
         lastSyncError: null,
         lastSyncErrorCategory: null,
+        ...(watchUpdateData ?? {}),
+        ...(shouldPersistGmailCoverage
+          ? { watchMetadata: effectiveWatchMetadata as Prisma.InputJsonValue }
+          : watchUpdateData
+            ? { watchMetadata: effectiveWatchMetadata as Prisma.InputJsonValue }
+            : {}),
       },
     });
     await db.mailboxSyncRun.update({
@@ -379,7 +690,7 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
     return {
       success: true,
       runId: run.id,
-      threadCount: delta.threads.length,
+      threadCount,
       messageCount,
       syncMode: effectiveMode,
       triggerSource,

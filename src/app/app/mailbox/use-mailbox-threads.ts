@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import type { MailboxThreadReadShape } from "@/lib/mailbox/read-shapes";
+import type { MailboxFolder } from "./types";
 
 const SEARCH_DEBOUNCE_MS = 300;
 
@@ -13,12 +14,14 @@ export interface MailboxThreadListResponse {
 
 export interface UseMailboxThreadsParams {
   connectionId?: string;
+  folder?: MailboxFolder;
   status?: string;
   unreadOnly?: boolean;
   isFlagged?: boolean;
   assignee?: "me" | "none";
   searchQuery?: string;
   limit?: number;
+  enabled?: boolean;
 }
 
 export interface UseMailboxThreadsResult {
@@ -60,6 +63,9 @@ export function useMailboxThreads(
       if (params.connectionId) {
         url.searchParams.set("connectionId", params.connectionId);
       }
+      if (params.folder) {
+        url.searchParams.set("folder", params.folder);
+      }
       if (params.status) {
         url.searchParams.set("status", params.status);
       }
@@ -86,6 +92,7 @@ export function useMailboxThreads(
     },
     [
       params.connectionId,
+      params.folder,
       params.status,
       params.unreadOnly,
       params.isFlagged,
@@ -142,8 +149,16 @@ export function useMailboxThreads(
   );
 
   useEffect(() => {
+    if (params.enabled === false) {
+      setThreads([]);
+      setTotalCount(0);
+      setNextCursor(null);
+      setIsLoading(false);
+      setError(null);
+      return;
+    }
     fetchThreads(false);
-  }, [fetchThreads]);
+  }, [fetchThreads, params.enabled]);
 
   const refetch = useCallback(() => {
     fetchThreads(false);

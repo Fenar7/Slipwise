@@ -5,6 +5,7 @@ import { requireIntegrationMemberRoute } from "@/app/api/integrations/_auth";
 import { rateLimitByOrg } from "@/lib/rate-limit";
 import {
   getDraft,
+  getProviderDraftDetail,
   autosaveDraft,
   discardDraft,
   DraftServiceError,
@@ -69,12 +70,20 @@ export async function GET(
       return NextResponse.json({ error: "Too many requests" }, { status: 429 });
     }
 
-    const draft = await getDraft({
-      orgId,
-      userId,
-      role: role as "owner" | "admin" | "member",
-      draftId,
-    });
+    const effectiveRole = role as "owner" | "admin" | "member";
+    const draft = draftId.startsWith("provider:")
+      ? await getProviderDraftDetail({
+          orgId,
+          userId,
+          role: effectiveRole,
+          draftId,
+        })
+      : await getDraft({
+          orgId,
+          userId,
+          role: effectiveRole,
+          draftId,
+        });
 
     return NextResponse.json({
       draft: draft as unknown as Record<string, unknown> | null,

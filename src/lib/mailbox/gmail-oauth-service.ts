@@ -378,11 +378,10 @@ export async function disconnectGmailMailbox(params: {
     throw new Error(`MailboxConnection ${connectionId} not found for org ${orgId}`);
   }
 
-  // 2. Atomically update DB status and emit audit event FIRST.
+  // 2. Atomically delete the connection and emit audit event.
   await db.$transaction(async (tx) => {
-    await tx.mailboxConnection.update({
+    await tx.mailboxConnection.delete({
       where: { id: connection.id },
-      data: { status: "DISCONNECTED", disabledAt: new Date(), tokenRef: null, tokenExpiry: null },
     });
     await tx.mailboxAuditEvent.create({
       data: {
@@ -390,7 +389,7 @@ export async function disconnectGmailMailbox(params: {
         actorId,
         action: "CONNECTION_DISCONNECTED",
         summary: `Disconnected Gmail mailbox: ${connection.emailAddress}`,
-        mailboxConnectionId: connection.id,
+        mailboxConnectionId: null,
         metadata: { provider: "GMAIL" },
       },
     });

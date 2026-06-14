@@ -8,11 +8,13 @@ function makeConnection(
 ) {
   return {
     status: "ACTIVE" as const,
+    provider: "GMAIL" as const,
     lastSyncAt: new Date("2026-05-21T12:00:00.000Z"),
     lastSyncError: null,
     lastSyncErrorCategory: null,
     syncLeaseToken: null,
     syncLeaseExpiresAt: null,
+    watchMetadata: null,
     ...overrides,
   };
 }
@@ -62,7 +64,12 @@ describe("buildMailboxSyncPresentation", () => {
 
   it("returns completed with latest completed run stats", () => {
     const sync = buildMailboxSyncPresentation(
-      makeConnection(),
+      makeConnection({
+          watchMetadata: {
+          gmailCoverageVersion: 4,
+          gmailCoveredSystemLabels: ["INBOX", "SENT", "SPAM", "DRAFT"],
+          },
+      }),
       {
         latestRun: {
           id: "run_2",
@@ -262,4 +269,110 @@ describe("buildMailboxSyncPresentation", () => {
     expect(sync.state).toBe("running");
     expect(sync.stageLabel).toBe("Initial import in progress");
   });
+
+  describe("Gmail stale coverage detection", () => {
+    it("flags stale coverage when watchMetadata is null for Gmail", () => {
+      const sync = buildMailboxSyncPresentation(
+        makeConnection({
+          watchMetadata: null,
+        }),
+        {
+          latestCompletedRun: {
+            id: "run-1", status: "COMPLETED", syncMode: "DELTA", triggerSource: "MANUAL",
+            startedAt: new Date(NOW - 60000), completedAt: new Date(NOW - 30000),
+            stats: { threadCount: 5, messageCount: 10 },
+            errorCategory: null, errorMessage: null,
+          },
+        },
+        NOW,
+      );
+
+      expect(sync.state).toBe("completed");
+      expect(sync.staleGmailCoverage).toBe(true);
+      expect(sync.stageLabel).toBe("Sync recommended");
+      expect(sync.detailLabel).toMatch(/coverage needs to be refreshed/);
+    });
+
+    it("flags stale coverage when gmailCoverageVersion is outdated", () => {
+      const sync = buildMailboxSyncPresentation(
+        makeConnection({
+          watchMetadata: {
+            gmailCoverageVersion: 1,
+            gmailCoveredSystemLabels: ["INBOX", "SENT", "SPAM"],
+          },
+        }),
+        {},
+        NOW,
+      );
+
+      expect(sync.staleGmailCoverage).toBe(true);
+      expect(sync.stageLabel).toBe("Sync recommended");
+    });
+
+    it("flags stale coverage when covered labels are incomplete", () => {
+      const sync = buildMailboxSyncPresentation(
+        makeConnection({
+          watchMetadata: {
+            gmailCoverageVersion: 4,
+            gmailCoveredSystemLabels: ["INBOX"],
+          },
+        }),
+        {},
+        NOW,
+      );
+
+      expect(sync.staleGmailCoverage).toBe(true);
+    });
+
+    it("does not flag stale coverage for Gmail with current version and full labels", () => {
+      const sync = buildMailboxSyncPresentation(
+        makeConnection({
+          watchMetadata: {
+            gmailCoverageVersion: 4,
+            gmailCoveredSystemLabels: ["INBOX", "SENT", "SPAM", "DRAFT"],
+          },
+        }),
+        {
+          latestCompletedRun: {
+            id: "run-fresh", status: "COMPLETED", syncMode: "DELTA", triggerSource: "MANUAL",
+            startedAt: new Date(NOW - 60000), completedAt: new Date(NOW - 30000),
+            stats: { threadCount: 8, messageCount: 20 },
+            errorCategory: null, errorMessage: null,
+          },
+        },
+        NOW,
+      );
+
+      expect(sync.staleGmailCoverage).toBe(false);
+      expect(sync.stageLabel).toBe("Mailbox up to date");
+    });
+
+    it("does not flag stale coverage for non-Gmail providers", () => {
+      const sync = buildMailboxSyncPresentation(
+        makeConnection({
+          provider: "ZOHO" as any,
+          watchMetadata: null,
+        }),
+        {},
+        NOW,
+      );
+
+      expect(sync.staleGmailCoverage).toBe(false);
+    });
+
+    it("completed_never_imported state never has stale flag (covered by that path)", () => {
+      const sync = buildMailboxSyncPresentation(
+        makeConnection({
+          lastSyncAt: null,
+          watchMetadata: null,
+        }),
+        {},
+        NOW,
+      );
+
+      expect(sync.state).toBe("completed_never_imported");
+      expect(sync.staleGmailCoverage).toBe(false);
+    });
+  });
+
 });

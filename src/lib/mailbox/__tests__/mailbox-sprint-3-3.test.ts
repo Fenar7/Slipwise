@@ -300,7 +300,7 @@ describe("Sprint 3.3 — Ingestion service normalization", () => {
     expect(result.providerThreadId).toBe("gmail-thread-1");
   });
 
-  it("classifies direction and normalizes participants on message upsert", async () => {
+  it("preserves provider-set direction and normalizes participants on message upsert", async () => {
     mockDb.mailboxMessage.upsert.mockResolvedValue(
       makeMessageRow({
         direction: "outbound",
@@ -312,7 +312,7 @@ describe("Sprint 3.3 — Ingestion service normalization", () => {
     const envelope = {
       providerMessageId: "gmail-msg-1",
       rfcMessageId: "<msg@example.com>",
-      direction: "inbound" as const,
+      direction: "outbound" as const,
       from: { email: "ops@example.com", displayName: "Ops" },
       to: [{ email: "customer@example.com", displayName: "Customer" }],
       cc: [],
@@ -345,6 +345,49 @@ describe("Sprint 3.3 — Ingestion service normalization", () => {
       }),
     );
     expect(result.direction).toBe("outbound");
+  });
+
+  it("preserves provider-set inbound direction even when sender matches mailbox email", async () => {
+    mockDb.mailboxMessage.upsert.mockResolvedValue(
+      makeMessageRow({
+        direction: "inbound",
+        from: { email: "ops@example.com", displayName: null },
+      }),
+    );
+
+    const envelope = {
+      providerMessageId: "gmail-msg-2",
+      rfcMessageId: null,
+      direction: "inbound" as const,
+      from: { email: "ops@example.com", displayName: "Ops" },
+      to: [{ email: "ops@example.com", displayName: "Ops" }],
+      cc: [],
+      bcc: [],
+      subject: "Test",
+      snippet: "ns",
+      sentAt: new Date().toISOString(),
+      receivedAt: new Date().toISOString(),
+      attachmentCount: 0,
+      providerMetadata: {},
+      htmlBody: "<p>Test</p>",
+      textBody: "Test",
+    };
+
+    const result = await upsertMailboxMessage({
+      orgId: "org-1",
+      threadId: "thread-1",
+      envelope,
+      mailboxEmail: "ops@example.com",
+    });
+
+    expect(mockDb.mailboxMessage.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({
+          direction: "inbound",
+        }),
+      }),
+    );
+    expect(result.direction).toBe("inbound");
   });
 
   it("normalizes snippet during message upsert", async () => {

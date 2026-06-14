@@ -139,6 +139,21 @@ export interface MailboxMessageEnvelope {
   attachments?: MailboxAttachmentEnvelope[];
 }
 
+export interface MailboxDraftEnvelope {
+  draftId: string;
+  thread: MailboxThreadEnvelope;
+  message: MailboxMessageEnvelope & { htmlBody: string; textBody: string | null };
+}
+
+export interface MailboxDraftSyncResult {
+  drafts: MailboxDraftEnvelope[];
+  activeDraftIds: string[];
+  /** Draft IDs that could not be fetched (transient or malformed). Kept separate
+   * so reconciliation does not remove DRAFT labels from drafts that still exist
+   * on the provider but failed to download. */
+  failedDraftIds: string[];
+}
+
 export interface MailboxParticipantRef {
   email: string;
   displayName: string | null;
@@ -245,6 +260,16 @@ export interface IMailboxProviderAdapter {
     | { threads: MailboxThreadEnvelope[]; nextCursor: MailboxSyncCursor | null }
     | MailboxProviderError
   >;
+
+  /**
+   * Fetch the provider's current draft set as provider-backed thread envelopes.
+   * This is distinct from mailbox delta sync because some providers expose
+   * drafts via dedicated APIs rather than normal mailbox thread history.
+   */
+  syncDrafts(params: {
+    orgId: string;
+    tokenRef: string;
+  }): Promise<MailboxDraftSyncResult | MailboxProviderError>;
 
   /**
    * Fetch full thread detail including message bodies.

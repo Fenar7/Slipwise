@@ -5,7 +5,7 @@ import { requireIntegrationMemberRoute } from "@/app/api/integrations/_auth";
 import { rateLimitByOrg } from "@/lib/rate-limit";
 import {
   createOrRestoreDraft,
-  listActiveDrafts,
+  listDraftEntries,
   DraftServiceError,
 } from "@/lib/mailbox/draft-service";
 import {
@@ -151,7 +151,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     const { searchParams } = new URL(request.url);
     const connectionId = searchParams.get("connectionId") ?? undefined;
 
-    const drafts = await listActiveDrafts({
+    const drafts = await listDraftEntries({
       orgId,
       userId,
       role: role as "owner" | "admin" | "member",

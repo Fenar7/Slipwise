@@ -11,7 +11,6 @@ import {
   RefreshCw,
   Settings2,
   Plus,
-  MoreHorizontal,
   ShieldCheck,
   Clock,
   Mail,
@@ -174,7 +173,7 @@ function formatVisibilityPolicy(policy: string): string {
   }
 }
 
-function ConnectionCard({
+export function ConnectionCard({
   connection,
   onSyncNow,
   isSyncPending = false,
@@ -230,13 +229,6 @@ function ConnectionCard({
           >
             <Settings2 className="h-4 w-4" />
           </Link>
-          <button
-            className="flex h-7 w-7 items-center justify-center rounded-lg text-[#64748B] transition-colors hover:bg-[#F1F3F7] hover:text-[#0F172A]"
-            title="More actions"
-            aria-label={`More actions for ${connection.displayName}`}
-          >
-            <MoreHorizontal className="h-4 w-4" />
-          </button>
         </div>
       </div>
 
@@ -338,8 +330,9 @@ export function MailboxSettingsPageContent({
   getSyncError?: (connectionId: string) => string | null;
 }) {
   const [showConnectFlow, setShowConnectFlow] = useState(false);
-  const hasConnections = connections.length > 0;
-  const syncingConnections = connections.filter(
+  const activeConnections = connections.filter((c) => c.status !== "disconnected");
+  const hasConnections = activeConnections.length > 0;
+  const syncingConnections = activeConnections.filter(
     (connection) => resolveMailboxSyncPresentation(connection).isSyncing,
   );
 
@@ -444,9 +437,9 @@ export function MailboxSettingsPageContent({
             </p>
           </div>
 
-          {/* Connection cards */}
+          {/* Connection cards — hide disconnected (already ended) */}
           <div className="space-y-4" data-testid="connection-list">
-            {connections.map((connection) => (
+            {activeConnections.map((connection) => (
               <ConnectionCard
                 key={connection.id}
                 connection={connection}

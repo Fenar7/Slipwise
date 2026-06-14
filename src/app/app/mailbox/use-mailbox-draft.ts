@@ -75,6 +75,8 @@ export interface UseMailboxDraftResult {
   draftId: string | null;
   lastAutosavedAt: string | null;
   lastKnownUpdatedAt: string | null;
+  adoptDraft: (draft: DraftResponse) => void;
+  clearCurrentDraft: () => void;
   createDraft: (payload: CreateDraftPayload) => Promise<DraftResponse | null>;
   autosave: (payload: AutosavePayload) => Promise<AutosaveResult | null>;
   sendDraft: () => Promise<SendDraftResult | null>;
@@ -108,6 +110,21 @@ export function useMailboxDraft(): UseMailboxDraftResult {
   }, []);
 
   const clearError = useCallback(() => setError(null), []);
+
+  const clearCurrentDraft = useCallback(() => {
+    cancelAutosave();
+    setDraftId(null);
+    setLastKnownUpdatedAt(null);
+    setLastAutosavedAt(null);
+  }, [cancelAutosave]);
+
+  const adoptDraft = useCallback((draft: DraftResponse) => {
+    cancelAutosave();
+    setError(null);
+    setDraftId(draft.id);
+    setLastKnownUpdatedAt(draft.updatedAt);
+    setLastAutosavedAt(draft.lastAutosavedAt);
+  }, [cancelAutosave]);
 
   const createDraft = useCallback(async (
     payload: CreateDraftPayload,
@@ -306,6 +323,8 @@ export function useMailboxDraft(): UseMailboxDraftResult {
     draftId,
     lastAutosavedAt,
     lastKnownUpdatedAt,
+    adoptDraft,
+    clearCurrentDraft,
     createDraft,
     autosave,
     sendDraft,

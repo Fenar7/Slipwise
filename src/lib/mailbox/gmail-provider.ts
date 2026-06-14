@@ -34,6 +34,8 @@ import type {
   MailboxProviderError,
   MailboxWatchRenewalResult,
   MailboxParticipantRef,
+  MailboxDraftSyncResult,
+  MailboxDraftEnvelope,
 } from "./provider-contracts";
 import { storeMailboxCredential, readMailboxCredential, rotateMailboxCredential, revokeMailboxCredential } from "./credential-store";
 import type { MailboxCredentialPayload } from "./credential-store";
@@ -48,7 +50,16 @@ const GMAIL_THREADS_URL = "https://gmail.googleapis.com/gmail/v1/users/me/thread
 const GMAIL_THREAD_URL = "https://gmail.googleapis.com/gmail/v1/users/me/threads";
 const GMAIL_HISTORY_URL = "https://gmail.googleapis.com/gmail/v1/users/me/history";
 const GMAIL_WATCH_URL = "https://gmail.googleapis.com/gmail/v1/users/me/watch";
+const GMAIL_DRAFTS_URL = "https://gmail.googleapis.com/gmail/v1/users/me/drafts";
 const GMAIL_SEND_URL = "https://www.googleapis.com/gmail/v1/users/me/messages/send";
+const GMAIL_INITIAL_SYNC_MAX_PAGES = 1;
+const GMAIL_INITIAL_SYNC_MAX_RESULTS = 25;
+const GMAIL_BOOTSTRAP_SLICES = [
+  { query: "in:inbox", includeSpamTrash: false },
+  { query: "in:sent", includeSpamTrash: false },
+  { query: "in:spam", includeSpamTrash: true },
+] as const;
+const GMAIL_WATCH_LABEL_IDS = ["INBOX", "SENT", "SPAM", "DRAFT"] as const;
 
 /**
  * Least-privilege scopes for the Phase 6 connect/reconnect flow.
@@ -100,7 +111,7 @@ function mapGoogleError(
     return { category: "quota_exceeded", safeMessage: "Gmail API quota exceeded", retryable: false };
   }
   // History invalid / expired → force full re-sync by treating as watch expired
-  if (status === 404 && (errorCode === "historyNotFound" || errorCode === "notFound")) {
+  if (status === 404 && errorCode === "historyNotFound") {
     return { category: "watch_expired", safeMessage: "Gmail history expired; full re-sync required", retryable: false };
   }
   // Not found
@@ -440,83 +451,116 @@ export const gmailProviderAdapter: IMailboxProviderAdapter = {
         nextPageToken = historyData.nextPageToken;
       } while (nextPageToken);
 
-      const threads: MailboxThreadEnvelope[] = [];
-      for (const threadId of threadIds) {
-        const threadRes = await fetch(`${GMAIL_THREAD_URL}/${threadId}`, {
-          headers: { Authorization: `Bearer ${accessToken}` },
-        });
-        if (!threadRes.ok) continue;
-        const threadData = await threadRes.json() as GmailThreadResponse;
-        const envelope = toThreadEnvelope(threadData);
-        if (envelope) threads.push(envelope);
-      }
+      const threadFetch = await fetchThreadEnvelopes(accessToken, [...threadIds]);
 
       const nextCursor: MailboxSyncCursor = {
         value: lastHistoryId,
         expiresAt: null,
       };
 
-      return { threads, nextCursor };
+      return { threads: threadFetch.threads, nextCursor };
     }
 
     // ─── Initial path: use threads.list ─────────────────────────────────────
-    // Bounded initial import: bootstrap only a small slice of recent inbox
-    // threads, then seed the delta cursor from the live Gmail profile historyId.
+    // Bounded initial import: bootstrap a small slice of recent inbox, sent,
+    // and spam threads, then seed the delta cursor from the live Gmail profile
+    // historyId after the required slices are imported.
     // This keeps first-connect fast and avoids request-timeout risk on large
     // mailboxes while still making future delta syncs correct from "now".
-    const GMAIL_INITIAL_SYNC_MAX_PAGES = 1;
-    const GMAIL_INITIAL_SYNC_MAX_RESULTS = 25;
-    const threads: MailboxThreadEnvelope[] = [];
-    let nextPageToken: string | undefined;
+    const threadIds = new Set<string>();
     let highestHistoryId = "0";
-    let pagesFetched = 0;
+    for (const slice of GMAIL_BOOTSTRAP_SLICES) {
+      const sliceResult = await fetchBoundedThreadRefsForQuery(accessToken, slice);
+      if (isProviderError(sliceResult)) return sliceResult;
+      for (const threadRef of sliceResult.threadRefs) {
+        threadIds.add(threadRef.id);
+        highestHistoryId = maxHistoryId(highestHistoryId, threadRef.historyId);
+      }
+    }
+
+    const threadFetch = await fetchThreadEnvelopes(accessToken, [...threadIds], highestHistoryId);
+    highestHistoryId = threadFetch.highestHistoryId;
 
     const profile = await fetchGmailProfile(accessToken);
     if (isProviderError(profile)) return profile;
-
-    do {
-      pagesFetched += 1;
-      const params = new URLSearchParams({
-        maxResults: String(GMAIL_INITIAL_SYNC_MAX_RESULTS),
-        includeSpamTrash: "false",
-        q: "in:inbox",
-      });
-      if (nextPageToken) {
-        params.set("pageToken", nextPageToken);
-      }
-      const res = await fetch(`${GMAIL_THREADS_URL}?${params.toString()}`, {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
-      if (!res.ok) {
-        const errorCode = await parseGoogleErrorCode(res);
-        return mapGoogleError(res.status, errorCode);
-      }
-
-      const data = await res.json() as GmailThreadsListResponse;
-      for (const threadRef of data.threads ?? []) {
-        if (threadRef.historyId && BigInt(threadRef.historyId) > BigInt(highestHistoryId)) {
-          highestHistoryId = threadRef.historyId;
-        }
-        const threadRes = await fetch(`${GMAIL_THREAD_URL}/${threadRef.id}`, {
-          headers: { Authorization: `Bearer ${accessToken}` },
-        });
-        if (!threadRes.ok) continue;
-        const threadData = await threadRes.json() as GmailThreadResponse;
-        if (threadData.historyId && BigInt(threadData.historyId) > BigInt(highestHistoryId)) {
-          highestHistoryId = threadData.historyId;
-        }
-        const envelope = toThreadEnvelope(threadData);
-        if (envelope) threads.push(envelope);
-      }
-      nextPageToken = data.nextPageToken;
-    } while (nextPageToken && pagesFetched < GMAIL_INITIAL_SYNC_MAX_PAGES);
 
     const nextCursor: MailboxSyncCursor = {
       value: profile.historyId ?? highestHistoryId,
       expiresAt: null,
     };
 
-    return { threads, nextCursor };
+    return { threads: threadFetch.threads, nextCursor };
+  },
+
+  async syncDrafts({ orgId, tokenRef }) {
+    const credential = await readMailboxCredential(orgId, tokenRef);
+    if (!credential) {
+      return { category: "auth_expired", safeMessage: "Credential not found for tokenRef", retryable: false };
+    }
+
+    const accessToken = await ensureValidAccessToken(orgId, tokenRef, credential);
+    if (isProviderError(accessToken)) return accessToken;
+
+    const draftIds = await fetchAllDraftIds(accessToken);
+    if (isProviderError(draftIds)) return draftIds;
+    console.log(`[mailbox/gmail] syncDrafts start: ${draftIds.length} draft IDs to fetch`);
+
+    if (draftIds.length === 0) {
+      return { drafts: [], activeDraftIds: [], failedDraftIds: [] };
+    }
+
+    const drafts: MailboxDraftEnvelope[] = [];
+    const activeDraftIds: string[] = [];
+    const failedDraftIds: string[] = [];
+
+    for (const draftId of draftIds) {
+      const draft = await fetchDraftWithRetry(accessToken, draftId);
+      if (isProviderError(draft)) {
+        if (draft.category === "not_found") {
+          continue;
+        }
+        // Log and continue — do not abort the entire batch for one bad draft.
+        // A single malformed or transiently-failing draft should not hide
+        // the other N drafts from the user.
+        failedDraftIds.push(draftId);
+        console.warn(
+          `[mailbox/gmail] Draft fetch failed (id=${draftId}, category=${draft.category}): ${draft.safeMessage}`,
+        );
+        continue;
+      }
+
+      const message = draft.message ?? {
+        id: `gmail-draft-message:${draftId}`,
+        threadId: `gmail-draft-thread:${draftId}`,
+        labelIds: ["DRAFT"],
+      };
+
+      activeDraftIds.push(draftId);
+      const envelope = toDraftEnvelope(draftId, message);
+      if (!envelope) {
+        continue;
+      }
+      drafts.push(envelope);
+    }
+
+    const successCount = activeDraftIds.length;
+    const failCount = failedDraftIds.length;
+    const notFoundCount = draftIds.length - successCount - failCount;
+    console.log(
+      `[mailbox/gmail] syncDrafts summary: total=${draftIds.length}, success=${successCount}, failed=${failCount}, not_found_skipped=${notFoundCount}`,
+    );
+
+    if (failedDraftIds.length > 0) {
+      console.warn(
+        `[mailbox/gmail] Draft sync completed with ${failedDraftIds.length}/${draftIds.length} fetch failures: [${failedDraftIds.join(", ")}]`,
+      );
+    }
+
+    return {
+      drafts,
+      activeDraftIds,
+      failedDraftIds,
+    } satisfies MailboxDraftSyncResult;
   },
 
   /**
@@ -548,7 +592,7 @@ export const gmailProviderAdapter: IMailboxProviderAdapter = {
         Authorization: `Bearer ${accessToken}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ topicName, labelIds: ["INBOX"] }),
+      body: JSON.stringify({ topicName, labelIds: [...GMAIL_WATCH_LABEL_IDS] }),
     });
 
     if (!res.ok) {
@@ -783,6 +827,19 @@ interface GmailThreadsListResponse {
   nextPageToken?: string;
 }
 
+interface GmailDraftsListResponse {
+  drafts?: Array<{ id: string }>;
+  nextPageToken?: string;
+  resultSizeEstimate?: number;
+}
+
+interface GmailDraftResponse {
+  id: string;
+  message?: GmailMessage;
+}
+
+type GmailBootstrapSlice = (typeof GMAIL_BOOTSTRAP_SLICES)[number];
+
 interface GmailThreadRef {
   id: string;
   historyId?: string;
@@ -831,6 +888,163 @@ interface GmailMessagePartBody {
   data?: string;
 }
 
+function maxHistoryId(current: string, candidate?: string | null): string {
+  if (!candidate) return current;
+  try {
+    return BigInt(candidate) > BigInt(current) ? candidate : current;
+  } catch {
+    return current;
+  }
+}
+
+function parseGmailDate(internalDate: string | null | undefined): Date {
+  if (!internalDate) return new Date();
+  const ms = parseInt(internalDate, 10);
+  if (isNaN(ms)) return new Date();
+  const d = new Date(ms);
+  if (isNaN(d.getTime())) return new Date();
+  return d;
+}
+
+async function fetchBoundedThreadRefsForQuery(
+  accessToken: string,
+  slice: GmailBootstrapSlice,
+): Promise<{ threadRefs: GmailThreadRef[] } | MailboxProviderError> {
+  const threadRefs: GmailThreadRef[] = [];
+  let nextPageToken: string | undefined;
+  let pagesFetched = 0;
+
+  do {
+    pagesFetched += 1;
+    const params = new URLSearchParams({
+      maxResults: String(GMAIL_INITIAL_SYNC_MAX_RESULTS),
+      includeSpamTrash: String(slice.includeSpamTrash),
+      q: slice.query,
+    });
+    if (nextPageToken) {
+      params.set("pageToken", nextPageToken);
+    }
+
+    const res = await fetch(`${GMAIL_THREADS_URL}?${params.toString()}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!res.ok) {
+      const errorCode = await parseGoogleErrorCode(res);
+      return mapGoogleError(res.status, errorCode);
+    }
+
+    const data = await res.json() as GmailThreadsListResponse;
+    threadRefs.push(...(data.threads ?? []));
+    nextPageToken = data.nextPageToken;
+  } while (nextPageToken && pagesFetched < GMAIL_INITIAL_SYNC_MAX_PAGES);
+
+  return { threadRefs };
+}
+
+async function fetchAllDraftIds(
+  accessToken: string,
+): Promise<string[] | MailboxProviderError> {
+  const draftIds: string[] = [];
+  let nextPageToken: string | undefined;
+
+  do {
+    const params = new URLSearchParams({
+      maxResults: "100",
+    });
+    if (nextPageToken) {
+      params.set("pageToken", nextPageToken);
+    }
+
+    const res = await fetch(`${GMAIL_DRAFTS_URL}?${params.toString()}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!res.ok) {
+      const errorCode = await parseGoogleErrorCode(res);
+      return mapGoogleError(res.status, errorCode);
+    }
+
+    const data = await res.json() as GmailDraftsListResponse;
+    const pageDraftIds: string[] = [];
+    for (const draft of data.drafts ?? []) {
+      if (draft?.id) {
+        pageDraftIds.push(draft.id);
+      }
+    }
+    draftIds.push(...pageDraftIds);
+    nextPageToken = data.nextPageToken;
+
+    console.log(
+      `[mailbox/gmail] fetchAllDraftIds page: resultSizeEstimate=${data.resultSizeEstimate ?? "?"}, extracted=${pageDraftIds.length}, pageToken=${nextPageToken ? "present" : "none"}`,
+    );
+  } while (nextPageToken);
+
+  console.log(
+    `[mailbox/gmail] fetchAllDraftIds total: ${draftIds.length} IDs, sample=[${draftIds.slice(0, 5).join(", ")}]`,
+  );
+
+  return draftIds;
+}
+
+async function fetchDraft(
+  accessToken: string,
+  draftId: string,
+): Promise<GmailDraftResponse | MailboxProviderError> {
+  const res = await fetch(`${GMAIL_DRAFTS_URL}/${draftId}?format=full`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) {
+    const errorCode = await parseGoogleErrorCode(res);
+    return mapGoogleError(res.status, errorCode);
+  }
+
+  return res.json() as Promise<GmailDraftResponse>;
+}
+
+async function fetchDraftWithRetry(
+  accessToken: string,
+  draftId: string,
+  maxRetries = 3,
+): Promise<GmailDraftResponse | MailboxProviderError> {
+  let lastError: MailboxProviderError | null = null;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    if (attempt > 0) {
+      const delayMs = 1000 * Math.pow(2, attempt - 1);
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+    const result = await fetchDraft(accessToken, draftId);
+    if (!isProviderError(result)) return result;
+    lastError = result;
+    if (!result.retryable) return result;
+  }
+  return lastError!;
+}
+
+async function fetchThreadEnvelopes(
+  accessToken: string,
+  threadIds: string[],
+  initialHighestHistoryId = "0",
+): Promise<{ threads: MailboxThreadEnvelope[]; highestHistoryId: string }> {
+  const threads: MailboxThreadEnvelope[] = [];
+  let highestHistoryId = initialHighestHistoryId;
+
+  for (const threadId of threadIds) {
+    const threadRes = await fetch(`${GMAIL_THREAD_URL}/${threadId}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!threadRes.ok) continue;
+
+    const threadData = await threadRes.json() as GmailThreadResponse;
+    highestHistoryId = maxHistoryId(highestHistoryId, threadData.historyId);
+
+    const envelope = toThreadEnvelope(threadData);
+    if (envelope) {
+      threads.push(envelope);
+    }
+  }
+
+  return { threads, highestHistoryId };
+}
+
 // ─── Gmail parsing helpers ────────────────────────────────────────────────────
 
 function toThreadEnvelope(thread: GmailThreadResponse): MailboxThreadEnvelope | null {
@@ -846,28 +1060,99 @@ function toThreadEnvelope(thread: GmailThreadResponse): MailboxThreadEnvelope | 
   return {
     providerThreadId: thread.id,
     subject,
-    lastMessageAt: lastMessage?.internalDate
-      ? new Date(parseInt(lastMessage.internalDate, 10)).toISOString()
-      : new Date().toISOString(),
+    lastMessageAt: parseGmailDate(lastMessage?.internalDate).toISOString(),
     unreadCount,
     participants,
     providerMetadata: { gmailHistoryId: thread.historyId, messageCount: thread.messages?.length ?? 0 },
   };
 }
 
+function toDraftThreadEnvelope(draftId: string, message: GmailMessage): MailboxThreadEnvelope {
+  const headers = message.payload?.headers ?? [];
+  const subject = headers.find((h) => h.name === "Subject")?.value ?? "(No subject)";
+  const participants = extractParticipants(headers);
+  const lastMessageAt = parseGmailDate(message.internalDate).toISOString();
+
+  return {
+    providerThreadId: message.threadId ?? `gmail-draft-thread:${draftId}`,
+    subject,
+    lastMessageAt,
+    unreadCount: 0,
+    participants,
+    providerMetadata: {
+      gmailHistoryId: message.historyId ?? null,
+      messageCount: 1,
+      source: "draft",
+    },
+  };
+}
+
+function toDraftEnvelope(
+  draftId: string,
+  message: GmailMessage,
+): MailboxDraftEnvelope | null {
+  const isUnavailable = !message.payload;
+  const thread = toDraftThreadEnvelope(draftId, message);
+  const draftMessage = toMessageEnvelope({
+    ...message,
+    id: message.id ?? `gmail-draft-message:${draftId}`,
+    labelIds: [...new Set([...(message.labelIds ?? []), "DRAFT"])],
+  });
+  if (!draftMessage) return null;
+
+  const finalSubject = draftMessage.subject.trim() || "(No subject)";
+
+  let finalHtmlBody = draftMessage.htmlBody;
+  if (!finalHtmlBody && draftMessage.textBody) {
+    finalHtmlBody = `<div style="white-space: pre-wrap;">${draftMessage.textBody}</div>`;
+  }
+
+  return {
+    draftId,
+    thread: {
+      ...thread,
+      subject: finalSubject,
+    },
+    message: {
+      ...draftMessage,
+      subject: finalSubject,
+      htmlBody: finalHtmlBody,
+      // Drafts should not appear in Sent just because they originated from the sender.
+      direction: "inbound",
+      providerMetadata: {
+        ...draftMessage.providerMetadata,
+        labelIds: [
+          ...new Set([
+            ...(((draftMessage.providerMetadata as { labelIds?: string[] }).labelIds) ?? []),
+            "DRAFT",
+          ]),
+        ],
+        gmailDraftId: draftId,
+        source: "draft",
+        isUnavailable,
+      },
+    },
+  };
+}
+
 function toMessageEnvelope(msg: GmailMessage): (MailboxMessageEnvelope & { htmlBody: string; textBody: string | null }) | null {
   const headers = msg.payload?.headers ?? [];
-  const from = parseAddressHeader(headers.find((h) => h.name === "From")?.value ?? "") ?? { email: "unknown@unknown.com", displayName: null };
+  const from = parseAddressHeader(headers.find((h) => h.name === "From")?.value ?? "") ?? { email: "", displayName: "(No sender)" };
   const to = parseAddressListHeader(headers.find((h) => h.name === "To")?.value ?? "");
   const cc = parseAddressListHeader(headers.find((h) => h.name === "Cc")?.value ?? "");
   const bcc = parseAddressListHeader(headers.find((h) => h.name === "Bcc")?.value ?? "");
   const subject = headers.find((h) => h.name === "Subject")?.value ?? "";
   const messageId = headers.find((h) => h.name === "Message-ID")?.value ?? null;
-  const date = msg.internalDate ? new Date(parseInt(msg.internalDate, 10)) : new Date();
+  const date = parseGmailDate(msg.internalDate);
   const direction = isOutbound(msg.labelIds ?? []) ? "outbound" : "inbound";
 
   const { htmlBody, textBody } = extractBodies(msg.payload ?? null);
   const attachments = extractAttachments(msg.payload ?? null);
+
+  let snippet = msg.snippet ?? "";
+  if (!snippet.trim()) {
+    snippet = (textBody || htmlBody.replace(/<[^>]+>/g, "")).slice(0, 150).trim();
+  }
 
   return {
     providerMessageId: msg.id,
@@ -877,8 +1162,8 @@ function toMessageEnvelope(msg: GmailMessage): (MailboxMessageEnvelope & { htmlB
     to,
     cc,
     bcc,
-    subject,
-    snippet: msg.snippet ?? "",
+    subject: subject.trim() || "(No subject)",
+    snippet,
     sentAt: date.toISOString(),
     receivedAt: date.toISOString(),
     attachmentCount: attachments.length,

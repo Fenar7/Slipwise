@@ -394,14 +394,27 @@ describe("Sprint 4.4 review — Finding B: route-derived status semantics", () =
   it("inbox route resolves to OPEN,PENDING status", () => {
     const connections = [makeMinimalConnection({ slug: "billing" })];
     const params = resolveThreadQueryParams("/app/mailbox/billing/inbox", connections);
+    expect(params.folder).toBe("INBOX");
     expect(params.status).toBe("OPEN,PENDING");
     expect(params.connectionId).toBe("conn_billing");
   });
 
-  it("archive route resolves to ARCHIVED status", () => {
+  it("archive route resolves to ARCHIVE folder semantics", () => {
     const connections = [makeMinimalConnection({ slug: "billing" })];
     const params = resolveThreadQueryParams("/app/mailbox/billing/archive", connections);
-    expect(params.status).toBe("ARCHIVED");
+    expect(params.folder).toBe("ARCHIVE");
+  });
+
+  it("sent route resolves to SENT folder semantics", () => {
+    const connections = [makeMinimalConnection({ slug: "billing" })];
+    const params = resolveThreadQueryParams("/app/mailbox/billing/sent", connections);
+    expect(params.folder).toBe("SENT");
+  });
+
+  it("spam route resolves to SPAM folder semantics", () => {
+    const connections = [makeMinimalConnection({ slug: "billing" })];
+    const params = resolveThreadQueryParams("/app/mailbox/billing/spam", connections);
+    expect(params.folder).toBe("SPAM");
   });
 
   it("smart view waiting resolves to PENDING status", () => {
@@ -410,7 +423,7 @@ describe("Sprint 4.4 review — Finding B: route-derived status semantics", () =
   });
 
   it("user status filter is ignored when route already defines status", () => {
-    const routeParams = { connectionId: "conn_billing", status: "OPEN,PENDING" };
+    const routeParams = { connectionId: "conn_billing", folder: "INBOX" as const, status: "OPEN,PENDING" };
     const filterState = {
       filters: [{ field: "status", value: "closed", label: "Closed" }],
       searchQuery: "",

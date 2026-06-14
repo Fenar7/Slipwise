@@ -31,6 +31,7 @@ vi.mock("@/lib/db", () => ({
       findFirst: vi.fn(),
       update: vi.fn(),
       updateMany: vi.fn(),
+      delete: vi.fn(),
     },
     mailboxAuditEvent: {
       create: vi.fn(),
@@ -90,6 +91,7 @@ const mockDb = db as unknown as {
     findFirst: ReturnType<typeof vi.fn>;
     update: ReturnType<typeof vi.fn>;
     updateMany: ReturnType<typeof vi.fn>;
+    delete: ReturnType<typeof vi.fn>;
   };
   mailboxAuditEvent: { create: ReturnType<typeof vi.fn> };
   member: { findUnique: ReturnType<typeof vi.fn> };
@@ -931,7 +933,7 @@ describe("verifyGmailConnection", () => {
 });
 
 describe("disconnectGmailMailbox", () => {
-  it("revokes provider auth, deletes credential, sets DISCONNECTED, emits audit", async () => {
+  it("revokes provider auth, deletes credential, deletes connection, emits audit", async () => {
     setupTransaction();
     mockDb.mailboxConnection.findFirst.mockResolvedValue(
       makeConnectionRow({ tokenRef: TOKEN_REF }),
@@ -942,9 +944,7 @@ describe("disconnectGmailMailbox", () => {
     });
     mockFetch.mockResolvedValueOnce({ ok: true }); // revoke
     mockDb.mailboxCredential.deleteMany.mockResolvedValue({ count: 1 });
-    mockDb.mailboxConnection.update.mockResolvedValue(
-      makeConnectionRow({ status: "DISCONNECTED" }),
-    );
+    mockDb.mailboxConnection.delete.mockResolvedValue({});
     mockDb.mailboxAuditEvent.create.mockResolvedValue({});
 
     await disconnectGmailMailbox({
@@ -953,18 +953,18 @@ describe("disconnectGmailMailbox", () => {
       actorId: "actor-1",
     });
 
-    expect(mockDb.mailboxConnection.update).toHaveBeenCalledWith(
+    expect(mockDb.mailboxConnection.delete).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({
-          status: "DISCONNECTED",
-          tokenRef: null,
-          tokenExpiry: null,
-        }),
+        where: { id: "conn-001" },
       }),
     );
     expect(mockDb.mailboxAuditEvent.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ action: "CONNECTION_DISCONNECTED", orgId: ORG_A }),
+        data: expect.objectContaining({
+          action: "CONNECTION_DISCONNECTED",
+          orgId: ORG_A,
+          mailboxConnectionId: null,
+        }),
       }),
     );
   });
@@ -1084,7 +1084,7 @@ describe("disconnectGmailMailbox — operation order", () => {
       emailAddress: "test@example.com",
       status: "ACTIVE",
     });
-    mockDb.mailboxConnection.update.mockResolvedValue({});
+    mockDb.mailboxConnection.delete.mockResolvedValue({});
     mockDb.mailboxAuditEvent.create.mockResolvedValue({});
     // Credential read succeeds, but provider fetch throws
     mockDb.mailboxCredential.findFirst.mockResolvedValue({
@@ -1095,10 +1095,10 @@ describe("disconnectGmailMailbox — operation order", () => {
     await expect(
       disconnectGmailMailbox({ orgId: ORG_A, connectionId: "conn-001", actorId: "actor-1" }),
     ).resolves.toBeUndefined();
-    // DB update must have been called before provider revoke attempted
-    expect(mockDb.mailboxConnection.update).toHaveBeenCalledWith(
+    // DB delete must have been called before provider revoke attempted
+    expect(mockDb.mailboxConnection.delete).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ status: "DISCONNECTED", tokenRef: null }),
+        where: { id: "conn-001" },
       }),
     );
   });
