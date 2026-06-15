@@ -472,11 +472,11 @@ describe("ConnectionDetailClient", () => {
     });
   });
 
-  it("renders visibility section with truthful policy", async () => {
+  it("renders settings section with truthful visibility policy as radio option", async () => {
     mockFetchConnection(mockAdminConnections[0]);
     render(<ConnectionDetailClient connectionId="conn_billing" />);
     await waitFor(() => {
-      expect(screen.getByRole("region", { name: /mailbox visibility/i })).toBeInTheDocument();
+      expect(screen.getByRole("region", { name: /mailbox settings form/i })).toBeInTheDocument();
     });
     expect(screen.getByText(/shared with organization/i)).toBeInTheDocument();
   });
