@@ -78,7 +78,7 @@ export async function listMailboxAuditEventsPaginated(
   const pageRows = hasMore ? rows.slice(0, params.pageSize) : rows;
   const nextCursor = hasMore ? pageRows[pageRows.length - 1].id : null;
 
-  const records: MailboxAuditEventRecord[] = rows.map((row) => ({
+  const records: MailboxAuditEventRecord[] = pageRows.map((row) => ({
     id: row.id,
     orgId: row.orgId,
     mailboxConnectionId: row.mailboxConnectionId,
@@ -92,7 +92,7 @@ export async function listMailboxAuditEventsPaginated(
   }));
 
   return {
-    records: records.slice(0, params.pageSize),
+    records,
     nextCursor,
   };
 }
