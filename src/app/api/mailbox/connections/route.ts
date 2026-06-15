@@ -1,12 +1,13 @@
 /**
  * Security checklist:
  * - GET query params validated via Zod (paginationQuerySchema)
- * - POST body validated via Zod (createConnectionSchema) with strict unknown-key rejection
+ * - POST body validated via Zod (createConnectionSchema or newChatCreateSchema) with strict unknown-key rejection
  * - Admin-only via requireIntegrationAdminRoute()
- * - Rate-limited per org (RATE_LIMITS.mailboxPolicyUpdate for POST, RATE_LIMITS.api for GET)
- * - Tenant-isolated via org-scoped listMailboxConnectionsPaginated / createMailboxConnection
+ * - Rate-limited per org: RATE_LIMITS.mailboxCreate for New Chat (5 req/min), RATE_LIMITS.mailboxPolicyUpdate for provider connections
+ * - Max 1000 active connections per org (429)
+ * - Tenant-isolated via org-scoped listMailboxConnectionsPaginated / createMailboxConnection / createNewChatConnection
  * - Duplicate displayName checked per org (409)
- * - PII (emailAddress) masked in audit metadata
+ * - PII (emailAddress) masked in audit metadata; New Chat audit stores only the numeric seq
  * - Error messages never leak internal IDs or stack traces
  * - 201 Created with Location header for POST
  */
@@ -19,11 +20,12 @@ import { rateLimitByOrg, RATE_LIMITS } from "@/lib/rate-limit";
 import {
   listMailboxConnectionsPaginated,
   createMailboxConnection,
+  createNewChatConnection,
 } from "@/lib/mailbox/connection-service";
 import { toMailboxConnectionListItem } from "@/lib/mailbox/admin-shapes";
 import { getMailboxSyncRunsByConnectionIds } from "@/lib/mailbox/sync-run-read-service";
 import { emitMailboxConnectionEvent } from "@/lib/realtime";
-import { paginationQuerySchema, createConnectionSchema } from "@/lib/validation/mailbox";
+import { paginationQuerySchema, createConnectionSchema, newChatCreateSchema } from "@/lib/validation/mailbox";
 import { db } from "@/lib/db";
 import { ZodError } from "zod";
 
@@ -116,18 +118,79 @@ export async function POST(
     const auth = await requireIntegrationAdminRoute();
     if (!auth.ok) return auth.response;
 
+    // Attempt to parse raw body. If JSON parse fails, treat as empty.
+    let rawBody: unknown;
+    try {
+      rawBody = await request.json();
+    } catch {
+      rawBody = {};
+    }
+
+    if (typeof rawBody !== "object" || rawBody === null) {
+      rawBody = {};
+    }
+
+    // ── Determine request type ─────────────────────────────────────────────
+    // New Chat: empty body validated via newChatCreateSchema (strict).
+    // Provider connection: body with provider/emailAddress etc.
+    const isEmptyBody = Object.keys(rawBody as Record<string, unknown>).length === 0;
+
+    if (isEmptyBody) {
+      // ── New Chat flow (Sprint 7.3) ───────────────────────────────────────
+
+      const parseResult = newChatCreateSchema.safeParse(rawBody);
+      if (!parseResult.success) {
+        const firstIssue = parseResult.error.issues[0];
+        return NextResponse.json(
+          { error: firstIssue?.message ?? "Invalid request body" },
+          { status: 400 },
+        );
+      }
+
+      const rl = await rateLimitByOrg(auth.ctx.orgId, RATE_LIMITS.mailboxCreate);
+      if (!rl.success) {
+        return NextResponse.json(
+          { error: "Too many requests" },
+          { status: 429, headers: { "Retry-After": "60" } },
+        );
+      }
+
+      const activeCount = await db.mailboxConnection.count({
+        where: { orgId: auth.ctx.orgId, deletedAt: null },
+      });
+      if (activeCount >= 1000) {
+        return NextResponse.json(
+          { error: "Maximum number of connections (1000) reached" },
+          { status: 429 },
+        );
+      }
+
+      const connection = await createNewChatConnection(
+        auth.ctx.orgId,
+        auth.ctx.userId,
+      );
+
+      void emitMailboxConnectionEvent("mailbox_connection_created", {
+        id: connection.id,
+        orgId: auth.ctx.orgId,
+      });
+
+      return NextResponse.json(connection, {
+        status: 201,
+        headers: { Location: `/app/mailbox/connections/${connection.id}` },
+      });
+    }
+
+    // ── Provider-based connection flow (Sprint 7.2) ────────────────────────
+
     const rl = await rateLimitByOrg(auth.ctx.orgId, RATE_LIMITS.mailboxPolicyUpdate);
     if (!rl.success) {
       return NextResponse.json({ error: "Too many requests" }, { status: 429 });
     }
 
-    const rawBody = await request.json();
-
     let parsed;
     try {
-      parsed = createConnectionSchema.parse(
-        typeof rawBody === "object" && rawBody !== null ? rawBody : {},
-      );
+      parsed = createConnectionSchema.parse(rawBody);
     } catch (err) {
       if (err instanceof ZodError) {
         const firstIssue = err.issues[0];

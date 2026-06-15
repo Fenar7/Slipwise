@@ -134,6 +134,21 @@ const OPENAPI_SPEC = {
           nextCursor: { type: "string", nullable: true, description: "Cursor for the next page. null when on the last page." },
         },
       },
+      NewChatConnectionResponse: {
+        type: "object",
+        properties: {
+          id: { type: "string" },
+          displayName: { type: "string", description: "Auto-generated name (e.g. 'New Chat #3')" },
+          visibilityPolicy: { type: "string", enum: ["org_shared", "restricted", "admin_only"] },
+          notificationSettings: { type: "object", properties: { email: { type: "boolean" }, sms: { type: "boolean" } }, required: ["email", "sms"] },
+        },
+        required: ["id", "displayName", "visibilityPolicy", "notificationSettings"],
+      },
+      EmptyBody: {
+        type: "object",
+        description: "No payload required; strict mode rejects any keys.",
+        additionalProperties: false,
+      },
     },
     parameters: {
       PageParam: { name: "page", in: "query", schema: { type: "integer", default: 1, minimum: 1 } },
@@ -239,14 +254,27 @@ const OPENAPI_SPEC = {
         },
       },
       post: {
-        summary: "Create a mailbox connection",
+        summary: "Create a mailbox connection (New Chat or provider-based)",
         tags: ["Mailbox"],
-        requestBody: { required: true, content: { "application/json": { schema: { $ref: "#/components/schemas/CreateMailboxConnectionInput" } } } },
+        description: "Two modes:\\n1. **New Chat** (empty body): creates a system chat with auto-generated name 'New Chat #&lt;seq&gt;', welcome message, and masked audit.\\n2. **Provider connection** (with provider, emailAddress, etc.): creates a real email connection.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                oneOf: [
+                  { $ref: "#/components/schemas/EmptyBody" },
+                  { $ref: "#/components/schemas/CreateMailboxConnectionInput" },
+                ],
+              },
+            },
+          },
+        },
         responses: {
-          "201": { description: "Connection created", headers: { Location: { schema: { type: "string" }, description: "URL of the created resource" } } },
-          "400": { description: "Validation error" },
-          "409": { description: "Duplicate displayName" },
-          "429": { description: "Rate limited" },
+          "201": { description: "Connection created", headers: { Location: { schema: { type: "string" }, description: "URL of the created resource" } }, content: { "application/json": { schema: { oneOf: [{ $ref: "#/components/schemas/NewChatConnectionResponse" }, { type: "object", properties: { ok: { type: "boolean" }, connection: { $ref: "#/components/schemas/MailboxConnectionListItem" } } }] } } } },
+          "400": { description: "Validation error (invalid body or unknown keys)" },
+          "409": { description: "Duplicate displayName (provider flow only)" },
+          "429": { description: "Rate limited (mailboxCreate: 5 req/min for New Chat; mailboxPolicyUpdate: 10 req/min for provider connections). Also returned if org has ≥1000 active connections." },
         },
       },
     },
