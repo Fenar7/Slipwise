@@ -86,6 +86,56 @@ export async function findMailboxConnectionByProviderAccount(
   }
 }
 
+/**
+ * Result of a paginated connection list query.
+ */
+export interface PaginatedMailboxConnectionsResult {
+  records: MailboxConnectionRecord[];
+  nextCursor: string | null;
+}
+
+/**
+ * List mailbox connections for an org with cursor-based pagination.
+ * Excludes soft-deleted connections (deletedAt IS NULL).
+ *
+ * @param orgId - The organization to scope the query to.
+ * @param options.cursor - Opaque cursor (record id) for the next page.
+ * @param options.pageSize - Number of records per page (1–100, default 20).
+ */
+export async function listMailboxConnectionsPaginated(
+  orgId: string,
+  options?: { cursor?: string; pageSize?: number },
+): Promise<PaginatedMailboxConnectionsResult> {
+  const pageSize = Math.min(Math.max(options?.pageSize ?? 20, 1), 100);
+
+  try {
+    const rows = await db.mailboxConnection.findMany({
+      where: { orgId, deletedAt: null },
+      orderBy: { createdAt: "asc" },
+      take: pageSize + 1,
+      ...(options?.cursor
+        ? { cursor: { id: options.cursor }, skip: 1 }
+        : {}),
+    });
+
+    const hasMore = rows.length > pageSize;
+    const records = hasMore ? rows.slice(0, pageSize) : rows;
+
+    return {
+      records: records.map(toConnectionRecord),
+      nextCursor: hasMore ? records[records.length - 1].id : null,
+    };
+  } catch (error) {
+    if (isSchemaDriftError(error)) {
+      console.warn(
+        "[mailbox] listMailboxConnectionsPaginated skipped: mailbox_connection schema drift — run prisma migrate deploy",
+      );
+      return { records: [], nextCursor: null };
+    }
+    throw error;
+  }
+}
+
 // ─── Connection mutations ─────────────────────────────────────────────────────
 
 export interface CreateMailboxConnectionInput {
@@ -280,6 +330,178 @@ export async function disableMailboxConnection(
   return toConnectionRecord(result);
 }
 
+// ─── Soft-delete ──────────────────────────────────────────────────────────────
+
+/**
+ * Soft-delete a mailbox connection: sets deletedAt and status = DISCONNECTED.
+ * Prevents deletion if the connection has any active drafts.
+ *
+ * @throws Error if connection not found for org.
+ * @throws Error if connection has active drafts (409 semantic).
+ */
+export async function softDeleteMailboxConnection(
+  orgId: string,
+  connectionId: string,
+  actorId: string,
+): Promise<MailboxConnectionRecord> {
+  const result = await db.$transaction(async (tx: Prisma.TransactionClient) => {
+    const existing = await tx.mailboxConnection.findFirst({
+      where: { id: connectionId, orgId },
+      select: { id: true, displayName: true, deletedAt: true },
+    });
+    if (!existing) {
+      throw new Error(
+        `MailboxConnection ${connectionId} not found for org ${orgId}`,
+      );
+    }
+
+    if (existing.deletedAt) {
+      throw new Error(
+        `MailboxConnection ${connectionId} is already deleted`,
+      );
+    }
+
+    const activeDraft = await tx.mailboxDraft.findFirst({
+      where: {
+        mailboxConnectionId: connectionId,
+        orgId,
+        status: "ACTIVE",
+      },
+      select: { id: true },
+    });
+    if (activeDraft) {
+      throw new Error(
+        `MailboxConnection ${connectionId} has active drafts; cannot delete`,
+      );
+    }
+
+    const row = await tx.mailboxConnection.update({
+      where: { id: existing.id },
+      data: {
+        status: "DISCONNECTED",
+        deletedAt: new Date(),
+      },
+    });
+
+    await logMailboxAuditTx(tx, {
+      orgId,
+      actorId,
+      action: "CONNECTION_DISCONNECTED",
+      summary: `Mailbox connection "${existing.displayName}" soft-deleted by admin`,
+      mailboxConnectionId: existing.id,
+      metadata: {
+        deletedAt: new Date().toISOString(),
+        previousDisplayName: existing.displayName,
+      },
+    });
+
+    return row;
+  });
+
+  return toConnectionRecord(result);
+}
+
+/**
+ * Supported fields that can be bulk-updated on a mailbox connection.
+ */
+export interface UpdateMailboxConnectionSettingsInput {
+  orgId: string;
+  connectionId: string;
+  actorId: string;
+  displayName?: string;
+  visibilityPolicy?: string;
+  notificationSettings?: Record<string, unknown> | null;
+}
+
+/**
+ * Update mailbox connection settings (displayName, visibilityPolicy,
+ * notificationSettings) atomically with audit logging.
+ *
+ * Org safety: loads the existing row inside the transaction with
+ * `findFirst({ where: { id, orgId } })` before mutating. If the row
+ * does not exist for this org the function throws.
+ *
+ * Only provided fields are updated. The audit log captures previous
+ * and new values for changed fields only.
+ */
+export async function updateMailboxConnectionSettings(
+  input: UpdateMailboxConnectionSettingsInput,
+): Promise<MailboxConnectionRecord> {
+  const result = await db.$transaction(async (tx: Prisma.TransactionClient) => {
+    const existing = await tx.mailboxConnection.findFirst({
+      where: { id: input.connectionId, orgId: input.orgId },
+      select: {
+        id: true,
+        displayName: true,
+        visibilityPolicy: true,
+        notificationSettings: true,
+      },
+    });
+    if (!existing) {
+      throw new Error(
+        `MailboxConnection ${input.connectionId} not found for org ${input.orgId}`,
+      );
+    }
+
+    const updateData: Record<string, unknown> = {};
+    const metadata: Record<string, unknown> = {};
+    const summaryParts: string[] = [];
+
+    if (
+      input.displayName !== undefined &&
+      input.displayName !== existing.displayName
+    ) {
+      updateData.displayName = input.displayName;
+      metadata.previousDisplayName = existing.displayName;
+      metadata.newDisplayName = input.displayName;
+      summaryParts.push(
+        `display name updated from "${existing.displayName}" to "${input.displayName}"`,
+      );
+    }
+
+    if (
+      input.visibilityPolicy !== undefined &&
+      input.visibilityPolicy !== existing.visibilityPolicy
+    ) {
+      updateData.visibilityPolicy = input.visibilityPolicy;
+      metadata.previousVisibilityPolicy = existing.visibilityPolicy;
+      metadata.newVisibilityPolicy = input.visibilityPolicy;
+      summaryParts.push(
+        `visibility policy changed to "${input.visibilityPolicy}"`,
+      );
+    }
+
+    if (input.notificationSettings !== undefined) {
+      updateData.notificationSettings = input.notificationSettings;
+      metadata.previousNotificationSettings = existing.notificationSettings;
+      metadata.newNotificationSettings = input.notificationSettings;
+      summaryParts.push("notification settings updated");
+    }
+
+    if (Object.keys(updateData).length === 0) {
+      return existing;
+    }
+
+    const row = await tx.mailboxConnection.update({
+      where: { id: existing.id },
+      data: updateData,
+    });
+
+    await logMailboxAuditTx(tx, {
+      orgId: input.orgId,
+      actorId: input.actorId,
+      action: "CONNECTION_POLICY_UPDATED",
+      summary: `Mailbox connection ${summaryParts.join("; ")}`,
+      mailboxConnectionId: existing.id,
+      metadata,
+    });
+
+    return row;
+  });
+
+  return toConnectionRecord(result);
+}
+
 // ─── Internal mapper ──────────────────────────────────────────────────────────
 
 function toConnectionRecord(
@@ -310,6 +532,13 @@ function toConnectionRecord(
     syncLeaseToken: row.syncLeaseToken ?? null,
     syncLeaseExpiresAt: row.syncLeaseExpiresAt ?? null,
     disabledAt: row.disabledAt,
+    deletedAt: row.deletedAt,
+    notificationSettings:
+      row.notificationSettings != null &&
+      typeof row.notificationSettings === "object" &&
+      !Array.isArray(row.notificationSettings)
+        ? (row.notificationSettings as Record<string, unknown>)
+        : null,
     connectedBy: row.connectedBy,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,

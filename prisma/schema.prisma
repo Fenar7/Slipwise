@@ -6066,6 +6066,10 @@ model MailboxConnection {
   lastSyncErrorCategory String?
   /// Soft-disable: when set, the connection is treated as inactive without deletion.
   disabledAt        DateTime?
+  /// Soft-delete: when set, the connection is permanently hidden from all views.
+  deletedAt         DateTime?
+  /// User-configurable notification preferences stored as { email: boolean, sms: boolean }.
+  notificationSettings Json?
   /// Who connected this mailbox (org member userId).
   connectedBy       String                  @db.Uuid
   createdAt         DateTime                @default(now())
