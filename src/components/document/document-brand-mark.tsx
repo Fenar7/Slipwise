@@ -19,14 +19,50 @@ export function DocumentBrandMark({
     .map((part) => part.charAt(0).toUpperCase())
     .join("");
 
+  const size = branding.logoSize ?? 72;
+  const fit = branding.logoFit ?? "contain";
+  const isContain = fit === "contain";
+
+  // Clean container class if logo is uploaded to remove box background, borders, and padding
+  let finalClassName = className;
+  if (branding.logoDataUrl) {
+    finalClassName = className
+      .split(" ")
+      .filter((c) => {
+        // Strip out border, bg, padding, and fixed h/w classes
+        if (c === "border" || c.startsWith("border-") || c.startsWith("border/")) return false;
+        if (c.startsWith("bg-") || c.startsWith("bg/")) return false;
+        if (c.startsWith("p-") || c.startsWith("px-") || c.startsWith("py-")) return false;
+        if (c.startsWith("h-") || c.startsWith("w-")) return false;
+        // If fit mode is contain, also strip rounded corners so rectangular logos don't clip weirdly
+        if (isContain && (c.startsWith("rounded-") || c.startsWith("rounded["))) return false;
+        return true;
+      })
+      .join(" ");
+    if (!finalClassName.includes("flex")) finalClassName += " flex";
+    if (!finalClassName.includes("shrink-0")) finalClassName += " shrink-0";
+  }
+
+  const containerStyle: React.CSSProperties = {
+    width: `${size}px`,
+    height: branding.logoDataUrl && isContain ? "auto" : `${size}px`,
+  };
+
+  const imgStyle: React.CSSProperties = {
+    objectFit: fit,
+    width: "100%",
+    height: branding.logoDataUrl && isContain ? "auto" : "100%",
+  };
+
   return (
-    <div className={className}>
+    <div className={finalClassName} style={containerStyle}>
       {branding.logoDataUrl ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
           src={branding.logoDataUrl}
           alt={`${branding.companyName || "Company"} logo`}
-          className={imageClassName}
+          className={branding.logoFit === "cover" ? imageClassName : ""}
+          style={imgStyle}
           loading="lazy"
           decoding="async"
         />

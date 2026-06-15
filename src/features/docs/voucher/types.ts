@@ -21,6 +21,7 @@ export type VoucherVisibilityConfig = {
   showApprovedBy: boolean;
   showReceivedBy: boolean;
   showSignatureArea: boolean;
+  showUpiDetails: boolean;
 };
 
 export type VoucherFormValues = {
@@ -37,6 +38,8 @@ export type VoucherFormValues = {
   notes: string;
   approvedBy: string;
   receivedBy: string;
+  upiId: string;
+  upiQrDataUrl: string;
   visibility: VoucherVisibilityConfig;
   // Extended fields
   vendorId?: string;
@@ -63,6 +66,8 @@ export type VoucherDocument = {
   notes?: string;
   approvedBy?: string;
   receivedBy?: string;
+  upiId?: string;
+  upiQrDataUrl?: string;
   visibility: VoucherVisibilityConfig;
 };
 

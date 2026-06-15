@@ -1,19 +1,12 @@
-import { execFile } from "node:child_process";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import type {
   InvoiceDocument,
   InvoiceExportFormat,
 } from "@/features/docs/invoice/types";
 import {
-  getLocalExportBrowserArgs,
-  isServerlessExportRuntime,
   renderExportPdfViaBrowser,
   renderExportPngViaBrowser,
-  resolveExportBrowserExecutablePath,
 } from "@/lib/export/browser";
-import { serializeExportPayload } from "@/lib/server/export-payload";
+import { createInvoiceExportSession } from "@/features/docs/invoice/server/export-session-store";
 
 type ExportInvoiceOptions = {
   invoiceDocument: InvoiceDocument;
@@ -26,90 +19,25 @@ export async function exportInvoiceDocument({
   format,
   origin,
 }: ExportInvoiceOptions) {
-  const payload = serializeExportPayload(invoiceDocument);
   const routeMode = format === "pdf" ? "pdf" : "png";
-  const isServerless = isServerlessExportRuntime();
-  const renderUrl = isServerless
-    ? `${origin}/invoice/print?mode=${routeMode}`
-    : `${origin}/invoice/print?payload=${encodeURIComponent(payload)}&mode=${routeMode}`;
 
-  if (isServerless) {
-    const headers = {
-      "x-slipwise-export-payload": payload,
-    };
+  // Store the document in the session store and pass only a short token in the
+  // render URL. This sidesteps both URL-length limits (base64 QR images make
+  // the URL huge) and HTTP header-size limits (~8 KB in Node.js/Next.js).
+  // The /invoice/print page already supports ?token= lookup.
+  const token = createInvoiceExportSession(invoiceDocument);
+  const renderUrl = `${origin}/invoice/print?token=${token}&mode=${routeMode}`;
 
-    if (format === "pdf") {
-      return renderExportPdfViaBrowser(
-        renderUrl,
-        '[data-testid="invoice-render-ready"]',
-        headers,
-      );
-    }
-
-    return renderExportPngViaBrowser(
+  if (format === "pdf") {
+    return renderExportPdfViaBrowser(
       renderUrl,
       '[data-testid="invoice-render-ready"]',
-      headers,
     );
   }
 
-  const executablePath = await resolveExportBrowserExecutablePath();
-  const outputDirectory = await mkdtemp(join(tmpdir(), `invoice-${format}-`));
-  const outputFile = join(outputDirectory, `invoice.${format}`);
-
-  const cliArgs =
-    format === "pdf"
-      ? [
-          "--headless=new",
-          "--disable-gpu",
-          "--print-to-pdf-no-header",
-          "--no-pdf-header-footer",
-          "--virtual-time-budget=5000",
-          ...getLocalExportBrowserArgs(),
-          `--print-to-pdf=${outputFile}`,
-          renderUrl,
-        ]
-      : [
-          "--headless=new",
-          "--disable-gpu",
-          "--hide-scrollbars",
-          "--run-all-compositor-stages-before-draw",
-          "--force-device-scale-factor=2",
-          "--window-size=820,1140",
-          "--virtual-time-budget=5000",
-          ...getLocalExportBrowserArgs(),
-          `--screenshot=${outputFile}`,
-          renderUrl,
-        ];
-
-  try {
-    try {
-      await new Promise<void>((resolve, reject) => {
-        execFile(executablePath, cliArgs, (error) => {
-          if (error) {
-            reject(error);
-            return;
-          }
-
-          resolve();
-        });
-      });
-
-      return await readFile(outputFile);
-    } catch {
-      if (format === "pdf") {
-        return renderExportPdfViaBrowser(
-          renderUrl,
-          '[data-testid="invoice-render-ready"]',
-        );
-      }
-
-      return renderExportPngViaBrowser(
-        renderUrl,
-        '[data-testid="invoice-render-ready"]',
-      );
-    }
-  } finally {
-    await rm(outputDirectory, { recursive: true, force: true });
-  }
+  return renderExportPngViaBrowser(
+    renderUrl,
+    '[data-testid="invoice-render-ready"]',
+  );
 }
+

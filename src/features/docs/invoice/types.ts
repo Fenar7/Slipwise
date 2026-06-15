@@ -31,6 +31,7 @@ export type InvoiceVisibilityConfig = {
   showBankDetails: boolean;
   showSignature: boolean;
   showPaymentSummary: boolean;
+  showUpiDetails: boolean;
 };
 
 export type InvoiceFormValues = {
@@ -38,6 +39,7 @@ export type InvoiceFormValues = {
   branding: BrandingConfig;
   website: string;
   businessTaxId: string;
+  clientSalutation?: string;
   clientName: string;
   clientAddress: string;
   shippingAddress: string;
@@ -56,7 +58,11 @@ export type InvoiceFormValues = {
   bankName: string;
   bankAccountNumber: string;
   bankIfsc: string;
+  upiId: string;
+  upiQrDataUrl: string;
   authorizedBy: string;
+  authorizedByDesignation?: string;
+  authorizedByCompany?: string;
   lineItems: InvoiceLineItemFormValue[];
   visibility: InvoiceVisibilityConfig;
   tagIds?: string[];
@@ -85,6 +91,7 @@ export type InvoiceDocument = {
   branding: BrandingConfig;
   website?: string;
   businessTaxId?: string;
+  clientSalutation?: string;
   clientName: string;
   clientAddress?: string;
   shippingAddress?: string;
@@ -119,6 +126,10 @@ export type InvoiceDocument = {
   bankName?: string;
   bankAccountNumber?: string;
   bankIfsc?: string;
+  upiId?: string;
+  upiQrDataUrl?: string;
   authorizedBy?: string;
+  authorizedByDesignation?: string;
+  authorizedByCompany?: string;
   visibility: InvoiceVisibilityConfig;
 };
