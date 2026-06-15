@@ -5,6 +5,7 @@ import type { Prisma } from "@/generated/prisma/client";
 import type { MailboxConnectionRecord, MailboxConnectionStatus } from "./domain-types";
 import { logMailboxAuditTx } from "./audit";
 import type { MailboxAuditAction } from "./domain-types";
+import { isSchemaDriftError } from "@/lib/prisma-errors";
 
 // ─── Org-scoped connection queries ────────────────────────────────────────────
 
@@ -19,11 +20,21 @@ import type { MailboxAuditAction } from "./domain-types";
 export async function listMailboxConnections(
   orgId: string,
 ): Promise<MailboxConnectionRecord[]> {
-  const rows = await db.mailboxConnection.findMany({
-    where: { orgId },
-    orderBy: { createdAt: "asc" },
-  });
-  return rows.map(toConnectionRecord);
+  try {
+    const rows = await db.mailboxConnection.findMany({
+      where: { orgId },
+      orderBy: { createdAt: "asc" },
+    });
+    return rows.map(toConnectionRecord);
+  } catch (error) {
+    if (isSchemaDriftError(error)) {
+      console.warn(
+        "[mailbox] listMailboxConnections skipped: mailbox_connection schema drift — run prisma migrate deploy",
+      );
+      return [];
+    }
+    throw error;
+  }
 }
 
 /**
@@ -34,10 +45,20 @@ export async function getMailboxConnection(
   orgId: string,
   connectionId: string,
 ): Promise<MailboxConnectionRecord | null> {
-  const row = await db.mailboxConnection.findFirst({
-    where: { id: connectionId, orgId },
-  });
-  return row ? toConnectionRecord(row) : null;
+  try {
+    const row = await db.mailboxConnection.findFirst({
+      where: { id: connectionId, orgId },
+    });
+    return row ? toConnectionRecord(row) : null;
+  } catch (error) {
+    if (isSchemaDriftError(error)) {
+      console.warn(
+        "[mailbox] getMailboxConnection skipped: mailbox_connection schema drift — run prisma migrate deploy",
+      );
+      return null;
+    }
+    throw error;
+  }
 }
 
 /**
@@ -49,10 +70,20 @@ export async function findMailboxConnectionByProviderAccount(
   provider: MailboxConnectionRecord["provider"],
   providerAccountId: string,
 ): Promise<MailboxConnectionRecord | null> {
-  const row = await db.mailboxConnection.findFirst({
-    where: { orgId, provider, providerAccountId },
-  });
-  return row ? toConnectionRecord(row) : null;
+  try {
+    const row = await db.mailboxConnection.findFirst({
+      where: { orgId, provider, providerAccountId },
+    });
+    return row ? toConnectionRecord(row) : null;
+  } catch (error) {
+    if (isSchemaDriftError(error)) {
+      console.warn(
+        "[mailbox] findMailboxConnectionByProviderAccount skipped: mailbox_connection schema drift — run prisma migrate deploy",
+      );
+      return null;
+    }
+    throw error;
+  }
 }
 
 // ─── Connection mutations ─────────────────────────────────────────────────────

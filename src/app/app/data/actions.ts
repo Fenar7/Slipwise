@@ -147,7 +147,12 @@ export async function listCustomers(params?: {
   ]);
   
   return {
-    customers,
+    customers: customers.map((c) => ({
+      ...c,
+      totalPaid: c.totalPaid != null ? Number(c.totalPaid) : null,
+      lifetimeValue: c.lifetimeValue != null ? Number(c.lifetimeValue) : null,
+      totalInvoiced: c.totalInvoiced != null ? Number(c.totalInvoiced) : null,
+    })),
     total,
     page,
     totalPages: Math.ceil(total / limit),

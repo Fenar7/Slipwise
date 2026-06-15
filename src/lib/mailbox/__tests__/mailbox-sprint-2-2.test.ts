@@ -310,9 +310,8 @@ describe("buildGmailAuthUrl", () => {
   it("includes least-privilege scopes only", () => {
     const url = buildGmailAuthUrl("s");
     expect(url).toContain("gmail.readonly");
+    expect(url).toContain("gmail.send");
     expect(url).toContain("userinfo.email");
-    // Must NOT include send scope (Sprint 2.3+)
-    expect(url).not.toContain("gmail.send");
     expect(url).not.toContain("gmail.compose");
     expect(url).not.toContain("gmail.modify");
   });

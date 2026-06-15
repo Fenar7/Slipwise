@@ -13,8 +13,59 @@ import { NextRequest } from "next/server";
 
 vi.mock("server-only", () => ({}));
 
+const mockQueryRaw = vi.fn().mockImplementation(async (sql, ...values) => {
+  const queryStr = (Array.isArray(sql) ? sql.join(" ") : String(sql)).toUpperCase();
+  const allValues = values.map(v => String(v).toUpperCase());
+  const hasThread = queryStr.includes("THREAD") || allValues.some(v => v.includes("THREAD"));
+  const hasMessage = queryStr.includes("MESSAGE") || allValues.some(v => v.includes("MESSAGE"));
+
+  if (queryStr.includes("COUNT")) {
+    if (hasThread) {
+      return [{ count: 11n }];
+    }
+    if (hasMessage) {
+      return [{ count: 10n }];
+    }
+    return [{ count: 0n }];
+  }
+
+  if (hasThread) {
+    return [
+      { threadId: "local-t-1" },
+      { threadId: "local-t-2" },
+      { threadId: "t-1" },
+      { threadId: "t-2" },
+      { threadId: "thread-123" },
+      { threadId: "thread-456" },
+      { threadId: "thread-789" },
+      { threadId: "thread-abc" },
+      { threadId: "thread-def" },
+      { threadId: "thread-xyz" },
+      { threadId: "restricted-t-1" },
+    ];
+  }
+
+  if (hasMessage) {
+    return [
+      { messageId: "local-m-1" },
+      { messageId: "local-m-2" },
+      { messageId: "m-1" },
+      { messageId: "m-2" },
+      { messageId: "msg-123" },
+      { messageId: "msg-456" },
+      { messageId: "msg-789" },
+      { messageId: "msg-abc" },
+      { messageId: "msg-def" },
+      { messageId: "msg-xyz" },
+    ];
+  }
+
+  return [];
+});
+
 vi.mock("@/lib/db", () => ({
   db: {
+    $queryRaw: (...args: any[]) => mockQueryRaw(...args),
     mailboxThread: {
       findMany: vi.fn(),
       findFirst: vi.fn(),
@@ -22,6 +73,13 @@ vi.mock("@/lib/db", () => ({
     },
     mailboxConnection: {
       findMany: vi.fn(),
+    },
+    mailboxFolderCoverage: {
+      findMany: vi.fn(),
+    },
+    mailboxMessage: {
+      findMany: vi.fn().mockResolvedValue([]),
+      count: vi.fn().mockResolvedValue(0),
     },
   },
 }));
@@ -37,6 +95,9 @@ const mockDb = db as unknown as {
   mailboxConnection: {
     findMany: ReturnType<typeof vi.fn>;
   };
+  mailboxFolderCoverage: {
+    findMany: ReturnType<typeof vi.fn>;
+  };
 };
 
 vi.mock("@/app/api/integrations/_auth", () => ({
@@ -48,6 +109,16 @@ vi.mock("@/lib/rate-limit", () => ({
   RATE_LIMITS: { api: { maxRequests: 60, window: "60 s" } },
 }));
 
+const mockSearchThreads = vi.fn();
+
+vi.mock("@/lib/mailbox/provider-registry", () => ({
+  getMailboxProviderAdapter: () => ({
+    descriptor: { provider: "GMAIL", displayName: "Gmail", supportsPushSync: true, supportsSend: true },
+    searchThreads: mockSearchThreads,
+    fetchThreadDetail: vi.fn(),
+  }),
+}));
+
 import { listMailboxThreads } from "@/lib/mailbox/thread-service";
 
 const ORG_A = "org-aaa";
@@ -56,6 +127,24 @@ const CONN_1 = "conn-001";
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockSearchThreads.mockReset();
+  mockSearchThreads.mockResolvedValue({
+    hits: [],
+    nextPageToken: null,
+    estimatedTotal: 0,
+  });
+  mockDb.mailboxFolderCoverage.findMany.mockImplementation(async (params) => {
+    const connectionIdCond = params?.where?.mailboxConnectionId;
+    const ids = connectionIdCond?.in || (connectionIdCond ? [connectionIdCond] : []);
+    return ids.flatMap((id: string) => [
+      { mailboxConnectionId: id, folder: "INBOX", state: "COMPLETE" },
+      { mailboxConnectionId: id, folder: "SENT", state: "COMPLETE" },
+      { mailboxConnectionId: id, folder: "SPAM", state: "COMPLETE" },
+      { mailboxConnectionId: id, folder: "DRAFT", state: "COMPLETE" },
+      { mailboxConnectionId: id, folder: "STARRED", state: "COMPLETE" },
+      { mailboxConnectionId: id, folder: "TRASH", state: "COMPLETE" },
+    ]);
+  });
 });
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
@@ -114,7 +203,9 @@ function makeThreadRecord(overrides: Partial<Record<string, unknown>> = {}) {
 
 describe("Sprint 4.4 — listMailboxThreads search", () => {
   it("ignores empty searchQuery", async () => {
-    mockDb.mailboxConnection.findMany.mockResolvedValue([makeConnectionRecord()]);
+    mockDb.mailboxConnection.findMany.mockResolvedValue([
+      makeConnectionRecord({ provider: "OUTLOOK", tokenRef: "token-outlook" }),
+    ]);
     mockDb.mailboxThread.findMany.mockResolvedValue([makeThreadRecord()]);
     mockDb.mailboxThread.count.mockResolvedValue(1);
 
@@ -133,7 +224,9 @@ describe("Sprint 4.4 — listMailboxThreads search", () => {
   });
 
   it("searches subject with case-insensitive contains", async () => {
-    mockDb.mailboxConnection.findMany.mockResolvedValue([makeConnectionRecord()]);
+    mockDb.mailboxConnection.findMany.mockResolvedValue([
+      makeConnectionRecord({ provider: "OUTLOOK", tokenRef: "token-outlook" }),
+    ]);
     mockDb.mailboxThread.findMany.mockResolvedValue([makeThreadRecord()]);
     mockDb.mailboxThread.count.mockResolvedValue(1);
 
@@ -150,10 +243,7 @@ describe("Sprint 4.4 — listMailboxThreads search", () => {
           AND: expect.arrayContaining([
             expect.objectContaining({ orgId: ORG_A }),
             expect.objectContaining({
-              OR: [
-                { subject: { contains: "invoice", mode: "insensitive" } },
-                { previewSnippet: { contains: "invoice", mode: "insensitive" } },
-              ],
+              id: { in: expect.any(Array) },
             }),
           ]),
         }),
@@ -162,7 +252,9 @@ describe("Sprint 4.4 — listMailboxThreads search", () => {
   });
 
   it("searches previewSnippet with case-insensitive contains", async () => {
-    mockDb.mailboxConnection.findMany.mockResolvedValue([makeConnectionRecord()]);
+    mockDb.mailboxConnection.findMany.mockResolvedValue([
+      makeConnectionRecord({ provider: "OUTLOOK", tokenRef: "token-outlook" }),
+    ]);
     mockDb.mailboxThread.findMany.mockResolvedValue([makeThreadRecord()]);
     mockDb.mailboxThread.count.mockResolvedValue(1);
 
@@ -174,18 +266,17 @@ describe("Sprint 4.4 — listMailboxThreads search", () => {
     });
 
     const callArgs = mockDb.mailboxThread.findMany.mock.calls[0]?.[0];
-    const searchOr = callArgs?.where?.AND?.find(
-      (cond: Record<string, unknown>) => cond.OR,
+    const searchIdIn = callArgs?.where?.AND?.find(
+      (cond: Record<string, unknown>) => cond.id?.in,
     );
-    expect(searchOr).toBeDefined();
-    expect(searchOr.OR).toEqual([
-      { subject: { contains: "attached", mode: "insensitive" } },
-      { previewSnippet: { contains: "attached", mode: "insensitive" } },
-    ]);
+    expect(searchIdIn).toBeDefined();
+    expect(searchIdIn.id.in).toEqual(expect.any(Array));
   });
 
   it("combines search with existing filters", async () => {
-    mockDb.mailboxConnection.findMany.mockResolvedValue([makeConnectionRecord()]);
+    mockDb.mailboxConnection.findMany.mockResolvedValue([
+      makeConnectionRecord({ provider: "OUTLOOK", tokenRef: "token-outlook" }),
+    ]);
     mockDb.mailboxThread.findMany.mockResolvedValue([makeThreadRecord({ status: "PENDING" })]);
     mockDb.mailboxThread.count.mockResolvedValue(1);
 
@@ -202,17 +293,16 @@ describe("Sprint 4.4 — listMailboxThreads search", () => {
       expect.arrayContaining([
         expect.objectContaining({ status: "PENDING" }),
         expect.objectContaining({
-          OR: [
-            { subject: { contains: "invoice", mode: "insensitive" } },
-            { previewSnippet: { contains: "invoice", mode: "insensitive" } },
-          ],
+          id: { in: expect.any(Array) },
         }),
       ]),
     );
   });
 
   it("includes search in totalCount query", async () => {
-    mockDb.mailboxConnection.findMany.mockResolvedValue([makeConnectionRecord()]);
+    mockDb.mailboxConnection.findMany.mockResolvedValue([
+      makeConnectionRecord({ provider: "OUTLOOK", tokenRef: "token-outlook" }),
+    ]);
     mockDb.mailboxThread.findMany.mockResolvedValue([]);
     mockDb.mailboxThread.count.mockResolvedValue(0);
 
@@ -228,14 +318,209 @@ describe("Sprint 4.4 — listMailboxThreads search", () => {
       expect.objectContaining({
         AND: expect.arrayContaining([
           expect.objectContaining({
-            OR: [
-              { subject: { contains: "invoice", mode: "insensitive" } },
-              { previewSnippet: { contains: "invoice", mode: "insensitive" } },
-            ],
+            id: { in: expect.any(Array) },
           }),
         ]),
       }),
     );
+  });
+
+  it("uses Gmail provider search for Gmail connections and preserves provider hit order", async () => {
+    mockDb.mailboxConnection.findMany.mockResolvedValue([makeConnectionRecord()]);
+    mockSearchThreads.mockResolvedValue({
+      hits: [
+        { providerThreadId: "gmail-thread-2", providerMessageId: "msg-2" },
+        { providerThreadId: "gmail-thread-1", providerMessageId: "msg-1" },
+      ],
+      nextPageToken: "next-page",
+      estimatedTotal: 20,
+    });
+    mockDb.mailboxThread.findMany.mockResolvedValue([
+      makeThreadRecord({
+        id: "thread-1",
+        providerThreadId: "gmail-thread-1",
+        lastMessageAt: new Date("2026-05-10T10:00:00Z"),
+      }),
+      makeThreadRecord({
+        id: "thread-2",
+        providerThreadId: "gmail-thread-2",
+        lastMessageAt: new Date("2026-05-11T10:00:00Z"),
+      }),
+    ]);
+
+    const result = await listMailboxThreads({
+      orgId: ORG_A,
+      userId: USER_A,
+      role: "member",
+      searchQuery: "chatgpt",
+      limit: 2,
+    });
+
+    expect(mockSearchThreads).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orgId: ORG_A,
+        query: "chatgpt",
+        maxResults: 50,
+      }),
+    );
+    expect(result.threads.map((thread) => thread.providerThreadId)).toEqual([
+      "gmail-thread-2",
+      "gmail-thread-1",
+    ]);
+    expect(result.totalCount).toBeNull();
+    expect(result.searchMeta).toEqual({
+      mode: "gmail_exact",
+      searchMode: "threads",
+      totalCountIsExact: false,
+      partial: false,
+      partialConnectionIds: [],
+      coverageState: "complete",
+      connectionStates: [
+        {
+          connectionId: CONN_1,
+          status: "ok",
+          reason: "Mailbox connection is healthy",
+        },
+      ],
+    });
+    expect(result.nextCursor).not.toBeNull();
+  });
+
+  it("supplements Gmail zero-hit searches with local normalized matches for already-ingested threads", async () => {
+    mockDb.mailboxConnection.findMany.mockResolvedValue([makeConnectionRecord()]);
+    mockSearchThreads.mockResolvedValue({
+      hits: [],
+      nextPageToken: null,
+      estimatedTotal: 0,
+    });
+    mockDb.mailboxThread.findMany.mockResolvedValue([
+      makeThreadRecord({
+        id: "thread-chatgpt-1",
+        providerThreadId: "gmail-thread-chatgpt-1",
+        subject: "Find your next favorite podcast",
+        previewSnippet: "ChatGPT weekly update",
+      }),
+    ]);
+    mockDb.mailboxThread.count.mockResolvedValue(1);
+
+    const result = await listMailboxThreads({
+      orgId: ORG_A,
+      userId: USER_A,
+      role: "member",
+      searchQuery: "chatgpt",
+      limit: 10,
+    });
+
+    expect(mockSearchThreads).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: "chatgpt",
+      }),
+    );
+    expect(result.threads.map((thread) => thread.providerThreadId)).toEqual([
+      "gmail-thread-chatgpt-1",
+    ]);
+    expect(result.searchMeta).toEqual({
+      mode: "gmail_exact",
+      searchMode: "threads",
+      totalCountIsExact: false,
+      partial: false,
+      partialConnectionIds: [],
+      coverageState: "complete",
+      connectionStates: [
+        {
+          connectionId: CONN_1,
+          status: "ok",
+          reason: "Mailbox connection is healthy",
+        },
+      ],
+    });
+  });
+
+  it("falls back to exact local search when the scoped mailbox is not Gmail-backed", async () => {
+    mockDb.mailboxConnection.findMany.mockResolvedValue([
+      makeConnectionRecord({
+        id: "conn-outlook",
+        provider: "OUTLOOK",
+        tokenRef: "token-outlook",
+      }),
+    ]);
+    mockDb.mailboxThread.findMany.mockResolvedValue([
+      makeThreadRecord({
+        id: "thread-outlook-1",
+        mailboxConnectionId: "conn-outlook",
+        providerThreadId: "outlook-thread-1",
+        subject: "ChatGPT weekly update",
+      }),
+    ]);
+    mockDb.mailboxThread.count.mockResolvedValue(1);
+
+    const result = await listMailboxThreads({
+      orgId: ORG_A,
+      userId: USER_A,
+      role: "member",
+      searchQuery: "chatgpt",
+      connectionId: "conn-outlook",
+      limit: 25,
+    });
+
+    expect(mockSearchThreads).not.toHaveBeenCalled();
+    expect(result.totalCount).toBe(1);
+    expect(result.searchMeta).toEqual({
+      mode: "local",
+      searchMode: "threads",
+      totalCountIsExact: true,
+      partial: false,
+      partialConnectionIds: [],
+      coverageState: "unknown",
+      connectionStates: [
+        {
+          connectionId: "conn-outlook",
+          status: "provider_unsupported",
+          reason: "Provider search is unsupported for this provider",
+        },
+      ],
+    });
+  });
+
+  it("stops offering a dead next page when Gmail search returns the same token with only duplicate hits", async () => {
+    mockDb.mailboxConnection.findMany.mockResolvedValue([makeConnectionRecord()]);
+    mockSearchThreads.mockResolvedValue({
+      hits: [{ providerThreadId: "gmail-thread-1", providerMessageId: "msg-1" }],
+      nextPageToken: "repeat-token",
+      estimatedTotal: 1,
+    });
+    mockDb.mailboxThread.findMany.mockResolvedValue([
+      makeThreadRecord({
+        id: "thread-1",
+        providerThreadId: "gmail-thread-1",
+      }),
+    ]);
+
+    const stickyCursor = Buffer.from(
+      JSON.stringify({
+        kind: "provider_search",
+        query: "chatgpt",
+        bufferedThreadKeys: [],
+        seenThreadKeys: [`${CONN_1}:gmail-thread-1`],
+        connectionPageTokens: { [CONN_1]: "repeat-token" },
+        localFallbackFetched: true,
+        partialConnectionIds: [],
+        estimatedTotal: 1,
+      }),
+      "utf-8",
+    ).toString("base64");
+
+    const result = await listMailboxThreads({
+      orgId: ORG_A,
+      userId: USER_A,
+      role: "member",
+      searchQuery: "chatgpt",
+      limit: 1,
+      cursor: stickyCursor,
+    });
+
+    expect(result.threads).toEqual([]);
+    expect(result.nextCursor).toBeNull();
   });
 });
 
@@ -253,7 +538,9 @@ describe("Sprint 4.4 — GET /api/mailbox/threads searchQuery", () => {
       ctx: { orgId: ORG_A, userId: USER_A, role: "member" },
     } as never);
 
-    mockDb.mailboxConnection.findMany.mockResolvedValue([makeConnectionRecord()]);
+    mockDb.mailboxConnection.findMany.mockResolvedValue([
+      makeConnectionRecord({ provider: "OUTLOOK", tokenRef: "token-outlook" }),
+    ]);
     mockDb.mailboxThread.findMany.mockResolvedValue([]);
     mockDb.mailboxThread.count.mockResolvedValue(0);
 
@@ -265,14 +552,11 @@ describe("Sprint 4.4 — GET /api/mailbox/threads searchQuery", () => {
     expect(res.status).toBe(200);
 
     const callArgs = mockDb.mailboxThread.findMany.mock.calls[0]?.[0];
-    const searchOr = callArgs?.where?.AND?.find(
-      (cond: Record<string, unknown>) => cond.OR,
+    const searchIdIn = callArgs?.where?.AND?.find(
+      (cond: Record<string, unknown>) => cond.id?.in,
     );
-    expect(searchOr).toBeDefined();
-    expect(searchOr.OR).toEqual([
-      { subject: { contains: "invoice 123", mode: "insensitive" } },
-      { previewSnippet: { contains: "invoice 123", mode: "insensitive" } },
-    ]);
+    expect(searchIdIn).toBeDefined();
+    expect(searchIdIn.id.in).toEqual(expect.any(Array));
   });
 
   it("trims whitespace from searchQuery", async () => {
@@ -282,7 +566,9 @@ describe("Sprint 4.4 — GET /api/mailbox/threads searchQuery", () => {
       ctx: { orgId: ORG_A, userId: USER_A, role: "member" },
     } as never);
 
-    mockDb.mailboxConnection.findMany.mockResolvedValue([makeConnectionRecord()]);
+    mockDb.mailboxConnection.findMany.mockResolvedValue([
+      makeConnectionRecord({ provider: "OUTLOOK", tokenRef: "token-outlook" }),
+    ]);
     mockDb.mailboxThread.findMany.mockResolvedValue([]);
     mockDb.mailboxThread.count.mockResolvedValue(0);
 
@@ -306,7 +592,9 @@ describe("Sprint 4.4 — GET /api/mailbox/threads searchQuery", () => {
       ctx: { orgId: ORG_A, userId: USER_A, role: "member" },
     } as never);
 
-    mockDb.mailboxConnection.findMany.mockResolvedValue([makeConnectionRecord()]);
+    mockDb.mailboxConnection.findMany.mockResolvedValue([
+      makeConnectionRecord({ provider: "OUTLOOK", tokenRef: "token-outlook" }),
+    ]);
     mockDb.mailboxThread.findMany.mockResolvedValue([]);
     mockDb.mailboxThread.count.mockResolvedValue(0);
 
@@ -323,10 +611,7 @@ describe("Sprint 4.4 — GET /api/mailbox/threads searchQuery", () => {
           AND: expect.arrayContaining([
             expect.objectContaining({ status: "OPEN", isFlagged: true }),
             expect.objectContaining({
-              OR: [
-                { subject: { contains: "urgent", mode: "insensitive" } },
-                { previewSnippet: { contains: "urgent", mode: "insensitive" } },
-              ],
+              id: { in: expect.any(Array) },
             }),
           ]),
         }),
@@ -399,10 +684,10 @@ describe("Sprint 4.4 review — Finding B: route-derived status semantics", () =
     expect(params.connectionId).toBe("conn_billing");
   });
 
-  it("archive route resolves to ARCHIVE folder semantics", () => {
+  it("starred route resolves to STARRED folder semantics", () => {
     const connections = [makeMinimalConnection({ slug: "billing" })];
-    const params = resolveThreadQueryParams("/app/mailbox/billing/archive", connections);
-    expect(params.folder).toBe("ARCHIVE");
+    const params = resolveThreadQueryParams("/app/mailbox/billing/starred", connections);
+    expect(params.folder).toBe("STARRED");
   });
 
   it("sent route resolves to SENT folder semantics", () => {

@@ -30,6 +30,10 @@ export function ModernEdgeInvoiceTemplate({
     document.visibility.showBankDetails &&
     (document.bankName || document.bankAccountNumber || document.bankIfsc);
 
+  const showUpi =
+    document.visibility.showUpiDetails &&
+    (document.upiId || document.upiQrDataUrl);
+
   return (
     <div className="flex text-[var(--voucher-ink)]">
       {/* Left accent sidebar */}
@@ -56,6 +60,7 @@ export function ModernEdgeInvoiceTemplate({
               />
               <div>
                 <h2 className="text-2xl font-bold leading-tight tracking-tight">
+                  {document.branding.salutation ? document.branding.salutation + " " : ""}
                   {document.branding.companyName}
                 </h2>
                 <p className="mt-0.5 text-xs tracking-wide text-[rgba(29,23,16,0.4)]">
@@ -91,15 +96,18 @@ export function ModernEdgeInvoiceTemplate({
               From
             </p>
             <div className="mt-3 space-y-1 text-sm leading-6 text-[rgba(29,23,16,0.72)]">
-              <p className="font-medium text-[var(--voucher-ink)]">{document.branding.companyName}</p>
+              <p className="font-medium text-[var(--voucher-ink)]">
+                {document.branding.salutation ? document.branding.salutation + " " : ""}
+                {document.branding.companyName}
+              </p>
               {document.visibility.showAddress && document.branding.address ? (
-                <p>{document.branding.address}</p>
+                <p className="whitespace-pre-line">{document.branding.address}</p>
               ) : null}
               {document.visibility.showEmail && document.branding.email ? (
-                <p>{document.branding.email}</p>
+                <p>Email: {document.branding.email}</p>
               ) : null}
               {document.visibility.showPhone && document.branding.phone ? (
-                <p>{document.branding.phone}</p>
+                <p>Phone: {document.branding.phone}</p>
               ) : null}
               {document.website ? <p>{document.website}</p> : null}
               {document.businessTaxId ? <p>GSTIN: {document.businessTaxId}</p> : null}
@@ -114,8 +122,8 @@ export function ModernEdgeInvoiceTemplate({
               Bill To
             </p>
             <div className="mt-3 space-y-1 text-sm leading-6 text-[rgba(29,23,16,0.72)]">
-              <p className="font-medium text-[var(--voucher-ink)]">{document.clientName}</p>
-              {document.clientAddress ? <p>{document.clientAddress}</p> : null}
+              <p className="font-medium text-[var(--voucher-ink)]">{document.clientSalutation ? document.clientSalutation + " " : ""}{document.clientName}</p>
+              {document.clientAddress ? <p className="whitespace-pre-line">{document.clientAddress}</p> : null}
               {document.clientEmail ? <p>{document.clientEmail}</p> : null}
               {document.clientPhone ? <p>{document.clientPhone}</p> : null}
               {document.clientTaxId ? <p>Tax ID: {document.clientTaxId}</p> : null}
@@ -137,12 +145,12 @@ export function ModernEdgeInvoiceTemplate({
           >
             <div>
               <p className="text-xs font-medium uppercase tracking-[0.2em] text-white">
-                Balance Due
+                Net Amount Payable
               </p>
               <p className="mt-1 text-3xl font-bold tracking-tight text-white">{document.balanceDueFormatted}</p>
             </div>
             <div className="ml-auto text-right text-sm leading-6 text-white">
-              <p className="text-white">{document.amountInWords}</p>
+              <p className="text-white">*{document.amountInWords}</p>
             </div>
           </div>
 
@@ -169,7 +177,7 @@ export function ModernEdgeInvoiceTemplate({
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[rgba(29,23,16,0.4)]">
               Ship To
             </p>
-            <p className="mt-1.5 text-sm leading-6 text-[rgba(29,23,16,0.72)]">
+            <p className="mt-2 text-sm leading-6 text-[rgba(29,23,16,0.7)] whitespace-pre-line">
               {document.shippingAddress}
             </p>
           </section>
@@ -254,7 +262,7 @@ export function ModernEdgeInvoiceTemplate({
             {document.terms ? (
               <div className="document-break-inside-avoid">
                 <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[rgba(29,23,16,0.4)]">
-                  Terms &amp; Conditions
+                  Terms &amp; Conditions*
                 </p>
                 <p className="mt-2 text-sm leading-6 text-[rgba(29,23,16,0.7)]">{document.terms}</p>
               </div>
@@ -297,10 +305,12 @@ export function ModernEdgeInvoiceTemplate({
 
             {document.visibility.showPaymentSummary ? (
               <div className="mt-3 space-y-1.5 border-t border-[rgba(29,23,16,0.1)] pt-3 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-[rgba(29,23,16,0.55)]">Amount Paid</span>
-                  <span>{document.amountPaidFormatted}</span>
-                </div>
+                {document.amountPaid > 0 ? (
+                  <div className="flex justify-between">
+                    <span className="text-[rgba(29,23,16,0.55)]">Amount Paid</span>
+                    <span>{document.amountPaidFormatted}</span>
+                  </div>
+                ) : null}
                 <div className="flex justify-between font-bold" style={{ color: "var(--voucher-accent)" }}>
                   <span>Due</span>
                   <span className="text-lg">{document.balanceDueFormatted}</span>
@@ -311,36 +321,66 @@ export function ModernEdgeInvoiceTemplate({
         </section>
 
         {/* ── Bank Details & Signature ── */}
-        {showBank || (document.visibility.showSignature && document.authorizedBy) ? (
+        {showBank || showUpi || (document.visibility.showSignature && (document.authorizedBy || document.authorizedByDesignation || document.authorizedByCompany)) ? (
           <section
             className={cn(
               "document-break-inside-avoid grid border-t border-[rgba(29,23,16,0.1)] pt-5",
               printLike ? "grid-cols-2 gap-8" : "gap-5 md:grid-cols-2 md:gap-8",
             )}
           >
-            {showBank ? (
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[rgba(29,23,16,0.4)]">
-                  Payment Details
-                </p>
-                <div className="mt-2 space-y-1 text-sm leading-5 text-[rgba(29,23,16,0.72)]">
-                  {document.bankName ? <p>{document.bankName}</p> : null}
-                  {document.bankAccountNumber ? <p>A/C: {document.bankAccountNumber}</p> : null}
-                  {document.bankIfsc ? <p>IFSC: {document.bankIfsc}</p> : null}
-                </div>
+            {showBank || showUpi ? (
+              <div className="space-y-4">
+                {showBank ? (
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[rgba(29,23,16,0.4)]">
+                      Payment Details
+                    </p>
+                    <div className="mt-2 space-y-1 text-sm leading-5 text-[rgba(29,23,16,0.72)]">
+                      {document.bankName ? <p>{document.bankName}</p> : null}
+                      {document.bankAccountNumber ? <p>A/C: {document.bankAccountNumber}</p> : null}
+                      {document.bankIfsc ? <p>IFSC: {document.bankIfsc}</p> : null}
+                    </div>
+                  </div>
+                ) : null}
+                {showUpi ? (
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[rgba(29,23,16,0.4)]">
+                      UPI Details
+                    </p>
+                    <div className="mt-2 flex items-center gap-4">
+                      {document.upiQrDataUrl ? (
+                        <img
+                          src={document.upiQrDataUrl}
+                          alt="UPI QR Code"
+                          className="h-16 w-16 rounded border border-[rgba(29,23,16,0.1)] object-contain p-0.5 bg-white shrink-0"
+                        />
+                      ) : null}
+                      {document.upiId ? (
+                        <div>
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-[rgba(29,23,16,0.45)]">UPI ID</p>
+                          <p className="text-sm font-semibold text-[rgba(29,23,16,0.9)] mt-0.5">{document.upiId}</p>
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : null}
               </div>
             ) : (
               <div />
             )}
 
-            {document.visibility.showSignature && document.authorizedBy ? (
+            {document.visibility.showSignature && (document.authorizedBy || document.authorizedByDesignation || document.authorizedByCompany) ? (
               <div className="text-right">
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[rgba(29,23,16,0.4)]">
-                  Authorized By
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[rgba(29,23,16,0.45)]">
+                  Approved By
                 </p>
-                <p className="mt-8 text-sm font-medium">{document.authorizedBy}</p>
+                <div className="mt-8 inline-block text-right">
+                  {document.authorizedBy && <p className="text-sm font-semibold text-[rgba(29,23,16,0.85)] text-right">{document.authorizedBy}</p>}
+                  {document.authorizedByDesignation && <p className="text-sm text-[rgba(29,23,16,0.72)] mt-0.5 text-right">{document.authorizedByDesignation}</p>}
+                  {document.authorizedByCompany && <p className="text-sm text-[rgba(29,23,16,0.72)] mt-0.5 text-right">{document.authorizedByCompany}</p>}
+                </div>
                 <div
-                  className="mx-auto mt-1 h-0.5 w-32 rounded-full"
+                  className="mx-auto mt-1.5 h-0.5 w-32 rounded-full"
                   style={{ backgroundColor: "var(--voucher-accent)", marginLeft: "auto" }}
                 />
               </div>
@@ -395,9 +435,14 @@ function ModernEdgeEditor({ document }: { document: InvoiceDocument }) {
                 imageClassName="h-full w-full rounded-lg object-cover"
               />
               <div>
-                <h2 className="text-2xl font-bold leading-tight tracking-tight">
-                  <InlineTextField name="branding.companyName" className="text-2xl font-bold leading-tight tracking-tight" />
-                </h2>
+                <div className="flex items-baseline gap-1">
+                  {document.branding.salutation ? (
+                    <span className="text-lg font-bold tracking-tight text-[rgba(29,23,16,0.55)] shrink-0">
+                      {document.branding.salutation}
+                    </span>
+                  ) : null}
+                  <InlineTextField name="branding.companyName" className="text-2xl font-bold leading-tight tracking-tight flex-1" />
+                </div>
                 <p className="mt-0.5 text-xs tracking-wide text-[rgba(29,23,16,0.4)]">
                   {document.title}
                 </p>
@@ -426,10 +471,23 @@ function ModernEdgeEditor({ document }: { document: InvoiceDocument }) {
               From
             </p>
             <div className="mt-3 space-y-1 text-sm leading-6 text-[rgba(29,23,16,0.72)]">
-              <InlineTextField name="branding.companyName" className="font-medium text-[var(--voucher-ink)]" />
+              <div className="flex items-baseline gap-1">
+                {document.branding.salutation ? (
+                  <span className="text-xs font-semibold text-[rgba(29,23,16,0.55)] shrink-0">
+                    {document.branding.salutation}
+                  </span>
+                ) : null}
+                <InlineTextField name="branding.companyName" className="font-medium text-[var(--voucher-ink)] flex-1" />
+              </div>
               <InlineTextArea name="branding.address" placeholder="Business address" />
-              <InlineTextField name="branding.email" placeholder="Business email" />
-              <InlineTextField name="branding.phone" placeholder="Business phone" />
+              <div className="flex items-center gap-1.5 text-sm leading-6 text-[rgba(29,23,16,0.72)]">
+                <span className="opacity-70 text-xs shrink-0">Email:</span>
+                <InlineTextField name="branding.email" placeholder="Business email" />
+              </div>
+              <div className="flex items-center gap-1.5 text-sm leading-6 text-[rgba(29,23,16,0.72)]">
+                <span className="opacity-70 text-xs shrink-0">Phone:</span>
+                <InlineTextField name="branding.phone" placeholder="Business phone" />
+              </div>
               <InlineTextField name="website" placeholder="Website" />
               <InlineTextField name="businessTaxId" placeholder="Tax ID / GSTIN" />
             </div>
@@ -443,6 +501,7 @@ function ModernEdgeEditor({ document }: { document: InvoiceDocument }) {
               Bill To
             </p>
             <div className="mt-3 space-y-1 text-sm leading-6 text-[rgba(29,23,16,0.72)]">
+              <InlineTextField name="clientSalutation" placeholder="" className="text-sm font-medium text-[rgba(29,23,16,0.45)] w-16" />
               <InlineTextField name="clientName" className="font-medium text-[var(--voucher-ink)]" placeholder="Client name" />
               <InlineTextArea name="clientAddress" placeholder="Client address" />
               <InlineTextField name="clientEmail" placeholder="Client email" />
@@ -461,12 +520,12 @@ function ModernEdgeEditor({ document }: { document: InvoiceDocument }) {
           >
             <div>
               <p className="text-xs font-medium uppercase tracking-[0.2em] text-white">
-                Balance Due
+                Net Amount Payable
               </p>
               <p className="mt-1 text-3xl font-bold tracking-tight text-white">{doc.balanceDueFormatted}</p>
             </div>
             <div className="ml-auto text-right text-sm leading-6 text-white">
-              <p className="text-white">{doc.amountInWords}</p>
+              <p className="text-white">*{doc.amountInWords}</p>
             </div>
           </div>
 
@@ -484,12 +543,14 @@ function ModernEdgeEditor({ document }: { document: InvoiceDocument }) {
         </section>
 
         {/* ── Shipping ── */}
-        <section className="document-break-inside-avoid">
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[rgba(29,23,16,0.4)]">
-            Ship To
-          </p>
-          <InlineTextArea name="shippingAddress" className="mt-1.5 text-sm leading-6 text-[rgba(29,23,16,0.72)]" placeholder="Shipping address" />
-        </section>
+        {doc.visibility.showShippingAddress ? (
+          <section className="document-break-inside-avoid">
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[rgba(29,23,16,0.4)]">
+              Ship To
+            </p>
+            <InlineTextArea name="shippingAddress" className="mt-1.5 text-sm leading-6 text-[rgba(29,23,16,0.72)]" placeholder="Shipping address" />
+          </section>
+        ) : null}
 
         {/* ── Line Items — editorial sub-row style ── */}
         <section>
@@ -543,7 +604,7 @@ function ModernEdgeEditor({ document }: { document: InvoiceDocument }) {
             </div>
             <div className="document-break-inside-avoid">
               <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[rgba(29,23,16,0.4)]">
-                Terms &amp; Conditions
+                Terms &amp; Conditions*
               </p>
               <InlineTextArea name="terms" className="mt-2 text-sm leading-6 text-[rgba(29,23,16,0.7)]" placeholder="Terms & conditions" />
             </div>
@@ -585,10 +646,12 @@ function ModernEdgeEditor({ document }: { document: InvoiceDocument }) {
 
             {doc.visibility.showPaymentSummary ? (
               <div className="mt-3 space-y-1.5 border-t border-[rgba(29,23,16,0.1)] pt-3 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-[rgba(29,23,16,0.55)]">Amount Paid</span>
-                  <span>{doc.amountPaidFormatted}</span>
-                </div>
+                {doc.amountPaid > 0 ? (
+                  <div className="flex justify-between">
+                    <span className="text-[rgba(29,23,16,0.55)]">Amount Paid</span>
+                    <span>{doc.amountPaidFormatted}</span>
+                  </div>
+                ) : null}
                 <div className="flex justify-between font-bold" style={{ color: "var(--voucher-accent)" }}>
                   <span>Due</span>
                   <span className="text-lg">{doc.balanceDueFormatted}</span>
@@ -600,24 +663,57 @@ function ModernEdgeEditor({ document }: { document: InvoiceDocument }) {
 
         {/* ── Bank Details & Signature ── */}
         <section className="document-break-inside-avoid grid gap-5 border-t border-[rgba(29,23,16,0.1)] pt-5 md:grid-cols-2 md:gap-8">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[rgba(29,23,16,0.4)]">
-              Payment Details
-            </p>
-            <div className="mt-2 space-y-1 text-sm leading-5 text-[rgba(29,23,16,0.72)]">
-              <InlineTextField name="bankName" placeholder="Bank name" />
-              <InlineTextField name="bankAccountNumber" placeholder="Account number" />
-              <InlineTextField name="bankIfsc" placeholder="IFSC code" />
-            </div>
+          <div className="space-y-4">
+            {doc.visibility.showBankDetails ? (
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[rgba(29,23,16,0.4)]">
+                  Payment Details
+                </p>
+                <div className="mt-2 space-y-1 text-sm leading-5 text-[rgba(29,23,16,0.72)]">
+                  <InlineTextField name="bankName" placeholder="Bank name" />
+                  <InlineTextField name="bankAccountNumber" placeholder="Account number" />
+                  <InlineTextField name="bankIfsc" placeholder="IFSC code" />
+                </div>
+              </div>
+            ) : null}
+
+            {doc.visibility.showUpiDetails ? (
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[rgba(29,23,16,0.4)]">
+                  UPI Details
+                </p>
+                <div className="mt-2 flex items-center gap-4">
+                  {doc.upiQrDataUrl ? (
+                    <img
+                      src={doc.upiQrDataUrl}
+                      alt="UPI QR Code"
+                      className="h-16 w-16 rounded border border-[rgba(29,23,16,0.1)] object-contain p-0.5 bg-white shrink-0"
+                    />
+                  ) : null}
+                  <div className="flex-1">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-[rgba(29,23,16,0.45)]">UPI ID</p>
+                    <InlineTextField
+                      name="upiId"
+                      placeholder="UPI ID (merchant@ybl)"
+                      className="text-sm font-semibold text-[rgba(29,23,16,0.9)] mt-0.5"
+                    />
+                  </div>
+                </div>
+              </div>
+            ) : null}
           </div>
 
           <div className="text-right">
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[rgba(29,23,16,0.4)]">
-              Authorized By
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[rgba(29,23,16,0.45)]">
+              Approved By
             </p>
-            <InlineTextField name="authorizedBy" className="mt-8 text-sm font-medium" placeholder="Authorized by" />
+            <div className="mt-8 inline-block min-w-[140px] text-right">
+              <InlineTextField name="authorizedBy" className="text-sm font-semibold text-right text-[rgba(29,23,16,0.85)]" placeholder="Name" />
+              <InlineTextField name="authorizedByDesignation" className="text-sm text-[rgba(29,23,16,0.72)] mt-0.5 text-right" placeholder="Designation" />
+              <InlineTextField name="authorizedByCompany" className="text-sm text-[rgba(29,23,16,0.72)] mt-0.5 text-right" placeholder="Company Name" />
+            </div>
             <div
-              className="mx-auto mt-1 h-0.5 w-32 rounded-full"
+              className="mx-auto mt-1.5 h-0.5 w-32 rounded-full"
               style={{ backgroundColor: "var(--voucher-accent)", marginLeft: "auto" }}
             />
           </div>

@@ -27,7 +27,7 @@ export function FormalBorderedVoucherTemplate({
 
   const printLikeMode = mode !== "preview";
 
-  const rows: { label: string; value: string }[] = [
+  const rows: { label: string; value: React.ReactNode }[] = [
     { label: "Voucher No.", value: document.voucherNumber },
     { label: "Date", value: document.date },
     { label: document.counterpartyLabel, value: document.counterpartyName },
@@ -43,6 +43,23 @@ export function FormalBorderedVoucherTemplate({
     rows.push({ label: "Reference No.", value: document.referenceNumber });
   }
   rows.push({ label: "Purpose", value: document.purpose });
+  if (document.visibility.showUpiDetails && (document.upiId || document.upiQrDataUrl)) {
+    rows.push({
+      label: "UPI Details",
+      value: (
+        <div className="flex items-center gap-4 text-sm font-medium">
+          {document.upiId ? <span>ID: {document.upiId}</span> : null}
+          {document.upiQrDataUrl ? (
+            <img
+              src={document.upiQrDataUrl}
+              alt="UPI QR Code"
+              className="h-10 w-10 rounded border border-[rgba(29,23,16,0.1)] object-contain p-0.5 bg-white"
+            />
+          ) : null}
+        </div>
+      )
+    });
+  }
   if (document.visibility.showNotes && document.notes) {
     rows.push({ label: "Notes", value: document.notes });
   }
@@ -75,7 +92,7 @@ export function FormalBorderedVoucherTemplate({
           {/* Company details row */}
           <div className="flex flex-wrap items-center gap-x-6 gap-y-1 border-b border-[rgba(29,23,16,0.2)] px-6 py-2 text-xs text-[rgba(29,23,16,0.6)]">
             {document.visibility.showAddress && document.branding.address ? (
-              <span>{document.branding.address}</span>
+              <span className="whitespace-pre-line">{document.branding.address}</span>
             ) : null}
             {document.visibility.showEmail && document.branding.email ? (
               <span>{document.branding.email}</span>
@@ -113,27 +130,29 @@ export function FormalBorderedVoucherTemplate({
             <div
               className={cn(
                 "document-break-inside-avoid grid border-t border-[rgba(29,23,16,0.35)]",
-                printLikeMode ? "grid-cols-2" : "md:grid-cols-2",
+                (!printLikeMode || (document.approvedBy && document.receivedBy))
+                  ? (printLikeMode ? "grid-cols-2" : "md:grid-cols-2")
+                  : "grid-cols-1",
               )}
             >
-              {document.visibility.showApprovedBy ? (
+              {document.visibility.showApprovedBy && (!printLikeMode || document.approvedBy) ? (
                 <div
                   className={cn(
                     "px-6 py-5",
                     printLikeMode
-                      ? "border-r border-[rgba(29,23,16,0.2)]"
+                      ? (document.receivedBy ? "border-r border-[rgba(29,23,16,0.2)]" : "")
                       : "md:border-r md:border-[rgba(29,23,16,0.2)]",
                   )}
                 >
                   <div className="mt-8 border-b border-dotted border-[rgba(29,23,16,0.4)]" />
                   <p className="mt-2 text-xs font-semibold uppercase tracking-[0.14em] text-[rgba(29,23,16,0.5)]">
                     {document.approvedBy
-                      ? `Approved by: ${document.approvedBy}`
-                      : "Approved by"}
+                      ? `Authorized by: ${document.approvedBy}`
+                      : "Authorized by"}
                   </p>
                 </div>
               ) : null}
-              {document.visibility.showReceivedBy ? (
+              {document.visibility.showReceivedBy && (!printLikeMode || document.receivedBy) ? (
                 <div className="px-6 py-5">
                   <div className="mt-8 border-b border-dotted border-[rgba(29,23,16,0.4)]" />
                   <p className="mt-2 text-xs font-semibold uppercase tracking-[0.14em] text-[rgba(29,23,16,0.5)]">
@@ -238,6 +257,21 @@ function FormalBorderedEditor() {
               <span className={labelClass}>Purpose</span>
               <InlineTextArea name="purpose" placeholder="Purpose of payment…" className="text-sm text-[rgba(29,23,16,0.85)]" />
             </div>
+            {doc.visibility.showUpiDetails ? (
+              <div className={rowClass(7)}>
+                <span className={labelClass}>UPI Details</span>
+                <div className="flex items-center gap-4">
+                  <InlineTextField name="upiId" placeholder="UPI ID (merchant@ybl)" className="text-sm text-[rgba(29,23,16,0.85)]" />
+                  {doc.upiQrDataUrl ? (
+                    <img
+                      src={doc.upiQrDataUrl}
+                      alt="UPI QR Code"
+                      className="h-8 w-8 rounded border border-[rgba(29,23,16,0.1)] object-contain p-0.5 bg-white"
+                    />
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
             {doc.visibility.showNotes ? (
               <div className={rowClass(7)}>
                 <span className={labelClass}>Notes</span>
@@ -253,7 +287,7 @@ function FormalBorderedEditor() {
                 <div className="px-6 py-5 md:border-r md:border-[rgba(29,23,16,0.2)]">
                   <div className="mt-8 border-b border-dotted border-[rgba(29,23,16,0.4)]" />
                   <div className="mt-2 flex items-center gap-1 text-xs font-semibold uppercase tracking-[0.14em] text-[rgba(29,23,16,0.5)]">
-                    <span className="shrink-0">Approved by:</span>
+                    <span className="shrink-0">Authorized by:</span>
                     <InlineTextField name="approvedBy" placeholder="Name" className="text-xs font-semibold uppercase tracking-[0.14em]" />
                   </div>
                 </div>

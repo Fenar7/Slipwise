@@ -1,5 +1,35 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, act } from "@testing-library/react";
 import VoucherPage from "@/app/voucher/page";
+import { WorkspaceTopBarProvider, useWorkspaceTopBar } from "@/components/layout/workspace-topbar-context";
+
+function VoucherActionsRenderer() {
+  const { actions } = useWorkspaceTopBar();
+  return (
+    <div>
+      {actions.map((action) => (
+        <button
+          key={action.id}
+          onClick={action.onClick}
+          disabled={action.disabled}
+        >
+          {action.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+const renderVoucherPage = () => {
+  return render(
+    <WorkspaceTopBarProvider>
+      <div>
+        <h1 className="text-lg font-bold">Voucher Generator</h1>
+        <VoucherActionsRenderer />
+        <VoucherPage />
+      </div>
+    </WorkspaceTopBarProvider>
+  );
+};
 
 describe("Voucher workspace", () => {
   afterEach(() => {
@@ -7,7 +37,7 @@ describe("Voucher workspace", () => {
   });
 
   it("renders the interactive voucher builder", () => {
-    render(<VoucherPage />);
+    renderVoucherPage();
 
     expect(
       screen.getByRole("heading", { name: "Voucher Generator", level: 1 }),
@@ -19,7 +49,7 @@ describe("Voucher workspace", () => {
   });
 
   it("updates the preview when the voucher type changes", () => {
-    render(<VoucherPage />);
+    renderVoucherPage();
 
     fireEvent.change(screen.getByLabelText(/voucher type/i), {
       target: { value: "receipt" },
@@ -30,7 +60,7 @@ describe("Voucher workspace", () => {
   });
 
   it("hides notes from the preview when the visibility toggle is disabled", () => {
-    render(<VoucherPage />);
+    renderVoucherPage();
 
     expect(
       screen.getByText("Settled after manager approval."),
@@ -48,16 +78,18 @@ describe("Voucher workspace", () => {
   });
 
   it("shows an error state when export validation fails", async () => {
-    render(<VoucherPage />);
+    renderVoucherPage();
 
     // Switch to Document view so inline edit fields are visible in jsdom
     // (preview is hidden by default on non-desktop viewports).
     const documentViewButtons = screen.getAllByRole("button", { name: /document/i });
     fireEvent.click(documentViewButtons[documentViewButtons.length - 1]);
 
-    // Counterparty field has placeholder "Name" and is the first such input
+    // Counterparty field has placeholder "Rahul Menon" and is the first such input
     // in the default payment voucher layout.
-    fireEvent.change(screen.getAllByPlaceholderText("Name")[0], {
+    // Use findAllByPlaceholderText to wait for the view-mode transition to complete.
+    const nameInputs = await screen.findAllByPlaceholderText("Rahul Menon");
+    fireEvent.change(nameInputs[0], {
       target: { value: "" },
     });
 

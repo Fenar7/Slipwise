@@ -2,6 +2,36 @@ import "server-only";
 
 import { db } from "@/lib/db";
 import type { MailboxSyncRunRecord } from "./domain-types";
+import { isSchemaDriftError } from "@/lib/prisma-errors";
+
+const MAILBOX_SYNC_MAX_RUNNING_AGE_MINUTES = 30;
+
+async function cleanStaleSyncRunsForConnections(
+  orgId: string,
+  connectionIds: string[],
+): Promise<void> {
+  if (!db.mailboxSyncRun || connectionIds.length === 0) return;
+  const cutoff = new Date(Date.now() - MAILBOX_SYNC_MAX_RUNNING_AGE_MINUTES * 60 * 1000);
+  try {
+    await db.mailboxSyncRun.updateMany({
+      where: {
+        orgId,
+        mailboxConnectionId: { in: connectionIds },
+        status: "RUNNING",
+        startedAt: { lt: cutoff },
+      },
+      data: {
+        status: "FAILED",
+        completedAt: new Date(),
+        errorCategory: "unknown",
+        errorSummary: "Sync run abandoned — did not complete within expected time",
+      },
+    });
+  } catch (error) {
+    if (isSchemaDriftError(error)) return;
+    throw error;
+  }
+}
 
 function toSyncRunRecord(
   row: {
@@ -64,30 +94,43 @@ export async function getMailboxSyncRunsByConnectionIds(
     return { latestRunByConnectionId, latestCompletedRunByConnectionId };
   }
 
-  const rows = await db.mailboxSyncRun.findMany({
-    where: {
-      orgId,
-      mailboxConnectionId: { in: connectionIds },
-    },
-    orderBy: { startedAt: "desc" },
-    select: {
-      id: true,
-      orgId: true,
-      mailboxConnectionId: true,
-      provider: true,
-      status: true,
-      triggerSource: true,
-      syncMode: true,
-      startedAt: true,
-      completedAt: true,
-      errorCategory: true,
-      errorSummary: true,
-      stats: true,
-      createdBy: true,
-      createdAt: true,
-      updatedAt: true,
-    },
-  });
+  await cleanStaleSyncRunsForConnections(orgId, connectionIds);
+
+  let rows: Awaited<ReturnType<typeof db.mailboxSyncRun.findMany>> = [];
+  try {
+    rows = await db.mailboxSyncRun.findMany({
+      where: {
+        orgId,
+        mailboxConnectionId: { in: connectionIds },
+      },
+      orderBy: { startedAt: "desc" },
+      select: {
+        id: true,
+        orgId: true,
+        mailboxConnectionId: true,
+        provider: true,
+        status: true,
+        triggerSource: true,
+        syncMode: true,
+        startedAt: true,
+        completedAt: true,
+        errorCategory: true,
+        errorSummary: true,
+        stats: true,
+        createdBy: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+  } catch (error) {
+    if (isSchemaDriftError(error)) {
+      console.warn(
+        "[mailbox] getMailboxSyncRunsByConnectionIds skipped: mailbox_sync_run schema drift — run prisma migrate deploy",
+      );
+      return { latestRunByConnectionId, latestCompletedRunByConnectionId };
+    }
+    throw error;
+  }
 
   for (const row of rows) {
     const mapped = toSyncRunRecord(row);

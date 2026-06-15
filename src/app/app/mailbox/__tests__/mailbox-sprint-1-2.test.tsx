@@ -4,6 +4,7 @@
  */
 import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import * as React from "react";
 
 vi.mock("next/navigation", () => ({
   usePathname: () => "/app/mailbox",
@@ -13,7 +14,7 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("../use-mailbox-query-sync", () => ({
   useMailboxQuerySync: () => {
-    const [filterState, setFilterState] = require("react").useState({ filters: [], searchQuery: "" });
+    const [filterState, setFilterState] = React.useState({ filters: [], searchQuery: "", searchMode: "threads" });
     return { filterState, setFilterState };
   },
 }));
@@ -44,6 +45,10 @@ vi.mock("../use-mailbox-threads", () => ({
     ],
     totalCount: 6,
     nextCursor: null,
+    messages: [],
+    searchMeta: null,
+    hasMore: false,
+    isLoadingMore: false,
     isLoading: false,
     error: null,
     refetch: vi.fn(),
@@ -280,6 +285,27 @@ describe("MailboxReadingPane", () => {
     render(<MailboxReadingPane detail={detail} />);
     const expandBtn = screen.getByRole("button", { name: /expand message/i });
     fireEvent.click(expandBtn);
+    expect(screen.getByText(/reminder that Invoice/i)).toBeInTheDocument();
+  });
+
+  it("expands and highlights the matched message when selectedMessageProviderId is provided", () => {
+    const matchedDetail = {
+      ...detail,
+      messages: detail.messages.map((message, index) => ({
+        ...message,
+        providerMessageId: index === 0 ? "provider-match-1" : "provider-match-2",
+      })),
+    };
+
+    render(
+      <MailboxReadingPane
+        detail={matchedDetail}
+        selectedMessageProviderId="provider-match-1"
+      />,
+    );
+
+    const matchedMessage = screen.getAllByText(/billing team/i)[0]?.closest("article");
+    expect(matchedMessage).toHaveAttribute("data-highlighted", "true");
     expect(screen.getByText(/reminder that Invoice/i)).toBeInTheDocument();
   });
 

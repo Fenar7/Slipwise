@@ -115,10 +115,10 @@ function mailboxFolders(connectionId: string, prefix: string): MailboxTreeItem[]
       mailboxConnectionId: connectionId,
     },
     {
-      id: `${connectionId}-archive`,
-      label: "Archive",
-      href: `/app/mailbox/${prefix}/archive`,
-      icon: "Archive",
+      id: `${connectionId}-starred`,
+      label: "Starred",
+      href: `/app/mailbox/${prefix}/starred`,
+      icon: "Star",
       mailboxConnectionId: connectionId,
     },
     {

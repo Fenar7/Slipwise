@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { invoiceExportRequestSchema } from "@/features/docs/invoice/schema";
+import { createInvoiceExportSession } from "@/features/docs/invoice/server/export-session-store";
 import { serializeExportPayload } from "@/lib/server/export-payload";
 
 export const runtime = "nodejs";
@@ -20,12 +21,21 @@ export async function POST(request: Request) {
       );
     }
 
-    const payload = encodeURIComponent(serializeExportPayload(parsed.data.document));
+    const document = parsed.data.document;
+
+    // Store document in the session store so the download URL stays short.
+    // This avoids URL-length failures when the document contains large data
+    // (e.g. a base64-encoded UPI QR code image).
+    const token = createInvoiceExportSession(document);
+
+    // Keep the payload path as a fallback for the print surface (it handles
+    // both token and payload) but use token-based URLs for pdf/png downloads.
+    const printPayload = encodeURIComponent(serializeExportPayload(document));
 
     return NextResponse.json({
-      printUrl: `/invoice/print?payload=${payload}&mode=print&autoprint=1`,
-      pdfUrl: `/api/export/invoice/download?payload=${payload}&format=pdf`,
-      pngUrl: `/api/export/invoice/download?payload=${payload}&format=png`,
+      printUrl: `/invoice/print?payload=${printPayload}&mode=print&autoprint=1`,
+      pdfUrl: `/api/export/invoice/download?token=${token}&format=pdf`,
+      pngUrl: `/api/export/invoice/download?token=${token}&format=png`,
     });
   } catch (error) {
     console.error("Invoice export session failed", error);

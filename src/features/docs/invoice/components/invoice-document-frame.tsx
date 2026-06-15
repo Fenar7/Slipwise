@@ -17,6 +17,9 @@ export function InvoiceDocumentFrame({
 }: InvoiceDocumentFrameProps) {
   const template = invoiceTemplateRegistry[document.templateId];
   const TemplateComponent = template.component;
+  // In export modes (pdf/png) omit minHeight so the article only occupies
+  // actual content height — prevents Chromium producing a blank second page.
+  const isExport = mode === "pdf" || mode === "png";
 
   return (
     <article
@@ -25,7 +28,7 @@ export function InvoiceDocumentFrame({
       style={
         {
           width: `${A4_DOCUMENT_WIDTH}px`,
-          minHeight: `${A4_DOCUMENT_HEIGHT}px`,
+          ...(isExport ? {} : { minHeight: `${A4_DOCUMENT_HEIGHT}px` }),
           "--voucher-ink": "#1d1710",
           "--voucher-accent": document.branding.accentColor || "#dc2626",
         } as CSSProperties

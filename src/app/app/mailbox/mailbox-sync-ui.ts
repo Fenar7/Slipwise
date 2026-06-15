@@ -33,6 +33,8 @@ export function buildFallbackSyncPresentation(
         connection.lastSyncError ??
         "Reconnect this mailbox to resume syncing and importing new messages.",
       staleGmailCoverage: false,
+      draftErrorCategory: null,
+      draftErrorSummary: null,
     };
   }
 
@@ -53,6 +55,8 @@ export function buildFallbackSyncPresentation(
       stageLabel: "Sync needs attention",
       detailLabel: connection.lastSyncError,
       staleGmailCoverage: false,
+      draftErrorCategory: null,
+      draftErrorSummary: null,
     };
   }
 
@@ -74,6 +78,8 @@ export function buildFallbackSyncPresentation(
       detailLabel:
         "This mailbox is connected. The first sync has not completed yet.",
       staleGmailCoverage: false,
+      draftErrorCategory: null,
+      draftErrorSummary: null,
     };
   }
 
@@ -87,13 +93,15 @@ export function buildFallbackSyncPresentation(
     lastCompletedAt: connection.lastSyncAt,
     lastRunStatus: null,
     lastErrorCategory: null,
-    lastErrorSummary: null,
-    lastRunThreadCount: null,
-    lastRunMessageCount: null,
-    stageLabel: "Mailbox up to date",
-    detailLabel: "Recent messages are available in this mailbox.",
-    staleGmailCoverage: false,
-  };
+      lastErrorSummary: null,
+      lastRunThreadCount: null,
+      lastRunMessageCount: null,
+      stageLabel: "Mailbox up to date",
+      detailLabel: "Recent messages are available in this mailbox.",
+      staleGmailCoverage: false,
+      draftErrorCategory: null,
+      draftErrorSummary: null,
+    };
 }
 
 export function resolveMailboxSyncPresentation(
@@ -103,9 +111,19 @@ export function resolveMailboxSyncPresentation(
 }
 
 export function shouldAutoTriggerMailboxSync(sync: MailboxSyncPresentation): boolean {
+  const hasIncompleteCoverage =
+    sync.folderCoverage != null &&
+    sync.folderCoverage.overallState !== "COMPLETE";
+
+  // Do not auto-trigger if the last run failed or is stalled — the user
+  // should manually retry so we do not create an opaque endless loop.
+  if (sync.state === "failed") return false;
+  if (sync.state === "running") return false;
+
   return (
     sync.state === "completed_never_imported" ||
-    (sync.state === "completed" && sync.staleGmailCoverage)
+    (sync.state === "completed" && sync.staleGmailCoverage) ||
+    (sync.state === "completed" && hasIncompleteCoverage)
   );
 }
 

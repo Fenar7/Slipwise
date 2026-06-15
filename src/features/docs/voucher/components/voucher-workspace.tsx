@@ -19,6 +19,8 @@ import {
   TextAreaField,
   TextField,
   ToggleField,
+  SliderField,
+  SegmentedControlField,
 } from "@/components/forms/input-primitives";
 import {
   DocumentWorkspaceLayout,
@@ -512,6 +514,25 @@ function VoucherPanel({
                       hint="Session-only asset for the preview."
                     />
                   </div>
+                  {values.branding?.logoDataUrl ? (
+                    <div className="grid gap-4 sm:grid-cols-2 mt-4">
+                      <SegmentedControlField<VoucherFormValues>
+                        name="branding.logoFit"
+                        label="Logo fit mode"
+                        options={[
+                          { value: "contain", label: "Fit (Contain)" },
+                          { value: "cover", label: "Fill (Cover)" },
+                        ]}
+                      />
+                      <SliderField<VoucherFormValues>
+                        name="branding.logoSize"
+                        label="Logo size"
+                        min={30}
+                        max={150}
+                        step={5}
+                      />
+                    </div>
+                  ) : null}
                 </FormSection>
             </div>
 
@@ -632,6 +653,21 @@ function VoucherPanel({
                         placeholder="REF-8831"
                       />
                     ) : null}
+
+                    {visibility.showUpiDetails ? (
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <TextField<VoucherFormValues>
+                          name="upiId"
+                          label="UPI ID"
+                          placeholder="merchant@ybl"
+                        />
+                        <FileUploadField<VoucherFormValues>
+                          name="upiQrDataUrl"
+                          label="UPI QR Code"
+                          hint="Session-only upload for the QR code."
+                        />
+                      </div>
+                    ) : null}
                     <TextAreaField<VoucherFormValues>
                       name="purpose"
                       label="Purpose / narration"
@@ -697,7 +733,7 @@ function VoucherPanel({
                   {visibility.showApprovedBy ? (
                     <TextField<VoucherFormValues>
                       name="approvedBy"
-                      label="Approved by"
+                      label="Authorized by"
                       placeholder="Anita Thomas"
                     />
                   ) : null}
@@ -745,7 +781,7 @@ function VoucherPanel({
                     />
                     <ToggleField<VoucherFormValues>
                       name="visibility.showApprovedBy"
-                      label="Approved by"
+                      label="Authorized by"
                     />
                     <ToggleField<VoucherFormValues>
                       name="visibility.showReceivedBy"
@@ -754,6 +790,10 @@ function VoucherPanel({
                     <ToggleField<VoucherFormValues>
                       name="visibility.showSignatureArea"
                       label="Signature area"
+                    />
+                    <ToggleField<VoucherFormValues>
+                      name="visibility.showUpiDetails"
+                      label="UPI Details"
                     />
                   </div>
                 </FormSection>

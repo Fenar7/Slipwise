@@ -30,6 +30,10 @@ export function ClassicBorderedInvoiceTemplate({
     document.visibility.showBankDetails &&
     (document.bankName || document.bankAccountNumber || document.bankIfsc);
 
+  const showUpi =
+    document.visibility.showUpiDetails &&
+    (document.upiId || document.upiQrDataUrl);
+
   return (
     <div className="space-y-0 text-[var(--voucher-ink)]">
       {/* ── Header ── */}
@@ -49,17 +53,18 @@ export function ClassicBorderedInvoiceTemplate({
             />
             <div>
               <h2 className="text-xl font-bold uppercase tracking-wide">
+                {document.branding.salutation ? document.branding.salutation + " " : ""}
                 {document.branding.companyName}
               </h2>
               <div className="mt-1 space-y-0.5 text-[0.78rem] leading-5 text-[rgba(29,23,16,0.7)]">
                 {document.visibility.showAddress && document.branding.address ? (
-                  <p>{document.branding.address}</p>
+                  <p className="whitespace-pre-line">{document.branding.address}</p>
                 ) : null}
                 {document.visibility.showEmail && document.branding.email ? (
-                  <p>{document.branding.email}</p>
+                  <p>Email: {document.branding.email}</p>
                 ) : null}
                 {document.visibility.showPhone && document.branding.phone ? (
-                  <p>{document.branding.phone}</p>
+                  <p>Phone: {document.branding.phone}</p>
                 ) : null}
                 {document.website ? <p>{document.website}</p> : null}
                 {document.businessTaxId ? (
@@ -73,7 +78,7 @@ export function ClassicBorderedInvoiceTemplate({
             <p className="text-[0.68rem] font-bold uppercase tracking-[0.2em] text-[rgba(29,23,16,0.5)]">
               {document.title}
             </p>
-            <p className="mt-1 text-2xl font-bold tracking-tight">{document.invoiceNumber}</p>
+            <p className="mt-1 text-xl font-semibold tracking-tight">{document.invoiceNumber}</p>
           </div>
         </div>
       </section>
@@ -90,10 +95,13 @@ export function ClassicBorderedInvoiceTemplate({
             <p className="text-[0.68rem] font-bold uppercase tracking-[0.18em] text-[rgba(29,23,16,0.5)]">
               From
             </p>
-            <p className="mt-1.5 text-sm font-semibold">{document.branding.companyName}</p>
+            <p className="mt-1.5 text-sm font-semibold">
+              {document.branding.salutation ? document.branding.salutation + " " : ""}
+              {document.branding.companyName}
+            </p>
             <div className="mt-1 text-[0.78rem] leading-5 text-[rgba(29,23,16,0.7)]">
               {document.visibility.showAddress && document.branding.address ? (
-                <p>{document.branding.address}</p>
+                <p className="whitespace-pre-line">{document.branding.address}</p>
               ) : null}
             </div>
           </div>
@@ -101,9 +109,9 @@ export function ClassicBorderedInvoiceTemplate({
             <p className="text-[0.68rem] font-bold uppercase tracking-[0.18em] text-[rgba(29,23,16,0.5)]">
               Bill To
             </p>
-            <p className="mt-1.5 text-sm font-semibold">{document.clientName}</p>
+            <p className="mt-1.5 text-sm font-semibold">{document.clientSalutation ? document.clientSalutation + " " : ""}{document.clientName}</p>
             <div className="mt-1 space-y-0.5 text-[0.78rem] leading-5 text-[rgba(29,23,16,0.7)]">
-              {document.clientAddress ? <p>{document.clientAddress}</p> : null}
+              {document.clientAddress ? <p className="whitespace-pre-line">{document.clientAddress}</p> : null}
               {document.clientEmail ? <p>{document.clientEmail}</p> : null}
               {document.clientPhone ? <p>{document.clientPhone}</p> : null}
               {document.clientTaxId ? <p>Tax ID: {document.clientTaxId}</p> : null}
@@ -143,7 +151,7 @@ export function ClassicBorderedInvoiceTemplate({
           </div>
           <div className="flex">
             <span className="w-[45%] border-r border-[rgba(29,23,16,0.2)] px-3 py-2 text-[0.68rem] font-bold uppercase tracking-[0.12em] text-[var(--voucher-accent)]">
-              Balance Due
+              Net Amount Payable
             </span>
             <span className="flex-1 px-3 py-2 text-sm font-bold text-[var(--voucher-accent)]">
               {document.balanceDueFormatted}
@@ -158,7 +166,7 @@ export function ClassicBorderedInvoiceTemplate({
           <p className="text-[0.68rem] font-bold uppercase tracking-[0.18em] text-[rgba(29,23,16,0.5)]">
             Ship To
           </p>
-          <p className="mt-1.5 text-sm leading-6 text-[rgba(29,23,16,0.78)]">
+          <p className="mt-1.5 text-sm leading-6 text-[rgba(29,23,16,0.78)] whitespace-pre-line">
             {document.shippingAddress}
           </p>
         </section>
@@ -169,7 +177,7 @@ export function ClassicBorderedInvoiceTemplate({
         <table className="w-full text-left text-[0.78rem]" style={{ borderCollapse: "collapse" }}>
           <thead className="document-table-head">
             <tr className="border border-[rgba(29,23,16,0.3)] bg-[rgba(29,23,16,0.06)] text-[0.65rem] font-bold uppercase tracking-[0.15em] text-[rgba(29,23,16,0.6)]">
-              <th className="border-r border-[rgba(29,23,16,0.15)] px-3 py-2.5">#</th>
+              <th className="border-r border-[rgba(29,23,16,0.15)] px-3 py-2.5">S.No</th>
               <th className="border-r border-[rgba(29,23,16,0.15)] px-3 py-2.5">Description</th>
               <th className="border-r border-[rgba(29,23,16,0.15)] px-3 py-2.5 text-center">Qty</th>
               <th className="border-r border-[rgba(29,23,16,0.15)] px-3 py-2.5 text-right">Rate</th>
@@ -221,7 +229,7 @@ export function ClassicBorderedInvoiceTemplate({
       >
         <div>
           <p className="text-sm italic leading-6 text-[rgba(29,23,16,0.65)]">
-            {document.amountInWords}
+            *{document.amountInWords}
           </p>
         </div>
 
@@ -256,12 +264,14 @@ export function ClassicBorderedInvoiceTemplate({
           </div>
           {document.visibility.showPaymentSummary ? (
             <>
-              <div className="flex justify-between border-b border-[rgba(29,23,16,0.12)] px-3 py-1.5 text-sm">
-                <span className="text-[rgba(29,23,16,0.65)]">Paid</span>
-                <span>{document.amountPaidFormatted}</span>
-              </div>
+              {document.amountPaid > 0 ? (
+                <div className="flex justify-between border-b border-[rgba(29,23,16,0.12)] px-3 py-1.5 text-sm">
+                  <span className="text-[rgba(29,23,16,0.65)]">Paid</span>
+                  <span>{document.amountPaidFormatted}</span>
+                </div>
+              ) : null}
               <div className="flex justify-between bg-[var(--voucher-accent)] px-3 py-2 text-sm font-bold text-white">
-                <span>Balance Due</span>
+                <span>Net Amount Payable</span>
                 <span>{document.balanceDueFormatted}</span>
               </div>
             </>
@@ -283,7 +293,7 @@ export function ClassicBorderedInvoiceTemplate({
           {document.terms ? (
             <div>
               <p className="text-[0.68rem] font-bold uppercase tracking-[0.15em] text-[rgba(29,23,16,0.5)]">
-                Terms &amp; Conditions
+                Terms &amp; Conditions*
               </p>
               <p className="mt-1 text-sm leading-6 text-[rgba(29,23,16,0.75)]">{document.terms}</p>
             </div>
@@ -291,36 +301,64 @@ export function ClassicBorderedInvoiceTemplate({
         </section>
       ) : null}
 
-      {/* ── Footer: Bank details left, Signature right ── */}
-      {showBank || (document.visibility.showSignature && document.authorizedBy) ? (
+      {/* ── Footer: Bank details/UPI left, Signature right ── */}
+      {showBank || showUpi || (document.visibility.showSignature && (document.authorizedBy || document.authorizedByDesignation || document.authorizedByCompany)) ? (
         <section
           className={cn(
             "document-break-inside-avoid grid border-t-2 border-[var(--voucher-ink)] pt-4",
             printLike ? "grid-cols-2 gap-6" : "gap-4 md:grid-cols-2 md:gap-6",
           )}
         >
-          {showBank ? (
-            <div>
-              <p className="text-[0.68rem] font-bold uppercase tracking-[0.15em] text-[rgba(29,23,16,0.5)]">
-                Bank Details
-              </p>
-              <div className="mt-2 space-y-1 text-sm leading-5 text-[rgba(29,23,16,0.78)]">
-                {document.bankName ? <p>Bank: {document.bankName}</p> : null}
-                {document.bankAccountNumber ? <p>A/C No: {document.bankAccountNumber}</p> : null}
-                {document.bankIfsc ? <p>IFSC: {document.bankIfsc}</p> : null}
-              </div>
+          {showBank || showUpi ? (
+            <div className="space-y-4">
+              {showBank ? (
+                <div>
+                  <p className="text-[0.68rem] font-bold uppercase tracking-[0.15em] text-[rgba(29,23,16,0.5)]">
+                    Bank Details
+                  </p>
+                  <div className="mt-2 space-y-1 text-sm leading-5 text-[rgba(29,23,16,0.78)]">
+                    {document.bankName ? <p>Bank: {document.bankName}</p> : null}
+                    {document.bankAccountNumber ? <p>A/C No: {document.bankAccountNumber}</p> : null}
+                    {document.bankIfsc ? <p>IFSC: {document.bankIfsc}</p> : null}
+                  </div>
+                </div>
+              ) : null}
+              {showUpi ? (
+                <div>
+                  <p className="text-[0.68rem] font-bold uppercase tracking-[0.15em] text-[rgba(29,23,16,0.5)]">
+                    UPI Details
+                  </p>
+                  <div className="mt-2 flex items-center gap-4">
+                    {document.upiQrDataUrl ? (
+                      <img
+                        src={document.upiQrDataUrl}
+                        alt="UPI QR Code"
+                        className="h-16 w-16 rounded border border-[rgba(29,23,16,0.1)] object-contain p-0.5 bg-white shrink-0"
+                      />
+                    ) : null}
+                    {document.upiId ? (
+                      <div>
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-[rgba(29,23,16,0.45)]">UPI ID</p>
+                        <p className="text-sm font-semibold text-[rgba(29,23,16,0.9)] mt-0.5">{document.upiId}</p>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
             </div>
           ) : (
             <div />
           )}
 
-          {document.visibility.showSignature && document.authorizedBy ? (
+          {document.visibility.showSignature && (document.authorizedBy || document.authorizedByDesignation || document.authorizedByCompany) ? (
             <div className="text-right">
               <p className="text-[0.68rem] font-bold uppercase tracking-[0.15em] text-[rgba(29,23,16,0.5)]">
-                Authorized Signatory
+                Approved By
               </p>
               <div className="mt-8 inline-block border-t border-[rgba(29,23,16,0.3)] px-6 pt-2">
-                <p className="text-sm font-medium">{document.authorizedBy}</p>
+                {document.authorizedBy && <p className="text-sm font-semibold text-[rgba(29,23,16,0.85)]">{document.authorizedBy}</p>}
+                {document.authorizedByDesignation && <p className="text-sm text-[rgba(29,23,16,0.72)] mt-0.5">{document.authorizedByDesignation}</p>}
+                {document.authorizedByCompany && <p className="text-sm text-[rgba(29,23,16,0.72)] mt-0.5">{document.authorizedByCompany}</p>}
               </div>
             </div>
           ) : null}
@@ -398,25 +436,38 @@ function ClassicBorderedEditor({ document }: { document: InvoiceDocument }) {
               imageClassName="h-full w-full object-cover"
             />
             <div>
-              <InlineTextField
-                name="branding.companyName"
-                className="text-xl font-bold uppercase tracking-wide"
-              />
+              <div className="flex items-baseline gap-1">
+                {document.branding.salutation ? (
+                  <span className="text-sm font-bold uppercase tracking-wide text-[rgba(29,23,16,0.65)] shrink-0">
+                    {document.branding.salutation}
+                  </span>
+                ) : null}
+                <InlineTextField
+                  name="branding.companyName"
+                  className="text-xl font-bold uppercase tracking-wide flex-1"
+                />
+              </div>
               <InlineTextArea
                 name="branding.address"
                 className="mt-1 text-[0.78rem] leading-5 text-[rgba(29,23,16,0.7)]"
                 placeholder="Business address"
               />
-              <InlineTextField
-                name="branding.email"
-                className="text-[0.78rem] leading-5 text-[rgba(29,23,16,0.7)]"
-                placeholder="Business email"
-              />
-              <InlineTextField
-                name="branding.phone"
-                className="text-[0.78rem] leading-5 text-[rgba(29,23,16,0.7)]"
-                placeholder="Business phone"
-              />
+              <div className="flex items-center gap-1.5 text-[0.78rem] leading-5 text-[rgba(29,23,16,0.7)]">
+                <span className="opacity-70 text-[0.75rem] shrink-0">Email:</span>
+                <InlineTextField
+                  name="branding.email"
+                  className="text-[0.78rem] leading-5 text-[rgba(29,23,16,0.7)]"
+                  placeholder="Business email"
+                />
+              </div>
+              <div className="flex items-center gap-1.5 text-[0.78rem] leading-5 text-[rgba(29,23,16,0.7)]">
+                <span className="opacity-70 text-[0.75rem] shrink-0">Phone:</span>
+                <InlineTextField
+                  name="branding.phone"
+                  className="text-[0.78rem] leading-5 text-[rgba(29,23,16,0.7)]"
+                  placeholder="Business phone"
+                />
+              </div>
               <InlineTextField
                 name="website"
                 className="text-[0.78rem] leading-5 text-[rgba(29,23,16,0.7)]"
@@ -436,7 +487,7 @@ function ClassicBorderedEditor({ document }: { document: InvoiceDocument }) {
             </p>
             <InlineTextField
               name="invoiceNumber"
-              className="mt-1 text-2xl font-bold tracking-tight text-right"
+              className="mt-1 text-xl font-semibold tracking-tight text-right"
             />
           </div>
         </div>
@@ -449,10 +500,17 @@ function ClassicBorderedEditor({ document }: { document: InvoiceDocument }) {
             <p className="text-[0.68rem] font-bold uppercase tracking-[0.18em] text-[rgba(29,23,16,0.5)]">
               From
             </p>
-            <InlineTextField
-              name="branding.companyName"
-              className="mt-1.5 text-sm font-semibold"
-            />
+            <div className="mt-1.5 flex items-baseline gap-1">
+              {document.branding.salutation ? (
+                <span className="text-xs font-semibold text-[rgba(29,23,16,0.65)] shrink-0">
+                  {document.branding.salutation}
+                </span>
+              ) : null}
+              <InlineTextField
+                name="branding.companyName"
+                className="text-sm font-semibold flex-1"
+              />
+            </div>
             <InlineTextArea
               name="branding.address"
               className="mt-1 text-[0.78rem] leading-5 text-[rgba(29,23,16,0.7)]"
@@ -463,6 +521,7 @@ function ClassicBorderedEditor({ document }: { document: InvoiceDocument }) {
             <p className="text-[0.68rem] font-bold uppercase tracking-[0.18em] text-[rgba(29,23,16,0.5)]">
               Bill To
             </p>
+            <InlineTextField name="clientSalutation" placeholder="" className="mt-1.5 text-xs font-semibold text-[rgba(29,23,16,0.45)] w-12" />
             <InlineTextField
               name="clientName"
               className="mt-1.5 text-sm font-semibold"
@@ -529,7 +588,7 @@ function ClassicBorderedEditor({ document }: { document: InvoiceDocument }) {
           </div>
           <div className="flex">
             <span className="w-[45%] border-r border-[rgba(29,23,16,0.2)] px-3 py-2 text-[0.68rem] font-bold uppercase tracking-[0.12em] text-[var(--voucher-accent)]">
-              Balance Due
+              Net Amount Payable
             </span>
             <span className="flex-1 px-3 py-2 text-sm font-bold text-[var(--voucher-accent)]">
               {doc.balanceDueFormatted}
@@ -539,23 +598,25 @@ function ClassicBorderedEditor({ document }: { document: InvoiceDocument }) {
       </section>
 
       {/* ── Shipping ── */}
-      <section className="border-b border-[rgba(29,23,16,0.15)] py-4">
-        <p className="text-[0.68rem] font-bold uppercase tracking-[0.18em] text-[rgba(29,23,16,0.5)]">
-          Ship To
-        </p>
-        <InlineTextArea
-          name="shippingAddress"
-          className="mt-1.5 text-sm leading-6 text-[rgba(29,23,16,0.78)]"
-          placeholder="Shipping address"
-        />
-      </section>
+      {doc.visibility.showShippingAddress ? (
+        <section className="border-b border-[rgba(29,23,16,0.15)] py-4">
+          <p className="text-[0.68rem] font-bold uppercase tracking-[0.18em] text-[rgba(29,23,16,0.5)]">
+            Ship To
+          </p>
+          <InlineTextArea
+            name="shippingAddress"
+            className="mt-1.5 text-sm leading-6 text-[rgba(29,23,16,0.78)]"
+            placeholder="Shipping address"
+          />
+        </section>
+      ) : null}
 
       {/* ── Line Items ── */}
       <section className="py-5">
         <table className="w-full text-left text-[0.78rem]" style={{ borderCollapse: "collapse" }}>
           <thead>
             <tr className="border border-[rgba(29,23,16,0.3)] bg-[rgba(29,23,16,0.06)] text-[0.65rem] font-bold uppercase tracking-[0.15em] text-[rgba(29,23,16,0.6)]">
-              <th className="border-r border-[rgba(29,23,16,0.15)] px-3 py-2.5">#</th>
+              <th className="border-r border-[rgba(29,23,16,0.15)] px-3 py-2.5">S.No</th>
               <th className="border-r border-[rgba(29,23,16,0.15)] px-3 py-2.5">Description</th>
               <th className="border-r border-[rgba(29,23,16,0.15)] px-3 py-2.5 text-center">Qty</th>
               <th className="border-r border-[rgba(29,23,16,0.15)] px-3 py-2.5 text-right">Rate</th>
@@ -634,7 +695,7 @@ function ClassicBorderedEditor({ document }: { document: InvoiceDocument }) {
       {/* ── Summary ── */}
       <section className="grid gap-5 md:grid-cols-[1fr_16rem]">
         <div>
-          <p className="text-sm italic leading-6 text-[rgba(29,23,16,0.65)]">{doc.amountInWords}</p>
+          <p className="text-sm italic leading-6 text-[rgba(29,23,16,0.65)]">*{doc.amountInWords}</p>
         </div>
 
         <div className="border border-[rgba(29,23,16,0.2)]">
@@ -668,12 +729,14 @@ function ClassicBorderedEditor({ document }: { document: InvoiceDocument }) {
           </div>
           {doc.visibility.showPaymentSummary ? (
             <>
-              <div className="flex justify-between border-b border-[rgba(29,23,16,0.12)] px-3 py-1.5 text-sm">
-                <span className="text-[rgba(29,23,16,0.65)]">Paid</span>
-                <span>{doc.amountPaidFormatted}</span>
-              </div>
+              {doc.amountPaid > 0 ? (
+                <div className="flex justify-between border-b border-[rgba(29,23,16,0.12)] px-3 py-1.5 text-sm">
+                  <span className="text-[rgba(29,23,16,0.65)]">Paid</span>
+                  <span>{doc.amountPaidFormatted}</span>
+                </div>
+              ) : null}
               <div className="flex justify-between bg-[var(--voucher-accent)] px-3 py-2 text-sm font-bold text-white">
-                <span>Balance Due</span>
+                <span>Net Amount Payable</span>
                 <span>{doc.balanceDueFormatted}</span>
               </div>
             </>
@@ -695,7 +758,7 @@ function ClassicBorderedEditor({ document }: { document: InvoiceDocument }) {
         </div>
         <div>
           <p className="text-[0.68rem] font-bold uppercase tracking-[0.15em] text-[rgba(29,23,16,0.5)]">
-            Terms &amp; Conditions
+            Terms &amp; Conditions*
           </p>
           <InlineTextArea
             name="terms"
@@ -705,28 +768,67 @@ function ClassicBorderedEditor({ document }: { document: InvoiceDocument }) {
         </div>
       </section>
 
-      {/* ── Footer: Bank details left, Signature right ── */}
+      {/* ── Footer: Bank details/UPI left, Signature right ── */}
       <section className="grid gap-4 border-t-2 border-[var(--voucher-ink)] pt-4 md:grid-cols-2 md:gap-6">
-        <div>
-          <p className="text-[0.68rem] font-bold uppercase tracking-[0.15em] text-[rgba(29,23,16,0.5)]">
-            Bank Details
-          </p>
-          <div className="mt-2 space-y-1 text-sm leading-5 text-[rgba(29,23,16,0.78)]">
-            <InlineTextField name="bankName" placeholder="Bank name" />
-            <InlineTextField name="bankAccountNumber" placeholder="Account number" />
-            <InlineTextField name="bankIfsc" placeholder="IFSC code" />
-          </div>
+        <div className="space-y-4">
+          {doc.visibility.showBankDetails ? (
+            <div>
+              <p className="text-[0.68rem] font-bold uppercase tracking-[0.15em] text-[rgba(29,23,16,0.5)]">
+                Bank Details
+              </p>
+              <div className="mt-2 space-y-1 text-sm leading-5 text-[rgba(29,23,16,0.78)]">
+                <InlineTextField name="bankName" placeholder="Bank name" />
+                <InlineTextField name="bankAccountNumber" placeholder="Account number" />
+                <InlineTextField name="bankIfsc" placeholder="IFSC code" />
+              </div>
+            </div>
+          ) : null}
+
+          {doc.visibility.showUpiDetails ? (
+            <div>
+              <p className="text-[0.68rem] font-bold uppercase tracking-[0.15em] text-[rgba(29,23,16,0.5)]">
+                UPI Details
+              </p>
+              <div className="mt-2 flex items-center gap-4">
+                {doc.upiQrDataUrl ? (
+                  <img
+                    src={doc.upiQrDataUrl}
+                    alt="UPI QR Code"
+                    className="h-16 w-16 rounded border border-[rgba(29,23,16,0.1)] object-contain p-0.5 bg-white shrink-0"
+                  />
+                ) : null}
+                <div className="flex-1">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-[rgba(29,23,16,0.45)]">UPI ID</p>
+                  <InlineTextField
+                    name="upiId"
+                    placeholder="UPI ID (merchant@ybl)"
+                    className="text-sm font-semibold text-[rgba(29,23,16,0.9)] mt-0.5"
+                  />
+                </div>
+              </div>
+            </div>
+          ) : null}
         </div>
 
         <div className="text-right">
           <p className="text-[0.68rem] font-bold uppercase tracking-[0.15em] text-[rgba(29,23,16,0.5)]">
-            Authorized Signatory
+            Approved By
           </p>
-          <div className="mt-8 inline-block border-t border-[rgba(29,23,16,0.3)] px-6 pt-2">
+          <div className="mt-8 inline-block border-t border-[rgba(29,23,16,0.3)] px-6 pt-2 min-w-[140px] text-right">
             <InlineTextField
               name="authorizedBy"
-              className="mt-8 text-sm font-medium"
-              placeholder="Authorized by"
+              className="text-sm font-semibold text-right text-[rgba(29,23,16,0.85)]"
+              placeholder="Name"
+            />
+            <InlineTextField
+              name="authorizedByDesignation"
+              className="text-sm text-[rgba(29,23,16,0.72)] mt-0.5 text-right"
+              placeholder="Designation"
+            />
+            <InlineTextField
+              name="authorizedByCompany"
+              className="text-sm text-[rgba(29,23,16,0.72)] mt-0.5 text-right"
+              placeholder="Company Name"
             />
           </div>
         </div>

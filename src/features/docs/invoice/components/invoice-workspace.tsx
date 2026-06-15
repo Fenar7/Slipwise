@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { FormProvider, useFieldArray, useForm, useFormContext, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -19,6 +19,9 @@ import {
   TextAreaField,
   TextField,
   ToggleField,
+  SliderField,
+  SegmentedControlField,
+  SelectField,
 } from "@/components/forms/input-primitives";
 import { InvoicePreview } from "@/features/docs/invoice/components/invoice-preview";
 import { InvoiceDocumentFrame } from "@/features/docs/invoice/components/invoice-document-frame";
@@ -232,8 +235,14 @@ interface InvoicePanelProps {
 }
 
 function InvoicePanel({ customers = [], inventoryItems = [], tagIds = [], setTagIds = () => {}, suggestions = [], loadSuggestions }: InvoicePanelProps) {
-  const { control, getValues, setValue, trigger } = useFormContextSafe();
+  const { control, getValues, setValue } = useFormContextSafe();
   const values = useWatch({ control }) as InvoiceFormValues;
+
+  useEffect(() => {
+    if ((values?.upiId || values?.upiQrDataUrl) && !values?.visibility?.showUpiDetails) {
+      setValue("visibility.showUpiDetails", true);
+    }
+  }, [values?.upiId, values?.upiQrDataUrl, values?.visibility?.showUpiDetails, setValue]);
   const [selectedTemplateId, setSelectedTemplateId] = useState<InvoiceFormValues["templateId"]>(() => getValues("templateId") ?? "professional");
   const previewDocument = normalizeInvoice({
     ...values,
@@ -243,17 +252,7 @@ function InvoicePanel({ customers = [], inventoryItems = [], tagIds = [], setTag
     status: "idle",
   });
 
-  async function prepareDocument() {
-    const isValid = await trigger();
-
-    if (!isValid) {
-      setActionState({
-        status: "error",
-        message: "Complete the required invoice fields before exporting.",
-      });
-      return null;
-    }
-
+  function prepareDocument() {
     return normalizeInvoice({
       ...getValues(),
       templateId: selectedTemplateId,
@@ -261,11 +260,7 @@ function InvoicePanel({ customers = [], inventoryItems = [], tagIds = [], setTag
   }
 
   async function handleDownload(format: "pdf" | "png") {
-    const document = await prepareDocument();
-
-    if (!document) {
-      return;
-    }
+    const document = prepareDocument();
 
     setActionState({ status: "pending", action: format });
 
@@ -291,11 +286,7 @@ function InvoicePanel({ customers = [], inventoryItems = [], tagIds = [], setTag
   }
 
   async function handlePrint() {
-    const document = await prepareDocument();
-
-    if (!document) {
-      return;
-    }
+    const document = prepareDocument();
 
     const printWindow = window.open(
       "about:blank",
@@ -458,11 +449,29 @@ function InvoicePanel({ customers = [], inventoryItems = [], tagIds = [], setTag
                     })}
                   </div>
                 </FieldShell>
-                <TextField<InvoiceFormValues>
-                  name="branding.companyName"
-                  label="Business name"
-                  placeholder="Northfield Trading Co."
-                />
+                <div className="grid gap-4 grid-cols-3">
+                  <div className="col-span-1">
+                    <SelectField<InvoiceFormValues>
+                      name="branding.salutation"
+                      label="Salutation"
+                      options={[
+                        { value: "", label: "None" },
+                        { value: "M/s.", label: "M/s." },
+                        { value: "Mr.", label: "Mr." },
+                        { value: "Ms.", label: "Ms." },
+                        { value: "Mrs.", label: "Mrs." },
+                        { value: "Dr.", label: "Dr." },
+                      ]}
+                    />
+                  </div>
+                  <div className="col-span-2">
+                    <TextField<InvoiceFormValues>
+                      name="branding.companyName"
+                      label="Business name"
+                      placeholder="Northfield Trading Co."
+                    />
+                  </div>
+                </div>
                 <TextAreaField<InvoiceFormValues>
                   name="branding.address"
                   label="Business address"
@@ -504,6 +513,25 @@ function InvoicePanel({ customers = [], inventoryItems = [], tagIds = [], setTag
                     hint="Session-only asset for the live preview."
                   />
                 </div>
+                {values.branding?.logoDataUrl ? (
+                  <div className="grid gap-4 sm:grid-cols-2 mt-4">
+                    <SegmentedControlField<InvoiceFormValues>
+                      name="branding.logoFit"
+                      label="Logo fit mode"
+                      options={[
+                        { value: "contain", label: "Fit (Contain)" },
+                        { value: "cover", label: "Fill (Cover)" },
+                      ]}
+                    />
+                    <SliderField<InvoiceFormValues>
+                      name="branding.logoSize"
+                      label="Logo size"
+                      min={30}
+                      max={150}
+                      step={5}
+                    />
+                  </div>
+                ) : null}
               </FormSection>
           </div>
 
@@ -515,24 +543,44 @@ function InvoicePanel({ customers = [], inventoryItems = [], tagIds = [], setTag
                 description="Control how the client block appears in the invoice preview."
               >
                 <CustomerPicker customers={customers} onTagPrefill={setTagIds} onCustomerSelect={loadSuggestions} />
-                <TextField<InvoiceFormValues>
-                  name="clientName"
-                  label="Client name"
-                  required
-                  placeholder="Axis PeopleX Pvt. Ltd."
-                />
+                <div className="grid gap-4 grid-cols-3">
+                  <div className="col-span-1">
+                    <SelectField<InvoiceFormValues>
+                      name="clientSalutation"
+                      label="Salutation"
+                      options={[
+                        { value: "", label: "None" },
+                        { value: "M/s.", label: "M/s." },
+                        { value: "Mr.", label: "Mr." },
+                        { value: "Ms.", label: "Ms." },
+                        { value: "Mrs.", label: "Mrs." },
+                        { value: "Dr.", label: "Dr." },
+                      ]}
+                    />
+                  </div>
+                  <div className="col-span-2">
+                    <TextField<InvoiceFormValues>
+                      name="clientName"
+                      label="Client name"
+                      required
+                      placeholder="Axis PeopleX Pvt. Ltd."
+                    />
+                  </div>
+                </div>
                 <TextAreaField<InvoiceFormValues>
                   name="clientAddress"
                   label="Client address"
                   rows={3}
                   placeholder="4th Floor, Grand Square, Kochi"
                 />
-                <TextAreaField<InvoiceFormValues>
-                  name="shippingAddress"
-                  label="Shipping address"
-                  rows={3}
-                  placeholder="Warehouse Bay 3, Marine Drive, Kochi"
-                />
+                {values.visibility?.showShippingAddress ? (
+                  <TextAreaField<InvoiceFormValues>
+                    name="shippingAddress"
+                    label="Shipping address"
+                    rows={3}
+                    placeholder="Warehouse Bay 3, Marine Drive, Kochi"
+                  />
+                ) : null}
                 <div className="grid gap-4 sm:grid-cols-2">
                   <TextField<InvoiceFormValues>
                     name="clientEmail"
@@ -675,30 +723,60 @@ function InvoicePanel({ customers = [], inventoryItems = [], tagIds = [], setTag
                   rows={3}
                   placeholder="Payment due within 7 days."
                 />
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <TextField<InvoiceFormValues>
-                    name="bankName"
-                    label="Bank name"
-                    placeholder="Federal Bank"
-                  />
-                  <TextField<InvoiceFormValues>
-                    name="bankAccountNumber"
-                    label="Account number"
-                    placeholder="122001004281"
-                  />
-                </div>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <TextField<InvoiceFormValues>
-                    name="bankIfsc"
-                    label="IFSC"
-                    placeholder="FDRL0001220"
-                  />
+                {values.visibility?.showBankDetails ? (
+                  <>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <TextField<InvoiceFormValues>
+                        name="bankName"
+                        label="Bank name"
+                        placeholder="Federal Bank"
+                      />
+                      <TextField<InvoiceFormValues>
+                        name="bankAccountNumber"
+                        label="Account number"
+                        placeholder="122001004281"
+                      />
+                    </div>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <TextField<InvoiceFormValues>
+                        name="bankIfsc"
+                        label="IFSC"
+                        placeholder="FDRL0001220"
+                      />
+                    </div>
+                  </>
+                ) : null}
+                <div className="grid gap-4 sm:grid-cols-3">
                   <TextField<InvoiceFormValues>
                     name="authorizedBy"
-                    label="Authorized by"
+                    label="Approved by (Name)"
                     placeholder="Anita Thomas"
                   />
+                  <TextField<InvoiceFormValues>
+                    name="authorizedByDesignation"
+                    label="Designation"
+                    placeholder="Finance Manager"
+                  />
+                  <TextField<InvoiceFormValues>
+                    name="authorizedByCompany"
+                    label="Company name"
+                    placeholder="Northfield Trading Co."
+                  />
                 </div>
+                {values.visibility?.showUpiDetails ? (
+                  <div className="grid gap-4 sm:grid-cols-2 border-t border-[var(--border-soft)] pt-4 mt-4">
+                    <TextField<InvoiceFormValues>
+                      name="upiId"
+                      label="UPI ID"
+                      placeholder="merchant@ybl"
+                    />
+                    <FileUploadField<InvoiceFormValues>
+                      name="upiQrDataUrl"
+                      label="UPI QR Code"
+                      hint="Session-only upload for the QR code."
+                    />
+                  </div>
+                ) : null}
               </FormSection>
           </div>
 
@@ -769,6 +847,10 @@ function InvoicePanel({ customers = [], inventoryItems = [], tagIds = [], setTag
                   <ToggleField<InvoiceFormValues>
                     name="visibility.showBankDetails"
                     label="Bank details"
+                  />
+                  <ToggleField<InvoiceFormValues>
+                    name="visibility.showUpiDetails"
+                    label="UPI details"
                   />
                   <ToggleField<InvoiceFormValues>
                     name="visibility.showSignature"

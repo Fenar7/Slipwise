@@ -108,6 +108,15 @@ vi.mock("@/lib/mailbox/provider-registry", () => ({
   getMailboxProviderAdapter: vi.fn(),
 }));
 
+vi.mock("@/lib/mailbox/folder-coverage-service", () => ({
+  markFolderCoverageComplete: vi.fn(),
+  updateFolderCoverageBootstrapping: vi.fn(),
+  initFolderCoverageForBootstrap: vi.fn(),
+  getIncompleteRequiredFolders: vi.fn().mockResolvedValue([]),
+  getFolderCoverage: vi.fn().mockResolvedValue(null),
+  resetFolderCoverageCursor: vi.fn(),
+}));
+
 vi.mock("@/app/api/integrations/_auth", () => ({
   requireIntegrationAdminRoute: vi.fn(),
 }));
@@ -399,6 +408,7 @@ describe("Sprint 3.2 — Incremental sync and provider cursors", () => {
       const { getMailboxConnection } = await import("@/lib/mailbox/connection-service");
       const { getMailboxProviderAdapter } = await import("@/lib/mailbox/provider-registry");
       const { getMailboxCursor, upsertMailboxCursor } = await import("@/lib/mailbox/cursor-service");
+      const { getIncompleteRequiredFolders, getFolderCoverage } = await import("@/lib/mailbox/folder-coverage-service");
 
       vi.mocked(getMailboxConnection).mockResolvedValue(
         makeConnectionRecord({
@@ -407,6 +417,17 @@ describe("Sprint 3.2 — Incremental sync and provider cursors", () => {
         }),
       );
       vi.mocked(getMailboxCursor).mockResolvedValue(makeCursorRecord());
+
+      // Simulate that SENT, SPAM, and DRAFT are still incomplete.
+      vi.mocked(getIncompleteRequiredFolders).mockResolvedValue(["SENT", "SPAM", "DRAFT"]);
+      vi.mocked(getFolderCoverage).mockImplementation(async (_orgId, _connId, folder) => ({
+        folder,
+        state: "BOOTSTRAPPING",
+        totalThreads: 10,
+        lastCompletedAt: null,
+        lastAdvancedCursor: `cursor-${folder.toLowerCase()}`,
+        errorSummary: null,
+      }));
 
       const mockAdapter = makeMockAdapter();
       mockAdapter.syncDelta
@@ -420,6 +441,11 @@ describe("Sprint 3.2 — Incremental sync and provider cursors", () => {
             providerMetadata: {},
           }],
           nextCursor: { value: "bootstrap-now", expiresAt: null },
+          bootstrapSliceResults: [
+            { sliceLabel: "SENT", paginationExhausted: true, threadCount: 1, lastAdvancedCursor: "sent-cursor" },
+            { sliceLabel: "SPAM", paginationExhausted: false, threadCount: 1, lastAdvancedCursor: "spam-cursor" },
+            { sliceLabel: "DRAFT", paginationExhausted: true, threadCount: 1, lastAdvancedCursor: "draft-cursor" },
+          ],
         })
         .mockResolvedValueOnce({
           threads: [{
@@ -452,7 +478,14 @@ describe("Sprint 3.2 — Incremental sync and provider cursors", () => {
       expect(result.threadCount).toBe(2);
       expect(mockAdapter.syncDelta).toHaveBeenNthCalledWith(
         1,
-        expect.objectContaining({ cursor: null }),
+        expect.objectContaining({
+          cursor: null,
+          folderCursors: {
+            SENT: "cursor-sent",
+            SPAM: "cursor-spam",
+            DRAFT: "cursor-draft",
+          },
+        }),
       );
       expect(mockAdapter.syncDelta).toHaveBeenNthCalledWith(
         2,
@@ -463,12 +496,12 @@ describe("Sprint 3.2 — Incremental sync and provider cursors", () => {
       expect(upsertMailboxCursor).toHaveBeenCalledWith(
         expect.objectContaining({ cursorValue: "cursor-next" }),
       );
+      // Coverage completion truth is now in mailboxFolderCoverage rows, not metadata flags.
       expect(mockDb.mailboxConnection.update).toHaveBeenCalledWith(
         expect.objectContaining({
-          data: expect.objectContaining({
+          data: expect.not.objectContaining({
             watchMetadata: expect.objectContaining({
-              gmailCoverageVersion: 4,
-              gmailCoveredSystemLabels: ["INBOX", "SENT", "SPAM", "DRAFT"],
+              gmailCoverageVersion: expect.anything(),
             }),
           }),
         }),
@@ -479,6 +512,7 @@ describe("Sprint 3.2 — Incremental sync and provider cursors", () => {
       const { getMailboxConnection } = await import("@/lib/mailbox/connection-service");
       const { getMailboxProviderAdapter } = await import("@/lib/mailbox/provider-registry");
       const { getMailboxCursor } = await import("@/lib/mailbox/cursor-service");
+      const { getIncompleteRequiredFolders } = await import("@/lib/mailbox/folder-coverage-service");
 
       vi.mocked(getMailboxConnection).mockResolvedValue(
         makeConnectionRecord({
@@ -490,6 +524,8 @@ describe("Sprint 3.2 — Incremental sync and provider cursors", () => {
         }),
       );
       vi.mocked(getMailboxCursor).mockResolvedValue(makeCursorRecord());
+      // All required folders are already COMPLETE in the database — metadata flags are ignored.
+      vi.mocked(getIncompleteRequiredFolders).mockResolvedValue([]);
       const mockAdapter = makeMockAdapter();
       vi.mocked(getMailboxProviderAdapter).mockReturnValue(mockAdapter as never);
 
@@ -840,10 +876,28 @@ describe("Sprint 3.2 — Incremental sync and provider cursors", () => {
       const { getMailboxConnection } = await import("@/lib/mailbox/connection-service");
       const { getMailboxProviderAdapter } = await import("@/lib/mailbox/provider-registry");
       const { getMailboxCursor } = await import("@/lib/mailbox/cursor-service");
+      const { markFolderCoverageComplete, updateFolderCoverageBootstrapping } = await import("@/lib/mailbox/folder-coverage-service");
 
       vi.mocked(getMailboxConnection).mockResolvedValue(makeConnectionRecord());
       vi.mocked(getMailboxCursor).mockResolvedValue(null);
       const mockAdapter = makeMockAdapter();
+      mockAdapter.syncDelta.mockResolvedValue({
+        threads: [{
+          providerThreadId: "gmail-thread-1",
+          subject: "Test",
+          lastMessageAt: new Date().toISOString(),
+          unreadCount: 0,
+          participants: [{ email: "a@example.com", displayName: "A" }],
+          providerMetadata: {},
+        }],
+        nextCursor: { value: "cursor-next", expiresAt: null },
+        bootstrapSliceResults: [
+          { sliceLabel: "INBOX", paginationExhausted: true, threadCount: 1, lastAdvancedCursor: "inbox-cursor" },
+          { sliceLabel: "SENT", paginationExhausted: true, threadCount: 1, lastAdvancedCursor: "sent-cursor" },
+          { sliceLabel: "SPAM", paginationExhausted: true, threadCount: 1, lastAdvancedCursor: "spam-cursor" },
+          { sliceLabel: "DRAFT", paginationExhausted: true, threadCount: 1, lastAdvancedCursor: "draft-cursor" },
+        ],
+      });
       vi.mocked(getMailboxProviderAdapter).mockReturnValue(mockAdapter as never);
 
       mockDb.mailboxSyncRun.findFirst.mockResolvedValue(null);
@@ -860,12 +914,25 @@ describe("Sprint 3.2 — Incremental sync and provider cursors", () => {
       });
 
       expect(result.success).toBe(true);
+      // Coverage completion truth comes from per-folder rows, not metadata flags.
+      expect(markFolderCoverageComplete).toHaveBeenCalledWith(
+        "org-1", "conn-1", "INBOX", 1, "inbox-cursor",
+      );
+      expect(markFolderCoverageComplete).toHaveBeenCalledWith(
+        "org-1", "conn-1", "SENT", 1, "sent-cursor",
+      );
+      expect(markFolderCoverageComplete).toHaveBeenCalledWith(
+        "org-1", "conn-1", "SPAM", 1, "spam-cursor",
+      );
+      expect(markFolderCoverageComplete).toHaveBeenCalledWith(
+        "org-1", "conn-1", "DRAFT", 1, "draft-cursor",
+      );
+      expect(updateFolderCoverageBootstrapping).not.toHaveBeenCalled();
       expect(mockDb.mailboxConnection.update).toHaveBeenCalledWith(
         expect.objectContaining({
-          data: expect.objectContaining({
+          data: expect.not.objectContaining({
             watchMetadata: expect.objectContaining({
-              gmailCoverageVersion: 4,
-              gmailCoveredSystemLabels: ["INBOX", "SENT", "SPAM", "DRAFT"],
+              gmailCoverageVersion: expect.anything(),
             }),
           }),
         }),

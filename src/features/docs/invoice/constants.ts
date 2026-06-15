@@ -28,14 +28,18 @@ export const invoiceTemplateOptions: Array<{
 export const invoiceDefaultValues: InvoiceFormValues = {
   templateId: "professional",
   branding: {
+    salutation: "",
     companyName: "Northfield Trading Co.",
     address: "18 Market Road, Kozhikode",
     email: "accounts@northfield.example",
     phone: "+91 98765 43210",
     accentColor: "#c69854",
+    logoSize: 72,
+    logoFit: "contain",
   },
   website: "www.northfield.example",
   businessTaxId: "GSTIN 32ABCDE1234F1Z6",
+  clientSalutation: "",
   clientName: "Axis PeopleX Pvt. Ltd.",
   clientAddress: "4th Floor, Grand Square, Kochi",
   shippingAddress: "Warehouse Bay 3, Marine Drive, Kochi",
@@ -56,7 +60,11 @@ export const invoiceDefaultValues: InvoiceFormValues = {
   bankName: "Federal Bank",
   bankAccountNumber: "122001004281",
   bankIfsc: "FDRL0001220",
+  upiId: "",
+  upiQrDataUrl: "",
   authorizedBy: "Anita Thomas",
+  authorizedByDesignation: "Finance Manager",
+  authorizedByCompany: "Northfield Trading Co.",
   lineItems: [
     {
       description: "HR outsourcing retainer for March 2026",
@@ -93,5 +101,6 @@ export const invoiceDefaultValues: InvoiceFormValues = {
     showBankDetails: true,
     showSignature: true,
     showPaymentSummary: true,
+    showUpiDetails: true,
   },
 };

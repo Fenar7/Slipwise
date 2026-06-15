@@ -64,12 +64,7 @@ describe("buildMailboxSyncPresentation", () => {
 
   it("returns completed with latest completed run stats", () => {
     const sync = buildMailboxSyncPresentation(
-      makeConnection({
-          watchMetadata: {
-          gmailCoverageVersion: 4,
-          gmailCoveredSystemLabels: ["INBOX", "SENT", "SPAM", "DRAFT"],
-          },
-      }),
+      makeConnection(),
       {
         latestRun: {
           id: "run_2",
@@ -101,6 +96,111 @@ describe("buildMailboxSyncPresentation", () => {
     expect(sync.lastRunThreadCount).toBe(12);
     expect(sync.lastRunMessageCount).toBe(58);
     expect(sync.detailLabel).toContain("12 threads");
+  });
+
+  it("returns completed with draftErrorSummary when stats include draft error", () => {
+    const sync = buildMailboxSyncPresentation(
+      makeConnection(),
+      {
+        latestRun: {
+          id: "run_draft_err",
+          status: "COMPLETED",
+          syncMode: "DELTA",
+          triggerSource: "MANUAL",
+          startedAt: new Date("2026-05-22T11:55:00.000Z"),
+          completedAt: new Date("2026-05-22T11:57:00.000Z"),
+          stats: { threadCount: 12, messageCount: 58, draftErrorCategory: "gmail_api_error", draftErrorSummary: "Drafts API returned 403" },
+          errorCategory: null,
+          errorMessage: null,
+        },
+        latestCompletedRun: {
+          id: "run_draft_err",
+          status: "COMPLETED",
+          syncMode: "DELTA",
+          triggerSource: "MANUAL",
+          startedAt: new Date("2026-05-22T11:55:00.000Z"),
+          completedAt: new Date("2026-05-22T11:57:00.000Z"),
+          stats: { threadCount: 12, messageCount: 58, draftErrorCategory: "gmail_api_error", draftErrorSummary: "Drafts API returned 403" },
+          errorCategory: null,
+          errorMessage: null,
+        },
+      },
+      NOW,
+    );
+
+    expect(sync.state).toBe("completed");
+    expect(sync.draftErrorCategory).toBe("gmail_api_error");
+    expect(sync.draftErrorSummary).toBe("Drafts API returned 403");
+    expect(sync.detailLabel).toContain("Drafts could not be synced");
+    expect(sync.lastErrorCategory).toBeNull();
+    expect(sync.lastErrorSummary).toBeNull();
+  });
+
+  it("clears draftErrorSummary when subsequent sync has no draft error", () => {
+    const sync = buildMailboxSyncPresentation(
+      makeConnection(),
+      {
+        latestRun: {
+          id: "run_clean",
+          status: "COMPLETED",
+          syncMode: "DELTA",
+          triggerSource: "MANUAL",
+          startedAt: new Date("2026-05-22T12:55:00.000Z"),
+          completedAt: new Date("2026-05-22T12:57:00.000Z"),
+          stats: { threadCount: 5, messageCount: 20 },
+          errorCategory: null,
+          errorMessage: null,
+        },
+        latestCompletedRun: {
+          id: "run_clean",
+          status: "COMPLETED",
+          syncMode: "DELTA",
+          triggerSource: "MANUAL",
+          startedAt: new Date("2026-05-22T12:55:00.000Z"),
+          completedAt: new Date("2026-05-22T12:57:00.000Z"),
+          stats: { threadCount: 5, messageCount: 20 },
+          errorCategory: null,
+          errorMessage: null,
+        },
+      },
+      NOW,
+    );
+
+    expect(sync.state).toBe("completed");
+    expect(sync.draftErrorCategory).toBeNull();
+    expect(sync.draftErrorSummary).toBeNull();
+    expect(sync.detailLabel).not.toContain("Drafts could not be synced");
+  });
+
+  it("shows draft error in running sync detail label when syncPhase is draft_sync", () => {
+    const sync = buildMailboxSyncPresentation(
+      makeConnection({
+        lastSyncAt: null,
+        syncLeaseToken: "lease_draft_err",
+        syncLeaseExpiresAt: new Date(NOW + 60_000),
+      }),
+      {
+        latestRun: {
+          id: "run_draft_err_running",
+          status: "RUNNING",
+          syncMode: "INITIAL",
+          triggerSource: "MANUAL",
+          startedAt: new Date(NOW - 30_000),
+          completedAt: null,
+          stats: { threadCount: 0, messageCount: 0, syncPhase: "draft_sync", draftErrorCategory: "forbidden", draftErrorSummary: "Insufficient Gmail permissions to read drafts" },
+          errorCategory: null,
+          errorMessage: null,
+          lastHeartbeatAt: new Date(NOW - 10_000),
+        },
+      },
+      NOW,
+    );
+
+    expect(sync.state).toBe("running");
+    expect(sync.draftErrorCategory).toBe("forbidden");
+    expect(sync.draftErrorSummary).toBe("Insufficient Gmail permissions to read drafts");
+    expect(sync.detailLabel).toContain("Draft sync had an issue");
+    expect(sync.detailLabel).toContain("Insufficient Gmail permissions");
   });
 
   it("returns failed when latest run failed", () => {
@@ -270,8 +370,126 @@ describe("buildMailboxSyncPresentation", () => {
     expect(sync.stageLabel).toBe("Initial import in progress");
   });
 
+  describe("stalled sync detection", () => {
+    it("treats a running run with stale heartbeat as stalled (not healthy active)", () => {
+      const sync = buildMailboxSyncPresentation(
+        makeConnection({
+          lastSyncAt: null,
+          syncLeaseToken: "lease_1",
+          syncLeaseExpiresAt: new Date(NOW + 60_000),
+        }),
+        {
+          latestRun: {
+            id: "run_stalled",
+            status: "RUNNING",
+            syncMode: "INITIAL",
+            triggerSource: "MANUAL",
+            startedAt: new Date(NOW - 10 * 60 * 1000),
+            completedAt: null,
+            stats: null,
+            errorCategory: null,
+            errorMessage: null,
+            lastHeartbeatAt: new Date(NOW - 6 * 60 * 1000), // 6 min ago > 5 min threshold
+          },
+        },
+        NOW,
+      );
+
+      // Stalled run should NOT be treated as syncing
+      expect(sync.isSyncing).toBe(false);
+      expect(sync.state).toBe("failed");
+      expect(sync.stageLabel).toBe("Sync needs attention");
+      expect(sync.detailLabel).toContain("not made recent progress");
+    });
+
+    it("treats a running run with recent heartbeat as healthy active", () => {
+      const sync = buildMailboxSyncPresentation(
+        makeConnection({
+          lastSyncAt: null,
+          syncLeaseToken: "lease_1",
+          syncLeaseExpiresAt: new Date(NOW + 60_000),
+        }),
+        {
+          latestRun: {
+            id: "run_active",
+            status: "RUNNING",
+            syncMode: "INITIAL",
+            triggerSource: "MANUAL",
+            startedAt: new Date(NOW - 10 * 60 * 1000),
+            completedAt: null,
+            stats: null,
+            errorCategory: null,
+            errorMessage: null,
+            lastHeartbeatAt: new Date(NOW - 2 * 60 * 1000), // 2 min ago < 5 min threshold
+          },
+        },
+        NOW,
+      );
+
+      expect(sync.isSyncing).toBe(true);
+      expect(sync.state).toBe("running");
+      expect(sync.stageLabel).toBe("Initial import in progress");
+    });
+
+    it("treats a running run with no heartbeat as healthy (legacy runs)", () => {
+      const sync = buildMailboxSyncPresentation(
+        makeConnection({
+          lastSyncAt: null,
+          syncLeaseToken: "lease_1",
+          syncLeaseExpiresAt: new Date(NOW + 60_000),
+        }),
+        {
+          latestRun: {
+            id: "run_no_hb",
+            status: "RUNNING",
+            syncMode: "INITIAL",
+            triggerSource: "MANUAL",
+            startedAt: new Date(NOW - 2 * 60 * 1000),
+            completedAt: null,
+            stats: null,
+            errorCategory: null,
+            errorMessage: null,
+            lastHeartbeatAt: null, // No heartbeat — legacy run, treat as active
+          },
+        },
+        NOW,
+      );
+
+      expect(sync.isSyncing).toBe(true);
+      expect(sync.state).toBe("running");
+    });
+
+    it("stalled run is presented as failed even with an active lease", () => {
+      const sync = buildMailboxSyncPresentation(
+        makeConnection({
+          lastSyncAt: null,
+          syncLeaseToken: "lease_1",
+          syncLeaseExpiresAt: new Date(NOW + 60_000), // Active lease
+        }),
+        {
+          latestRun: {
+            id: "run_stalled_lease",
+            status: "RUNNING",
+            syncMode: "INITIAL",
+            triggerSource: "MANUAL",
+            startedAt: new Date(NOW - 10 * 60 * 1000),
+            completedAt: null,
+            stats: null,
+            errorCategory: null,
+            errorMessage: null,
+            lastHeartbeatAt: new Date(NOW - 6 * 60 * 1000), // Stalled
+          },
+        },
+        NOW,
+      );
+
+      expect(sync.isSyncing).toBe(false);
+      expect(sync.state).toBe("failed");
+    });
+  });
+
   describe("Gmail stale coverage detection", () => {
-    it("flags stale coverage when watchMetadata is null for Gmail", () => {
+    it("does not flag stale coverage from legacy metadata (visibility service owns this)", () => {
       const sync = buildMailboxSyncPresentation(
         makeConnection({
           watchMetadata: null,
@@ -288,32 +506,15 @@ describe("buildMailboxSyncPresentation", () => {
       );
 
       expect(sync.state).toBe("completed");
-      expect(sync.staleGmailCoverage).toBe(true);
-      expect(sync.stageLabel).toBe("Sync recommended");
-      expect(sync.detailLabel).toMatch(/coverage needs to be refreshed/);
+      expect(sync.staleGmailCoverage).toBe(false);
+      expect(sync.stageLabel).toBe("Mailbox up to date");
     });
 
-    it("flags stale coverage when gmailCoverageVersion is outdated", () => {
+    it("always returns false for completed state regardless of watchMetadata", () => {
       const sync = buildMailboxSyncPresentation(
         makeConnection({
           watchMetadata: {
             gmailCoverageVersion: 1,
-            gmailCoveredSystemLabels: ["INBOX", "SENT", "SPAM"],
-          },
-        }),
-        {},
-        NOW,
-      );
-
-      expect(sync.staleGmailCoverage).toBe(true);
-      expect(sync.stageLabel).toBe("Sync recommended");
-    });
-
-    it("flags stale coverage when covered labels are incomplete", () => {
-      const sync = buildMailboxSyncPresentation(
-        makeConnection({
-          watchMetadata: {
-            gmailCoverageVersion: 4,
             gmailCoveredSystemLabels: ["INBOX"],
           },
         }),
@@ -321,10 +522,11 @@ describe("buildMailboxSyncPresentation", () => {
         NOW,
       );
 
-      expect(sync.staleGmailCoverage).toBe(true);
+      expect(sync.staleGmailCoverage).toBe(false);
+      expect(sync.stageLabel).toBe("Mailbox up to date");
     });
 
-    it("does not flag stale coverage for Gmail with current version and full labels", () => {
+    it("always returns false for completed state with current metadata", () => {
       const sync = buildMailboxSyncPresentation(
         makeConnection({
           watchMetadata: {
@@ -360,7 +562,7 @@ describe("buildMailboxSyncPresentation", () => {
       expect(sync.staleGmailCoverage).toBe(false);
     });
 
-    it("completed_never_imported state never has stale flag (covered by that path)", () => {
+    it("completed_never_imported state never has stale flag", () => {
       const sync = buildMailboxSyncPresentation(
         makeConnection({
           lastSyncAt: null,
@@ -372,6 +574,572 @@ describe("buildMailboxSyncPresentation", () => {
 
       expect(sync.state).toBe("completed_never_imported");
       expect(sync.staleGmailCoverage).toBe(false);
+    });
+  });
+
+  describe("sync-state recovery — successful run supersedes prior failure", () => {
+    const MAKE_CONNECTION = (
+      overrides: Partial<Parameters<typeof buildMailboxSyncPresentation>[0]> = {},
+    ) => makeConnection(overrides);
+
+    it("new COMPLETED run after stale RUNNING run shows completed, not failed", () => {
+      const sync = buildMailboxSyncPresentation(
+        MAKE_CONNECTION(),
+        {
+          latestRun: {
+            id: "run_new_completed",
+            status: "COMPLETED",
+            syncMode: "DELTA",
+            triggerSource: "MANUAL",
+            startedAt: new Date(NOW - 60_000),
+            completedAt: new Date(NOW - 30_000),
+            stats: { threadCount: 10, messageCount: 42 },
+            errorCategory: null,
+            errorMessage: null,
+          },
+          latestCompletedRun: {
+            id: "run_new_completed",
+            status: "COMPLETED",
+            syncMode: "DELTA",
+            triggerSource: "MANUAL",
+            startedAt: new Date(NOW - 60_000),
+            completedAt: new Date(NOW - 30_000),
+            stats: { threadCount: 10, messageCount: 42 },
+            errorCategory: null,
+            errorMessage: null,
+          },
+        },
+        NOW,
+      );
+
+      expect(sync.state).toBe("completed");
+      expect(sync.lastRunThreadCount).toBe(10);
+      expect(sync.lastErrorSummary).toBeNull();
+    });
+
+    it("new COMPLETED run supersedes stale connection-lastSyncError", () => {
+      const sync = buildMailboxSyncPresentation(
+        MAKE_CONNECTION({
+          lastSyncError: "Gmail rate limit exceeded",
+          lastSyncErrorCategory: "rate_limited",
+        }),
+        {
+          latestRun: {
+            id: "run_recovered",
+            status: "COMPLETED",
+            syncMode: "DELTA",
+            triggerSource: "MANUAL",
+            startedAt: new Date(NOW - 60_000),
+            completedAt: new Date(NOW - 30_000),
+            stats: { threadCount: 5, messageCount: 20 },
+            errorCategory: null,
+            errorMessage: null,
+          },
+          latestCompletedRun: {
+            id: "run_recovered",
+            status: "COMPLETED",
+            syncMode: "DELTA",
+            triggerSource: "MANUAL",
+            startedAt: new Date(NOW - 60_000),
+            completedAt: new Date(NOW - 30_000),
+            stats: { threadCount: 5, messageCount: 20 },
+            errorCategory: null,
+            errorMessage: null,
+          },
+        },
+        NOW,
+      );
+
+      expect(sync.state).toBe("completed");
+      expect(sync.lastErrorSummary).toBeNull();
+      expect(sync.detailLabel).not.toContain("rate limit");
+    });
+
+    it("new COMPLETED run supersedes prior FAILED run that was cleaned up", () => {
+      const sync = buildMailboxSyncPresentation(
+        MAKE_CONNECTION({
+          lastSyncError: null,
+          lastSyncErrorCategory: null,
+        }),
+        {
+          latestRun: {
+            id: "run_recovered",
+            status: "COMPLETED",
+            syncMode: "DELTA",
+            triggerSource: "MANUAL",
+            startedAt: new Date(NOW - 60_000),
+            completedAt: new Date(NOW - 30_000),
+            stats: { threadCount: 8, messageCount: 35 },
+            errorCategory: null,
+            errorMessage: null,
+          },
+          latestCompletedRun: {
+            id: "run_recovered",
+            status: "COMPLETED",
+            syncMode: "DELTA",
+            triggerSource: "MANUAL",
+            startedAt: new Date(NOW - 60_000),
+            completedAt: new Date(NOW - 30_000),
+            stats: { threadCount: 8, messageCount: 35 },
+            errorCategory: null,
+            errorMessage: null,
+          },
+        },
+        NOW,
+      );
+
+      expect(sync.state).toBe("completed");
+      expect(sync.lastRunStatus).toBe("COMPLETED");
+    });
+
+    it("FAILED run with no newer COMPLETED run shows failed state", () => {
+      const sync = buildMailboxSyncPresentation(
+        MAKE_CONNECTION(),
+        {
+          latestRun: {
+            id: "run_failed",
+            status: "FAILED",
+            syncMode: "DELTA",
+            triggerSource: "MANUAL",
+            startedAt: new Date(NOW - 60_000),
+            completedAt: new Date(NOW - 30_000),
+            stats: null,
+            errorCategory: "rate_limited",
+            errorSummary: "Gmail API rate limit",
+          },
+        },
+        NOW,
+      );
+
+      expect(sync.state).toBe("failed");
+      expect(sync.lastErrorSummary).toBe("Gmail API rate limit");
+    });
+
+    it("connection lastSyncError with no COMPLETED run shows failed state", () => {
+      const sync = buildMailboxSyncPresentation(
+        MAKE_CONNECTION({
+          lastSyncError: "OAuth token revoked",
+          lastSyncErrorCategory: "auth_error",
+        }),
+        {},
+        NOW,
+      );
+
+      expect(sync.state).toBe("failed");
+      expect(sync.lastErrorSummary).toBe("OAuth token revoked");
+    });
+
+    it("abandoned FAILED run (stale cleanup) with prior COMPLETED run shows completed", () => {
+      const sync = buildMailboxSyncPresentation(
+        MAKE_CONNECTION(),
+        {
+          latestRun: {
+            id: "run_abandoned",
+            status: "FAILED",
+            syncMode: "INITIAL",
+            triggerSource: "MANUAL",
+            startedAt: new Date(NOW - 35 * 60 * 1000),
+            completedAt: new Date(NOW - 34 * 60 * 1000),
+            stats: null,
+            errorCategory: "unknown",
+            errorSummary: "Sync run abandoned — did not complete within expected time",
+          },
+          latestCompletedRun: {
+            id: "run_prior",
+            status: "COMPLETED",
+            syncMode: "DELTA",
+            triggerSource: "SCHEDULED",
+            startedAt: new Date(NOW - 120 * 60 * 1000),
+            completedAt: new Date(NOW - 118 * 60 * 1000),
+            stats: { threadCount: 42, messageCount: 180 },
+            errorCategory: null,
+            errorMessage: null,
+          },
+        },
+        NOW,
+      );
+
+      expect(sync.state).toBe("completed");
+      expect(sync.lastRunStatus).toBe("FAILED");
+      expect(sync.lastErrorCategory).toBeNull();
+      expect(sync.lastErrorSummary).toBeNull();
+      expect(sync.stageLabel).toBe("Mailbox up to date");
+      expect(sync.detailLabel).toContain("42 threads");
+      expect(sync.detailLabel).toContain("180 messages");
+    });
+
+    it("abandoned FAILED run with NO prior COMPLETED run still shows failed", () => {
+      const sync = buildMailboxSyncPresentation(
+        MAKE_CONNECTION({ lastSyncAt: null }),
+        {
+          latestRun: {
+            id: "run_abandoned_no_prior",
+            status: "FAILED",
+            syncMode: "INITIAL",
+            triggerSource: "MANUAL",
+            startedAt: new Date(NOW - 35 * 60 * 1000),
+            completedAt: new Date(NOW - 34 * 60 * 1000),
+            stats: null,
+            errorCategory: "unknown",
+            errorSummary: "Sync run abandoned — did not complete within expected time",
+          },
+        },
+        NOW,
+      );
+
+      expect(sync.state).toBe("failed");
+      expect(sync.lastRunStatus).toBe("FAILED");
+      expect(sync.lastErrorSummary).toBe("Sync run abandoned — did not complete within expected time");
+    });
+
+    it("genuine FAILED run with prior COMPLETED run still shows failed (not abandoned)", () => {
+      const sync = buildMailboxSyncPresentation(
+        MAKE_CONNECTION(),
+        {
+          latestRun: {
+            id: "run_genuine_fail",
+            status: "FAILED",
+            syncMode: "DELTA",
+            triggerSource: "MANUAL",
+            startedAt: new Date(NOW - 60_000),
+            completedAt: new Date(NOW - 30_000),
+            stats: null,
+            errorCategory: "rate_limited",
+            errorSummary: "Gmail API rate limit exceeded",
+          },
+          latestCompletedRun: {
+            id: "run_prior",
+            status: "COMPLETED",
+            syncMode: "DELTA",
+            triggerSource: "SCHEDULED",
+            startedAt: new Date(NOW - 120 * 60 * 1000),
+            completedAt: new Date(NOW - 118 * 60 * 1000),
+            stats: { threadCount: 42, messageCount: 180 },
+            errorCategory: null,
+            errorMessage: null,
+          },
+        },
+        NOW,
+      );
+
+      expect(sync.state).toBe("failed");
+      expect(sync.lastErrorCategory).toBe("rate_limited");
+      expect(sync.lastErrorSummary).toBe("Gmail API rate limit exceeded");
+    });
+
+    it("draft-only degradation in COMPLETED state does not show full-sync failure", () => {
+      const sync = buildMailboxSyncPresentation(
+        MAKE_CONNECTION(),
+        {
+          latestRun: {
+            id: "run_draft_degraded",
+            status: "COMPLETED",
+            syncMode: "DELTA",
+            triggerSource: "MANUAL",
+            startedAt: new Date(NOW - 60_000),
+            completedAt: new Date(NOW - 30_000),
+            stats: { threadCount: 5, messageCount: 20, draftErrorCategory: "gmail_api_error", draftErrorSummary: "Drafts API returned 403" },
+            errorCategory: null,
+            errorMessage: null,
+          },
+          latestCompletedRun: {
+            id: "run_draft_degraded",
+            status: "COMPLETED",
+            syncMode: "DELTA",
+            triggerSource: "MANUAL",
+            startedAt: new Date(NOW - 60_000),
+            completedAt: new Date(NOW - 30_000),
+            stats: { threadCount: 5, messageCount: 20, draftErrorCategory: "gmail_api_error", draftErrorSummary: "Drafts API returned 403" },
+            errorCategory: null,
+            errorMessage: null,
+          },
+        },
+        NOW,
+      );
+
+      expect(sync.state).toBe("completed");
+      expect(sync.lastErrorCategory).toBeNull();
+      expect(sync.lastErrorSummary).toBeNull();
+      expect(sync.draftErrorCategory).toBe("gmail_api_error");
+      expect(sync.draftErrorSummary).toBe("Drafts API returned 403");
+      expect(sync.detailLabel).toContain("Drafts could not be synced");
+    });
+  });
+
+  describe("in-run progress visibility", () => {
+    it("shows live thread/message counts during running sync from heartbeat stats", () => {
+      const sync = buildMailboxSyncPresentation(
+        makeConnection({
+          lastSyncAt: null,
+          syncLeaseToken: "lease_1",
+          syncLeaseExpiresAt: new Date(NOW + 60_000),
+        }),
+        {
+          latestRun: {
+            id: "run_progress",
+            status: "RUNNING",
+            syncMode: "INITIAL",
+            triggerSource: "MANUAL",
+            startedAt: new Date(NOW - 10 * 60 * 1000),
+            completedAt: null,
+            stats: { threadCount: 42, messageCount: 128 },
+            errorCategory: null,
+            errorMessage: null,
+            lastHeartbeatAt: new Date(NOW - 2 * 60 * 1000),
+          },
+        },
+        NOW,
+      );
+
+      expect(sync.state).toBe("running");
+      expect(sync.lastRunThreadCount).toBe(42);
+      expect(sync.lastRunMessageCount).toBe(128);
+      expect(sync.detailLabel).toContain("42 threads");
+      expect(sync.detailLabel).toContain("128 messages");
+    });
+
+    it("shows coverage recovery phase in detail label", () => {
+      const sync = buildMailboxSyncPresentation(
+        makeConnection({
+          lastSyncAt: null,
+          syncLeaseToken: "lease_1",
+          syncLeaseExpiresAt: new Date(NOW + 60_000),
+        }),
+        {
+          latestRun: {
+            id: "run_recovery",
+            status: "RUNNING",
+            syncMode: "DELTA",
+            triggerSource: "MANUAL",
+            startedAt: new Date(NOW - 10 * 60 * 1000),
+            completedAt: null,
+            stats: { threadCount: 5, messageCount: 12, syncPhase: "coverage_recovery", currentFolder: "SENT" },
+            errorCategory: null,
+            errorMessage: null,
+            lastHeartbeatAt: new Date(NOW - 2 * 60 * 1000),
+          },
+        },
+        NOW,
+      );
+
+      expect(sync.state).toBe("running");
+      expect(sync.detailLabel).toContain("Recovering SENT");
+      expect(sync.detailLabel).toContain("5 threads");
+    });
+
+    it("shows draft sync phase in detail label", () => {
+      const sync = buildMailboxSyncPresentation(
+        makeConnection({
+          lastSyncAt: new Date("2026-05-21T12:00:00.000Z"),
+          syncLeaseToken: "lease_1",
+          syncLeaseExpiresAt: new Date(NOW + 60_000),
+        }),
+        {
+          latestRun: {
+            id: "run_drafts",
+            status: "RUNNING",
+            syncMode: "DELTA",
+            triggerSource: "MANUAL",
+            startedAt: new Date(NOW - 5 * 60 * 1000),
+            completedAt: null,
+            stats: { threadCount: 3, messageCount: 8, syncPhase: "draft_sync" },
+            errorCategory: null,
+            errorMessage: null,
+            lastHeartbeatAt: new Date(NOW - 1 * 60 * 1000),
+          },
+        },
+        NOW,
+      );
+
+      expect(sync.state).toBe("running");
+      expect(sync.detailLabel).toContain("Syncing drafts");
+      expect(sync.detailLabel).toContain("3 threads");
+    });
+
+    it("falls back to generic message when no progress stats yet", () => {
+      const sync = buildMailboxSyncPresentation(
+        makeConnection({
+          lastSyncAt: null,
+          syncLeaseToken: "lease_1",
+          syncLeaseExpiresAt: new Date(NOW + 60_000),
+        }),
+        {
+          latestRun: {
+            id: "run_early",
+            status: "RUNNING",
+            syncMode: "INITIAL",
+            triggerSource: "MANUAL",
+            startedAt: new Date(NOW - 30_000),
+            completedAt: null,
+            stats: null,
+            errorCategory: null,
+            errorMessage: null,
+            lastHeartbeatAt: new Date(NOW - 10_000),
+          },
+        },
+        NOW,
+      );
+
+      expect(sync.state).toBe("running");
+      expect(sync.detailLabel).toBe("Importing recent threads. Messages will appear automatically.");
+    });
+  });
+
+  describe("folder-specific degradation vs mailbox-wide failure", () => {
+    it("failed state with all-complete folder coverage still shows failed", () => {
+      // When the sync run failed but all folders are somehow complete,
+      // the mailbox-wide state is still "failed" because the connection
+      // status reflects the last error.
+      const sync = buildMailboxSyncPresentation(
+        makeConnection({
+          status: "DEGRADED",
+          lastSyncAt: new Date(NOW - 60_000),
+          lastSyncError: "Gmail API temporarily unavailable",
+          lastSyncErrorCategory: "provider_unavailable",
+        }),
+        {
+          latestRun: {
+            id: "run_1",
+            status: "FAILED",
+            syncMode: "DELTA",
+            triggerSource: "MANUAL",
+            startedAt: new Date(NOW - 120_000),
+            completedAt: null,
+            stats: null,
+            errorCategory: "provider_unavailable",
+            errorSummary: "Gmail API temporarily unavailable",
+            lastHeartbeatAt: null,
+          },
+        },
+        NOW,
+      );
+
+      expect(sync.state).toBe("failed");
+      expect(sync.lastErrorSummary).toBe("Gmail API temporarily unavailable");
+    });
+
+    it("completed with staleGmailCoverage shows as needing recovery", () => {
+      const sync = buildMailboxSyncPresentation(
+        makeConnection({
+          status: "ACTIVE",
+          lastSyncAt: new Date(NOW - 60_000),
+        }),
+        {
+          latestRun: {
+            id: "run_1",
+            status: "COMPLETED",
+            syncMode: "DELTA",
+            triggerSource: "MANUAL",
+            startedAt: new Date(NOW - 120_000),
+            completedAt: new Date(NOW - 60_000),
+            stats: { threadCount: 5, messageCount: 10 },
+            errorCategory: null,
+            errorSummary: null,
+            lastHeartbeatAt: null,
+          },
+        },
+        NOW,
+      );
+
+      // Without staleGmailCoverage override, completed is healthy
+      expect(sync.state).toBe("completed");
+    });
+
+    it("running sync shows truthful phase label", () => {
+      const sync = buildMailboxSyncPresentation(
+        makeConnection({
+          lastSyncAt: null,
+          syncLeaseExpiresAt: new Date(NOW + 60_000),
+        }),
+        {
+          latestRun: {
+            id: "run_1",
+            status: "RUNNING",
+            syncMode: "INITIAL",
+            triggerSource: "MANUAL",
+            startedAt: new Date(NOW - 30_000),
+            completedAt: null,
+            stats: { threadCount: 42, messageCount: 100, syncPhase: "coverage_recovery" },
+            errorCategory: null,
+            errorSummary: null,
+            lastHeartbeatAt: new Date(NOW - 5_000),
+          },
+        },
+        NOW,
+      );
+
+      expect(sync.state).toBe("running");
+      expect(sync.detailLabel).toContain("Recovering");
+      expect(sync.detailLabel).toContain("42 threads");
+    });
+
+    it("completed run supersedes prior failed run", () => {
+      const sync = buildMailboxSyncPresentation(
+        makeConnection({
+          status: "ACTIVE",
+          lastSyncAt: new Date(NOW - 60_000),
+          lastSyncError: "Prior failure",
+          lastSyncErrorCategory: "unknown",
+        }),
+        {
+          latestRun: {
+            id: "run_failed",
+            status: "COMPLETED",
+            syncMode: "DELTA",
+            triggerSource: "MANUAL",
+            startedAt: new Date(NOW - 180_000),
+            completedAt: new Date(NOW - 120_000),
+            stats: { threadCount: 10, messageCount: 20 },
+            errorCategory: null,
+            errorSummary: null,
+            lastHeartbeatAt: null,
+          },
+          latestCompletedRun: {
+            id: "run_failed",
+            status: "COMPLETED",
+            syncMode: "DELTA",
+            triggerSource: "MANUAL",
+            startedAt: new Date(NOW - 180_000),
+            completedAt: new Date(NOW - 120_000),
+            stats: { threadCount: 10, messageCount: 20 },
+            errorCategory: null,
+            errorSummary: null,
+            lastHeartbeatAt: null,
+          },
+        },
+        NOW,
+      );
+
+      // A completed run supersedes prior failure — should be "completed" not "failed"
+      expect(sync.state).toBe("completed");
+      expect(sync.lastErrorSummary).toBeNull();
+    });
+
+    it("stalled running run shows as needing attention", () => {
+      const sync = buildMailboxSyncPresentation(
+        makeConnection({
+          lastSyncAt: null,
+          syncLeaseExpiresAt: new Date(NOW + 60_000),
+        }),
+        {
+          latestRun: {
+            id: "run_1",
+            status: "RUNNING",
+            syncMode: "INITIAL",
+            triggerSource: "MANUAL",
+            startedAt: new Date(NOW - 600_000), // 10 min ago
+            completedAt: null,
+            stats: null,
+            errorCategory: null,
+            errorSummary: null,
+            lastHeartbeatAt: new Date(NOW - 600_000), // heartbeat also 10 min ago (>5 min threshold)
+          },
+        },
+        NOW,
+      );
+
+      expect(sync.state).toBe("failed");
+      expect(sync.detailLabel).toContain("has not made recent progress");
     });
   });
 

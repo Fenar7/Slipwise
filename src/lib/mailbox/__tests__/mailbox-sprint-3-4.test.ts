@@ -27,6 +27,7 @@ vi.mock("@/lib/db", () => ({
       upsert: vi.fn(),
       findUnique: vi.fn(),
       findFirst: vi.fn(),
+      findMany: vi.fn().mockResolvedValue([]),
       count: vi.fn(),
     },
     mailboxAttachment: {
@@ -93,9 +94,10 @@ vi.mock("@/lib/mailbox/gmail-provider", async () => {
       refreshAuthorization: vi.fn(),
       verifyConnection: vi.fn(),
       syncDelta: vi.fn(),
+      syncDrafts: vi.fn().mockResolvedValue({ drafts: [], activeDraftIds: [], failedDraftIds: [] }),
       fetchThreadDetail: vi.fn(),
       disconnect: vi.fn(),
-      renewWatch: vi.fn(),
+      renewWatch: vi.fn().mockResolvedValue({ expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), metadata: {} }),
     },
   };
 });
@@ -116,6 +118,15 @@ vi.mock("@/lib/mailbox/audit", () => ({
 
 vi.mock("@/lib/mailbox/provider-registry", () => ({
   getMailboxProviderAdapter: vi.fn(),
+}));
+
+vi.mock("@/lib/mailbox/folder-coverage-service", () => ({
+  markFolderCoverageComplete: vi.fn(),
+  updateFolderCoverageBootstrapping: vi.fn(),
+  initFolderCoverageForBootstrap: vi.fn(),
+  getIncompleteRequiredFolders: vi.fn().mockResolvedValue([]),
+  getFolderCoverage: vi.fn().mockResolvedValue(null),
+  resetFolderCoverageCursor: vi.fn(),
 }));
 
 vi.mock("@/lib/mailbox/gmail-oauth-service", () => ({
@@ -889,6 +900,11 @@ function makeMockAdapter() {
       }],
       nextCursor: { value: "cursor-next", expiresAt: null },
     }),
+    syncDrafts: vi.fn().mockResolvedValue({
+      drafts: [],
+      activeDraftIds: [],
+      failedDraftIds: [],
+    }),
     fetchThreadDetail: vi.fn().mockResolvedValue({
       messages: [{
         providerMessageId: "gmail-msg-1",
@@ -910,7 +926,10 @@ function makeMockAdapter() {
       }],
     }),
     disconnect: vi.fn(),
-    renewWatch: vi.fn(),
+    renewWatch: vi.fn().mockResolvedValue({
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      metadata: { gmailHistoryId: "12345", gmailWatchExpiration: String(Date.now() + 7 * 24 * 60 * 60 * 1000) },
+    }),
   };
 }
 

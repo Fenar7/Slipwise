@@ -3,6 +3,7 @@ import { invoiceDefaultValues } from "@/features/docs/invoice/constants";
 import type { InvoiceFormValues } from "@/features/docs/invoice/types";
 
 const brandingSchema = z.object({
+  salutation: z.string().trim().optional(),
   companyName: z.string().trim(),
   address: z.string().trim(),
   email: z.string().trim(),
@@ -11,6 +12,8 @@ const brandingSchema = z.object({
   accentColor: z
     .string()
     .regex(/^#([0-9a-fA-F]{6})$/, "Enter a valid hex color."),
+  logoSize: z.number().min(30).max(150).optional(),
+  logoFit: z.enum(["contain", "cover"]).optional(),
 });
 
 const visibilitySchema = z.object({
@@ -31,6 +34,7 @@ const visibilitySchema = z.object({
   showBankDetails: z.boolean(),
   showSignature: z.boolean(),
   showPaymentSummary: z.boolean(),
+  showUpiDetails: z.boolean(),
 });
 
 const lineItemFormSchema = z.object({
@@ -85,6 +89,7 @@ export const invoiceDocumentSchema = z.object({
   branding: brandingSchema,
   website: z.string().trim().optional(),
   businessTaxId: z.string().trim().optional(),
+  clientSalutation: z.string().trim().optional(),
   clientName: z.string().trim().min(1),
   clientAddress: z.string().trim().optional(),
   shippingAddress: z.string().trim().optional(),
@@ -119,7 +124,11 @@ export const invoiceDocumentSchema = z.object({
   bankName: z.string().trim().optional(),
   bankAccountNumber: z.string().trim().optional(),
   bankIfsc: z.string().trim().optional(),
+  upiId: z.string().trim().optional(),
+  upiQrDataUrl: z.string().optional(),
   authorizedBy: z.string().trim().optional(),
+  authorizedByDesignation: z.string().trim().optional(),
+  authorizedByCompany: z.string().trim().optional(),
   visibility: visibilitySchema,
 });
 
@@ -131,6 +140,7 @@ export const invoiceFormSchema = z
     }),
     website: z.string().trim(),
     businessTaxId: z.string().trim(),
+    clientSalutation: z.string().trim().optional(),
     clientName: z.string().trim().min(1, "Client name is required."),
     clientAddress: z.string().trim(),
     shippingAddress: z.string().trim(),
@@ -144,30 +154,31 @@ export const invoiceFormSchema = z
     extraCharges: z
       .string()
       .trim()
-      .min(1, "Extra charges are required.")
-      .refine((value) => Number.isFinite(Number(value)), "Enter a valid amount.")
-      .refine((value) => Number(value) >= 0, "Extra charges cannot be negative."),
+      .refine((value) => value === "" || Number.isFinite(Number(value)), "Enter a valid amount.")
+      .refine((value) => value === "" || Number(value) >= 0, "Extra charges cannot be negative."),
     invoiceLevelDiscount: z
       .string()
       .trim()
-      .min(1, "Invoice-level discount is required.")
-      .refine((value) => Number.isFinite(Number(value)), "Enter a valid discount.")
+      .refine((value) => value === "" || Number.isFinite(Number(value)), "Enter a valid discount.")
       .refine(
-        (value) => Number(value) >= 0,
+        (value) => value === "" || Number(value) >= 0,
         "Invoice-level discount cannot be negative.",
       ),
     amountPaid: z
       .string()
       .trim()
-      .min(1, "Amount paid is required.")
-      .refine((value) => Number.isFinite(Number(value)), "Enter a valid amount.")
-      .refine((value) => Number(value) >= 0, "Amount paid cannot be negative."),
+      .refine((value) => value === "" || Number.isFinite(Number(value)), "Enter a valid amount.")
+      .refine((value) => value === "" || Number(value) >= 0, "Amount paid cannot be negative."),
     notes: z.string().trim(),
     terms: z.string().trim(),
     bankName: z.string().trim(),
     bankAccountNumber: z.string().trim(),
     bankIfsc: z.string().trim(),
-    authorizedBy: z.string().trim(),
+    upiId: z.string().trim(),
+    upiQrDataUrl: z.string().optional(),
+    authorizedBy: z.string().trim().optional(),
+    authorizedByDesignation: z.string().trim().optional(),
+    authorizedByCompany: z.string().trim().optional(),
     lineItems: z.array(lineItemFormSchema).min(1, "Add at least one line item."),
     visibility: visibilitySchema,
   })

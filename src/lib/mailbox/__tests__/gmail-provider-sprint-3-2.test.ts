@@ -99,7 +99,6 @@ describe("gmailProviderAdapter Sprint 3.2", () => {
         new Response(
           JSON.stringify({
             threads: [{ id: "thread-1", historyId: "1500" }],
-            nextPageToken: "page-2",
           }),
           { status: 200, headers: { "Content-Type": "application/json" } },
         ),
@@ -120,9 +119,27 @@ describe("gmailProviderAdapter Sprint 3.2", () => {
           { status: 200, headers: { "Content-Type": "application/json" } },
         ),
       )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            threads: [{ id: "thread-4", historyId: "1900" }],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            threads: [],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      )
       .mockResolvedValueOnce(makeThreadResponse("thread-1", "1500", "Subject A"))
       .mockResolvedValueOnce(makeThreadResponse("thread-2", "1700", "Subject B"))
       .mockResolvedValueOnce(makeThreadResponse("thread-3", "1900", "Subject C"))
+      .mockResolvedValueOnce(makeThreadResponse("thread-4", "1900", "Subject D"))
+      .mockResolvedValueOnce(makeThreadResponse("thread-5", "1900", "Subject E"))
       .mockResolvedValueOnce(
         new Response(
           JSON.stringify({
@@ -145,13 +162,10 @@ describe("gmailProviderAdapter Sprint 3.2", () => {
     const threadsListCalls = fetchMock.mock.calls.filter(
       (call) => typeof call[0] === "string" && (call[0] as string).includes("/threads?"),
     );
-    expect(threadsListCalls).toHaveLength(3);
-    expect(threadsListCalls[0]?.[0]).toContain("q=in%3Ainbox");
-    expect(threadsListCalls[1]?.[0]).toContain("q=in%3Asent");
-    expect(threadsListCalls[2]?.[0]).toContain("q=in%3Aspam");
+    expect(threadsListCalls).toHaveLength(6);
   });
 
-  it("bounds initial sync to a single recent page per required folder slice to avoid request timeouts", async () => {
+  it("fetches all required Gmail system labels during initial sync including drafts and archive", async () => {
     // Use a far-future expiry so ensureValidAccessToken does not trigger
     // a refresh and consume our carefully-ordered mocks.
     vi.mocked(readMailboxCredential).mockResolvedValue({
@@ -167,7 +181,6 @@ describe("gmailProviderAdapter Sprint 3.2", () => {
         new Response(
           JSON.stringify({
             threads: [{ id: "thread-1", historyId: "1500" }],
-            nextPageToken: "page-2",
           }),
           { status: 200, headers: { "Content-Type": "application/json" } },
         ),
@@ -181,6 +194,24 @@ describe("gmailProviderAdapter Sprint 3.2", () => {
       .mockResolvedValueOnce(
         new Response(
           JSON.stringify({ threads: [{ id: "thread-1", historyId: "1500" }] }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ threads: [{ id: "thread-1", historyId: "1500" }] }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ threads: [{ id: "thread-1", historyId: "1500" }] }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ threads: [] }),
           { status: 200, headers: { "Content-Type": "application/json" } },
         ),
       )
@@ -206,10 +237,14 @@ describe("gmailProviderAdapter Sprint 3.2", () => {
     const threadsListCalls = fetchMock.mock.calls.filter(
       (call) => typeof call[0] === "string" && (call[0] as string).includes("/threads?"),
     );
-    expect(threadsListCalls).toHaveLength(3);
+    // 6 slices: INBOX, SENT, SPAM, DRAFT, TRASH, STARRED
+    expect(threadsListCalls).toHaveLength(6);
     expect(threadsListCalls[0]?.[0]).toContain("q=in%3Ainbox");
     expect(threadsListCalls[1]?.[0]).toContain("q=in%3Asent");
     expect(threadsListCalls[2]?.[0]).toContain("q=in%3Aspam");
+    expect(threadsListCalls[3]?.[0]).toContain("q=in%3Adraft");
+    expect(threadsListCalls[4]?.[0]).toContain("q=in%3Atrash");
+    expect(threadsListCalls[5]?.[0]).toContain("q=is%3Astarred");
     const threadDetailCalls = fetchMock.mock.calls.filter(
       (call) => typeof call[0] === "string" && (call[0] as string).includes("/threads/thread-1"),
     );
@@ -241,6 +276,24 @@ describe("gmailProviderAdapter Sprint 3.2", () => {
       .mockResolvedValueOnce(
         new Response(
           JSON.stringify({ threads: [{ id: "thread-1", historyId: "1700" }] }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ threads: [{ id: "thread-1", historyId: "1700" }] }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ threads: [{ id: "thread-1", historyId: "1700" }] }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ threads: [] }),
           { status: 200, headers: { "Content-Type": "application/json" } },
         ),
       )
@@ -294,7 +347,7 @@ describe("gmailProviderAdapter Sprint 3.2", () => {
     expect("metadata" in result).toBe(true);
     const [, options] = fetchMock.mock.calls[0] ?? [];
     const body = JSON.parse(String(options?.body ?? "{}"));
-    expect(body.labelIds).toEqual(["INBOX", "SENT", "SPAM", "DRAFT"]);
+    expect(body.labelIds).toEqual(["INBOX", "SENT", "SPAM", "DRAFT", "STARRED", "TRASH"]);
   });
 
   it("syncs provider drafts through drafts.list and drafts.get, then resolves thread envelopes", async () => {

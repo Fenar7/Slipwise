@@ -4,7 +4,7 @@
  * Shared composer primitives used by floating, expanded, and inline composers.
  */
 
-import { useRef } from "react";
+import { useRef, useState, useEffect, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import {
   Bold,
@@ -25,6 +25,7 @@ import {
   CalendarClock,
   Clock3,
 } from "lucide-react";
+import { getMailboxAssignableMembers, getMailboxRecentContacts } from "./actions";
 import type { ComposeDraftAttachment, ComposeDeliveryMode } from "./types";
 
 // ─── Rich-text toolbar ────────────────────────────────────────────────────────
@@ -158,21 +159,270 @@ interface RecipientFieldProps {
 }
 
 export function RecipientField({ label, value, onChange, placeholder, autoFocus }: RecipientFieldProps) {
+  const [contacts, setContacts] = useState<{ name: string | null; email: string; avatarUrl?: string | null }[]>([]);
+  const [inputValue, setInputValue] = useState("");
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [focusedIndex, setFocusedIndex] = useState(0);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const emails = useMemo(() => {
+    return value
+      ? value
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean)
+      : [];
+  }, [value]);
+
+  useEffect(() => {
+    let active = true;
+    async function load() {
+      try {
+        const [members, recents] = await Promise.all([
+          getMailboxAssignableMembers().catch(() => []),
+          getMailboxRecentContacts().catch(() => []),
+        ]);
+        if (!active) return;
+
+        const merged = new Map<string, { name: string | null; email: string; avatarUrl?: string | null }>();
+        for (const m of members) {
+          merged.set(m.email.toLowerCase(), {
+            name: m.name,
+            email: m.email,
+            avatarUrl: m.avatarUrl,
+          });
+        }
+        for (const r of recents) {
+          const emailLower = r.email.toLowerCase();
+          if (!merged.has(emailLower)) {
+            merged.set(emailLower, {
+              name: r.name,
+              email: r.email,
+              avatarUrl: null,
+            });
+          }
+        }
+        setContacts(Array.from(merged.values()));
+      } catch (err) {
+        console.error("Failed to load contact suggestions", err);
+      }
+    }
+    load();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const filteredSuggestions = useMemo(() => {
+    const query = inputValue.trim().toLowerCase();
+    const unselected = contacts.filter((c) => !emails.some((e) => e.toLowerCase() === c.email.toLowerCase()));
+
+    if (!query) {
+      return unselected.slice(0, 5);
+    }
+
+    return unselected.filter(
+      (c) =>
+        c.email.toLowerCase().includes(query) ||
+        (c.name && c.name.toLowerCase().includes(query))
+    );
+  }, [contacts, emails, inputValue]);
+
+  const selectSuggestion = (contact: { name: string | null; email: string }) => {
+    const newEmails = [...emails, contact.email];
+    onChange(newEmails.join(", "));
+    setInputValue("");
+    setShowDropdown(false);
+    inputRef.current?.focus();
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Backspace" && !inputValue && emails.length > 0) {
+      const newEmails = emails.slice(0, -1);
+      onChange(newEmails.join(", "));
+      return;
+    }
+
+    if (e.key === "," || e.key === "Enter" || e.key === " ") {
+      if (e.key === "Enter" && showDropdown && filteredSuggestions[focusedIndex]) {
+        e.preventDefault();
+        selectSuggestion(filteredSuggestions[focusedIndex]);
+        return;
+      }
+
+      const trimmed = inputValue.trim().replace(/,$/, "");
+      if (trimmed) {
+        e.preventDefault();
+        if (!emails.some((em) => em.toLowerCase() === trimmed.toLowerCase())) {
+          const newEmails = [...emails, trimmed];
+          onChange(newEmails.join(", "));
+        }
+        setInputValue("");
+        setShowDropdown(false);
+      }
+      return;
+    }
+
+    if (e.key === "ArrowDown" && showDropdown) {
+      e.preventDefault();
+      setFocusedIndex((prev) => (prev + 1) % filteredSuggestions.length);
+      return;
+    }
+
+    if (e.key === "ArrowUp" && showDropdown) {
+      e.preventDefault();
+      setFocusedIndex((prev) => (prev - 1 + filteredSuggestions.length) % filteredSuggestions.length);
+      return;
+    }
+
+    if (e.key === "Escape") {
+      setShowDropdown(false);
+      return;
+    }
+
+    if (e.key === "Tab" && showDropdown && filteredSuggestions[focusedIndex]) {
+      e.preventDefault();
+      selectSuggestion(filteredSuggestions[focusedIndex]);
+    }
+  };
+
+  useEffect(() => {
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setShowDropdown(false);
+        const trimmed = inputValue.trim();
+        if (trimmed) {
+          if (!emails.some((em) => em.toLowerCase() === trimmed.toLowerCase())) {
+            const newEmails = [...emails, trimmed];
+            onChange(newEmails.join(", "));
+          }
+          setInputValue("");
+        }
+      }
+    };
+    document.addEventListener("mousedown", handleOutsideClick);
+    return () => {
+      document.removeEventListener("mousedown", handleOutsideClick);
+    };
+  }, [emails, inputValue, onChange]);
+
+  const getAvatarContent = (email: string) => {
+    const match = contacts.find((c) => c.email.toLowerCase() === email.toLowerCase());
+    if (match?.name) {
+      return match.name.charAt(0).toUpperCase();
+    }
+    return email.charAt(0).toUpperCase();
+  };
+
+  const getDisplayName = (email: string) => {
+    const match = contacts.find((c) => c.email.toLowerCase() === email.toLowerCase());
+    return match?.name || email;
+  };
+
   return (
     <div
-      className="flex items-center gap-2 border-b px-3 py-1.5"
+      ref={containerRef}
+      className="relative flex flex-wrap items-center gap-1.5 border-b px-3 py-1.5 cursor-text min-h-[38px]"
       style={{ borderColor: "#F1F3F7" }}
+      onClick={() => inputRef.current?.focus()}
     >
-      <span className="w-7 shrink-0 text-xs font-semibold text-[#94A3B8]">{label}</span>
-      <input
-        type="text"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        autoFocus={autoFocus}
-        className="flex-1 bg-transparent text-sm text-[#0F172A] placeholder-[#94A3B8] outline-none"
-        aria-label={label}
-      />
+      <span className="w-7 shrink-0 text-xs font-semibold text-[#94A3B8] select-none">{label}</span>
+
+      <div className="flex flex-wrap items-center gap-1.5 flex-1 min-w-0">
+        {emails.map((email) => (
+          <div
+            key={email}
+            className="flex items-center gap-1.5 rounded-full bg-slate-100/90 hover:bg-slate-200/90 border border-slate-200/40 pl-1 pr-2 py-0.5 text-xs text-slate-800 transition-colors select-none"
+          >
+            <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-blue-600 text-[10px] font-bold text-white shadow-sm">
+              {getAvatarContent(email)}
+            </div>
+            <span className="font-medium truncate max-w-[180px]">
+              {getDisplayName(email)}
+            </span>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                const newEmails = emails.filter((em) => em !== email);
+                onChange(newEmails.join(", "));
+              }}
+              className="flex h-3.5 w-3.5 items-center justify-center rounded-full text-slate-400 hover:bg-slate-300 hover:text-slate-600 transition-colors"
+              aria-label={`Remove ${email}`}
+            >
+              <X className="h-2.5 w-2.5" />
+            </button>
+          </div>
+        ))}
+
+        <input
+          ref={inputRef}
+          type="text"
+          value={inputValue}
+          onChange={(e) => {
+            setInputValue(e.target.value);
+            setShowDropdown(true);
+            setFocusedIndex(0);
+          }}
+          onKeyDown={handleKeyDown}
+          onFocus={() => setShowDropdown(true)}
+          placeholder={emails.length === 0 ? placeholder : ""}
+          autoFocus={autoFocus}
+          className="flex-1 min-w-[120px] bg-transparent text-sm text-[#0F172A] placeholder-[#94A3B8] border-0 border-none outline-none focus:outline-none focus:ring-0 focus:border-none py-0.5"
+          aria-label={label}
+        />
+      </div>
+
+      {showDropdown && filteredSuggestions.length > 0 && (
+        <div
+          className="absolute left-10 right-3 top-full z-50 mt-1 max-h-56 overflow-y-auto rounded-lg border bg-white py-1 shadow-lg border-slate-200/80"
+          role="listbox"
+          aria-label="Email suggestions"
+        >
+          {filteredSuggestions.map((contact, index) => {
+            const isFocused = index === focusedIndex;
+            return (
+              <div
+                key={contact.email}
+                role="option"
+                aria-selected={isFocused}
+                onMouseEnter={() => setFocusedIndex(index)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  selectSuggestion(contact);
+                }}
+                className={cn(
+                  "flex items-center gap-2.5 px-3 py-2 cursor-pointer transition-colors text-left",
+                  isFocused ? "bg-slate-50" : "bg-transparent"
+                )}
+              >
+                <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-blue-500 text-[11px] font-bold text-white shadow-sm">
+                  {contact.avatarUrl ? (
+                    <img
+                      src={contact.avatarUrl}
+                      alt=""
+                      className="h-full w-full rounded-full object-cover"
+                    />
+                  ) : (
+                    (contact.name || contact.email).charAt(0).toUpperCase()
+                  )}
+                </div>
+                <div className="min-w-0 flex-1">
+                  {contact.name && (
+                    <p className="text-xs font-semibold text-slate-700 truncate leading-none mb-0.5">
+                      {contact.name}
+                    </p>
+                  )}
+                  <p className="text-[11px] text-slate-500 truncate leading-none">
+                    {contact.email}
+                  </p>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

@@ -739,16 +739,28 @@ export async function getInvoice(id: string) {
 
   return {
     ...invoice,
-    invoiceDate: formatIsoDate(invoice.invoiceDate),
-    dueDate: invoice.dueDate ? formatIsoDate(invoice.dueDate) : null,
     totalAmount: toAccountingNumber(invoice.totalAmount),
     amountPaid: toAccountingNumber(invoice.amountPaid),
     remainingAmount: toAccountingNumber(invoice.remainingAmount),
+    gstTotalCgst: Number(invoice.gstTotalCgst),
+    gstTotalSgst: Number(invoice.gstTotalSgst),
+    gstTotalIgst: Number(invoice.gstTotalIgst),
+    gstTotalCess: Number(invoice.gstTotalCess),
+    invoiceDate: formatIsoDate(invoice.invoiceDate),
+    dueDate: invoice.dueDate ? formatIsoDate(invoice.dueDate) : null,
     paymentPromiseDate: invoice.paymentPromiseDate ? formatIsoDate(invoice.paymentPromiseDate) : null,
     lineItems: invoice.lineItems.map((lineItem) => ({
       ...lineItem,
       amount: toAccountingNumber(lineItem.amount),
     })),
+    customer: invoice.customer
+      ? {
+          ...invoice.customer,
+          lifetimeValue: Number(invoice.customer.lifetimeValue),
+          totalInvoiced: Number(invoice.customer.totalInvoiced),
+          totalPaid: Number(invoice.customer.totalPaid),
+        }
+      : null,
   };
 }
 
@@ -855,11 +867,15 @@ export async function listInvoices(params?: {
   return {
     invoices: invoices.map((invoice) => ({
       ...invoice,
-      invoiceDate: formatIsoDate(invoice.invoiceDate),
-      dueDate: invoice.dueDate ? formatIsoDate(invoice.dueDate) : null,
       totalAmount: toAccountingNumber(invoice.totalAmount),
       amountPaid: toAccountingNumber(invoice.amountPaid),
       remainingAmount: toAccountingNumber(invoice.remainingAmount),
+      gstTotalCgst: Number(invoice.gstTotalCgst),
+      gstTotalSgst: Number(invoice.gstTotalSgst),
+      gstTotalIgst: Number(invoice.gstTotalIgst),
+      gstTotalCess: Number(invoice.gstTotalCess),
+      invoiceDate: formatIsoDate(invoice.invoiceDate),
+      dueDate: invoice.dueDate ? formatIsoDate(invoice.dueDate) : null,
       paymentPromiseDate: invoice.paymentPromiseDate
         ? formatIsoDate(invoice.paymentPromiseDate)
         : null,

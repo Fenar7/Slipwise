@@ -355,9 +355,9 @@ describe("MailboxConnectFlow — pre_connect step", () => {
     render(<MailboxConnectFlow onClose={vi.fn()} />);
     const permissions = screen.getByLabelText(/gmail permissions requested/i);
     expect(permissions).toHaveTextContent(/read email messages and metadata/i);
+    expect(permissions).toHaveTextContent(/send email on your behalf/i);
     expect(permissions).toHaveTextContent(/view the google account email address/i);
     expect(permissions).toHaveTextContent(/view the google account profile name/i);
-    expect(permissions).not.toHaveTextContent(/send email on your behalf/i);
     expect(permissions).not.toHaveTextContent(/manage labels and mailbox settings/i);
     expect(permissions).not.toHaveTextContent(/mailbox history and changes/i);
   });
@@ -669,7 +669,7 @@ describe("MailboxLeftRail — settings link updated", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /accounts/i }));
+    // Account group is expanded by default, so reconnect link is immediately visible
     const reconnectLink = screen.getByRole("link", { name: /reconnect/i });
     expect(reconnectLink).toHaveAttribute(
       "href",

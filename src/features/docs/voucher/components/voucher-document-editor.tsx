@@ -168,7 +168,7 @@ export function VoucherDocumentEditor() {
         <div className="rounded-[1.5rem] border border-[rgba(29,23,16,0.08)] bg-[rgba(255,255,255,0.9)] p-5">
           <div className="h-16 border-b border-dashed border-[rgba(29,23,16,0.16)]" />
           <div className="mt-4 flex items-center gap-1 text-sm font-medium text-[rgba(29,23,16,0.82)]">
-            <span>Approved by:</span>
+            <span>Authorized by:</span>
             <InlineTextField
               name="approvedBy"
               placeholder="Name"

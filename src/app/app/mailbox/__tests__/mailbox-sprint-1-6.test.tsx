@@ -75,8 +75,8 @@ vi.mock("../use-mailbox-threads", () => ({
     if (params?.folder === "SPAM") {
       threads = [];
     }
-    if (params?.folder === "ARCHIVE") {
-      threads = threads.filter((t) => t.status === "ARCHIVED");
+    if (params?.folder === "STARRED") {
+      threads = threads.filter((t) => t.isFlagged === true);
     }
     if (params?.status) {
       const rawStatuses = Array.isArray(params.status)
@@ -433,6 +433,69 @@ describe("EmptyInboxState", () => {
     expect(billingTexts.length).toBe(1);
   });
 
+  describe("Starred folder empty state", () => {
+    it("shows normal synced-empty UI when sync is healthy (no syncStatus)", () => {
+      // Simulates the Starred folder with a healthy mailbox:
+      // effectiveActiveSync.state === "completed" so syncStatus is undefined.
+      // syncError is null so syncError is omitted.
+      render(
+        <EmptyInboxState
+          mailboxLabel="Inbox · Starred"
+        />
+      );
+
+      expect(screen.getByText(/starred is empty/i)).toBeInTheDocument();
+      expect(screen.queryByTestId("empty-inbox-failed")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("empty-inbox-syncing")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("empty-inbox-waiting")).not.toBeInTheDocument();
+    });
+
+    it("shows sync failure UI when sync is genuinely failed", () => {
+      // Simulates the Starred folder when effectiveActiveSync.state === "failed":
+      // syncStatus IS passed, triggering the failed empty state.
+      render(
+        <EmptyInboxState
+          mailboxLabel="Inbox · Starred"
+          syncStatus={{
+            state: "failed",
+            isSyncing: false,
+            syncMode: null,
+            triggerSource: null,
+            currentRunId: null,
+            currentRunStartedAt: null,
+            lastCompletedAt: null,
+            lastRunStatus: "FAILED",
+            lastErrorCategory: "rate_limited",
+            lastErrorSummary: "Gmail API rate limit exceeded",
+            lastRunThreadCount: null,
+            lastRunMessageCount: null,
+            stageLabel: "Sync needs attention",
+            detailLabel: "Gmail API rate limit exceeded",
+          }}
+          onSyncNow={vi.fn()}
+        />
+      );
+
+      expect(screen.getByTestId("empty-inbox-failed")).toBeInTheDocument();
+      expect(screen.getByText(/sync needs attention/i)).toBeInTheDocument();
+    });
+
+    it("does NOT show failed sync UI when mailbox state is completed with draft-only degradation", () => {
+      // Simulates the Starred folder when mailbox sync is healthy but
+      // draft sync has an isolated degradation. Since effectiveActiveSync
+      // state is "completed", syncStatus is undefined and the UI shows
+      // the normal empty state — draft degradation does not leak.
+      render(
+        <EmptyInboxState
+          mailboxLabel="Inbox · Starred"
+        />
+      );
+
+      expect(screen.getByText(/starred is empty/i)).toBeInTheDocument();
+      expect(screen.queryByTestId("empty-inbox-failed")).not.toBeInTheDocument();
+    });
+  });
+
   it("does NOT show Sync now CTA when sync is actively running", () => {
     render(
       <EmptyInboxState
@@ -532,6 +595,13 @@ describe("NoSearchResultsEmpty", () => {
   it("does not render clear button when no filters", () => {
     render(<NoSearchResultsEmpty />);
     expect(screen.queryByRole("button", { name: /clear filters/i })).not.toBeInTheDocument();
+  });
+
+  it("renders degraded copy when search results are partial", () => {
+    render(<NoSearchResultsEmpty query="chatgpt" isPartialSearch={true} />);
+    expect(
+      screen.getByText(/search results may be incomplete right now/i),
+    ).toBeInTheDocument();
   });
 });
 
