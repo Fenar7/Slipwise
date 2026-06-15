@@ -1,23 +1,29 @@
+/**
+ * Security checklist:
+ * - All inputs validated via Zod schema (patchConnectionSchema)
+ * - Unknown request body keys are rejected (strict mode)
+ * - Admin-only via requireIntegrationAdminRoute()
+ * - Rate-limited per org via RATE_LIMITS.mailboxPolicyUpdate
+ * - Org-scoped queries prevent cross-tenant data access
+ * - Error messages never leak internal IDs or stack traces
+ * - Soft-delete prevents data loss with draft-existence guard
+ */
+
 import "server-only";
 
 import { NextRequest, NextResponse } from "next/server";
 import { requireIntegrationAdminRoute } from "@/app/api/integrations/_auth";
 import { rateLimitByOrg, RATE_LIMITS } from "@/lib/rate-limit";
-import { db } from "@/lib/db";
 import {
   getMailboxConnection,
-  disableMailboxConnection,
+  softDeleteMailboxConnection,
+  updateMailboxConnectionSettings,
 } from "@/lib/mailbox/connection-service";
 import { toMailboxConnectionListItem } from "@/lib/mailbox/admin-shapes";
 import { getMailboxSyncRunsByConnectionIds } from "@/lib/mailbox/sync-run-read-service";
-import { logMailboxAuditTx } from "@/lib/mailbox/audit";
-import type { MailboxConnectionRecord, MailboxVisibilityPolicy } from "@/lib/mailbox/domain-types";
-
-const ALLOWED_POLICIES: MailboxVisibilityPolicy[] = [
-  "org_shared",
-  "restricted",
-  "admin_only",
-];
+import { emitMailboxConnectionEvent } from "@/lib/realtime";
+import { patchConnectionSchema } from "@/lib/validation/mailbox";
+import { ZodError } from "zod";
 
 export async function GET(
   _request: NextRequest,
@@ -56,13 +62,9 @@ export async function GET(
 /**
  * DELETE /api/mailbox/connections/[connectionId]
  *
- * Admin governance action: soft-disable a mailbox connection.
- * Sets status = DISCONNECTED and emits a governance audit event.
- *
- * This is a provider-agnostic disable. It does NOT revoke OAuth tokens at the
- * provider level — use the provider-specific disconnect routes for that.
- * Use this route when an admin needs to immediately disable a connection
- * regardless of provider (e.g., security incident, org offboarding).
+ * Soft-delete a mailbox connection. Sets deletedAt and status = DISCONNECTED.
+ * Denies deletion if the connection has any active email drafts (409).
+ * Emits a mailbox_connection_deleted realtime event after commit.
  *
  * Admin-only. Rate-limited per org.
  */
@@ -74,26 +76,47 @@ export async function DELETE(
     const auth = await requireIntegrationAdminRoute();
     if (!auth.ok) return auth.response;
 
-    const rl = await rateLimitByOrg(auth.ctx.orgId, RATE_LIMITS.api);
+    const rl = await rateLimitByOrg(auth.ctx.orgId, RATE_LIMITS.mailboxPolicyUpdate);
     if (!rl.success) {
       return NextResponse.json({ error: "Too many requests" }, { status: 429 });
     }
 
     const { connectionId } = await params;
 
-    let record: MailboxConnectionRecord;
+    let record;
     try {
-      record = await disableMailboxConnection(
+      record = await softDeleteMailboxConnection(
         auth.ctx.orgId,
         connectionId,
         auth.ctx.userId,
       );
     } catch (err) {
-      if (err instanceof Error && err.message.toLowerCase().includes("not found")) {
-        return NextResponse.json({ error: "Connection not found" }, { status: 404 });
+      if (err instanceof Error) {
+        const msg = err.message.toLowerCase();
+        if (msg.includes("not found")) {
+          return NextResponse.json({ error: "Connection not found" }, { status: 404 });
+        }
+        if (msg.includes("active drafts")) {
+          return NextResponse.json(
+            { error: "Cannot delete connection with active email drafts" },
+            { status: 409 },
+          );
+        }
+        if (msg.includes("already deleted")) {
+          return NextResponse.json(
+            { error: "Connection is already deleted" },
+            { status: 410 },
+          );
+        }
       }
       throw err;
     }
+
+    // Fire-and-forget realtime event after successful commit.
+    void emitMailboxConnectionEvent("mailbox_connection_deleted", {
+      id: record.id,
+      orgId: auth.ctx.orgId,
+    });
 
     return NextResponse.json({ ok: true, connection: toMailboxConnectionListItem(record) });
   } catch (error) {
@@ -105,12 +128,14 @@ export async function DELETE(
 /**
  * PATCH /api/mailbox/connections/[connectionId]
  *
- * Admin governance action: update a mailbox connection's display name and/or
- * visibility policy. Both fields are optional — only provided fields are updated.
+ * Update a mailbox connection's display name, visibility policy, and/or
+ * notification settings. All fields are optional — only provided fields are
+ * updated. Unknown request body keys are rejected.
  *
- * Validates input, enforces tenant isolation via org-scoped findFirst,
+ * Validates input via Zod (patchConnectionSchema), enforces tenant isolation,
  * logs a CONNECTION_POLICY_UPDATED audit event with previous and new values,
- * and returns the updated connection.
+ * emits a mailbox_connection_updated realtime event, and returns the updated
+ * connection.
  *
  * Admin-only. Rate-limited per org using mailboxPolicyUpdate limits.
  */
@@ -129,86 +154,34 @@ export async function PATCH(
 
     const { connectionId } = await params;
     const rawBody = await request.json();
-    const body: Record<string, unknown> =
-      typeof rawBody === "object" && rawBody !== null ? rawBody : {};
 
-    let displayName: string | undefined;
-    let visibilityPolicy: string | undefined;
-
-    if (body.displayName !== undefined) {
-      if (typeof body.displayName !== "string") {
-        return NextResponse.json({ error: "displayName must be a string" }, { status: 400 });
+    let parsed;
+    try {
+      parsed = patchConnectionSchema.parse(
+        typeof rawBody === "object" && rawBody !== null ? rawBody : {},
+      );
+    } catch (err) {
+      if (err instanceof ZodError) {
+        const firstIssue = err.issues[0];
+        const message = firstIssue?.message ?? "Invalid request body";
+        return NextResponse.json({ error: message }, { status: 400 });
       }
-      displayName = body.displayName.trim();
-      if (displayName.length === 0) {
-        return NextResponse.json({ error: "displayName must not be empty" }, { status: 400 });
-      }
-      if (displayName.length > 100) {
-        return NextResponse.json({ error: "displayName must be at most 100 characters" }, { status: 400 });
-      }
+      throw err;
     }
 
-    if (body.visibilityPolicy !== undefined) {
-      if (typeof body.visibilityPolicy !== "string") {
-        return NextResponse.json({ error: "visibilityPolicy must be a string" }, { status: 400 });
-      }
-      visibilityPolicy = body.visibilityPolicy;
-      if (!(ALLOWED_POLICIES as string[]).includes(visibilityPolicy)) {
-        return NextResponse.json({ error: "Invalid visibilityPolicy value" }, { status: 400 });
-      }
-    }
-
-    if (displayName === undefined && visibilityPolicy === undefined) {
-      return NextResponse.json({ error: "No fields to update" }, { status: 400 });
-    }
-
-    await db.$transaction(async (tx) => {
-      const existing = await tx.mailboxConnection.findFirst({
-        where: { id: connectionId, orgId: auth.ctx.orgId },
-      });
-      if (!existing) {
-        throw new Error("Connection not found");
-      }
-
-      const updateData: Record<string, unknown> = {};
-      const metadata: Record<string, unknown> = {};
-      const summaryParts: string[] = [];
-
-      if (displayName !== undefined && displayName !== existing.displayName) {
-        updateData.displayName = displayName;
-        metadata.previousDisplayName = existing.displayName;
-        metadata.newDisplayName = displayName;
-        summaryParts.push(`display name updated from "${existing.displayName}" to "${displayName}"`);
-      }
-
-      if (visibilityPolicy !== undefined && visibilityPolicy !== existing.visibilityPolicy) {
-        updateData.visibilityPolicy = visibilityPolicy;
-        metadata.previousVisibilityPolicy = existing.visibilityPolicy;
-        metadata.newVisibilityPolicy = visibilityPolicy;
-        summaryParts.push(`visibility policy changed to "${visibilityPolicy}"`);
-      }
-
-      if (Object.keys(updateData).length === 0) return;
-
-      await tx.mailboxConnection.update({
-        where: { id: existing.id },
-        data: updateData,
-      });
-
-      await logMailboxAuditTx(tx, {
-        orgId: auth.ctx.orgId,
-        actorId: auth.ctx.userId,
-        action: "CONNECTION_POLICY_UPDATED",
-        summary: `Mailbox connection ${summaryParts.join("; ")}`,
-        mailboxConnectionId: existing.id,
-        metadata,
-      });
+    const record = await updateMailboxConnectionSettings({
+      orgId: auth.ctx.orgId,
+      connectionId,
+      actorId: auth.ctx.userId,
+      displayName: parsed.displayName,
+      visibilityPolicy: parsed.visibilityPolicy,
+      notificationSettings: parsed.notificationSettings as Record<string, unknown> | undefined,
     });
 
-    const record = await getMailboxConnection(auth.ctx.orgId, connectionId);
-    if (!record) {
-      return NextResponse.json({ error: "Connection not found" }, { status: 404 });
-    }
+    void emitMailboxConnectionEvent("mailbox_connection_updated", {
+      id: record.id,
+      orgId: auth.ctx.orgId,
+    });
 
     return NextResponse.json({
       ok: true,

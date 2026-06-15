@@ -42,9 +42,14 @@ vi.mock("@/lib/rate-limit", () => ({
   RATE_LIMITS: { mailboxPolicyUpdate: { maxRequests: 10, window: "60 s" }, api: { maxRequests: 60, window: "60 s" } },
 }));
 
-vi.mock("@/lib/mailbox/connection-service", () => ({
+vi.mock("@/lib/mailbox/connection-service", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/mailbox/connection-service")>()),
   getMailboxConnection: mockGetMailboxConnection,
   disableMailboxConnection: vi.fn(),
+}));
+
+vi.mock("@/lib/realtime", () => ({
+  emitMailboxConnectionEvent: vi.fn(),
 }));
 
 vi.mock("@/lib/mailbox/admin-shapes", () => ({
@@ -172,7 +177,7 @@ describe("PATCH /api/mailbox/connections/[connectionId] — Sprint 7.1", () => {
     const res = await PATCH(req, makeParams());
     expect(res.status).toBe(400);
     const body = await res.json();
-    expect(body.error).toContain("No fields");
+    expect(body.error).toContain("must be provided");
   });
 
   // ── Test 6: 400 for whitespace-only displayName ───────────────────────────
@@ -231,14 +236,14 @@ describe("PATCH /api/mailbox/connections/[connectionId] — Sprint 7.1", () => {
     const mockTxFindFirst = vi.fn().mockResolvedValue(existingRow);
     const mockTxUpdate = vi.fn().mockResolvedValue({ ...existingRow, displayName: "New Name", visibilityPolicy: "admin_only" });
 
-    mockDb.$transaction.mockImplementation(async (txFn: (tx: unknown) => Promise<void>) => {
+    mockDb.$transaction.mockImplementation(async (txFn: (tx: unknown) => Promise<unknown>) => {
       const tx = {
         mailboxConnection: {
           findFirst: mockTxFindFirst,
           update: mockTxUpdate,
         },
       };
-      await txFn(tx);
+      return await txFn(tx);
     });
 
     const updatedRecord = {
@@ -261,6 +266,7 @@ describe("PATCH /api/mailbox/connections/[connectionId] — Sprint 7.1", () => {
 
     expect(mockTxFindFirst).toHaveBeenCalledWith({
       where: { id: "conn-1", orgId: "org-1" },
+      select: { id: true, displayName: true, visibilityPolicy: true, notificationSettings: true },
     });
     expect(mockTxUpdate).toHaveBeenCalledWith({
       where: { id: "conn-1" },
@@ -286,7 +292,7 @@ describe("PATCH /api/mailbox/connections/[connectionId] — Sprint 7.1", () => {
   it("returns 404 when the connection belongs to a different organization", async () => {
     mockRequireAdmin.mockResolvedValue(makeAdminCtx("org-1"));
 
-    mockDb.$transaction.mockImplementation(async (txFn: (tx: unknown) => Promise<void>) => {
+    mockDb.$transaction.mockImplementation(async (txFn: (tx: unknown) => Promise<unknown>) => {
       const mockFindFirstNotFound = vi.fn().mockResolvedValue(null);
       const tx = {
         mailboxConnection: {
@@ -294,7 +300,7 @@ describe("PATCH /api/mailbox/connections/[connectionId] — Sprint 7.1", () => {
           update: vi.fn(),
         },
       };
-      await txFn(tx);
+      return await txFn(tx);
     });
 
     const req = buildRequest({ displayName: "New Name" });

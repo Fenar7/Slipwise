@@ -28,6 +28,8 @@ export interface MailboxConnectionListItem {
    * Callers that need strict typing should cast via `as MailboxVisibilityPolicy`.
    */
   visibilityPolicy: string;
+  /** User-configurable notification preferences. Null if never configured. */
+  notificationSettings: Record<string, unknown> | null;
   health: MailboxConnectionHealth;
   sync: MailboxSyncPresentation;
   lastSyncAt: string | null;
@@ -59,6 +61,7 @@ export function toMailboxConnectionListItem(
     // Null-guard: visibilityPolicy can be null for records pre-dating the
     // default migration. Fall back to "org_shared" as the schema default.
     visibilityPolicy: record.visibilityPolicy ?? "org_shared",
+    notificationSettings: record.notificationSettings ?? null,
     health: deriveMailboxHealth(record, now),
     sync: buildMailboxSyncPresentation(record, syncRuns, now),
     lastSyncAt: record.lastSyncAt?.toISOString() ?? null,

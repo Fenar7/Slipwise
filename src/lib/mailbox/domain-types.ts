@@ -73,6 +73,10 @@ export interface MailboxConnectionRecord {
   lastSyncError: string | null;
   lastSyncErrorCategory: string | null;
   disabledAt: Date | null;
+  /** Soft-delete timestamp. When set, the connection is hidden from all views. */
+  deletedAt: Date | null;
+  /** User-configurable notification preferences: { email: boolean, sms: boolean }. */
+  notificationSettings: Record<string, unknown> | null;
   connectedBy: string;
   createdAt: Date;
   updatedAt: Date;
