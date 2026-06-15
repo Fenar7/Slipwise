@@ -103,6 +103,14 @@ export const paginationQuerySchema = z.object({
     ),
 });
 
+/**
+ * Strict version of paginationQuerySchema that rejects unknown query params.
+ * Used in audit routes where extra params must return 400.
+ */
+export const strictPaginationQuerySchema = paginationQuerySchema.strict(
+  "Unexpected query parameters",
+);
+
 // ─── Audit list query schema (Sprint 7.4) ────────────────────────────────────
 
 export const auditListQuerySchema = z

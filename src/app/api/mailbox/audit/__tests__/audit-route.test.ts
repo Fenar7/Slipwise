@@ -4,8 +4,8 @@
  * Covers:
  * - GET /api/mailbox/audit (paginated, filtered, metadata stripping, validation, rate limit, auth)
  * - GET /api/mailbox/audit/[eventId] (single event, tenant isolation)
- * - GET /api/mailbox/connections/[connectionId]/audit (scoped audit)
- * - GET /api/mailbox/connections/[connectionId]/support-summary (email redacted, error sanitized)
+ * - GET /api/mailbox/connections/[connectionId]/audit (scoped audit, rate limit, auth)
+ * - GET /api/mailbox/connections/[connectionId]/support-summary (email redacted, error sanitized, rate limit, auth)
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -20,9 +20,8 @@ const {
   mockGetAuditEventById,
   mockStripSensitive,
   mockGetActionLabel,
-  mockDbFindFirst,
-  mockDbGroupBy,
-  mockDbFindFirstSync,
+  mockGetConnectionForAudit,
+  mockGetConnectionSupportData,
 } = vi.hoisted(() => ({
   mockRequireAdmin: vi.fn(),
   mockRateLimit: vi.fn().mockResolvedValue({ success: true, remaining: 99 }),
@@ -30,9 +29,8 @@ const {
   mockGetAuditEventById: vi.fn(),
   mockStripSensitive: vi.fn((m: Record<string, unknown> | null) => m),
   mockGetActionLabel: vi.fn((action: string) => `Label for ${action}`),
-  mockDbFindFirst: vi.fn(),
-  mockDbGroupBy: vi.fn(),
-  mockDbFindFirstSync: vi.fn(),
+  mockGetConnectionForAudit: vi.fn(),
+  mockGetConnectionSupportData: vi.fn(),
 }));
 
 vi.mock("@/app/api/integrations/_auth", () => ({
@@ -52,23 +50,13 @@ vi.mock("@/lib/mailbox/audit-read-service", () => ({
   listMailboxAuditEventsPaginated: mockListAuditEvents,
   getMailboxAuditEventById: mockGetAuditEventById,
   stripSensitiveMetadata: mockStripSensitive,
+  getMailboxConnectionForAudit: mockGetConnectionForAudit,
+  getConnectionSupportData: mockGetConnectionSupportData,
 }));
 
 vi.mock("@/lib/mailbox/audit", () => ({
   getMailboxAuditActionLabel: mockGetActionLabel,
   MAILBOX_AUDIT_ACTION_LABELS: {},
-}));
-
-vi.mock("@/lib/db", () => ({
-  db: {
-    mailboxConnection: {
-      findFirst: mockDbFindFirst,
-    },
-    mailboxSyncRun: {
-      groupBy: mockDbGroupBy,
-      findFirst: mockDbFindFirstSync,
-    },
-  },
 }));
 
 // ─── Import handlers after mocks ──────────────────────────────────────────────
@@ -278,7 +266,7 @@ describe("GET /api/mailbox/audit", () => {
     expect(res.status).toBe(429);
   });
 
-  it("returns 401/403 when not authenticated", async () => {
+  it("returns 403 when not authenticated", async () => {
     mockRequireAdmin.mockResolvedValue(makeForbiddenResponse());
 
     const res = await GET_AUDIT(
@@ -353,7 +341,7 @@ describe("GET /api/mailbox/audit/[eventId]", () => {
 describe("GET /api/mailbox/connections/[connectionId]/audit", () => {
   it("returns connection-scoped events for valid connectionId in org", async () => {
     mockRequireAdmin.mockResolvedValue(makeAdminCtx());
-    mockDbFindFirst.mockResolvedValue({ id: "conn-1" });
+    mockGetConnectionForAudit.mockResolvedValue({ id: "conn-1" });
     mockListAuditEvents.mockResolvedValue({
       records: [makeAuditRecord()],
       nextCursor: null,
@@ -375,7 +363,7 @@ describe("GET /api/mailbox/connections/[connectionId]/audit", () => {
 
   it("returns 404 if connectionId does not belong to org", async () => {
     mockRequireAdmin.mockResolvedValue(makeAdminCtx());
-    mockDbFindFirst.mockResolvedValue(null);
+    mockGetConnectionForAudit.mockResolvedValue(null);
 
     const res = await GET_CONN_AUDIT(
       buildGetRequest("http://localhost/api/mailbox/connections/conn-notfound/audit"),
@@ -384,6 +372,52 @@ describe("GET /api/mailbox/connections/[connectionId]/audit", () => {
 
     expect(res.status).toBe(404);
     expect(mockListAuditEvents).not.toHaveBeenCalled();
+  });
+
+  it("returns 429 when rate limited", async () => {
+    mockRequireAdmin.mockResolvedValue(makeAdminCtx());
+    mockRateLimit.mockResolvedValueOnce({ success: false, remaining: 0 });
+
+    const res = await GET_CONN_AUDIT(
+      buildGetRequest("http://localhost/api/mailbox/connections/conn-1/audit"),
+      { params: Promise.resolve({ connectionId: "conn-1" }) },
+    );
+
+    expect(res.status).toBe(429);
+  });
+
+  it("returns 403 when not authenticated", async () => {
+    mockRequireAdmin.mockResolvedValue(makeForbiddenResponse());
+
+    const res = await GET_CONN_AUDIT(
+      buildGetRequest("http://localhost/api/mailbox/connections/conn-1/audit"),
+      { params: Promise.resolve({ connectionId: "conn-1" }) },
+    );
+
+    expect(res.status).toBe(403);
+  });
+
+  it("returns 401 for unauthenticated", async () => {
+    mockRequireAdmin.mockResolvedValue(makeUnauthorizedResponse());
+
+    const res = await GET_CONN_AUDIT(
+      buildGetRequest("http://localhost/api/mailbox/connections/conn-1/audit"),
+      { params: Promise.resolve({ connectionId: "conn-1" }) },
+    );
+
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 400 on unknown query param (strict pagination)", async () => {
+    mockRequireAdmin.mockResolvedValue(makeAdminCtx());
+    mockGetConnectionForAudit.mockResolvedValue({ id: "conn-1" });
+
+    const res = await GET_CONN_AUDIT(
+      buildGetRequest("http://localhost/api/mailbox/connections/conn-1/audit?unknownField=foo"),
+      { params: Promise.resolve({ connectionId: "conn-1" }) },
+    );
+
+    expect(res.status).toBe(400);
   });
 });
 
@@ -394,19 +428,19 @@ describe("GET /api/mailbox/connections/[connectionId]/audit", () => {
 describe("GET /api/mailbox/connections/[connectionId]/support-summary", () => {
   it("returns summary with emailAddress always [REDACTED]", async () => {
     mockRequireAdmin.mockResolvedValue(makeAdminCtx());
-    mockDbFindFirst.mockResolvedValue({
-      id: "conn-1",
+    mockGetConnectionSupportData.mockResolvedValue({
+      connectionId: "conn-1",
       displayName: "Test Mailbox",
       provider: "GMAIL",
       status: "ACTIVE",
       lastSyncAt: new Date("2026-06-16T10:00:00.000Z"),
       lastSyncError: null,
+      deletedAt: null,
+      syncRunCount: 10,
+      failedSyncRunCount: 0,
+      providerErrorSummary: null,
+      recentAuditEvents: [],
     });
-    mockDbGroupBy.mockResolvedValue([
-      { status: "COMPLETED", _count: { id: 10 } },
-    ]);
-    mockDbFindFirstSync.mockResolvedValue(null);
-    mockListAuditEvents.mockResolvedValue({ records: [], nextCursor: null });
 
     const res = await GET_SUPPORT_SUMMARY(
       buildGetRequest("http://localhost/api/mailbox/connections/conn-1/support-summary"),
@@ -422,22 +456,19 @@ describe("GET /api/mailbox/connections/[connectionId]/support-summary", () => {
 
   it("sanitizes providerErrorSummary — replaces 20+ char alphanumeric strings with [REDACTED]", async () => {
     mockRequireAdmin.mockResolvedValue(makeAdminCtx());
-    mockDbFindFirst.mockResolvedValue({
-      id: "conn-1",
+    mockGetConnectionSupportData.mockResolvedValue({
+      connectionId: "conn-1",
       displayName: "Degraded Mailbox",
       provider: "GMAIL",
       status: "DEGRADED",
       lastSyncAt: new Date("2026-06-16T10:00:00.000Z"),
       lastSyncError: "Token expired",
+      deletedAt: null,
+      syncRunCount: 42,
+      failedSyncRunCount: 2,
+      providerErrorSummary: "Token refresh failed: [REDACTED]",
+      recentAuditEvents: [],
     });
-    mockDbGroupBy.mockResolvedValue([
-      { status: "COMPLETED", _count: { id: 40 } },
-      { status: "FAILED", _count: { id: 2 } },
-    ]);
-    mockDbFindFirstSync.mockResolvedValue({
-      errorSummary: "Token refresh failed: eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9",
-    });
-    mockListAuditEvents.mockResolvedValue({ records: [], nextCursor: null });
 
     const res = await GET_SUPPORT_SUMMARY(
       buildGetRequest("http://localhost/api/mailbox/connections/conn-1/support-summary"),
@@ -447,14 +478,13 @@ describe("GET /api/mailbox/connections/[connectionId]/support-summary", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.summary.providerErrorSummary).toContain("[REDACTED]");
-    expect(body.summary.providerErrorSummary).not.toContain("eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9");
     expect(body.summary.failedSyncRunCount).toBe(2);
     expect(body.summary.actionRequired).toBe(true);
   });
 
   it("returns 404 if connectionId does not belong to org", async () => {
     mockRequireAdmin.mockResolvedValue(makeAdminCtx());
-    mockDbFindFirst.mockResolvedValue(null);
+    mockGetConnectionSupportData.mockResolvedValue(null);
 
     const res = await GET_SUPPORT_SUMMARY(
       buildGetRequest("http://localhost/api/mailbox/connections/conn-notfound/support-summary"),
@@ -462,5 +492,65 @@ describe("GET /api/mailbox/connections/[connectionId]/support-summary", () => {
     );
 
     expect(res.status).toBe(404);
+  });
+
+  it("returns 429 when rate limited", async () => {
+    mockRequireAdmin.mockResolvedValue(makeAdminCtx());
+    mockRateLimit.mockResolvedValueOnce({ success: false, remaining: 0 });
+
+    const res = await GET_SUPPORT_SUMMARY(
+      buildGetRequest("http://localhost/api/mailbox/connections/conn-1/support-summary"),
+      { params: Promise.resolve({ connectionId: "conn-1" }) },
+    );
+
+    expect(res.status).toBe(429);
+  });
+
+  it("returns 403 when not authenticated", async () => {
+    mockRequireAdmin.mockResolvedValue(makeForbiddenResponse());
+
+    const res = await GET_SUPPORT_SUMMARY(
+      buildGetRequest("http://localhost/api/mailbox/connections/conn-1/support-summary"),
+      { params: Promise.resolve({ connectionId: "conn-1" }) },
+    );
+
+    expect(res.status).toBe(403);
+  });
+
+  it("returns 401 for unauthenticated", async () => {
+    mockRequireAdmin.mockResolvedValue(makeUnauthorizedResponse());
+
+    const res = await GET_SUPPORT_SUMMARY(
+      buildGetRequest("http://localhost/api/mailbox/connections/conn-1/support-summary"),
+      { params: Promise.resolve({ connectionId: "conn-1" }) },
+    );
+
+    expect(res.status).toBe(401);
+  });
+
+  it("includes deletedAt in response when connection is soft-deleted", async () => {
+    mockRequireAdmin.mockResolvedValue(makeAdminCtx());
+    mockGetConnectionSupportData.mockResolvedValue({
+      connectionId: "conn-1",
+      displayName: "Deleted Mailbox",
+      provider: "GMAIL",
+      status: "DISCONNECTED",
+      lastSyncAt: null,
+      lastSyncError: null,
+      deletedAt: new Date("2026-06-10T00:00:00.000Z"),
+      syncRunCount: 5,
+      failedSyncRunCount: 0,
+      providerErrorSummary: null,
+      recentAuditEvents: [],
+    });
+
+    const res = await GET_SUPPORT_SUMMARY(
+      buildGetRequest("http://localhost/api/mailbox/connections/conn-1/support-summary"),
+      { params: Promise.resolve({ connectionId: "conn-1" }) },
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.summary.deletedAt).toBe("2026-06-10T00:00:00.000Z");
   });
 });

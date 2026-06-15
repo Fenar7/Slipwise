@@ -3,10 +3,9 @@ import "server-only";
 import { NextRequest, NextResponse } from "next/server";
 import { requireIntegrationAdminRoute } from "@/app/api/integrations/_auth";
 import { rateLimitByOrg, RATE_LIMITS } from "@/lib/rate-limit";
-import { listMailboxAuditEventsPaginated, stripSensitiveMetadata } from "@/lib/mailbox/audit-read-service";
+import { listMailboxAuditEventsPaginated, stripSensitiveMetadata, getMailboxConnectionForAudit } from "@/lib/mailbox/audit-read-service";
 import { getMailboxAuditActionLabel } from "@/lib/mailbox/audit";
-import { paginationQuerySchema } from "@/lib/validation/mailbox";
-import { db } from "@/lib/db";
+import { strictPaginationQuerySchema } from "@/lib/validation/mailbox";
 import { ZodError } from "zod";
 
 export async function GET(
@@ -24,10 +23,7 @@ export async function GET(
 
     const { connectionId } = await params;
 
-    const connection = await db.mailboxConnection.findFirst({
-      where: { id: connectionId, orgId: auth.ctx.orgId },
-      select: { id: true },
-    });
+    const connection = await getMailboxConnectionForAudit(auth.ctx.orgId, connectionId);
 
     if (!connection) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -38,7 +34,7 @@ export async function GET(
 
     let parsed;
     try {
-      parsed = paginationQuerySchema.parse(query);
+      parsed = strictPaginationQuerySchema.parse(query);
     } catch (err) {
       if (err instanceof ZodError) {
         const firstIssue = err.issues[0];
