@@ -6,6 +6,12 @@ import type { MailboxConnectionRecord, MailboxConnectionStatus } from "./domain-
 import { logMailboxAuditTx } from "./audit";
 import type { MailboxAuditAction } from "./domain-types";
 
+/**
+ * System user ID used for auto-generated system messages (e.g., "New Chat" welcome).
+ * Matches the UUID format used for org members but is not a real user row.
+ */
+export const SYSTEM_USER_ID = "00000000-0000-0000-0000-000000000000";
+
 // ─── Org-scoped connection queries ────────────────────────────────────────────
 
 /**
@@ -106,6 +112,144 @@ export async function createMailboxConnection(
   });
 
   return toConnectionRecord(result);
+}
+
+// ─── New Chat (Sprint 7.3) ────────────────────────────────────────────────────
+
+/**
+ * Result DTO for a newly created chat connection.
+ */
+export interface NewChatConnectionDTO {
+  id: string;
+  displayName: string;
+  visibilityPolicy: string;
+  notificationSettings: Record<string, unknown> | null;
+}
+
+const NEW_CHAT_PREFIX = "New Chat #";
+
+/**
+ * Generate the next "New Chat #<seq>" display name for an org.
+ * Fetches all non-deleted New Chat names for the org, parses the numeric
+ * suffix from each, and returns max + 1. This avoids the lexicographic
+ * ordering pitfall where "New Chat #9" > "New Chat #10".
+ *
+ * Gaps are ignored (e.g., if "#2" is missing and "#3" exists, returns "#4").
+ *
+ * Indexed path: uses composite index on (orgId, displayName) with
+ * a filtered condition (deletedAt IS NULL).
+ */
+export async function generateNewChatName(orgId: string): Promise<string> {
+  const rows = await db.mailboxConnection.findMany({
+    where: {
+      orgId,
+      displayName: { startsWith: NEW_CHAT_PREFIX },
+      deletedAt: null,
+    },
+    select: { displayName: true },
+  });
+
+  const maxSeq = rows.reduce((max, r) => {
+    const seq = parseInt(r.displayName.replace(NEW_CHAT_PREFIX, ""), 10);
+    return Number.isNaN(seq) ? max : Math.max(max, seq);
+  }, 0);
+
+  return `${NEW_CHAT_PREFIX}${maxSeq + 1}`;
+}
+
+/**
+ * Create a "New Chat" connection, welcome thread + message, and audit log
+ * in a single Prisma transaction.
+ *
+ * - connection: status=ACTIVE, provider=GMAIL (placeholder), synthetic
+ *   providerAccountId/emailAddress
+ * - thread: synthetic providerThreadId, subject="Welcome to your new mailbox!"
+ * - message: synthetic providerMessageId, htmlBody/snippet with welcome text
+ * - audit: CONNECTION_CREATED with masked name (#<seq> only)
+ *
+ * Caller must emit the realtime event after the transaction commits.
+ */
+export async function createNewChatConnection(
+  orgId: string,
+  userId: string,
+): Promise<NewChatConnectionDTO> {
+  const result = await db.$transaction(async (tx: Prisma.TransactionClient) => {
+    const displayName = await generateNewChatName(orgId);
+    const seq = displayName.replace(NEW_CHAT_PREFIX, "");
+    const connId = `new-chat-${crypto.randomUUID().replace(/-/g, "").slice(0, 16)}`;
+    const threadId = `welcome-thread-${crypto.randomUUID().replace(/-/g, "").slice(0, 16)}`;
+    const msgId = `welcome-msg-${crypto.randomUUID().replace(/-/g, "").slice(0, 16)}`;
+    const now = new Date();
+
+    const connection = await tx.mailboxConnection.create({
+      data: {
+        orgId,
+        provider: "GMAIL",
+        providerAccountId: connId,
+        emailAddress: `chat-${connId}@local`,
+        displayName,
+        status: "ACTIVE",
+        visibilityPolicy: "org_shared",
+        notificationSettings: { email: false, sms: false },
+        connectedBy: userId,
+      },
+    });
+
+    const thread = await tx.mailboxThread.create({
+      data: {
+        orgId,
+        mailboxConnectionId: connection.id,
+        providerThreadId: `system-welcome-${connection.id}`,
+        subject: "Welcome to your new mailbox!",
+        participantsSummary: [],
+        lastMessageAt: now,
+        unreadCount: 1,
+        status: "OPEN",
+        previewSnippet: "Welcome to your new mailbox!",
+      },
+    });
+
+    await tx.mailboxMessage.create({
+      data: {
+        orgId,
+        threadId: thread.id,
+        providerMessageId: `system-welcome-msg-${connection.id}`,
+        direction: "inbound",
+        from: { name: "System", id: SYSTEM_USER_ID },
+        to: [],
+        cc: [],
+        bcc: [],
+        subject: "Welcome to your new mailbox!",
+        htmlBody: "<p>Welcome to your new mailbox!</p>",
+        textBody: "Welcome to your new mailbox!",
+        snippet: "Welcome to your new mailbox!",
+        sentAt: now,
+        receivedAt: now,
+        attachmentCount: 0,
+      },
+    });
+
+    await logMailboxAuditTx(tx, {
+      orgId,
+      actorId: userId,
+      action: "CONNECTION_CREATED",
+      summary: `New Chat #${seq} created`,
+      mailboxConnectionId: connection.id,
+      metadata: {
+        nameSeq: seq,
+        visibilityPolicy: "org_shared",
+      },
+    });
+
+    return {
+      id: connection.id,
+      displayName,
+      visibilityPolicy: "org_shared",
+      notificationSettings: { email: false, sms: false },
+    };
+  });
+
+  return result;
 }
 
 export interface UpdateMailboxConnectionStatusInput {
