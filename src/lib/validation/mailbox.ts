@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { MailboxAuditAction } from "@/generated/prisma/enums";
 
 /**
  * Allowed visibility policy values for a mailbox connection.
@@ -101,3 +102,36 @@ export const paginationQuerySchema = z.object({
         .max(100, "pageSize must not exceed 100"),
     ),
 });
+
+/**
+ * Strict version of paginationQuerySchema that rejects unknown query params.
+ * Used in audit routes where extra params must return 400.
+ */
+export const strictPaginationQuerySchema = paginationQuerySchema.strict(
+  "Unexpected query parameters",
+);
+
+// ─── Audit list query schema (Sprint 7.4) ────────────────────────────────────
+
+export const auditListQuerySchema = z
+  .object({
+    cursor: z.string().optional(),
+    pageSize: z
+      .string()
+      .optional()
+      .transform((val) => (val ? parseInt(val, 10) : 20))
+      .pipe(
+        z
+          .number()
+          .int("pageSize must be an integer")
+          .min(1, "pageSize must be at least 1")
+          .max(100, "pageSize must not exceed 100"),
+      ),
+    connectionId: z.string().optional(),
+    action: z.nativeEnum(MailboxAuditAction).optional(),
+    from: z.string().datetime({ message: "from must be a valid ISO datetime" }).optional(),
+    to: z.string().datetime({ message: "to must be a valid ISO datetime" }).optional(),
+  })
+  .strict("Unexpected query parameters");
+
+export type AuditListQuery = z.infer<typeof auditListQuerySchema>;
