@@ -363,9 +363,13 @@ async function assertCanAccessThread(
   }
 }
 
-export async function getMailboxAttachmentDownloadUrl(
+export type MailboxAttachmentDownloadResult =
+  | { kind: "signed-url"; signedUrl: string; filename: string; mimeType: string }
+  | { kind: "direct-bytes"; bytes: Uint8Array; filename: string; mimeType: string };
+
+export async function getMailboxAttachmentDownload(
   input: GetMailboxAttachmentDownloadInput,
-): Promise<{ signedUrl: string; filename: string; mimeType: string }> {
+): Promise<MailboxAttachmentDownloadResult> {
   const { orgId, attachmentId } = input;
 
   const record = await db.mailboxAttachment.findFirst({
@@ -383,19 +387,35 @@ export async function getMailboxAttachmentDownloadUrl(
 
   await assertCanAccessThread(orgId, input.userId, input.role, record.message.threadId);
 
+  const { filename, mimeType } = record;
+
   // If the attachment is cached locally, serve a signed URL directly.
   if (record.storageRef) {
-    const signedUrl = await getSignedUrlServer(
-      ATTACHMENT_BUCKET,
-      record.storageRef,
-      300,
-      { download: record.filename },
-    );
-    return { signedUrl, filename: record.filename, mimeType: record.mimeType };
+    try {
+      const signedUrl = await getSignedUrlServer(
+        ATTACHMENT_BUCKET,
+        record.storageRef,
+        300,
+        { download: filename },
+      );
+      return { kind: "signed-url", signedUrl, filename, mimeType };
+    } catch {
+      console.warn(
+        `Stale cache ref for attachment ${attachmentId} (org ${orgId}): ` +
+        `storage object missing. Clearing ref and falling back to provider fetch.`,
+      );
+      try {
+        await db.mailboxAttachment.update({
+          where: { id: attachmentId },
+          data: { storageRef: null },
+        });
+      } catch {
+        // Non-critical; fallback will still proceed.
+      }
+    }
   }
 
   // If not cached, fall back to provider fetch.
-  // This requires the parent message's provider info and the connection token.
   const message = await db.mailboxMessage.findFirst({
     where: { id: record.messageId, orgId },
     include: { thread: { select: { mailboxConnectionId: true } } },
@@ -424,27 +444,27 @@ export async function getMailboxAttachmentDownloadUrl(
     throw new AttachmentServiceError(fetchResult.safeMessage, 502);
   }
 
-  // Cache the fetched bytes so future downloads are local.
-  const cachePath = `${orgId}/mailbox/messages/${message.id}/${attachmentId}_${record.filename.replace(/[^a-zA-Z0-9.-]/g, "_")}`;
+  // Attempt to cache the fetched bytes so future downloads are local.
+  // If caching fails, return the bytes directly rather than a broken signed URL.
+  const cachePath = `${orgId}/mailbox/messages/${message.id}/${attachmentId}_${filename.replace(/[^a-zA-Z0-9.-]/g, "_")}`;
   try {
-    await uploadFileServer(ATTACHMENT_BUCKET, cachePath, fetchResult.bytes, record.mimeType);
+    await uploadFileServer(ATTACHMENT_BUCKET, cachePath, fetchResult.bytes, mimeType);
     await db.mailboxAttachment.update({
       where: { id: attachmentId },
       data: { storageRef: cachePath },
     });
+    const signedUrl = await getSignedUrlServer(
+      ATTACHMENT_BUCKET,
+      cachePath,
+      300,
+      { download: filename },
+    );
+    return { kind: "signed-url", signedUrl, filename, mimeType };
   } catch {
-    // Best-effort cache; if it fails, still return the bytes via a temporary signed URL
-    // In production, a data URI or inline response would be more appropriate here.
+    // Cache write failed; stream bytes directly to the caller instead of
+    // returning a broken signed URL to a non-existent cache object.
+    return { kind: "direct-bytes", bytes: fetchResult.bytes, filename, mimeType };
   }
-
-  // After caching (or attempting to), try to serve a signed URL.
-  const signedUrl = await getSignedUrlServer(
-    ATTACHMENT_BUCKET,
-    cachePath,
-    300,
-    { download: record.filename },
-  );
-  return { signedUrl, filename: record.filename, mimeType: record.mimeType };
 }
 
 // ─── Type guard ─────────────────────────────────────────────────────────────────

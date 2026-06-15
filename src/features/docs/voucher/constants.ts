@@ -29,6 +29,8 @@ export const voucherDefaultValues: VoucherFormValues = {
     email: "accounts@northfield.example",
     phone: "+91 98765 43210",
     accentColor: "#c69854",
+    logoSize: 72,
+    logoFit: "contain",
   },
   voucherNumber: "", // assigned when approved — drafts have no official number (Phase 5)
   date: "2026-03-25",
@@ -40,6 +42,8 @@ export const voucherDefaultValues: VoucherFormValues = {
   notes: "Settled after manager approval.",
   approvedBy: "Anita Thomas",
   receivedBy: "Rahul Menon",
+  upiId: "",
+  upiQrDataUrl: "",
   isMultiLine: false,
   lineItems: [],
   visibility: {
@@ -52,5 +56,6 @@ export const voucherDefaultValues: VoucherFormValues = {
     showApprovedBy: true,
     showReceivedBy: true,
     showSignatureArea: true,
+    showUpiDetails: false,
   },
 };

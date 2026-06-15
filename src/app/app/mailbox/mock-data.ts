@@ -51,7 +51,6 @@ export const GLOBAL_SMART_VIEWS: MailboxTreeItem[] = [
     label: "All Inboxes",
     href: "/app/mailbox",
     icon: "Inbox",
-    unreadCount: 20,
     isSmartView: true,
   },
   {
@@ -59,7 +58,6 @@ export const GLOBAL_SMART_VIEWS: MailboxTreeItem[] = [
     label: "Unread",
     href: "/app/mailbox/unread",
     icon: "Circle",
-    unreadCount: 20,
     isSmartView: true,
   },
   {
@@ -67,7 +65,6 @@ export const GLOBAL_SMART_VIEWS: MailboxTreeItem[] = [
     label: "Assigned to me",
     href: "/app/mailbox/assigned",
     icon: "UserCheck",
-    unreadCount: 3,
     isSmartView: true,
   },
   {
@@ -75,7 +72,6 @@ export const GLOBAL_SMART_VIEWS: MailboxTreeItem[] = [
     label: "Unassigned",
     href: "/app/mailbox/unassigned",
     icon: "UserX",
-    unreadCount: 8,
     isSmartView: true,
   },
   {
@@ -83,7 +79,6 @@ export const GLOBAL_SMART_VIEWS: MailboxTreeItem[] = [
     label: "Flagged",
     href: "/app/mailbox/flagged",
     icon: "Flag",
-    unreadCount: 2,
     isSmartView: true,
   },
   {
@@ -120,10 +115,10 @@ function mailboxFolders(connectionId: string, prefix: string): MailboxTreeItem[]
       mailboxConnectionId: connectionId,
     },
     {
-      id: `${connectionId}-archive`,
-      label: "Archive",
-      href: `/app/mailbox/${prefix}/archive`,
-      icon: "Archive",
+      id: `${connectionId}-starred`,
+      label: "Starred",
+      href: `/app/mailbox/${prefix}/starred`,
+      icon: "Star",
       mailboxConnectionId: connectionId,
     },
     {

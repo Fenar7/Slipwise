@@ -28,6 +28,8 @@ export const salarySlipDefaultValues: SalarySlipFormValues = {
     email: "accounts@northfield.example",
     phone: "+91 98765 43210",
     accentColor: "#c69854",
+    logoSize: 72,
+    logoFit: "contain",
   },
   employeeName: "Arun Dev",
   employeeId: "EMP-041",

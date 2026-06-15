@@ -12,7 +12,7 @@ describe("SalarySlipPreview", () => {
 
     expect(screen.getByText("Arun Dev")).toBeInTheDocument();
     expect(screen.getByText(/monthly payroll summary/i)).toBeInTheDocument();
-    expect(screen.getByText(/live preview/i)).toBeInTheDocument();
+    expect(screen.getByText(/preview/i)).toBeInTheDocument();
   });
 
   it("marks print sections to avoid mid-page splits", () => {

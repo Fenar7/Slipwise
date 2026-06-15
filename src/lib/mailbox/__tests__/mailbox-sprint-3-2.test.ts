@@ -18,7 +18,10 @@ vi.mock("@/lib/db", () => ({
     },
     mailboxMessage: {
       upsert: vi.fn(),
+      findUnique: vi.fn(),
       findFirst: vi.fn(),
+      findMany: vi.fn(),
+      update: vi.fn(),
       count: vi.fn(),
     },
     mailboxAttachment: {
@@ -29,6 +32,7 @@ vi.mock("@/lib/db", () => ({
     mailboxSyncRun: {
       create: vi.fn(),
       update: vi.fn(),
+      updateMany: vi.fn(),
       findFirst: vi.fn(),
       findUnique: vi.fn(),
     },
@@ -78,6 +82,7 @@ vi.mock("@/lib/mailbox/gmail-provider", async () => {
       refreshAuthorization: vi.fn(),
       verifyConnection: vi.fn(),
       syncDelta: vi.fn(),
+      syncDrafts: vi.fn(),
       fetchThreadDetail: vi.fn(),
       disconnect: vi.fn(),
       renewWatch: vi.fn(),
@@ -103,6 +108,15 @@ vi.mock("@/lib/mailbox/provider-registry", () => ({
   getMailboxProviderAdapter: vi.fn(),
 }));
 
+vi.mock("@/lib/mailbox/folder-coverage-service", () => ({
+  markFolderCoverageComplete: vi.fn(),
+  updateFolderCoverageBootstrapping: vi.fn(),
+  initFolderCoverageForBootstrap: vi.fn(),
+  getIncompleteRequiredFolders: vi.fn().mockResolvedValue([]),
+  getFolderCoverage: vi.fn().mockResolvedValue(null),
+  resetFolderCoverageCursor: vi.fn(),
+}));
+
 vi.mock("@/app/api/integrations/_auth", () => ({
   requireIntegrationAdminRoute: vi.fn(),
 }));
@@ -115,6 +129,7 @@ const mockDb = db as unknown as {
   mailboxSyncRun: {
     create: ReturnType<typeof vi.fn>;
     update: ReturnType<typeof vi.fn>;
+    updateMany: ReturnType<typeof vi.fn>;
     findFirst: ReturnType<typeof vi.fn>;
   };
   mailboxConnection: {
@@ -129,7 +144,10 @@ const mockDb = db as unknown as {
   };
   mailboxMessage: {
     upsert: ReturnType<typeof vi.fn>;
+    findUnique: ReturnType<typeof vi.fn>;
     findFirst: ReturnType<typeof vi.fn>;
+    findMany: ReturnType<typeof vi.fn>;
+    update: ReturnType<typeof vi.fn>;
   };
   mailboxProviderCursor: {
     upsert: ReturnType<typeof vi.fn>;
@@ -144,6 +162,7 @@ describe("Sprint 3.2 — Incremental sync and provider cursors", () => {
     mockDb.mailboxSyncRun.findFirst.mockResolvedValue(null);
     mockDb.mailboxConnection.updateMany.mockResolvedValue({ count: 1 });
     mockDb.mailboxThread.updateMany.mockResolvedValue({ count: 1 });
+    mockDb.mailboxMessage.findMany.mockResolvedValue([]);
   });
 
   // ─── Domain helpers ──────────────────────────────────────────────────────
@@ -252,6 +271,68 @@ describe("Sprint 3.2 — Incremental sync and provider cursors", () => {
       expect(result.success).toBe(true);
       expect(mockDb.mailboxConnection.updateMany).toHaveBeenCalledTimes(2);
     });
+
+    it("cleans up stale RUNNING runs before starting a new sync", async () => {
+      const { getMailboxConnection } = await import("@/lib/mailbox/connection-service");
+      const { getMailboxProviderAdapter } = await import("@/lib/mailbox/provider-registry");
+      const { getMailboxCursor } = await import("@/lib/mailbox/cursor-service");
+
+      vi.mocked(getMailboxConnection).mockResolvedValue(makeConnectionRecord());
+      vi.mocked(getMailboxCursor).mockResolvedValue(null);
+      vi.mocked(getMailboxProviderAdapter).mockReturnValue(makeMockAdapter() as never);
+
+      mockDb.mailboxConnection.updateMany.mockResolvedValue({ count: 1 });
+      mockDb.mailboxSyncRun.create.mockResolvedValue(makeSyncRunRow());
+      mockDb.mailboxSyncRun.update.mockResolvedValue({});
+      mockDb.mailboxSyncRun.updateMany.mockResolvedValue({ count: 1 });
+      mockDb.mailboxConnection.update.mockResolvedValue({});
+      mockDb.mailboxThread.upsert.mockResolvedValue(makeThreadRow());
+      mockDb.mailboxMessage.upsert.mockResolvedValue(makeMessageRow());
+
+      const result = await runMailboxSync({
+        orgId: "org-1",
+        connectionId: "conn-1",
+        actorId: "user-1",
+        triggerSource: "MANUAL",
+      });
+
+      expect(result.success).toBe(true);
+      expect(mockDb.mailboxSyncRun.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            status: "RUNNING",
+            startedAt: expect.objectContaining({ lt: expect.any(Date) }),
+          }),
+          data: expect.objectContaining({ status: "FAILED" }),
+        }),
+      );
+    });
+
+    it("still blocks when a genuinely fresh RUNNING sync exists", async () => {
+      const { getMailboxConnection } = await import("@/lib/mailbox/connection-service");
+      const { getMailboxProviderAdapter } = await import("@/lib/mailbox/provider-registry");
+      const { getMailboxCursor } = await import("@/lib/mailbox/cursor-service");
+
+      vi.mocked(getMailboxConnection).mockResolvedValue(makeConnectionRecord());
+      vi.mocked(getMailboxCursor).mockResolvedValue(null);
+      vi.mocked(getMailboxProviderAdapter).mockReturnValue(makeMockAdapter() as never);
+
+      // Lease acquisition fails.
+      mockDb.mailboxConnection.updateMany.mockResolvedValue({ count: 0 });
+      // A fresh RUNNING run exists (started just now).
+      mockDb.mailboxSyncRun.findFirst.mockResolvedValue({ id: "run-fresh" });
+      mockDb.mailboxSyncRun.updateMany.mockResolvedValue({ count: 0 });
+
+      const result = await runMailboxSync({
+        orgId: "org-1",
+        connectionId: "conn-1",
+        actorId: "user-1",
+        triggerSource: "MANUAL",
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error?.category).toBe("concurrent_sync_running");
+    });
   });
 
   // ─── Delta sync path ──────────────────────────────────────────────────────
@@ -321,6 +402,153 @@ describe("Sprint 3.2 — Incremental sync and provider cursors", () => {
 
       expect(result.success).toBe(false);
       expect(upsertMailboxCursor).not.toHaveBeenCalled();
+    });
+
+    it("runs a bounded Gmail coverage recovery before delta for old inbox-only connections", async () => {
+      const { getMailboxConnection } = await import("@/lib/mailbox/connection-service");
+      const { getMailboxProviderAdapter } = await import("@/lib/mailbox/provider-registry");
+      const { getMailboxCursor, upsertMailboxCursor } = await import("@/lib/mailbox/cursor-service");
+      const { getIncompleteRequiredFolders, getFolderCoverage } = await import("@/lib/mailbox/folder-coverage-service");
+
+      vi.mocked(getMailboxConnection).mockResolvedValue(
+        makeConnectionRecord({
+          watchExpiresAt: new Date("2099-01-01"),
+          watchMetadata: { gmailHistoryId: "hist-1" },
+        }),
+      );
+      vi.mocked(getMailboxCursor).mockResolvedValue(makeCursorRecord());
+
+      // Simulate that SENT, SPAM, and DRAFT are still incomplete.
+      vi.mocked(getIncompleteRequiredFolders).mockResolvedValue(["SENT", "SPAM", "DRAFT"]);
+      vi.mocked(getFolderCoverage).mockImplementation(async (_orgId, _connId, folder) => ({
+        folder,
+        state: "BOOTSTRAPPING",
+        totalThreads: 10,
+        lastCompletedAt: null,
+        lastAdvancedCursor: `cursor-${folder.toLowerCase()}`,
+        errorSummary: null,
+      }));
+
+      const mockAdapter = makeMockAdapter();
+      mockAdapter.syncDelta
+        .mockResolvedValueOnce({
+          threads: [{
+            providerThreadId: "gmail-thread-recovery",
+            subject: "Recovered Sent",
+            lastMessageAt: new Date().toISOString(),
+            unreadCount: 0,
+            participants: [{ email: "sent@example.com", displayName: "Sent" }],
+            providerMetadata: {},
+          }],
+          nextCursor: { value: "bootstrap-now", expiresAt: null },
+          bootstrapSliceResults: [
+            { sliceLabel: "SENT", paginationExhausted: true, threadCount: 1, lastAdvancedCursor: "sent-cursor" },
+            { sliceLabel: "SPAM", paginationExhausted: false, threadCount: 1, lastAdvancedCursor: "spam-cursor" },
+            { sliceLabel: "DRAFT", paginationExhausted: true, threadCount: 1, lastAdvancedCursor: "draft-cursor" },
+          ],
+        })
+        .mockResolvedValueOnce({
+          threads: [{
+            providerThreadId: "gmail-thread-delta",
+            subject: "Fresh Delta",
+            lastMessageAt: new Date().toISOString(),
+            unreadCount: 0,
+            participants: [{ email: "delta@example.com", displayName: "Delta" }],
+            providerMetadata: {},
+          }],
+          nextCursor: { value: "cursor-next", expiresAt: null },
+        });
+      vi.mocked(getMailboxProviderAdapter).mockReturnValue(mockAdapter as never);
+
+      mockDb.mailboxSyncRun.findFirst.mockResolvedValue(null);
+      mockDb.mailboxSyncRun.create.mockResolvedValue(makeSyncRunRow({ id: "run-delta", syncMode: "DELTA" }));
+      mockDb.mailboxSyncRun.update.mockResolvedValue({});
+      mockDb.mailboxConnection.update.mockResolvedValue({});
+      mockDb.mailboxThread.upsert.mockResolvedValue(makeThreadRow());
+      mockDb.mailboxMessage.upsert.mockResolvedValue(makeMessageRow());
+
+      const result = await runMailboxSync({
+        orgId: "org-1",
+        connectionId: "conn-1",
+        actorId: "user-1",
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.syncMode).toBe("DELTA");
+      expect(result.threadCount).toBe(2);
+      expect(mockAdapter.syncDelta).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({
+          cursor: null,
+          folderCursors: {
+            SENT: "cursor-sent",
+            SPAM: "cursor-spam",
+            DRAFT: "cursor-draft",
+          },
+        }),
+      );
+      expect(mockAdapter.syncDelta).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          cursor: expect.objectContaining({ value: "1000" }),
+        }),
+      );
+      expect(upsertMailboxCursor).toHaveBeenCalledWith(
+        expect.objectContaining({ cursorValue: "cursor-next" }),
+      );
+      // Coverage completion truth is now in mailboxFolderCoverage rows, not metadata flags.
+      expect(mockDb.mailboxConnection.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.not.objectContaining({
+            watchMetadata: expect.objectContaining({
+              gmailCoverageVersion: expect.anything(),
+            }),
+          }),
+        }),
+      );
+    });
+
+    it("skips Gmail coverage recovery once required coverage metadata already exists", async () => {
+      const { getMailboxConnection } = await import("@/lib/mailbox/connection-service");
+      const { getMailboxProviderAdapter } = await import("@/lib/mailbox/provider-registry");
+      const { getMailboxCursor } = await import("@/lib/mailbox/cursor-service");
+      const { getIncompleteRequiredFolders } = await import("@/lib/mailbox/folder-coverage-service");
+
+      vi.mocked(getMailboxConnection).mockResolvedValue(
+        makeConnectionRecord({
+          watchExpiresAt: new Date("2099-01-01"),
+          watchMetadata: {
+            gmailCoverageVersion: 4,
+            gmailCoveredSystemLabels: ["INBOX", "SENT", "SPAM", "DRAFT"],
+          },
+        }),
+      );
+      vi.mocked(getMailboxCursor).mockResolvedValue(makeCursorRecord());
+      // All required folders are already COMPLETE in the database — metadata flags are ignored.
+      vi.mocked(getIncompleteRequiredFolders).mockResolvedValue([]);
+      const mockAdapter = makeMockAdapter();
+      vi.mocked(getMailboxProviderAdapter).mockReturnValue(mockAdapter as never);
+
+      mockDb.mailboxSyncRun.findFirst.mockResolvedValue(null);
+      mockDb.mailboxSyncRun.create.mockResolvedValue(makeSyncRunRow({ id: "run-delta", syncMode: "DELTA" }));
+      mockDb.mailboxSyncRun.update.mockResolvedValue({});
+      mockDb.mailboxConnection.update.mockResolvedValue({});
+      mockDb.mailboxThread.upsert.mockResolvedValue(makeThreadRow());
+      mockDb.mailboxMessage.upsert.mockResolvedValue(makeMessageRow());
+
+      const result = await runMailboxSync({
+        orgId: "org-1",
+        connectionId: "conn-1",
+        actorId: "user-1",
+      });
+
+      expect(result.success).toBe(true);
+      expect(mockAdapter.syncDelta).toHaveBeenCalledTimes(1);
+      expect(mockAdapter.syncDelta).toHaveBeenCalledWith(
+        expect.objectContaining({
+          cursor: expect.objectContaining({ value: "1000" }),
+        }),
+      );
     });
   });
 
@@ -612,7 +840,12 @@ describe("Sprint 3.2 — Incremental sync and provider cursors", () => {
       const { getMailboxProviderAdapter } = await import("@/lib/mailbox/provider-registry");
       const { getMailboxCursor } = await import("@/lib/mailbox/cursor-service");
 
-      vi.mocked(getMailboxConnection).mockResolvedValue(makeConnectionRecord());
+      vi.mocked(getMailboxConnection).mockResolvedValue(makeConnectionRecord({
+        watchMetadata: {
+          gmailCoverageVersion: 4,
+          gmailCoveredSystemLabels: ["INBOX", "SENT", "SPAM", "DRAFT"],
+        },
+      }));
       vi.mocked(getMailboxCursor).mockResolvedValue(makeCursorRecord());
       const mockAdapter = makeMockAdapter();
       vi.mocked(getMailboxProviderAdapter).mockReturnValue(mockAdapter as never);
@@ -634,6 +867,76 @@ describe("Sprint 3.2 — Incremental sync and provider cursors", () => {
       expect(r2.success).toBe(true);
       // Upsert semantics in ingestion-service guarantee idempotency.
       expect(mockDb.mailboxThread.upsert).toHaveBeenCalledTimes(2);
+      expect(mockAdapter.syncDrafts).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe("Gmail coverage metadata", () => {
+    it("persists required Gmail folder coverage after a successful initial sync", async () => {
+      const { getMailboxConnection } = await import("@/lib/mailbox/connection-service");
+      const { getMailboxProviderAdapter } = await import("@/lib/mailbox/provider-registry");
+      const { getMailboxCursor } = await import("@/lib/mailbox/cursor-service");
+      const { markFolderCoverageComplete, updateFolderCoverageBootstrapping } = await import("@/lib/mailbox/folder-coverage-service");
+
+      vi.mocked(getMailboxConnection).mockResolvedValue(makeConnectionRecord());
+      vi.mocked(getMailboxCursor).mockResolvedValue(null);
+      const mockAdapter = makeMockAdapter();
+      mockAdapter.syncDelta.mockResolvedValue({
+        threads: [{
+          providerThreadId: "gmail-thread-1",
+          subject: "Test",
+          lastMessageAt: new Date().toISOString(),
+          unreadCount: 0,
+          participants: [{ email: "a@example.com", displayName: "A" }],
+          providerMetadata: {},
+        }],
+        nextCursor: { value: "cursor-next", expiresAt: null },
+        bootstrapSliceResults: [
+          { sliceLabel: "INBOX", paginationExhausted: true, threadCount: 1, lastAdvancedCursor: "inbox-cursor" },
+          { sliceLabel: "SENT", paginationExhausted: true, threadCount: 1, lastAdvancedCursor: "sent-cursor" },
+          { sliceLabel: "SPAM", paginationExhausted: true, threadCount: 1, lastAdvancedCursor: "spam-cursor" },
+          { sliceLabel: "DRAFT", paginationExhausted: true, threadCount: 1, lastAdvancedCursor: "draft-cursor" },
+        ],
+      });
+      vi.mocked(getMailboxProviderAdapter).mockReturnValue(mockAdapter as never);
+
+      mockDb.mailboxSyncRun.findFirst.mockResolvedValue(null);
+      mockDb.mailboxSyncRun.create.mockResolvedValue(makeSyncRunRow({ syncMode: "INITIAL" }));
+      mockDb.mailboxSyncRun.update.mockResolvedValue({});
+      mockDb.mailboxConnection.update.mockResolvedValue({});
+      mockDb.mailboxThread.upsert.mockResolvedValue(makeThreadRow());
+      mockDb.mailboxMessage.upsert.mockResolvedValue(makeMessageRow());
+
+      const result = await runMailboxSync({
+        orgId: "org-1",
+        connectionId: "conn-1",
+        actorId: "user-1",
+      });
+
+      expect(result.success).toBe(true);
+      // Coverage completion truth comes from per-folder rows, not metadata flags.
+      expect(markFolderCoverageComplete).toHaveBeenCalledWith(
+        "org-1", "conn-1", "INBOX", 1, "inbox-cursor",
+      );
+      expect(markFolderCoverageComplete).toHaveBeenCalledWith(
+        "org-1", "conn-1", "SENT", 1, "sent-cursor",
+      );
+      expect(markFolderCoverageComplete).toHaveBeenCalledWith(
+        "org-1", "conn-1", "SPAM", 1, "spam-cursor",
+      );
+      expect(markFolderCoverageComplete).toHaveBeenCalledWith(
+        "org-1", "conn-1", "DRAFT", 1, "draft-cursor",
+      );
+      expect(updateFolderCoverageBootstrapping).not.toHaveBeenCalled();
+      expect(mockDb.mailboxConnection.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.not.objectContaining({
+            watchMetadata: expect.objectContaining({
+              gmailCoverageVersion: expect.anything(),
+            }),
+          }),
+        }),
+      );
     });
   });
 
@@ -802,6 +1105,10 @@ function makeMockAdapter(overrides: { snippet?: string; attachmentCount?: number
       }],
       nextCursor: { value: "cursor-next", expiresAt: null },
     }),
+    syncDrafts: vi.fn().mockResolvedValue({
+      drafts: [],
+      activeDraftMessageIds: [],
+    }),
     fetchThreadDetail: vi.fn().mockResolvedValue({
       messages: [{
         providerMessageId: "gmail-msg-1",
@@ -823,7 +1130,10 @@ function makeMockAdapter(overrides: { snippet?: string; attachmentCount?: number
       }],
     }),
     disconnect: vi.fn(),
-    renewWatch: vi.fn(),
+    renewWatch: vi.fn().mockResolvedValue({
+      expiresAt: new Date("2099-01-01T00:00:00Z"),
+      metadata: { gmailHistoryId: "hist-bootstrap", gmailWatchExpiration: "4102444800000" },
+    }),
   };
 }
 

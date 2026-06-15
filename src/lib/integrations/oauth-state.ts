@@ -8,6 +8,8 @@ interface IntegrationOAuthStatePayload {
   userId: string;
   state: string;
   expiresAt: number;
+  /** Set when this OAuth flow is a reconnect for a specific mailbox connection. */
+  connectionId?: string;
 }
 
 export type IntegrationOAuthStateResult =
@@ -53,6 +55,7 @@ export function createIntegrationOAuthState(
   orgId: string,
   userId: string,
   now = Date.now(),
+  connectionId?: string,
 ) {
   const payload: IntegrationOAuthStatePayload = {
     provider,
@@ -60,6 +63,7 @@ export function createIntegrationOAuthState(
     userId,
     state: crypto.randomBytes(24).toString("hex"),
     expiresAt: now + INTEGRATION_OAUTH_STATE_TTL_MS,
+    ...(connectionId ? { connectionId } : {}),
   };
 
   return {

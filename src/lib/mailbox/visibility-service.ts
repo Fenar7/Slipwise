@@ -16,6 +16,8 @@ import { toMailboxRestrictedSummary } from "./read-shapes";
 import { logMailboxAuditTx } from "./audit";
 import type { MailboxConnectionListItem } from "./admin-shapes";
 import type { MailboxRestrictedSummary } from "./read-shapes";
+import { getMailboxSyncRunsByConnectionIds } from "./sync-run-read-service";
+import { getBatchMailboxFolderCoverage } from "./folder-coverage-service";
 
 /**
  * Compute the effective access resolution for a user on a specific connection.
@@ -67,9 +69,24 @@ export async function listMailboxConnectionsForMember(
   restricted: MailboxRestrictedSummary[];
 }> {
   const records = await listMailboxConnections(orgId);
+  const syncRuns = await getMailboxSyncRunsByConnectionIds(
+    orgId,
+    records.map((record) => record.id),
+  );
 
   const accessible: MailboxConnectionListItem[] = [];
   const restricted: MailboxRestrictedSummary[] = [];
+
+  let batchCoverage: Awaited<ReturnType<typeof getBatchMailboxFolderCoverage>> | null = null;
+  try {
+    batchCoverage = await getBatchMailboxFolderCoverage(
+      orgId,
+      records.map((r) => r.id),
+    );
+  } catch {
+    // Table may not exist yet (pending migration); skip coverage enrichment
+    batchCoverage = null;
+  }
 
   for (const record of records) {
     const visibilityPolicy =
@@ -85,7 +102,32 @@ export async function listMailboxConnectionsForMember(
     });
 
     if (canAccessMailbox(resolution)) {
-      accessible.push(toMailboxConnectionListItem(record));
+      const coverage = batchCoverage?.coveragesByConnectionId.get(record.id);
+      const listItem = toMailboxConnectionListItem(record, Date.now(), {
+        latestRun: syncRuns.latestRunByConnectionId.get(record.id) ?? null,
+        latestCompletedRun:
+          syncRuns.latestCompletedRunByConnectionId.get(record.id) ?? null,
+      });
+      // Attach folder coverage to the sync presentation on the list item.
+      // When real folder coverage exists, override staleGmailCoverage so the
+      // UI truthfully reflects actual completion instead of legacy metadata.
+      if (coverage && coverage.coverages.length > 0 && listItem.sync) {
+        const hasStale = coverage.overallState !== "COMPLETE";
+        listItem.sync = {
+          ...listItem.sync,
+          staleGmailCoverage: hasStale,
+          folderCoverage: {
+            overallState: coverage.overallState,
+            coverages: coverage.coverages.map((c) => ({
+              folder: c.folder,
+              state: c.state,
+              totalThreads: c.totalThreads,
+              errorSummary: c.errorSummary,
+            })),
+          },
+        };
+      }
+      accessible.push(listItem);
     } else {
       const reason: MailboxRestrictedSummary["restrictionReason"] =
         record.status === "DISCONNECTED" ? "mailbox_disabled" : "no_permission";

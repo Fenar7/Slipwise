@@ -1,9 +1,13 @@
 "use client";
 
-import { useState, useCallback, useEffect, useMemo } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { usePathname } from "next/navigation";
+import { useMailboxQuerySync } from "./use-mailbox-query-sync";
+import { useMailboxSavedViews } from "./use-mailbox-saved-views";
+import { useSupabaseSession } from "@/hooks/use-supabase-session";
 import { MailboxLeftRail } from "./mailbox-left-rail";
 import { MailboxCommandBar } from "./mailbox-command-bar";
+import { MailboxDraftList } from "./mailbox-draft-list";
 import { MailboxThreadList } from "./mailbox-thread-list";
 import { MailboxReadingPaneEmpty } from "./mailbox-reading-pane-empty";
 import { MailboxReadingPane } from "./mailbox-reading-pane";
@@ -12,7 +16,16 @@ import { ExpandedComposer } from "./mailbox-expanded-composer";
 import { MailboxContextPanel, MailboxContextPanelEmpty } from "./mailbox-context-panel";
 import { FilterChipsBar } from "./mailbox-filter-chips";
 import { MailboxFilterPanel } from "./mailbox-filter-panel";
-import { EmptyInboxState, NoMailboxesEmpty, NoSearchResultsEmpty, SmartViewEmpty } from "./mailbox-empty-states";
+import {
+  EmptyDraftsState,
+  EmptyInboxState,
+  EmptySentState,
+  EmptySpamState,
+  NoDraftSelectedEmpty,
+  NoMailboxesEmpty,
+  NoSearchResultsEmpty,
+  SmartViewEmpty,
+} from "./mailbox-empty-states";
 import { ReconnectBanner } from "./mailbox-restricted-states";
 import { MailboxRailDrawer, MobileTopBar, TabletTopBar, MobileTabBar } from "./mailbox-mobile-nav";
 import {
@@ -20,13 +33,30 @@ import {
   MOCK_LINKED_CONTEXT,
 } from "./mock-data";
 import { useMailboxConnections } from "./use-mailbox-connections";
+import { useMailboxCounts } from "./use-mailbox-counts";
 import { useMailboxThreads, type UseMailboxThreadsParams } from "./use-mailbox-threads";
-import { mapThreadToRowData, deriveMailboxColor, mapThreadDetailToUI } from "./thread-data-helpers";
+import {
+  mapDraftToRowData,
+  mapProviderDraftDetailToUI,
+  mapThreadToRowData,
+  deriveMailboxColor,
+  mapThreadDetailToUI,
+} from "./thread-data-helpers";
 import { useMailboxThreadDetail } from "./use-mailbox-thread-detail";
+import { useMailboxProviderDraftDetail } from "./use-mailbox-provider-draft-detail";
 import { useThreadAction } from "./use-thread-action";
 import type { ThreadAction } from "./use-thread-action";
 import { useMailboxDraft } from "./use-mailbox-draft";
-import { ThreadNotFoundEmpty } from "./mailbox-empty-states";
+import { useMailboxDrafts } from "./use-mailbox-drafts";
+import { useAssignableMembers } from "./use-assignable-members";
+import { ThreadLoadErrorEmpty, ThreadNotFoundEmpty } from "./mailbox-empty-states";
+import { useMailboxSyncAction } from "./use-mailbox-sync-action";
+import {
+  canManuallySyncMailbox,
+  resolveMailboxSyncPresentation,
+  shouldAutoTriggerMailboxSync,
+  withPendingSyncPresentation,
+} from "./mailbox-sync-ui";
 import type { ThreadRowData } from "./mailbox-thread-list";
 import type {
   MailboxComposerState,
@@ -36,6 +66,8 @@ import type {
   ActiveFilter,
   LinkedContextState,
   MailboxResponsivePanel,
+  SupportedSavedViewSmartViewId,
+  MailboxFolder,
 } from "./types";
 
 // Minimal connection shape for composer and filters
@@ -43,6 +75,33 @@ interface ConnectionLike {
   id: string;
   displayName: string;
   emailAddress: string;
+}
+
+function resolveFolderFromPathname(pathname: string): string {
+  return pathname.split("/").pop() ?? "inbox";
+}
+
+function isDraftsFolder(pathname: string): boolean {
+  return resolveFolderFromPathname(pathname) === "drafts";
+}
+
+function draftModeToComposeMode(mode: string): ComposeMode {
+  switch (mode) {
+    case "REPLY":
+      return "reply";
+    case "REPLY_ALL":
+      return "reply-all";
+    case "FORWARD":
+      return "forward";
+    default:
+      return "new";
+  }
+}
+
+function formatDraftAttachmentSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 export function resolveViewLabel(
@@ -126,6 +185,7 @@ export function resolveThreadQueryParams(
   connections: MailboxConnection[] = [],
 ): {
   connectionId?: string;
+  folder?: MailboxFolder;
   status?: string;
   unreadOnly?: boolean;
   isFlagged?: boolean;
@@ -146,22 +206,25 @@ export function resolveThreadQueryParams(
   // Sprint 4.4: linked/unlinked smart views removed from live nav
 
   if (activeConnection) {
-    const folder = pathname.split("/").pop() ?? "inbox";
-    if (folder === "archive") {
-      return { connectionId: activeConnection.id, status: "ARCHIVED" };
-    }
-    if (folder === "drafts" || folder === "spam") {
-      // Drafts and spam are not supported by the thread list backend yet.
-      // Return a sentinel status that yields an empty result.
-      return { connectionId: activeConnection.id, status: "DRAFT" };
-    }
-    if (folder === "sent") {
-      // Sent folder not yet supported by thread list backend
+    const folder = resolveFolderFromPathname(pathname);
+    if (folder === "drafts") {
       return { connectionId: activeConnection.id };
     }
-    // Inbox: show OPEN and PENDING threads
+    if (folder === "starred") {
+      return { connectionId: activeConnection.id, folder: "STARRED" };
+    }
+    if (folder === "spam") {
+      return { connectionId: activeConnection.id, folder: "SPAM" };
+    }
+    if (folder === "sent") {
+      return { connectionId: activeConnection.id, folder: "SENT" };
+    }
+    if (folder === "trash") {
+      return { connectionId: activeConnection.id, folder: "TRASH" };
+    }
     return {
       connectionId: activeConnection.id,
+      folder: "INBOX",
       status: "OPEN,PENDING",
     };
   }
@@ -191,6 +254,11 @@ export function resolveLiveQueryParams(
     params.searchQuery = trimmedQuery;
   }
 
+  // Sprint B: pass searchMode through to the hook
+  if (filterState.searchMode === "messages") {
+    params.searchMode = "messages";
+  }
+
   for (const filter of filterState.filters) {
     switch (filter.field) {
       case "mailbox":
@@ -200,10 +268,9 @@ export function resolveLiveQueryParams(
         }
         break;
       case "status":
-        // Sprint 4.4 review fix: preserve route-derived folder semantics.
-        // Do not let a user-applied status filter override the folder's
-        // built-in status (e.g. inbox = OPEN,PENDING, archive = ARCHIVED).
-        if (!routeParams.status) {
+        // Preserve route-derived folder semantics. Do not let a user-applied
+        // status filter override a folder-scoped route.
+        if (!routeParams.status && !routeParams.folder) {
           params.status = filter.value.toUpperCase();
         }
         break;
@@ -264,21 +331,40 @@ function resolveSmartViewDescription(pathname: string): { label: string; descrip
   };
 }
 
+function resolveSmartViewId(pathname: string): SupportedSavedViewSmartViewId | undefined {
+  const smartView = GLOBAL_SMART_VIEWS.find(
+    (view) =>
+      view.href !== "/app/mailbox" &&
+      (pathname === view.href || pathname.startsWith(`${view.href}/`)),
+  );
+  return smartView?.id as SupportedSavedViewSmartViewId | undefined;
+}
+
 export function MailboxWorkspace() {
   const pathname = usePathname();
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
+  const [selectedMessageProviderId, setSelectedMessageProviderId] = useState<string | null>(null);
+  const [selectedDraftId, setSelectedDraftId] = useState<string | null>(null);
   const [composer, setComposer] = useState<MailboxComposerState | null>(null);
-  const [filterState, setFilterState] = useState<ActiveFilterState>({ filters: [], searchQuery: "" });
+  const { filterState, setFilterState } = useMailboxQuerySync();
   const [contextOverrides, setContextOverrides] = useState<Record<string, Partial<LinkedContextState>>>({});
   const [isFilterPanelOpen, setIsFilterPanelOpen] = useState(false);
-  const [filterDraftState, setFilterDraftState] = useState<ActiveFilterState>({ filters: [], searchQuery: "" });
+  const [filterDraftState, setFilterDraftState] = useState<ActiveFilterState>({ filters: [], searchQuery: "", searchMode: "threads" });
+  const { views: savedViews, createView, deleteView } = useMailboxSavedViews();
 
   // Responsive state
   const [isRailOpen, setIsRailOpen] = useState(false);
   const [mobilePanel, setMobilePanel] = useState<MailboxResponsivePanel>("thread-list");
 
   // Real data hooks
-  const { connections, isLoading: connectionsLoading } = useMailboxConnections();
+  const {
+    connections,
+    isLoading: connectionsLoading,
+    refetch: refetchConnections,
+  } = useMailboxConnections();
+  const { counts: mailboxCounts } = useMailboxCounts();
+  const activeConnection = resolveActiveConnection(pathname, connections);
+  const inDraftsMode = !!activeConnection && isDraftsFolder(pathname);
 
   const threadQueryParams = useMemo(
     () => resolveThreadQueryParams(pathname, connections),
@@ -292,10 +378,22 @@ export function MailboxWorkspace() {
 
   const {
     threads: rawThreads,
+    messages: rawMessages = [],
     totalCount: apiTotalCount,
+    searchMeta: threadSearchMeta,
+    hasMore: threadsHasMore,
     isLoading: threadsLoading,
+    isLoadingMore: threadsLoadingMore,
     refetch: refetchThreads,
-  } = useMailboxThreads(liveQueryParams);
+    loadMore: loadMoreThreads,
+  } = useMailboxThreads({ ...liveQueryParams, enabled: !inDraftsMode });
+
+  const {
+    drafts: rawDrafts,
+    isLoading: draftsLoading,
+    error: draftsFetchError,
+    refetch: refetchDrafts,
+  } = useMailboxDrafts(activeConnection?.id, inDraftsMode);
 
   const connectionMap = useMemo(() => {
     const map = new Map<string, { displayName: string; color: string }>();
@@ -305,10 +403,8 @@ export function MailboxWorkspace() {
     return map;
   }, [connections]);
 
-  // TODO: Sprint 4.1 does not have current user ID from auth context in this component.
-  // Using empty string means assignee will show as "Assigned" rather than "You".
-  // This will be resolved when auth context is wired into the mailbox workspace.
-  const currentUserId = "";
+  const { user } = useSupabaseSession();
+  const currentUserId = user?.id ?? "";
 
   const mappedThreads = useMemo(() => {
     const ctx = { connectionMap, currentUserId };
@@ -319,16 +415,45 @@ export function MailboxWorkspace() {
   const visibleThreads = mappedThreads;
 
   const viewLabel = resolveViewLabel(pathname, connections);
-  const activeConnection = resolveActiveConnection(pathname, connections);
-  const totalCount = apiTotalCount;
-  const unreadCount = mappedThreads.filter((t) => t.isUnread).length;
+  const activeSync = activeConnection
+    ? resolveMailboxSyncPresentation(activeConnection)
+    : null;
+  const mappedDrafts = useMemo(() => {
+    const ctx = { connectionMap, currentUserId };
+    return rawDrafts.map((draft) => mapDraftToRowData(draft, ctx));
+  }, [rawDrafts, connectionMap, currentUserId]);
+  const selectedDraftEntry = useMemo(
+    () => rawDrafts.find((draft) => draft.id === selectedDraftId) ?? null,
+    [rawDrafts, selectedDraftId],
+  );
+  // Derive effective selection: clear stale draft ID without a cascading setState effect.
+  const effectiveSelectedDraftId =
+    selectedDraftId && mappedDrafts.some((d) => d.id === selectedDraftId)
+      ? selectedDraftId
+      : null;
+  const selectedProviderDraftActive =
+    inDraftsMode && selectedDraftEntry?.source === "provider" && !!effectiveSelectedDraftId;
+
+  const totalCount = inDraftsMode ? mappedDrafts.length : apiTotalCount;
+  const unreadCount = inDraftsMode ? 0 : mappedThreads.filter((t) => t.isUnread).length;
 
   const {
     detail: rawDetail,
     isLoading: detailLoading,
+    error: detailError,
     isNotFound: detailNotFound,
     refetch: refetchDetail,
   } = useMailboxThreadDetail(selectedThreadId);
+  const {
+    detail: rawProviderDraftDetail,
+    isLoading: providerDraftDetailLoading,
+    error: providerDraftDetailError,
+    isNotFound: providerDraftDetailNotFound,
+    refetch: refetchProviderDraftDetail,
+  } = useMailboxProviderDraftDetail(
+    selectedProviderDraftActive ? effectiveSelectedDraftId : null,
+    selectedProviderDraftActive,
+  );
 
   const handleActionSuccess = useCallback(
     (_threadId: string, _action: ThreadAction) => {
@@ -342,18 +467,110 @@ export function MailboxWorkspace() {
   );
 
   const { isLoading: isActionLoading, performAction } = useThreadAction(handleActionSuccess);
+  const {
+    triggerSync,
+    isPending: isSyncPending,
+    getError: getSyncError,
+  } = useMailboxSyncAction({
+    onSuccess: async () => {
+      refetchConnections();
+      if (inDraftsMode) {
+        refetchDrafts();
+        if (selectedProviderDraftActive) {
+          refetchProviderDraftDetail();
+        }
+      } else {
+        refetchThreads();
+        if (selectedThreadId) {
+          refetchDetail();
+        }
+      }
+    },
+  });
+
+  /**
+   * Auto-trigger recovery syncs while folder coverage is incomplete.
+   *
+   * Guard: only trigger once per `lastSyncAt` value so we do not loop
+   * endlessly, but we DO resume automatically after a prior sync completes
+   * and coverage is still partial. Stalled or failed runs are excluded —
+   * the user must manually retry those to avoid opaque endless loops.
+   */
+  const autoSyncLastStampRef = useRef<Record<string, string | null>>({});
+  useEffect(() => {
+    if (connectionsLoading || !activeConnection) return;
+    if (activeConnection.status !== "connected") return;
+    const sync = resolveMailboxSyncPresentation(activeConnection);
+    const needsAutoSync = shouldAutoTriggerMailboxSync(sync);
+    if (!needsAutoSync) return;
+    if (isSyncPending(activeConnection.id)) return;
+
+    const stamp = activeConnection.lastSyncAt;
+    if (autoSyncLastStampRef.current[activeConnection.id] === stamp) return;
+
+    autoSyncLastStampRef.current[activeConnection.id] = stamp;
+    void triggerSync(activeConnection.id);
+  }, [
+    connectionsLoading,
+    activeConnection,
+    triggerSync,
+    isSyncPending,
+  ]);
+
+  const lastSeenSyncStampRef = useRef<Record<string, string | null>>({});
+  useEffect(() => {
+    if (!activeConnection || activeConnection.status !== "connected") return;
+    const syncStamp = activeConnection.lastSyncAt;
+    const previousSyncStamp = lastSeenSyncStampRef.current[activeConnection.id];
+
+    if (previousSyncStamp === undefined) {
+      lastSeenSyncStampRef.current[activeConnection.id] = syncStamp;
+      return;
+    }
+    if (previousSyncStamp === syncStamp) return;
+
+    lastSeenSyncStampRef.current[activeConnection.id] = syncStamp;
+    if (inDraftsMode) {
+      refetchDrafts();
+      if (selectedProviderDraftActive) {
+        refetchProviderDraftDetail();
+      }
+      return;
+    }
+
+    refetchThreads();
+    if (selectedThreadId) {
+      refetchDetail();
+    }
+  }, [
+    activeConnection,
+    inDraftsMode,
+    selectedProviderDraftActive,
+    selectedThreadId,
+    refetchDrafts,
+    refetchProviderDraftDetail,
+    refetchThreads,
+    refetchDetail,
+  ]);
+
 
   // Sprint 5.1: Draft persistence hook
   const {
     isLoading: isDraftLoading,
     isAutosaving,
     error: draftError,
+    adoptDraft,
+    clearCurrentDraft,
     createDraft,
     autosave,
+    flushAutosave,
     sendDraft,
     discardDraft,
     cancelAutosave,
   } = useMailboxDraft();
+
+  // Sprint 6.2: fetch assignable org members for the context panel picker
+  const { members: assignableMembers } = useAssignableMembers();
 
   const handleThreadAction = useCallback(
     (threadId: string, action: ThreadAction) => {
@@ -372,16 +589,87 @@ export function MailboxWorkspace() {
   );
 
   const selectedDetail = useMemo(() => {
+    if (selectedProviderDraftActive) {
+      if (!rawProviderDraftDetail) return null;
+      return mapProviderDraftDetailToUI(rawProviderDraftDetail, {
+        connectionMap,
+        currentUserId,
+      });
+    }
     if (!rawDetail) return null;
     return mapThreadDetailToUI(rawDetail, { connectionMap, currentUserId });
-  }, [rawDetail, connectionMap, currentUserId]);
+  }, [
+    rawDetail,
+    rawProviderDraftDetail,
+    selectedProviderDraftActive,
+    connectionMap,
+    currentUserId,
+  ]);
 
   const reconnectConnection = resolveReconnectConnection(pathname, connections);
   const smartViewEmpty = resolveSmartViewDescription(pathname);
   const connectedMailboxCount = connections.filter((conn) => conn.status !== "disconnected").length;
+  const effectiveActiveSync =
+    activeConnection && activeSync
+      ? withPendingSyncPresentation(activeSync, isSyncPending(activeConnection.id))
+      : null;
+  const activeSyncError = activeConnection ? getSyncError(activeConnection.id) : null;
+  const canSyncActiveMailbox =
+    activeConnection ? canManuallySyncMailbox(activeConnection.status) : false;
 
-  const selectedContext: LinkedContextState | null = selectedThreadId
-    ? { ...(MOCK_LINKED_CONTEXT[selectedThreadId] ?? null), ...(contextOverrides[selectedThreadId] ?? {}) } as LinkedContextState
+  // Hybrid sync: refetch threads and drafts when active sync counts update during a run
+  const lastThreadCountRef = useRef<Record<string, number>>({});
+  const lastMessageCountRef = useRef<Record<string, number>>({});
+
+  useEffect(() => {
+    if (!activeConnection || !effectiveActiveSync || effectiveActiveSync.state !== "running") {
+      return;
+    }
+    const connectionId = activeConnection.id;
+    const currentThreadCount = effectiveActiveSync.lastRunThreadCount ?? 0;
+    const currentMessageCount = effectiveActiveSync.lastRunMessageCount ?? 0;
+
+    const prevThreadCount = lastThreadCountRef.current[connectionId] ?? 0;
+    const prevMessageCount = lastMessageCountRef.current[connectionId] ?? 0;
+
+    if (currentThreadCount !== prevThreadCount || currentMessageCount !== prevMessageCount) {
+      lastThreadCountRef.current[connectionId] = currentThreadCount;
+      lastMessageCountRef.current[connectionId] = currentMessageCount;
+
+      if (inDraftsMode) {
+        refetchDrafts();
+      } else {
+        refetchThreads();
+      }
+    }
+  }, [
+    activeConnection,
+    effectiveActiveSync,
+    inDraftsMode,
+    refetchDrafts,
+    refetchThreads,
+  ]);
+
+  const selectedContext: LinkedContextState | null = selectedProviderDraftActive
+    ? null
+    : selectedThreadId
+    ? {
+        ...(MOCK_LINKED_CONTEXT[selectedThreadId] ?? {
+          threadId: selectedThreadId,
+          links: [],
+          suggestions: [],
+          assignee: null,
+          assigneeId: null,
+          status: "open" as const,
+          statusChangedAt: null,
+          internalNote: "",
+        }),
+        ...(contextOverrides[selectedThreadId] ?? {}),
+        // Override assignee and status with authoritative thread data
+        assignee: selectedDetail?.assignee ?? null,
+        assigneeId: selectedDetail?.assigneeId ?? null,
+        status: selectedDetail?.status ?? "open",
+      } as LinkedContextState
     : null;
 
   const defaultComposeConnection =
@@ -390,21 +678,62 @@ export function MailboxWorkspace() {
     connections[0];
 
   useEffect(() => {
-    if (selectedThreadId && !visibleThreads.some((t) => t.id === selectedThreadId)) {
-      setSelectedThreadId(null);
+    if (inDraftsMode) return;
+    if (selectedThreadId && !visibleThreads.some((t) => t.id === selectedThreadId) && rawMessages.length === 0) {
+      queueMicrotask(() => {
+        setSelectedThreadId(null);
+        setSelectedMessageProviderId(null);
+      });
     }
-  }, [selectedThreadId, visibleThreads]);
+  }, [inDraftsMode, selectedThreadId, visibleThreads, rawMessages.length]);
 
   useEffect(() => {
     if (isFilterPanelOpen) {
-      setFilterDraftState({ filters: [...filterState.filters], searchQuery: filterState.searchQuery });
+      queueMicrotask(() => {
+        setFilterDraftState({ filters: [...filterState.filters], searchQuery: filterState.searchQuery });
+      });
     }
   }, [isFilterPanelOpen, filterState]);
 
   // On mobile, selecting a thread navigates to reading pane
   const handleSelectThread = useCallback((id: string) => {
     setSelectedThreadId(id);
+    setSelectedMessageProviderId(null);
+    setSelectedDraftId(null);
     setMobilePanel("reading-pane");
+  }, []);
+
+  // Sprint B: Handle message result selection — open parent thread
+  const handleSelectMessage = useCallback(async (message: import("./use-mailbox-threads").MailboxMessageResultItem) => {
+    setSelectedMessageProviderId(message.providerMessageId);
+    setSelectedDraftId(null);
+    setMobilePanel("reading-pane");
+
+    if (message.threadId) {
+      setSelectedThreadId(message.threadId);
+      return;
+    }
+
+    try {
+      const res = await fetch("/api/mailbox/threads/open", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mailboxConnectionId: message.mailboxConnectionId,
+          providerThreadId: message.providerThreadId,
+        }),
+      });
+      if (!res.ok) {
+        return;
+      }
+
+      const body = (await res.json()) as { threadId?: string };
+      if (body.threadId) {
+        setSelectedThreadId(body.threadId);
+      }
+    } catch {
+      // Search truth/degraded state is already surfaced; leave the shell result selected.
+    }
   }, []);
 
   const handleMobileBack = useCallback(() => {
@@ -415,7 +744,86 @@ export function MailboxWorkspace() {
 
     setMobilePanel("thread-list");
     setSelectedThreadId(null);
+    setSelectedMessageProviderId(null);
   }, [mobilePanel]);
+
+  const handleSelectDraft = useCallback(async (draftId: string) => {
+    const draft = rawDrafts.find((candidate) => candidate.id === draftId);
+    if (!draft) return;
+
+    // Flush any pending changes to the current draft before selecting a new one
+    await flushAutosave?.();
+
+    if (draft.source === "provider") {
+      setSelectedDraftId(draftId);
+      setSelectedThreadId(null);
+      setSelectedMessageProviderId(null);
+      clearCurrentDraft();
+      setComposer(null);
+      setMobilePanel("reading-pane");
+      return;
+    }
+
+    const connection =
+      connections.find((candidate) => candidate.id === draft.mailboxConnectionId) ??
+      defaultComposeConnection;
+    if (!connection) return;
+
+    adoptDraft({
+      id: draft.id,
+      orgId: draft.orgId,
+      mailboxConnectionId: draft.mailboxConnectionId,
+      threadId: draft.threadId,
+      replyToMessageId: draft.replyToMessageId,
+      mode: draft.mode,
+      fromIdentity: draft.fromIdentity,
+      to: draft.to,
+      cc: draft.cc,
+      bcc: draft.bcc,
+      subject: draft.subject,
+      htmlBody: draft.htmlBody,
+      textBody: draft.textBody,
+      attachmentRefs: draft.attachmentRefs,
+      status: draft.status,
+      lastAutosavedAt: draft.lastAutosavedAt,
+      createdBy: draft.createdBy,
+      createdAt: draft.createdAt,
+      updatedAt: draft.updatedAt,
+    });
+    setSelectedDraftId(draftId);
+    setSelectedThreadId(null);
+    setSelectedMessageProviderId(null);
+    setComposer({
+      isOpen: true,
+      layout: "expanded",
+      mode: draftModeToComposeMode(draft.mode),
+      fromConnectionId: connection.id,
+      fromLabel: connection.displayName,
+      fromEmail: connection.emailAddress,
+      to: draft.to,
+      cc: draft.cc,
+      bcc: draft.bcc,
+      showCc: draft.cc.length > 0,
+      showBcc: draft.bcc.length > 0,
+      subject: draft.subject,
+      bodyHtml: draft.htmlBody,
+      attachments: draft.attachments.map((attachment) => ({
+        id: attachment.id,
+        filename: attachment.filename,
+        mimeType: attachment.mimeType,
+        sizeLabel: formatDraftAttachmentSize(attachment.size),
+      })),
+      sendState: "idle",
+      deliveryMode: "send_now",
+      scheduledSendAt: null,
+      scheduleLabel: null,
+      schedulePanelOpen: false,
+      threadId: draft.threadId,
+      replyToMessageId: draft.replyToMessageId,
+      draftId: draft.id,
+    });
+    setMobilePanel("reading-pane");
+  }, [adoptDraft, clearCurrentDraft, connections, defaultComposeConnection, rawDrafts]);
 
   const openNewCompose = useCallback(async () => {
     if (!defaultComposeConnection) return;
@@ -423,8 +831,12 @@ export function MailboxWorkspace() {
       mailboxConnectionId: defaultComposeConnection.id,
       mode: "NEW",
     });
+    setSelectedDraftId(draft?.id ?? null);
     setComposer(makeComposerState("new", null, null, "", [], defaultComposeConnection, "floating", draft?.id ?? null));
-  }, [defaultComposeConnection, createDraft]);
+    if (inDraftsMode) {
+      refetchDrafts();
+    }
+  }, [defaultComposeConnection, createDraft, inDraftsMode, refetchDrafts]);
 
   const openInlineReply = useCallback(
     async (mode: ComposeMode, threadId: string, messageId: string, subject: string, to: string[]) => {
@@ -447,10 +859,14 @@ export function MailboxWorkspace() {
     [connections, defaultComposeConnection, selectedDetail, createDraft]
   );
 
-  const closeComposer = useCallback(() => {
-    cancelAutosave();
+  const closeComposer = useCallback(async () => {
+    await flushAutosave?.();
     setComposer(null);
-  }, [cancelAutosave]);
+    if (inDraftsMode) {
+      clearCurrentDraft();
+      setSelectedDraftId(null);
+    }
+  }, [flushAutosave, clearCurrentDraft, inDraftsMode]);
   const expandComposer = useCallback(() => setComposer((p) => p ? { ...p, layout: "expanded" } : p), []);
   const collapseComposer = useCallback(
     () => setComposer((p) => p ? { ...p, layout: p.threadId ? "inline" : "floating" } : p),
@@ -479,22 +895,52 @@ export function MailboxWorkspace() {
   const handleDiscardComposer = useCallback(async () => {
     await discardDraft();
     setComposer(null);
-  }, [discardDraft]);
+    clearCurrentDraft();
+    setSelectedDraftId(null);
+    refetchDrafts();
+  }, [clearCurrentDraft, discardDraft, refetchDrafts]);
 
   const handleSendComposer = useCallback(async () => {
     const result = await sendDraft();
     if (result) {
       setComposer(null);
+      clearCurrentDraft();
+      setSelectedDraftId(null);
+      refetchDrafts();
+      refetchThreads();
     }
-  }, [sendDraft]);
+  }, [clearCurrentDraft, refetchDrafts, refetchThreads, sendDraft]);
 
-  const patchContext = useCallback((patch: Partial<LinkedContextState>) => {
-    if (!selectedThreadId) return;
-    setContextOverrides((prev) => ({
-      ...prev,
-      [selectedThreadId]: { ...(prev[selectedThreadId] ?? {}), ...patch },
-    }));
-  }, [selectedThreadId]);
+  const patchContext = useCallback(
+    (patch: Partial<LinkedContextState>) => {
+      if (!selectedThreadId) return;
+
+      // Sprint 6.2: assignment and status changes go to the backend
+      if (patch.status !== undefined) {
+        void performAction(selectedThreadId, "set_status", {
+          status: patch.status.toUpperCase(),
+        });
+        return;
+      }
+
+      if (patch.assignee !== undefined) {
+        if (patch.assignee === null) {
+          void performAction(selectedThreadId, "unassign");
+        } else if (patch.assigneeId) {
+          // Real teammate assignment (or self via "Assign to me")
+          void performAction(selectedThreadId, "assign", { assigneeId: patch.assigneeId });
+        }
+        return;
+      }
+
+      // Linked records and internal notes remain local-only (Sprint 6.1)
+      setContextOverrides((prev) => ({
+        ...prev,
+        [selectedThreadId]: { ...(prev[selectedThreadId] ?? {}), ...patch },
+      }));
+    },
+    [selectedThreadId, performAction],
+  );
 
   const addFilter = useCallback((filter: ActiveFilter) => {
     setFilterState((prev) => ({
@@ -503,22 +949,22 @@ export function MailboxWorkspace() {
         ? prev.filters
         : [...prev.filters, filter],
     }));
-  }, []);
+  }, [setFilterState]);
 
   const removeFilter = useCallback((field: string, value: string) => {
     setFilterState((prev) => ({
       ...prev,
       filters: prev.filters.filter((f) => !(f.field === field && f.value === value)),
     }));
-  }, []);
+  }, [setFilterState]);
 
   const clearFilters = useCallback(() => {
-    setFilterState({ filters: [], searchQuery: "" });
-  }, []);
+    setFilterState({ filters: [], searchQuery: "", searchMode: "threads" });
+  }, [setFilterState]);
 
   const clearSearch = useCallback(() => {
-    setFilterState((prev) => ({ ...prev, searchQuery: "" }));
-  }, []);
+    setFilterState((prev) => ({ ...prev, searchQuery: "", searchMode: "threads" }));
+  }, [setFilterState]);
 
   const toggleDraftFilter = useCallback((filter: ActiveFilter) => {
     setFilterDraftState((prev) => {
@@ -544,7 +990,7 @@ export function MailboxWorkspace() {
   const applyDraftFilters = useCallback(() => {
     setFilterState((prev) => ({ ...prev, filters: [...filterDraftState.filters] }));
     setIsFilterPanelOpen(false);
-  }, [filterDraftState.filters]);
+  }, [filterDraftState.filters, setFilterState]);
 
   const hasActiveFilters = filterState.filters.length > 0 || !!filterState.searchQuery;
 
@@ -556,13 +1002,39 @@ export function MailboxWorkspace() {
     if (connectedMailboxCount === 0) {
       return <NoMailboxesEmpty isAdmin={true} />;
     }
-    if (rawThreads.length === 0) {
+    if (inDraftsMode && mappedDrafts.length === 0) {
+      return (
+        <EmptyDraftsState
+          mailboxLabel={resolveEmptyMailboxLabel(pathname, activeConnection, viewLabel)}
+          syncStatus={
+            effectiveActiveSync &&
+            (effectiveActiveSync.state === "running" ||
+              effectiveActiveSync.state === "completed_never_imported" ||
+              effectiveActiveSync.state === "failed" ||
+              effectiveActiveSync.draftErrorSummary != null)
+              ? effectiveActiveSync
+              : undefined
+          }
+          fetchError={draftsFetchError}
+          onSyncNow={
+            activeConnection && canSyncActiveMailbox
+              ? () => { void triggerSync(activeConnection.id); }
+              : undefined
+          }
+          isSyncPending={activeConnection ? isSyncPending(activeConnection.id) : false}
+        />
+      );
+    }
+    if (!inDraftsMode && rawThreads.length === 0 && rawMessages.length === 0) {
       if (hasActiveFilters) {
         return (
           <NoSearchResultsEmpty
             query={filterState.searchQuery || undefined}
             hasActiveFilters={filterState.filters.length > 0}
             onClearFilters={clearFilters}
+            isPartialSearch={threadSearchMeta?.partial === true}
+            searchMeta={threadSearchMeta}
+            connections={connections}
           />
         );
       }
@@ -574,9 +1046,69 @@ export function MailboxWorkspace() {
           />
         );
       }
+      const activeFolder = resolveFolderFromPathname(pathname);
+      if (activeFolder === "sent") {
+        return (
+          <EmptySentState
+            mailboxLabel={resolveEmptyMailboxLabel(pathname, activeConnection, viewLabel)}
+            syncStatus={
+              effectiveActiveSync &&
+              (effectiveActiveSync.state === "running" ||
+                effectiveActiveSync.state === "completed_never_imported" ||
+                effectiveActiveSync.state === "failed")
+                ? effectiveActiveSync
+                : undefined
+            }
+            onSyncNow={
+              activeConnection && canSyncActiveMailbox
+                ? () => { void triggerSync(activeConnection.id); }
+                : undefined
+            }
+            isSyncPending={activeConnection ? isSyncPending(activeConnection.id) : false}
+          />
+        );
+      }
+      if (activeFolder === "spam") {
+        return (
+          <EmptySpamState
+            mailboxLabel={resolveEmptyMailboxLabel(pathname, activeConnection, viewLabel)}
+            syncStatus={
+              effectiveActiveSync &&
+              (effectiveActiveSync.state === "running" ||
+                effectiveActiveSync.state === "completed_never_imported" ||
+                effectiveActiveSync.state === "failed")
+                ? effectiveActiveSync
+                : undefined
+            }
+            onSyncNow={
+              activeConnection && canSyncActiveMailbox
+                ? () => { void triggerSync(activeConnection.id); }
+                : undefined
+            }
+            isSyncPending={activeConnection ? isSyncPending(activeConnection.id) : false}
+          />
+        );
+      }
       return (
         <EmptyInboxState
           mailboxLabel={resolveEmptyMailboxLabel(pathname, activeConnection, viewLabel)}
+          syncStatus={
+            effectiveActiveSync &&
+            (effectiveActiveSync.state === "running" ||
+              effectiveActiveSync.state === "completed_never_imported" ||
+              effectiveActiveSync.state === "failed")
+              ? effectiveActiveSync
+              : undefined
+          }
+          onSyncNow={
+            activeConnection && canSyncActiveMailbox
+              ? () => {
+                  void triggerSync(activeConnection.id);
+                }
+              : undefined
+          }
+          isSyncPending={activeConnection ? isSyncPending(activeConnection.id) : false}
+          syncError={activeSyncError}
         />
       );
     }
@@ -611,13 +1143,27 @@ export function MailboxWorkspace() {
         {/* ── Desktop left rail (xl+) — single instance, always in DOM ── */}
         {/* On xl+: shown inline. On <xl: hidden (drawer has its own copy via portal). */}
         <div className="hidden xl:flex xl:shrink-0" aria-hidden="false">
-          <MailboxLeftRail connections={connections} onCompose={openNewCompose} />
+          <MailboxLeftRail
+            connections={connections}
+            onCompose={openNewCompose}
+            savedViews={savedViews}
+            onDeleteSavedView={deleteView}
+            smartViewCounts={mailboxCounts?.smartViews}
+            folderCounts={mailboxCounts?.folders}
+          />
         </div>
 
         {/* ── Rail drawer for tablet + mobile — separate instance, aria-hidden when closed ── */}
         <div className="xl:hidden" aria-hidden={!isRailOpen}>
           <MailboxRailDrawer isOpen={isRailOpen} onClose={() => setIsRailOpen(false)}>
-            <MailboxLeftRail connections={connections} onCompose={openNewCompose} />
+            <MailboxLeftRail
+              connections={connections}
+              onCompose={openNewCompose}
+              savedViews={savedViews}
+              onDeleteSavedView={deleteView}
+              smartViewCounts={mailboxCounts?.smartViews}
+              folderCounts={mailboxCounts?.folders}
+            />
           </MailboxRailDrawer>
         </div>
 
@@ -649,16 +1195,40 @@ export function MailboxWorkspace() {
           <MailboxCommandBar
             activeViewLabel={viewLabel}
             totalCount={totalCount}
+            loadedCount={
+              inDraftsMode
+                ? mappedDrafts.length
+                : filterState.searchMode === "messages"
+                ? rawMessages.length
+                : visibleThreads.length
+            }
             unreadCount={unreadCount}
+            searchMeta={threadSearchMeta}
+            itemLabel={inDraftsMode ? "draft" : "thread"}
             onCompose={openNewCompose}
             searchQuery={filterState.searchQuery}
             onSearchQueryChange={(query) =>
               setFilterState((prev) => ({ ...prev, searchQuery: query }))
             }
             onClearSearch={clearSearch}
+            searchMode={filterState.searchMode}
+            onSearchModeChange={(mode) =>
+              setFilterState((prev) => ({ ...prev, searchMode: mode }))
+            }
             filterState={filterState}
             isFilterPanelOpen={isFilterPanelOpen}
             onToggleFilterPanel={() => setIsFilterPanelOpen((open) => !open)}
+            onSaveView={createView}
+            smartViewId={resolveSmartViewId(pathname)}
+            syncStatus={effectiveActiveSync}
+            onSyncNow={
+              activeConnection && canSyncActiveMailbox
+                ? () => {
+                    void triggerSync(activeConnection.id);
+                  }
+                : undefined
+            }
+            isSyncPending={activeConnection ? isSyncPending(activeConnection.id) : false}
           />
 
           <MailboxFilterPanel
@@ -696,16 +1266,37 @@ export function MailboxWorkspace() {
             ].join(" ")}
             data-testid="mailbox-thread-list-pane"
           >
-            <MailboxThreadList
-              threads={visibleThreads}
-              selectedThreadId={selectedThreadId}
-              onSelectThread={handleSelectThread}
-              reconnectBanner={reconnectBanner}
-              emptyState={threadListEmptyState ?? undefined}
-              isLoading={threadsLoading}
-              isActionLoading={isActionLoading}
-              onThreadAction={handleThreadAction}
-            />
+            {inDraftsMode ? (
+              <MailboxDraftList
+                drafts={mappedDrafts}
+                selectedDraftId={effectiveSelectedDraftId}
+                onSelectDraft={handleSelectDraft}
+                emptyState={threadListEmptyState ?? undefined}
+                isLoading={draftsLoading}
+              />
+            ) : (
+              <MailboxThreadList
+                threads={visibleThreads}
+                messages={rawMessages}
+                selectedThreadId={selectedThreadId}
+                selectedMessageProviderId={selectedMessageProviderId}
+                onSelectThread={handleSelectThread}
+                onSelectMessage={handleSelectMessage}
+                reconnectBanner={reconnectBanner}
+                emptyState={threadListEmptyState ?? undefined}
+                totalCount={apiTotalCount}
+                loadedCount={filterState.searchMode === "messages" ? rawMessages.length : visibleThreads.length}
+                hasMore={threadsHasMore}
+                searchMeta={threadSearchMeta}
+                isLoading={threadsLoading}
+                isLoadingMore={threadsLoadingMore}
+                onLoadMore={loadMoreThreads}
+                isActionLoading={isActionLoading}
+                onThreadAction={handleThreadAction}
+                connections={connections}
+                syncStatus={effectiveActiveSync}
+              />
+            )}
           </div>
 
           {/* Reading pane — hidden on mobile when thread-list is active */}
@@ -716,15 +1307,59 @@ export function MailboxWorkspace() {
             ].join(" ")}
             data-testid="mailbox-reading-pane"
           >
-            {detailLoading ? (
+            {detailLoading || providerDraftDetailLoading ? (
               <div className="flex h-full items-center justify-center bg-[#F7F8FB]" data-testid="mailbox-reading-pane-loading">
                 <div className="h-8 w-8 animate-spin rounded-full border-2 border-[#E2E8F0] border-t-[#16294D]" />
               </div>
-            ) : detailNotFound ? (
-              <ThreadNotFoundEmpty onDismiss={() => setSelectedThreadId(null)} />
+            ) : detailError || providerDraftDetailError ? (
+              <ThreadLoadErrorEmpty
+                message={providerDraftDetailError ?? detailError}
+                onRetry={
+                  selectedProviderDraftActive
+                    ? refetchProviderDraftDetail
+                    : selectedThreadId
+                    ? refetchDetail
+                    : undefined
+                }
+                onDismiss={() => {
+                  setSelectedThreadId(null);
+                  setSelectedMessageProviderId(null);
+                  setSelectedDraftId(null);
+                }}
+              />
+            ) : detailNotFound || providerDraftDetailNotFound ? (
+              <ThreadNotFoundEmpty
+                onDismiss={() => {
+                  setSelectedThreadId(null);
+                  setSelectedMessageProviderId(null);
+                  setSelectedDraftId(null);
+                }}
+              />
+            ) : inDraftsMode && selectedProviderDraftActive && selectedDetail ? (
+              <MailboxReadingPane
+                detail={selectedDetail}
+                selectedMessageProviderId={selectedMessageProviderId}
+                composerState={null}
+                onOpenReply={() => {}}
+                onCloseReply={() => {}}
+                onDiscardReply={() => {}}
+                onExpandReply={() => {}}
+                onSendReply={() => {}}
+                onPatchComposer={() => {}}
+                onOpenContext={() => setMobilePanel("context")}
+                isActionLoading={false}
+                onThreadAction={() => {}}
+                allowReplies={false}
+                allowThreadActions={false}
+              />
+            ) : inDraftsMode ? (
+              <NoDraftSelectedEmpty
+                mailboxLabel={resolveEmptyMailboxLabel(pathname, activeConnection, viewLabel)}
+              />
             ) : selectedDetail ? (
               <MailboxReadingPane
                 detail={selectedDetail}
+                selectedMessageProviderId={selectedMessageProviderId}
                 composerState={composer?.threadId === selectedDetail.threadId ? composer : null}
                 onOpenReply={openInlineReply}
                 onCloseReply={closeComposer}
@@ -752,7 +1387,7 @@ export function MailboxWorkspace() {
             data-testid="mailbox-context-panel-container"
           >
             {selectedContext ? (
-              <MailboxContextPanel context={selectedContext} onPatch={patchContext} />
+              <MailboxContextPanel context={selectedContext} onPatch={patchContext} members={assignableMembers} currentUserId={currentUserId} />
             ) : (
               <MailboxContextPanelEmpty />
             )}

@@ -13,17 +13,23 @@ import {
   Clock,
   Send,
   FileEdit,
-  Archive,
+  Star,
   ShieldAlert,
+  Trash2,
   ChevronDown,
   ChevronRight,
   Settings,
   AlertTriangle,
   RefreshCw,
   Plus,
+  Bookmark,
+  X,
+  Loader2,
 } from "lucide-react";
 import type { MailboxConnection, MailboxGroup, MailboxTreeItem } from "./types";
-import { GLOBAL_SMART_VIEWS, MOCK_CONNECTIONS } from "./mock-data";
+import type { SavedViewItem } from "./use-mailbox-saved-views";
+import { GLOBAL_SMART_VIEWS } from "./mock-data";
+import { resolveMailboxSyncPresentation } from "./mailbox-sync-ui";
 
 const ICON_MAP: Record<string, React.ElementType> = {
   Inbox,
@@ -34,8 +40,9 @@ const ICON_MAP: Record<string, React.ElementType> = {
   Clock,
   Send,
   FileEdit,
-  Archive,
+  Star,
   ShieldAlert,
+  Trash2,
 };
 
 function UnreadBadge({ count }: { count: number }) {
@@ -74,6 +81,31 @@ function HealthBadge({ status }: { status: MailboxConnection["status"] }) {
   return null;
 }
 
+function resolveSavedViewBaseHref(smartViewId: SavedViewItem["smartViewId"]): string {
+  if (!smartViewId || smartViewId === "all-inboxes") {
+    return "/app/mailbox";
+  }
+
+  return GLOBAL_SMART_VIEWS.find((item) => item.id === smartViewId)?.href ?? "/app/mailbox";
+}
+
+export function buildSavedViewHref(view: SavedViewItem): string {
+  const params = new URLSearchParams();
+
+  if (view.searchQuery.trim()) {
+    params.set("q", view.searchQuery.trim());
+  }
+
+  for (const filter of view.filters) {
+    params.set(`f_${filter.field}`, filter.value);
+  }
+
+  const query = params.toString();
+  const baseHref = resolveSavedViewBaseHref(view.smartViewId);
+
+  return query ? `${baseHref}?${query}` : baseHref;
+}
+
 function NavItem({ item, depth = 0 }: { item: MailboxTreeItem; depth?: number }) {
   const pathname = usePathname();
   const isActive =
@@ -109,7 +141,7 @@ function NavItem({ item, depth = 0 }: { item: MailboxTreeItem; depth?: number })
   );
 }
 
-function mailboxFolders(connectionId: string, prefix: string): MailboxTreeItem[] {
+function mailboxFolders(connectionId: string, prefix: string, folderCounts?: { inbox: number; sent: number; drafts: number; starred: number; spam: number; trash: number }): MailboxTreeItem[] {
   return [
     {
       id: `${connectionId}-inbox`,
@@ -117,6 +149,7 @@ function mailboxFolders(connectionId: string, prefix: string): MailboxTreeItem[]
       href: `/app/mailbox/${prefix}/inbox`,
       icon: "Inbox",
       mailboxConnectionId: connectionId,
+      unreadCount: folderCounts?.inbox || undefined,
     },
     {
       id: `${connectionId}-sent`,
@@ -131,13 +164,15 @@ function mailboxFolders(connectionId: string, prefix: string): MailboxTreeItem[]
       href: `/app/mailbox/${prefix}/drafts`,
       icon: "FileEdit",
       mailboxConnectionId: connectionId,
+      unreadCount: folderCounts?.drafts || undefined,
     },
     {
-      id: `${connectionId}-archive`,
-      label: "Archive",
-      href: `/app/mailbox/${prefix}/archive`,
-      icon: "Archive",
+      id: `${connectionId}-starred`,
+      label: "Starred",
+      href: `/app/mailbox/${prefix}/starred`,
+      icon: "Star",
       mailboxConnectionId: connectionId,
+      unreadCount: folderCounts?.starred || undefined,
     },
     {
       id: `${connectionId}-spam`,
@@ -145,21 +180,37 @@ function mailboxFolders(connectionId: string, prefix: string): MailboxTreeItem[]
       href: `/app/mailbox/${prefix}/spam`,
       icon: "ShieldAlert",
       mailboxConnectionId: connectionId,
+      unreadCount: folderCounts?.spam || undefined,
+    },
+    {
+      id: `${connectionId}-trash`,
+      label: "Trash",
+      href: `/app/mailbox/${prefix}/trash`,
+      icon: "Trash2",
+      mailboxConnectionId: connectionId,
+      unreadCount: folderCounts?.trash || undefined,
     },
   ];
 }
 
-function buildMailboxGroups(connections: MailboxConnection[]): MailboxGroup[] {
-  return connections.map((conn) => ({
-    connection: conn,
-    items: mailboxFolders(conn.id, conn.id),
-  }));
+function buildMailboxGroups(connections: MailboxConnection[], folderCounts?: Record<string, { inbox: number; sent: number; drafts: number; starred: number; spam: number; trash: number }>): MailboxGroup[] {
+  return connections.map((conn) => {
+    const connCounts = folderCounts?.[conn.id];
+    return {
+      connection: {
+        ...conn,
+        unreadCount: connCounts?.inbox ?? conn.unreadCount,
+      },
+      items: mailboxFolders(conn.id, conn.id, connCounts),
+    };
+  });
 }
 
 function MailboxAccountGroup({ group }: { group: MailboxGroup }) {
   const { connection, items } = group;
-  const [expanded, setExpanded] = useState(connection.status === "connected");
+  const [expanded, setExpanded] = useState(true);
   const pathname = usePathname();
+  const sync = resolveMailboxSyncPresentation(connection);
   const isAnyChildActive = items.some(
     (item) => pathname === item.href || pathname.startsWith(`${item.href}/`)
   );
@@ -187,6 +238,12 @@ function MailboxAccountGroup({ group }: { group: MailboxGroup }) {
 
         <HealthBadge status={connection.status} />
 
+        {sync.isSyncing && (
+          <span title={sync.stageLabel} className="ml-1 shrink-0">
+            <Loader2 className="h-3 w-3 animate-spin text-blue-500" />
+          </span>
+        )}
+
         {connection.status === "connected" && connection.unreadCount > 0 && (
           <UnreadBadge count={connection.unreadCount} />
         )}
@@ -205,7 +262,7 @@ function MailboxAccountGroup({ group }: { group: MailboxGroup }) {
           <p className="mt-0.5 text-amber-600">
             Token expired.{" "}
             <Link
-              href="/app/settings/integrations"
+              href={`/app/mailbox/settings/connections/${connection.id}?action=reconnect`}
               className="underline underline-offset-2 hover:text-amber-800"
             >
               Reconnect
@@ -214,7 +271,7 @@ function MailboxAccountGroup({ group }: { group: MailboxGroup }) {
         </div>
       )}
 
-      {expanded && connection.status === "connected" && (
+      {expanded && (
         <ul className="mt-0.5 space-y-0.5 pl-2">
           {items.map((item) => (
             <NavItem key={item.id} item={item} depth={1} />
@@ -228,13 +285,21 @@ function MailboxAccountGroup({ group }: { group: MailboxGroup }) {
 interface MailboxLeftRailProps {
   connections?: MailboxConnection[];
   onCompose?: () => void;
+  savedViews?: SavedViewItem[];
+  onDeleteSavedView?: (id: string) => Promise<void>;
+  smartViewCounts?: Record<string, number>;
+  folderCounts?: Record<string, { inbox: number; sent: number; drafts: number; starred: number; spam: number; trash: number }>;
 }
 
 export function MailboxLeftRail({
-  connections = MOCK_CONNECTIONS,
+  connections = [],
   onCompose,
+  savedViews = [],
+  onDeleteSavedView,
+  smartViewCounts,
+  folderCounts,
 }: MailboxLeftRailProps) {
-  const groups = buildMailboxGroups(connections);
+  const groups = buildMailboxGroups(connections, folderCounts);
 
   return (
     <aside
@@ -270,10 +335,47 @@ export function MailboxLeftRail({
           </p>
           <ul className="space-y-0.5">
             {GLOBAL_SMART_VIEWS.map((item) => (
-              <NavItem key={item.id} item={item} />
+              <NavItem key={item.id} item={{ ...item, unreadCount: smartViewCounts?.[item.id] || undefined }} />
             ))}
           </ul>
         </div>
+
+        {/* Saved views */}
+        {savedViews.length > 0 && (
+          <div className="mb-3">
+            <p className="mb-1 px-2.5 text-[10px] font-semibold uppercase tracking-widest text-[#94A3B8]">
+              Saved Views
+            </p>
+            <ul className="space-y-0.5">
+              {savedViews.map((view) => (
+                <li key={view.id}>
+                  <Link
+                    href={buildSavedViewHref(view)}
+                    className="group flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs font-medium text-[#64748B] transition-colors hover:bg-[#F1F3F7] hover:text-[#0F172A]"
+                    title={view.label}
+                  >
+                    <Bookmark className="h-3.5 w-3.5 shrink-0" />
+                    <span className="truncate">{view.label}</span>
+                    {onDeleteSavedView && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          void onDeleteSavedView(view.id);
+                        }}
+                        className="ml-auto hidden h-4 w-4 items-center justify-center rounded hover:bg-[#E2E5EA] group-hover:flex"
+                        aria-label={`Delete ${view.label}`}
+                      >
+                        <X className="h-3 w-3 text-[#94A3B8]" />
+                      </button>
+                    )}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {/* Divider */}
         <div className="my-2 border-t" style={{ borderColor: "#E2E5EA" }} />

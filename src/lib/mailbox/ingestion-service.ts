@@ -2,6 +2,7 @@ import "server-only";
 
 import { Prisma } from "@/generated/prisma/client";
 import { db } from "@/lib/db";
+import { indexMailboxThread } from "./search-indexing-service";
 import type {
   MailboxAttachmentRecord,
   MailboxMessageRecord,
@@ -9,7 +10,6 @@ import type {
 } from "./domain-types";
 import type { MailboxMessageEnvelope, MailboxThreadEnvelope, MailboxAttachmentEnvelope } from "./provider-contracts";
 import {
-  classifyMessageDirection,
   normalizeParticipant,
   normalizeParticipants,
 } from "./participant-service";
@@ -59,9 +59,45 @@ export async function upsertMailboxMessage(params: {
   const normalizedCc = normalizeParticipants(params.envelope.cc);
   const normalizedBcc = normalizeParticipants(params.envelope.bcc);
 
-  const senderEmail = normalizedFrom?.email ?? "";
-  const direction = classifyMessageDirection(params.mailboxEmail, senderEmail);
+  // Provider-set direction is authoritative; email comparison is fallback-only
+  const direction = params.envelope.direction;
   const snippet = normalizeSnippet(params.envelope.snippet);
+
+  // Look up the existing row so we can preserve good body content if the
+  // provider returns an empty extraction transiently.
+  const existing = await db.mailboxMessage.findUnique({
+    where: {
+      orgId_threadId_providerMessageId: {
+        orgId: params.orgId,
+        threadId: params.threadId,
+        providerMessageId: params.envelope.providerMessageId,
+      },
+    },
+    select: { htmlBody: true, textBody: true },
+  });
+
+  const incomingHtml = params.envelope.htmlBody;
+  const incomingText = params.envelope.textBody;
+
+  const hasIncomingHtml = incomingHtml.trim().length > 0;
+  const hasIncomingText = !!incomingText && incomingText.trim().length > 0;
+
+  const hasExistingHtml = !!existing && existing.htmlBody.trim().length > 0;
+  const hasExistingText = !!existing && !!existing.textBody && existing.textBody.trim().length > 0;
+
+  // Preserve existing bodies when the new envelope lacks them (transient
+  // extraction failure).  Allow richer provider data to backfill empty rows.
+  const htmlBody = hasIncomingHtml
+    ? incomingHtml
+    : hasExistingHtml
+      ? existing!.htmlBody
+      : incomingHtml;
+
+  const textBody = hasIncomingText
+    ? incomingText
+    : hasExistingText
+      ? existing!.textBody
+      : incomingText;
 
   const record = await db.mailboxMessage.upsert({
     where: {
@@ -78,8 +114,8 @@ export async function upsertMailboxMessage(params: {
       cc: normalizedCc as unknown as Prisma.InputJsonValue,
       bcc: normalizedBcc as unknown as Prisma.InputJsonValue,
       subject: params.envelope.subject,
-      htmlBody: params.envelope.htmlBody,
-      textBody: params.envelope.textBody,
+      htmlBody,
+      textBody,
       snippet,
       sentAt: new Date(params.envelope.sentAt),
       receivedAt: params.envelope.receivedAt ? new Date(params.envelope.receivedAt) : null,
@@ -97,8 +133,8 @@ export async function upsertMailboxMessage(params: {
       cc: normalizedCc as unknown as Prisma.InputJsonValue,
       bcc: normalizedBcc as unknown as Prisma.InputJsonValue,
       subject: params.envelope.subject,
-      htmlBody: params.envelope.htmlBody,
-      textBody: params.envelope.textBody,
+      htmlBody,
+      textBody,
       snippet,
       sentAt: new Date(params.envelope.sentAt),
       receivedAt: params.envelope.receivedAt ? new Date(params.envelope.receivedAt) : null,
@@ -163,6 +199,7 @@ export async function updateMailboxThreadSummary(params: {
       attachmentCount: params.attachmentCount,
     },
   });
+  await indexMailboxThread(params.orgId, params.threadId);
 }
 
 function toThreadRecord(record: Awaited<ReturnType<typeof db.mailboxThread.upsert>>): MailboxThreadRecord {

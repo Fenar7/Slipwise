@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import {
   FileText,
@@ -19,9 +19,11 @@ import {
   Clock,
   Archive,
   AlertCircle,
+  UserCheck,
 } from "lucide-react";
 import type { LinkedContextState, ThreadLinkSummary, ThreadStatus } from "./types";
 import { NoLinkedRecordsEmpty } from "./mailbox-empty-states";
+import type { AssignableMember } from "./actions";
 
 // ─── Entity icon map ──────────────────────────────────────────────────────────
 
@@ -132,19 +134,47 @@ function LinkCard({
 
 function AssignmentBlock({
   assignee,
+  assigneeId,
   status,
+  members,
+  currentUserId,
   onChangeAssignee,
   onChangeStatus,
 }: {
   assignee: string | null;
+  assigneeId: string | null;
   status: ThreadStatus;
-  onChangeAssignee: (v: string | null) => void;
+  members: AssignableMember[];
+  currentUserId: string;
+  onChangeAssignee: (name: string | null, userId: string | null) => void;
   onChangeStatus: (v: ThreadStatus) => void;
 }) {
+  const [open, setOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
   const statusCfg = STATUS_CONFIG[status];
-  const StatusIcon = statusCfg.icon;
-
   const statuses: ThreadStatus[] = ["open", "pending", "closed", "archived"];
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    if (!open) return;
+    const handleClick = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [open]);
+
+  const handleSelect = (member: AssignableMember | null) => {
+    setOpen(false);
+    if (!member) {
+      onChangeAssignee(null, null);
+      return;
+    }
+    const label = member.userId === currentUserId ? "You" : member.name;
+    onChangeAssignee(label, member.userId);
+  };
 
   return (
     <div className="space-y-3" data-testid="assignment-block">
@@ -179,32 +209,81 @@ function AssignmentBlock({
       </div>
 
       {/* Assignee */}
-      <div>
+      <div ref={dropdownRef} className="relative">
         <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-[#94A3B8]">
           Assigned to
         </p>
         {assignee ? (
-          <div className="flex items-center gap-2 rounded-lg border border-[#E2E5EA] bg-white px-2.5 py-2">
+          <button
+            onClick={() => setOpen((v) => !v)}
+            className="flex w-full items-center gap-2 rounded-lg border border-[#E2E5EA] bg-white px-2.5 py-2 text-left transition-colors hover:border-[#D1D5DB]"
+            aria-label="Change assignee"
+            data-testid="assignee-chip"
+          >
             <UserCircle2 className="h-4 w-4 shrink-0 text-[#16294D]" aria-hidden="true" />
             <span className="flex-1 text-xs font-semibold text-[#0F172A]">{assignee}</span>
-            <button
-              onClick={() => onChangeAssignee(null)}
-              className="flex h-5 w-5 items-center justify-center rounded text-[#94A3B8] transition-colors hover:text-[#DC2626]"
+            <X
+              className="h-3.5 w-3.5 shrink-0 text-[#94A3B8] transition-colors hover:text-[#DC2626]"
               aria-label="Unassign"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          </div>
+              onClick={(e) => {
+                e.stopPropagation();
+                handleSelect(null);
+              }}
+            />
+          </button>
         ) : (
           <button
-            onClick={() => onChangeAssignee("You")}
+            onClick={() => setOpen((v) => !v)}
             className="flex w-full items-center gap-2 rounded-lg border border-dashed border-[#D1D5DB] px-2.5 py-2 text-xs text-[#94A3B8] transition-colors hover:border-[#16294D] hover:text-[#16294D]"
-            aria-label="Assign thread"
+            aria-label="Choose assignee"
             data-testid="assign-btn"
           >
             <UserCircle2 className="h-4 w-4 shrink-0" aria-hidden="true" />
-            Assign to someone…
+            Choose assignee…
           </button>
+        )}
+
+        {open && (
+          <div className="absolute z-10 mt-1 w-full rounded-lg border border-[#E2E5EA] bg-white py-1 shadow-lg">
+            {/* Self-assign option */}
+            <button
+              onClick={() =>
+                handleSelect({
+                  id: "self",
+                  userId: currentUserId,
+                  name: "You",
+                  email: "",
+                  avatarUrl: null,
+                })
+              }
+              className="flex w-full items-center gap-2 px-2.5 py-1.5 text-xs text-[#0F172A] transition-colors hover:bg-[#F1F3F7]"
+              data-testid="assign-self-option"
+            >
+              <UserCheck className="h-3.5 w-3.5 shrink-0 text-[#16294D]" aria-hidden="true" />
+              Assign to me
+            </button>
+
+            {members.length > 0 && (
+              <>
+                <div className="my-1 border-t border-[#F1F3F7]" />
+                {members.map((m) => (
+                  <button
+                    key={m.userId}
+                    onClick={() => handleSelect(m)}
+                    className={cn(
+                      "flex w-full items-center gap-2 px-2.5 py-1.5 text-xs transition-colors hover:bg-[#F1F3F7]",
+                      m.userId === assigneeId ? "font-semibold text-[#16294D]" : "text-[#0F172A]"
+                    )}
+                    data-testid={`assign-option-${m.userId}`}
+                  >
+                    <UserCircle2 className="h-3.5 w-3.5 shrink-0 text-[#94A3B8]" aria-hidden="true" />
+                    {m.name}
+                    <span className="ml-auto text-[10px] text-[#94A3B8]">{m.email}</span>
+                  </button>
+                ))}
+              </>
+            )}
+          </div>
         )}
       </div>
     </div>
@@ -216,9 +295,16 @@ function AssignmentBlock({
 interface MailboxContextPanelProps {
   context: LinkedContextState;
   onPatch: (patch: Partial<LinkedContextState>) => void;
+  members?: AssignableMember[];
+  currentUserId?: string;
 }
 
-export function MailboxContextPanel({ context, onPatch }: MailboxContextPanelProps) {
+export function MailboxContextPanel({
+  context,
+  onPatch,
+  members = [],
+  currentUserId = "",
+}: MailboxContextPanelProps) {
   const [linksExpanded, setLinksExpanded] = useState(true);
   const [noteExpanded, setNoteExpanded] = useState(false);
 
@@ -259,8 +345,11 @@ export function MailboxContextPanel({ context, onPatch }: MailboxContextPanelPro
         {/* Assignment + status */}
         <AssignmentBlock
           assignee={context.assignee}
+          assigneeId={context.assigneeId}
           status={context.status}
-          onChangeAssignee={(v) => onPatch({ assignee: v })}
+          members={members}
+          currentUserId={currentUserId}
+          onChangeAssignee={(name, userId) => onPatch({ assignee: name, assigneeId: userId })}
           onChangeStatus={(v) => onPatch({ status: v })}
         />
 

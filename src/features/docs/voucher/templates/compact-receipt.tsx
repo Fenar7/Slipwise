@@ -11,7 +11,7 @@ import {
 } from "@/components/document/inline-edit-fields";
 import type { VoucherDocument, VoucherFormValues } from "@/features/docs/voucher/types";
 import { normalizeVoucher } from "@/features/docs/voucher/utils/normalize-voucher";
-
+import { cn } from "@/lib/utils";
 type VoucherTemplateProps = {
   document: VoucherDocument;
   mode?: "preview" | "print" | "pdf" | "png" | "edit";
@@ -48,7 +48,7 @@ export function CompactReceiptVoucherTemplate({
               {document.branding.companyName || "Slipwise"}
             </h2>
             {document.visibility.showAddress && document.branding.address ? (
-              <p className="mt-1 text-xs text-[rgba(29,23,16,0.5)]">
+              <p className="mt-1 text-xs text-[rgba(29,23,16,0.5)] whitespace-pre-line">
                 {document.branding.address}
               </p>
             ) : null}
@@ -122,6 +122,27 @@ export function CompactReceiptVoucherTemplate({
             </p>
           </div>
 
+          {/* UPI Details */}
+          {document.visibility.showUpiDetails && (document.upiId || document.upiQrDataUrl) ? (
+            <div className="document-break-inside-avoid text-center">
+              <p className="text-[0.6rem] font-semibold uppercase tracking-[0.3em] text-[rgba(29,23,16,0.4)]">
+                UPI Details
+              </p>
+              <div className="mt-2 flex flex-col items-center gap-2">
+                {document.upiId ? (
+                  <p className="text-sm font-medium text-[rgba(29,23,16,0.78)]">ID: {document.upiId}</p>
+                ) : null}
+                {document.upiQrDataUrl ? (
+                  <img
+                    src={document.upiQrDataUrl}
+                    alt="UPI QR Code"
+                    className="h-16 w-16 rounded border border-[rgba(29,23,16,0.1)] object-contain p-0.5 bg-white mx-auto"
+                  />
+                ) : null}
+              </div>
+            </div>
+          ) : null}
+
           {/* Notes */}
           {document.visibility.showNotes && document.notes ? (
             <div className="document-break-inside-avoid text-center">
@@ -139,23 +160,26 @@ export function CompactReceiptVoucherTemplate({
             <div className="document-break-inside-avoid space-y-5">
               <div className="border-t border-dotted border-[rgba(29,23,16,0.3)]" />
               <div
-                className={
+                className={cn(
                   printLikeMode
                     ? "grid grid-cols-2 gap-4"
-                    : "grid gap-4 sm:grid-cols-2"
-                }
+                    : "grid gap-4 sm:grid-cols-2",
+                  (!printLikeMode || (document.approvedBy && document.receivedBy))
+                    ? ""
+                    : "grid-cols-1",
+                )}
               >
-                {document.visibility.showApprovedBy ? (
+                {document.visibility.showApprovedBy && (!printLikeMode || document.approvedBy) ? (
                   <div className="text-center">
                     <div className="mx-auto mt-6 w-3/4 border-b border-dotted border-[rgba(29,23,16,0.35)]" />
                     <p className="mt-2 text-xs font-medium text-[rgba(29,23,16,0.6)]">
                       {document.approvedBy
-                        ? `Approved by: ${document.approvedBy}`
-                        : "Approved by"}
+                        ? `Authorized by: ${document.approvedBy}`
+                        : "Authorized by"}
                     </p>
                   </div>
                 ) : null}
-                {document.visibility.showReceivedBy ? (
+                {document.visibility.showReceivedBy && (!printLikeMode || document.receivedBy) ? (
                   <div className="text-center">
                     <div className="mx-auto mt-6 w-3/4 border-b border-dotted border-[rgba(29,23,16,0.35)]" />
                     <p className="mt-2 text-xs font-medium text-[rgba(29,23,16,0.6)]">
@@ -299,6 +323,30 @@ function CompactReceiptEditor() {
             <InlineTextArea name="purpose" placeholder="Purpose of payment…" className="mt-2 text-center text-sm leading-6 text-[rgba(29,23,16,0.78)]" />
           </div>
 
+          {/* UPI Details */}
+          {doc.visibility.showUpiDetails ? (
+            <div className="document-break-inside-avoid text-center">
+              <p className="text-[0.6rem] font-semibold uppercase tracking-[0.3em] text-[rgba(29,23,16,0.4)]">UPI Details</p>
+              <div className="mt-2 flex flex-col items-center gap-2">
+                <div className="flex items-center gap-1">
+                  <span className="text-xs text-[rgba(29,23,16,0.45)]">UPI ID:</span>
+                  <InlineTextField name="upiId" placeholder="merchant@ybl" className="text-sm font-medium" />
+                </div>
+                {doc.upiQrDataUrl ? (
+                  <img
+                    src={doc.upiQrDataUrl}
+                    alt="UPI QR Code"
+                    className="h-16 w-16 rounded border border-[rgba(29,23,16,0.1)] object-contain p-0.5 bg-white mx-auto"
+                  />
+                ) : (
+                  <div className="text-[10px] text-[rgba(29,23,16,0.45)] border border-dashed border-[rgba(29,23,16,0.12)] rounded-lg p-2 bg-white">
+                    Upload UPI QR in Sidebar
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : null}
+
           {/* Notes */}
           {doc.visibility.showNotes ? (
             <div className="document-break-inside-avoid text-center">
@@ -318,7 +366,7 @@ function CompactReceiptEditor() {
                   <div className="text-center">
                     <div className="mx-auto mt-6 w-3/4 border-b border-dotted border-[rgba(29,23,16,0.35)]" />
                     <div className="mt-2 flex items-center justify-center gap-1 text-xs font-medium text-[rgba(29,23,16,0.6)]">
-                      <span className="shrink-0">Approved by:</span>
+                      <span className="shrink-0">Authorized by:</span>
                       <InlineTextField name="approvedBy" placeholder="Name" className="text-center text-xs font-medium" />
                     </div>
                   </div>

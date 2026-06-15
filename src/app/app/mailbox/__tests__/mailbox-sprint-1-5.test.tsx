@@ -10,6 +10,14 @@ let mockPathname = "/app/mailbox";
 vi.mock("next/navigation", () => ({
   usePathname: () => mockPathname,
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(),
+}));
+
+vi.mock("../use-mailbox-query-sync", () => ({
+  useMailboxQuerySync: () => {
+    const [filterState, setFilterState] = require("react").useState({ filters: [], searchQuery: "" });
+    return { filterState, setFilterState };
+  },
 }));
 
 // Mock mailbox data hooks for workspace tests
@@ -236,7 +244,8 @@ describe("MailboxContextPanel — assignment block", () => {
     const onPatch = vi.fn();
     render(<MailboxContextPanel context={unassignedCtx} onPatch={onPatch} />);
     fireEvent.click(screen.getByTestId("assign-btn"));
-    expect(onPatch).toHaveBeenCalledWith({ assignee: "You" });
+    fireEvent.click(screen.getByTestId("assign-self-option"));
+    expect(onPatch).toHaveBeenCalledWith({ assignee: "You", assigneeId: "" });
   });
 
   it("renders status buttons for all statuses", () => {
@@ -454,7 +463,7 @@ describe("MailboxWorkspace — Sprint 1.5 filter integration", () => {
 
   it("workspace search input updates filter state", () => {
     renderWorkspaceAtPath();
-    const searchInput = screen.getByRole("textbox", { name: /search mailbox threads/i });
+    const searchInput = screen.getByRole("combobox", { name: /search mailbox threads/i });
     fireEvent.change(searchInput, { target: { value: "Sunita" } });
     // Sprint 4.4: search is backend-driven; UI state updates immediately
     expect(searchInput).toHaveValue("Sunita");
@@ -463,7 +472,7 @@ describe("MailboxWorkspace — Sprint 1.5 filter integration", () => {
 
   it("clearing search restores the current result set", () => {
     renderWorkspaceAtPath();
-    const searchInput = screen.getByRole("textbox", { name: /search mailbox threads/i });
+    const searchInput = screen.getByRole("combobox", { name: /search mailbox threads/i });
     fireEvent.change(searchInput, { target: { value: "Sunita" } });
     fireEvent.click(screen.getByRole("button", { name: /clear search/i }));
     expect(screen.getByText("Sunita Rao")).toBeInTheDocument();

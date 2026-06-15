@@ -251,6 +251,8 @@ model Organization {
   customRoles                  CustomRole[]
   dataResidencyConfig          DataResidencyConfig?
   webhookDeadLetters           WebhookDeadLetter[]
+  mailboxSavedViews            MailboxSavedView[]
+  mailboxFolderCoverages       MailboxFolderCoverage[]
   // Mailbox Platform — Phase 2
   mailboxConnections           MailboxConnection[]
   mailboxThreadLinks           MailboxThreadLink[]
@@ -263,6 +265,7 @@ model Organization {
   mailboxMessages              MailboxMessage[]
   mailboxSyncRuns              MailboxSyncRun[]
   mailboxDraftAttachments      MailboxDraftAttachment[]
+  mailboxSearchDocuments       MailboxSearchDocument[]
 
   @@index([entityGroupId])
   @@map("organization")
@@ -1164,6 +1167,7 @@ model Customer {
   quotes           Quote[]
   arrangements     PaymentArrangement[]
   crmNotes         CrmNote[]                 @relation("CustomerNotes")
+  defaultTags      CustomerDefaultTag[]
 
   @@index([organizationId])
   @@map("customer")
@@ -1196,6 +1200,7 @@ model Vendor {
   bills          VendorBill[]
   purchaseOrders PurchaseOrder[]
   crmNotes       CrmNote[]       @relation("VendorNotes")
+  defaultTags    VendorDefaultTag[]
 
   @@index([organizationId])
   @@map("vendor")
@@ -1415,6 +1420,7 @@ model Invoice {
   arrangement         PaymentArrangement?
   postedJournalEntry  JournalEntry?         @relation("InvoicePostedJournal", fields: [postedJournalEntryId], references: [id])
   tdsRecords          TdsRecord[]
+  tagAssignments      InvoiceTagAssignment[]
 
   eInvoiceRequests EInvoiceRequest[]
 
@@ -1484,6 +1490,7 @@ model Voucher {
   attachments      FileAttachment[]  @relation("VoucherAttachments")
   journalEntry     JournalEntry?     @relation("VoucherPostedJournal", fields: [journalEntryId], references: [id])
   approvalRequests ApprovalRequest[] @relation("VoucherApprovals")
+  tagAssignments    VoucherTagAssignment[]
 
   // Phase 1: Document Sequencing Platform
   sequenceId       String?
@@ -5442,12 +5449,78 @@ model DocumentTag {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  organization       Organization          @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  invoiceAssignments InvoiceTagAssignment[]
+  voucherAssignments VoucherTagAssignment[]
+  customerDefaults   CustomerDefaultTag[]
+  vendorDefaults     VendorDefaultTag[]
 
   @@unique([orgId, slug], map: "document_tag_org_slug_unique")
   @@index([orgId])
   @@index([orgId, isArchived])
   @@map("document_tag")
+}
+
+// ─── Tag Assignments & Defaults (Phase 29) ─────────────────────────────────
+
+model InvoiceTagAssignment {
+  id        String   @id @default(cuid())
+  invoiceId String
+  tagId     String
+  createdAt DateTime @default(now())
+
+  invoice Invoice    @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  tag     DocumentTag @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@unique([invoiceId, tagId])
+  @@index([invoiceId])
+  @@index([tagId])
+  @@map("invoice_tag_assignment")
+}
+
+model VoucherTagAssignment {
+  id        String   @id @default(cuid())
+  voucherId String
+  tagId     String
+  createdAt DateTime @default(now())
+
+  voucher Voucher    @relation(fields: [voucherId], references: [id], onDelete: Cascade)
+  tag     DocumentTag @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@unique([voucherId, tagId])
+  @@index([voucherId])
+  @@index([tagId])
+  @@map("voucher_tag_assignment")
+}
+
+model CustomerDefaultTag {
+  id         String   @id @default(cuid())
+  customerId String
+  tagId      String
+  createdAt  DateTime @default(now())
+
+  customer Customer   @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  tag      DocumentTag @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@unique([customerId, tagId])
+  @@index([customerId])
+  @@index([tagId])
+  @@map("customer_default_tag")
+}
+
+model VendorDefaultTag {
+  id        String   @id @default(cuid())
+  vendorId  String
+  tagId     String
+  createdAt DateTime @default(now())
+
+  vendor Vendor     @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  tag    DocumentTag @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@unique([vendorId, tagId])
+  @@index([vendorId])
+  @@index([tagId])
+  @@map("vendor_default_tag")
 }
 
 // ─── Phase 27 Sprint 27.1: AI Financial Forecaster ──────────────────────────
@@ -6002,9 +6075,11 @@ model MailboxConnection {
   drafts             MailboxDraft[]
   auditEvents        MailboxAuditEvent[]
   providerCursors    MailboxProviderCursor[]
-  mailboxCredentials MailboxCredential[]
-  mailboxThreads     MailboxThread[]
-  mailboxSyncRuns    MailboxSyncRun[]
+  mailboxCredentials     MailboxCredential[]
+  mailboxThreads         MailboxThread[]
+  mailboxSyncRuns        MailboxSyncRun[]
+  mailboxFolderCoverages MailboxFolderCoverage[]
+  mailboxSearchDocuments MailboxSearchDocument[]
 
   /// One active connection per org per provider account.
   @@unique([orgId, provider, providerAccountId])
@@ -6302,6 +6377,8 @@ model MailboxSyncRun {
   errorCategory       String?
   errorSummary        String?
   stats               Json?
+  /** Last heartbeat/progress update during a running sync. Used for stall detection. */
+  lastHeartbeatAt     DateTime?
   createdBy           String               @db.Uuid
   createdAt           DateTime             @default(now())
   updatedAt           DateTime             @updatedAt
@@ -6335,4 +6412,101 @@ model MailboxCredential {
   @@index([orgId])
   @@index([connectionId])
   @@map("mailbox_credential")
+}
+
+/// Persisted operational saved view for mailbox triage.
+/// Sprint 6.3: minimal production-safe model. Org-scoped, per-user.
+model MailboxSavedView {
+  id           String   @id @default(cuid())
+  orgId        String
+  createdBy    String   @db.Uuid
+  label        String
+  /// JSON array of ActiveFilter shapes: [{ field, value, label }]
+  filters      Json     @default("[]")
+  searchQuery  String   @default("")
+  /// Optional smartViewId to pair with (e.g. "unread", "assigned-to-me")
+  smartViewId  String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, createdBy])
+  @@map("mailbox_saved_view")
+}
+
+/// Folder-level coverage state for truthful Gmail-grade mailbox completeness.
+/// Each row tracks the import state of a single Gmail system label (INBOX, SENT,
+/// SPAM, DRAFT, ARCHIVE) or aggregate source-of-truth (ALL_MAIL).
+///
+/// The four required Gmail labels that MUST reach COMPLETE before the app can
+/// claim "Up to date" are INBOX, SENT, SPAM, and DRAFT. ARCHIVE is informational.
+///
+/// Coverage lifecycle: PENDING → BOOTSTRAPPING → COMPLETE
+///   PENDING:      Never started. The folder has not been bootstrapped.
+///   BOOTSTRAPPING: Bootstrap in progress. Partial data may be visible.
+///   COMPLETE:     Full historical backfill finished. Future deltas keep it current.
+///   RECOVERING:   Previously complete but a gap was detected (stale cursor,
+///                 missed history events). Re-bootstrapping in progress.
+///   ERRORED:      Bootstrap or recovery failed; intervention needed.
+model MailboxFolderCoverage {
+  id                  String   @id @default(cuid())
+  orgId               String
+  mailboxConnectionId String
+  /// Gmail system label: "INBOX" | "SENT" | "SPAM" | "DRAFT" | "ARCHIVE" | "ALL_MAIL"
+  folder              String
+  state               String   @default("PENDING")
+  /// Last cursor value advanced for this folder (historyId or page token).
+  /// Allows bootstrap to resume from where it left off.
+  lastAdvancedCursor  String?
+  /// Total threads imported for this folder during last bootstrap/recovery.
+  totalThreads        Int      @default(0)
+  /// When the folder last reached COMPLETE state.
+  lastCompletedAt     DateTime?
+  /// Error summary if state is ERRORED.
+  errorSummary        String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  organization      Organization      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  mailboxConnection MailboxConnection @relation(fields: [mailboxConnectionId, orgId], references: [id, orgId], onDelete: Cascade)
+
+  @@unique([orgId, mailboxConnectionId, folder])
+  @@index([orgId, mailboxConnectionId])
+  @@index([orgId, mailboxConnectionId, state])
+  @@map("mailbox_folder_coverage")
+}
+
+model MailboxSearchDocument {
+  id                  String   @id @default(cuid())
+  orgId               String
+  mailboxConnectionId String
+  threadId            String
+  messageId           String   @default("")
+  documentType        String   // "THREAD" | "MESSAGE"
+  providerThreadId    String
+  providerMessageId   String?
+  searchText          String   @db.Text
+  subjectText         String
+  snippetText         String
+  fromDisplayName     String?
+  fromEmail           String?
+  toRecipients        String   @default("") @db.Text
+  lastActivityAt      DateTime
+  sentAt              DateTime?
+  isUnread            Boolean  @default(false)
+  isFlagged           Boolean  @default(false)
+  status              String   @default("OPEN")
+  assigneeId          String?  @db.Uuid
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  organization      Organization      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  mailboxConnection MailboxConnection @relation(fields: [mailboxConnectionId, orgId], references: [id, orgId], onDelete: Cascade)
+
+  @@unique([orgId, mailboxConnectionId, threadId, messageId])
+  @@index([orgId, mailboxConnectionId])
+  @@index([orgId, mailboxConnectionId, documentType])
+  @@index([orgId, lastActivityAt])
+  @@map("mailbox_search_document")
 }

@@ -15,13 +15,10 @@ export async function GET(
   const auth = await requireIntegrationMemberRoute();
 
   if (!auth.ok) {
-    return NextResponse.json(
-      { error: auth.error ?? "Unauthorized" },
-      { status: auth.status ?? 401 },
-    );
+    return auth.response;
   }
 
-  const { org, user, role } = auth;
+  const { orgId, userId, role } = auth.ctx;
   const threadId = (await params).id;
 
   if (!threadId || typeof threadId !== "string") {
@@ -31,9 +28,9 @@ export async function GET(
     );
   }
 
-  const limitResult = await rateLimitByOrg(org.id, "mailbox:thread-detail", {
+  const limitResult = await rateLimitByOrg(orgId, {
     maxRequests: 120,
-    window: 60,
+    window: "60 s",
   });
 
   if (!limitResult.success) {
@@ -44,8 +41,8 @@ export async function GET(
   }
 
   const thread = await getMailboxThreadDetail(
-    org.id,
-    user.id,
+    orgId,
+    userId,
     role,
     threadId,
   );

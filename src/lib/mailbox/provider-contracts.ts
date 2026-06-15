@@ -104,6 +104,8 @@ export interface MailboxThreadEnvelope {
   participants: MailboxParticipantRef[];
   /** Provider-specific metadata. Must not be used by core mailbox logic. */
   providerMetadata: Record<string, unknown>;
+  /** Optional cached raw thread response for sync optimizations (never persisted). */
+  cachedThreadData?: any;
 }
 
 /**
@@ -137,6 +139,51 @@ export interface MailboxMessageEnvelope {
   attachmentCount: number;
   providerMetadata: Record<string, unknown>;
   attachments?: MailboxAttachmentEnvelope[];
+}
+
+export interface MailboxDraftEnvelope {
+  draftId: string;
+  thread: MailboxThreadEnvelope;
+  message: MailboxMessageEnvelope & { htmlBody: string; textBody: string | null };
+}
+
+export interface MailboxSearchHit {
+  providerThreadId: string;
+  providerMessageId: string | null;
+}
+
+export interface MailboxThreadSearchResult {
+  hits: MailboxSearchHit[];
+  nextPageToken: string | null;
+  estimatedTotal: number | null;
+}
+
+/**
+ * Sprint B: Message-level search result from a provider.
+ * Each hit represents a single message, not a thread.
+ */
+export interface MailboxMessageSearchHit {
+  providerThreadId: string;
+  providerMessageId: string;
+  snippet: string;
+  subject: string;
+  from: MailboxParticipantRef;
+  sentAt: string;
+}
+
+export interface MailboxMessageSearchResult {
+  hits: MailboxMessageSearchHit[];
+  nextPageToken: string | null;
+  estimatedTotal: number | null;
+}
+
+export interface MailboxDraftSyncResult {
+  drafts: MailboxDraftEnvelope[];
+  activeDraftIds: string[];
+  /** Draft IDs that could not be fetched (transient or malformed). Kept separate
+   * so reconciliation does not remove DRAFT labels from drafts that still exist
+   * on the provider but failed to download. */
+  failedDraftIds: string[];
 }
 
 export interface MailboxParticipantRef {
@@ -177,6 +224,13 @@ export interface MailboxProviderError {
  * Provider-neutral: the mailbox core stores these fields directly on
  * MailboxConnection.watchExpiresAt / watchRenewedAt.
  */
+export interface MailboxBootstrapSliceResult {
+  sliceLabel: string;
+  paginationExhausted: boolean;
+  threadCount: number;
+  lastAdvancedCursor: string | null;
+}
+
 export interface MailboxWatchRenewalResult {
   /** When the renewed watch will expire. Null if the provider does not expose expiry. */
   expiresAt: Date | null;
@@ -241,10 +295,36 @@ export interface IMailboxProviderAdapter {
     orgId: string;
     tokenRef: string;
     cursor: MailboxSyncCursor | null;
+    /**
+     * Per-folder continuation cursors for resumable initial bootstrap.
+     * Only used when cursor is null (initial/recovery sync).
+     * Keys are provider-specific folder identifiers; values are opaque
+     * page tokens to resume pagination from.
+     */
+    folderCursors?: Record<string, string>;
   }): Promise<
-    | { threads: MailboxThreadEnvelope[]; nextCursor: MailboxSyncCursor | null }
+    | {
+        threads: MailboxThreadEnvelope[];
+        nextCursor: MailboxSyncCursor | null;
+        /** Provider message IDs that were remotely deleted. Reconcile locally. */
+        deletedMessageIds?: string[];
+        /** Thread IDs affected by deletion events so we re-fetch them. */
+        deletionAffectedThreadIds?: string[];
+        /** Per-slice bootstrap results. Only present for initial (cursor=null) syncs. */
+        bootstrapSliceResults?: MailboxBootstrapSliceResult[];
+      }
     | MailboxProviderError
   >;
+
+  /**
+   * Fetch the provider's current draft set as provider-backed thread envelopes.
+   * This is distinct from mailbox delta sync because some providers expose
+   * drafts via dedicated APIs rather than normal mailbox thread history.
+   */
+  syncDrafts(params: {
+    orgId: string;
+    tokenRef: string;
+  }): Promise<MailboxDraftSyncResult | MailboxProviderError>;
 
   /**
    * Fetch full thread detail including message bodies.
@@ -254,10 +334,36 @@ export interface IMailboxProviderAdapter {
     orgId: string;
     tokenRef: string;
     providerThreadId: string;
+    cachedThreadData?: any;
   }): Promise<
     | { messages: (MailboxMessageEnvelope & { htmlBody: string; textBody: string | null })[] }
     | MailboxProviderError
   >;
+
+  /**
+   * Search provider mailbox content using the provider's native query semantics.
+   * Returns lightweight hits that can be hydrated into local mailbox threads.
+   */
+  searchThreads?(params: {
+    orgId: string;
+    tokenRef: string;
+    query: string;
+    pageToken?: string;
+    maxResults?: number;
+  }): Promise<MailboxThreadSearchResult | MailboxProviderError>;
+
+  /**
+   * Sprint B: Search provider mailbox at the message level.
+   * Returns individual message hits with enough context for message-mode rendering.
+   * Each hit includes the parent thread ID for opening the thread.
+   */
+  searchMessages?(params: {
+    orgId: string;
+    tokenRef: string;
+    query: string;
+    pageToken?: string;
+    maxResults?: number;
+  }): Promise<MailboxMessageSearchResult | MailboxProviderError>;
 
   /**
    * Renew the provider push watch/subscription.
@@ -364,6 +470,20 @@ export interface IMailboxProviderAdapter {
     orgId: string;
     tokenRef: string;
   }): Promise<void>;
+
+  /**
+   * Query the provider for thread IDs matching a provider-specific query.
+   * Used for lightweight reconciliation (e.g., `is:starred`, `in:trash`)
+   * without triggering a full sync. Returns only provider thread IDs —
+   * no message envelopes or body content.
+   *
+   * Max results is bounded by the adapter (typically 500).
+   */
+  queryThreadIdsByLabel?(params: {
+    orgId: string;
+    tokenRef: string;
+    query: string;
+  }): Promise<{ threadIds: string[] } | MailboxProviderError>;
 }
 
 // ─── Provider registry ────────────────────────────────────────────────────────

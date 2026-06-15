@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useCallback } from "react";
 import type { MailboxConnection } from "./types";
+import type { MailboxSyncPresentation } from "@/lib/mailbox/sync-presentation-shape";
+import { buildFallbackSyncPresentation } from "./mailbox-sync-ui";
 
 interface ApiConnectionItem {
   id: string;
@@ -15,6 +17,7 @@ interface ApiConnectionItem {
   connectedBy: string;
   createdAt: string;
   updatedAt: string;
+  sync?: MailboxSyncPresentation;
 }
 
 interface UseMailboxConnectionsResult {
@@ -25,6 +28,12 @@ interface UseMailboxConnectionsResult {
 }
 
 function mapApiToConnection(item: ApiConnectionItem): MailboxConnection {
+  const status = item.status
+    .toLowerCase()
+    .replace("active", "connected")
+    .replace("reconnect_required", "reconnect_required")
+    .replace("degraded", "degraded")
+    .replace("disconnected", "disconnected") as MailboxConnection["status"];
   return {
     id: item.id,
     orgId: item.orgId,
@@ -33,23 +42,35 @@ function mapApiToConnection(item: ApiConnectionItem): MailboxConnection {
     slug: item.id,
     emailAddress: item.emailAddress,
     displayName: item.displayName,
-    status: item.status.toLowerCase().replace("active", "connected").replace("reconnect_required", "reconnect_required").replace("degraded", "degraded").replace("disconnected", "disconnected") as MailboxConnection["status"],
+    status,
     lastSyncAt: item.lastSyncAt,
     lastSyncError: item.lastSyncError,
     lastSyncErrorCategory: null,
+    sync:
+      item.sync ??
+      buildFallbackSyncPresentation({
+        status,
+        lastSyncAt: item.lastSyncAt,
+        lastSyncError: item.lastSyncError,
+      }),
     unreadCount: 0,
     inboxCount: 0,
   };
 }
+
+const SYNC_POLL_INTERVAL_MS = 5000;
 
 export function useMailboxConnections(): UseMailboxConnectionsResult {
   const [connections, setConnections] = useState<MailboxConnection[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchConnections = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
+  const fetchConnections = useCallback(async (options?: { silent?: boolean }) => {
+    const silent = options?.silent ?? false;
+    if (!silent) {
+      setIsLoading(true);
+      setError(null);
+    }
     try {
       const res = await fetch("/api/mailbox/connections/visible");
       if (!res.ok) {
@@ -60,15 +81,33 @@ export function useMailboxConnections(): UseMailboxConnectionsResult {
       const accessible: ApiConnectionItem[] = data.accessible ?? [];
       setConnections(accessible.map(mapApiToConnection));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unknown error");
+      if (!silent) {
+        setError(err instanceof Error ? err.message : "Unknown error");
+      }
     } finally {
-      setIsLoading(false);
+      if (!silent) {
+        setIsLoading(false);
+      }
     }
   }, []);
 
   useEffect(() => {
     fetchConnections();
   }, [fetchConnections]);
+
+  const hasConnectedMailbox = connections.some((connection) => connection.status === "connected");
+  const shouldPoll = hasConnectedMailbox;
+
+  useEffect(() => {
+    if (!shouldPoll) return;
+
+    const timer = window.setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      void fetchConnections({ silent: true });
+    }, SYNC_POLL_INTERVAL_MS);
+
+    return () => window.clearInterval(timer);
+  }, [fetchConnections, shouldPoll]);
 
   return {
     connections,

@@ -25,7 +25,9 @@ vi.mock("@/lib/db", () => ({
     },
     mailboxMessage: {
       upsert: vi.fn(),
+      findUnique: vi.fn(),
       findFirst: vi.fn(),
+      findMany: vi.fn().mockResolvedValue([]),
       count: vi.fn(),
     },
     mailboxAttachment: {
@@ -36,6 +38,7 @@ vi.mock("@/lib/db", () => ({
     mailboxSyncRun: {
       create: vi.fn(),
       update: vi.fn(),
+      updateMany: vi.fn(),
       findFirst: vi.fn(),
       findUnique: vi.fn(),
     },
@@ -91,9 +94,10 @@ vi.mock("@/lib/mailbox/gmail-provider", async () => {
       refreshAuthorization: vi.fn(),
       verifyConnection: vi.fn(),
       syncDelta: vi.fn(),
+      syncDrafts: vi.fn().mockResolvedValue({ drafts: [], activeDraftIds: [], failedDraftIds: [] }),
       fetchThreadDetail: vi.fn(),
       disconnect: vi.fn(),
-      renewWatch: vi.fn(),
+      renewWatch: vi.fn().mockResolvedValue({ expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), metadata: {} }),
     },
   };
 });
@@ -116,6 +120,15 @@ vi.mock("@/lib/mailbox/provider-registry", () => ({
   getMailboxProviderAdapter: vi.fn(),
 }));
 
+vi.mock("@/lib/mailbox/folder-coverage-service", () => ({
+  markFolderCoverageComplete: vi.fn(),
+  updateFolderCoverageBootstrapping: vi.fn(),
+  initFolderCoverageForBootstrap: vi.fn(),
+  getIncompleteRequiredFolders: vi.fn().mockResolvedValue([]),
+  getFolderCoverage: vi.fn().mockResolvedValue(null),
+  resetFolderCoverageCursor: vi.fn(),
+}));
+
 vi.mock("@/lib/mailbox/gmail-oauth-service", () => ({
   refreshGmailAuthorization: vi.fn(),
   verifyGmailConnection: vi.fn(),
@@ -134,6 +147,7 @@ const mockDb = db as unknown as {
   mailboxSyncRun: {
     create: ReturnType<typeof vi.fn>;
     update: ReturnType<typeof vi.fn>;
+    updateMany: ReturnType<typeof vi.fn>;
     findFirst: ReturnType<typeof vi.fn>;
   };
   mailboxConnection: {
@@ -148,6 +162,7 @@ const mockDb = db as unknown as {
   };
   mailboxMessage: {
     upsert: ReturnType<typeof vi.fn>;
+    findUnique: ReturnType<typeof vi.fn>;
     findFirst: ReturnType<typeof vi.fn>;
   };
   mailboxProviderCursor: {
@@ -885,6 +900,11 @@ function makeMockAdapter() {
       }],
       nextCursor: { value: "cursor-next", expiresAt: null },
     }),
+    syncDrafts: vi.fn().mockResolvedValue({
+      drafts: [],
+      activeDraftIds: [],
+      failedDraftIds: [],
+    }),
     fetchThreadDetail: vi.fn().mockResolvedValue({
       messages: [{
         providerMessageId: "gmail-msg-1",
@@ -906,7 +926,10 @@ function makeMockAdapter() {
       }],
     }),
     disconnect: vi.fn(),
-    renewWatch: vi.fn(),
+    renewWatch: vi.fn().mockResolvedValue({
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      metadata: { gmailHistoryId: "12345", gmailWatchExpiration: String(Date.now() + 7 * 24 * 60 * 60 * 1000) },
+    }),
   };
 }
 

@@ -15,6 +15,9 @@ vi.mock("server-only", () => ({}));
 
 vi.mock("@/lib/db", () => ({
   db: {
+    mailboxMessage: {
+      findMany: vi.fn(),
+    },
     mailboxThread: {
       findMany: vi.fn(),
       findFirst: vi.fn(),
@@ -29,6 +32,9 @@ vi.mock("@/lib/db", () => ({
 import { db } from "@/lib/db";
 
 const mockDb = db as unknown as {
+  mailboxMessage: {
+    findMany: ReturnType<typeof vi.fn>;
+  };
   mailboxThread: {
     findMany: ReturnType<typeof vi.fn>;
     findFirst: ReturnType<typeof vi.fn>;
@@ -58,6 +64,7 @@ const CONN_2 = "conn-002";
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockDb.mailboxMessage.findMany.mockResolvedValue([]);
 });
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
@@ -246,6 +253,55 @@ describe("Sprint 4.1 — listMailboxThreads", () => {
     );
   });
 
+  it("applies SENT folder semantics via outbound message relation", async () => {
+    mockDb.mailboxConnection.findMany.mockResolvedValue([makeConnectionRecord()]);
+    mockDb.mailboxThread.findMany.mockResolvedValue([makeThreadRecord()]);
+    mockDb.mailboxThread.count.mockResolvedValue(1);
+
+    await listMailboxThreads({
+      orgId: ORG_A,
+      userId: USER_A,
+      role: "member",
+      connectionId: CONN_1,
+      folder: "SENT",
+    });
+
+    expect(mockDb.mailboxThread.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          mailboxConnectionId: { in: [CONN_1] },
+          messages: { some: { direction: "outbound" } },
+        }),
+      }),
+    );
+  });
+
+  it("applies SPAM folder semantics from provider metadata thread ids", async () => {
+    mockDb.mailboxConnection.findMany.mockResolvedValue([makeConnectionRecord()]);
+    mockDb.mailboxMessage.findMany.mockResolvedValue([
+      { threadId: "thread-spam", providerMetadata: { labelIds: ["SPAM"] } },
+      { threadId: "thread-ham", providerMetadata: { labelIds: ["INBOX"] } },
+    ]);
+    mockDb.mailboxThread.findMany.mockResolvedValue([makeThreadRecord({ id: "thread-spam" })]);
+    mockDb.mailboxThread.count.mockResolvedValue(1);
+
+    await listMailboxThreads({
+      orgId: ORG_A,
+      userId: USER_A,
+      role: "member",
+      connectionId: CONN_1,
+      folder: "SPAM",
+    });
+
+    expect(mockDb.mailboxThread.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          id: { in: ["thread-spam"] },
+        }),
+      }),
+    );
+  });
+
   it("filters by unreadOnly", async () => {
     mockDb.mailboxConnection.findMany.mockResolvedValue([makeConnectionRecord()]);
     mockDb.mailboxThread.findMany.mockResolvedValue([
@@ -379,6 +435,54 @@ describe("Sprint 4.1 — listMailboxThreads", () => {
     expect(result.threads).toHaveLength(50);
     expect(result.nextCursor).not.toBeNull();
     expect(result.totalCount).toBe(100);
+  });
+
+  it("encodes unread state in the cursor boundary so unread-first pagination cannot skip rows", async () => {
+    mockDb.mailboxConnection.findMany.mockResolvedValue([makeConnectionRecord()]);
+    mockDb.mailboxThread.findMany.mockResolvedValue([makeThreadRecord()]);
+    mockDb.mailboxThread.count.mockResolvedValue(1);
+
+    const cursor = Buffer.from(
+      JSON.stringify({
+        kind: "local",
+        unreadCount: 2,
+        lastMessageAt: "2026-05-10T10:00:00.000Z",
+        id: "thread-123",
+      }),
+      "utf-8",
+    ).toString("base64");
+
+    await listMailboxThreads({
+      orgId: ORG_A,
+      userId: USER_A,
+      role: "member",
+      cursor,
+    });
+
+    expect(mockDb.mailboxThread.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          AND: expect.arrayContaining([
+            expect.objectContaining({ orgId: ORG_A }),
+            expect.objectContaining({
+              OR: [
+                { unreadCount: { lt: 2 } },
+                {
+                  unreadCount: 2,
+                  OR: [
+                    { lastMessageAt: { lt: new Date("2026-05-10T10:00:00.000Z") } },
+                    {
+                      lastMessageAt: new Date("2026-05-10T10:00:00.000Z"),
+                      id: { lt: "thread-123" },
+                    },
+                  ],
+                },
+              ],
+            }),
+          ]),
+        }),
+      }),
+    );
   });
 
   it("returns nextCursor null when no more pages", async () => {
@@ -518,7 +622,7 @@ describe("Sprint 4.1 — GET /api/mailbox/threads", () => {
 
     const { GET } = await import("@/app/api/mailbox/threads/route");
     const req = new NextRequest(
-      `http://localhost/api/mailbox/threads?connectionId=${CONN_1}&status=OPEN&unreadOnly=true&isFlagged=true&assignee=me&limit=25`,
+      `http://localhost/api/mailbox/threads?connectionId=${CONN_1}&folder=SENT&status=OPEN&unreadOnly=true&isFlagged=true&assignee=me&limit=25`,
     );
     const res = await GET(req);
     expect(res.status).toBe(200);
@@ -528,6 +632,7 @@ describe("Sprint 4.1 — GET /api/mailbox/threads", () => {
         where: expect.objectContaining({
           orgId: ORG_A,
           mailboxConnectionId: { in: [CONN_1] },
+          messages: { some: { direction: "outbound" } },
           status: "OPEN",
           unreadCount: { gt: 0 },
           isFlagged: true,
@@ -579,6 +684,19 @@ describe("Sprint 4.1 — GET /api/mailbox/threads", () => {
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body.error).toContain("Invalid assignee");
+  });
+
+  it("returns 400 for invalid folder", async () => {
+    const { requireIntegrationMemberRoute } = await import("@/app/api/integrations/_auth");
+    vi.mocked(requireIntegrationMemberRoute).mockResolvedValue({
+      ok: true,
+      ctx: { orgId: ORG_A, userId: USER_A, role: "member" },
+    } as never);
+
+    const { GET } = await import("@/app/api/mailbox/threads/route");
+    const req = new NextRequest("http://localhost/api/mailbox/threads?folder=INVALID_FOLDER");
+    const res = await GET(req);
+    expect(res.status).toBe(400);
   });
 
   it("ignores invalid status values", async () => {

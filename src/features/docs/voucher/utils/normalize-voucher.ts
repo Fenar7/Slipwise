@@ -58,6 +58,12 @@ export function normalizeVoucher(values: VoucherFormValues): VoucherDocument {
     receivedBy: visibility.showReceivedBy
       ? values.receivedBy.trim() || undefined
       : undefined,
+    upiId: visibility.showUpiDetails
+      ? values.upiId.trim() || undefined
+      : undefined,
+    upiQrDataUrl: visibility.showUpiDetails
+      ? values.upiQrDataUrl || undefined
+      : undefined,
     visibility,
   };
 }

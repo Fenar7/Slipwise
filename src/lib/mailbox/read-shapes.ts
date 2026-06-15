@@ -303,6 +303,7 @@ export interface MailboxThreadReadShape {
   unreadCount: number;
   status: MailboxThreadStatus;
   assigneeId: string | null;
+  assigneeName: string | null;
   isFlagged: boolean;
   previewSnippet: string;
   attachmentCount: number;
@@ -322,6 +323,8 @@ export interface MailboxMessageReadShape {
   bcc: MailboxParticipantReadShape[];
   subject: string;
   snippet: string;
+  htmlBody: string;
+  textBody: string | null;
   sentAt: string;
   receivedAt: string | null;
   attachmentCount: number;
@@ -371,6 +374,7 @@ export function toMailboxThreadReadShape(
     unreadCount: record.unreadCount,
     status: record.status,
     assigneeId: record.assigneeId ?? null,
+    assigneeName: null,
     isFlagged: record.isFlagged,
     previewSnippet: record.previewSnippet ?? "",
     attachmentCount: record.attachmentCount ?? 0,
@@ -400,6 +404,8 @@ export function toMailboxMessageReadShape(
       .filter(Boolean) as MailboxParticipantReadShape[],
     subject: record.subject,
     snippet: record.snippet,
+    htmlBody: record.htmlBody,
+    textBody: record.textBody,
     sentAt: record.sentAt.toISOString(),
     receivedAt: record.receivedAt?.toISOString() ?? null,
     attachmentCount: record.attachmentCount,
@@ -447,6 +453,7 @@ export interface MailboxThreadDetailReadShape {
   unreadCount: number;
   status: MailboxThreadStatus;
   assigneeId: string | null;
+  assigneeName: string | null;
   isFlagged: boolean;
   previewSnippet: string;
   attachmentCount: number;
@@ -490,6 +497,7 @@ export function toMailboxThreadDetailReadShape(
     unreadCount: threadRecord.unreadCount,
     status: threadRecord.status,
     assigneeId: threadRecord.assigneeId ?? null,
+    assigneeName: null,
     isFlagged: threadRecord.isFlagged,
     previewSnippet: threadRecord.previewSnippet ?? "",
     attachmentCount: threadRecord.attachmentCount ?? 0,
@@ -533,6 +541,47 @@ export interface MailboxDraftReadShape {
   createdAt: string;
   updatedAt: string;
 }
+
+export interface MailboxProviderDraftReadShape {
+  id: string;
+  orgId: string;
+  mailboxConnectionId: string;
+  threadId: string;
+  providerDraftId: string | null;
+  providerMessageId: string;
+  subject: string;
+  snippet: string;
+  to: string[];
+  cc: string[];
+  bcc: string[];
+  updatedAt: string;
+  source: "provider";
+}
+
+export interface MailboxProviderDraftDetailReadShape {
+  id: string;
+  orgId: string;
+  mailboxConnectionId: string;
+  threadId: string;
+  providerDraftId: string | null;
+  providerMessageId: string;
+  from: MailboxParticipantReadShape | null;
+  to: MailboxParticipantReadShape[];
+  cc: MailboxParticipantReadShape[];
+  bcc: MailboxParticipantReadShape[];
+  subject: string;
+  snippet: string;
+  htmlBody: string;
+  textBody: string | null;
+  sentAt: string;
+  updatedAt: string;
+  attachments: MailboxAttachmentReadShape[];
+  source: "provider";
+}
+
+export type MailboxDraftListEntryReadShape =
+  | (MailboxDraftReadShape & { source: "local" })
+  | MailboxProviderDraftReadShape;
 
 function toMailboxDraftAttachmentReadShape(
   record: import("./domain-types").MailboxDraftAttachmentRecord,

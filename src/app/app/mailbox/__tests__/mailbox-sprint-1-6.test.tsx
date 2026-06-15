@@ -13,7 +13,7 @@
  * - Workspace integration (empty thread list, reconnect banner wiring)
  */
 
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 let mockPathname = "/app/mailbox";
@@ -21,11 +21,19 @@ let mockPathname = "/app/mailbox";
 vi.mock("next/navigation", () => ({
   usePathname: () => mockPathname,
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(),
+}));
+
+vi.mock("../use-mailbox-query-sync", () => ({
+  useMailboxQuerySync: () => {
+    const [filterState, setFilterState] = require("react").useState({ filters: [], searchQuery: "" });
+    return { filterState, setFilterState };
+  },
 }));
 
 // Mock mailbox data hooks for workspace tests
 vi.mock("../use-mailbox-connections", () => ({
-  useMailboxConnections: () => ({
+  useMailboxConnections: vi.fn(() => ({
     connections: [
       { id: "conn_billing", orgId: "org_1", provider: "gmail", slug: "billing", emailAddress: "billing@acmecorp.com", displayName: "Billing", status: "connected", lastSyncAt: "2026-05-08T14:30:00Z", lastSyncError: null, lastSyncErrorCategory: null, unreadCount: 14, inboxCount: 47 },
       { id: "conn_support", orgId: "org_1", provider: "gmail", slug: "support", emailAddress: "support@acmecorp.com", displayName: "Support", status: "connected", lastSyncAt: "2026-05-08T14:28:00Z", lastSyncError: null, lastSyncErrorCategory: null, unreadCount: 6, inboxCount: 23 },
@@ -34,6 +42,15 @@ vi.mock("../use-mailbox-connections", () => ({
     isLoading: false,
     error: null,
     refetch: vi.fn(),
+  })),
+}));
+
+vi.mock("../use-mailbox-sync-action", () => ({
+  useMailboxSyncAction: () => ({
+    triggerSync: vi.fn(async () => true),
+    isPending: vi.fn(() => false),
+    getError: vi.fn(() => null),
+    clearError: vi.fn(),
   }),
 }));
 
@@ -51,6 +68,15 @@ vi.mock("../use-mailbox-threads", () => ({
     let threads = ALL_MOCK_THREADS;
     if (params?.connectionId) {
       threads = threads.filter((t) => t.mailboxConnectionId === params.connectionId);
+    }
+    if (params?.folder === "SENT") {
+      threads = [];
+    }
+    if (params?.folder === "SPAM") {
+      threads = [];
+    }
+    if (params?.folder === "STARRED") {
+      threads = threads.filter((t) => t.isFlagged === true);
     }
     if (params?.status) {
       const rawStatuses = Array.isArray(params.status)
@@ -81,6 +107,19 @@ vi.mock("../use-mailbox-threads", () => ({
       loadMore: vi.fn(),
     };
   }),
+}));
+
+vi.mock("../use-mailbox-drafts", () => ({
+  useMailboxDrafts: vi.fn(() => ({
+    drafts: [],
+    isLoading: false,
+    error: null,
+    refetch: vi.fn(),
+  })),
+}));
+
+vi.mock("@/hooks/use-supabase-session", () => ({
+  useSupabaseSession: () => ({ user: { id: "user_self" }, loading: false }),
 }));
 
 function buildThreadDetail(threadId: string) {
@@ -142,6 +181,16 @@ function buildThreadDetail(threadId: string) {
 vi.mock("../use-mailbox-thread-detail", () => ({
   useMailboxThreadDetail: vi.fn((threadId: string | null) => ({
     detail: threadId ? buildThreadDetail(threadId) : null,
+    isLoading: false,
+    error: null,
+    isNotFound: false,
+    refetch: vi.fn(),
+  })),
+}));
+
+vi.mock("../use-mailbox-provider-draft-detail", () => ({
+  useMailboxProviderDraftDetail: vi.fn(() => ({
+    detail: null,
     isLoading: false,
     error: null,
     isNotFound: false,
@@ -248,14 +297,262 @@ describe("NoMailboxesEmpty", () => {
 });
 
 describe("EmptyInboxState", () => {
-  it("renders with mailbox label", () => {
+  it("renders with mailbox label when no sync status", () => {
     render(<EmptyInboxState mailboxLabel="Billing" />);
     expect(screen.getByText(/billing is empty/i)).toBeInTheDocument();
   });
 
-  it("mentions syncing context", () => {
+  it("mentions syncing context when no sync status", () => {
     render(<EmptyInboxState mailboxLabel="Support" />);
     expect(screen.getByText(/still be syncing/i)).toBeInTheDocument();
+  });
+
+  it("renders sync-aware empty state when initial import is running", () => {
+    render(
+      <EmptyInboxState
+        mailboxLabel="Support"
+        syncStatus={{
+          state: "running",
+          isSyncing: true,
+          syncMode: "INITIAL",
+          triggerSource: "MANUAL",
+          currentRunId: "run_1",
+          currentRunStartedAt: "2026-05-22T10:00:00Z",
+          lastCompletedAt: null,
+          lastRunStatus: "RUNNING",
+          lastErrorCategory: null,
+          lastErrorSummary: null,
+          lastRunThreadCount: null,
+          lastRunMessageCount: null,
+          stageLabel: "Initial import in progress",
+          detailLabel: "Importing recent threads. Messages will appear automatically.",
+        }}
+      />
+    );
+
+    // New design: heading is "Importing messages…"
+    expect(screen.getByText(/importing messages/i)).toBeInTheDocument();
+    // Body explains threads will appear automatically
+    expect(screen.getByText(/threads will appear here automatically/i)).toBeInTheDocument();
+    // Uses the correct testId
+    expect(screen.getByTestId("empty-inbox-syncing")).toBeInTheDocument();
+  });
+
+  it("does NOT render the mailbox label as a duplicate heading below the sync card when running", () => {
+    render(
+      <EmptyInboxState
+        mailboxLabel="Support"
+        syncStatus={{
+          state: "running",
+          isSyncing: true,
+          syncMode: "INITIAL",
+          triggerSource: "MANUAL",
+          currentRunId: "run_1",
+          currentRunStartedAt: null,
+          lastCompletedAt: null,
+          lastRunStatus: "RUNNING",
+          lastErrorCategory: null,
+          lastErrorSummary: null,
+          lastRunThreadCount: null,
+          lastRunMessageCount: null,
+          stageLabel: "Initial import in progress",
+          detailLabel: "Importing recent threads.",
+        }}
+      />
+    );
+
+    // "Support" must NOT appear as a standalone heading duplicate
+    // (it previously appeared as a separate <p> below the sync card)
+    const supportTexts = screen.queryAllByText("Support");
+    expect(supportTexts).toHaveLength(0);
+  });
+
+  it("renders waiting-for-first-sync state with Sync now CTA", () => {
+    const onSyncNow = vi.fn();
+    render(
+      <EmptyInboxState
+        mailboxLabel="Support"
+        onSyncNow={onSyncNow}
+        syncStatus={{
+          state: "completed_never_imported",
+          isSyncing: false,
+          syncMode: null,
+          triggerSource: null,
+          currentRunId: null,
+          currentRunStartedAt: null,
+          lastCompletedAt: null,
+          lastRunStatus: null,
+          lastErrorCategory: null,
+          lastErrorSummary: null,
+          lastRunThreadCount: null,
+          lastRunMessageCount: null,
+          stageLabel: "Connected, waiting for first sync",
+          detailLabel: "This mailbox is connected. The first sync has not completed yet.",
+        }}
+      />
+    );
+
+    // New design: heading is "[mailboxLabel] is ready"
+    expect(screen.getByText(/support is ready/i)).toBeInTheDocument();
+    // Correct testId
+    expect(screen.getByTestId("empty-inbox-waiting")).toBeInTheDocument();
+    // CTA is present and wired
+    const button = screen.getByTestId("sync-now-cta");
+    expect(button).toBeInTheDocument();
+    fireEvent.click(button);
+    expect(onSyncNow).toHaveBeenCalledOnce();
+  });
+
+  it("does NOT render a duplicate mailbox heading below the waiting state chip", () => {
+    render(
+      <EmptyInboxState
+        mailboxLabel="Billing"
+        syncStatus={{
+          state: "completed_never_imported",
+          isSyncing: false,
+          syncMode: null,
+          triggerSource: null,
+          currentRunId: null,
+          currentRunStartedAt: null,
+          lastCompletedAt: null,
+          lastRunStatus: null,
+          lastErrorCategory: null,
+          lastErrorSummary: null,
+          lastRunThreadCount: null,
+          lastRunMessageCount: null,
+          stageLabel: "Connected, waiting for first sync",
+          detailLabel: "This mailbox is connected.",
+        }}
+      />
+    );
+
+    // "Billing" should appear exactly once (as part of "Billing is ready"),
+    // NOT as a standalone repeated heading underneath the chip.
+    const billingTexts = screen.getAllByText(/billing/i);
+    // All occurrences must be inside the heading, not a separate element
+    expect(billingTexts.length).toBe(1);
+  });
+
+  describe("Starred folder empty state", () => {
+    it("shows normal synced-empty UI when sync is healthy (no syncStatus)", () => {
+      // Simulates the Starred folder with a healthy mailbox:
+      // effectiveActiveSync.state === "completed" so syncStatus is undefined.
+      // syncError is null so syncError is omitted.
+      render(
+        <EmptyInboxState
+          mailboxLabel="Inbox · Starred"
+        />
+      );
+
+      expect(screen.getByText(/starred is empty/i)).toBeInTheDocument();
+      expect(screen.queryByTestId("empty-inbox-failed")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("empty-inbox-syncing")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("empty-inbox-waiting")).not.toBeInTheDocument();
+    });
+
+    it("shows sync failure UI when sync is genuinely failed", () => {
+      // Simulates the Starred folder when effectiveActiveSync.state === "failed":
+      // syncStatus IS passed, triggering the failed empty state.
+      render(
+        <EmptyInboxState
+          mailboxLabel="Inbox · Starred"
+          syncStatus={{
+            state: "failed",
+            isSyncing: false,
+            syncMode: null,
+            triggerSource: null,
+            currentRunId: null,
+            currentRunStartedAt: null,
+            lastCompletedAt: null,
+            lastRunStatus: "FAILED",
+            lastErrorCategory: "rate_limited",
+            lastErrorSummary: "Gmail API rate limit exceeded",
+            lastRunThreadCount: null,
+            lastRunMessageCount: null,
+            stageLabel: "Sync needs attention",
+            detailLabel: "Gmail API rate limit exceeded",
+          }}
+          onSyncNow={vi.fn()}
+        />
+      );
+
+      expect(screen.getByTestId("empty-inbox-failed")).toBeInTheDocument();
+      expect(screen.getByText(/sync needs attention/i)).toBeInTheDocument();
+    });
+
+    it("does NOT show failed sync UI when mailbox state is completed with draft-only degradation", () => {
+      // Simulates the Starred folder when mailbox sync is healthy but
+      // draft sync has an isolated degradation. Since effectiveActiveSync
+      // state is "completed", syncStatus is undefined and the UI shows
+      // the normal empty state — draft degradation does not leak.
+      render(
+        <EmptyInboxState
+          mailboxLabel="Inbox · Starred"
+        />
+      );
+
+      expect(screen.getByText(/starred is empty/i)).toBeInTheDocument();
+      expect(screen.queryByTestId("empty-inbox-failed")).not.toBeInTheDocument();
+    });
+  });
+
+  it("does NOT show Sync now CTA when sync is actively running", () => {
+    render(
+      <EmptyInboxState
+        mailboxLabel="Support"
+        onSyncNow={vi.fn()}
+        isSyncPending={true}
+        syncStatus={{
+          state: "completed_never_imported",
+          isSyncing: false,
+          syncMode: null,
+          triggerSource: null,
+          currentRunId: null,
+          currentRunStartedAt: null,
+          lastCompletedAt: null,
+          lastRunStatus: null,
+          lastErrorCategory: null,
+          lastErrorSummary: null,
+          lastRunThreadCount: null,
+          lastRunMessageCount: null,
+          stageLabel: "Connected, waiting for first sync",
+          detailLabel: "This mailbox is connected.",
+        }}
+      />
+    );
+
+    // When isSyncPending is true, the CTA must be hidden (no dead button)
+    expect(screen.queryByTestId("sync-now-cta")).not.toBeInTheDocument();
+  });
+
+  it("renders failed sync state with actionable body copy", () => {
+    render(
+      <EmptyInboxState
+        mailboxLabel="Billing"
+        syncStatus={{
+          state: "failed",
+          isSyncing: false,
+          syncMode: null,
+          triggerSource: null,
+          currentRunId: null,
+          currentRunStartedAt: null,
+          lastCompletedAt: null,
+          lastRunStatus: "FAILED",
+          lastErrorCategory: "rate_limited",
+          lastErrorSummary: "Gmail rate limit exceeded",
+          lastRunThreadCount: null,
+          lastRunMessageCount: null,
+          stageLabel: "Sync needs attention",
+          detailLabel: "Gmail rate limit exceeded",
+        }}
+        onSyncNow={vi.fn()}
+      />
+    );
+
+    expect(screen.getByTestId("empty-inbox-failed")).toBeInTheDocument();
+    expect(screen.getByText(/sync needs attention/i)).toBeInTheDocument();
+    // Shows the safe error summary
+    expect(screen.getByText(/gmail rate limit exceeded/i)).toBeInTheDocument();
   });
 });
 
@@ -298,6 +595,13 @@ describe("NoSearchResultsEmpty", () => {
   it("does not render clear button when no filters", () => {
     render(<NoSearchResultsEmpty />);
     expect(screen.queryByRole("button", { name: /clear filters/i })).not.toBeInTheDocument();
+  });
+
+  it("renders degraded copy when search results are partial", () => {
+    render(<NoSearchResultsEmpty query="chatgpt" isPartialSearch={true} />);
+    expect(
+      screen.getByText(/search results may be incomplete right now/i),
+    ).toBeInTheDocument();
   });
 });
 
@@ -899,12 +1203,12 @@ describe("MailboxWorkspace Sprint 1.6 integration", () => {
 
   it("shows a mailbox empty state for drafts routes instead of a blank list", () => {
     renderWorkspaceAtPath("/app/mailbox/billing/drafts");
-    expect(screen.getByText(/billing · drafts is empty/i)).toBeInTheDocument();
+    expect(screen.getByText(/billing · drafts has no drafts/i)).toBeInTheDocument();
   });
 
   it("shows a mailbox empty state for spam routes instead of a blank list", () => {
     renderWorkspaceAtPath("/app/mailbox/support/spam");
-    expect(screen.getByText(/support · spam is empty/i)).toBeInTheDocument();
+    expect(screen.getByText(/support · spam has no spam conversations/i)).toBeInTheDocument();
   });
 
   it("opens a narrow-viewport context panel from the reading pane", async () => {
@@ -928,11 +1232,124 @@ describe("MailboxWorkspace Sprint 1.6 integration", () => {
       expect(screen.getByTestId("mailbox-reading-pane-active")).toBeInTheDocument();
     });
   });
+
+  it("opens provider drafts from draft detail instead of thread detail", async () => {
+    const { useMailboxDrafts } = await import("../use-mailbox-drafts");
+    const { useMailboxProviderDraftDetail } = await import("../use-mailbox-provider-draft-detail");
+    vi.mocked(useMailboxDrafts).mockReturnValue({
+      drafts: [
+        {
+          id: "provider:draft-123",
+          orgId: "org_1",
+          mailboxConnectionId: "conn_billing",
+          threadId: "thread-draft-123",
+          providerDraftId: "draft-123",
+          providerMessageId: "msg-draft-123",
+          subject: "Draft from Gmail",
+          snippet: "draft snippet",
+          to: ["client@example.com"],
+          cc: [],
+          bcc: [],
+          updatedAt: "2026-05-25T08:51:00Z",
+          source: "provider",
+        },
+      ],
+      isLoading: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+    vi.mocked(useMailboxProviderDraftDetail).mockReturnValue({
+      detail: {
+        id: "provider:draft-123",
+        orgId: "org_1",
+        mailboxConnectionId: "conn_billing",
+        threadId: "thread-draft-123",
+        providerDraftId: "draft-123",
+        providerMessageId: "msg-draft-123",
+        from: { email: "billing@acmecorp.com", displayName: "Billing" },
+        to: [{ email: "client@example.com", displayName: null }],
+        cc: [],
+        bcc: [],
+        subject: "Draft from Gmail",
+        snippet: "draft snippet",
+        htmlBody: "<p>Real provider draft body</p>",
+        textBody: "Real provider draft body",
+        sentAt: "2026-05-25T08:51:00Z",
+        updatedAt: "2026-05-25T08:51:00Z",
+        attachments: [],
+        source: "provider",
+      },
+      isLoading: false,
+      error: null,
+      isNotFound: false,
+      refetch: vi.fn(),
+    });
+
+    renderWorkspaceAtPath("/app/mailbox/billing/drafts");
+    fireEvent.click(screen.getByRole("button", { name: /draft from gmail/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Real provider draft body")).toBeInTheDocument();
+    });
+    expect(screen.queryByText(/message body unavailable/i)).not.toBeInTheDocument();
+    expect(screen.queryByTestId("reply-prompt")).not.toBeInTheDocument();
+  });
+
+  it("refreshes the active drafts view when the mailbox sync timestamp changes", async () => {
+    const draftsRefetch = vi.fn();
+    let currentConnections = [
+      {
+        id: "conn_billing",
+        orgId: "org_1",
+        provider: "gmail",
+        slug: "billing",
+        emailAddress: "billing@acmecorp.com",
+        displayName: "Billing",
+        status: "connected" as const,
+        lastSyncAt: "2026-05-08T14:30:00Z",
+        lastSyncError: null,
+        lastSyncErrorCategory: null,
+        unreadCount: 14,
+        inboxCount: 47,
+      },
+    ];
+
+    const { useMailboxConnections } = await import("../use-mailbox-connections");
+    const { useMailboxDrafts } = await import("../use-mailbox-drafts");
+
+    vi.mocked(useMailboxConnections).mockImplementation(() => ({
+      connections: currentConnections,
+      isLoading: false,
+      error: null,
+      refetch: vi.fn(),
+    }));
+    vi.mocked(useMailboxDrafts).mockReturnValue({
+      drafts: [],
+      isLoading: false,
+      error: null,
+      refetch: draftsRefetch,
+    });
+
+    const view = renderWorkspaceAtPath("/app/mailbox/billing/drafts");
+    expect(draftsRefetch).not.toHaveBeenCalled();
+
+    currentConnections = [
+      {
+        ...currentConnections[0],
+        lastSyncAt: "2026-05-08T14:35:00Z",
+      },
+    ];
+    view.rerender(<MailboxWorkspace />);
+
+    await waitFor(() => {
+      expect(draftsRefetch).toHaveBeenCalledTimes(1);
+    });
+  });
 });
 
 describe("MailboxSettingsPageContent Sprint 1.6 integration", () => {
   it("shows no-mailboxes empty state when there are no mailbox connections", () => {
-    render(<MailboxSettingsPageContent summaries={[]} />);
+    render(<MailboxSettingsPageContent connections={[]} />);
     expect(screen.getByTestId("settings-empty-state")).toBeInTheDocument();
     expect(screen.getByTestId("empty-no-mailboxes")).toBeInTheDocument();
   });

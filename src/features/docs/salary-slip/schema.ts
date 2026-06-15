@@ -11,6 +11,8 @@ const brandingSchema = z.object({
   accentColor: z
     .string()
     .regex(/^#([0-9a-fA-F]{6})$/, "Enter a valid hex color."),
+  logoSize: z.number().min(30).max(150).optional(),
+  logoFit: z.enum(["contain", "cover"]).optional(),
 });
 
 const visibilitySchema = z.object({

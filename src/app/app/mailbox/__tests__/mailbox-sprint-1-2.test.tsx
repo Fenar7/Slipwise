@@ -4,10 +4,19 @@
  */
 import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import * as React from "react";
 
 vi.mock("next/navigation", () => ({
   usePathname: () => "/app/mailbox",
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(),
+}));
+
+vi.mock("../use-mailbox-query-sync", () => ({
+  useMailboxQuerySync: () => {
+    const [filterState, setFilterState] = React.useState({ filters: [], searchQuery: "", searchMode: "threads" });
+    return { filterState, setFilterState };
+  },
 }));
 
 // Mock mailbox data hooks for workspace tests
@@ -36,6 +45,10 @@ vi.mock("../use-mailbox-threads", () => ({
     ],
     totalCount: 6,
     nextCursor: null,
+    messages: [],
+    searchMeta: null,
+    hasMore: false,
+    isLoadingMore: false,
     isLoading: false,
     error: null,
     refetch: vi.fn(),
@@ -43,11 +56,40 @@ vi.mock("../use-mailbox-threads", () => ({
   }),
 }));
 
+vi.mock("../use-mailbox-thread-detail", () => ({
+  useMailboxThreadDetail: (threadId: string | null) => {
+    const details = (globalThis as any).__mockThreadDetails;
+    const rawDetail = threadId ? details?.[threadId] : null;
+    const participantsMap: Record<string, any[]> = {
+      t1: [{ displayName: "Priya Sharma", email: "priya@clientco.in" }],
+      t2: [{ displayName: "Arjun Mehta", email: "arjun@techventures.io" }],
+      t3: [{ displayName: "Neha Kapoor", email: "neha@vendor.com" }],
+      t4: [{ displayName: "Ravi Nair", email: "ravi@globalretail.com" }],
+      t5: [{ displayName: "Sunita Rao", email: "sunita@customer.com" }],
+      t6: [{ displayName: "Vikram Joshi", email: "vikram@enterprise.com" }],
+    };
+    return {
+      detail: rawDetail
+        ? {
+            participants: participantsMap[threadId!] ?? [],
+            ...rawDetail,
+          }
+        : null,
+      isLoading: false,
+      error: null,
+      isNotFound: false,
+      refetch: vi.fn(),
+    };
+  },
+}));
+
 import { MailboxThreadList, MOCK_THREADS } from "../mailbox-thread-list";
 import { MailboxReadingPane } from "../mailbox-reading-pane";
 import { MailboxReadingPaneEmpty } from "../mailbox-reading-pane-empty";
 import { MailboxWorkspace } from "../mailbox-workspace";
 import { MOCK_THREAD_DETAILS } from "../mock-data";
+
+(globalThis as any).__mockThreadDetails = MOCK_THREAD_DETAILS;
 
 // ─── Sprint 1.1 regression: workspace still renders ─────────────────────────
 
@@ -130,15 +172,17 @@ describe("MailboxThreadList — Sprint 1.2", () => {
     expect(toolbars.length).toBe(MOCK_THREADS.length);
   });
 
-  it("quick-action toolbar contains Reply, Archive, Mark as read, Delete, More actions", () => {
+  it("quick-action toolbar contains Archive, Mark as read/unread, Delete, Flag, More actions", () => {
     render(<MailboxThreadList selectedThreadId={null} onSelectThread={vi.fn()} />);
     // Each toolbar has these buttons — check first thread's toolbar
-    const replyBtns = screen.getAllByRole("button", { name: /^reply$/i });
-    expect(replyBtns.length).toBeGreaterThan(0);
-    const archiveBtns = screen.getAllByRole("button", { name: /^archive$/i });
+    const readBtns = screen.getAllByRole("button", { name: /mark as (read|unread)/i });
+    expect(readBtns.length).toBeGreaterThan(0);
+    const archiveBtns = screen.getAllByRole("button", { name: /^(archive|unarchive)$/i });
     expect(archiveBtns.length).toBeGreaterThan(0);
     const deleteBtns = screen.getAllByRole("button", { name: /^delete$/i });
     expect(deleteBtns.length).toBeGreaterThan(0);
+    const flagBtns = screen.getAllByRole("button", { name: /^(flag|unflag)$/i });
+    expect(flagBtns.length).toBeGreaterThan(0);
   });
 
   it("quick-action click does not propagate to row selection", () => {
@@ -244,6 +288,27 @@ describe("MailboxReadingPane", () => {
     expect(screen.getByText(/reminder that Invoice/i)).toBeInTheDocument();
   });
 
+  it("expands and highlights the matched message when selectedMessageProviderId is provided", () => {
+    const matchedDetail = {
+      ...detail,
+      messages: detail.messages.map((message, index) => ({
+        ...message,
+        providerMessageId: index === 0 ? "provider-match-1" : "provider-match-2",
+      })),
+    };
+
+    render(
+      <MailboxReadingPane
+        detail={matchedDetail}
+        selectedMessageProviderId="provider-match-1"
+      />,
+    );
+
+    const matchedMessage = screen.getAllByText(/billing team/i)[0]?.closest("article");
+    expect(matchedMessage).toHaveAttribute("data-highlighted", "true");
+    expect(screen.getByText(/reminder that Invoice/i)).toBeInTheDocument();
+  });
+
   it("renders inline reply/reply-all/forward buttons on expanded message", () => {
     render(<MailboxReadingPane detail={detail} />);
     // The expanded message (m1b) has these buttons
@@ -273,6 +338,49 @@ describe("MailboxReadingPane", () => {
     render(<MailboxReadingPane detail={detailNoAssignee} />);
     // Should not throw; assignee section simply absent
     expect(screen.getByRole("heading", { name: detailNoAssignee.subject })).toBeInTheDocument();
+  });
+
+  it("falls back to plain text when html body is empty", () => {
+    const detail = {
+      ...MOCK_THREAD_DETAILS["t1"],
+      messages: MOCK_THREAD_DETAILS["t1"].messages.map((message, index, all) => ({
+        ...message,
+        bodyHtml: index === all.length - 1 ? "" : message.bodyHtml,
+        bodyText: index === all.length - 1 ? "Plain text body line 1\nPlain text body line 2" : null,
+      })),
+    };
+    render(<MailboxReadingPane detail={detail} />);
+
+    expect(screen.getByText(/plain text body line 1/i)).toBeInTheDocument();
+    expect(screen.getByText(/plain text body line 2/i)).toBeInTheDocument();
+  });
+
+  it("falls back to plain text when sanitized html has no visible content", () => {
+    const detail = {
+      ...MOCK_THREAD_DETAILS["t1"],
+      messages: MOCK_THREAD_DETAILS["t1"].messages.map((message, index, all) => ({
+        ...message,
+        bodyHtml: index === all.length - 1 ? "<div><script>alert('x')</script></div>" : message.bodyHtml,
+        bodyText: index === all.length - 1 ? "Visible fallback text" : null,
+      })),
+    };
+    render(<MailboxReadingPane detail={detail} />);
+
+    expect(screen.getByText(/visible fallback text/i)).toBeInTheDocument();
+  });
+
+  it("shows a compact fallback when both html and text bodies are unavailable", () => {
+    const detail = {
+      ...MOCK_THREAD_DETAILS["t1"],
+      messages: MOCK_THREAD_DETAILS["t1"].messages.map((message, index, all) => ({
+        ...message,
+        bodyHtml: index === all.length - 1 ? "" : message.bodyHtml,
+        bodyText: null,
+      })),
+    };
+    render(<MailboxReadingPane detail={detail} />);
+
+    expect(screen.getByText(/message body unavailable/i)).toBeInTheDocument();
   });
 });
 

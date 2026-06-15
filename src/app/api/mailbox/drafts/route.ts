@@ -5,7 +5,7 @@ import { requireIntegrationMemberRoute } from "@/app/api/integrations/_auth";
 import { rateLimitByOrg } from "@/lib/rate-limit";
 import {
   createOrRestoreDraft,
-  listActiveDrafts,
+  listDraftEntries,
   DraftServiceError,
 } from "@/lib/mailbox/draft-service";
 import {
@@ -150,12 +150,21 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
     const { searchParams } = new URL(request.url);
     const connectionId = searchParams.get("connectionId") ?? undefined;
+    const rawSearchQuery = searchParams.get("searchQuery");
+    
+    // Support stripping in:draft if user explicitly types it (since they are already in drafts)
+    let searchQuery = rawSearchQuery?.trim() ?? undefined;
+    if (searchQuery) {
+      searchQuery = searchQuery.replace(/\bin:drafts?\b/gi, "").trim();
+      if (!searchQuery) searchQuery = undefined;
+    }
 
-    const drafts = await listActiveDrafts({
+    const drafts = await listDraftEntries({
       orgId,
       userId,
       role: role as "owner" | "admin" | "member",
       mailboxConnectionId: connectionId,
+      searchQuery,
     });
 
     return NextResponse.json({
