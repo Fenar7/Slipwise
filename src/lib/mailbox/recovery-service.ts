@@ -20,6 +20,7 @@ import { getMailboxCursor, deleteMailboxCursors } from "./cursor-service";
 import { runMailboxSync } from "./mailbox-sync-service";
 import { refreshGmailAuthorization, verifyGmailConnection } from "./gmail-oauth-service";
 import { logMailboxAudit } from "./audit";
+import { findMailboxProviderAdapter } from "./provider-registry";
 import {
   classifyProviderError,
   resolveRecoveryAction,
@@ -234,7 +235,9 @@ async function handleRetrySync(
     };
   }
 
-  const cursor = await getMailboxCursor(orgId, connection.id, "HISTORY_ID");
+  const recAdapter = findMailboxProviderAdapter(connection.provider);
+  const recCursorType = recAdapter?.descriptor.syncCursorType ?? "HISTORY_ID";
+  const cursor = await getMailboxCursor(orgId, connection.id, recCursorType);
   const previousMode: MailboxSyncMode = cursor ? "DELTA" : "INITIAL";
   const syncMode = resolveRecoverySyncMode("retry", previousMode);
 

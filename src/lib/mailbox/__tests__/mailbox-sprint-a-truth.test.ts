@@ -99,10 +99,14 @@ const mockFetchThreadDetail = vi.fn();
 
 vi.mock("@/lib/mailbox/provider-registry", () => ({
   getMailboxProviderAdapter: () => ({
-    descriptor: { provider: "GMAIL", displayName: "Gmail", supportsPushSync: true, supportsSend: true },
+    descriptor: { provider: "GMAIL", displayName: "Gmail", supportsPushSync: true, supportsSend: true, supportsSearch: true, syncCursorType: "HISTORY_ID" },
     searchThreads: mockSearchThreads,
     fetchThreadDetail: mockFetchThreadDetail,
   }),
+  findMailboxProviderAdapter: (provider) =>
+    provider === "GMAIL"
+      ? { descriptor: { provider: "GMAIL", displayName: "Gmail", supportsPushSync: true, supportsSend: true, supportsSearch: true, syncCursorType: "HISTORY_ID" } }
+      : null,
 }));
 
 import { listMailboxThreads } from "@/lib/mailbox/thread-service";

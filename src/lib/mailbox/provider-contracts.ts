@@ -13,7 +13,7 @@ import "server-only";
  * - Sprint 2.1 locks the contract surface. Sprint 2.2 implements Gmail behind it.
  */
 
-import type { MailboxProvider } from "@/generated/prisma/client";
+import type { MailboxProvider, MailboxCursorType } from "@/generated/prisma/client";
 
 // ─── Provider identity ────────────────────────────────────────────────────────
 
@@ -28,6 +28,10 @@ export interface MailboxProviderDescriptor {
   readonly supportsPushSync: boolean;
   /** Whether this provider supports send/reply. */
   readonly supportsSend: boolean;
+  /** The cursor type this provider uses for incremental sync delta. */
+  readonly syncCursorType: MailboxCursorType;
+  /** Whether this provider supports live API searches. */
+  readonly supportsSearch: boolean;
 }
 
 // ─── Connection identity capture ─────────────────────────────────────────────
