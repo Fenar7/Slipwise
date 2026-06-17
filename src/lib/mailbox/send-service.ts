@@ -46,6 +46,7 @@ import {
   getSendAttemptById,
 } from "./send-attempt-service";
 import type { SendAttemptRecord } from "./send-attempt-service";
+import { logMailboxTelemetry, captureMailboxError } from "./telemetry";
 
 // ─── Errors ───────────────────────────────────────────────────────────────────
 
@@ -308,6 +309,15 @@ export async function sendDraft(input: SendDraftInput): Promise<SendDraftResult>
     };
   }
 
+  // Emit telemetry so dashboards can track send volume per connection.
+  await logMailboxTelemetry("send_attempt_started", {
+    orgId,
+    userId,
+    draftId,
+    mailboxConnectionId: connection.id,
+    mode: draft.mode,
+  });
+
   // Generate correlation keys and create attempt
   const correlationKey = generateCorrelationKey();
   const rfcMessageId = generateRfcMessageId(correlationKey);
@@ -394,6 +404,20 @@ export async function sendDraft(input: SendDraftInput): Promise<SendDraftResult>
           },
         });
       });
+      // Emit telemetry + forward to Sentry for definitive (non-retryable) send failures.
+      await logMailboxTelemetry("send_attempt_failed", {
+        orgId,
+        draftId,
+        mailboxConnectionId: connection.id,
+        attemptId: attempt.id,
+        errorCategory: sendResult.category,
+        errorSummary: sendResult.safeMessage,
+        retryable: false,
+      });
+      await captureMailboxError(
+        new Error(sendResult.safeMessage),
+        { orgId, draftId, attemptId: attempt.id, errorCategory: sendResult.category },
+      );
 
       return {
         status: "failed",
@@ -480,6 +504,15 @@ export async function sendDraft(input: SendDraftInput): Promise<SendDraftResult>
   } catch {
     // Non-fatal
   }
+  // Emit send success telemetry so delivery-rate dashboards stay accurate.
+  await logMailboxTelemetry("send_attempt_completed", {
+    orgId,
+    draftId,
+    mailboxConnectionId: connection.id,
+    attemptId: attempt.id,
+    providerMessageId: sendResult.providerMessageId,
+    providerThreadId: sendResult.providerThreadId,
+  });
 
   return {
     status: "sent",

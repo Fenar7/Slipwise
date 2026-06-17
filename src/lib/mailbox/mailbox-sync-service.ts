@@ -49,6 +49,7 @@ import {
   computeThreadAttachmentCount,
 } from "./normalization-service";
 import type { MailboxMessageRecord } from "./domain-types";
+import { logMailboxTelemetry, captureMailboxError } from "./telemetry";
 
 export interface RunMailboxSyncParams {
   orgId: string;
@@ -509,6 +510,16 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
         createdBy: params.actorId,
       },
       select: { id: true },
+    });
+
+    // Emit structured telemetry so log collectors can track every sync start.
+    await logMailboxTelemetry("sync_started", {
+      orgId: params.orgId,
+      connectionId: connection.id,
+      provider: connection.provider,
+      syncMode: effectiveMode,
+      triggerSource,
+      runId: run.id,
     });
 
     await logMailboxAudit({
@@ -1017,6 +1028,18 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
       metadata: { runId: run.id, ...stats, syncMode: effectiveMode, triggerSource },
     });
 
+    // Emit structured telemetry with duration so SLO dashboards can track latency.
+    await logMailboxTelemetry("sync_completed", {
+      orgId: params.orgId,
+      connectionId: connection.id,
+      runId: run.id,
+      threadCount,
+      messageCount,
+      syncMode: effectiveMode,
+      triggerSource,
+      durationMs: Date.now() - startedAt.getTime(),
+    });
+
     return {
       success: true,
       runId: run.id,
@@ -1071,6 +1094,26 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
       summary: "Mailbox sync failed",
       mailboxConnectionId: connection.id,
       metadata: { runId: run.id, errorCategory: providerError.category, failureClass, syncMode: effectiveMode, triggerSource },
+    });
+
+    // Emit structured telemetry so error dashboards can track failure rates.
+    await logMailboxTelemetry("sync_failed", {
+      orgId: params.orgId,
+      connectionId: connection.id,
+      runId: run.id,
+      errorCategory: providerError.category,
+      errorSummary: providerError.safeMessage,
+      syncMode: effectiveMode,
+      triggerSource,
+      durationMs: Date.now() - startedAt.getTime(),
+    });
+
+    // Forward unexpected (non-transient) failures to Sentry for alerting.
+    await captureMailboxError(error, {
+      orgId: params.orgId,
+      connectionId: connection.id,
+      runId: run.id,
+      errorCategory: providerError.category,
     });
 
     return {
