@@ -27,6 +27,7 @@ import { getMailboxProviderAdapter } from "./provider-registry";
 import { isMailboxProviderError } from "./provider-contracts";
 import type { MailboxProviderError, MailboxThreadEnvelope } from "./provider-contracts";
 import { withRetry, isRetryableProviderError, sanitizeErrorForLog } from "./retry-utils";
+import { withMailboxLock } from "./mailbox-lock-service";
 import {
   markFolderCoverageComplete,
   updateFolderCoverageBootstrapping,
@@ -487,8 +488,12 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
       }
     | null = null;
 
-  try {
-    run = await db.mailboxSyncRun.create({
+  const syncResult = await withMailboxLock(
+    params.orgId,
+    connection.id,
+    async () => {
+      try {
+        run = await db.mailboxSyncRun.create({
       data: {
         orgId: params.orgId,
         mailboxConnectionId: connection.id,
@@ -1075,9 +1080,14 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
         summary: providerError.safeMessage,
       },
     };
-  } finally {
-    await releaseSyncLease(params.orgId, connection.id, leaseToken);
-  }
+      } finally {
+        await releaseSyncLease(params.orgId, connection.id, leaseToken);
+      }
+    },
+    MAILBOX_SYNC_MAX_RUNNING_AGE_MINUTES * 60 * 1000,
+  );
+
+  return syncResult;
 }
 
 function toProviderErrorException(error: MailboxProviderError): Error {

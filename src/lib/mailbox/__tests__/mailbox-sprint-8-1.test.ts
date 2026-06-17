@@ -5,7 +5,7 @@
  * - Retry with exponential backoff and jitter
  * - Retryable error classification and predicates
  * - PII-safe error sanitization
- * - Mailbox-scoped advisory lock key derivation and acquire/release
+ * - Mailbox-scoped advisory lock acquire/race/timeout
  * - Idempotency guard enforcement
  */
 
@@ -187,119 +187,109 @@ describe("Sprint 8.1 — Retry utilities", () => {
   });
 });
 
-// ── mailbox-lock-service tests (mocked db) ─────────────────────────────────
+// ── mailbox-lock-service tests (mocked db + transaction) ───────────────────
 
-const mockQueryRawUnsafe = vi.fn();
+const mockTxQueryRawUnsafe = vi.fn();
+const mockTransaction = vi.fn();
 
 vi.mock("@/lib/db", () => ({
   db: {
-    $queryRawUnsafe: mockQueryRawUnsafe,
+    $transaction: mockTransaction,
   },
 }));
 
+/**
+ * Helper: configures `mockTransaction` and `mockTxQueryRawUnsafe` so the
+ * transaction callback receives a mock `tx` whose `$queryRawUnsafe` resolves
+ * to `queryResult`.
+ */
+function configureTx(queryResult: unknown): void {
+  mockTxQueryRawUnsafe.mockResolvedValue(queryResult);
+  mockTransaction.mockImplementation(
+    async <T>(fn: (tx: { $queryRawUnsafe: typeof mockTxQueryRawUnsafe }) => T): Promise<T> => {
+      const tx = { $queryRawUnsafe: mockTxQueryRawUnsafe };
+      return fn(tx);
+    },
+  );
+}
+
 describe("Sprint 8.1 — Mailbox-scoped locks", () => {
   beforeEach(() => {
-    mockQueryRawUnsafe.mockReset();
+    mockTxQueryRawUnsafe.mockReset();
+    mockTransaction.mockReset();
   });
 
-  describe("tryAcquireMailboxLock", () => {
-    it("returns true when lock is granted", async () => {
-      mockQueryRawUnsafe.mockResolvedValue([{ locked: true }]);
-      const { tryAcquireMailboxLock } = await import("../mailbox-lock-service");
-      const result = await tryAcquireMailboxLock("org-1", "conn-1");
-      expect(result).toBe(true);
-      expect(mockQueryRawUnsafe).toHaveBeenCalledWith(
-        expect.stringContaining("pg_try_advisory_lock"),
+  describe("withMailboxLock", () => {
+    it("executes fn successfully when lock is acquired", async () => {
+      configureTx([{ locked: true }]);
+
+      const { withMailboxLock } = await import("../mailbox-lock-service");
+      const result = await withMailboxLock("org-1", "conn-1", () =>
+        Promise.resolve("done"),
+      );
+      expect(result).toBe("done");
+      expect(mockTxQueryRawUnsafe).toHaveBeenCalledWith(
+        expect.stringContaining("pg_try_advisory_xact_lock"),
         expect.any(Number),
       );
     });
 
-    it("returns false when lock is held", async () => {
-      mockQueryRawUnsafe.mockResolvedValue([{ locked: false }]);
-      const { tryAcquireMailboxLock } = await import("../mailbox-lock-service");
-      const result = await tryAcquireMailboxLock("org-1", "conn-2");
-      expect(result).toBe(false);
+    it("throws MAILBOX_LOCKED when lock cannot be acquired", async () => {
+      configureTx([{ locked: false }]);
+
+      const { withMailboxLock } = await import("../mailbox-lock-service");
+      await expect(
+        withMailboxLock("org-1", "conn-2", () => Promise.resolve("never")),
+      ).rejects.toThrow("Mailbox is locked by another operation");
     });
 
-    it("produces same key for same connection id", async () => {
-      mockQueryRawUnsafe.mockResolvedValue([{ locked: true }]);
-      const { tryAcquireMailboxLock } = await import("../mailbox-lock-service");
-      await tryAcquireMailboxLock("org-1", "conn-same");
-      await tryAcquireMailboxLock("org-2", "conn-same");
-      const calls = mockQueryRawUnsafe.mock.calls;
+    it("propagates MAILBOX_LOCKED code on lock failure", async () => {
+      configureTx([{ locked: false }]);
+
+      const { withMailboxLock } = await import("../mailbox-lock-service");
+      await expect(
+        withMailboxLock("org-1", "conn-3", () => Promise.resolve("never")),
+      ).rejects.toMatchObject({ code: "MAILBOX_LOCKED" });
+    });
+
+    it("throws MAILBOX_LOCK_TIMEOUT when fn exceeds timeout", async () => {
+      configureTx([{ locked: true }]);
+
+      const { withMailboxLock } = await import("../mailbox-lock-service");
+      await expect(
+        withMailboxLock("org-1", "conn-4", () => new Promise((_) => {}), 50),
+      ).rejects.toMatchObject({ code: "MAILBOX_LOCK_TIMEOUT" });
+    });
+
+    it("rejects quickly (not after full timeout) when lock is not acquired", async () => {
+      configureTx([{ locked: false }]);
+
+      const { withMailboxLock } = await import("../mailbox-lock-service");
+      const start = Date.now();
+      await expect(
+        withMailboxLock("org-1", "conn-5", () => new Promise((_) => {}), 10_000),
+      ).rejects.toThrow("Mailbox is locked by another operation");
+      expect(Date.now() - start).toBeLessThan(1000);
+    });
+
+    it("produces same advisory lock key for same connection id", async () => {
+      configureTx([{ locked: true }]);
+
+      const { withMailboxLock } = await import("../mailbox-lock-service");
+      await withMailboxLock("org-1", "conn-same", () => Promise.resolve("a"));
+      await withMailboxLock("org-2", "conn-same", () => Promise.resolve("b"));
+      const calls = mockTxQueryRawUnsafe.mock.calls;
       expect(calls[0][1]).toBe(calls[1][1]);
     });
 
     it("produces different keys for different connection ids", async () => {
-      mockQueryRawUnsafe.mockResolvedValue([{ locked: true }]);
-      const { tryAcquireMailboxLock } = await import("../mailbox-lock-service");
-      await tryAcquireMailboxLock("org-1", "conn-aaaa");
-      await tryAcquireMailboxLock("org-1", "conn-bbbb");
-      const calls = mockQueryRawUnsafe.mock.calls;
+      configureTx([{ locked: true }]);
+
+      const { withMailboxLock } = await import("../mailbox-lock-service");
+      await withMailboxLock("org-1", "conn-aaaa", () => Promise.resolve("a"));
+      await withMailboxLock("org-1", "conn-bbbb", () => Promise.resolve("b"));
+      const calls = mockTxQueryRawUnsafe.mock.calls;
       expect(calls[0][1]).not.toBe(calls[1][1]);
-    });
-  });
-
-  describe("releaseMailboxLock", () => {
-    it("calls pg_advisory_unlock", async () => {
-      mockQueryRawUnsafe.mockResolvedValue([]);
-      const { releaseMailboxLock } = await import("../mailbox-lock-service");
-      await releaseMailboxLock("org-1", "conn-3");
-      expect(mockQueryRawUnsafe).toHaveBeenCalledWith(
-        expect.stringContaining("pg_advisory_unlock"),
-        expect.any(Number),
-      );
-    });
-  });
-
-  describe("withMailboxLock", () => {
-    it("executes the function within the lock", async () => {
-      mockQueryRawUnsafe
-        .mockResolvedValueOnce([{ locked: true }])
-        .mockResolvedValueOnce([]);
-      const { withMailboxLock } = await import("../mailbox-lock-service");
-      const result = await withMailboxLock("org-1", "conn-4", () => Promise.resolve("done"));
-      expect(result).toBe("done");
-      // acquire + release = 2 calls
-      expect(mockQueryRawUnsafe).toHaveBeenCalledTimes(2);
-    });
-
-    it("throws when lock cannot be acquired", async () => {
-      mockQueryRawUnsafe.mockResolvedValueOnce([{ locked: false }]);
-      const { withMailboxLock } = await import("../mailbox-lock-service");
-      await expect(
-        withMailboxLock("org-1", "conn-5", () => Promise.resolve("never")),
-      ).rejects.toThrow("Mailbox is locked by another operation");
-      // only 1 call (acquire attempt, no release since not acquired)
-      expect(mockQueryRawUnsafe).toHaveBeenCalledTimes(1);
-    });
-
-    it("releases the lock after function completes", async () => {
-      mockQueryRawUnsafe
-        .mockResolvedValueOnce([{ locked: true }])
-        .mockResolvedValueOnce([]);
-      const { withMailboxLock } = await import("../mailbox-lock-service");
-      await withMailboxLock("org-1", "conn-6", () => Promise.resolve("ok"));
-
-      expect(mockQueryRawUnsafe).toHaveBeenCalledWith(
-        expect.stringContaining("pg_advisory_unlock"),
-        expect.any(Number),
-      );
-    });
-
-    it("releases the lock when the function throws", async () => {
-      mockQueryRawUnsafe
-        .mockResolvedValueOnce([{ locked: true }])
-        .mockResolvedValueOnce([]);
-      const { withMailboxLock } = await import("../mailbox-lock-service");
-      await expect(
-        withMailboxLock("org-1", "conn-7", () => Promise.reject(new Error("fail"))),
-      ).rejects.toThrow("fail");
-
-      expect(mockQueryRawUnsafe).toHaveBeenCalledWith(
-        expect.stringContaining("pg_advisory_unlock"),
-        expect.any(Number),
-      );
     });
   });
 });
