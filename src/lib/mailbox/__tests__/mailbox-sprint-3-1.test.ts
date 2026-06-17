@@ -90,6 +90,7 @@ vi.mock("@/lib/mailbox/audit", () => ({
 
 vi.mock("@/lib/mailbox/provider-registry", () => ({
   getMailboxProviderAdapter: vi.fn(),
+  findMailboxProviderAdapter: vi.fn(),
 }));
 
 vi.mock("@/lib/mailbox/folder-coverage-service", () => ({

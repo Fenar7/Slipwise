@@ -23,7 +23,7 @@ import {
   indexMailboxMessage,
   deleteMailboxSearchDocumentsForThread,
 } from "./search-indexing-service";
-import { getMailboxProviderAdapter } from "./provider-registry";
+import { getMailboxProviderAdapter, findMailboxProviderAdapter } from "./provider-registry";
 import { isMailboxProviderError } from "./provider-contracts";
 import type { MailboxProviderError, MailboxThreadEnvelope } from "./provider-contracts";
 import { withRetry, isRetryableProviderError, sanitizeErrorForLog } from "./retry-utils";
@@ -474,7 +474,9 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
   }
 
   // ─── Resolve sync mode ────────────────────────────────────────────────────
-  const cursor = await getMailboxCursor(params.orgId, connection.id, "HISTORY_ID");
+  const syncAdapter = findMailboxProviderAdapter(connection.provider);
+  const syncCursorType = syncAdapter?.descriptor.syncCursorType ?? "HISTORY_ID";
+  const cursor = await getMailboxCursor(params.orgId, connection.id, syncCursorType);
   const hasValidCursor = cursorIsValidForDelta(cursor);
   const requestedMode = params.syncMode ?? (hasValidCursor ? "DELTA" : "INITIAL");
 
@@ -587,8 +589,8 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
 
     // ─── Determine whether recovery is required based on REAL folder coverage ──
     const incompleteRequiredFolders =
-      connection.provider === "GMAIL" && effectiveMode === "DELTA" && !!effectiveCursor
-        ? await getIncompleteRequiredFolders(params.orgId, connection.id)
+      effectiveMode === "DELTA" && !!effectiveCursor
+        ? await getIncompleteRequiredFolders(params.orgId, connection.id, connection.provider)
         : [];
 
     const needsGmailCoverageRecovery = incompleteRequiredFolders.length > 0;
@@ -868,7 +870,7 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
         orgId: params.orgId,
         mailboxConnectionId: connection.id,
         provider: connection.provider,
-        cursorType: "HISTORY_ID",
+        cursorType: syncCursorType,
         cursorValue: delta.nextCursor.value,
         expiresAt: delta.nextCursor.expiresAt,
       });
@@ -939,7 +941,8 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
     const nextStatus = resolveStatusAfterSuccess(connection.status);
 
     // ── Update per-folder coverage after successful sync ─────────────────
-    if (connection.provider === "GMAIL") {
+    const coverageAdapter = findMailboxProviderAdapter(connection.provider);
+    if (coverageAdapter) {
       // Use bootstrap results from the INITIAL delta or from the recovery sync.
       const bootstrapResults =
         effectiveMode === "INITIAL"
