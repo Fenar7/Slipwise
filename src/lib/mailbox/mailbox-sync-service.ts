@@ -26,6 +26,8 @@ import {
 import { getMailboxProviderAdapter } from "./provider-registry";
 import { isMailboxProviderError } from "./provider-contracts";
 import type { MailboxProviderError, MailboxThreadEnvelope } from "./provider-contracts";
+import { withRetry, isRetryableProviderError, sanitizeErrorForLog } from "./retry-utils";
+import { withMailboxLock } from "./mailbox-lock-service";
 import {
   markFolderCoverageComplete,
   updateFolderCoverageBootstrapping,
@@ -113,12 +115,24 @@ async function ingestSyncedThreads(params: {
       mailboxConnectionId: params.connectionId,
       envelope: threadEnvelope,
     });
-    const detail = await params.adapter.fetchThreadDetail({
-      orgId: params.orgId,
-      tokenRef: params.tokenRef,
-      providerThreadId: threadEnvelope.providerThreadId,
-      cachedThreadData: threadEnvelope.cachedThreadData,
-    });
+    const detail = await withRetry(
+      () =>
+        params.adapter.fetchThreadDetail({
+          orgId: params.orgId,
+          tokenRef: params.tokenRef,
+          providerThreadId: threadEnvelope.providerThreadId,
+          cachedThreadData: threadEnvelope.cachedThreadData,
+        }),
+      {
+        baseDelayMs: 1000,
+        maxDelayMs: 10_000,
+        maxAttempts: 3,
+        retryable: (err) => {
+          if (isMailboxProviderError(err)) return err.retryable !== false;
+          return isRetryableProviderError(err);
+        },
+      },
+    );
     if (isMailboxProviderError(detail)) {
       throw toProviderErrorException(detail);
     }
@@ -474,8 +488,14 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
       }
     | null = null;
 
+  let syncResult;
   try {
-    run = await db.mailboxSyncRun.create({
+    syncResult = await withMailboxLock(
+    params.orgId,
+    connection.id,
+    async () => {
+      try {
+        run = await db.mailboxSyncRun.create({
       data: {
         orgId: params.orgId,
         mailboxConnectionId: connection.id,
@@ -507,10 +527,22 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
 
     // ─── Watch renewal check ────────────────────────────────────────────────
     if (requestedMode === "DELTA" && watchIsExpired(connection)) {
-      const renewal = await adapter.renewWatch({
-        orgId: params.orgId,
-        tokenRef: connection.tokenRef,
-      });
+      const renewal = await withRetry(
+        () =>
+          adapter.renewWatch({
+            orgId: params.orgId,
+            tokenRef: connection.tokenRef,
+          }),
+        {
+          baseDelayMs: 1000,
+          maxDelayMs: 10_000,
+          maxAttempts: 2,
+          retryable: (err) => {
+            if (isMailboxProviderError(err)) return err.retryable !== false;
+            return isRetryableProviderError(err);
+          },
+        },
+      );
       if (isMailboxProviderError(renewal)) {
         if (renewal.category === "auth_expired" || renewal.category === "auth_insufficient") {
           throw toProviderErrorException(renewal);
@@ -577,12 +609,24 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
         }
       }
 
-      const recovery = await adapter.syncDelta({
-        orgId: params.orgId,
-        tokenRef: connection.tokenRef,
-        cursor: null,
-        folderCursors,
-      });
+      const recovery = await withRetry(
+        () =>
+          adapter.syncDelta({
+            orgId: params.orgId,
+            tokenRef: connection.tokenRef,
+            cursor: null,
+            folderCursors,
+          }),
+        {
+          baseDelayMs: 1000,
+          maxDelayMs: 15_000,
+          maxAttempts: 3,
+          retryable: (err) => {
+            if (isMailboxProviderError(err)) return err.retryable !== false;
+            return isRetryableProviderError(err);
+          },
+        },
+      );
       if (isMailboxProviderError(recovery)) {
         throw toProviderErrorException(recovery);
       }
@@ -607,11 +651,23 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
       }
     }
 
-    const delta = await adapter.syncDelta({
-      orgId: params.orgId,
-      tokenRef: connection.tokenRef,
-      cursor: effectiveCursor ? { value: effectiveCursor.cursorValue, expiresAt: effectiveCursor.expiresAt } : null,
-    });
+    const delta = await withRetry(
+      () =>
+        adapter.syncDelta({
+          orgId: params.orgId,
+          tokenRef: connection.tokenRef,
+          cursor: effectiveCursor ? { value: effectiveCursor.cursorValue, expiresAt: effectiveCursor.expiresAt } : null,
+        }),
+      {
+        baseDelayMs: 1000,
+        maxDelayMs: 15_000,
+        maxAttempts: 3,
+        retryable: (err) => {
+          if (isMailboxProviderError(err)) return err.retryable !== false;
+          return isRetryableProviderError(err);
+        },
+      },
+    );
     if (isMailboxProviderError(delta)) {
       throw toProviderErrorException(delta);
     }
@@ -663,12 +719,24 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
     // remotely and we should soft-delete it locally.
     if (delta.deletionAffectedThreadIds && delta.deletionAffectedThreadIds.length > 0) {
       for (const providerThreadId of delta.deletionAffectedThreadIds) {
-        const detail = await adapter.fetchThreadDetail({
-          orgId: params.orgId,
-          tokenRef: connection.tokenRef,
-          providerThreadId,
-          cachedThreadData: undefined,
-        });
+        const detail = await withRetry(
+          () =>
+            adapter.fetchThreadDetail({
+              orgId: params.orgId,
+              tokenRef: connection.tokenRef,
+              providerThreadId,
+              cachedThreadData: undefined,
+            }),
+          {
+            baseDelayMs: 500,
+            maxDelayMs: 5_000,
+            maxAttempts: 2,
+            retryable: (err) => {
+              if (isMailboxProviderError(err)) return err.retryable !== false && err.category !== "not_found";
+              return isRetryableProviderError(err);
+            },
+          },
+        );
         if (isMailboxProviderError(detail)) {
           // Not found or other error: the thread is gone. Soft-delete it.
           if (detail.category === "not_found") {
@@ -740,10 +808,22 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
     }
 
     if (connection.provider === "GMAIL") {
-      const draftSync = await adapter.syncDrafts({
-        orgId: params.orgId,
-        tokenRef: connection.tokenRef,
-      });
+      const draftSync = await withRetry(
+        () =>
+          adapter.syncDrafts({
+            orgId: params.orgId,
+            tokenRef: connection.tokenRef,
+          }),
+        {
+          baseDelayMs: 1000,
+          maxDelayMs: 10_000,
+          maxAttempts: 3,
+          retryable: (err) => {
+            if (isMailboxProviderError(err)) return err.retryable !== false;
+            return isRetryableProviderError(err);
+          },
+        },
+      );
       if (isMailboxProviderError(draftSync)) {
         draftSyncError = draftSync;
         await logMailboxAudit({
@@ -809,10 +889,22 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
       connection.provider === "GMAIL" &&
       (!connection.watchExpiresAt || effectiveMode === "INITIAL");
     if (shouldBootstrapWatch) {
-      const renewal = await adapter.renewWatch({
-        orgId: params.orgId,
-        tokenRef: connection.tokenRef,
-      });
+      const renewal = await withRetry(
+        () =>
+          adapter.renewWatch({
+            orgId: params.orgId,
+            tokenRef: connection.tokenRef,
+          }),
+        {
+          baseDelayMs: 1000,
+          maxDelayMs: 10_000,
+          maxAttempts: 2,
+          retryable: (err) => {
+            if (isMailboxProviderError(err)) return err.retryable !== false;
+            return isRetryableProviderError(err);
+          },
+        },
+      );
       if (isMailboxProviderError(renewal)) {
         await logMailboxAudit({
           orgId: params.orgId,
@@ -990,9 +1082,15 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
         summary: providerError.safeMessage,
       },
     };
-  } finally {
-    await releaseSyncLease(params.orgId, connection.id, leaseToken);
-  }
+      }
+    },
+    MAILBOX_SYNC_MAX_RUNNING_AGE_MINUTES * 60 * 1000,
+  );
+} finally {
+  await releaseSyncLease(params.orgId, connection.id, leaseToken);
+}
+
+  return syncResult;
 }
 
 function toProviderErrorException(error: MailboxProviderError): Error {
@@ -1087,7 +1185,7 @@ function normalizeSyncError(error: unknown): MailboxProviderError {
   const rawMessage = error instanceof Error ? error.message : "Mailbox sync failed";
   const safeMessage = /fetch failed|ECONNREFUSED|ETIMEDOUT|network/i.test(rawMessage)
     ? "Gmail API unreachable (network error)"
-    : rawMessage;
+    : sanitizeErrorForLog(rawMessage);
   return {
     category: "unknown",
     safeMessage,

@@ -26,6 +26,7 @@ import {
 import { listMailboxConnectionsForMember } from "./visibility-service";
 import { getMailboxProviderAdapter } from "./provider-registry";
 import { isMailboxProviderError } from "./provider-contracts";
+import { withRetry, isRetryableProviderError } from "./retry-utils";
 
 // ─── Errors ───────────────────────────────────────────────────────────────────
 
@@ -433,12 +434,24 @@ export async function getMailboxAttachmentDownload(
   }
 
   const adapter = getMailboxProviderAdapter(connection.provider);
-  const fetchResult = await adapter.fetchAttachment({
-    orgId,
-    tokenRef: connection.tokenRef,
-    providerMessageId: message.providerMessageId,
-    providerAttachmentId: record.providerAttachmentId,
-  });
+  const fetchResult = await withRetry(
+    () =>
+      adapter.fetchAttachment({
+        orgId,
+        tokenRef: connection.tokenRef,
+        providerMessageId: message.providerMessageId,
+        providerAttachmentId: record.providerAttachmentId,
+      }),
+    {
+      baseDelayMs: 1000,
+      maxDelayMs: 10_000,
+      maxAttempts: 3,
+      retryable: (err) => {
+        if (isMailboxProviderError(err)) return err.retryable !== false;
+        return isRetryableProviderError(err);
+      },
+    },
+  );
 
   if (isMailboxProviderError(fetchResult)) {
     throw new AttachmentServiceError(fetchResult.safeMessage, 502);

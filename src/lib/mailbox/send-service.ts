@@ -31,6 +31,7 @@ import {
   cleanupDraftAttachments,
   isAttachmentServiceError,
 } from "./attachment-service";
+import { withRetry, isRetryableProviderError } from "./retry-utils";
 import {
   computeDraftFingerprint,
   findLatestSendAttemptForFingerprint,
@@ -329,21 +330,36 @@ export async function sendDraft(input: SendDraftInput): Promise<SendDraftResult>
 
   let sendResult;
   try {
-    sendResult = await adapter.sendMessage({
-      orgId,
-      tokenRef: connection.tokenRef,
-      from: draft.fromIdentity,
-      to: draft.toRecipients as string[],
-      cc: (draft.ccRecipients as string[]) ?? [],
-      bcc: (draft.bccRecipients as string[]) ?? [],
-      subject: draft.subject,
-      htmlBody: draft.htmlBody ?? "",
-      textBody: draft.textBody ?? null,
-      threadContext,
-      attachments: attachmentPayload,
-      correlationKey,
-      rfcMessageId,
-    });
+    sendResult = await withRetry(
+      () =>
+        adapter.sendMessage({
+          orgId,
+          tokenRef: connection.tokenRef,
+          from: draft.fromIdentity,
+          to: draft.toRecipients as string[],
+          cc: (draft.ccRecipients as string[]) ?? [],
+          bcc: (draft.bccRecipients as string[]) ?? [],
+          subject: draft.subject,
+          htmlBody: draft.htmlBody ?? "",
+          textBody: draft.textBody ?? null,
+          threadContext,
+          attachments: attachmentPayload,
+          correlationKey,
+          rfcMessageId,
+        }),
+      {
+        baseDelayMs: 1000,
+        maxDelayMs: 15_000,
+        maxAttempts: 3,
+        retryable: (err) => {
+          if (err && typeof err === "object" && "category" in err) {
+            const providerErr = err as { category: string; retryable?: boolean };
+            return providerErr.retryable !== false || isRetryableProviderError(err);
+          }
+          return isRetryableProviderError(err);
+        },
+      },
+    );
   } catch (err) {
     const safeMessage = err instanceof Error ? err.message : "Unknown provider error";
     sendResult = {
@@ -627,19 +643,33 @@ async function legacySendFallback(params: {
 
   let sendResult;
   try {
-    sendResult = await adapter.sendMessage({
-      orgId,
-      tokenRef: connection.tokenRef,
-      from: draft.fromIdentity,
-      to: draft.toRecipients as string[],
-      cc: (draft.ccRecipients as string[]) ?? [],
-      bcc: (draft.bccRecipients as string[]) ?? [],
-      subject: draft.subject,
-      htmlBody: draft.htmlBody ?? "",
-      textBody: draft.textBody ?? null,
-      threadContext,
-      attachments: attachmentPayload,
-    });
+    sendResult = await withRetry(
+      () =>
+        adapter.sendMessage({
+          orgId,
+          tokenRef: connection.tokenRef,
+          from: draft.fromIdentity,
+          to: draft.toRecipients as string[],
+          cc: (draft.ccRecipients as string[]) ?? [],
+          bcc: (draft.bccRecipients as string[]) ?? [],
+          subject: draft.subject,
+          htmlBody: draft.htmlBody ?? "",
+          textBody: draft.textBody ?? null,
+          threadContext,
+          attachments: attachmentPayload,
+        }),
+      {
+        baseDelayMs: 1000,
+        maxDelayMs: 15_000,
+        maxAttempts: 3,
+        retryable: (err) => {
+          if (err && typeof err === "object" && "category" in err) {
+            return (err as { retryable?: boolean }).retryable !== false || isRetryableProviderError(err);
+          }
+          return isRetryableProviderError(err);
+        },
+      },
+    );
   } catch (err) {
     const safeMessage = err instanceof Error ? err.message : "Unknown provider error";
     sendResult = {

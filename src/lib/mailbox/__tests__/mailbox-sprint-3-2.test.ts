@@ -10,6 +10,7 @@ vi.mock("server-only", () => ({}));
 
 vi.mock("@/lib/db", () => ({
   db: {
+    $transaction: vi.fn((cb: any) => cb({ $queryRawUnsafe: vi.fn().mockResolvedValue([{ locked: true }]) })),
     mailboxThread: {
       upsert: vi.fn(),
       updateMany: vi.fn(),
