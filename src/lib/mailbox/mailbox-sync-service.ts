@@ -488,7 +488,9 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
       }
     | null = null;
 
-  const syncResult = await withMailboxLock(
+  let syncResult;
+  try {
+    syncResult = await withMailboxLock(
     params.orgId,
     connection.id,
     async () => {
@@ -1080,12 +1082,13 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
         summary: providerError.safeMessage,
       },
     };
-      } finally {
-        await releaseSyncLease(params.orgId, connection.id, leaseToken);
       }
     },
     MAILBOX_SYNC_MAX_RUNNING_AGE_MINUTES * 60 * 1000,
   );
+} finally {
+  await releaseSyncLease(params.orgId, connection.id, leaseToken);
+}
 
   return syncResult;
 }
