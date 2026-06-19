@@ -135,5 +135,3 @@ export const auditListQuerySchema = z
   .strict("Unexpected query parameters");
 
 export type AuditListQuery = z.infer<typeof auditListQuerySchema>;
-=======
->>>>>>> origin/feature/mailbox-platform
