@@ -81,7 +81,7 @@ export const createConnectionSchema = z
 export type CreateConnectionInput = z.infer<typeof createConnectionSchema>;
 
 /**
-* Schema for New Chat POST — empty body with strict mode (rejects any keys).
+ * Schema for New Chat POST — empty body with strict mode (rejects any keys).
  */
 export const newChatCreateSchema = z.object({}).strict("Request body must be empty for New Chat creation");
 
@@ -135,3 +135,5 @@ export const auditListQuerySchema = z
   .strict("Unexpected query parameters");
 
 export type AuditListQuery = z.infer<typeof auditListQuerySchema>;
+=======
+>>>>>>> origin/feature/mailbox-platform
