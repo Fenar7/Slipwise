@@ -6,6 +6,7 @@ import type { MailboxConnectionRecord, MailboxConnectionStatus } from "./domain-
 import { logMailboxAuditTx } from "./audit";
 import type { MailboxAuditAction } from "./domain-types";
 import { isSchemaDriftError } from "@/lib/prisma-errors";
+import { logMailboxTelemetry } from "./telemetry";
 
 /**
  * System user ID used for auto-generated system messages (e.g., "New Chat" welcome).
@@ -192,7 +193,16 @@ export async function createMailboxConnection(
     return row;
   });
 
-  return toConnectionRecord(result);
+  const record = toConnectionRecord(result);
+  // Emit connection_created so adoption dashboards track every new mailbox.
+  await logMailboxTelemetry("connection_created", {
+    orgId: input.orgId,
+    connectionId: record.id,
+    provider: input.provider,
+    emailAddress: input.emailAddress,
+    connectedBy: input.connectedBy,
+  });
+  return record;
 }
 
 // ─── New Chat (Sprint 7.3) ────────────────────────────────────────────────────
@@ -396,7 +406,15 @@ export async function updateMailboxConnectionStatus(
     return row;
   });
 
-  return toConnectionRecord(result);
+  const statusRecord = toConnectionRecord(result);
+  // Emit status transition telemetry for health dashboards.
+  await logMailboxTelemetry("connection_status_updated", {
+    orgId: input.orgId,
+    connectionId: input.connectionId,
+    newStatus: input.status,
+    reason: input.lastSyncError ?? undefined,
+  });
+  return statusRecord;
 }
 
 /**
@@ -542,7 +560,13 @@ export async function softDeleteMailboxConnection(
     return row;
   });
 
-  return toConnectionRecord(result);
+  const deletedRecord = toConnectionRecord(result);
+  // Emit connection_deleted telemetry so adoption metrics reflect true active count.
+  await logMailboxTelemetry("connection_deleted", {
+    orgId,
+    connectionId,
+  });
+  return deletedRecord;
 }
 
 /**
