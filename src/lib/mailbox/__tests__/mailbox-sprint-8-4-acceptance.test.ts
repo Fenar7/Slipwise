@@ -231,54 +231,6 @@ function makeConnB(
   };
 }
 
-/**
- * Build a cursor row for delta sync.
- */
-function makeCursor(
-  overrides: Partial<Record<string, unknown>> = {},
-): Record<string, unknown> {
-  return {
-    id: "cursor-001",
-    orgId: ORG_A,
-    mailboxConnectionId: CONN_A,
-    provider: "GMAIL",
-    cursorType: "HISTORY_ID",
-    cursorValue: "12345",
-    expiresAt: EXPIRY_DATE,
-    lastAdvancedAt: BASE_DATE,
-    createdAt: BASE_DATE,
-    updatedAt: BASE_DATE,
-    ...overrides,
-  };
-}
-
-/**
- * Build a sync run row.
- */
-function makeSyncRun(
-  overrides: Partial<Record<string, unknown>> = {},
-): Record<string, unknown> {
-  return {
-    id: RUN_ID,
-    orgId: ORG_A,
-    mailboxConnectionId: CONN_A,
-    provider: "GMAIL",
-    status: "RUNNING",
-    triggerSource: "MANUAL",
-    syncMode: "DELTA",
-    startedAt: BASE_DATE,
-    completedAt: null,
-    errorCategory: null,
-    errorSummary: null,
-    stats: null,
-    lastHeartbeatAt: null,
-    createdBy: ACTOR,
-    createdAt: BASE_DATE,
-    updatedAt: BASE_DATE,
-    ...overrides,
-  };
-}
-
 // ═══════════════════════════════════════════════════════════════════════════════
 // SUITE 1 — Multi-Mailbox Tenancy Validation
 // ═══════════════════════════════════════════════════════════════════════════════
