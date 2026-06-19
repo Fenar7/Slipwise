@@ -569,6 +569,13 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
           mailboxConnectionId: connection.id,
           metadata: { errorCategory: renewal.category, runId: run.id },
         });
+        await logMailboxTelemetry("watch_renewal_failed", {
+          orgId: params.orgId,
+          connectionId: connection.id,
+          errorCategory: renewal.category,
+          errorSummary: renewal.safeMessage,
+          runId: run.id,
+        });
         await deleteMailboxCursors(params.orgId, connection.id);
         effectiveMode = "INITIAL";
         effectiveCursor = null;
@@ -594,6 +601,12 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
           summary: "Mailbox watch renewed successfully",
           mailboxConnectionId: connection.id,
           metadata: { expiresAt: renewal.expiresAt?.toISOString(), runId: run.id },
+        });
+        await logMailboxTelemetry("watch_renewed", {
+          orgId: params.orgId,
+          connectionId: connection.id,
+          expiresAt: renewal.expiresAt?.toISOString(),
+          runId: run.id,
         });
       }
     }
@@ -927,6 +940,13 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
           mailboxConnectionId: connection.id,
           metadata: { errorCategory: renewal.category, runId: run.id },
         });
+        await logMailboxTelemetry("watch_renewal_failed", {
+          orgId: params.orgId,
+          connectionId: connection.id,
+          errorCategory: renewal.category,
+          errorSummary: renewal.safeMessage,
+          runId: run.id,
+        });
       } else {
         effectiveWatchMetadata = mergeWatchMetadata(effectiveWatchMetadata, renewal.metadata);
         watchUpdateData = {
@@ -940,6 +960,12 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
           summary: "Mailbox watch established successfully",
           mailboxConnectionId: connection.id,
           metadata: { expiresAt: renewal.expiresAt?.toISOString(), runId: run.id },
+        });
+        await logMailboxTelemetry("watch_renewed", {
+          orgId: params.orgId,
+          connectionId: connection.id,
+          expiresAt: renewal.expiresAt?.toISOString(),
+          runId: run.id,
         });
       }
     }
