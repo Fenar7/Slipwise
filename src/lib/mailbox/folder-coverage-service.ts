@@ -8,10 +8,11 @@ import type {
   MailboxFolderCoverageSummary,
   MailboxOverallCoverage,
 } from "./domain-types";
+import type { MailboxProvider } from "./domain-types";
 import {
   computeOverallCoverage,
+  getRequiredCoverageFolders,
   MAILBOX_FOLDER_COVERAGE_FOLDERS,
-  GMAIL_REQUIRED_COVERAGE_FOLDERS,
 } from "./domain-types";
 
 // ── Read ──
@@ -27,7 +28,7 @@ export interface GetFolderCoverageResult {
 }
 
 export async function getMailboxFolderCoverage(
-  params: GetFolderCoverageParams,
+  params: GetFolderCoverageParams & { provider?: MailboxProvider },
 ): Promise<GetFolderCoverageResult> {
   const rows = (await db.mailboxFolderCoverage.findMany({
     where: {
@@ -48,7 +49,7 @@ export async function getMailboxFolderCoverage(
 
   return {
     coverages,
-    overallState: computeOverallCoverage(coverages),
+    overallState: computeOverallCoverage(coverages, params.provider ?? "GMAIL" as MailboxProvider),
   };
 }
 
@@ -229,37 +230,45 @@ export async function markFolderCoverageErrored(
 export async function isMailboxCoverageComplete(
   orgId: string,
   connectionId: string,
+  provider?: MailboxProvider,
 ): Promise<boolean> {
+  const requiredFolders = getRequiredCoverageFolders(provider ?? "GMAIL" as MailboxProvider);
+  if (requiredFolders.length === 0) return true;
+
   const rows = (await db.mailboxFolderCoverage.findMany({
     where: {
       orgId,
       mailboxConnectionId: connectionId,
-      folder: { in: GMAIL_REQUIRED_COVERAGE_FOLDERS },
+      folder: { in: requiredFolders },
       state: "COMPLETE",
     },
     select: { folder: true },
   })) as Array<{ folder: string }>;
 
   const completeSet = new Set(rows.map((r) => r.folder));
-  return GMAIL_REQUIRED_COVERAGE_FOLDERS.every((f) => completeSet.has(f));
+  return requiredFolders.every((f) => completeSet.has(f));
 }
 
 export async function getIncompleteRequiredFolders(
   orgId: string,
   connectionId: string,
+  provider?: MailboxProvider,
 ): Promise<MailboxCoverageFolder[]> {
+  const requiredFolders = getRequiredCoverageFolders(provider ?? "GMAIL" as MailboxProvider);
+  if (requiredFolders.length === 0) return [];
+
   const rows = (await db.mailboxFolderCoverage.findMany({
     where: {
       orgId,
       mailboxConnectionId: connectionId,
-      folder: { in: GMAIL_REQUIRED_COVERAGE_FOLDERS },
+      folder: { in: requiredFolders },
       state: "COMPLETE",
     },
     select: { folder: true },
   })) as Array<{ folder: string }>;
 
   const completeSet = new Set(rows.map((r) => r.folder));
-  return GMAIL_REQUIRED_COVERAGE_FOLDERS.filter((f) => !completeSet.has(f));
+  return requiredFolders.filter((f) => !completeSet.has(f));
 }
 
 // ── Batch Read ──
@@ -272,6 +281,7 @@ export interface BatchFolderCoverageResult {
 export async function getBatchMailboxFolderCoverage(
   orgId: string,
   connectionIds: string[],
+  connectionProviders?: Map<string, MailboxProvider>,
 ): Promise<BatchFolderCoverageResult> {
   if (connectionIds.length === 0) {
     return { coveragesByConnectionId: new Map() };
@@ -303,9 +313,10 @@ export async function getBatchMailboxFolderCoverage(
       errorSummary: r.errorSummary,
       lastAdvancedCursor: r.lastAdvancedCursor,
     }));
+    const provider = connectionProviders?.get(connId) ?? "GMAIL" as MailboxProvider;
     result.set(connId, {
       coverages,
-      overallState: computeOverallCoverage(coverages),
+      overallState: computeOverallCoverage(coverages, provider),
     });
   }
 

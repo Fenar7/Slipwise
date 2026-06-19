@@ -98,18 +98,20 @@ export async function GET(
 /**
  * POST /api/mailbox/connections
  *
- * Create a new mailbox connection for the caller's org.
- * Rejects duplicate displayName within the same org (409 Conflict).
- * Emits a mailbox_connection_created realtime event after commit.
+ * Dual-mode endpoint:
  *
- * Body (validated via createConnectionSchema):
- *   provider, emailAddress, displayName (required),
- *   visibilityPolicy (optional, defaults to "org_shared"),
- *   notificationSettings (optional),
- *   providerAccountId, tokenRef (required),
- *   tokenExpiry (optional, nullable).
+ * 1. New Chat (empty body):
+ *    Creates a system chat connection with an auto-generated name "New Chat #<seq>",
+ *    a welcome message, and a masked audit entry. Rate-limited at 5 req/min per org.
+ *    Rejects if org already has ≥1000 active connections (429).
  *
- * Returns 201 with Location header and { connection, ok: true }.
+ * 2. Provider connection (body with provider, emailAddress, etc.):
+ *    Validated via createConnectionSchema (strict, rejects unknown keys).
+ *    Rejects duplicate displayName within the same org (409 Conflict).
+ *    Rate-limited at 10 req/min per org.
+ *
+ * Both modes require admin role and emit a mailbox_connection_created realtime event.
+ * Returns 201 with Location header.
  */
 export async function POST(
   request: NextRequest,

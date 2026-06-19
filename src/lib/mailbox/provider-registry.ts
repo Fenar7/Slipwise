@@ -15,4 +15,8 @@ export function getMailboxProviderAdapter(provider: string): IMailboxProviderAda
   return adapter;
 }
 
+export function findMailboxProviderAdapter(provider: string): IMailboxProviderAdapter | null {
+  return registry.get(provider as any) ?? null;
+}
+
 export { registry as mailboxProviderRegistry };

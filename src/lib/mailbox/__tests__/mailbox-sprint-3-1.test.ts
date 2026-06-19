@@ -8,6 +8,7 @@ vi.mock("server-only", () => ({}));
 
 vi.mock("@/lib/db", () => ({
   db: {
+    $transaction: vi.fn((cb: any) => cb({ $queryRawUnsafe: vi.fn().mockResolvedValue([{ locked: true }]) })),
     mailboxThread: {
       upsert: vi.fn(),
       updateMany: vi.fn(),
@@ -89,6 +90,7 @@ vi.mock("@/lib/mailbox/audit", () => ({
 
 vi.mock("@/lib/mailbox/provider-registry", () => ({
   getMailboxProviderAdapter: vi.fn(),
+  findMailboxProviderAdapter: vi.fn(),
 }));
 
 vi.mock("@/lib/mailbox/folder-coverage-service", () => ({

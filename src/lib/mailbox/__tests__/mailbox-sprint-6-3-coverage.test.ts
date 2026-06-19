@@ -31,21 +31,21 @@ function makeComplete(folder: string, totalThreads = 10): MailboxFolderCoverageS
 
 describe("computeOverallCoverage", () => {
   it("returns PENDING for empty coverage list", () => {
-    expect(computeOverallCoverage([])).toBe("PENDING");
+    expect(computeOverallCoverage([], "GMAIL")).toBe("PENDING");
   });
 
   it("returns PENDING when all required folders are PENDING", () => {
     const coverages = GMAIL_REQUIRED_COVERAGE_FOLDERS.map((f) =>
       makeCoverage(f, "PENDING"),
     );
-    expect(computeOverallCoverage(coverages)).toBe("PENDING");
+    expect(computeOverallCoverage(coverages, "GMAIL")).toBe("PENDING");
   });
 
   it("returns COMPLETE when all required folders are COMPLETE", () => {
     const coverages = GMAIL_REQUIRED_COVERAGE_FOLDERS.map((f) =>
       makeComplete(f),
     );
-    expect(computeOverallCoverage(coverages)).toBe("COMPLETE");
+    expect(computeOverallCoverage(coverages, "GMAIL")).toBe("COMPLETE");
   });
 
   it("returns BOOTSTRAPPING when any required folder is BOOTSTRAPPING", () => {
@@ -56,7 +56,7 @@ describe("computeOverallCoverage", () => {
       makeComplete("DRAFT"),
       makeComplete("STARRED"),
     ];
-    expect(computeOverallCoverage(coverages)).toBe("BOOTSTRAPPING");
+    expect(computeOverallCoverage(coverages, "GMAIL")).toBe("BOOTSTRAPPING");
   });
 
   it("returns ERRORED when any required folder is ERRORED", () => {
@@ -66,7 +66,7 @@ describe("computeOverallCoverage", () => {
       makeCoverage("SPAM", "ERRORED"),
       makeCoverage("DRAFT", "BOOTSTRAPPING"),
     ];
-    expect(computeOverallCoverage(coverages)).toBe("ERRORED");
+    expect(computeOverallCoverage(coverages, "GMAIL")).toBe("ERRORED");
   });
 
   it("returns RECOVERING when any required folder is RECOVERING", () => {
@@ -76,7 +76,7 @@ describe("computeOverallCoverage", () => {
       makeCoverage("SPAM", "RECOVERING"),
       makeComplete("DRAFT"),
     ];
-    expect(computeOverallCoverage(coverages)).toBe("RECOVERING");
+    expect(computeOverallCoverage(coverages, "GMAIL")).toBe("RECOVERING");
   });
 
   it("returns PARTIAL when some folders are COMPLETE and others are PENDING", () => {
@@ -86,7 +86,7 @@ describe("computeOverallCoverage", () => {
       makeCoverage("SPAM", "PENDING"),
       makeComplete("DRAFT"),
     ];
-    expect(computeOverallCoverage(coverages)).toBe("PARTIAL");
+    expect(computeOverallCoverage(coverages, "GMAIL")).toBe("PARTIAL");
   });
 
   it("ignores non-required folders for overall computation", () => {
@@ -99,12 +99,12 @@ describe("computeOverallCoverage", () => {
       makeComplete("TRASH"),
       makeCoverage("CUSTOM_LABEL", "BOOTSTRAPPING"),
     ];
-    expect(computeOverallCoverage(coverages)).toBe("COMPLETE");
+    expect(computeOverallCoverage(coverages, "GMAIL")).toBe("COMPLETE");
   });
 
   it("returns PENDING when only non-required folders exist alongside missing required ones", () => {
     const coverages = [makeCoverage("CUSTOM_LABEL", "COMPLETE")];
-    expect(computeOverallCoverage(coverages)).toBe("PENDING");
+    expect(computeOverallCoverage(coverages, "GMAIL")).toBe("PENDING");
   });
 });
 
@@ -179,11 +179,11 @@ describe("coverage state lifecycle", () => {
       makeCoverage("STARRED", "PENDING"),
       makeCoverage("TRASH", "PENDING"),
     ];
-    expect(computeOverallCoverage(coverages)).toBe("PENDING");
+    expect(computeOverallCoverage(coverages, "GMAIL")).toBe("PENDING");
 
     // Bootstrap starts
     coverages[0] = makeCoverage("INBOX", "BOOTSTRAPPING");
-    expect(computeOverallCoverage(coverages)).toBe("BOOTSTRAPPING");
+    expect(computeOverallCoverage(coverages, "GMAIL")).toBe("BOOTSTRAPPING");
 
     // All complete
     coverages[0] = makeComplete("INBOX");
@@ -192,15 +192,15 @@ describe("coverage state lifecycle", () => {
     coverages[3] = makeComplete("DRAFT");
     coverages[4] = makeComplete("STARRED");
     coverages[5] = makeComplete("TRASH");
-    expect(computeOverallCoverage(coverages)).toBe("COMPLETE");
+    expect(computeOverallCoverage(coverages, "GMAIL")).toBe("COMPLETE");
 
     // SPAM needs recovery
     coverages[2] = makeCoverage("SPAM", "RECOVERING");
-    expect(computeOverallCoverage(coverages)).toBe("RECOVERING");
+    expect(computeOverallCoverage(coverages, "GMAIL")).toBe("RECOVERING");
 
     // Recovery done
     coverages[2] = makeComplete("SPAM");
-    expect(computeOverallCoverage(coverages)).toBe("COMPLETE");
+    expect(computeOverallCoverage(coverages, "GMAIL")).toBe("COMPLETE");
   });
 });
 
@@ -213,7 +213,7 @@ describe("truthful bootstrap completion", () => {
       makeCoverage("SPAM", "BOOTSTRAPPING", 1000),
       makeCoverage("DRAFT", "COMPLETE", 5),
     ];
-    expect(computeOverallCoverage(coverages)).toBe("BOOTSTRAPPING");
+    expect(computeOverallCoverage(coverages, "GMAIL")).toBe("BOOTSTRAPPING");
   });
 
   it("totalThreads is non-zero for non-empty COMPLETE folders", () => {
@@ -238,7 +238,7 @@ describe("truthful bootstrap completion", () => {
       makeCoverage("SPAM", "PENDING", 0),
       makeComplete("DRAFT", 0),
     ];
-    expect(computeOverallCoverage(coverages)).toBe("PARTIAL");
+    expect(computeOverallCoverage(coverages, "GMAIL")).toBe("PARTIAL");
   });
 
   it("overallState is only COMPLETE when ALL required folders are COMPLETE", () => {
@@ -250,7 +250,7 @@ describe("truthful bootstrap completion", () => {
       makeComplete("STARRED", 5),
       makeComplete("TRASH", 1),
     ];
-    expect(computeOverallCoverage(coverages)).toBe("COMPLETE");
+    expect(computeOverallCoverage(coverages, "GMAIL")).toBe("COMPLETE");
   });
 });
 
@@ -264,7 +264,7 @@ describe("bootstrap slice exhaustion vs bounded cap", () => {
       makeComplete("DRAFT", 5),
     ];
     // SENT and SPAM not exhausted → overall should be BOOTSTRAPPING
-    expect(computeOverallCoverage(coverages)).toBe("BOOTSTRAPPING");
+    expect(computeOverallCoverage(coverages, "GMAIL")).toBe("BOOTSTRAPPING");
   });
 
   it("bootstrapSliceResults with paginationExhausted=true means folder IS COMPLETE", () => {
@@ -276,7 +276,7 @@ describe("bootstrap slice exhaustion vs bounded cap", () => {
       makeComplete("STARRED", 0),
       makeComplete("TRASH", 0),
     ];
-    expect(computeOverallCoverage(coverages)).toBe("COMPLETE");
+    expect(computeOverallCoverage(coverages, "GMAIL")).toBe("COMPLETE");
   });
 });
 
@@ -412,7 +412,7 @@ describe("STARRED and TRASH in coverage model", () => {
       makeComplete("TRASH", 2),
     ];
     // Overall should be ERRORED because STARRED is ERRORED
-    expect(computeOverallCoverage(coverages)).toBe("ERRORED");
+    expect(computeOverallCoverage(coverages, "GMAIL")).toBe("ERRORED");
   });
 
   it("coverage with COMPLETE STARRED and ERRORED TRASH", () => {
@@ -424,7 +424,7 @@ describe("STARRED and TRASH in coverage model", () => {
       makeComplete("STARRED", 3),
       makeCoverage("TRASH", "ERRORED"),
     ];
-    expect(computeOverallCoverage(coverages)).toBe("ERRORED");
+    expect(computeOverallCoverage(coverages, "GMAIL")).toBe("ERRORED");
   });
 
   it("all folders complete except ERRORED TRASH: overall is ERRORED", () => {
@@ -436,7 +436,7 @@ describe("STARRED and TRASH in coverage model", () => {
       makeComplete("STARRED", 3),
       makeCoverage("TRASH", "ERRORED"),
     ];
-    expect(computeOverallCoverage(coverages)).toBe("ERRORED");
+    expect(computeOverallCoverage(coverages, "GMAIL")).toBe("ERRORED");
   });
 });
 

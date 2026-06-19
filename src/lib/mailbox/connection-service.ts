@@ -6,12 +6,15 @@ import type { MailboxConnectionRecord, MailboxConnectionStatus } from "./domain-
 import { logMailboxAuditTx } from "./audit";
 import type { MailboxAuditAction } from "./domain-types";
 import { isSchemaDriftError } from "@/lib/prisma-errors";
+import { logMailboxTelemetry } from "./telemetry";
 
 /**
  * System user ID used for auto-generated system messages (e.g., "New Chat" welcome).
  * Matches the UUID format used for org members but is not a real user row.
  */
 export const SYSTEM_USER_ID = "00000000-0000-0000-0000-000000000000";
+
+
 
 // ─── Org-scoped connection queries ────────────────────────────────────────────
 
@@ -192,7 +195,16 @@ export async function createMailboxConnection(
     return row;
   });
 
-  return toConnectionRecord(result);
+  const record = toConnectionRecord(result);
+  // Emit connection_created so adoption dashboards track every new mailbox.
+  await logMailboxTelemetry("connection_created", {
+    orgId: input.orgId,
+    connectionId: record.id,
+    provider: input.provider,
+    emailAddress: input.emailAddress,
+    connectedBy: input.connectedBy,
+  });
+  return record;
 }
 
 // ─── New Chat (Sprint 7.3) ────────────────────────────────────────────────────
@@ -211,29 +223,31 @@ const NEW_CHAT_PREFIX = "New Chat #";
 
 /**
  * Generate the next "New Chat #<seq>" display name for an org.
- * Queries the highest existing sequence among non-deleted connections
- * and increments by one. Gaps are ignored (e.g., if "#2" is missing,
- * the next name is based on the actual max found).
+ * Fetches all non-deleted New Chat names for the org, parses the numeric
+ * suffix from each, and returns max + 1. This avoids the lexicographic
+ * ordering pitfall where "New Chat #9" > "New Chat #10".
+ *
+ * Gaps are ignored (e.g., if "#2" is missing and "#3" exists, returns "#4").
  *
  * Indexed path: uses composite index on (orgId, displayName) with
  * a filtered condition (deletedAt IS NULL).
  */
 export async function generateNewChatName(orgId: string): Promise<string> {
-  const result = await db.mailboxConnection.findFirst({
+  const rows = await db.mailboxConnection.findMany({
     where: {
       orgId,
       displayName: { startsWith: NEW_CHAT_PREFIX },
       deletedAt: null,
     },
-    orderBy: { displayName: "desc" },
     select: { displayName: true },
   });
 
-  const nextSeq = result
-    ? parseInt(result.displayName.replace(NEW_CHAT_PREFIX, ""), 10) + 1
-    : 1;
+  const maxSeq = rows.reduce((max, r) => {
+    const seq = parseInt(r.displayName.replace(NEW_CHAT_PREFIX, ""), 10);
+    return Number.isNaN(seq) ? max : Math.max(max, seq);
+  }, 0);
 
-  return `${NEW_CHAT_PREFIX}${nextSeq}`;
+  return `${NEW_CHAT_PREFIX}${maxSeq + 1}`;
 }
 
 /**
@@ -294,7 +308,7 @@ export async function createNewChatConnection(
         threadId: thread.id,
         providerMessageId: `system-welcome-msg-${connection.id}`,
         direction: "inbound",
-        from: { name: "System" },
+        from: { name: "System", id: SYSTEM_USER_ID },
         to: [],
         cc: [],
         bcc: [],
@@ -394,7 +408,15 @@ export async function updateMailboxConnectionStatus(
     return row;
   });
 
-  return toConnectionRecord(result);
+  const statusRecord = toConnectionRecord(result);
+  // Emit status transition telemetry for health dashboards.
+  await logMailboxTelemetry("connection_status_updated", {
+    orgId: input.orgId,
+    connectionId: input.connectionId,
+    newStatus: input.status,
+    reason: input.lastSyncError ?? undefined,
+  });
+  return statusRecord;
 }
 
 /**
@@ -540,7 +562,13 @@ export async function softDeleteMailboxConnection(
     return row;
   });
 
-  return toConnectionRecord(result);
+  const deletedRecord = toConnectionRecord(result);
+  // Emit connection_deleted telemetry so adoption metrics reflect true active count.
+  await logMailboxTelemetry("connection_deleted", {
+    orgId,
+    connectionId,
+  });
+  return deletedRecord;
 }
 
 /**
