@@ -1,0 +1,251 @@
+"use client";
+
+import React from "react";
+import { X, Download, ZoomIn, ZoomOut, RotateCw, FileText, AlertTriangle, Loader2, FileSpreadsheet } from "lucide-react";
+
+export interface FilePreviewAttachment {
+  name: string;
+  mimeType: string;
+  sizeBytes: number;
+  signedUrl: string;
+}
+
+interface FilePreviewModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  attachment: FilePreviewAttachment;
+  onDownload: (url: string) => void;
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function ImagePreview({ src, name }: { src: string; name: string }) {
+  const [scale, setScale] = React.useState(1);
+  const [rotation, setRotation] = React.useState(0);
+  const [position, setPosition] = React.useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = React.useState(false);
+  const [dragStart, setDragStart] = React.useState({ x: 0, y: 0 });
+
+  function handleZoomIn() { setScale((s) => Math.min(s + 0.25, 3)); }
+  function handleZoomOut() { setScale((s) => Math.max(s - 0.25, 0.25)); }
+  function handleRotate() { setRotation((r) => r + 90); }
+  function handleReset() { setScale(1); setRotation(0); setPosition({ x: 0, y: 0 }); }
+
+  function handleMouseDown(e: React.MouseEvent) {
+    if (scale > 1) {
+      setIsDragging(true);
+      setDragStart({ x: e.clientX - position.x, y: e.clientY - position.y });
+    }
+  }
+
+  function handleMouseMove(e: React.MouseEvent) {
+    if (isDragging) {
+      setPosition({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y });
+    }
+  }
+
+  function handleMouseUp() { setIsDragging(false); }
+
+  return (
+    <div className="flex flex-col h-full">
+      <div className="flex items-center justify-center gap-1.5 border-b bg-gray-50 px-4 py-2 shrink-0" style={{ borderColor: "#E0E0E0" }}>
+        <button type="button" onClick={handleZoomOut} className="flex h-7 w-7 items-center justify-center rounded-lg hover:bg-gray-200 transition-colors" aria-label="Zoom out"><ZoomOut className="h-3.5 w-3.5" style={{ color: "#49454F" }} /></button>
+        <span className="text-xs font-medium min-w-[3rem] text-center" style={{ color: "#49454F" }}>{Math.round(scale * 100)}%</span>
+        <button type="button" onClick={handleZoomIn} className="flex h-7 w-7 items-center justify-center rounded-lg hover:bg-gray-200 transition-colors" aria-label="Zoom in"><ZoomIn className="h-3.5 w-3.5" style={{ color: "#49454F" }} /></button>
+        <div className="w-px h-5 bg-gray-300 mx-1" />
+        <button type="button" onClick={handleRotate} className="flex h-7 w-7 items-center justify-center rounded-lg hover:bg-gray-200 transition-colors" aria-label="Rotate"><RotateCw className="h-3.5 w-3.5" style={{ color: "#49454F" }} /></button>
+        {(scale !== 1 || rotation !== 0 || position.x !== 0 || position.y !== 0) && (
+          <button type="button" onClick={handleReset} className="text-xs font-semibold px-2 py-1 rounded-lg hover:bg-gray-200 transition-colors" style={{ color: "#49454F" }}>Reset</button>
+        )}
+      </div>
+      <div
+        className="flex-1 overflow-hidden bg-[#1a1a1a] flex items-center justify-center cursor-grab"
+        style={isDragging ? { cursor: "grabbing" } : undefined}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={src}
+          alt={name}
+          className="max-w-full max-h-full object-contain select-none transition-transform duration-75"
+          style={{
+            transform: `translate(${position.x}px, ${position.y}px) scale(${scale}) rotate(${rotation}deg)`,
+            pointerEvents: "none",
+          }}
+          draggable={false}
+        />
+      </div>
+    </div>
+  );
+}
+
+function PdfPreview({ src }: { src: string }) {
+  return (
+    <iframe
+      src={src}
+      className="flex-1 w-full border-0 bg-white"
+      sandbox="allow-scripts"
+      title="PDF preview"
+    />
+  );
+}
+
+function TextPreview({ src, mimeType }: { src: string; mimeType: string }) {
+  const [content, setContent] = React.useState<string | null>(null);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState(false);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(false);
+    fetch(src)
+      .then((res) => {
+        if (!res.ok) throw new Error("Failed to fetch");
+        return res.text();
+      })
+      .then((text) => {
+        if (!cancelled) { setContent(text); setLoading(false); }
+      })
+      .catch(() => {
+        if (!cancelled) { setError(true); setLoading(false); }
+      });
+    return () => { cancelled = true; };
+  }, [src]);
+
+  if (loading) {
+    return (
+      <div className="flex-1 flex items-center justify-center bg-gray-50">
+        <Loader2 className="h-5 w-5 animate-spin" style={{ color: "#C4C4C4" }} />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center gap-3 bg-gray-50 px-6">
+        <AlertTriangle className="h-8 w-8 text-amber-500" />
+        <p className="text-sm font-medium" style={{ color: "#49454F" }}>Could not load file preview</p>
+        <p className="text-xs text-center" style={{ color: "#79747E" }}>The file could not be fetched for preview. Use the download button to view the original.</p>
+      </div>
+    );
+  }
+
+  const isCsv = mimeType === "text/csv" || mimeType.includes("csv");
+  return (
+    <div className="flex-1 overflow-auto bg-white">
+      {isCsv ? (
+        <table className="w-full border-collapse text-xs">
+          <tbody>
+            {content!.split("\n").filter(Boolean).map((row, i) => (
+              <tr key={i} className={i === 0 ? "bg-gray-50 font-semibold" : "even:bg-gray-50/50"}>
+                {row.split(",").map((cell, j) => (
+                  <td key={j} className="border px-2 py-1 whitespace-nowrap" style={{ borderColor: "#E8E8E8", color: "#1C1B1F" }}>{cell}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : (
+        <pre className="p-4 text-xs leading-relaxed font-mono whitespace-pre-wrap" style={{ color: "#1C1B1F" }}>{content}</pre>
+      )}
+    </div>
+  );
+}
+
+function UnsupportedPreview({ name, mimeType, sizeBytes, onDownload, signedUrl }: { name: string; mimeType: string; sizeBytes: number; onDownload: (url: string) => void; signedUrl: string }) {
+  return (
+    <div className="flex-1 flex flex-col items-center justify-center gap-5 bg-gray-50 px-8">
+      <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white border shadow-sm" style={{ borderColor: "#E8E8E8" }}>
+        <FileText className="h-7 w-7" style={{ color: "#C4C4C4" }} />
+      </div>
+      <div className="text-center space-y-1">
+        <p className="text-sm font-semibold" style={{ color: "#1C1B1F" }}>{name}</p>
+        <p className="text-xs" style={{ color: "#79747E" }}>{mimeType} · {formatBytes(sizeBytes)}</p>
+      </div>
+      <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-2.5 text-center max-w-xs">
+        <p className="text-xs font-medium text-amber-800">Preview not supported for this file type</p>
+        <p className="text-[10px] text-amber-600 mt-0.5">Download the original file to view it.</p>
+      </div>
+      <button
+        type="button"
+        onClick={() => onDownload(signedUrl)}
+        className="inline-flex items-center gap-2 rounded-lg bg-[#DC2626] px-4 py-2 text-xs font-semibold text-white hover:bg-red-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626] focus-visible:ring-offset-2"
+      >
+        <Download className="h-3.5 w-3.5" />
+        Download Original
+      </button>
+    </div>
+  );
+}
+
+export function FilePreviewModal({ isOpen, onClose, attachment, onDownload }: FilePreviewModalProps) {
+  if (!isOpen) return null;
+
+  const isImage = attachment.mimeType.startsWith("image/");
+  const isPdf = attachment.mimeType === "application/pdf";
+  const isText = attachment.mimeType.startsWith("text/") || attachment.mimeType === "application/json";
+  const isCsv = attachment.mimeType === "text/csv";
+  const isPreviewable = isImage || isPdf || isText || isCsv;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex flex-col bg-black/60"
+      data-testid="file-preview-modal"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div className="flex h-14 shrink-0 items-center justify-between bg-white border-b px-4" style={{ borderColor: "#E0E0E0" }}>
+        <div className="flex items-center gap-3 min-w-0">
+          <FileText className="h-4 w-4 shrink-0" style={{ color: "#79747E" }} />
+          <div className="min-w-0">
+            <p className="text-sm font-semibold truncate" style={{ color: "#1C1B1F" }}>{attachment.name}</p>
+            <p className="text-[10px]" style={{ color: "#79747E" }}>{formatBytes(attachment.sizeBytes)}</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => onDownload(attachment.signedUrl)}
+            className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold hover:bg-gray-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]"
+            style={{ borderColor: "#E0E0E0", color: "#49454F" }}
+            aria-label="Download original file"
+          >
+            <Download className="h-3.5 w-3.5" />
+            Download Original
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-gray-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]"
+            aria-label="Close preview"
+          >
+            <X className="h-4 w-4" style={{ color: "#49454F" }} />
+          </button>
+        </div>
+      </div>
+
+      {isImage ? (
+        <ImagePreview src={attachment.signedUrl} name={attachment.name} />
+      ) : isPdf ? (
+        <PdfPreview src={attachment.signedUrl} />
+      ) : isText || isCsv ? (
+        <TextPreview src={attachment.signedUrl} mimeType={attachment.mimeType} />
+      ) : (
+        <UnsupportedPreview
+          name={attachment.name}
+          mimeType={attachment.mimeType}
+          sizeBytes={attachment.sizeBytes}
+          onDownload={onDownload}
+          signedUrl={attachment.signedUrl}
+        />
+      )}
+    </div>
+  );
+}

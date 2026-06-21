@@ -29,11 +29,13 @@ import {
   Check,
   AlertTriangle,
   Loader2,
+  Download,
 } from "lucide-react";
 import type { ConversationMessage, MessageReaction, EditState } from "./types";
 import { useAttachmentUpload, type UploadedAttachment } from "./lib/use-attachment-upload";
 import { MentionText } from "./messaging-mention-text";
 import { FormattingToolbar, applyComposerFormat } from "./messaging-formatting-toolbar";
+import { FilePreviewModal, type FilePreviewAttachment } from "./components/file-preview-modal";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -96,70 +98,171 @@ interface AttachmentChipProps {
   name: string;
   mimeType?: string;
   attachmentId?: string;
+  sizeBytes?: number;
+  scanStatus?: string;
   onDownload?: (attachmentId: string) => Promise<{ signedUrl: string } | null>;
 }
 
-function AttachmentChip({ name, mimeType, attachmentId, onDownload }: AttachmentChipProps) {
+function AttachmentChip({ name, mimeType, attachmentId, sizeBytes, scanStatus, onDownload }: AttachmentChipProps) {
+  const [signedUrl, setSignedUrl] = React.useState<string | null>(null);
+  const [urlLoading, setUrlLoading] = React.useState(false);
   const [downloadError, setDownloadError] = React.useState(false);
-  const [imageUrl, setImageUrl] = React.useState<string | null>(null);
+  const [previewOpen, setPreviewOpen] = React.useState(false);
   const isImage = mimeType?.startsWith("image/") ?? false;
   const isSpreadsheet = name.endsWith(".xlsx") || name.endsWith(".csv");
+  const isBlocked = scanStatus === "BLOCKED";
   const Icon = isImage ? Image : isSpreadsheet ? FileSpreadsheet : FileText;
 
   React.useEffect(() => {
-    if (!isImage || !attachmentId || !onDownload) return;
+    if (!isImage || !attachmentId || !onDownload || isBlocked || scanStatus === "PENDING") return;
     let cancelled = false;
     onDownload(attachmentId).then((result) => {
-      if (!cancelled && result?.signedUrl) setImageUrl(result.signedUrl);
+      if (!cancelled && result?.signedUrl) setSignedUrl(result.signedUrl);
     });
     return () => { cancelled = true; };
-  }, [isImage, attachmentId, onDownload]);
+  }, [isImage, attachmentId, onDownload, isBlocked, scanStatus]);
 
-  async function handleClick() {
-    if (!attachmentId || !onDownload) return;
+  async function ensureSignedUrl(): Promise<string | null> {
+    if (signedUrl) return signedUrl;
+    if (!attachmentId || !onDownload) return null;
+    setUrlLoading(true);
     setDownloadError(false);
-    if (imageUrl) { window.open(imageUrl, "_blank"); return; }
-    const result = await onDownload(attachmentId);
-    if (!result) { setDownloadError(true); return; }
-    window.open(result.signedUrl, "_blank");
+    try {
+      const result = await onDownload(attachmentId);
+      if (result?.signedUrl) {
+        setSignedUrl(result.signedUrl);
+        return result.signedUrl;
+      }
+      setDownloadError(true);
+      return null;
+    } catch {
+      setDownloadError(true);
+      return null;
+    } finally {
+      setUrlLoading(false);
+    }
   }
+
+  async function handleCardClick() {
+    if (isBlocked || scanStatus === "PENDING" || urlLoading) return;
+    const url = await ensureSignedUrl();
+    if (url) setPreviewOpen(true);
+  }
+
+  async function handleDownloadClick(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (urlLoading) return;
+    const url = await ensureSignedUrl();
+    if (url) window.open(url, "_blank");
+  }
+
+  const modalAttachment: FilePreviewAttachment | null = signedUrl ? {
+    name,
+    mimeType: mimeType ?? "application/octet-stream",
+    sizeBytes: sizeBytes ?? 0,
+    signedUrl,
+  } : null;
 
   return (
     <div className="mt-1.5 inline-flex flex-col gap-1">
-      {isImage && imageUrl ? (
-        <button
-          type="button"
-          onClick={handleClick}
-          className="group relative block rounded-xl overflow-hidden border hover:opacity-90 transition-opacity focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]"
-          style={{ borderColor: "#E8E8E8", maxWidth: "260px" }}
-          title={`Open ${name}`}
+      {isBlocked ? (
+        <span
+          className="inline-flex items-center gap-1 rounded-lg border bg-red-50 px-2.5 py-1.5 text-xs"
+          style={{ borderColor: "#FECACA" }}
+          title="This attachment was blocked by security scan"
         >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={imageUrl}
-            alt={name}
-            className="block max-h-40 w-auto object-contain bg-gray-50"
-            style={{ maxWidth: "260px" }}
-          />
-          <div className="absolute bottom-0 left-0 right-0 bg-black/50 px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity">
-            <span className="text-[10px] text-white truncate block">{name}</span>
-          </div>
-        </button>
+          <AlertTriangle className="h-3 w-3 shrink-0 text-red-600" />
+          <span className="text-red-700">Blocked attachment</span>
+        </span>
+      ) : scanStatus === "PENDING" ? (
+        <span
+          className="inline-flex items-center gap-1 rounded-lg border bg-amber-50 px-2.5 py-1.5 text-xs"
+          style={{ borderColor: "#FDE68A" }}
+        >
+          <Loader2 className="h-3 w-3 shrink-0 animate-spin text-amber-600" />
+          <span className="text-amber-700">Scanning…</span>
+        </span>
+      ) : isImage && signedUrl ? (
+        <div className="group relative inline-block" style={{ maxWidth: "260px" }}>
+          <button
+            type="button"
+            onClick={handleCardClick}
+            className="block rounded-xl overflow-hidden border hover:opacity-90 transition-opacity focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]"
+            style={{ borderColor: "#E8E8E8" }}
+            title={`Preview ${name}`}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={signedUrl}
+              alt={name}
+              className="block max-h-40 w-auto object-contain bg-gray-50"
+              style={{ maxWidth: "260px" }}
+            />
+            <div className="absolute bottom-0 left-0 right-0 bg-black/50 px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              <span className="text-[10px] text-white truncate block">{name}</span>
+            </div>
+          </button>
+          <button
+            type="button"
+            onClick={handleDownloadClick}
+            className="absolute top-1.5 right-1.5 flex h-7 w-7 items-center justify-center rounded-lg bg-black/50 text-white opacity-0 group-hover:opacity-100 hover:bg-black/70 transition-opacity focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+            aria-label={`Download ${name}`}
+            title="Download"
+          >
+            <Download className="h-3.5 w-3.5" />
+          </button>
+        </div>
       ) : (
-        <button
-          type="button"
-          onClick={attachmentId && onDownload ? handleClick : undefined}
-          className="inline-flex items-center gap-2 rounded-lg border bg-gray-50 px-2.5 py-1.5 text-xs hover:bg-gray-100 transition-colors focus-visible:outline-none"
-          style={{ borderColor: "#E8E8E8", cursor: attachmentId && onDownload ? "pointer" : "default" }}
-        >
-          <Icon className="h-3.5 w-3.5 shrink-0 text-[#79747E]" />
-          <span className="max-w-[160px] truncate font-medium" style={{ color: "#1C1B1F" }}>
-            {name}
-          </span>
-        </button>
+        <div className="inline-flex items-center gap-0">
+          <button
+            type="button"
+            onClick={handleCardClick}
+            disabled={urlLoading}
+            className={cn(
+              "rounded-l-lg border bg-gray-50 px-2.5 py-1.5 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#DC2626]",
+              urlLoading ? "opacity-60 cursor-wait" : "hover:bg-gray-100 cursor-pointer"
+            )}
+            style={{ borderColor: "#E8E8E8", borderRightWidth: 0 }}
+            title={`Preview ${name}`}
+          >
+            <span className="inline-flex items-center gap-2">
+              {urlLoading ? (
+                <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-[#79747E]" />
+              ) : (
+                <Icon className="h-3.5 w-3.5 shrink-0 text-[#79747E]" />
+              )}
+              <span className="max-w-[130px] truncate font-medium" style={{ color: "#1C1B1F" }}>
+                {name}
+              </span>
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={handleDownloadClick}
+            disabled={urlLoading}
+            className="rounded-r-lg border bg-gray-50 px-2 py-1.5 text-xs transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#DC2626]"
+            style={{ borderColor: "#E8E8E8" }}
+            aria-label={`Download ${name}`}
+            title="Download"
+          >
+            {urlLoading ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin text-[#79747E]" />
+            ) : (
+              <Download className="h-3.5 w-3.5" style={{ color: "#79747E" }} />
+            )}
+          </button>
+        </div>
       )}
       {downloadError && (
         <span className="text-[10px] text-red-600">Access denied</span>
+      )}
+      {modalAttachment && (
+        <FilePreviewModal
+          isOpen={previewOpen}
+          onClose={() => setPreviewOpen(false)}
+          attachment={modalAttachment}
+          onDownload={(url) => window.open(url, "_blank")}
+        />
       )}
     </div>
   );
@@ -404,6 +507,8 @@ function ThreadReplyRow({
                   name={att.name}
                   mimeType={att.mimeType}
                   attachmentId={att.id}
+                  sizeBytes={att.sizeBytes}
+                  scanStatus={att.scanStatus}
                   onDownload={onDownloadAttachment}
                 />
               ))}
@@ -521,6 +626,8 @@ function ThreadAnchorMessage({ message, onDownloadAttachment }: { message: Conve
                   name={att.name}
                   mimeType={att.mimeType}
                   attachmentId={att.id}
+                  sizeBytes={att.sizeBytes}
+                  scanStatus={att.scanStatus}
                   onDownload={onDownloadAttachment}
                 />
               ))}
