@@ -25,7 +25,6 @@ import {
   Paperclip,
   FileText,
   FileSpreadsheet,
-  Image,
   Check,
   AlertTriangle,
   Loader2,
