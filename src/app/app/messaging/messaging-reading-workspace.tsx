@@ -835,6 +835,7 @@ function ChannelWorkspace({
             sendingReply={sendingReply}
             replyError={replyError}
             loadingReplies={loadingThreadReplies}
+            onDownloadAttachment={onDownloadAttachment}
           />
         ) : (
         <div
@@ -1047,6 +1048,7 @@ function GroupWorkspace({
           sendingReply={sendingReply}
           replyError={replyError}
           loadingReplies={loadingThreadReplies}
+          onDownloadAttachment={onDownloadAttachment}
         />
       )}
       {detailOpen && (
@@ -1363,6 +1365,7 @@ function PortalWorkspace({
             sendingReply={sendingReply}
             replyError={replyError}
             loadingReplies={loadingThreadReplies}
+            onDownloadAttachment={onDownloadAttachment}
           />
         ) : (
         <div

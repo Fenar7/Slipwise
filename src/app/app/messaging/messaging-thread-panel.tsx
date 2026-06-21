@@ -25,6 +25,7 @@ import {
   Paperclip,
   FileText,
   FileSpreadsheet,
+  Image,
   Check,
   AlertTriangle,
   Loader2,
@@ -89,20 +90,77 @@ function UploadFailureChip({ fileName, message, onDismiss }: { fileName: string;
   );
 }
 
-// ─── Attachment chip (legacy, for anchor message) ─────────────────────────────
+// ─── Attachment chip (for anchor/reply messages) ──────────────────────────────
 
-function AttachmentChip({ name }: { name: string }) {
+interface AttachmentChipProps {
+  name: string;
+  mimeType?: string;
+  attachmentId?: string;
+  onDownload?: (attachmentId: string) => Promise<{ signedUrl: string } | null>;
+}
+
+function AttachmentChip({ name, mimeType, attachmentId, onDownload }: AttachmentChipProps) {
+  const [downloadError, setDownloadError] = React.useState(false);
+  const [imageUrl, setImageUrl] = React.useState<string | null>(null);
+  const isImage = mimeType?.startsWith("image/") ?? false;
   const isSpreadsheet = name.endsWith(".xlsx") || name.endsWith(".csv");
-  const Icon = isSpreadsheet ? FileSpreadsheet : FileText;
+  const Icon = isImage ? Image : isSpreadsheet ? FileSpreadsheet : FileText;
+
+  React.useEffect(() => {
+    if (!isImage || !attachmentId || !onDownload) return;
+    let cancelled = false;
+    onDownload(attachmentId).then((result) => {
+      if (!cancelled && result?.signedUrl) setImageUrl(result.signedUrl);
+    });
+    return () => { cancelled = true; };
+  }, [isImage, attachmentId, onDownload]);
+
+  async function handleClick() {
+    if (!attachmentId || !onDownload) return;
+    setDownloadError(false);
+    if (imageUrl) { window.open(imageUrl, "_blank"); return; }
+    const result = await onDownload(attachmentId);
+    if (!result) { setDownloadError(true); return; }
+    window.open(result.signedUrl, "_blank");
+  }
+
   return (
-    <div
-      className="mt-1.5 inline-flex items-center gap-2 rounded-lg border bg-gray-50 px-2.5 py-1.5 text-xs"
-      style={{ borderColor: "#E8E8E8" }}
-    >
-      <Icon className="h-3.5 w-3.5 shrink-0 text-[#79747E]" />
-      <span className="max-w-[160px] truncate font-medium" style={{ color: "#1C1B1F" }}>
-        {name}
-      </span>
+    <div className="mt-1.5 inline-flex flex-col gap-1">
+      {isImage && imageUrl ? (
+        <button
+          type="button"
+          onClick={handleClick}
+          className="group relative block rounded-xl overflow-hidden border hover:opacity-90 transition-opacity focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]"
+          style={{ borderColor: "#E8E8E8", maxWidth: "260px" }}
+          title={`Open ${name}`}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={imageUrl}
+            alt={name}
+            className="block max-h-40 w-auto object-contain bg-gray-50"
+            style={{ maxWidth: "260px" }}
+          />
+          <div className="absolute bottom-0 left-0 right-0 bg-black/50 px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <span className="text-[10px] text-white truncate block">{name}</span>
+          </div>
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={attachmentId && onDownload ? handleClick : undefined}
+          className="inline-flex items-center gap-2 rounded-lg border bg-gray-50 px-2.5 py-1.5 text-xs hover:bg-gray-100 transition-colors focus-visible:outline-none"
+          style={{ borderColor: "#E8E8E8", cursor: attachmentId && onDownload ? "pointer" : "default" }}
+        >
+          <Icon className="h-3.5 w-3.5 shrink-0 text-[#79747E]" />
+          <span className="max-w-[160px] truncate font-medium" style={{ color: "#1C1B1F" }}>
+            {name}
+          </span>
+        </button>
+      )}
+      {downloadError && (
+        <span className="text-[10px] text-red-600">Access denied</span>
+      )}
     </div>
   );
 }
@@ -275,6 +333,9 @@ interface ThreadReplyRowProps {
   onCancelEdit: () => void;
   onSaveEdit: (messageId: string, newBody: string) => void;
   onToggleReaction: (messageId: string, emoji: string) => void;
+  onReact?: (messageId: string, emoji: string) => void;
+  onReply?: (messageId: string) => void;
+  onDownloadAttachment?: (attachmentId: string) => Promise<{ signedUrl: string } | null>;
 }
 
 function ThreadReplyRow({
@@ -284,8 +345,13 @@ function ThreadReplyRow({
   onCancelEdit,
   onSaveEdit,
   onToggleReaction,
+  onReact,
+  onReply,
+  onDownloadAttachment,
 }: ThreadReplyRowProps) {
   const isEditing = editState?.messageId === reply.id;
+  const [showEmojiPicker, setShowEmojiPicker] = React.useState(false);
+  const [showActions, setShowActions] = React.useState(false);
 
   const enrichedReactions: MessageReaction[] = reply.reactions.map((r) => ({ ...r }));
 
@@ -331,9 +397,15 @@ function ThreadReplyRow({
               <MentionText text={reply.body} />
             </div>
             {reply.attachmentRecords && reply.attachmentRecords.length > 0 && (
-            <div className="mt-1.5 flex flex-wrap gap-1">
+            <div className="mt-1.5 flex flex-wrap gap-2">
               {reply.attachmentRecords.map((att) => (
-                <AttachmentChip key={att.id} name={att.name} />
+                <AttachmentChip
+                  key={att.id}
+                  name={att.name}
+                  mimeType={att.mimeType}
+                  attachmentId={att.id}
+                  onDownload={onDownloadAttachment}
+                />
               ))}
             </div>
           )}
@@ -347,13 +419,62 @@ function ThreadReplyRow({
 
       {/* Hover actions */}
       {!isEditing && (
-        <HoverActions
-          messageId={reply.id}
-          onReact={() => {}}
-          onReply={() => {}}
-          onEdit={() => onStartEdit(reply.id)}
-          onMore={() => {}}
-        />
+        <div className="absolute -top-3 right-2 hidden group-hover:flex items-center gap-0.5 rounded-lg border bg-white shadow-sm"
+          style={{ borderColor: "#E0E0E0" }}
+          data-testid={`thread-reply-hover-actions-${reply.id}`}
+        >
+          <div className="relative">
+            <button
+              type="button"
+              className="flex h-6 w-6 items-center justify-center rounded-l-lg transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#DC2626]"
+              aria-label="React to reply"
+              onClick={() => setShowEmojiPicker((o) => !o)}
+              data-testid={`thread-reply-react-btn-${reply.id}`}
+            >
+              <Smile className="h-3 w-3" style={{ color: "#79747E" }} />
+            </button>
+            {showEmojiPicker && (
+              <div className="absolute right-0 top-7 z-10">
+                <MessagingEmojiPicker
+                  onClose={() => setShowEmojiPicker(false)}
+                  onSelect={(emoji) => {
+                    onReact?.(reply.id, emoji);
+                    setShowEmojiPicker(false);
+                  }}
+                />
+              </div>
+            )}
+          </div>
+          {onReply && (
+            <button
+              type="button"
+              className="flex h-6 w-6 items-center justify-center transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#DC2626]"
+              aria-label="Reply to message"
+              onClick={() => onReply(reply.id)}
+              data-testid={`thread-reply-reply-btn-${reply.id}`}
+            >
+              <CornerUpRight className="h-3 w-3" style={{ color: "#79747E" }} />
+            </button>
+          )}
+          <button
+            type="button"
+            className="flex h-6 w-6 items-center justify-center transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#DC2626]"
+            aria-label="Edit reply"
+            onClick={() => onStartEdit(reply.id)}
+            data-testid={`thread-reply-edit-btn-${reply.id}`}
+          >
+            <Pencil className="h-3 w-3" style={{ color: "#79747E" }} />
+          </button>
+          <button
+            type="button"
+            className="flex h-6 w-6 items-center justify-center rounded-r-lg transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#DC2626]"
+            aria-label="More actions"
+            onClick={() => setShowActions((o) => !o)}
+            data-testid={`thread-reply-more-btn-${reply.id}`}
+          >
+            <MoreHorizontal className="h-3 w-3" style={{ color: "#79747E" }} />
+          </button>
+        </div>
       )}
     </div>
   );
@@ -361,7 +482,7 @@ function ThreadReplyRow({
 
 // ─── Thread anchor message ────────────────────────────────────────────────────
 
-function ThreadAnchorMessage({ message }: { message: ConversationMessage }) {
+function ThreadAnchorMessage({ message, onDownloadAttachment }: { message: ConversationMessage; onDownloadAttachment?: (attachmentId: string) => Promise<{ signedUrl: string } | null> }) {
   return (
     <div
       className="shrink-0 border-b px-4 py-3"
@@ -393,9 +514,15 @@ function ThreadAnchorMessage({ message }: { message: ConversationMessage }) {
             <MentionText text={message.body} />
           </div>
           {message.attachmentRecords && message.attachmentRecords.length > 0 && (
-            <div className="mt-1.5 flex flex-wrap gap-1">
+            <div className="mt-1.5 flex flex-wrap gap-2">
               {message.attachmentRecords.map((att) => (
-                <AttachmentChip key={att.id} name={att.name} />
+                <AttachmentChip
+                  key={att.id}
+                  name={att.name}
+                  mimeType={att.mimeType}
+                  attachmentId={att.id}
+                  onDownload={onDownloadAttachment}
+                />
               ))}
             </div>
           )}
@@ -589,6 +716,12 @@ export interface MessagingThreadPanelProps {
   sendingReply?: boolean;
   /** Error from last reply attempt */
   replyError?: string | null;
+  /** Whether replies are being loaded */
+  loadingReplies?: boolean;
+  /** Handler for reacting to a thread reply */
+  onReactToReply?: (messageId: string, emoji: string) => void;
+  /** Download handler for attachments — enables image previews and file downloads in thread */
+  onDownloadAttachment?: (attachmentId: string) => Promise<{ signedUrl: string } | null>;
 }
 
 export function MessagingThreadPanel({
@@ -598,8 +731,13 @@ export function MessagingThreadPanel({
   onReply,
   sendingReply = false,
   replyError,
+  loadingReplies = false,
+  onReactToReply,
+  onDownloadAttachment,
 }: MessagingThreadPanelProps) {
   const [editState, setEditState] = React.useState<EditState | null>(null);
+  const repliesEndRef = React.useRef<HTMLDivElement>(null);
+  const prevReplyCountRef = React.useRef(replies.length);
 
   function handleStartEdit(messageId: string) {
     const msg = replies.find((r) => r.id === messageId);
@@ -618,6 +756,14 @@ export function MessagingThreadPanel({
   function handleToggleReaction(_messageId: string, _emoji: string) {
     // Phase 1: static — no persistence
   }
+
+  // Auto-scroll to bottom when new replies arrive
+  React.useEffect(() => {
+    if (replies.length > prevReplyCountRef.current) {
+      repliesEndRef.current?.scrollIntoView?.({ behavior: "smooth" });
+    }
+    prevReplyCountRef.current = replies.length;
+  }, [replies.length]);
 
   return (
     <div
@@ -656,7 +802,7 @@ export function MessagingThreadPanel({
       </div>
 
       {/* Anchor message */}
-      <ThreadAnchorMessage message={anchorMessage} />
+      <ThreadAnchorMessage message={anchorMessage} onDownloadAttachment={onDownloadAttachment} />
 
       {/* Replies divider */}
       <div
@@ -675,7 +821,14 @@ export function MessagingThreadPanel({
 
       {/* Replies list */}
       <div className="flex-1 overflow-y-auto py-1" data-testid="thread-replies-list">
-        {replies.length === 0 ? (
+        {loadingReplies && replies.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-full gap-2 px-4 text-center">
+            <Loader2 className="h-5 w-5 animate-spin" style={{ color: "#C4C4C4" }} />
+            <p className="text-xs" style={{ color: "#79747E" }}>
+              Loading replies…
+            </p>
+          </div>
+        ) : replies.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full gap-2 px-4 text-center">
             <MessageSquare className="h-6 w-6" style={{ color: "#C4C4C4" }} />
             <p className="text-xs" style={{ color: "#79747E" }}>
@@ -692,11 +845,21 @@ export function MessagingThreadPanel({
               onCancelEdit={handleCancelEdit}
               onSaveEdit={handleSaveEdit}
               onToggleReaction={handleToggleReaction}
+              onReact={onReactToReply}
+              onReply={undefined}
+              onDownloadAttachment={onDownloadAttachment}
             />
           ))
         )}
-        <div className="h-2" />
+        <div ref={repliesEndRef} className="h-2" />
       </div>
+
+      {/* Error banner */}
+      {replyError && (
+        <div className="shrink-0 border-t border-red-100 bg-red-50 px-4 py-2" data-testid="thread-reply-error">
+          <p className="text-[11px] text-red-600">{replyError}</p>
+        </div>
+      )}
 
       {/* Reply composer */}
       <ThreadReplyComposer onReply={onReply} sendingReply={sendingReply} />
