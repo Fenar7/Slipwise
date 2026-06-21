@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { getSignedUrlServer } from "@/lib/storage/upload-server";
+import { getSignedUrlServer, uploadFileServer } from "@/lib/storage/upload-server";
 import {
   requireMessagingApiContext,
   handleMessagingApiError,
@@ -96,12 +96,48 @@ export async function GET(
       }
     }
 
-    const signedUrl = await getSignedUrlServer(
-      "attachments",
-      attachment.storageRef,
-      300, // 5-minute expiry
-      { download: attachment.fileName },
-    );
+    const isLocalDev =
+      process.env.NODE_ENV === "development" ||
+      process.env.SUPABASE_URL?.includes("localhost") ||
+      process.env.SUPABASE_URL?.includes("127.0.0.1");
+
+    async function resolveSignedUrl(): Promise<string> {
+      try {
+        return await getSignedUrlServer(
+          "attachments",
+          attachment.storageRef,
+          300,
+          { download: attachment.fileName },
+        );
+      } catch (err) {
+        const msg = err instanceof Error ? err.message.toLowerCase() : "";
+        const isMissingFile = msg.includes("object not found");
+
+        if (isMissingFile && isLocalDev) {
+          const placeholder = Buffer.from(
+            `Local development placeholder — ${attachment.fileName}\nThis file was auto-generated because the original blob was missing from local storage.\n`,
+            "utf-8",
+          );
+          await uploadFileServer(
+            "attachments",
+            attachment.storageRef,
+            placeholder,
+            attachment.mimeType || "application/octet-stream",
+            { useAdmin: true },
+          );
+          return await getSignedUrlServer(
+            "attachments",
+            attachment.storageRef,
+            300,
+            { download: attachment.fileName },
+          );
+        }
+
+        throw err;
+      }
+    }
+
+    const signedUrl = await resolveSignedUrl();
 
     return NextResponse.json({
       success: true,
