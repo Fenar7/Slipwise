@@ -140,6 +140,60 @@ function PdfPreview({ src, onDownload }: { src: string; onDownload: () => void }
 
 // ─── DOCX preview via client-side docx-preview rendering ──────────────────────────
 
+function fixTofuSymbols(parent: HTMLElement) {
+  const walker = document.createTreeWalker(parent, NodeFilter.SHOW_TEXT);
+  let node;
+  while ((node = walker.nextNode())) {
+    const text = node.nodeValue || "";
+    let newText = "";
+    let changed = false;
+    for (let i = 0; i < text.length; i++) {
+      const char = text.charCodeAt(i);
+      // Check if character is in Private Use Area (specifically Wingdings / Symbol mapping U+F000 to U+F0FF)
+      if (char >= 0xF000 && char <= 0xF0FF) {
+        changed = true;
+        // Map to standard characters based on common Wingdings characters
+        switch (char) {
+          case 0xF0B7: // standard round bullet
+          case 0xF0A3: // standard round bullet
+          case 0xF0A7: // square bullet
+          case 0xF0A8: // square bullet
+          case 0xF0E0: // document/letter bullet
+          case 0xF0D8: // diamond
+          case 0xF0B0: // small bullet
+          case 0xF06F: // circle / list bullet
+          case 0xF0D4: // diamond arrow
+          case 0xF076: // standard bullet
+          case 0xF03B: // bullet
+            newText += "•";
+            break;
+          case 0xF071: // white square
+          case 0xF02D: // white square
+            newText += "□";
+            break;
+          case 0xF0FC: // check mark
+            newText += "✓";
+            break;
+          case 0xF0FE: // checked box
+            newText += "☑";
+            break;
+          default:
+            newText += "•"; // fallback bullet
+            break;
+        }
+      } else {
+        newText += text[i];
+      }
+    }
+    if (changed) {
+      node.nodeValue = newText;
+      if (node.parentElement) {
+        node.parentElement.style.fontFamily = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
+      }
+    }
+  }
+}
+
 function DocxPreview({ src, onDownload }: { src: string; onDownload: () => void }) {
   const containerRef = React.useRef<HTMLDivElement>(null);
   const [loading, setLoading] = React.useState(true);
@@ -165,9 +219,11 @@ function DocxPreview({ src, onDownload }: { src: string; onDownload: () => void 
             await docx.renderAsync(arrayBuffer, containerRef.current, undefined, {
               className: "docx-rendered-page",
               inWrapper: false,
-              ignoreWidth: true,
+              ignoreWidth: false,
               ignoreHeight: false,
             });
+            // Fix unmapped Wingdings / Symbol tofu boxes
+            fixTofuSymbols(containerRef.current);
           }
           setLoading(false);
         } catch (renderErr) {
@@ -194,7 +250,7 @@ function DocxPreview({ src, onDownload }: { src: string; onDownload: () => void 
   }, [fetchAndRender]);
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden bg-neutral-100">
+    <div className="flex-1 flex flex-col overflow-hidden bg-[#F3F4F6]">
       <style dangerouslySetInnerHTML={{ __html: `
         .docx-rendered-container {
           background-color: #F3F4F6 !important;
@@ -209,9 +265,8 @@ function DocxPreview({ src, onDownload }: { src: string; onDownload: () => void 
           border: 1px solid #E5E7EB !important;
           background-color: #FFFFFF !important;
           margin: 0 auto 10px auto !important;
-          padding: 48px 56px !important;
-          width: 100% !important;
-          max-width: 816px !important;
+          max-width: 100% !important;
+          height: auto !important;
           box-sizing: border-box !important;
         }
         .docx-rendered-container .docx-rendered-page p,
@@ -251,6 +306,7 @@ function DocxPreview({ src, onDownload }: { src: string; onDownload: () => void 
 
 function XlsxPreview({ src, onDownload }: { src: string; onDownload: () => void }) {
   const [workbook, setWorkbook] = React.useState<any>(null);
+  const [xlsxModule, setXlsxModule] = React.useState<any>(null);
   const [activeSheetIndex, setActiveSheetIndex] = React.useState(0);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState(false);
@@ -272,6 +328,7 @@ function XlsxPreview({ src, onDownload }: { src: string; onDownload: () => void 
           if (cancelled) return;
           const wb = XLSX.read(arrayBuffer, { type: "array" });
           setWorkbook(wb);
+          setXlsxModule(XLSX);
           setLoading(false);
         } catch (parseErr) {
           console.error("XLSX parsing error:", parseErr);
@@ -297,7 +354,7 @@ function XlsxPreview({ src, onDownload }: { src: string; onDownload: () => void 
   }, [fetchAndParse]);
 
   if (loading) return <PreviewLoading label="Loading spreadsheet..." />;
-  if (error || !workbook) return <PreviewError onRetry={fetchAndParse} onDownload={onDownload} />;
+  if (error || !workbook || !xlsxModule) return <PreviewError onRetry={fetchAndParse} onDownload={onDownload} />;
 
   const sheetNames = workbook.SheetNames;
   const currentSheetName = sheetNames[activeSheetIndex];
@@ -306,8 +363,7 @@ function XlsxPreview({ src, onDownload }: { src: string; onDownload: () => void 
   if (currentSheetName) {
     try {
       const sheet = workbook.Sheets[currentSheetName];
-      const XLSX = (window as any).XLSX || require("xlsx");
-      sheetHtml = XLSX.utils.sheet_to_html(sheet, { header: "" });
+      sheetHtml = xlsxModule.utils.sheet_to_html(sheet, { header: "" });
     } catch (err) {
       console.error("XLSX sheet conversion error:", err);
       sheetHtml = "<p className='p-4 text-red-500 font-semibold'>Error rendering sheet.</p>";
@@ -352,9 +408,9 @@ function XlsxPreview({ src, onDownload }: { src: string; onDownload: () => void 
         <div dangerouslySetInnerHTML={{ __html: sheetHtml }} />
       </div>
 
-      {/* Tabs list at the bottom for multi-sheet view */}
+      {/* Premium Tab list at the bottom for multi-sheet view */}
       {sheetNames.length > 1 && (
-        <div className="flex shrink-0 items-center gap-1 bg-gray-50 border-t border-gray-200 px-4 py-2 overflow-x-auto select-none">
+        <div className="flex shrink-0 items-center gap-1 bg-[#F3F4F6] border-t border-gray-250 px-4 pt-1 overflow-x-auto select-none">
           {sheetNames.map((name: string, index: number) => {
             const isActive = index === activeSheetIndex;
             return (
@@ -362,11 +418,17 @@ function XlsxPreview({ src, onDownload }: { src: string; onDownload: () => void 
                 key={name}
                 type="button"
                 onClick={() => setActiveSheetIndex(index)}
-                className="px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors focus:outline-none"
+                className="px-4 py-1.5 text-xs font-semibold whitespace-nowrap transition-all focus:outline-none"
                 style={{
-                  backgroundColor: isActive ? "#DC2626" : "transparent",
-                  color: isActive ? "#FFFFFF" : "#4B5563",
-                  border: isActive ? "1px solid #DC2626" : "1px solid transparent"
+                  backgroundColor: isActive ? "#FFFFFF" : "transparent",
+                  color: isActive ? "#111827" : "#4B5563",
+                  borderTopLeftRadius: "6px",
+                  borderTopRightRadius: "6px",
+                  borderLeft: isActive ? "1px solid #D1D5DB" : "1px solid transparent",
+                  borderRight: isActive ? "1px solid #D1D5DB" : "1px solid transparent",
+                  borderTop: isActive ? "3px solid #107C41" : "3px solid transparent",
+                  boxShadow: isActive ? "0 -1px 2px rgba(0,0,0,0.05)" : "none",
+                  marginTop: "2px"
                 }}
               >
                 {name}
@@ -450,13 +512,11 @@ function UnsupportedPreview({
   mimeType,
   sizeBytes,
   onDownload,
-  signedUrl,
 }: {
   name: string;
   mimeType: string;
   sizeBytes: number;
-  onDownload: (url: string) => void;
-  signedUrl: string;
+  onDownload: () => void;
 }) {
   return (
     <div className="flex-1 flex flex-col items-center justify-center gap-5 bg-neutral-900 px-8 text-neutral-300">
@@ -473,7 +533,7 @@ function UnsupportedPreview({
       </div>
       <button
         type="button"
-        onClick={() => onDownload(signedUrl)}
+        onClick={onDownload}
         className="inline-flex items-center gap-2 rounded-lg bg-[#DC2626] px-4 py-2 text-xs font-semibold text-white hover:bg-red-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626] focus-visible:ring-offset-2"
         style={{ backgroundColor: "#DC2626", color: "#FFFFFF" }}
       >
@@ -540,7 +600,7 @@ export function FilePreviewModal({ isOpen, onClose, attachment, onDownload }: Fi
 
   if (!isOpen) return null;
 
-  const { name, mimeType, sizeBytes, signedUrl } = attachment;
+  const { name, mimeType, sizeBytes, signedUrl, attachmentId } = attachment;
   const isImage = mimeType.startsWith("image/");
   const isPdf = mimeType === "application/pdf";
   const isText = mimeType.startsWith("text/") || mimeType === "application/json";
@@ -548,10 +608,31 @@ export function FilePreviewModal({ isOpen, onClose, attachment, onDownload }: Fi
   const isXlsx = isXlsxFile(mimeType);
   const canRender = isPreviewable(mimeType);
 
+  // Fetch a fresh signed URL to prevent expiration JWT issues
+  async function handleDownloadClick() {
+    if (attachmentId) {
+      try {
+        const res = await fetch(`/api/messaging/attachments/${attachmentId}/download`);
+        if (res.ok) {
+          const json = await res.json();
+          if (json?.data?.signedUrl) {
+            onDownload(json.data.signedUrl);
+            return;
+          }
+        }
+      } catch (err) {
+        console.error("Failed to fetch fresh signed download URL:", err);
+      }
+    }
+    // Fallback to original signed url
+    onDownload(signedUrl);
+  }
+
   function handleZoomIn() {
     setScale((s) => Math.min(s + 0.25, 3));
   }
   
+  // Custom ZoomOut to handle page fitting scale correctly
   function handleZoomOut() {
     setScale((s) => Math.max(s - 0.25, 0.25));
   }
@@ -567,10 +648,21 @@ export function FilePreviewModal({ isOpen, onClose, attachment, onDownload }: Fi
   }
 
   function handleMouseDown(e: React.MouseEvent) {
-    if (e.target === e.currentTarget) {
-      setIsDragging(true);
-      setDragStart({ x: e.clientX - position.x, y: e.clientY - position.y });
+    const target = e.target as HTMLElement;
+    // Prevent dragging when clicking on inputs, select, iframe, buttons or spreadsheet tab bar
+    if (
+      target.closest("button") || 
+      target.closest("a") || 
+      target.closest("iframe") || 
+      target.closest("select") || 
+      target.closest("input") ||
+      target.closest(".xlsx-preview-grid") || // let spreadsheet scroll/select natively
+      target.closest("table") // let tables scroll natively
+    ) {
+      return;
     }
+    setIsDragging(true);
+    setDragStart({ x: e.clientX - position.x, y: e.clientY - position.y });
   }
 
   function handleMouseMove(e: React.MouseEvent) {
@@ -579,6 +671,7 @@ export function FilePreviewModal({ isOpen, onClose, attachment, onDownload }: Fi
     }
   }
 
+  // Force drag termination
   function handleMouseUp() {
     setIsDragging(false);
   }
@@ -587,66 +680,69 @@ export function FilePreviewModal({ isOpen, onClose, attachment, onDownload }: Fi
     if (e.target === e.currentTarget) onClose();
   }
 
+  // Get localized button label like macOS Quick Look
+  const getOpenButtonLabel = () => {
+    if (isDocx) return "Open with Microsoft Word";
+    if (isPdf) return "Open with Preview";
+    return "Download";
+  };
+
   return (
     <div
-      className="fixed inset-0 z-50 flex flex-col bg-neutral-950/85 backdrop-blur-md"
+      className="fixed inset-0 z-50 flex flex-col bg-neutral-950/90 backdrop-blur-md"
       data-testid="file-preview-modal"
       onClick={handleBackdropClick}
       role="dialog"
       aria-modal="true"
       aria-label={`Preview: ${name}`}
     >
-      {/* Premium Dark Header */}
-      <div className="flex h-14 shrink-0 items-center justify-between bg-neutral-900 border-b border-neutral-800 px-4 text-white" style={{ backgroundColor: "#171717", borderBottomColor: "#262626" }}>
+      {/* macOS Quick Look Styled Header Bar */}
+      <div 
+        className="flex h-14 shrink-0 items-center justify-between border-b px-4 text-white" 
+        style={{ backgroundColor: "#18181B", borderBottomColor: "#27272A" }}
+      >
         <div className="flex items-center gap-3 min-w-0">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-neutral-800" style={{ backgroundColor: "#262626" }}>
-            {isImage ? (
-              <Eye className="h-4 w-4 text-blue-400" style={{ color: "#60A5FA" }} />
-            ) : isPdf ? (
-              <FileText className="h-4 w-4 text-red-400" style={{ color: "#F87171" }} />
-            ) : isDocx ? (
-              <FileText className="h-4 w-4 text-blue-400" style={{ color: "#60A5FA" }} />
-            ) : isXlsx ? (
-              <FileSpreadsheet className="h-4 w-4 text-green-400" style={{ color: "#4ADE80" }} />
-            ) : (
-              <FileText className="h-4 w-4 text-neutral-400" style={{ color: "#A3A3A3" }} />
-            )}
-          </div>
-          <div className="min-w-0">
-            <p className="text-sm font-semibold truncate" style={{ color: "#FFFFFF" }}>{name}</p>
-            <p className="text-[10px]" style={{ color: "#A3A3A3" }}>
-              {formatBytes(sizeBytes)}
-              {!canRender && " · Download to view"}
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2.5">
-          <button
-            type="button"
-            onClick={() => onDownload(signedUrl)}
-            className="inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-xs font-semibold hover:bg-red-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]"
-            style={{ backgroundColor: "#DC2626", color: "#FFFFFF" }}
-            aria-label="Download original file"
-          >
-            <Download className="h-3.5 w-3.5" style={{ color: "#FFFFFF" }} />
-            Download
-          </button>
+          {/* Close button inside circular overlay */}
           <button
             type="button"
             onClick={onClose}
-            className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-neutral-800 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626] text-neutral-400 hover:text-white"
-            style={{ color: "#A3A3A3" }}
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-neutral-800 hover:bg-neutral-700 transition-colors focus:outline-none"
             aria-label="Close preview"
           >
-            <X className="h-4 w-4" style={{ color: "#FFFFFF" }} />
+            <X className="h-4 w-4" style={{ color: "#D4D4D4" }} />
+          </button>
+          
+          <div className="min-w-0 flex items-center gap-2">
+            <span className="text-sm font-semibold truncate text-neutral-200 select-all">{name}</span>
+            <span className="text-[10px] text-neutral-400 font-medium whitespace-nowrap">
+              ({formatBytes(sizeBytes)})
+            </span>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3">
+          {/* Action / Download button styled like Apple Quick Look "Open with..." */}
+          <button
+            type="button"
+            onClick={handleDownloadClick}
+            className="inline-flex items-center gap-1.5 rounded-lg border px-3.5 py-1.5 text-xs font-semibold transition-all hover:bg-neutral-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
+            style={{ 
+              backgroundColor: "rgba(39, 39, 42, 0.6)", 
+              borderColor: "#3F3F46", 
+              color: "#F4F4F5"
+            }}
+            aria-label={getOpenButtonLabel()}
+          >
+            <Download className="h-3.5 w-3.5" style={{ color: "#D4D4D4" }} />
+            {getOpenButtonLabel()}
           </button>
         </div>
       </div>
 
       {/* Main Google Drive-style Canvas */}
       <div
-        className="flex-1 relative bg-neutral-950 overflow-hidden flex items-center justify-center p-6 md:p-12 cursor-grab animate-fade-in"
-        style={{ ...isDragging ? { cursor: "grabbing" } : undefined, backgroundColor: "#0A0A0A" }}
+        className="flex-1 relative bg-[#09090B] overflow-hidden flex items-center justify-center p-6 md:p-12 cursor-grab animate-fade-in"
+        style={{ ...isDragging ? { cursor: "grabbing" } : undefined }}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
@@ -666,31 +762,31 @@ export function FilePreviewModal({ isOpen, onClose, attachment, onDownload }: Fi
         ) : (
           /* Structured Centered White Sheet Card */
           <div
-            className="w-full bg-white rounded-xl shadow-2xl overflow-hidden flex flex-col select-none origin-center"
+            className="w-full rounded-xl shadow-2xl overflow-hidden flex flex-col select-none origin-center"
             style={{
               transform: `translate(${position.x}px, ${position.y}px) scale(${scale}) rotate(${rotation}deg)`,
               transition: isDragging ? "none" : "transform 0.15s ease-out",
-              width: isXlsx ? "92%" : isDocx ? "850px" : "720px",
+              width: isXlsx ? "92%" : isDocx ? "920px" : "760px",
               maxWidth: "100%",
               height: "calc(100vh - 160px)",
               maxHeight: "850px",
+              backgroundColor: isDocx ? "#F3F4F6" : "#FFFFFF"
             }}
           >
             {isPdf ? (
-              <PdfPreview src={signedUrl} onDownload={() => onDownload(signedUrl)} />
+              <PdfPreview src={signedUrl} onDownload={handleDownloadClick} />
             ) : isDocx ? (
-              <DocxPreview src={signedUrl} onDownload={() => onDownload(signedUrl)} />
+              <DocxPreview src={signedUrl} onDownload={handleDownloadClick} />
             ) : isXlsx ? (
-              <XlsxPreview src={signedUrl} onDownload={() => onDownload(signedUrl)} />
+              <XlsxPreview src={signedUrl} onDownload={handleDownloadClick} />
             ) : isText ? (
-              <TextPreview src={signedUrl} mimeType={mimeType} onDownload={() => onDownload(signedUrl)} />
+              <TextPreview src={signedUrl} mimeType={mimeType} onDownload={handleDownloadClick} />
             ) : (
               <UnsupportedPreview
                 name={name}
                 mimeType={mimeType}
                 sizeBytes={sizeBytes}
-                onDownload={onDownload}
-                signedUrl={signedUrl}
+                onDownload={handleDownloadClick}
               />
             )}
           </div>
