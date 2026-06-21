@@ -225,7 +225,8 @@ describe("Sprint 5.3 — live channel, DM, and group creation", () => {
 
   it("creates a new channel and selects it", async () => {
     render(<MessagingWorkspace />);
-    await waitFor(() => expect(screen.getByText("finance")).toBeInTheDocument());
+    const listColumn = await waitFor(() => screen.getByTestId("conversation-list-column"));
+    expect(within(listColumn).getByText("finance")).toBeInTheDocument();
 
     // Open channel create modal
     const channelList = screen.getByTestId("conv-list-channels");
@@ -243,7 +244,7 @@ describe("Sprint 5.3 — live channel, DM, and group creation", () => {
 
   it("creates a new group and selects it", async () => {
     render(<MessagingWorkspace />);
-    await waitFor(() => expect(screen.getByText("finance")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByTestId("conversation-list-column")).toBeInTheDocument());
 
     // Switch to groups section
     fireEvent.click(screen.getByTestId("messaging-mobile-section-groups"));
@@ -264,11 +265,11 @@ describe("Sprint 5.3 — live channel, DM, and group creation", () => {
 
   it("creates a new DM and selects it", async () => {
     render(<MessagingWorkspace />);
-    await waitFor(() => expect(screen.getByText("finance")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByTestId("conversation-list-column")).toBeInTheDocument());
 
     // Switch to DMs section
     fireEvent.click(screen.getByTestId("messaging-mobile-section-dms"));
-    await waitFor(() => expect(screen.getByText("Bob")).toBeInTheDocument());
+    await waitFor(() => expect(within(screen.getByTestId("conversation-list-column")).getByText("Bob")).toBeInTheDocument());
 
     const dmList = screen.getByTestId("conv-list-dms");
     const plusBtn = within(dmList).getByLabelText("New direct message");
@@ -288,10 +289,10 @@ describe("Sprint 5.3 — live channel, DM, and group creation", () => {
 
   it("duplicate DM resolves to existing conversation instead of creating new", async () => {
     render(<MessagingWorkspace />);
-    await waitFor(() => expect(screen.getByText("finance")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByTestId("conversation-list-column")).toBeInTheDocument());
 
     fireEvent.click(screen.getByLabelText("DMs section"));
-    await waitFor(() => expect(screen.getByText("Bob")).toBeInTheDocument());
+    await waitFor(() => expect(within(screen.getByTestId("conversation-list-column")).getByText("Bob")).toBeInTheDocument());
 
     const dmList = screen.getByTestId("conv-list-dms");
     fireEvent.click(within(dmList).getByLabelText("New direct message"));
@@ -312,10 +313,10 @@ describe("Sprint 5.3 — live channel, DM, and group creation", () => {
 
   it("rejects invalid peer during DM creation", async () => {
     render(<MessagingWorkspace />);
-    await waitFor(() => expect(screen.getByText("finance")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByTestId("conversation-list-column")).toBeInTheDocument());
 
     fireEvent.click(screen.getByLabelText("DMs section"));
-    await waitFor(() => expect(screen.getByText("Bob")).toBeInTheDocument());
+    await waitFor(() => expect(within(screen.getByTestId("conversation-list-column")).getByText("Bob")).toBeInTheDocument());
 
     const dmList = screen.getByTestId("conv-list-dms");
     fireEvent.click(within(dmList).getByLabelText("New direct message"));
@@ -335,9 +336,9 @@ describe("Sprint 5.3 — live channel, DM, and group creation", () => {
 
   it("hydrates real participants in channel detail panel", async () => {
     render(<MessagingWorkspace />);
-    await waitFor(() => expect(screen.getByText("finance")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByTestId("conversation-list-column")).toBeInTheDocument());
 
-    fireEvent.click(screen.getByText("finance"));
+    fireEvent.click(within(screen.getByTestId("conversation-list-column")).getByText("finance"));
     await waitFor(() => expect(screen.getByText("Budget approved")).toBeInTheDocument());
 
     // Open detail panel via info button in workspace header
@@ -360,9 +361,9 @@ describe("Sprint 5.3 — live channel, DM, and group creation", () => {
   it("shows governance actions for OWNER and hides for MEMBER", async () => {
     // OWNER view (currentUserId = user-1 who is OWNER)
     render(<MessagingWorkspace />);
-    await waitFor(() => expect(screen.getByText("finance")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByTestId("conversation-list-column")).toBeInTheDocument());
 
-    fireEvent.click(screen.getByText("finance"));
+    fireEvent.click(within(screen.getByTestId("conversation-list-column")).getByText("finance"));
     await waitFor(() => expect(screen.getByText("Budget approved")).toBeInTheDocument());
 
     fireEvent.click(screen.getByLabelText("Conversation info"));
@@ -416,9 +417,9 @@ describe("Sprint 5.3 — live channel, DM, and group creation", () => {
     }));
 
     render(<MessagingWorkspace />);
-    await waitFor(() => expect(screen.getByText("finance")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByTestId("conversation-list-column")).toBeInTheDocument());
 
-    fireEvent.click(screen.getByText("finance"));
+    fireEvent.click(within(screen.getByTestId("conversation-list-column")).getByText("finance"));
     await waitFor(() => expect(screen.getByTestId("reading-workspace")).toBeInTheDocument());
 
     fireEvent.click(screen.getByLabelText("Conversation info"));
@@ -462,17 +463,17 @@ describe("Sprint 5.3 — live channel, DM, and group creation", () => {
     }));
 
     render(<MessagingWorkspace />);
-    await waitFor(() => expect(screen.getByText("secret")).toBeInTheDocument());
+    const listCol = await waitFor(() => screen.getByTestId("conversation-list-column"));
 
-    fireEvent.click(screen.getByText("secret"));
+    fireEvent.click(within(listCol).getByText("secret"));
     await waitFor(() => expect(screen.getByTestId("reading-workspace-restricted")).toBeInTheDocument());
   });
 
   it("refreshes list and detail after governance archive action", async () => {
     render(<MessagingWorkspace />);
-    await waitFor(() => expect(screen.getByText("finance")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByTestId("conversation-list-column")).toBeInTheDocument());
 
-    fireEvent.click(screen.getByText("finance"));
+    fireEvent.click(within(screen.getByTestId("conversation-list-column")).getByText("finance"));
     await waitFor(() => expect(screen.getByText("Budget approved")).toBeInTheDocument());
 
     fireEvent.click(screen.getByLabelText("Conversation info"));
@@ -518,7 +519,7 @@ describe("Sprint 5.3 — live channel, DM, and group creation", () => {
 
   it("post-create selection resolves to authoritative conversation from list hydration", async () => {
     render(<MessagingWorkspace />);
-    await waitFor(() => expect(screen.getByText("finance")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByTestId("conversation-list-column")).toBeInTheDocument());
 
     const channelList = screen.getByTestId("conv-list-channels");
     const plusBtn = within(channelList).getByLabelText("New channel");

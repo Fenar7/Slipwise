@@ -35,9 +35,6 @@ import {
   MOCK_DMS,
   MOCK_GROUPS,
 } from "./mock-data";
-import { MessagingChannelCreate } from "./messaging-channel-create";
-import { MessagingGroupCreate } from "./messaging-group-create";
-import { MessagingDMCreate } from "./messaging-dm-create";
 
 // ─── Shared primitives ────────────────────────────────────────────────────────
 
@@ -151,19 +148,16 @@ interface ChannelListProps {
   activeConversationId: string | null;
   onSelect: (conv: ActiveConversation) => void;
   channels?: MessagingChannel[];
-  onCreateChannel?: (payload: { name: string; description: string | null; visibility: "PUBLIC" | "PRIVATE"; initialParticipantIds: string[] }) => void;
-  creatingChannel?: boolean;
+  onRequestCreate?: () => void;
 }
 
 export function ChannelConversationList({
   activeConversationId,
   onSelect,
   channels: liveChannels,
-  onCreateChannel,
-  creatingChannel,
+  onRequestCreate,
 }: ChannelListProps) {
   const [search, setSearch] = React.useState("");
-  const [showCreate, setShowCreate] = React.useState(false);
 
   const source = liveChannels ?? MOCK_CHANNELS;
   const filtered = source.filter((ch) =>
@@ -195,7 +189,7 @@ export function ChannelConversationList({
         title="Channels"
         subtitle={`${source.length} channels · ${source.filter((c) => c.visibility === "private").length} private`}
         actionLabel="New channel"
-        onAction={() => setShowCreate(true)}
+        onAction={() => onRequestCreate?.()}
         searchPlaceholder="Find a channel…"
         searchValue={search}
         onSearchChange={setSearch}
@@ -236,16 +230,6 @@ export function ChannelConversationList({
           </button>
         </div>
       </div>
-      {showCreate && (
-        <MessagingChannelCreate
-          onClose={() => setShowCreate(false)}
-          onCreate={(payload) => {
-            setShowCreate(false);
-            onCreateChannel?.(payload);
-          }}
-          creating={creatingChannel}
-        />
-      )}
     </div>
   );
 }
@@ -321,13 +305,11 @@ interface DMListProps {
   activeConversationId: string | null;
   onSelect: (conv: ActiveConversation) => void;
   dms?: DirectMessage[];
-  onCreateDM?: (dmPeerId: string) => void;
-  creatingDM?: boolean;
+  onRequestCreate?: () => void;
 }
 
-export function DMConversationList({ activeConversationId, onSelect, dms: liveDms, onCreateDM, creatingDM }: DMListProps) {
+export function DMConversationList({ activeConversationId, onSelect, dms: liveDms, onRequestCreate }: DMListProps) {
   const [search, setSearch] = React.useState("");
-  const [showCreate, setShowCreate] = React.useState(false);
 
   const source = liveDms ?? MOCK_DMS;
   const filtered = source.filter((dm) =>
@@ -356,7 +338,7 @@ export function DMConversationList({ activeConversationId, onSelect, dms: liveDm
         title="Direct Messages"
         subtitle={`${source.length} conversations`}
         actionLabel="New direct message"
-        onAction={() => setShowCreate(true)}
+        onAction={() => onRequestCreate?.()}
         searchPlaceholder="Find a person…"
         searchValue={search}
         onSearchChange={setSearch}
@@ -378,21 +360,12 @@ export function DMConversationList({ activeConversationId, onSelect, dms: liveDm
             type="button"
             className="w-full rounded-lg border border-dashed px-3 py-2 text-xs font-medium transition-colors hover:border-[#DC2626] hover:text-[#DC2626] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]"
             style={{ borderColor: "#E0E0E0", color: "#79747E" }}
-            onClick={() => setShowCreate(true)}
+            onClick={() => onRequestCreate?.()}
           >
             Start a new message…
           </button>
         </div>
       </div>
-      {showCreate && (
-        <MessagingDMCreate
-          onClose={() => setShowCreate(false)}
-          onCreate={(dmPeerId) => {
-            setShowCreate(false);
-            onCreateDM?.(dmPeerId);
-          }}
-        />
-      )}
     </div>
   );
 }
@@ -469,13 +442,11 @@ interface GroupListProps {
   activeConversationId: string | null;
   onSelect: (conv: ActiveConversation) => void;
   groups?: MessagingGroup[];
-  onCreateGroup?: (payload: { name: string; visibility: "PUBLIC" | "PRIVATE"; initialParticipantIds: string[] }) => void;
-  creatingGroup?: boolean;
+  onRequestCreate?: () => void;
 }
 
-export function GroupConversationList({ activeConversationId, onSelect, groups: liveGroups, onCreateGroup, creatingGroup }: GroupListProps) {
+export function GroupConversationList({ activeConversationId, onSelect, groups: liveGroups, onRequestCreate }: GroupListProps) {
   const [search, setSearch] = React.useState("");
-  const [showCreate, setShowCreate] = React.useState(false);
 
   const source = liveGroups ?? MOCK_GROUPS;
   const filtered = source.filter((g) =>
@@ -505,7 +476,7 @@ export function GroupConversationList({ activeConversationId, onSelect, groups: 
         title="Groups"
         subtitle={`${source.length} groups · ${source.filter((g) => g.isPrivate).length} private`}
         actionLabel="New group"
-        onAction={() => setShowCreate(true)}
+        onAction={() => onRequestCreate?.()}
         searchPlaceholder="Find a group…"
         searchValue={search}
         onSearchChange={setSearch}
@@ -523,16 +494,6 @@ export function GroupConversationList({ activeConversationId, onSelect, groups: 
           <EmptySearch label="No groups match your search." />
         )}
       </div>
-      {showCreate && (
-        <MessagingGroupCreate
-          onClose={() => setShowCreate(false)}
-          onCreate={(payload) => {
-            setShowCreate(false);
-            onCreateGroup?.(payload);
-          }}
-          creating={creatingGroup}
-        />
-      )}
     </div>
   );
 }

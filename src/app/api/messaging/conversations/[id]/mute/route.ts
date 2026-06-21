@@ -18,10 +18,10 @@ import { toggleConversationMute } from "@/lib/messaging/notification-service";
  */
 export async function POST(
   req: NextRequest,
-  context: { params: Promise<{ conversationId: string }> },
+  context: { params: Promise<{ id: string }> },
 ) {
   try {
-    const { conversationId } = await context.params;
+    const { id: conversationId } = await context.params;
     const { userId, orgId } = await requireMessagingPermission(MESSAGING_RESOURCE, MESSAGING_ACTIONS.READ);
     const body = await req.json();
     const { isMuted } = body;

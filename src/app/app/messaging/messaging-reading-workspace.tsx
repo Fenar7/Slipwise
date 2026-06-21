@@ -26,6 +26,7 @@ import {
   Pin,
   FileText,
   FileSpreadsheet,
+  Image,
   Smile,
   AlertTriangle,
   Loader2,
@@ -431,6 +432,16 @@ function AttachmentChip({ name, mimeType, attachmentId, sizeBytes, onDownload, s
     }
   }
 
+  function triggerAnchorDownload(url: string, filename: string) {
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.rel = "noopener noreferrer";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }
+
   async function handleCardClick() {
     if (isBlocked || scanStatus === "PENDING" || urlLoading) return;
     const url = await ensureSignedUrl();
@@ -441,7 +452,7 @@ function AttachmentChip({ name, mimeType, attachmentId, sizeBytes, onDownload, s
     e.stopPropagation();
     if (urlLoading) return;
     const url = await ensureSignedUrl();
-    if (url) window.open(url, "_blank");
+    if (url) triggerAnchorDownload(url, name);
   }
 
   const modalAttachment: FilePreviewAttachment | null = signedUrl ? {
@@ -549,7 +560,7 @@ function AttachmentChip({ name, mimeType, attachmentId, sizeBytes, onDownload, s
           isOpen={previewOpen}
           onClose={() => setPreviewOpen(false)}
           attachment={modalAttachment}
-          onDownload={(url) => window.open(url, "_blank")}
+          onDownload={(url) => triggerAnchorDownload(url, name)}
         />
       )}
     </div>

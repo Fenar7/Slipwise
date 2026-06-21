@@ -10,11 +10,11 @@ export const runtime = "nodejs";
  */
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
+  { params }: { params: Promise<{ provider: string }> },
 ) {
   try {
     const { orgId, userId } = await requireMessagingApiContext();
-    const { id: connectionId } = await params;
+    const { provider: connectionId } = await params;
 
     const connection = await disconnectCalendar({
       orgId,

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, waitFor, fireEvent, renderHook } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent, renderHook, within } from "@testing-library/react";
 import React from "react";
 
 vi.mock("next/navigation", () => ({
@@ -306,7 +306,7 @@ describe("MessagingComposer Sprint 5.2 live send", () => {
     fireEvent.input(input, { target: { textContent: "Hello team" } });
     fireEvent.click(screen.getByTestId("composer-send-btn"));
 
-    await waitFor(() => expect(onSend).toHaveBeenCalledWith("Hello team"));
+    await waitFor(() => expect(onSend).toHaveBeenCalledWith("Hello team", expect.any(Object)));
   });
 
   it("disables send while sending and shows sending label", async () => {
@@ -477,8 +477,8 @@ describe("MessagingWorkspace Sprint 5.2 integration", () => {
   it("sends a top-level message and refreshes detail", async () => {
     const { MessagingWorkspace } = await import("../messaging-workspace");
     render(<MessagingWorkspace />);
-    await waitFor(() => expect(screen.getByText("finance")).toBeInTheDocument());
-    fireEvent.click(screen.getByText("finance"));
+    const listColumn = await waitFor(() => screen.getByTestId("conversation-list-column"));
+    fireEvent.click(within(listColumn).getByText("finance"));
     await waitFor(() => expect(screen.getByTestId("reading-workspace")).toBeInTheDocument());
 
     const input = screen.getByTestId("composer-input");
@@ -492,16 +492,16 @@ describe("MessagingWorkspace Sprint 5.2 integration", () => {
   it("marks conversation as read when selected with unread messages", async () => {
     const { MessagingWorkspace } = await import("../messaging-workspace");
     render(<MessagingWorkspace />);
-    await waitFor(() => expect(screen.getByText("finance")).toBeInTheDocument());
-    fireEvent.click(screen.getByText("finance"));
+    const listColumn = await waitFor(() => screen.getByTestId("conversation-list-column"));
+    fireEvent.click(within(listColumn).getByText("finance"));
     await waitFor(() => expect(fetchCalls.some((c) => c.url.endsWith("/read"))).toBe(true));
   });
 
   it("fetches thread replies when a thread is opened", async () => {
     const { MessagingWorkspace } = await import("../messaging-workspace");
     render(<MessagingWorkspace />);
-    await waitFor(() => expect(screen.getByText("finance")).toBeInTheDocument());
-    fireEvent.click(screen.getByText("finance"));
+    const listColumn = await waitFor(() => screen.getByTestId("conversation-list-column"));
+    fireEvent.click(within(listColumn).getByText("finance"));
     await waitFor(() => expect(screen.getByTestId("reading-workspace")).toBeInTheDocument());
 
     const threadCue = await waitFor(() => screen.getByTestId("thread-cue-button"));
@@ -569,8 +569,8 @@ describe("MessagingWorkspace Sprint 5.2 integration", () => {
   it("refreshes list after successful thread reply", async () => {
     const { MessagingWorkspace } = await import("../messaging-workspace");
     render(<MessagingWorkspace />);
-    await waitFor(() => expect(screen.getByText("finance")).toBeInTheDocument());
-    fireEvent.click(screen.getByText("finance"));
+    const listColumn = await waitFor(() => screen.getByTestId("conversation-list-column"));
+    fireEvent.click(within(listColumn).getByText("finance"));
     await waitFor(() => expect(screen.getByTestId("reading-workspace")).toBeInTheDocument());
 
     const threadCue = await waitFor(() => screen.getByTestId("thread-cue-button"));

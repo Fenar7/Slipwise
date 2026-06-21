@@ -62,6 +62,7 @@ export function setupLegacyMessagingMocks() {
       channels: mappedChannels,
       dms: mappedDms,
       groups: mappedGroups,
+      portals: [],
       loading: false,
       error: null,
       empty: false,

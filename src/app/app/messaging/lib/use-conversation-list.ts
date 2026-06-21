@@ -11,14 +11,14 @@ export function useConversationList() {
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (options?: { silent?: boolean }) => {
     if (abortRef.current) {
       abortRef.current.abort();
     }
     const controller = new AbortController();
     abortRef.current = controller;
 
-    setLoading(true); setError(null);
+    if (!options?.silent) setLoading(true); setError(null);
     try {
       const res = await fetch("/api/messaging/conversations", {
         credentials: "same-origin",

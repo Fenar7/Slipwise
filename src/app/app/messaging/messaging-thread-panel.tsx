@@ -143,6 +143,16 @@ function AttachmentChip({ name, mimeType, attachmentId, sizeBytes, scanStatus, o
     }
   }
 
+  function triggerAnchorDownload(url: string, filename: string) {
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.rel = "noopener noreferrer";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }
+
   async function handleCardClick() {
     if (isBlocked || scanStatus === "PENDING" || urlLoading) return;
     const url = await ensureSignedUrl();
@@ -153,7 +163,7 @@ function AttachmentChip({ name, mimeType, attachmentId, sizeBytes, scanStatus, o
     e.stopPropagation();
     if (urlLoading) return;
     const url = await ensureSignedUrl();
-    if (url) window.open(url, "_blank");
+    if (url) triggerAnchorDownload(url, name);
   }
 
   const modalAttachment: FilePreviewAttachment | null = signedUrl ? {
@@ -261,7 +271,7 @@ function AttachmentChip({ name, mimeType, attachmentId, sizeBytes, scanStatus, o
           isOpen={previewOpen}
           onClose={() => setPreviewOpen(false)}
           attachment={modalAttachment}
-          onDownload={(url) => window.open(url, "_blank")}
+          onDownload={(url) => triggerAnchorDownload(url, name)}
         />
       )}
     </div>

@@ -66,11 +66,22 @@ import {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function renderLeftRail(activeSection: any = "channels") {
+function renderLeftRail(activeSection: any = "channels", extraProps: Record<string, any> = {}) {
   return render(
     <MessagingLeftRail
       activeSection={activeSection}
       onSectionChange={vi.fn()}
+      channels={MOCK_CHANNELS}
+      dms={MOCK_DMS}
+      groups={MOCK_GROUPS}
+      portals={[]}
+      unreadSummary={{
+        channels: MOCK_CHANNELS.reduce((sum, c) => sum + c.unreadCount, 0),
+        dms: MOCK_DMS.reduce((sum, d) => sum + d.unreadCount, 0),
+        groups: MOCK_GROUPS.reduce((sum, g) => sum + g.unreadCount, 0),
+        portals: 0,
+      }}
+      {...extraProps}
     />
   );
 }

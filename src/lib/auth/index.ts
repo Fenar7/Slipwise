@@ -1,4 +1,5 @@
 export { 
+  getAuthContext,
   getAuthRoutingContext,
   requireOrgContext, 
   getOrgContext, 

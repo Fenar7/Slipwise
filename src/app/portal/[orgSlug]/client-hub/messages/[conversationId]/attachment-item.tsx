@@ -31,7 +31,13 @@ export function PortalAttachmentItem({
     try {
       const result = await getPortalAttachmentDownloadUrl(orgSlug, attachmentId);
       if (result.success && result.data?.signedUrl) {
-        window.open(result.data.signedUrl, "_blank");
+        const a = document.createElement("a");
+        a.href = result.data.signedUrl;
+        a.download = fileName;
+        a.rel = "noopener noreferrer";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
       } else {
         setError(result.error || "Failed to download");
       }

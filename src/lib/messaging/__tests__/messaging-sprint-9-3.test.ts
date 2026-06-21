@@ -153,7 +153,7 @@ import { dispatchDueTaskReminders } from "../task-reminders";
 // API Route Handlers
 import { GET as getNotificationsRoute, POST as postNotificationsRoute } from "@/app/api/messaging/notifications/route";
 import { GET as getPrefsRoute, PUT as putPrefsRoute } from "@/app/api/messaging/notification-preferences/route";
-import { POST as postMuteRoute } from "@/app/api/messaging/conversations/[conversationId]/mute/route";
+import { POST as postMuteRoute } from "@/app/api/messaging/conversations/[id]/mute/route";
 
 describe("Sprint 9.3 — Notification Center, Preferences, and Alert Routing", () => {
   beforeEach(() => {

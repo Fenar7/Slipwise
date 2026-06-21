@@ -89,6 +89,10 @@ vi.mock("@/lib/db", () => {
     findMany: makeFn(),
   };
 
+  const profile = {
+    findMany: makeFn(),
+  };
+
   const db = {
     ...{
       conversation,
@@ -100,6 +104,7 @@ vi.mock("@/lib/db", () => {
       conversationReadState,
       messagingAuditEvent,
       conversationAttachment,
+      profile,
     },
     $transaction: makeFn().mockImplementation(async (fn: (tx: typeof db) => Promise<unknown>) => {
       return fn(db);
