@@ -853,7 +853,7 @@ describe("InMemoryRealtimePublisher", () => {
 describe("Sprint 4.1 regression guard", () => {
   let wss: WebSocketServer;
   let gateway: MessagingGateway;
-  const port = 19997;
+  const port = 19992;
 
   beforeEach(() => {
     wss = new WebSocketServer({ port });
