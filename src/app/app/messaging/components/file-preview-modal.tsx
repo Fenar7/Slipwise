@@ -269,27 +269,6 @@ function DocxPreview({ src, onDownload }: { src: string; onDownload: () => void 
           height: auto !important;
           box-sizing: border-box !important;
         }
-        .docx-rendered-container .docx-rendered-page p,
-        .docx-rendered-container .docx-rendered-page span,
-        .docx-rendered-container .docx-rendered-page h1,
-        .docx-rendered-container .docx-rendered-page h2,
-        .docx-rendered-container .docx-rendered-page h3,
-        .docx-rendered-container .docx-rendered-page h4 {
-          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important;
-        }
-        .docx-rendered-container .docx-list-bullet {
-          font-size: 0 !important;
-          display: inline-block !important;
-          vertical-align: middle !important;
-        }
-        .docx-rendered-container .docx-list-bullet::after {
-          content: "•" !important;
-          font-size: 14px !important;
-          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important;
-          color: #1F2937 !important;
-          font-weight: bold !important;
-          margin-right: 6px !important;
-        }
       `}} />
       {loading && <PreviewLoading label="Rendering Word document..." />}
       {error && <PreviewError onRetry={fetchAndRender} onDownload={onDownload} />}
@@ -680,13 +659,6 @@ export function FilePreviewModal({ isOpen, onClose, attachment, onDownload }: Fi
     if (e.target === e.currentTarget) onClose();
   }
 
-  // Get localized button label like macOS Quick Look
-  const getOpenButtonLabel = () => {
-    if (isDocx) return "Open with Microsoft Word";
-    if (isPdf) return "Open with Preview";
-    return "Download";
-  };
-
   return (
     <div
       className="fixed inset-0 z-50 flex flex-col bg-neutral-950/90 backdrop-blur-md"
@@ -696,45 +668,56 @@ export function FilePreviewModal({ isOpen, onClose, attachment, onDownload }: Fi
       aria-modal="true"
       aria-label={`Preview: ${name}`}
     >
-      {/* macOS Quick Look Styled Header Bar */}
+      {/* Clean Premium Web Header Bar */}
       <div 
-        className="flex h-14 shrink-0 items-center justify-between border-b px-4 text-white" 
-        style={{ backgroundColor: "#18181B", borderBottomColor: "#27272A" }}
+        className="flex h-14 shrink-0 items-center justify-between px-4 text-white select-none" 
+        style={{ backgroundColor: "#171717", borderBottom: "1px solid #262626" }}
       >
         <div className="flex items-center gap-3 min-w-0">
-          {/* Close button inside circular overlay */}
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-neutral-800 hover:bg-neutral-700 transition-colors focus:outline-none"
-            aria-label="Close preview"
+          <div 
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-neutral-800" 
+            style={{ backgroundColor: "#262626" }}
           >
-            <X className="h-4 w-4" style={{ color: "#D4D4D4" }} />
-          </button>
-          
-          <div className="min-w-0 flex items-center gap-2">
-            <span className="text-sm font-semibold truncate text-neutral-200 select-all">{name}</span>
-            <span className="text-[10px] text-neutral-400 font-medium whitespace-nowrap">
-              ({formatBytes(sizeBytes)})
-            </span>
+            {isImage ? (
+              <Eye className="h-4 w-4 text-blue-400" style={{ color: "#60A5FA" }} />
+            ) : isPdf ? (
+              <FileText className="h-4 w-4 text-red-400" style={{ color: "#F87171" }} />
+            ) : isDocx ? (
+              <FileText className="h-4 w-4 text-blue-400" style={{ color: "#60A5FA" }} />
+            ) : isXlsx ? (
+              <FileSpreadsheet className="h-4 w-4 text-green-400" style={{ color: "#4ADE80" }} />
+            ) : (
+              <FileText className="h-4 w-4 text-neutral-400" style={{ color: "#A3A3A3" }} />
+            )}
+          </div>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold truncate text-white">{name}</p>
+            <p className="text-[10px] text-neutral-400">
+              {formatBytes(sizeBytes)}
+              {!canRender && " · Download to view"}
+            </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
-          {/* Action / Download button styled like Apple Quick Look "Open with..." */}
+        <div className="flex items-center gap-2.5">
           <button
             type="button"
             onClick={handleDownloadClick}
-            className="inline-flex items-center gap-1.5 rounded-lg border px-3.5 py-1.5 text-xs font-semibold transition-all hover:bg-neutral-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
-            style={{ 
-              backgroundColor: "rgba(39, 39, 42, 0.6)", 
-              borderColor: "#3F3F46", 
-              color: "#F4F4F5"
-            }}
-            aria-label={getOpenButtonLabel()}
+            className="inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-xs font-semibold hover:bg-red-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]"
+            style={{ backgroundColor: "#DC2626", color: "#FFFFFF" }}
+            aria-label="Download original file"
           >
-            <Download className="h-3.5 w-3.5" style={{ color: "#D4D4D4" }} />
-            {getOpenButtonLabel()}
+            <Download className="h-3.5 w-3.5" style={{ color: "#FFFFFF" }} />
+            Download
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-neutral-800 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626] text-neutral-400 hover:text-white"
+            style={{ color: "#A3A3A3" }}
+            aria-label="Close preview"
+          >
+            <X className="h-4 w-4" style={{ color: "#FFFFFF" }} />
           </button>
         </div>
       </div>
