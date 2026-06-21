@@ -31,6 +31,7 @@ import {
   cleanupDraftAttachments,
   isAttachmentServiceError,
 } from "./attachment-service";
+import { withRetry, isRetryableProviderError } from "./retry-utils";
 import {
   computeDraftFingerprint,
   findLatestSendAttemptForFingerprint,
@@ -45,6 +46,7 @@ import {
   getSendAttemptById,
 } from "./send-attempt-service";
 import type { SendAttemptRecord } from "./send-attempt-service";
+import { logMailboxTelemetry, captureMailboxError } from "./telemetry";
 
 // ─── Errors ───────────────────────────────────────────────────────────────────
 
@@ -307,6 +309,15 @@ export async function sendDraft(input: SendDraftInput): Promise<SendDraftResult>
     };
   }
 
+  // Emit telemetry so dashboards can track send volume per connection.
+  await logMailboxTelemetry("send_attempt_started", {
+    orgId,
+    userId,
+    draftId,
+    mailboxConnectionId: connection.id,
+    mode: draft.mode,
+  });
+
   // Generate correlation keys and create attempt
   const correlationKey = generateCorrelationKey();
   const rfcMessageId = generateRfcMessageId(correlationKey);
@@ -329,21 +340,36 @@ export async function sendDraft(input: SendDraftInput): Promise<SendDraftResult>
 
   let sendResult;
   try {
-    sendResult = await adapter.sendMessage({
-      orgId,
-      tokenRef: connection.tokenRef,
-      from: draft.fromIdentity,
-      to: draft.toRecipients as string[],
-      cc: (draft.ccRecipients as string[]) ?? [],
-      bcc: (draft.bccRecipients as string[]) ?? [],
-      subject: draft.subject,
-      htmlBody: draft.htmlBody ?? "",
-      textBody: draft.textBody ?? null,
-      threadContext,
-      attachments: attachmentPayload,
-      correlationKey,
-      rfcMessageId,
-    });
+    sendResult = await withRetry(
+      () =>
+        adapter.sendMessage({
+          orgId,
+          tokenRef: connection.tokenRef,
+          from: draft.fromIdentity,
+          to: draft.toRecipients as string[],
+          cc: (draft.ccRecipients as string[]) ?? [],
+          bcc: (draft.bccRecipients as string[]) ?? [],
+          subject: draft.subject,
+          htmlBody: draft.htmlBody ?? "",
+          textBody: draft.textBody ?? null,
+          threadContext,
+          attachments: attachmentPayload,
+          correlationKey,
+          rfcMessageId,
+        }),
+      {
+        baseDelayMs: 1000,
+        maxDelayMs: 15_000,
+        maxAttempts: 3,
+        retryable: (err) => {
+          if (err && typeof err === "object" && "category" in err) {
+            const providerErr = err as { category: string; retryable?: boolean };
+            return providerErr.retryable !== false || isRetryableProviderError(err);
+          }
+          return isRetryableProviderError(err);
+        },
+      },
+    );
   } catch (err) {
     const safeMessage = err instanceof Error ? err.message : "Unknown provider error";
     sendResult = {
@@ -378,6 +404,20 @@ export async function sendDraft(input: SendDraftInput): Promise<SendDraftResult>
           },
         });
       });
+      // Emit telemetry + forward to Sentry for definitive (non-retryable) send failures.
+      await logMailboxTelemetry("send_attempt_failed", {
+        orgId,
+        draftId,
+        mailboxConnectionId: connection.id,
+        attemptId: attempt.id,
+        errorCategory: sendResult.category,
+        errorSummary: sendResult.safeMessage,
+        retryable: false,
+      });
+      await captureMailboxError(
+        new Error(sendResult.safeMessage),
+        { orgId, draftId, attemptId: attempt.id, errorCategory: sendResult.category },
+      );
 
       return {
         status: "failed",
@@ -464,6 +504,15 @@ export async function sendDraft(input: SendDraftInput): Promise<SendDraftResult>
   } catch {
     // Non-fatal
   }
+  // Emit send success telemetry so delivery-rate dashboards stay accurate.
+  await logMailboxTelemetry("send_attempt_completed", {
+    orgId,
+    draftId,
+    mailboxConnectionId: connection.id,
+    attemptId: attempt.id,
+    providerMessageId: sendResult.providerMessageId,
+    providerThreadId: sendResult.providerThreadId,
+  });
 
   return {
     status: "sent",
@@ -627,19 +676,33 @@ async function legacySendFallback(params: {
 
   let sendResult;
   try {
-    sendResult = await adapter.sendMessage({
-      orgId,
-      tokenRef: connection.tokenRef,
-      from: draft.fromIdentity,
-      to: draft.toRecipients as string[],
-      cc: (draft.ccRecipients as string[]) ?? [],
-      bcc: (draft.bccRecipients as string[]) ?? [],
-      subject: draft.subject,
-      htmlBody: draft.htmlBody ?? "",
-      textBody: draft.textBody ?? null,
-      threadContext,
-      attachments: attachmentPayload,
-    });
+    sendResult = await withRetry(
+      () =>
+        adapter.sendMessage({
+          orgId,
+          tokenRef: connection.tokenRef,
+          from: draft.fromIdentity,
+          to: draft.toRecipients as string[],
+          cc: (draft.ccRecipients as string[]) ?? [],
+          bcc: (draft.bccRecipients as string[]) ?? [],
+          subject: draft.subject,
+          htmlBody: draft.htmlBody ?? "",
+          textBody: draft.textBody ?? null,
+          threadContext,
+          attachments: attachmentPayload,
+        }),
+      {
+        baseDelayMs: 1000,
+        maxDelayMs: 15_000,
+        maxAttempts: 3,
+        retryable: (err) => {
+          if (err && typeof err === "object" && "category" in err) {
+            return (err as { retryable?: boolean }).retryable !== false || isRetryableProviderError(err);
+          }
+          return isRetryableProviderError(err);
+        },
+      },
+    );
   } catch (err) {
     const safeMessage = err instanceof Error ? err.message : "Unknown provider error";
     sendResult = {

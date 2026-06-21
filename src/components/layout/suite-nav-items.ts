@@ -16,6 +16,7 @@ import {
   Receipt,
   Handshake,
   Inbox,
+  MessageSquare,
 } from "lucide-react";
 
 export interface NavItem {
@@ -39,6 +40,12 @@ export const suiteNavItems: NavItem[] = [
     label: "Mailbox",
     suite: "mailbox",
     icon: Inbox,
+  },
+  {
+    href: "/app/messaging",
+    label: "Messaging",
+    suite: "messaging",
+    icon: MessageSquare,
   },
   {
     href: "/app/docs",

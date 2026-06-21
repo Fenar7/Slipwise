@@ -6,6 +6,13 @@ import type { MailboxConnectionRecord, MailboxConnectionStatus } from "./domain-
 import { logMailboxAuditTx } from "./audit";
 import type { MailboxAuditAction } from "./domain-types";
 import { isSchemaDriftError } from "@/lib/prisma-errors";
+import { logMailboxTelemetry } from "./telemetry";
+
+/**
+ * System user ID used for auto-generated system messages (e.g., "New Chat" welcome).
+ * Matches the UUID format used for org members but is not a real user row.
+ */
+export const SYSTEM_USER_ID = "00000000-0000-0000-0000-000000000000";
 
 // ─── Org-scoped connection queries ────────────────────────────────────────────
 
@@ -86,6 +93,56 @@ export async function findMailboxConnectionByProviderAccount(
   }
 }
 
+/**
+ * Result of a paginated connection list query.
+ */
+export interface PaginatedMailboxConnectionsResult {
+  records: MailboxConnectionRecord[];
+  nextCursor: string | null;
+}
+
+/**
+ * List mailbox connections for an org with cursor-based pagination.
+ * Excludes soft-deleted connections (deletedAt IS NULL).
+ *
+ * @param orgId - The organization to scope the query to.
+ * @param options.cursor - Opaque cursor (record id) for the next page.
+ * @param options.pageSize - Number of records per page (1–100, default 20).
+ */
+export async function listMailboxConnectionsPaginated(
+  orgId: string,
+  options?: { cursor?: string; pageSize?: number },
+): Promise<PaginatedMailboxConnectionsResult> {
+  const pageSize = Math.min(Math.max(options?.pageSize ?? 20, 1), 100);
+
+  try {
+    const rows = await db.mailboxConnection.findMany({
+      where: { orgId, deletedAt: null },
+      orderBy: { createdAt: "asc" },
+      take: pageSize + 1,
+      ...(options?.cursor
+        ? { cursor: { id: options.cursor }, skip: 1 }
+        : {}),
+    });
+
+    const hasMore = rows.length > pageSize;
+    const records = hasMore ? rows.slice(0, pageSize) : rows;
+
+    return {
+      records: records.map(toConnectionRecord),
+      nextCursor: hasMore ? records[records.length - 1].id : null,
+    };
+  } catch (error) {
+    if (isSchemaDriftError(error)) {
+      console.warn(
+        "[mailbox] listMailboxConnectionsPaginated skipped: mailbox_connection schema drift — run prisma migrate deploy",
+      );
+      return { records: [], nextCursor: null };
+    }
+    throw error;
+  }
+}
+
 // ─── Connection mutations ─────────────────────────────────────────────────────
 
 export interface CreateMailboxConnectionInput {
@@ -136,7 +193,154 @@ export async function createMailboxConnection(
     return row;
   });
 
-  return toConnectionRecord(result);
+  const record = toConnectionRecord(result);
+  // Emit connection_created so adoption dashboards track every new mailbox.
+  await logMailboxTelemetry("connection_created", {
+    orgId: input.orgId,
+    connectionId: record.id,
+    provider: input.provider,
+    emailAddress: input.emailAddress,
+    connectedBy: input.connectedBy,
+  });
+  return record;
+}
+
+// ─── New Chat (Sprint 7.3) ────────────────────────────────────────────────────
+
+/**
+ * Result DTO for a newly created chat connection.
+ */
+export interface NewChatConnectionDTO {
+  id: string;
+  displayName: string;
+  visibilityPolicy: string;
+  notificationSettings: Record<string, unknown> | null;
+}
+
+const NEW_CHAT_PREFIX = "New Chat #";
+
+/**
+ * Generate the next "New Chat #<seq>" display name for an org.
+ * Fetches all non-deleted New Chat names for the org, parses the numeric
+ * suffix from each, and returns max + 1. This avoids the lexicographic
+ * ordering pitfall where "New Chat #9" > "New Chat #10".
+ *
+ * Gaps are ignored (e.g., if "#2" is missing and "#3" exists, returns "#4").
+ *
+ * Indexed path: uses composite index on (orgId, displayName) with
+ * a filtered condition (deletedAt IS NULL).
+ */
+export async function generateNewChatName(orgId: string): Promise<string> {
+  const rows = await db.mailboxConnection.findMany({
+    where: {
+      orgId,
+      displayName: { startsWith: NEW_CHAT_PREFIX },
+      deletedAt: null,
+    },
+    select: { displayName: true },
+  });
+
+  const maxSeq = rows.reduce((max, r) => {
+    const seq = parseInt(r.displayName.replace(NEW_CHAT_PREFIX, ""), 10);
+    return Number.isNaN(seq) ? max : Math.max(max, seq);
+  }, 0);
+
+  return `${NEW_CHAT_PREFIX}${maxSeq + 1}`;
+}
+
+/**
+ * Create a "New Chat" connection, welcome thread + message, and audit log
+ * in a single Prisma transaction.
+ *
+ * - connection: status=ACTIVE, provider=GMAIL (placeholder), synthetic
+ *   providerAccountId/emailAddress
+ * - thread: synthetic providerThreadId, subject="Welcome to your new mailbox!"
+ * - message: synthetic providerMessageId, htmlBody/snippet with welcome text
+ * - audit: CONNECTION_CREATED with masked name (#<seq> only)
+ *
+ * Caller must emit the realtime event after the transaction commits.
+ */
+export async function createNewChatConnection(
+  orgId: string,
+  userId: string,
+): Promise<NewChatConnectionDTO> {
+  const result = await db.$transaction(async (tx: Prisma.TransactionClient) => {
+    const displayName = await generateNewChatName(orgId);
+    const seq = displayName.replace(NEW_CHAT_PREFIX, "");
+    const connId = `new-chat-${crypto.randomUUID().replace(/-/g, "").slice(0, 16)}`;
+    const threadId = `welcome-thread-${crypto.randomUUID().replace(/-/g, "").slice(0, 16)}`;
+    const msgId = `welcome-msg-${crypto.randomUUID().replace(/-/g, "").slice(0, 16)}`;
+    const now = new Date();
+
+    const connection = await tx.mailboxConnection.create({
+      data: {
+        orgId,
+        provider: "GMAIL",
+        providerAccountId: connId,
+        emailAddress: `chat-${connId}@local`,
+        displayName,
+        status: "ACTIVE",
+        visibilityPolicy: "org_shared",
+        notificationSettings: { email: false, sms: false },
+        connectedBy: userId,
+      },
+    });
+
+    const thread = await tx.mailboxThread.create({
+      data: {
+        orgId,
+        mailboxConnectionId: connection.id,
+        providerThreadId: `system-welcome-${connection.id}`,
+        subject: "Welcome to your new mailbox!",
+        participantsSummary: [],
+        lastMessageAt: now,
+        unreadCount: 1,
+        status: "OPEN",
+        previewSnippet: "Welcome to your new mailbox!",
+      },
+    });
+
+    await tx.mailboxMessage.create({
+      data: {
+        orgId,
+        threadId: thread.id,
+        providerMessageId: `system-welcome-msg-${connection.id}`,
+        direction: "inbound",
+        from: { name: "System", id: SYSTEM_USER_ID },
+        to: [],
+        cc: [],
+        bcc: [],
+        subject: "Welcome to your new mailbox!",
+        htmlBody: "<p>Welcome to your new mailbox!</p>",
+        textBody: "Welcome to your new mailbox!",
+        snippet: "Welcome to your new mailbox!",
+        sentAt: now,
+        receivedAt: now,
+        attachmentCount: 0,
+      },
+    });
+
+    await logMailboxAuditTx(tx, {
+      orgId,
+      actorId: userId,
+      action: "CONNECTION_CREATED",
+      summary: `New Chat #${seq} created`,
+      mailboxConnectionId: connection.id,
+      metadata: {
+        nameSeq: seq,
+        visibilityPolicy: "org_shared",
+      },
+    });
+
+    return {
+      id: connection.id,
+      displayName,
+      visibilityPolicy: "org_shared",
+      notificationSettings: { email: false, sms: false },
+    };
+  });
+
+  return result;
 }
 
 export interface UpdateMailboxConnectionStatusInput {
@@ -202,7 +406,15 @@ export async function updateMailboxConnectionStatus(
     return row;
   });
 
-  return toConnectionRecord(result);
+  const statusRecord = toConnectionRecord(result);
+  // Emit status transition telemetry for health dashboards.
+  await logMailboxTelemetry("connection_status_updated", {
+    orgId: input.orgId,
+    connectionId: input.connectionId,
+    newStatus: input.status,
+    reason: input.lastSyncError ?? undefined,
+  });
+  return statusRecord;
 }
 
 /**
@@ -280,6 +492,184 @@ export async function disableMailboxConnection(
   return toConnectionRecord(result);
 }
 
+// ─── Soft-delete ──────────────────────────────────────────────────────────────
+
+/**
+ * Soft-delete a mailbox connection: sets deletedAt and status = DISCONNECTED.
+ * Prevents deletion if the connection has any active drafts.
+ *
+ * @throws Error if connection not found for org.
+ * @throws Error if connection has active drafts (409 semantic).
+ */
+export async function softDeleteMailboxConnection(
+  orgId: string,
+  connectionId: string,
+  actorId: string,
+): Promise<MailboxConnectionRecord> {
+  const result = await db.$transaction(async (tx: Prisma.TransactionClient) => {
+    const existing = await tx.mailboxConnection.findFirst({
+      where: { id: connectionId, orgId },
+      select: { id: true, displayName: true, deletedAt: true },
+    });
+    if (!existing) {
+      throw new Error(
+        `MailboxConnection ${connectionId} not found for org ${orgId}`,
+      );
+    }
+
+    if (existing.deletedAt) {
+      throw new Error(
+        `MailboxConnection ${connectionId} is already deleted`,
+      );
+    }
+
+    const activeDraft = await tx.mailboxDraft.findFirst({
+      where: {
+        mailboxConnectionId: connectionId,
+        orgId,
+        status: "ACTIVE",
+      },
+      select: { id: true },
+    });
+    if (activeDraft) {
+      throw new Error(
+        `MailboxConnection ${connectionId} has active drafts; cannot delete`,
+      );
+    }
+
+    const row = await tx.mailboxConnection.update({
+      where: { id: existing.id },
+      data: {
+        status: "DISCONNECTED",
+        deletedAt: new Date(),
+      },
+    });
+
+    await logMailboxAuditTx(tx, {
+      orgId,
+      actorId,
+      action: "CONNECTION_DISCONNECTED",
+      summary: `Mailbox connection "${existing.displayName}" soft-deleted by admin`,
+      mailboxConnectionId: existing.id,
+      metadata: {
+        deletedAt: new Date().toISOString(),
+        previousDisplayName: existing.displayName,
+      },
+    });
+
+    return row;
+  });
+
+  const deletedRecord = toConnectionRecord(result);
+  // Emit connection_deleted telemetry so adoption metrics reflect true active count.
+  await logMailboxTelemetry("connection_deleted", {
+    orgId,
+    connectionId,
+  });
+  return deletedRecord;
+}
+
+/**
+ * Supported fields that can be bulk-updated on a mailbox connection.
+ */
+export interface UpdateMailboxConnectionSettingsInput {
+  orgId: string;
+  connectionId: string;
+  actorId: string;
+  displayName?: string;
+  visibilityPolicy?: string;
+  notificationSettings?: Record<string, unknown> | null;
+}
+
+/**
+ * Update mailbox connection settings (displayName, visibilityPolicy,
+ * notificationSettings) atomically with audit logging.
+ *
+ * Org safety: loads the existing row inside the transaction with
+ * `findFirst({ where: { id, orgId } })` before mutating. If the row
+ * does not exist for this org the function throws.
+ *
+ * Only provided fields are updated. The audit log captures previous
+ * and new values for changed fields only.
+ */
+export async function updateMailboxConnectionSettings(
+  input: UpdateMailboxConnectionSettingsInput,
+): Promise<MailboxConnectionRecord> {
+  const result = await db.$transaction(async (tx: Prisma.TransactionClient) => {
+    const existing = await tx.mailboxConnection.findFirst({
+      where: { id: input.connectionId, orgId: input.orgId },
+      select: {
+        id: true,
+        displayName: true,
+        visibilityPolicy: true,
+        notificationSettings: true,
+      },
+    });
+    if (!existing) {
+      throw new Error(
+        `MailboxConnection ${input.connectionId} not found for org ${input.orgId}`,
+      );
+    }
+
+    const updateData: Record<string, unknown> = {};
+    const metadata: Record<string, unknown> = {};
+    const summaryParts: string[] = [];
+
+    if (
+      input.displayName !== undefined &&
+      input.displayName !== existing.displayName
+    ) {
+      updateData.displayName = input.displayName;
+      metadata.previousDisplayName = existing.displayName;
+      metadata.newDisplayName = input.displayName;
+      summaryParts.push(
+        `display name updated from "${existing.displayName}" to "${input.displayName}"`,
+      );
+    }
+
+    if (
+      input.visibilityPolicy !== undefined &&
+      input.visibilityPolicy !== existing.visibilityPolicy
+    ) {
+      updateData.visibilityPolicy = input.visibilityPolicy;
+      metadata.previousVisibilityPolicy = existing.visibilityPolicy;
+      metadata.newVisibilityPolicy = input.visibilityPolicy;
+      summaryParts.push(
+        `visibility policy changed to "${input.visibilityPolicy}"`,
+      );
+    }
+
+    if (input.notificationSettings !== undefined) {
+      updateData.notificationSettings = input.notificationSettings;
+      metadata.previousNotificationSettings = existing.notificationSettings;
+      metadata.newNotificationSettings = input.notificationSettings;
+      summaryParts.push("notification settings updated");
+    }
+
+    if (Object.keys(updateData).length === 0) {
+      return existing;
+    }
+
+    const row = await tx.mailboxConnection.update({
+      where: { id: existing.id },
+      data: updateData,
+    });
+
+    await logMailboxAuditTx(tx, {
+      orgId: input.orgId,
+      actorId: input.actorId,
+      action: "CONNECTION_POLICY_UPDATED",
+      summary: `Mailbox connection ${summaryParts.join("; ")}`,
+      mailboxConnectionId: existing.id,
+      metadata,
+    });
+
+    return row;
+  });
+
+  return toConnectionRecord(result);
+}
+
 // ─── Internal mapper ──────────────────────────────────────────────────────────
 
 function toConnectionRecord(
@@ -310,6 +700,13 @@ function toConnectionRecord(
     syncLeaseToken: row.syncLeaseToken ?? null,
     syncLeaseExpiresAt: row.syncLeaseExpiresAt ?? null,
     disabledAt: row.disabledAt,
+    deletedAt: row.deletedAt,
+    notificationSettings:
+      row.notificationSettings != null &&
+      typeof row.notificationSettings === "object" &&
+      !Array.isArray(row.notificationSettings)
+        ? (row.notificationSettings as Record<string, unknown>)
+        : null,
     connectedBy: row.connectedBy,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,

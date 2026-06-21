@@ -5,7 +5,7 @@ import { Prisma } from "@/generated/prisma/client";
 import { listMailboxConnectionsForMember } from "./visibility-service";
 import { listMailboxConnections } from "./connection-service";
 import { indexMailboxThread, indexMailboxMessage } from "./search-indexing-service";
-import { getMailboxProviderAdapter } from "./provider-registry";
+import { getMailboxProviderAdapter, findMailboxProviderAdapter } from "./provider-registry";
 import type { MailboxMessageEnvelope, MailboxThreadEnvelope } from "./provider-contracts";
 import { isMailboxProviderError } from "./provider-contracts";
 import { readMailboxCredential } from "./credential-store";
@@ -774,9 +774,13 @@ async function searchMailboxMessages(params: {
     cursor,
   } = params;
 
+  const batchCoverageProviders = new Map(
+    connectionIdsToQuery.map((id) => [id, accessibleRecordById.get(id)?.provider ?? "GMAIL" as const]),
+  );
   const { coveragesByConnectionId } = await getBatchMailboxFolderCoverage(
     orgId,
     connectionIdsToQuery,
+    batchCoverageProviders,
   );
 
   // ── LOCAL-FIRST: If ALL connections have complete coverage, search locally ──
@@ -815,7 +819,8 @@ async function searchMailboxMessages(params: {
     const record = accessibleRecordById.get(connId);
     if (!record) continue;
 
-    if (record.provider !== "GMAIL") {
+    const supportsSearch = findMailboxProviderAdapter(record.provider)?.descriptor.supportsSearch ?? false;
+    if (!supportsSearch) {
       connectionStatusMap.set(connId, {
         status: "provider_unsupported",
         reason: "Provider search is unsupported for this provider",
@@ -841,12 +846,12 @@ async function searchMailboxMessages(params: {
     }
   }
 
-  const gmailConnections = connectionIdsToQuery
+  const searchableConnections = connectionIdsToQuery
     .map((id) => accessibleRecordById.get(id))
     .filter(
       (record): record is MailboxConnectionRecord =>
         !!record &&
-        record.provider === "GMAIL" &&
+        (findMailboxProviderAdapter(record.provider)?.descriptor.supportsSearch ?? false) &&
         typeof record.tokenRef === "string" &&
         !connectionRequiresReconnect(record.status),
     );
@@ -865,7 +870,7 @@ async function searchMailboxMessages(params: {
   const seenMessageKeys = new Set<string>(providerCursor?.seenThreadKeys ?? []);
   const connectionPageTokens = new Map<string, string | null | undefined>();
 
-  for (const connection of gmailConnections) {
+  for (const connection of searchableConnections) {
     connectionPageTokens.set(
       connection.id,
       providerCursor?.connectionPageTokens[connection.id] ?? null,
@@ -890,7 +895,7 @@ async function searchMailboxMessages(params: {
 
   while (bufferedMessageKeys.length < limit) {
     const bufferedCountBeforeLoop = bufferedMessageKeys.length;
-    const pendingConnections = gmailConnections.filter((connection) => {
+    const pendingConnections = searchableConnections.filter((connection) => {
       if (connectionRequiresReconnect(connection.status)) {
         partialConnectionIds.add(connection.id);
         connectionPageTokens.set(connection.id, undefined);
@@ -1102,7 +1107,7 @@ async function searchMailboxMessages(params: {
     if (!hit) continue;
 
     const connection = accessibleRecordById.get(connId);
-    if (!connection || !connection.tokenRef || connection.provider !== "GMAIL" || connectionRequiresReconnect(connection.status)) {
+    if (!connection || !connection.tokenRef || !findMailboxProviderAdapter(connection.provider) || connectionRequiresReconnect(connection.status)) {
       partialConnectionIds.add(connId);
       continue;
     }
@@ -1200,8 +1205,8 @@ async function searchMailboxMessages(params: {
   );
 
   let coverageState: "complete" | "partial" | "unknown" = "unknown";
-  if (gmailConnections.length > 0) {
-    const allComplete = gmailConnections.every((conn) => {
+  if (searchableConnections.length > 0) {
+    const allComplete = searchableConnections.every((conn) => {
       const overallState = coveragesByConnectionId.get(conn.id)?.overallState;
       return overallState === "COMPLETE";
     });
@@ -1557,24 +1562,32 @@ async function searchMailboxMessagesLocal(params: {
   `;
   const totalCount = Number(countResult[0]?.count ?? 0);
 
-  const connectionStates = accessibleConnectionIds.map((id) => ({
-    connectionId: id,
-    status: "ok" as const,
-    reason: "Local search — all coverage complete",
-  }));
+  const connectionStates = accessibleConnectionIds.map((id) => {
+    const record = accessibleRecordById.get(id);
+    const supportsSearch = record ? (findMailboxProviderAdapter(record.provider)?.descriptor.supportsSearch ?? false) : false;
+    return {
+      connectionId: id,
+      status: supportsSearch ? "ok" as const : "provider_unsupported" as const,
+      reason: supportsSearch ? "Local search — all coverage complete" : "Provider search is unsupported for this provider",
+    };
+  });
 
   logSearchDiagnostics({
     query: trimmedQuery,
     mode: "local",
-    connectionStates: accessibleConnectionIds.map((id) => ({
-      connectionId: id,
-      status: "ok" as const,
-      reason: "Local search — all coverage complete",
-      coverageComplete: true,
-      providerHitCount: 0,
-      localFallbackCount: finalMessageResults.filter((r) => r.mailboxConnectionId === id).length,
-      hydrationMissCount: 0,
-    })),
+    connectionStates: accessibleConnectionIds.map((id) => {
+      const record = accessibleRecordById.get(id);
+      const supportsSearch = record ? (findMailboxProviderAdapter(record.provider)?.descriptor.supportsSearch ?? false) : false;
+      return {
+        connectionId: id,
+        status: supportsSearch ? "ok" as const : "provider_unsupported" as const,
+        reason: supportsSearch ? "Local search — all coverage complete" : "Provider search is unsupported for this provider",
+        coverageComplete: true,
+        providerHitCount: 0,
+        localFallbackCount: finalMessageResults.filter((r) => r.mailboxConnectionId === id).length,
+        hydrationMissCount: 0,
+      };
+    }),
   });
 
   return {
@@ -1775,9 +1788,13 @@ export async function listMailboxThreads(
         ? decodedCursor
         : null;
 
+    const batchCoverageProviders = new Map(
+      connectionIdsToQuery.map((id) => [id, accessibleRecordById.get(id)?.provider ?? "GMAIL" as const]),
+    );
     const { coveragesByConnectionId } = await getBatchMailboxFolderCoverage(
       orgId,
       connectionIdsToQuery,
+      batchCoverageProviders,
     );
 
     const connectionStatusMap = new Map<
@@ -1798,7 +1815,8 @@ export async function listMailboxThreads(
       const record = accessibleRecordById.get(connId);
       if (!record) continue;
 
-      if (record.provider !== "GMAIL") {
+      const supportsSearch = findMailboxProviderAdapter(record.provider)?.descriptor.supportsSearch ?? false;
+      if (!supportsSearch) {
         connectionStatusMap.set(connId, {
           status: "provider_unsupported",
           reason: "Provider search is unsupported for this provider",
@@ -1824,11 +1842,11 @@ export async function listMailboxThreads(
       }
     }
 
-    const requestedGmailConnections = connectionIdsToQuery
+    const requestedSearchableConnections = connectionIdsToQuery
       .map((id) => accessibleRecordById.get(id))
-      .filter((record): record is MailboxConnectionRecord => !!record && record.provider === "GMAIL");
+      .filter((record): record is MailboxConnectionRecord => !!record && (findMailboxProviderAdapter(record.provider)?.descriptor.supportsSearch ?? false));
 
-    const gmailConnections = requestedGmailConnections.filter(
+    const searchableConnections = requestedSearchableConnections.filter(
       (record) => typeof record.tokenRef === "string" && !connectionRequiresReconnect(record.status)
     );
 
@@ -1837,7 +1855,7 @@ export async function listMailboxThreads(
       return overallState === "COMPLETE";
     });
 
-    if (gmailConnections.length === 0) {
+    if (searchableConnections.length === 0) {
       // 1. Run local search on MailboxSearchDocument using buildLocalSearchQuery
       const { whereClause, relevanceSql, parsed } = await buildLocalSearchQuery({
         orgId,
@@ -1940,8 +1958,8 @@ export async function listMailboxThreads(
         .map(cs => cs.connectionId);
 
       let coverageState: "complete" | "partial" | "unknown" = "unknown";
-      if (requestedGmailConnections.length > 0) {
-        const allComplete = requestedGmailConnections.every(conn => {
+      if (requestedSearchableConnections.length > 0) {
+        const allComplete = requestedSearchableConnections.every(conn => {
           const overallState = coveragesByConnectionId.get(conn.id)?.overallState;
           return overallState === "COMPLETE";
         });
@@ -1991,7 +2009,7 @@ export async function listMailboxThreads(
     const seenThreadKeys = new Set<string>(providerCursor?.seenThreadKeys ?? []);
     const connectionPageTokens = new Map<string, string | null | undefined>();
 
-    for (const connection of gmailConnections) {
+    for (const connection of searchableConnections) {
       connectionPageTokens.set(
         connection.id,
         providerCursor?.connectionPageTokens[connection.id] ?? null,
@@ -2006,7 +2024,7 @@ export async function listMailboxThreads(
 
     while (bufferedThreadKeys.length < limit) {
       const bufferedCountBeforeLoop = bufferedThreadKeys.length;
-      const pendingConnections = gmailConnections.filter((connection) => {
+    const pendingConnections = searchableConnections.filter((connection) => {
         if (connectionRequiresReconnect(connection.status)) {
           partialConnectionIds.add(connection.id);
           connectionPageTokens.set(connection.id, undefined);
@@ -2173,7 +2191,7 @@ export async function listMailboxThreads(
       const parsed = splitThreadKey(key);
       if (!parsed) continue;
       const connection = accessibleRecordById.get(parsed.connectionId);
-      if (!connection || !connection.tokenRef || connection.provider !== "GMAIL" || connectionRequiresReconnect(connection.status)) {
+      if (!connection || !connection.tokenRef || !findMailboxProviderAdapter(connection.provider) || connectionRequiresReconnect(connection.status)) {
         partialConnectionIds.add(parsed.connectionId);
         if (connection && connectionRequiresReconnect(connection.status)) {
           connectionStatusMap.set(parsed.connectionId, {
@@ -2253,7 +2271,7 @@ export async function listMailboxThreads(
             ),
             localFallbackFetched: true,
             partialConnectionIds: [...partialConnectionIds],
-            estimatedTotal: gmailConnections.length > 0 ? null : orderedThreads.length,
+            estimatedTotal: searchableConnections.length > 0 ? null : orderedThreads.length,
           })
         : null;
 
@@ -2276,8 +2294,8 @@ export async function listMailboxThreads(
       .map(cs => cs.connectionId);
 
     let coverageState: "complete" | "partial" | "unknown" = "unknown";
-    if (gmailConnections.length > 0) {
-      const allComplete = gmailConnections.every(conn => {
+    if (searchableConnections.length > 0) {
+      const allComplete = searchableConnections.every(conn => {
         const overallState = coveragesByConnectionId.get(conn.id)?.overallState;
         return overallState === "COMPLETE";
       });

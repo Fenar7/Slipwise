@@ -342,6 +342,8 @@ const descriptor: MailboxProviderDescriptor = {
   displayName: "Gmail",
   supportsPushSync: true,
   supportsSend: true,
+  supportsSearch: true,
+  syncCursorType: "HISTORY_ID",
 };
 
 export const gmailProviderAdapter: IMailboxProviderAdapter = {

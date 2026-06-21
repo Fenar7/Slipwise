@@ -73,6 +73,10 @@ export interface MailboxConnectionRecord {
   lastSyncError: string | null;
   lastSyncErrorCategory: string | null;
   disabledAt: Date | null;
+  /** Soft-delete timestamp. When set, the connection is hidden from all views. */
+  deletedAt: Date | null;
+  /** User-configurable notification preferences: { email: boolean, sms: boolean }. */
+  notificationSettings: Record<string, unknown> | null;
   connectedBy: string;
   createdAt: Date;
   updatedAt: Date;
@@ -546,17 +550,32 @@ export type MailboxOverallCoverage =
   | "RECOVERING"     // Recovery in progress for at least one folder
   | "ERRORED"        // At least one folder is ERRORED and no bootstrapping/recovering
   | "PENDING";       // No folders have been started at all
+/**
+ * Get the required coverage folders for a given provider.
+ * Gmail requires INBOX, SENT, SPAM, DRAFT, STARRED, TRASH.
+ * Other providers have no folder coverage requirements by default.
+ */
+export function getRequiredCoverageFolders(provider: MailboxProvider): MailboxCoverageFolder[] {
+  if (provider === "GMAIL") {
+    return GMAIL_REQUIRED_COVERAGE_FOLDERS;
+  }
+  return [];
+}
 
 /**
  * Compute the overall coverage state from a set of folder coverages.
- * Required folders are INBOX, SENT, SPAM, DRAFT, STARRED, TRASH.
+ * Required folders are determined by the provider parameter.
  * Any required folder without a coverage record is treated as PENDING.
  */
 export function computeOverallCoverage(
   coverages: MailboxFolderCoverageSummary[],
+  provider: MailboxProvider,
 ): MailboxOverallCoverage {
+  const requiredFolders = getRequiredCoverageFolders(provider);
+  if (requiredFolders.length === 0) return "COMPLETE";
+
   const coverageMap = new Map(coverages.map((c) => [c.folder, c]));
-  const required: MailboxFolderCoverageSummary[] = GMAIL_REQUIRED_COVERAGE_FOLDERS.map(
+  const required: MailboxFolderCoverageSummary[] = requiredFolders.map(
     (folder) => {
       return coverageMap.get(folder) ?? {
         folder,

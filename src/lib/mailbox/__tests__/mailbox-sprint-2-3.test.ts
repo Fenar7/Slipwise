@@ -23,6 +23,9 @@ vi.mock("@/lib/db", () => ({
       findFirst: vi.fn(),
       update: vi.fn(),
     },
+    mailboxDraft: {
+      findFirst: vi.fn(),
+    },
     mailboxAuditEvent: {
       create: vi.fn(),
     },
@@ -106,6 +109,9 @@ const mockDb = db as unknown as {
     findMany: ReturnType<typeof vi.fn>;
     findFirst: ReturnType<typeof vi.fn>;
     update: ReturnType<typeof vi.fn>;
+  };
+  mailboxDraft: {
+    findFirst: ReturnType<typeof vi.fn>;
   };
   mailboxAuditEvent: { create: ReturnType<typeof vi.fn> };
   $transaction: ReturnType<typeof vi.fn>;
@@ -314,7 +320,8 @@ describe("GET /api/mailbox/connections", () => {
     setupAdminAuth();
     mockDb.mailboxConnection.findMany.mockResolvedValue([makeDbRow()]);
 
-    const res = await listConnections();
+    const req = new NextRequest("http://localhost/api/mailbox/connections");
+    const res = await listConnections(req);
     const body = await res.json();
 
     expect(res.status).toBe(200);
@@ -327,7 +334,8 @@ describe("GET /api/mailbox/connections", () => {
     vi.mocked(getOrgContext).mockResolvedValue(null);
     vi.mocked(hasRole).mockReturnValue(false);
 
-    const res = await listConnections();
+    const req = new NextRequest("http://localhost/api/mailbox/connections");
+    const res = await listConnections(req);
     expect(res.status).toBe(401);
   });
 
@@ -342,7 +350,8 @@ describe("GET /api/mailbox/connections", () => {
     } as never);
     vi.mocked(hasRole).mockReturnValue(false);
 
-    const res = await listConnections();
+    const req = new NextRequest("http://localhost/api/mailbox/connections");
+    const res = await listConnections(req);
     expect(res.status).toBe(403);
   });
 
@@ -350,7 +359,8 @@ describe("GET /api/mailbox/connections", () => {
     setupAdminAuth();
     mockDb.mailboxConnection.findMany.mockResolvedValue([]);
 
-    const res = await listConnections();
+    const req = new NextRequest("http://localhost/api/mailbox/connections");
+    const res = await listConnections(req);
     const body = await res.json();
 
     expect(res.status).toBe(200);
@@ -559,8 +569,9 @@ describe("DELETE /api/mailbox/connections/[id]", () => {
     setupAdminAuth();
     setupTransaction();
     mockDb.mailboxConnection.findFirst.mockResolvedValue(makeDbRow());
+    mockDb.mailboxDraft.findFirst.mockResolvedValue(null);
     mockDb.mailboxConnection.update.mockResolvedValue(
-      makeDbRow({ status: "DISCONNECTED", disabledAt: new Date() }),
+      makeDbRow({ status: "DISCONNECTED", disabledAt: new Date(), deletedAt: new Date() }),
     );
     mockDb.mailboxAuditEvent.create.mockResolvedValue({});
 

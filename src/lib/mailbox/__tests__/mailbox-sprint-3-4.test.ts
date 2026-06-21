@@ -17,6 +17,7 @@ vi.mock("server-only", () => ({}));
 
 vi.mock("@/lib/db", () => ({
   db: {
+    $transaction: vi.fn((cb: any) => cb({ $queryRawUnsafe: vi.fn().mockResolvedValue([{ locked: true }]) })),
     mailboxThread: {
       upsert: vi.fn(),
       updateMany: vi.fn(),
@@ -89,7 +90,7 @@ vi.mock("@/lib/mailbox/gmail-provider", async () => {
   return {
     ...actual,
     gmailProviderAdapter: {
-      descriptor: { provider: "GMAIL", displayName: "Gmail", supportsPushSync: true, supportsSend: true },
+    descriptor: { provider: "GMAIL", displayName: "Gmail", supportsPushSync: true, supportsSend: true, supportsSearch: true, syncCursorType: "HISTORY_ID" },
       connect: vi.fn(),
       refreshAuthorization: vi.fn(),
       verifyConnection: vi.fn(),
@@ -118,6 +119,16 @@ vi.mock("@/lib/mailbox/audit", () => ({
 
 vi.mock("@/lib/mailbox/provider-registry", () => ({
   getMailboxProviderAdapter: vi.fn(),
+  findMailboxProviderAdapter: vi.fn(),
+}));
+
+vi.mock("@/lib/mailbox/folder-coverage-service", () => ({
+  markFolderCoverageComplete: vi.fn(),
+  updateFolderCoverageBootstrapping: vi.fn(),
+  initFolderCoverageForBootstrap: vi.fn(),
+  getIncompleteRequiredFolders: vi.fn().mockResolvedValue([]),
+  getFolderCoverage: vi.fn().mockResolvedValue(null),
+  resetFolderCoverageCursor: vi.fn(),
 }));
 
 vi.mock("@/lib/mailbox/folder-coverage-service", () => ({

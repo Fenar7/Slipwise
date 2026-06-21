@@ -88,6 +88,12 @@ export const RATE_LIMITS = {
   mailboxTokenRefresh: { maxRequests: 10, window: "60 s" },
   // Mailbox Phase 2 Sprint 2.4: Visibility policy governance
   mailboxPolicyUpdate: { maxRequests: 10, window: "60 s" },
+  // Mailbox Sprint 7.3: New Chat creation (5 req/min per org)
+  mailboxCreate: { maxRequests: 5, window: "60 s" },
   // Mailbox search suggestions
   search: { maxRequests: 30, window: "60 s" },
+  // Mailbox Sprint 7.4: Audit trail and support summary
+  mailboxAuditList: { maxRequests: 30, window: "60 s" },
+  mailboxAuditDetail: { maxRequests: 60, window: "60 s" },
+  mailboxSupportSummary: { maxRequests: 20, window: "60 s" },
 } as const;

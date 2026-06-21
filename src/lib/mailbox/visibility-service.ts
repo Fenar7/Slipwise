@@ -77,11 +77,13 @@ export async function listMailboxConnectionsForMember(
   const accessible: MailboxConnectionListItem[] = [];
   const restricted: MailboxRestrictedSummary[] = [];
 
+  const connectionProviders = new Map(records.map((r) => [r.id, r.provider]));
   let batchCoverage: Awaited<ReturnType<typeof getBatchMailboxFolderCoverage>> | null = null;
   try {
     batchCoverage = await getBatchMailboxFolderCoverage(
       orgId,
       records.map((r) => r.id),
+      connectionProviders,
     );
   } catch {
     // Table may not exist yet (pending migration); skip coverage enrichment

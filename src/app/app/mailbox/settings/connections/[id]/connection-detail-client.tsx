@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 import {
   ArrowLeft,
   CheckCircle2,
@@ -12,6 +13,7 @@ import {
   Users,
   Trash2,
   RefreshCw,
+  Loader2,
 } from "lucide-react";
 import type { DisconnectConfirmState } from "../../../types";
 import { MailboxConnectFlow } from "../../mailbox-connect-flow";
@@ -142,6 +144,10 @@ export function ConnectionDetailClient({ connectionId }: ConnectionDetailClientP
   const [disconnectError, setDisconnectError] = useState<string | null>(null);
   const shouldOpenReconnect = searchParams.get("action") === "reconnect";
 
+  const [displayNameDraft, setDisplayNameDraft] = useState("");
+  const [visibilityDraft, setVisibilityDraft] = useState("org_shared");
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;
     async function load() {
@@ -205,6 +211,12 @@ export function ConnectionDetailClient({ connectionId }: ConnectionDetailClientP
     setShowReconnect(true);
   }, [connection, shouldOpenReconnect]);
 
+  useEffect(() => {
+    if (connection) {
+      setDisplayNameDraft(connection.displayName);
+      setVisibilityDraft(connection.visibilityPolicy);
+    }
+  }, [connection]);
   if (isLoading) {
     return (
       <div className="mx-auto max-w-2xl px-6 py-8" data-testid="connection-detail-loading">
@@ -335,18 +347,159 @@ export function ConnectionDetailClient({ connectionId }: ConnectionDetailClientP
         </dl>
       </section>
 
-      {/* Visibility — read-only truthful state */}
-      <section className="mb-6 rounded-xl border border-[#E2E5EA] bg-white p-5" aria-label="Mailbox visibility">
-        <div className="mb-1 flex items-center gap-2">
-          <Users className="h-4 w-4 text-[#16294D]" aria-hidden="true" />
-          <h2 className="text-sm font-bold text-[#0F172A]">Visibility</h2>
+      {/* Settings form — Display Name & Visibility Policy */}
+      <section className="mb-6 rounded-xl border border-[#E2E5EA] bg-white p-5" aria-label="Mailbox settings form">
+        <div className="mb-4 flex items-center gap-2">
+          <ShieldCheck className="h-4 w-4 text-[#16294D]" aria-hidden="true" />
+          <h2 className="text-sm font-bold text-[#0F172A]">Mailbox settings</h2>
         </div>
-        <p className="text-xs text-[#64748B]">
-          This mailbox is visible to members based on the visibility policy set for this connection.
-        </p>
-        <div className="mt-3 rounded-lg border border-[#E2E5EA] bg-[#F7F8FB] px-3 py-2.5 text-xs text-[#334155]">
-          <span className="font-semibold">Current visibility:</span>{" "}
-          {formatVisibilityPolicy(connection.visibilityPolicy)}
+
+        {/* Display Name */}
+        <div className="mb-5">
+          <label htmlFor="display-name-input" className="mb-1.5 block text-xs font-semibold text-[#334155]">
+            Display name
+          </label>
+          <input
+            id="display-name-input"
+            type="text"
+            value={displayNameDraft}
+            onChange={(e) => setDisplayNameDraft(e.target.value)}
+            maxLength={100}
+            className="w-full rounded-lg border border-[#E2E5EA] bg-white px-3 py-2 text-sm text-[#0F172A] outline-none transition-colors placeholder:text-[#94A3B8] focus:border-[#16294D] focus:ring-1 focus:ring-[#16294D]/20"
+            data-testid="display-name-input"
+            placeholder="Enter a display name"
+          />
+          <p className="mt-1 text-[11px] text-[#94A3B8]">{displayNameDraft.length}/100 characters</p>
+        </div>
+
+        {/* Visibility Policy */}
+        <div>
+          <p className="mb-2 text-xs font-semibold text-[#334155]">Mailbox visibility</p>
+          <p className="mb-3 text-xs text-[#64748B]">
+            Controls who in the organization can access this mailbox.
+          </p>
+          <div className="space-y-2.5">
+            <label
+              className={cn(
+                "flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors",
+                visibilityDraft === "org_shared"
+                  ? "border-[#16294D] bg-[#F1F3F7]"
+                  : "border-[#E2E5EA] bg-white hover:bg-[#F7F8FB]",
+              )}
+              data-testid="visibility-option-org_shared"
+            >
+              <input
+                type="radio"
+                name="visibilityPolicy"
+                value="org_shared"
+                checked={visibilityDraft === "org_shared"}
+                onChange={() => setVisibilityDraft("org_shared")}
+                className="mt-0.5 h-4 w-4 accent-[#16294D]"
+              />
+              <div>
+                <p className="text-sm font-semibold text-[#0F172A]">Shared with organization</p>
+                <p className="mt-0.5 text-xs text-[#64748B]">
+                  Any authorized member of the organization can read and triage email threads.
+                </p>
+              </div>
+            </label>
+
+            <label
+              className={cn(
+                "flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors",
+                visibilityDraft === "admin_only"
+                  ? "border-[#16294D] bg-[#F1F3F7]"
+                  : "border-[#E2E5EA] bg-white hover:bg-[#F7F8FB]",
+              )}
+              data-testid="visibility-option-admin_only"
+            >
+              <input
+                type="radio"
+                name="visibilityPolicy"
+                value="admin_only"
+                checked={visibilityDraft === "admin_only"}
+                onChange={() => setVisibilityDraft("admin_only")}
+                className="mt-0.5 h-4 w-4 accent-[#16294D]"
+              />
+              <div>
+                <p className="text-sm font-semibold text-[#0F172A]">Admins only</p>
+                <p className="mt-0.5 text-xs text-[#64748B]">
+                  Only organization administrators can access this mailbox.
+                </p>
+              </div>
+            </label>
+
+            <label
+              className={cn(
+                "flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors",
+                visibilityDraft === "restricted"
+                  ? "border-[#16294D] bg-[#F1F3F7]"
+                  : "border-[#E2E5EA] bg-white hover:bg-[#F7F8FB]",
+              )}
+              data-testid="visibility-option-restricted"
+            >
+              <input
+                type="radio"
+                name="visibilityPolicy"
+                value="restricted"
+                checked={visibilityDraft === "restricted"}
+                onChange={() => setVisibilityDraft("restricted")}
+                className="mt-0.5 h-4 w-4 accent-[#16294D]"
+              />
+              <div>
+                <p className="text-sm font-semibold text-[#0F172A]">Restricted</p>
+                <p className="mt-0.5 text-xs text-[#64748B]">
+                  Limited to specifically designated users (access enforcement scoped to Sprint 7.2).
+                </p>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        {/* Save button */}
+        <div className="mt-5 flex items-center gap-3">
+          <button
+            onClick={async () => {
+              setIsSaving(true);
+              setSaveError(null);
+              try {
+                const res = await fetch(`/api/mailbox/connections/${connectionId}`, {
+                  method: "PATCH",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    displayName: displayNameDraft,
+                    visibilityPolicy: visibilityDraft,
+                  }),
+                });
+                if (!res.ok) {
+                  const body = await res.json().catch(() => ({ error: `Save failed: ${res.status}` }));
+                  throw new Error(body.error ?? `Save failed: ${res.status}`);
+                }
+                const data = (await res.json()) as { connection?: FetchedConnection };
+                if (data.connection) {
+                  setConnection(data.connection);
+                }
+                toast.success("Mailbox settings saved");
+              } catch (err) {
+                const message = err instanceof Error ? err.message : "Failed to save settings";
+                setSaveError(message);
+                toast.error(message);
+              } finally {
+                setIsSaving(false);
+              }
+            }}
+            disabled={isSaving}
+            className="flex items-center gap-1.5 rounded-lg bg-[#16294D] px-4 py-2 text-sm font-semibold text-white transition-colors hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+            data-testid="save-settings-btn"
+          >
+            {isSaving && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
+            {isSaving ? "Saving…" : "Save changes"}
+          </button>
+          {saveError && (
+            <p className="text-xs text-red-600" data-testid="save-error">
+              {saveError}
+            </p>
+          )}
         </div>
       </section>
 
