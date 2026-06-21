@@ -190,7 +190,7 @@ function AttachmentChip({ name, mimeType, attachmentId, sizeBytes, scanStatus, o
   }
 
   const modalAttachment: FilePreviewAttachment | null = signedUrl ? {
-    name, mimeType: mimeType ?? "application/octet-stream", sizeBytes: sizeBytes ?? 0, signedUrl,
+    name, mimeType: mimeType ?? "application/octet-stream", sizeBytes: sizeBytes ?? 0, signedUrl, attachmentId,
   } : null;
 
   // BLOCKED

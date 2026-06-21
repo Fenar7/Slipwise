@@ -107,7 +107,7 @@ export async function GET(
           "attachments",
           attachment.storageRef,
           300,
-          { download: attachment.fileName },
+          { download: attachment.fileName, useAdmin: true },
         );
       } catch (err) {
         const msg = err instanceof Error ? err.message.toLowerCase() : "";
@@ -129,7 +129,7 @@ export async function GET(
             "attachments",
             attachment.storageRef,
             300,
-            { download: attachment.fileName },
+            { download: attachment.fileName, useAdmin: true },
           );
         }
 
