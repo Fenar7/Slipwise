@@ -106,7 +106,7 @@ export async function GET(
         return await getSignedUrlServer(
           "attachments",
           attachment.storageRef,
-          300,
+          86400,
           { download: attachment.fileName, useAdmin: true },
         );
       } catch (err) {
@@ -128,7 +128,7 @@ export async function GET(
           return await getSignedUrlServer(
             "attachments",
             attachment.storageRef,
-            300,
+            86400,
             { download: attachment.fileName, useAdmin: true },
           );
         }

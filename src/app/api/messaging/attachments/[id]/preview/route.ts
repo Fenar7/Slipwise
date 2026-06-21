@@ -195,7 +195,7 @@ async function resolveSignedUrl(attachment: {
     return await getSignedUrlServer(
       "attachments",
       attachment.storageRef,
-      300,
+      86400,
       { download: attachment.fileName, useAdmin: true },
     );
   } catch (err) {
@@ -217,7 +217,7 @@ async function resolveSignedUrl(attachment: {
       return await getSignedUrlServer(
         "attachments",
         attachment.storageRef,
-        300,
+        86400,
         { download: attachment.fileName, useAdmin: true },
       );
     }
