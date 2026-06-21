@@ -208,9 +208,24 @@ export async function POST(
 
     const body = (await request.json()) as Record<string, unknown>;
 
-    const messageBody = requireStringField(body.body, "body", 10000);
     const attachments = parseAttachments(body.attachments, orgId, userId);
     const mentions = parseMentions(body.mentions);
+
+    let messageBody = "";
+    if (body.body !== undefined && body.body !== null) {
+      if (typeof body.body !== "string") {
+        throw new Error("body must be a string");
+      }
+      messageBody = body.body.trim();
+    }
+
+    if (messageBody.length === 0 && (!attachments || attachments.length === 0)) {
+      messageBody = requireStringField(body.body, "body", 10000);
+    } else {
+      if (messageBody.length > 10000) {
+        throw new Error("body must be at most 10000 characters");
+      }
+    }
 
     const message = await replyToThread({
       orgId,

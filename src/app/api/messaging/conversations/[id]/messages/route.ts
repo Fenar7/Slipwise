@@ -127,18 +127,32 @@ export async function POST(
   try {
     const context = await requireMessagingApiContext();
     const { orgId, userId } = context;
-    await applyMessagingRateLimit(request, orgId, "messagingSend");
     const { id } = await params;
+    await applyMessagingRateLimit(request, orgId, "messagingSend");
     const body = (await request.json()) as Record<string, unknown>;
+    const attachments = parseAttachments(body.attachments, orgId, userId);
+    const mentions = parseMentions(body.mentions);
 
-    const messageBody = requireStringField(body.body, "body", 10000);
+    let messageBody = "";
+    if (body.body !== undefined && body.body !== null) {
+      if (typeof body.body !== "string") {
+        throw new Error("body must be a string");
+      }
+      messageBody = body.body.trim();
+    }
+
+    if (messageBody.length === 0 && (!attachments || attachments.length === 0)) {
+      messageBody = requireStringField(body.body, "body", 10000);
+    } else {
+      if (messageBody.length > 10000) {
+        throw new Error("body must be at most 10000 characters");
+      }
+    }
+
     const threadId =
       typeof body.threadId === "string" && body.threadId.trim().length > 0
         ? body.threadId.trim()
         : null;
-
-    const attachments = parseAttachments(body.attachments, orgId, userId);
-    const mentions = parseMentions(body.mentions);
     const audience =
       body.audience === "INTERNAL_ONLY"
         ? "INTERNAL_ONLY"
