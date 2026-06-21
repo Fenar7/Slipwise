@@ -381,20 +381,37 @@ function WorkspaceHeader({ conversation, threadOpen, onToggleThread, detailOpen,
 
 interface AttachmentChipProps {
   name: string;
+  mimeType?: string;
   attachmentId?: string;
   onDownload?: (attachmentId: string) => Promise<{ signedUrl: string } | null>;
   scanStatus?: string;
 }
 
-function AttachmentChip({ name, attachmentId, onDownload, scanStatus }: AttachmentChipProps) {
+function AttachmentChip({ name, mimeType, attachmentId, onDownload, scanStatus }: AttachmentChipProps) {
   const [downloadError, setDownloadError] = React.useState(false);
+  const [imageUrl, setImageUrl] = React.useState<string | null>(null);
+  const isImage = mimeType?.startsWith("image/") ?? false;
   const isSpreadsheet = name.endsWith(".xlsx") || name.endsWith(".csv");
   const isBlocked = scanStatus === "BLOCKED";
-  const Icon = isSpreadsheet ? FileSpreadsheet : FileText;
+  const Icon = isImage ? Image : isSpreadsheet ? FileSpreadsheet : FileText;
+
+  // For images, fetch a signed URL on mount so we can show a preview
+  React.useEffect(() => {
+    if (!isImage || !attachmentId || !onDownload || isBlocked || scanStatus === "PENDING") return;
+    let cancelled = false;
+    onDownload(attachmentId).then((result) => {
+      if (!cancelled && result?.signedUrl) setImageUrl(result.signedUrl);
+    });
+    return () => { cancelled = true; };
+  }, [isImage, attachmentId, onDownload, isBlocked, scanStatus]);
 
   async function handleClick() {
     if (!attachmentId || !onDownload) return;
     setDownloadError(false);
+    if (imageUrl) {
+      window.open(imageUrl, "_blank");
+      return;
+    }
     const result = await onDownload(attachmentId);
     if (!result) {
       setDownloadError(true);
@@ -404,7 +421,7 @@ function AttachmentChip({ name, attachmentId, onDownload, scanStatus }: Attachme
   }
 
   return (
-    <div className="mt-2 inline-flex items-center gap-2">
+    <div className="mt-2 inline-flex flex-col gap-1">
       {isBlocked ? (
         <span
           className="inline-flex items-center gap-1 rounded-lg border bg-red-50 px-2.5 py-1.5 text-xs"
@@ -422,6 +439,25 @@ function AttachmentChip({ name, attachmentId, onDownload, scanStatus }: Attachme
           <Loader2 className="h-3 w-3 shrink-0 animate-spin text-amber-600" />
           <span className="text-amber-700">Scanning…</span>
         </span>
+      ) : isImage && imageUrl ? (
+        <button
+          type="button"
+          onClick={handleClick}
+          className="group relative block rounded-xl overflow-hidden border hover:opacity-90 transition-opacity focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]"
+          style={{ borderColor: "#E8E8E8", maxWidth: "280px" }}
+          title={`Open ${name}`}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={imageUrl}
+            alt={name}
+            className="block max-h-48 w-auto object-contain bg-gray-50"
+            style={{ maxWidth: "280px" }}
+          />
+          <div className="absolute bottom-0 left-0 right-0 bg-black/50 px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <span className="text-[10px] text-white truncate block">{name}</span>
+          </div>
+        </button>
       ) : (
         <button
           type="button"
@@ -590,11 +626,12 @@ function MessageRow({ message, isThreadAnchor, onOpenThread, onDownloadAttachmen
 
         {/* Attachment */}
         {message.attachmentRecords && message.attachmentRecords.length > 0 && (
-          <div className="mt-1.5 flex flex-wrap gap-1">
+          <div className="mt-1.5 flex flex-wrap gap-2">
             {message.attachmentRecords.map((att) => (
               <AttachmentChip
                 key={att.id}
                 name={att.name}
+                mimeType={att.mimeType}
                 attachmentId={att.id}
                 onDownload={onDownloadAttachment ?? undefined}
                 scanStatus={att.scanStatus}
@@ -736,6 +773,7 @@ function ChannelWorkspace({
   sendingReply,
   replyError,
   threadReplies: externalThreadReplies,
+  loadingThreadReplies,
   detail,
   onRefreshDetail,
   participants,
@@ -796,6 +834,7 @@ function ChannelWorkspace({
               : undefined}
             sendingReply={sendingReply}
             replyError={replyError}
+            loadingReplies={loadingThreadReplies}
           />
         ) : (
         <div
@@ -949,6 +988,7 @@ function GroupWorkspace({
   sendingReply,
   replyError,
   threadReplies: externalThreadReplies,
+  loadingThreadReplies,
   detail,
   onRefreshDetail,
   participants,
@@ -998,13 +1038,15 @@ function GroupWorkspace({
           replies={threadReplies}
           onClose={onCloseThread}
           onReply={onReply && detail && threadAnchorMessageId
-            ? (body) => {
+            ? (body, attachments) => {
                 const threadId = detail.threads.find((thread) => thread.anchorMessageId === threadAnchorMessageId)?.id ?? threadAnchorMessageId;
-                return onReply(threadId, body);
+                const attPayloads = attachments?.map(a => ({ storageRef: a.storageRef, uploadToken: a.uploadToken, fileName: a.fileName, mimeType: a.mimeType, sizeBytes: a.sizeBytes }));
+                return onReply(threadId, body, attPayloads?.length ? ({ attachments: attPayloads, mentions: undefined }) : undefined);
               }
             : undefined}
           sendingReply={sendingReply}
           replyError={replyError}
+          loadingReplies={loadingThreadReplies}
         />
       )}
       {detailOpen && (
@@ -1189,6 +1231,7 @@ function PortalWorkspace({
   sendingReply,
   replyError,
   threadReplies: externalThreadReplies,
+  loadingThreadReplies,
   detail,
   onRefreshDetail,
   participants,
@@ -1319,6 +1362,7 @@ function PortalWorkspace({
               : undefined}
             sendingReply={sendingReply}
             replyError={replyError}
+            loadingReplies={loadingThreadReplies}
           />
         ) : (
         <div
@@ -1386,6 +1430,7 @@ interface WorkspaceBodyProps {
   sendingReply?: boolean;
   replyError?: string | null;
   threadReplies?: ConversationMessage[];
+  loadingThreadReplies?: boolean;
   detail?: ApiConversationDetail | null;
   onRefreshDetail?: () => void;
   participants?: MentionSuggestion[];
@@ -1482,7 +1527,7 @@ export function MessagingReadingWorkspace({
   }, [detail, threadAnchorMessageId]);
 
   // Sprint 5.2: live thread replies via dedicated backend endpoint.
-  const { replies: liveThreadReplies } = useThreadReplies(
+  const { replies: liveThreadReplies, loading: loadingThreadReplies } = useThreadReplies(
     conversation?.id ?? null,
     activeThreadId,
     detail ?? null,
@@ -1642,6 +1687,7 @@ export function MessagingReadingWorkspace({
     sendingReply,
     replyError,
     threadReplies: resolvedThreadReplies,
+    loadingThreadReplies,
     detail,
     onRefreshDetail,
     participants,

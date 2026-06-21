@@ -239,6 +239,12 @@ export function toParticipantSummary(
  * Enriched conversation detail for the workspace view.
  * Includes participants, recent messages, and threads.
  */
+export interface ParticipantProfile {
+  userId: string;
+  name: string;
+  avatarInitials: string;
+}
+
 export interface ConversationDetail {
   id: string;
   orgId: string;
@@ -258,6 +264,7 @@ export interface ConversationDetail {
   threads: ThreadSummary[];
   readState: ReadStateSummary | null;
   currentUserId: string;
+  participantProfiles?: ParticipantProfile[];
   portalState: ConversationPortalState | null;
   linkedRecordType: LinkedRecordType | null;
   linkedRecordId: string | null;
@@ -293,6 +300,13 @@ export interface ConversationDetailInput {
   currentUserId: string;
   attachmentCountByMessageId?: Map<string, number>;
   attachmentsByMessageId?: Map<string, Array<{ id: string; fileName: string; mimeType: string; sizeBytes: number; scanStatus: string }>>;
+  profiles?: Array<{ id: string; name: string; avatarUrl: string | null }>;
+}
+
+function deriveInitials(name: string): string {
+  const parts = name.trim().split(/\s+/);
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
 export function toConversationDetail(input: ConversationDetailInput): ConversationDetail {
@@ -307,6 +321,7 @@ export function toConversationDetail(input: ConversationDetailInput): Conversati
     currentUserId,
     attachmentCountByMessageId,
     attachmentsByMessageId,
+    profiles,
   } = input;
 
   const activeParticipants = participants.filter((p) => participantIsActive(p));
@@ -314,6 +329,14 @@ export function toConversationDetail(input: ConversationDetailInput): Conversati
     (p) => p.kind === "INTERNAL_MEMBER" && p.role === "OWNER" && p.leftAt === null
   );
   const assigneeId = assigneeParticipant?.userId ?? null;
+
+  const participantProfiles: ParticipantProfile[] | undefined = profiles
+    ? profiles.map((p) => ({
+        userId: p.id,
+        name: p.name,
+        avatarInitials: deriveInitials(p.name),
+      }))
+    : undefined;
 
   return {
     id: record.id,
@@ -336,6 +359,7 @@ export function toConversationDetail(input: ConversationDetailInput): Conversati
         reactions: messageReactions.get(msg.id) ?? [],
         currentUserId,
         attachmentCount: attachmentCountByMessageId?.get(msg.id) ?? 0,
+        attachments: attachmentsByMessageId?.get(msg.id),
         mentionsCurrentUser: mentionCurrentUserByMessageId?.get(msg.id) ?? false,
       }),
     ),
@@ -357,6 +381,7 @@ export function toConversationDetail(input: ConversationDetailInput): Conversati
         }
       : null,
     currentUserId,
+    participantProfiles,
     portalState: record.portalState ?? null,
     linkedRecordType: record.linkedRecordType ?? null,
     linkedRecordId: record.linkedRecordId ?? null,
