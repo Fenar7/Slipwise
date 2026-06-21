@@ -165,7 +165,7 @@ function DocxPreview({ src, onDownload }: { src: string; onDownload: () => void 
             await docx.renderAsync(arrayBuffer, containerRef.current, undefined, {
               className: "docx-rendered-page",
               inWrapper: false,
-              ignoreWidth: false,
+              ignoreWidth: true,
               ignoreHeight: false,
             });
           }
@@ -210,6 +210,9 @@ function DocxPreview({ src, onDownload }: { src: string; onDownload: () => void 
           background-color: #FFFFFF !important;
           margin: 0 auto 10px auto !important;
           padding: 48px 56px !important;
+          width: 100% !important;
+          max-width: 816px !important;
+          box-sizing: border-box !important;
         }
         .docx-rendered-container .docx-rendered-page p,
         .docx-rendered-container .docx-rendered-page span,
@@ -218,6 +221,19 @@ function DocxPreview({ src, onDownload }: { src: string; onDownload: () => void 
         .docx-rendered-container .docx-rendered-page h3,
         .docx-rendered-container .docx-rendered-page h4 {
           font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important;
+        }
+        .docx-rendered-container .docx-list-bullet {
+          font-size: 0 !important;
+          display: inline-block !important;
+          vertical-align: middle !important;
+        }
+        .docx-rendered-container .docx-list-bullet::after {
+          content: "•" !important;
+          font-size: 14px !important;
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important;
+          color: #1F2937 !important;
+          font-weight: bold !important;
+          margin-right: 6px !important;
         }
       `}} />
       {loading && <PreviewLoading label="Rendering Word document..." />}
@@ -654,7 +670,7 @@ export function FilePreviewModal({ isOpen, onClose, attachment, onDownload }: Fi
             style={{
               transform: `translate(${position.x}px, ${position.y}px) scale(${scale}) rotate(${rotation}deg)`,
               transition: isDragging ? "none" : "transform 0.15s ease-out",
-              width: isXlsx ? "92%" : "700px",
+              width: isXlsx ? "92%" : isDocx ? "850px" : "720px",
               maxWidth: "100%",
               height: "calc(100vh - 160px)",
               maxHeight: "850px",
