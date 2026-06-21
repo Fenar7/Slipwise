@@ -138,33 +138,46 @@ function PdfPreview({ src, onDownload }: { src: string; onDownload: () => void }
   );
 }
 
-// ─── DOCX preview via server-converted HTML ──────────────────────────────────
+// ─── DOCX preview via client-side docx-preview rendering ──────────────────────────
 
-function DocxPreview({ attachmentId, onDownload }: { attachmentId: string; onDownload: () => void }) {
-  const [html, setHtml] = React.useState<string | null>(null);
+function DocxPreview({ src, onDownload }: { src: string; onDownload: () => void }) {
+  const containerRef = React.useRef<HTMLDivElement>(null);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState(false);
 
-  const fetchPreview = React.useCallback(() => {
+  const fetchAndRender = React.useCallback(() => {
     let cancelled = false;
     setLoading(true);
     setError(false);
 
-    fetch(`/api/messaging/attachments/${attachmentId}/preview`)
+    fetch(src)
       .then((res) => {
-        if (!res.ok) throw new Error("Failed to fetch preview");
-        return res.json();
+        if (!res.ok) throw new Error("Failed to fetch document file");
+        return res.arrayBuffer();
       })
-      .then((json) => {
+      .then(async (arrayBuffer) => {
         if (cancelled) return;
-        if (json?.data?.kind === "html" && json.data.html) {
-          setHtml(json.data.html);
-        } else {
+        try {
+          const docx = await import("docx-preview");
+          if (cancelled) return;
+          if (containerRef.current) {
+            containerRef.current.innerHTML = "";
+            await docx.renderAsync(arrayBuffer, containerRef.current, undefined, {
+              className: "docx-rendered-page",
+              inWrapper: false,
+              ignoreWidth: false,
+              ignoreHeight: false,
+            });
+          }
+          setLoading(false);
+        } catch (renderErr) {
+          console.error("docx-preview rendering error:", renderErr);
           setError(true);
+          setLoading(false);
         }
-        setLoading(false);
       })
-      .catch(() => {
+      .catch((fetchErr) => {
+        console.error("docx fetch error:", fetchErr);
         if (!cancelled) {
           setError(true);
           setLoading(false);
@@ -174,112 +187,84 @@ function DocxPreview({ attachmentId, onDownload }: { attachmentId: string; onDow
     return () => {
       cancelled = true;
     };
-  }, [attachmentId]);
+  }, [src]);
 
   React.useEffect(() => {
-    return fetchPreview();
-  }, [fetchPreview]);
-
-  if (loading) return <PreviewLoading label="Converting document…" />;
-  if (error || !html) return <PreviewError onRetry={fetchPreview} onDownload={onDownload} />;
+    return fetchAndRender();
+  }, [fetchAndRender]);
 
   return (
-    <div className="flex-1 overflow-auto bg-white">
+    <div className="flex-1 flex flex-col overflow-hidden bg-neutral-100">
       <style dangerouslySetInnerHTML={{ __html: `
-        .docx-preview-wrapper {
-          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-          color: #1F2937;
-          line-height: 1.6;
-          font-size: 15px;
+        .docx-rendered-container {
+          background-color: #F3F4F6 !important;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 24px;
         }
-        .docx-preview-wrapper h1,
-        .docx-preview-wrapper h2,
-        .docx-preview-wrapper h3,
-        .docx-preview-wrapper h4,
-        .docx-preview-wrapper h5,
-        .docx-preview-wrapper h6 {
-          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-          color: #111827;
-          font-weight: 700;
-          margin-top: 1.5rem;
-          margin-bottom: 0.75rem;
-          line-height: 1.25;
+        .docx-rendered-container .docx-rendered-page {
+          box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05) !important;
+          border-radius: 4px !important;
+          border: 1px solid #E5E7EB !important;
+          background-color: #FFFFFF !important;
+          margin: 0 auto 10px auto !important;
+          padding: 48px 56px !important;
         }
-        .docx-preview-wrapper h1 { font-size: 1.75rem; text-align: center; margin-bottom: 1.25rem; }
-        .docx-preview-wrapper h2 { font-size: 1.35rem; margin-top: 1.75rem; padding-bottom: 0.25rem; border-bottom: 1px solid #E5E7EB; }
-        .docx-preview-wrapper h3 { font-size: 1.15rem; }
-        .docx-preview-wrapper p {
-          margin-top: 0;
-          margin-bottom: 1rem;
-          color: #374151;
-        }
-        .docx-preview-wrapper ul,
-        .docx-preview-wrapper ol {
-          margin-top: 0;
-          margin-bottom: 1rem;
-          padding-left: 1.5rem;
-        }
-        .docx-preview-wrapper li {
-          margin-bottom: 0.4rem;
-          color: #374151;
-        }
-        .docx-preview-wrapper table {
-          width: 100%;
-          border-collapse: collapse;
-          margin-top: 1.5rem;
-          margin-bottom: 1.5rem;
-        }
-        .docx-preview-wrapper th,
-        .docx-preview-wrapper td {
-          border: 1px solid #E5E7EB;
-          padding: 10px 14px;
-          text-align: left;
-          font-size: 14px;
-        }
-        .docx-preview-wrapper th {
-          background-color: #F9FAFB;
-          font-weight: 600;
-          color: #111827;
-        }
-        .docx-preview-wrapper tr:nth-child(even) {
-          background-color: #F9FAFB;
+        .docx-rendered-container .docx-rendered-page p,
+        .docx-rendered-container .docx-rendered-page span,
+        .docx-rendered-container .docx-rendered-page h1,
+        .docx-rendered-container .docx-rendered-page h2,
+        .docx-rendered-container .docx-rendered-page h3,
+        .docx-rendered-container .docx-rendered-page h4 {
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important;
         }
       `}} />
+      {loading && <PreviewLoading label="Rendering Word document..." />}
+      {error && <PreviewError onRetry={fetchAndRender} onDownload={onDownload} />}
       <div
-        className="mx-auto max-w-3xl p-12 docx-preview-wrapper"
-        dangerouslySetInnerHTML={{ __html: html }}
+        ref={containerRef}
+        className="flex-1 overflow-auto p-4 md:p-8 docx-rendered-container"
+        style={{ display: loading || error ? "none" : "flex" }}
       />
     </div>
   );
 }
 
-// ─── XLSX preview via server-converted HTML ──────────────────────────────────
+// ─── XLSX preview via client-side sheetjs parsing ─────────────────────────────────
 
-function XlsxPreview({ attachmentId, onDownload }: { attachmentId: string; onDownload: () => void }) {
-  const [html, setHtml] = React.useState<string | null>(null);
+function XlsxPreview({ src, onDownload }: { src: string; onDownload: () => void }) {
+  const [workbook, setWorkbook] = React.useState<any>(null);
+  const [activeSheetIndex, setActiveSheetIndex] = React.useState(0);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState(false);
 
-  const fetchPreview = React.useCallback(() => {
+  const fetchAndParse = React.useCallback(() => {
     let cancelled = false;
     setLoading(true);
     setError(false);
 
-    fetch(`/api/messaging/attachments/${attachmentId}/preview`)
+    fetch(src)
       .then((res) => {
-        if (!res.ok) throw new Error("Failed to fetch preview");
-        return res.json();
+        if (!res.ok) throw new Error("Failed to fetch spreadsheet file");
+        return res.arrayBuffer();
       })
-      .then((json) => {
+      .then(async (arrayBuffer) => {
         if (cancelled) return;
-        if (json?.data?.kind === "html" && json.data.html) {
-          setHtml(json.data.html);
-        } else {
+        try {
+          const XLSX = await import("xlsx");
+          if (cancelled) return;
+          const wb = XLSX.read(arrayBuffer, { type: "array" });
+          setWorkbook(wb);
+          setLoading(false);
+        } catch (parseErr) {
+          console.error("XLSX parsing error:", parseErr);
           setError(true);
+          setLoading(false);
         }
-        setLoading(false);
       })
-      .catch(() => {
+      .catch((fetchErr) => {
+        console.error("XLSX fetch error:", fetchErr);
         if (!cancelled) {
           setError(true);
           setLoading(false);
@@ -289,53 +274,91 @@ function XlsxPreview({ attachmentId, onDownload }: { attachmentId: string; onDow
     return () => {
       cancelled = true;
     };
-  }, [attachmentId]);
+  }, [src]);
 
   React.useEffect(() => {
-    return fetchPreview();
-  }, [fetchPreview]);
+    return fetchAndParse();
+  }, [fetchAndParse]);
 
-  if (loading) return <PreviewLoading label="Loading spreadsheet…" />;
-  if (error || !html) return <PreviewError onRetry={fetchPreview} onDownload={onDownload} />;
+  if (loading) return <PreviewLoading label="Loading spreadsheet..." />;
+  if (error || !workbook) return <PreviewError onRetry={fetchAndParse} onDownload={onDownload} />;
+
+  const sheetNames = workbook.SheetNames;
+  const currentSheetName = sheetNames[activeSheetIndex];
+  let sheetHtml = "";
+
+  if (currentSheetName) {
+    try {
+      const sheet = workbook.Sheets[currentSheetName];
+      const XLSX = (window as any).XLSX || require("xlsx");
+      sheetHtml = XLSX.utils.sheet_to_html(sheet, { header: "" });
+    } catch (err) {
+      console.error("XLSX sheet conversion error:", err);
+      sheetHtml = "<p className='p-4 text-red-500 font-semibold'>Error rendering sheet.</p>";
+    }
+  }
 
   return (
-    <div className="flex-1 overflow-auto bg-white">
+    <div className="flex-1 flex flex-col overflow-hidden bg-white">
       <style dangerouslySetInnerHTML={{ __html: `
-        .xlsx-preview-wrapper {
+        .xlsx-preview-grid {
           font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
           color: #1F2937;
           padding: 24px;
         }
-        .xlsx-preview-wrapper table {
+        .xlsx-preview-grid table {
           border-collapse: collapse;
           width: 100%;
           font-size: 13px;
           border: 1px solid #D1D5DB;
         }
-        .xlsx-preview-wrapper th,
-        .xlsx-preview-wrapper td {
+        .xlsx-preview-grid th,
+        .xlsx-preview-grid td {
           border: 1px solid #E5E7EB;
           padding: 8px 12px;
           text-align: left;
           min-width: 100px;
         }
-        .xlsx-preview-wrapper th {
+        .xlsx-preview-grid th {
           background-color: #F3F4F6;
           font-weight: 600;
           color: #111827;
           border: 1px solid #D1D5DB;
         }
-        .xlsx-preview-wrapper tr:nth-child(even) {
+        .xlsx-preview-grid tr:nth-child(even) {
           background-color: #F9FAFB;
         }
-        .xlsx-preview-wrapper tr:hover {
+        .xlsx-preview-grid tr:hover {
           background-color: #F3F4F6;
         }
       `}} />
-      <div
-        className="xlsx-preview-wrapper"
-        dangerouslySetInnerHTML={{ __html: html }}
-      />
+      <div className="flex-1 overflow-auto xlsx-preview-grid">
+        <div dangerouslySetInnerHTML={{ __html: sheetHtml }} />
+      </div>
+
+      {/* Tabs list at the bottom for multi-sheet view */}
+      {sheetNames.length > 1 && (
+        <div className="flex shrink-0 items-center gap-1 bg-gray-50 border-t border-gray-200 px-4 py-2 overflow-x-auto select-none">
+          {sheetNames.map((name: string, index: number) => {
+            const isActive = index === activeSheetIndex;
+            return (
+              <button
+                key={name}
+                type="button"
+                onClick={() => setActiveSheetIndex(index)}
+                className="px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors focus:outline-none"
+                style={{
+                  backgroundColor: isActive ? "#DC2626" : "transparent",
+                  color: isActive ? "#FFFFFF" : "#4B5563",
+                  border: isActive ? "1px solid #DC2626" : "1px solid transparent"
+                }}
+              >
+                {name}
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -480,20 +503,28 @@ export function FilePreviewModal({ isOpen, onClose, attachment, onDownload }: Fi
   const [position, setPosition] = React.useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = React.useState(false);
   const [dragStart, setDragStart] = React.useState({ x: 0, y: 0 });
+  const [isReady, setIsReady] = React.useState(false);
 
-  // Reset zoom settings on open or attachment changes
+  // Reset zoom settings and defer mount to ensure zero animation lag
   React.useEffect(() => {
     if (isOpen) {
       setScale(1);
       setRotation(0);
       setPosition({ x: 0, y: 0 });
       setIsDragging(false);
+      setIsReady(false);
+      const timer = requestAnimationFrame(() => {
+        setIsReady(true);
+      });
+      return () => cancelAnimationFrame(timer);
+    } else {
+      setIsReady(false);
     }
   }, [isOpen, attachment]);
 
   if (!isOpen) return null;
 
-  const { name, mimeType, sizeBytes, signedUrl, attachmentId } = attachment;
+  const { name, mimeType, sizeBytes, signedUrl } = attachment;
   const isImage = mimeType.startsWith("image/");
   const isPdf = mimeType === "application/pdf";
   const isText = mimeType.startsWith("text/") || mimeType === "application/json";
@@ -520,7 +551,6 @@ export function FilePreviewModal({ isOpen, onClose, attachment, onDownload }: Fi
   }
 
   function handleMouseDown(e: React.MouseEvent) {
-    // Initiate pan drag on outer dark canvas wrapper only
     if (e.target === e.currentTarget) {
       setIsDragging(true);
       setDragStart({ x: e.clientX - position.x, y: e.clientY - position.y });
@@ -606,7 +636,9 @@ export function FilePreviewModal({ isOpen, onClose, attachment, onDownload }: Fi
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
       >
-        {isImage ? (
+        {!isReady ? (
+          <PreviewLoading label="Opening document..." />
+        ) : isImage ? (
           <ImagePreview
             src={signedUrl}
             name={name}
@@ -630,10 +662,10 @@ export function FilePreviewModal({ isOpen, onClose, attachment, onDownload }: Fi
           >
             {isPdf ? (
               <PdfPreview src={signedUrl} onDownload={() => onDownload(signedUrl)} />
-            ) : isDocx && attachmentId ? (
-              <DocxPreview attachmentId={attachmentId} onDownload={() => onDownload(signedUrl)} />
-            ) : isXlsx && attachmentId ? (
-              <XlsxPreview attachmentId={attachmentId} onDownload={() => onDownload(signedUrl)} />
+            ) : isDocx ? (
+              <DocxPreview src={signedUrl} onDownload={() => onDownload(signedUrl)} />
+            ) : isXlsx ? (
+              <XlsxPreview src={signedUrl} onDownload={() => onDownload(signedUrl)} />
             ) : isText ? (
               <TextPreview src={signedUrl} mimeType={mimeType} onDownload={() => onDownload(signedUrl)} />
             ) : (
@@ -649,52 +681,54 @@ export function FilePreviewModal({ isOpen, onClose, attachment, onDownload }: Fi
         )}
 
         {/* Floating Google Drive-style pill controls */}
-        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1.5 rounded-full bg-neutral-900/95 border border-neutral-800 px-4 py-1.5 shadow-2xl backdrop-blur-md text-white select-none" style={{ backgroundColor: "#171717", borderColor: "#262626" }}>
-          <button
-            type="button"
-            onClick={handleZoomOut}
-            className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-neutral-800 transition-colors text-neutral-300 hover:text-white focus:outline-none"
-            style={{ color: "#D4D4D4" }}
-            aria-label="Zoom out"
-          >
-            <ZoomOut className="h-4 w-4" style={{ color: "#D4D4D4" }} />
-          </button>
-          <span className="text-xs font-semibold min-w-[3rem] text-center text-neutral-200" style={{ color: "#FFFFFF" }}>
-            {Math.round(scale * 100)}%
-          </span>
-          <button
-            type="button"
-            onClick={handleZoomIn}
-            className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-neutral-800 transition-colors text-neutral-300 hover:text-white focus:outline-none"
-            style={{ color: "#D4D4D4" }}
-            aria-label="Zoom in"
-          >
-            <ZoomIn className="h-4 w-4" style={{ color: "#D4D4D4" }} />
-          </button>
-          <div className="w-px h-5 bg-neutral-800 mx-1" style={{ backgroundColor: "#262626" }} />
-          <button
-            type="button"
-            onClick={handleRotate}
-            className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-neutral-800 transition-colors text-neutral-300 hover:text-white focus:outline-none"
-            style={{ color: "#D4D4D4" }}
-            aria-label="Rotate clockwise"
-          >
-            <RotateCw className="h-4 w-4" style={{ color: "#D4D4D4" }} />
-          </button>
-          {(scale !== 1 || rotation !== 0 || position.x !== 0 || position.y !== 0) && (
-            <>
-              <div className="w-px h-5 bg-neutral-800 mx-1" style={{ backgroundColor: "#262626" }} />
-              <button
-                type="button"
-                onClick={handleReset}
-                className="text-[10px] font-bold tracking-wide uppercase px-2.5 py-1 rounded-full bg-neutral-800 hover:bg-neutral-700 text-neutral-200 hover:text-white transition-colors focus:outline-none"
-                style={{ backgroundColor: "#262626", color: "#FFFFFF" }}
-              >
-                Reset
-              </button>
-            </>
-          )}
-        </div>
+        {isReady && (
+          <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1.5 rounded-full bg-neutral-900/95 border border-neutral-800 px-4 py-1.5 shadow-2xl backdrop-blur-md text-white select-none" style={{ backgroundColor: "#171717", borderColor: "#262626" }}>
+            <button
+              type="button"
+              onClick={handleZoomOut}
+              className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-neutral-800 transition-colors text-neutral-300 hover:text-white focus:outline-none"
+              style={{ color: "#D4D4D4" }}
+              aria-label="Zoom out"
+            >
+              <ZoomOut className="h-4 w-4" style={{ color: "#D4D4D4" }} />
+            </button>
+            <span className="text-xs font-semibold min-w-[3rem] text-center text-neutral-200" style={{ color: "#FFFFFF" }}>
+              {Math.round(scale * 100)}%
+            </span>
+            <button
+              type="button"
+              onClick={handleZoomIn}
+              className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-neutral-800 transition-colors text-neutral-300 hover:text-white focus:outline-none"
+              style={{ color: "#D4D4D4" }}
+              aria-label="Zoom in"
+            >
+              <ZoomIn className="h-4 w-4" style={{ color: "#D4D4D4" }} />
+            </button>
+            <div className="w-px h-5 bg-neutral-800 mx-1" style={{ backgroundColor: "#262626" }} />
+            <button
+              type="button"
+              onClick={handleRotate}
+              className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-neutral-800 transition-colors text-neutral-300 hover:text-white focus:outline-none"
+              style={{ color: "#D4D4D4" }}
+              aria-label="Rotate clockwise"
+            >
+              <RotateCw className="h-4 w-4" style={{ color: "#D4D4D4" }} />
+            </button>
+            {(scale !== 1 || rotation !== 0 || position.x !== 0 || position.y !== 0) && (
+              <>
+                <div className="w-px h-5 bg-neutral-800 mx-1" style={{ backgroundColor: "#262626" }} />
+                <button
+                  type="button"
+                  onClick={handleReset}
+                  className="text-[10px] font-bold tracking-wide uppercase px-2.5 py-1 rounded-full bg-neutral-800 hover:bg-neutral-700 text-neutral-200 hover:text-white transition-colors focus:outline-none"
+                  style={{ backgroundColor: "#262626", color: "#FFFFFF" }}
+                >
+                  Reset
+                </button>
+              </>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
