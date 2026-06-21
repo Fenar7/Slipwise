@@ -37,22 +37,22 @@ function formatBytes(bytes: number): string {
 
 function PreviewLoading({ label }: { label: string }) {
   return (
-    <div className="flex-1 flex flex-col items-center justify-center gap-3 bg-gray-50">
-      <Loader2 className="h-6 w-6 animate-spin" style={{ color: "#C4C4C4" }} />
-      <p className="text-xs font-medium" style={{ color: "#79747E" }}>{label}</p>
+    <div className="flex-1 flex flex-col items-center justify-center gap-3 bg-neutral-900 text-neutral-400">
+      <Loader2 className="h-6 w-6 animate-spin text-neutral-500" style={{ color: "#737373" }} />
+      <p className="text-xs font-medium" style={{ color: "#A3A3A3" }}>{label}</p>
     </div>
   );
 }
 
 function PreviewError({ onRetry, onDownload }: { onRetry?: () => void; onDownload?: () => void }) {
   return (
-    <div className="flex-1 flex flex-col items-center justify-center gap-4 bg-gray-50 px-8">
-      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-50 border border-amber-100">
-        <AlertTriangle className="h-6 w-6 text-amber-500" />
+    <div className="flex-1 flex flex-col items-center justify-center gap-4 bg-neutral-900 px-8 text-neutral-300">
+      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-500/10 border border-amber-500/20" style={{ backgroundColor: "rgba(245, 158, 11, 0.1)", borderColor: "rgba(245, 158, 11, 0.2)" }}>
+        <AlertTriangle className="h-6 w-6 text-amber-500" style={{ color: "#F59E0B" }} />
       </div>
       <div className="text-center space-y-1">
-        <p className="text-sm font-semibold" style={{ color: "#1C1B1F" }}>Could not load preview</p>
-        <p className="text-xs max-w-xs" style={{ color: "#79747E" }}>
+        <p className="text-sm font-semibold text-neutral-200" style={{ color: "#E5E5E5" }}>Could not load preview</p>
+        <p className="text-xs max-w-xs text-neutral-400" style={{ color: "#A3A3A3" }}>
           The file could not be rendered. You can download the original to view it.
         </p>
       </div>
@@ -61,10 +61,10 @@ function PreviewError({ onRetry, onDownload }: { onRetry?: () => void; onDownloa
           <button
             type="button"
             onClick={onRetry}
-            className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold hover:bg-gray-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]"
-            style={{ borderColor: "#E0E0E0", color: "#49454F" }}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-700 px-3 py-1.5 text-xs font-semibold hover:bg-neutral-800 text-neutral-300 hover:text-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]"
+            style={{ color: "#D4D4D4", borderColor: "#404040" }}
           >
-            <Eye className="h-3.5 w-3.5" />
+            <Eye className="h-3.5 w-3.5" style={{ color: "#D4D4D4" }} />
             Retry
           </button>
         )}
@@ -73,8 +73,9 @@ function PreviewError({ onRetry, onDownload }: { onRetry?: () => void; onDownloa
             type="button"
             onClick={onDownload}
             className="inline-flex items-center gap-1.5 rounded-lg bg-[#DC2626] px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]"
+            style={{ backgroundColor: "#DC2626", color: "#FFFFFF" }}
           >
-            <Download className="h-3.5 w-3.5" />
+            <Download className="h-3.5 w-3.5" style={{ color: "#FFFFFF" }} />
             Download Original
           </button>
         )}
@@ -83,77 +84,37 @@ function PreviewError({ onRetry, onDownload }: { onRetry?: () => void; onDownloa
   );
 }
 
-// ─── Image preview with zoom/pan/rotate ──────────────────────────────────────
+// ─── Image preview (Stateless) ──────────────────────────────────────────────
 
-function ImagePreview({ src, name }: { src: string; name: string }) {
-  const [scale, setScale] = React.useState(1);
-  const [rotation, setRotation] = React.useState(0);
-  const [position, setPosition] = React.useState({ x: 0, y: 0 });
-  const [isDragging, setIsDragging] = React.useState(false);
-  const [dragStart, setDragStart] = React.useState({ x: 0, y: 0 });
-
-  function handleZoomIn() { setScale((s) => Math.min(s + 0.25, 3)); }
-  function handleZoomOut() { setScale((s) => Math.max(s - 0.25, 0.25)); }
-  function handleRotate() { setRotation((r) => r + 90); }
-  function handleReset() { setScale(1); setRotation(0); setPosition({ x: 0, y: 0 }); }
-
-  function handleMouseDown(e: React.MouseEvent) {
-    if (scale > 1) {
-      setIsDragging(true);
-      setDragStart({ x: e.clientX - position.x, y: e.clientY - position.y });
-    }
-  }
-
-  function handleMouseMove(e: React.MouseEvent) {
-    if (isDragging) {
-      setPosition({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y });
-    }
-  }
-
-  function handleMouseUp() { setIsDragging(false); }
-
+function ImagePreview({
+  src,
+  name,
+  scale,
+  rotation,
+  position,
+  isDragging,
+}: {
+  src: string;
+  name: string;
+  scale: number;
+  rotation: number;
+  position: { x: number; y: number };
+  isDragging: boolean;
+}) {
   return (
-    <div className="flex flex-col h-full">
-      <div className="flex items-center justify-center gap-1.5 border-b bg-gray-50 px-4 py-2 shrink-0" style={{ borderColor: "#E0E0E0" }}>
-        <button type="button" onClick={handleZoomOut} className="flex h-7 w-7 items-center justify-center rounded-lg hover:bg-gray-200 transition-colors" aria-label="Zoom out">
-          <ZoomOut className="h-3.5 w-3.5" style={{ color: "#49454F" }} />
-        </button>
-        <span className="text-xs font-medium min-w-[3rem] text-center" style={{ color: "#49454F" }}>
-          {Math.round(scale * 100)}%
-        </span>
-        <button type="button" onClick={handleZoomIn} className="flex h-7 w-7 items-center justify-center rounded-lg hover:bg-gray-200 transition-colors" aria-label="Zoom in">
-          <ZoomIn className="h-3.5 w-3.5" style={{ color: "#49454F" }} />
-        </button>
-        <div className="w-px h-5 bg-gray-300 mx-1" />
-        <button type="button" onClick={handleRotate} className="flex h-7 w-7 items-center justify-center rounded-lg hover:bg-gray-200 transition-colors" aria-label="Rotate">
-          <RotateCw className="h-3.5 w-3.5" style={{ color: "#49454F" }} />
-        </button>
-        {(scale !== 1 || rotation !== 0 || position.x !== 0 || position.y !== 0) && (
-          <button type="button" onClick={handleReset} className="text-xs font-semibold px-2 py-1 rounded-lg hover:bg-gray-200 transition-colors" style={{ color: "#49454F" }}>
-            Reset
-          </button>
-        )}
-      </div>
-      <div
-        className="flex-1 overflow-hidden bg-[#1a1a1a] flex items-center justify-center cursor-grab"
-        style={isDragging ? { cursor: "grabbing" } : undefined}
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
-      >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={src}
-          alt={name}
-          className="max-w-full max-h-full object-contain select-none transition-transform duration-75"
-          style={{
-            transform: `translate(${position.x}px, ${position.y}px) scale(${scale}) rotate(${rotation}deg)`,
-            pointerEvents: "none",
-          }}
-          draggable={false}
-        />
-      </div>
+    <div className="flex-1 overflow-hidden flex items-center justify-center select-none">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={src}
+        alt={name}
+        className="max-w-full max-h-full object-contain select-none"
+        style={{
+          transform: `translate(${position.x}px, ${position.y}px) scale(${scale}) rotate(${rotation}deg)`,
+          transition: isDragging ? "none" : "transform 0.15s ease-out",
+          pointerEvents: scale > 1 ? "none" : "auto",
+        }}
+        draggable={false}
+      />
     </div>
   );
 }
@@ -210,7 +171,9 @@ function DocxPreview({ attachmentId, onDownload }: { attachmentId: string; onDow
         }
       });
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [attachmentId]);
 
   React.useEffect(() => {
@@ -222,9 +185,68 @@ function DocxPreview({ attachmentId, onDownload }: { attachmentId: string; onDow
 
   return (
     <div className="flex-1 overflow-auto bg-white">
+      <style dangerouslySetInnerHTML={{ __html: `
+        .docx-preview-wrapper {
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+          color: #1F2937;
+          line-height: 1.6;
+          font-size: 15px;
+        }
+        .docx-preview-wrapper h1,
+        .docx-preview-wrapper h2,
+        .docx-preview-wrapper h3,
+        .docx-preview-wrapper h4,
+        .docx-preview-wrapper h5,
+        .docx-preview-wrapper h6 {
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+          color: #111827;
+          font-weight: 700;
+          margin-top: 1.5rem;
+          margin-bottom: 0.75rem;
+          line-height: 1.25;
+        }
+        .docx-preview-wrapper h1 { font-size: 1.75rem; text-align: center; margin-bottom: 1.25rem; }
+        .docx-preview-wrapper h2 { font-size: 1.35rem; margin-top: 1.75rem; padding-bottom: 0.25rem; border-bottom: 1px solid #E5E7EB; }
+        .docx-preview-wrapper h3 { font-size: 1.15rem; }
+        .docx-preview-wrapper p {
+          margin-top: 0;
+          margin-bottom: 1rem;
+          color: #374151;
+        }
+        .docx-preview-wrapper ul,
+        .docx-preview-wrapper ol {
+          margin-top: 0;
+          margin-bottom: 1rem;
+          padding-left: 1.5rem;
+        }
+        .docx-preview-wrapper li {
+          margin-bottom: 0.4rem;
+          color: #374151;
+        }
+        .docx-preview-wrapper table {
+          width: 100%;
+          border-collapse: collapse;
+          margin-top: 1.5rem;
+          margin-bottom: 1.5rem;
+        }
+        .docx-preview-wrapper th,
+        .docx-preview-wrapper td {
+          border: 1px solid #E5E7EB;
+          padding: 10px 14px;
+          text-align: left;
+          font-size: 14px;
+        }
+        .docx-preview-wrapper th {
+          background-color: #F9FAFB;
+          font-weight: 600;
+          color: #111827;
+        }
+        .docx-preview-wrapper tr:nth-child(even) {
+          background-color: #F9FAFB;
+        }
+      `}} />
       <div
-        className="mx-auto max-w-3xl p-8 prose prose-sm prose-slate"
-        style={{ color: "#1C1B1F" }}
+        className="mx-auto max-w-3xl p-12 docx-preview-wrapper"
         dangerouslySetInnerHTML={{ __html: html }}
       />
     </div>
@@ -264,7 +286,9 @@ function XlsxPreview({ attachmentId, onDownload }: { attachmentId: string; onDow
         }
       });
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [attachmentId]);
 
   React.useEffect(() => {
@@ -276,9 +300,40 @@ function XlsxPreview({ attachmentId, onDownload }: { attachmentId: string; onDow
 
   return (
     <div className="flex-1 overflow-auto bg-white">
+      <style dangerouslySetInnerHTML={{ __html: `
+        .xlsx-preview-wrapper {
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+          color: #1F2937;
+          padding: 24px;
+        }
+        .xlsx-preview-wrapper table {
+          border-collapse: collapse;
+          width: 100%;
+          font-size: 13px;
+          border: 1px solid #D1D5DB;
+        }
+        .xlsx-preview-wrapper th,
+        .xlsx-preview-wrapper td {
+          border: 1px solid #E5E7EB;
+          padding: 8px 12px;
+          text-align: left;
+          min-width: 100px;
+        }
+        .xlsx-preview-wrapper th {
+          background-color: #F3F4F6;
+          font-weight: 600;
+          color: #111827;
+          border: 1px solid #D1D5DB;
+        }
+        .xlsx-preview-wrapper tr:nth-child(even) {
+          background-color: #F9FAFB;
+        }
+        .xlsx-preview-wrapper tr:hover {
+          background-color: #F3F4F6;
+        }
+      `}} />
       <div
-        className="p-4 text-xs"
-        style={{ color: "#1C1B1F" }}
+        className="xlsx-preview-wrapper"
         dangerouslySetInnerHTML={{ __html: html }}
       />
     </div>
@@ -302,12 +357,20 @@ function TextPreview({ src, mimeType, onDownload }: { src: string; mimeType: str
         return res.text();
       })
       .then((text) => {
-        if (!cancelled) { setContent(text); setLoading(false); }
+        if (!cancelled) {
+          setContent(text);
+          setLoading(false);
+        }
       })
       .catch(() => {
-        if (!cancelled) { setError(true); setLoading(false); }
+        if (!cancelled) {
+          setError(true);
+          setLoading(false);
+        }
       });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [src]);
 
   if (loading) return <PreviewLoading label="Loading file…" />;
@@ -317,13 +380,13 @@ function TextPreview({ src, mimeType, onDownload }: { src: string; mimeType: str
   return (
     <div className="flex-1 overflow-auto bg-white">
       {isCsv ? (
-        <div className="p-4 overflow-x-auto">
+        <div className="p-6 overflow-x-auto">
           <table className="w-full border-collapse text-xs">
             <tbody>
               {content!.split("\n").filter(Boolean).map((row, i) => (
-                <tr key={i} className={i === 0 ? "bg-gray-50 font-semibold" : "even:bg-gray-50/50"}>
+                <tr key={i} className={i === 0 ? "bg-gray-100 font-semibold" : "even:bg-gray-50/50"}>
                   {row.split(",").map((cell, j) => (
-                    <td key={j} className="border px-2 py-1 whitespace-nowrap" style={{ borderColor: "#E8E8E8", color: "#1C1B1F" }}>
+                    <td key={j} className="border px-3 py-2 whitespace-nowrap" style={{ borderColor: "#E5E7EB", color: "#1F2937" }}>
                       {cell}
                     </td>
                   ))}
@@ -333,7 +396,7 @@ function TextPreview({ src, mimeType, onDownload }: { src: string; mimeType: str
           </table>
         </div>
       ) : (
-        <pre className="p-4 text-xs leading-relaxed font-mono whitespace-pre-wrap" style={{ color: "#1C1B1F" }}>
+        <pre className="p-8 text-xs leading-relaxed font-mono whitespace-pre-wrap bg-gray-50" style={{ color: "#1F2937", fontFamily: 'Consolas, Menlo, Monaco, "Courier New", monospace' }}>
           {content}
         </pre>
       )}
@@ -343,7 +406,13 @@ function TextPreview({ src, mimeType, onDownload }: { src: string; mimeType: str
 
 // ─── Unsupported format fallback ─────────────────────────────────────────────
 
-function UnsupportedPreview({ name, mimeType, sizeBytes, onDownload, signedUrl }: {
+function UnsupportedPreview({
+  name,
+  mimeType,
+  sizeBytes,
+  onDownload,
+  signedUrl,
+}: {
   name: string;
   mimeType: string;
   sizeBytes: number;
@@ -351,24 +420,25 @@ function UnsupportedPreview({ name, mimeType, sizeBytes, onDownload, signedUrl }
   signedUrl: string;
 }) {
   return (
-    <div className="flex-1 flex flex-col items-center justify-center gap-5 bg-gray-50 px-8">
-      <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white border shadow-sm" style={{ borderColor: "#E8E8E8" }}>
-        <FileText className="h-7 w-7" style={{ color: "#C4C4C4" }} />
+    <div className="flex-1 flex flex-col items-center justify-center gap-5 bg-neutral-900 px-8 text-neutral-300">
+      <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-neutral-800 border border-neutral-700 shadow-lg" style={{ backgroundColor: "#262626", borderColor: "#404040" }}>
+        <FileText className="h-7 w-7 text-neutral-400" style={{ color: "#A3A3A3" }} />
       </div>
       <div className="text-center space-y-1">
-        <p className="text-sm font-semibold" style={{ color: "#1C1B1F" }}>{name}</p>
-        <p className="text-xs" style={{ color: "#79747E" }}>{mimeType} · {formatBytes(sizeBytes)}</p>
+        <p className="text-sm font-semibold text-neutral-200" style={{ color: "#E5E5E5" }}>{name}</p>
+        <p className="text-xs text-neutral-400" style={{ color: "#A3A3A3" }}>{mimeType} · {formatBytes(sizeBytes)}</p>
       </div>
-      <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-2.5 text-center max-w-xs">
-        <p className="text-xs font-medium text-amber-800">Preview not available for this file type</p>
-        <p className="text-[10px] text-amber-600 mt-0.5">Download the original file to view it.</p>
+      <div className="rounded-lg bg-amber-500/10 border border-amber-500/20 px-4 py-2.5 text-center max-w-xs" style={{ backgroundColor: "rgba(245, 158, 11, 0.1)", borderColor: "rgba(245, 158, 11, 0.2)" }}>
+        <p className="text-xs font-medium text-amber-500" style={{ color: "#F59E0B" }}>Preview not available for this file type</p>
+        <p className="text-[10px] mt-0.5" style={{ color: "rgba(217, 119, 6, 0.8)" }}>Download the original file to view it.</p>
       </div>
       <button
         type="button"
         onClick={() => onDownload(signedUrl)}
         className="inline-flex items-center gap-2 rounded-lg bg-[#DC2626] px-4 py-2 text-xs font-semibold text-white hover:bg-red-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626] focus-visible:ring-offset-2"
+        style={{ backgroundColor: "#DC2626", color: "#FFFFFF" }}
       >
-        <Download className="h-3.5 w-3.5" />
+        <Download className="h-3.5 w-3.5" style={{ color: "#FFFFFF" }} />
         Download Original
       </button>
     </div>
@@ -405,6 +475,22 @@ function isPreviewable(mimeType: string): boolean {
 // ─── Main modal ──────────────────────────────────────────────────────────────
 
 export function FilePreviewModal({ isOpen, onClose, attachment, onDownload }: FilePreviewModalProps) {
+  const [scale, setScale] = React.useState(1);
+  const [rotation, setRotation] = React.useState(0);
+  const [position, setPosition] = React.useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = React.useState(false);
+  const [dragStart, setDragStart] = React.useState({ x: 0, y: 0 });
+
+  // Reset zoom settings on open or attachment changes
+  React.useEffect(() => {
+    if (isOpen) {
+      setScale(1);
+      setRotation(0);
+      setPosition({ x: 0, y: 0 });
+      setIsDragging(false);
+    }
+  }, [isOpen, attachment]);
+
   if (!isOpen) return null;
 
   const { name, mimeType, sizeBytes, signedUrl, attachmentId } = attachment;
@@ -415,84 +501,201 @@ export function FilePreviewModal({ isOpen, onClose, attachment, onDownload }: Fi
   const isXlsx = isXlsxFile(mimeType);
   const canRender = isPreviewable(mimeType);
 
+  function handleZoomIn() {
+    setScale((s) => Math.min(s + 0.25, 3));
+  }
+  
+  function handleZoomOut() {
+    setScale((s) => Math.max(s - 0.25, 0.25));
+  }
+  
+  function handleRotate() {
+    setRotation((r) => r + 90);
+  }
+  
+  function handleReset() {
+    setScale(1);
+    setRotation(0);
+    setPosition({ x: 0, y: 0 });
+  }
+
+  function handleMouseDown(e: React.MouseEvent) {
+    // Initiate pan drag on outer dark canvas wrapper only
+    if (e.target === e.currentTarget) {
+      setIsDragging(true);
+      setDragStart({ x: e.clientX - position.x, y: e.clientY - position.y });
+    }
+  }
+
+  function handleMouseMove(e: React.MouseEvent) {
+    if (isDragging) {
+      setPosition({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y });
+    }
+  }
+
+  function handleMouseUp() {
+    setIsDragging(false);
+  }
+
   function handleBackdropClick(e: React.MouseEvent) {
     if (e.target === e.currentTarget) onClose();
   }
 
   return (
     <div
-      className="fixed inset-0 z-50 flex flex-col bg-black/60 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex flex-col bg-neutral-950/85 backdrop-blur-md"
       data-testid="file-preview-modal"
       onClick={handleBackdropClick}
       role="dialog"
       aria-modal="true"
       aria-label={`Preview: ${name}`}
     >
-      {/* Header */}
-      <div className="flex h-14 shrink-0 items-center justify-between bg-white border-b px-4" style={{ borderColor: "#E0E0E0" }}>
+      {/* Premium Dark Header */}
+      <div className="flex h-14 shrink-0 items-center justify-between bg-neutral-900 border-b border-neutral-800 px-4 text-white" style={{ backgroundColor: "#171717", borderBottomColor: "#262626" }}>
         <div className="flex items-center gap-3 min-w-0">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gray-100">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-neutral-800" style={{ backgroundColor: "#262626" }}>
             {isImage ? (
-              <Eye className="h-4 w-4" style={{ color: "#49454F" }} />
+              <Eye className="h-4 w-4 text-blue-400" style={{ color: "#60A5FA" }} />
             ) : isPdf ? (
-              <FileText className="h-4 w-4 text-red-500" />
+              <FileText className="h-4 w-4 text-red-400" style={{ color: "#F87171" }} />
             ) : isDocx ? (
-              <FileText className="h-4 w-4 text-blue-600" />
+              <FileText className="h-4 w-4 text-blue-400" style={{ color: "#60A5FA" }} />
             ) : isXlsx ? (
-              <FileSpreadsheet className="h-4 w-4 text-green-600" />
+              <FileSpreadsheet className="h-4 w-4 text-green-400" style={{ color: "#4ADE80" }} />
             ) : (
-              <FileText className="h-4 w-4" style={{ color: "#79747E" }} />
+              <FileText className="h-4 w-4 text-neutral-400" style={{ color: "#A3A3A3" }} />
             )}
           </div>
           <div className="min-w-0">
-            <p className="text-sm font-semibold truncate" style={{ color: "#1C1B1F" }}>{name}</p>
-            <p className="text-[10px]" style={{ color: "#79747E" }}>
+            <p className="text-sm font-semibold truncate" style={{ color: "#FFFFFF" }}>{name}</p>
+            <p className="text-[10px]" style={{ color: "#A3A3A3" }}>
               {formatBytes(sizeBytes)}
               {!canRender && " · Download to view"}
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-2.5">
           <button
             type="button"
             onClick={() => onDownload(signedUrl)}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-[#DC2626] px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]"
+            className="inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-xs font-semibold hover:bg-red-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]"
+            style={{ backgroundColor: "#DC2626", color: "#FFFFFF" }}
             aria-label="Download original file"
           >
-            <Download className="h-3.5 w-3.5" />
+            <Download className="h-3.5 w-3.5" style={{ color: "#FFFFFF" }} />
             Download
           </button>
           <button
             type="button"
             onClick={onClose}
-            className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-gray-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]"
+            className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-neutral-800 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626] text-neutral-400 hover:text-white"
+            style={{ color: "#A3A3A3" }}
             aria-label="Close preview"
           >
-            <X className="h-4 w-4" style={{ color: "#49454F" }} />
+            <X className="h-4 w-4" style={{ color: "#FFFFFF" }} />
           </button>
         </div>
       </div>
 
-      {/* Preview body */}
-      {isImage ? (
-        <ImagePreview src={signedUrl} name={name} />
-      ) : isPdf ? (
-        <PdfPreview src={signedUrl} onDownload={() => onDownload(signedUrl)} />
-      ) : isDocx && attachmentId ? (
-        <DocxPreview attachmentId={attachmentId} onDownload={() => onDownload(signedUrl)} />
-      ) : isXlsx && attachmentId ? (
-        <XlsxPreview attachmentId={attachmentId} onDownload={() => onDownload(signedUrl)} />
-      ) : isText ? (
-        <TextPreview src={signedUrl} mimeType={mimeType} onDownload={() => onDownload(signedUrl)} />
-      ) : (
-        <UnsupportedPreview
-          name={name}
-          mimeType={mimeType}
-          sizeBytes={sizeBytes}
-          onDownload={onDownload}
-          signedUrl={signedUrl}
-        />
-      )}
+      {/* Main Google Drive-style Canvas */}
+      <div
+        className="flex-1 relative bg-neutral-950 overflow-hidden flex items-center justify-center p-6 md:p-12 cursor-grab animate-fade-in"
+        style={{ ...isDragging ? { cursor: "grabbing" } : undefined, backgroundColor: "#0A0A0A" }}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
+      >
+        {isImage ? (
+          <ImagePreview
+            src={signedUrl}
+            name={name}
+            scale={scale}
+            rotation={rotation}
+            position={position}
+            isDragging={isDragging}
+          />
+        ) : (
+          /* Structured Centered White Sheet Card */
+          <div
+            className="w-full bg-white rounded-xl shadow-2xl overflow-hidden flex flex-col select-none origin-center"
+            style={{
+              transform: `translate(${position.x}px, ${position.y}px) scale(${scale}) rotate(${rotation}deg)`,
+              transition: isDragging ? "none" : "transform 0.15s ease-out",
+              width: isXlsx ? "92%" : "700px",
+              maxWidth: "100%",
+              height: "calc(100vh - 160px)",
+              maxHeight: "850px",
+            }}
+          >
+            {isPdf ? (
+              <PdfPreview src={signedUrl} onDownload={() => onDownload(signedUrl)} />
+            ) : isDocx && attachmentId ? (
+              <DocxPreview attachmentId={attachmentId} onDownload={() => onDownload(signedUrl)} />
+            ) : isXlsx && attachmentId ? (
+              <XlsxPreview attachmentId={attachmentId} onDownload={() => onDownload(signedUrl)} />
+            ) : isText ? (
+              <TextPreview src={signedUrl} mimeType={mimeType} onDownload={() => onDownload(signedUrl)} />
+            ) : (
+              <UnsupportedPreview
+                name={name}
+                mimeType={mimeType}
+                sizeBytes={sizeBytes}
+                onDownload={onDownload}
+                signedUrl={signedUrl}
+              />
+            )}
+          </div>
+        )}
+
+        {/* Floating Google Drive-style pill controls */}
+        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1.5 rounded-full bg-neutral-900/95 border border-neutral-800 px-4 py-1.5 shadow-2xl backdrop-blur-md text-white select-none" style={{ backgroundColor: "#171717", borderColor: "#262626" }}>
+          <button
+            type="button"
+            onClick={handleZoomOut}
+            className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-neutral-800 transition-colors text-neutral-300 hover:text-white focus:outline-none"
+            style={{ color: "#D4D4D4" }}
+            aria-label="Zoom out"
+          >
+            <ZoomOut className="h-4 w-4" style={{ color: "#D4D4D4" }} />
+          </button>
+          <span className="text-xs font-semibold min-w-[3rem] text-center text-neutral-200" style={{ color: "#FFFFFF" }}>
+            {Math.round(scale * 100)}%
+          </span>
+          <button
+            type="button"
+            onClick={handleZoomIn}
+            className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-neutral-800 transition-colors text-neutral-300 hover:text-white focus:outline-none"
+            style={{ color: "#D4D4D4" }}
+            aria-label="Zoom in"
+          >
+            <ZoomIn className="h-4 w-4" style={{ color: "#D4D4D4" }} />
+          </button>
+          <div className="w-px h-5 bg-neutral-800 mx-1" style={{ backgroundColor: "#262626" }} />
+          <button
+            type="button"
+            onClick={handleRotate}
+            className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-neutral-800 transition-colors text-neutral-300 hover:text-white focus:outline-none"
+            style={{ color: "#D4D4D4" }}
+            aria-label="Rotate clockwise"
+          >
+            <RotateCw className="h-4 w-4" style={{ color: "#D4D4D4" }} />
+          </button>
+          {(scale !== 1 || rotation !== 0 || position.x !== 0 || position.y !== 0) && (
+            <>
+              <div className="w-px h-5 bg-neutral-800 mx-1" style={{ backgroundColor: "#262626" }} />
+              <button
+                type="button"
+                onClick={handleReset}
+                className="text-[10px] font-bold tracking-wide uppercase px-2.5 py-1 rounded-full bg-neutral-800 hover:bg-neutral-700 text-neutral-200 hover:text-white transition-colors focus:outline-none"
+                style={{ backgroundColor: "#262626", color: "#FFFFFF" }}
+              >
+                Reset
+              </button>
+            </>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
