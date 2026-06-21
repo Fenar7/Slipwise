@@ -131,6 +131,15 @@ vi.mock("@/lib/mailbox/folder-coverage-service", () => ({
   resetFolderCoverageCursor: vi.fn(),
 }));
 
+vi.mock("@/lib/mailbox/folder-coverage-service", () => ({
+  markFolderCoverageComplete: vi.fn(),
+  updateFolderCoverageBootstrapping: vi.fn(),
+  initFolderCoverageForBootstrap: vi.fn(),
+  getIncompleteRequiredFolders: vi.fn().mockResolvedValue([]),
+  getFolderCoverage: vi.fn().mockResolvedValue(null),
+  resetFolderCoverageCursor: vi.fn(),
+}));
+
 vi.mock("@/lib/mailbox/gmail-oauth-service", () => ({
   refreshGmailAuthorization: vi.fn(),
   verifyGmailConnection: vi.fn(),

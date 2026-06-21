@@ -80,7 +80,6 @@ function makeUnauthorizedResponse() {
 function buildGetRequest() {
   return new Request("http://localhost/api/mailbox/connections", { method: "GET" });
 }
-
 /** Minimal MailboxConnectionListItem shape for testing */
 function makeListItem(overrides: Record<string, unknown> = {}) {
   return {

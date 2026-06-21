@@ -148,7 +148,6 @@ export function ConnectionDetailClient({ connectionId }: ConnectionDetailClientP
   const [visibilityDraft, setVisibilityDraft] = useState("org_shared");
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-
   useEffect(() => {
     let cancelled = false;
     async function load() {
@@ -218,7 +217,6 @@ export function ConnectionDetailClient({ connectionId }: ConnectionDetailClientP
       setVisibilityDraft(connection.visibilityPolicy);
     }
   }, [connection]);
-
   if (isLoading) {
     return (
       <div className="mx-auto max-w-2xl px-6 py-8" data-testid="connection-detail-loading">

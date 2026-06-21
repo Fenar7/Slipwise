@@ -79,7 +79,6 @@ export async function GET(
       auth.ctx.orgId,
       records.map((r) => r.id),
     );
-
     const connections = records.map((record) =>
       toMailboxConnectionListItem(record, Date.now(), {
         latestRun: syncRuns.latestRunByConnectionId.get(record.id) ?? null,
@@ -87,7 +86,6 @@ export async function GET(
           syncRuns.latestCompletedRunByConnectionId.get(record.id) ?? null,
       }),
     );
-
     return NextResponse.json({ connections, nextCursor });
   } catch (error) {
     console.error("[mailbox/connections] GET failed:", error);

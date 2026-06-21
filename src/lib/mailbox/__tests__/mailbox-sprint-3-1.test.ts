@@ -102,6 +102,15 @@ vi.mock("@/lib/mailbox/folder-coverage-service", () => ({
   resetFolderCoverageCursor: vi.fn(),
 }));
 
+vi.mock("@/lib/mailbox/folder-coverage-service", () => ({
+  markFolderCoverageComplete: vi.fn(),
+  updateFolderCoverageBootstrapping: vi.fn(),
+  initFolderCoverageForBootstrap: vi.fn(),
+  getIncompleteRequiredFolders: vi.fn().mockResolvedValue([]),
+  getFolderCoverage: vi.fn().mockResolvedValue(null),
+  resetFolderCoverageCursor: vi.fn(),
+}));
+
 describe("Sprint 3.1 — Initial sync pipeline", () => {
   beforeEach(() => {
     vi.clearAllMocks();

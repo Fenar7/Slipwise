@@ -117,7 +117,7 @@ vi.mock("@/lib/mailbox/provider-registry", () => ({
     searchThreads: mockSearchThreads,
     fetchThreadDetail: vi.fn(),
   }),
-  findMailboxProviderAdapter: (provider) =>
+  findMailboxProviderAdapter: (provider: string) =>
     provider === "GMAIL"
       ? { descriptor: { provider: "GMAIL", displayName: "Gmail", supportsPushSync: true, supportsSend: true, supportsSearch: true, syncCursorType: "HISTORY_ID" } }
       : null,

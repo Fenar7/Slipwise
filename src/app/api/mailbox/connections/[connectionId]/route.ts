@@ -21,6 +21,7 @@ import {
 } from "@/lib/mailbox/connection-service";
 import { toMailboxConnectionListItem } from "@/lib/mailbox/admin-shapes";
 import { getMailboxSyncRunsByConnectionIds } from "@/lib/mailbox/sync-run-read-service";
+import type { MailboxConnectionRecord } from "@/lib/mailbox/domain-types";
 import { emitMailboxConnectionEvent } from "@/lib/realtime";
 import { patchConnectionSchema } from "@/lib/validation/mailbox";
 import { ZodError } from "zod";

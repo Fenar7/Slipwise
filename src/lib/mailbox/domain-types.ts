@@ -550,7 +550,6 @@ export type MailboxOverallCoverage =
   | "RECOVERING"     // Recovery in progress for at least one folder
   | "ERRORED"        // At least one folder is ERRORED and no bootstrapping/recovering
   | "PENDING";       // No folders have been started at all
-
 /**
  * Get the required coverage folders for a given provider.
  * Gmail requires INBOX, SENT, SPAM, DRAFT, STARRED, TRASH.
