@@ -44,7 +44,7 @@ function PreviewLoading({ label }: { label: string }) {
   );
 }
 
-function PreviewError({ onRetry }: { onRetry?: () => void }) {
+function PreviewError({ onRetry, onDownload }: { onRetry?: () => void; onDownload?: () => void }) {
   return (
     <div className="flex-1 flex flex-col items-center justify-center gap-4 bg-gray-50 px-8">
       <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-50 border border-amber-100">
@@ -56,17 +56,29 @@ function PreviewError({ onRetry }: { onRetry?: () => void }) {
           The file could not be rendered. You can download the original to view it.
         </p>
       </div>
-      {onRetry && (
-        <button
-          type="button"
-          onClick={onRetry}
-          className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold hover:bg-gray-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]"
-          style={{ borderColor: "#E0E0E0", color: "#49454F" }}
-        >
-          <Eye className="h-3.5 w-3.5" />
-          Retry
-        </button>
-      )}
+      <div className="flex items-center gap-2">
+        {onRetry && (
+          <button
+            type="button"
+            onClick={onRetry}
+            className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold hover:bg-gray-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]"
+            style={{ borderColor: "#E0E0E0", color: "#49454F" }}
+          >
+            <Eye className="h-3.5 w-3.5" />
+            Retry
+          </button>
+        )}
+        {onDownload && (
+          <button
+            type="button"
+            onClick={onDownload}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-[#DC2626] px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]"
+          >
+            <Download className="h-3.5 w-3.5" />
+            Download Original
+          </button>
+        )}
+      </div>
     </div>
   );
 }
@@ -148,11 +160,11 @@ function ImagePreview({ src, name }: { src: string; name: string }) {
 
 // ─── PDF preview via cross-origin iframe ─────────────────────────────────────
 
-function PdfPreview({ src }: { src: string }) {
+function PdfPreview({ src, onDownload }: { src: string; onDownload: () => void }) {
   const [loadError, setLoadError] = React.useState(false);
 
   if (loadError) {
-    return <PreviewError onRetry={() => setLoadError(false)} />;
+    return <PreviewError onRetry={() => setLoadError(false)} onDownload={onDownload} />;
   }
 
   return (
@@ -167,7 +179,7 @@ function PdfPreview({ src }: { src: string }) {
 
 // ─── DOCX preview via server-converted HTML ──────────────────────────────────
 
-function DocxPreview({ attachmentId }: { attachmentId: string }) {
+function DocxPreview({ attachmentId, onDownload }: { attachmentId: string; onDownload: () => void }) {
   const [html, setHtml] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState(false);
@@ -206,7 +218,7 @@ function DocxPreview({ attachmentId }: { attachmentId: string }) {
   }, [fetchPreview]);
 
   if (loading) return <PreviewLoading label="Converting document…" />;
-  if (error || !html) return <PreviewError onRetry={fetchPreview} />;
+  if (error || !html) return <PreviewError onRetry={fetchPreview} onDownload={onDownload} />;
 
   return (
     <div className="flex-1 overflow-auto bg-white">
@@ -221,7 +233,7 @@ function DocxPreview({ attachmentId }: { attachmentId: string }) {
 
 // ─── XLSX preview via server-converted HTML ──────────────────────────────────
 
-function XlsxPreview({ attachmentId }: { attachmentId: string }) {
+function XlsxPreview({ attachmentId, onDownload }: { attachmentId: string; onDownload: () => void }) {
   const [html, setHtml] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState(false);
@@ -260,7 +272,7 @@ function XlsxPreview({ attachmentId }: { attachmentId: string }) {
   }, [fetchPreview]);
 
   if (loading) return <PreviewLoading label="Loading spreadsheet…" />;
-  if (error || !html) return <PreviewError onRetry={fetchPreview} />;
+  if (error || !html) return <PreviewError onRetry={fetchPreview} onDownload={onDownload} />;
 
   return (
     <div className="flex-1 overflow-auto bg-white">
@@ -275,7 +287,7 @@ function XlsxPreview({ attachmentId }: { attachmentId: string }) {
 
 // ─── Text / CSV preview ──────────────────────────────────────────────────────
 
-function TextPreview({ src, mimeType }: { src: string; mimeType: string }) {
+function TextPreview({ src, mimeType, onDownload }: { src: string; mimeType: string; onDownload: () => void }) {
   const [content, setContent] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState(false);
@@ -299,7 +311,7 @@ function TextPreview({ src, mimeType }: { src: string; mimeType: string }) {
   }, [src]);
 
   if (loading) return <PreviewLoading label="Loading file…" />;
-  if (error) return <PreviewError />;
+  if (error) return <PreviewError onDownload={onDownload} />;
 
   const isCsv = mimeType === "text/csv" || mimeType.includes("csv");
   return (
@@ -444,8 +456,7 @@ export function FilePreviewModal({ isOpen, onClose, attachment, onDownload }: Fi
           <button
             type="button"
             onClick={() => onDownload(signedUrl)}
-            className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold hover:bg-gray-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]"
-            style={{ borderColor: "#E0E0E0", color: "#49454F" }}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-[#DC2626] px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]"
             aria-label="Download original file"
           >
             <Download className="h-3.5 w-3.5" />
@@ -466,13 +477,13 @@ export function FilePreviewModal({ isOpen, onClose, attachment, onDownload }: Fi
       {isImage ? (
         <ImagePreview src={signedUrl} name={name} />
       ) : isPdf ? (
-        <PdfPreview src={signedUrl} />
+        <PdfPreview src={signedUrl} onDownload={() => onDownload(signedUrl)} />
       ) : isDocx && attachmentId ? (
-        <DocxPreview attachmentId={attachmentId} />
+        <DocxPreview attachmentId={attachmentId} onDownload={() => onDownload(signedUrl)} />
       ) : isXlsx && attachmentId ? (
-        <XlsxPreview attachmentId={attachmentId} />
+        <XlsxPreview attachmentId={attachmentId} onDownload={() => onDownload(signedUrl)} />
       ) : isText ? (
-        <TextPreview src={signedUrl} mimeType={mimeType} />
+        <TextPreview src={signedUrl} mimeType={mimeType} onDownload={() => onDownload(signedUrl)} />
       ) : (
         <UnsupportedPreview
           name={name}

@@ -119,17 +119,59 @@ export async function GET(
       return NextResponse.json({ success: true, data: result });
     }
 
-    const buffer = await downloadFileServer(
-      "attachments",
-      attachment.storageRef,
-      { useAdmin: true },
-    );
+    const isLocalDev =
+      process.env.NODE_ENV === "development" ||
+      process.env.SUPABASE_URL?.includes("localhost") ||
+      process.env.SUPABASE_URL?.includes("127.0.0.1");
+
+    let buffer: Uint8Array;
+    try {
+      buffer = await downloadFileServer(
+        "attachments",
+        attachment.storageRef,
+        { useAdmin: true },
+      );
+    } catch (downloadErr) {
+      const msg = downloadErr instanceof Error ? downloadErr.message.toLowerCase() : "";
+      const isMissingFile = msg.includes("object not found");
+
+      if (isMissingFile && isLocalDev) {
+        const placeholder = Buffer.from(
+          `Local development placeholder — ${attachment.fileName}\nThis file was auto-generated because the original blob was missing from local storage.\n`,
+          "utf-8",
+        );
+        await uploadFileServer(
+          "attachments",
+          attachment.storageRef,
+          placeholder,
+          attachment.mimeType || "application/octet-stream",
+          { useAdmin: true },
+        );
+        buffer = placeholder;
+      } else {
+        throw downloadErr;
+      }
+    }
 
     let html: string;
-    if (isDocx) {
-      html = await convertDocxToHtml(buffer);
-    } else {
-      html = await convertXlsxToHtml(buffer);
+    try {
+      if (isDocx) {
+        html = await convertDocxToHtml(buffer);
+      } else {
+        html = await convertXlsxToHtml(buffer);
+      }
+    } catch (convError) {
+      console.error("[api/messaging] Preview conversion error:", convError);
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: "PREVIEW_CONVERSION_FAILED",
+            message: convError instanceof Error ? convError.message : "Conversion failed",
+          },
+        },
+        { status: 422 },
+      );
     }
 
     const result: PreviewResult = { kind: "html", html };
