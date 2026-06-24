@@ -95,12 +95,18 @@ function getPageActions(pathname: string): PageAction[] {
   return [];
 }
 
+const MESSAGING_PATH = "/app/messaging";
+
+function isMessagingRoute(pathname: string) {
+  return pathname === MESSAGING_PATH || pathname.startsWith(`${MESSAGING_PATH}/`);
+}
+
 export function AppTopbar({ orgName }: AppTopbarProps) {
   const pathname = usePathname();
   const { breadcrumbs, pageTitle, suiteLabel } = getNavigationContext(pathname);
   const { actions: workspaceActions, headerContent, viewToggle, tabs } = useWorkspaceTopBar();
   const pageActions = getPageActions(pathname);
-  const hasTabs = tabs && tabs.length > 0;
+  const hasTabs = tabs.length > 0;
 
   return (
     <>

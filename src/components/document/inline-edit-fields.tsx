@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 import type { BrandingConfig } from "@/lib/branding";
 
 const baseClass =
-  "bg-transparent border-0 border-b border-transparent w-full rounded-none px-0 py-0.5 transition-all outline-none text-inherit " +
+  "bg-transparent border-0 border-b border-transparent w-full rounded-none px-0 py-0.5 transition-all outline-none " +
   "placeholder:text-[rgba(29,23,16,0.3)] " +
   "hover:border-b-[rgba(29,23,16,0.25)] hover:bg-[rgba(29,23,16,0.025)] " +
   "focus:border-b-[var(--voucher-accent)] focus:bg-transparent";

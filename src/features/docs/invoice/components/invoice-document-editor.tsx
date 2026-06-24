@@ -65,18 +65,11 @@ export function InvoiceDocumentEditor() {
               <p className="text-[0.68rem] font-semibold uppercase tracking-[0.32em] text-[rgba(29,23,16,0.45)]">
                 Tax Invoice
               </p>
-              <div className="flex items-baseline gap-1">
-                {branding.salutation ? (
-                  <span className="text-[1.5rem] font-medium text-[rgba(29,23,16,0.55)] shrink-0">
-                    {branding.salutation}
-                  </span>
-                ) : null}
-                <InlineTextField
-                  name="branding.companyName"
-                  placeholder="Company Name"
-                  className="mt-3 text-[1.95rem] leading-tight flex-1"
-                />
-              </div>
+              <InlineTextField
+                name="branding.companyName"
+                placeholder="Company Name"
+                className="mt-3 text-[1.95rem] leading-tight"
+              />
             </div>
             <div className="space-y-1.5 text-sm leading-6 text-[rgba(29,23,16,0.7)]">
               <InlineTextArea
@@ -84,22 +77,16 @@ export function InvoiceDocumentEditor() {
                 placeholder="Company address"
                 className="text-sm leading-6 text-[rgba(29,23,16,0.7)]"
               />
-              <div className="flex items-center gap-1.5 text-sm leading-6 text-[rgba(29,23,16,0.7)]">
-                <span className="opacity-70 text-xs shrink-0">Email:</span>
-                <InlineTextField
-                  name="branding.email"
-                  placeholder="Email"
-                  className="text-sm leading-6 text-[rgba(29,23,16,0.7)]"
-                />
-              </div>
-              <div className="flex items-center gap-1.5 text-sm leading-6 text-[rgba(29,23,16,0.7)]">
-                <span className="opacity-70 text-xs shrink-0">Phone:</span>
-                <InlineTextField
-                  name="branding.phone"
-                  placeholder="Phone"
-                  className="text-sm leading-6 text-[rgba(29,23,16,0.7)]"
-                />
-              </div>
+              <InlineTextField
+                name="branding.email"
+                placeholder="Email"
+                className="text-sm leading-6 text-[rgba(29,23,16,0.7)]"
+              />
+              <InlineTextField
+                name="branding.phone"
+                placeholder="Phone"
+                className="text-sm leading-6 text-[rgba(29,23,16,0.7)]"
+              />
               <InlineTextField
                 name="website"
                 placeholder="Website"
@@ -141,11 +128,6 @@ export function InvoiceDocumentEditor() {
             Bill to
           </p>
           <InlineTextField
-            name="clientSalutation"
-            placeholder=""
-            className="mt-3 text-sm font-medium text-[rgba(29,23,16,0.45)] w-16"
-          />
-          <InlineTextField
             name="clientName"
             placeholder="Client / Company Name"
             className="mt-3 text-base font-medium"
@@ -175,10 +157,10 @@ export function InvoiceDocumentEditor() {
         </div>
         <div className="rounded-[1.5rem] p-5 text-white" style={{ backgroundColor: "var(--voucher-accent)" }}>
           <p className="text-[0.68rem] uppercase tracking-[0.25em] text-white">
-            Net Amount Payable
+            Balance due
           </p>
           <p className="mt-3 text-3xl font-medium text-white">{doc.balanceDueFormatted}</p>
-          <p className="mt-4 text-sm leading-7 text-white">*{doc.amountInWords}</p>
+          <p className="mt-4 text-sm leading-7 text-white">{doc.amountInWords}</p>
         </div>
       </section>
 
@@ -291,7 +273,7 @@ export function InvoiceDocumentEditor() {
           </div>
           <div className="rounded-[1.5rem] border border-[rgba(29,23,16,0.08)] bg-[rgba(255,255,255,0.84)] p-5">
             <p className="text-[0.68rem] uppercase tracking-[0.25em] text-[rgba(29,23,16,0.45)]">
-              Terms*
+              Terms
             </p>
             <InlineTextArea
               name="terms"
@@ -332,12 +314,10 @@ export function InvoiceDocumentEditor() {
                 <span>Total</span>
                 <span>{doc.grandTotalFormatted}</span>
               </div>
-              {doc.amountPaid > 0 ? (
-                <div className="flex items-center justify-between">
-                  <span>Paid</span>
-                  <span>{doc.amountPaidFormatted}</span>
-                </div>
-              ) : null}
+              <div className="flex items-center justify-between">
+                <span>Paid</span>
+                <span>{doc.amountPaidFormatted}</span>
+              </div>
               <div className="flex items-center justify-between text-base font-medium text-[var(--voucher-accent)]">
                 <span>Due</span>
                 <span>{doc.balanceDueFormatted}</span>
@@ -391,25 +371,12 @@ export function InvoiceDocumentEditor() {
 
       {/* ── 7. Signature ── */}
       <section className="flex justify-end">
-        <div className="w-64 text-center">
+        <div className="w-48 text-center">
           <div className="h-16 border-b border-dashed border-[rgba(29,23,16,0.16)]" />
-          <p className="mt-2 text-xs font-semibold uppercase tracking-[0.2em] text-[rgba(29,23,16,0.45)]">
-            Approved By
-          </p>
           <InlineTextField
             name="authorizedBy"
-            placeholder="Name"
-            className="mt-1 text-center text-sm font-semibold text-[rgba(29,23,16,0.85)]"
-          />
-          <InlineTextField
-            name="authorizedByDesignation"
-            placeholder="Designation"
-            className="mt-0.5 text-center text-sm text-[rgba(29,23,16,0.7)]"
-          />
-          <InlineTextField
-            name="authorizedByCompany"
-            placeholder="Company name"
-            className="mt-0.5 text-center text-sm text-[rgba(29,23,16,0.7)]"
+            placeholder="Authorized By"
+            className="mt-1 text-center text-xs text-[rgba(29,23,16,0.45)]"
           />
         </div>
       </section>

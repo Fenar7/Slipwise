@@ -77,25 +77,12 @@ function MinimalEditor({ document }: { document: InvoiceDocument }) {
               <p className="text-[0.68rem] font-semibold uppercase tracking-[0.32em] text-[rgba(29,23,16,0.45)]">
                 {document.title}
               </p>
-              <div className="mt-3 flex items-baseline gap-1.5">
-                {document.branding.salutation ? (
-                  <span className="text-[1.5rem] font-medium text-[rgba(29,23,16,0.55)] shrink-0">
-                    {document.branding.salutation}
-                  </span>
-                ) : null}
-                <InlineTextField name="branding.companyName" className="text-[1.95rem] leading-tight flex-1" />
-              </div>
+              <InlineTextField name="branding.companyName" className="mt-3 text-[1.95rem] leading-tight" />
             </div>
             <div className="space-y-1.5 text-sm leading-6 text-[rgba(29,23,16,0.7)]">
               <InlineTextArea name="branding.address" placeholder="Business address" />
-              <div className="flex items-center gap-1.5 text-sm leading-6 text-[rgba(29,23,16,0.7)]">
-                <span className="opacity-70 text-xs shrink-0">Email:</span>
-                <InlineTextField name="branding.email" placeholder="Business email" />
-              </div>
-              <div className="flex items-center gap-1.5 text-sm leading-6 text-[rgba(29,23,16,0.7)]">
-                <span className="opacity-70 text-xs shrink-0">Phone:</span>
-                <InlineTextField name="branding.phone" placeholder="Business phone" />
-              </div>
+              <InlineTextField name="branding.email" placeholder="Business email" />
+              <InlineTextField name="branding.phone" placeholder="Business phone" />
               <InlineTextField name="website" placeholder="Website" />
               <InlineTextField name="businessTaxId" placeholder="Tax ID / GSTIN" />
             </div>
@@ -123,7 +110,6 @@ function MinimalEditor({ document }: { document: InvoiceDocument }) {
           <p className="text-[0.68rem] font-semibold uppercase tracking-[0.25em] text-[rgba(29,23,16,0.45)]">
             Bill to
           </p>
-          <InlineTextField name="clientSalutation" placeholder="" className="mt-3 text-sm font-medium text-[rgba(29,23,16,0.45)] w-16" />
           <InlineTextField name="clientName" className="mt-3 text-base font-medium" placeholder="Client name" />
           <div className="mt-3 space-y-1.5 text-sm leading-6 text-[rgba(29,23,16,0.7)]">
             <InlineTextArea name="clientAddress" placeholder="Client address" />
@@ -134,38 +120,27 @@ function MinimalEditor({ document }: { document: InvoiceDocument }) {
         </div>
         <div className="rounded-[1.5rem] p-5 text-white" style={{ backgroundColor: "var(--voucher-accent)" }}>
           <p className="text-[0.68rem] uppercase tracking-[0.25em] text-white">
-            Net Amount Payable
+            Balance due
           </p>
           <p className="mt-3 text-3xl font-medium text-white">{doc.balanceDueFormatted}</p>
-          <p className="mt-4 text-sm leading-7 text-white">*{doc.amountInWords}</p>
+          <p className="mt-4 text-sm leading-7 text-white">{doc.amountInWords}</p>
         </div>
       </section>
 
-      {doc.visibility.showShippingAddress || doc.placeOfSupply ? (
-        <section
-          className={cn(
-            "grid gap-4",
-            doc.visibility.showShippingAddress && doc.placeOfSupply
-              ? "md:grid-cols-2"
-              : "grid-cols-1",
-          )}
-        >
-          {doc.visibility.showShippingAddress ? (
-            <div className="rounded-[1.5rem] border border-[rgba(29,23,16,0.08)] bg-[rgba(255,255,255,0.86)] p-5">
-              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.25em] text-[rgba(29,23,16,0.45)]">
-                Ship to
-              </p>
-              <InlineTextArea name="shippingAddress" placeholder="Shipping address" />
-            </div>
-          ) : null}
-          <div className="rounded-[1.5rem] border border-[rgba(29,23,16,0.08)] bg-[rgba(255,255,255,0.86)] p-5">
-            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.25em] text-[rgba(29,23,16,0.45)]">
-              Place of supply
-            </p>
-            <InlineTextField name="placeOfSupply" placeholder="Place of supply" />
-          </div>
-        </section>
-      ) : null}
+      <section className="grid md:grid-cols-2 gap-4">
+        <div className="rounded-[1.5rem] border border-[rgba(29,23,16,0.08)] bg-[rgba(255,255,255,0.86)] p-5">
+          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.25em] text-[rgba(29,23,16,0.45)]">
+            Ship to
+          </p>
+          <InlineTextArea name="shippingAddress" placeholder="Shipping address" />
+        </div>
+        <div className="rounded-[1.5rem] border border-[rgba(29,23,16,0.08)] bg-[rgba(255,255,255,0.86)] p-5">
+          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.25em] text-[rgba(29,23,16,0.45)]">
+            Place of supply
+          </p>
+          <InlineTextField name="placeOfSupply" placeholder="Place of supply" />
+        </div>
+      </section>
 
       <div>
         <div className="overflow-hidden rounded-[1.5rem] border border-[rgba(29,23,16,0.08)]">
@@ -218,46 +193,18 @@ function MinimalEditor({ document }: { document: InvoiceDocument }) {
 
       <section className="grid md:grid-cols-[1fr_18rem] gap-4">
         <div className="space-y-4">
-          {doc.visibility.showNotes ? (
-            <div className="rounded-[1.5rem] border border-dashed border-[rgba(29,23,16,0.12)] bg-[rgba(255,255,255,0.72)] p-5">
-              <p className="text-[0.68rem] uppercase tracking-[0.25em] text-[rgba(29,23,16,0.45)]">
-                Notes
-              </p>
-              <InlineTextArea name="notes" className="mt-3 text-sm leading-7 text-[rgba(29,23,16,0.82)]" placeholder="Notes" />
-            </div>
-          ) : null}
-          {doc.visibility.showTerms ? (
-            <div className="rounded-[1.5rem] border border-[rgba(29,23,16,0.08)] bg-[rgba(255,255,255,0.84)] p-5">
-              <p className="text-[0.68rem] uppercase tracking-[0.25em] text-[rgba(29,23,16,0.45)]">
-                Terms*
-              </p>
-              <InlineTextArea name="terms" className="mt-3 text-sm leading-7 text-[rgba(29,23,16,0.82)]" placeholder="Terms" />
-            </div>
-          ) : null}
-          {doc.visibility.showUpiDetails ? (
-            <div className="rounded-[1.5rem] border border-[rgba(29,23,16,0.08)] bg-[rgba(255,255,255,0.84)] p-5">
-              <p className="text-[0.68rem] uppercase tracking-[0.25em] text-[rgba(29,23,16,0.45)]">
-                UPI Details
-              </p>
-              <div className="mt-3 flex flex-wrap items-center justify-between gap-4">
-                <div>
-                  <p className="text-xs text-[rgba(29,23,16,0.45)]">UPI ID</p>
-                  <InlineTextField name="upiId" placeholder="merchant@ybl" className="text-sm font-medium mt-1" />
-                </div>
-                {doc.upiQrDataUrl ? (
-                  <img
-                    src={doc.upiQrDataUrl}
-                    alt="UPI QR Code"
-                    className="h-16 w-16 rounded-lg border border-[rgba(29,23,16,0.1)] object-contain p-1 bg-white"
-                  />
-                ) : (
-                  <div className="text-[11px] text-[rgba(29,23,16,0.45)] border border-dashed border-[rgba(29,23,16,0.14)] rounded-lg p-2 bg-white">
-                    Upload UPI QR in Sidebar
-                  </div>
-                )}
-              </div>
-            </div>
-          ) : null}
+          <div className="rounded-[1.5rem] border border-dashed border-[rgba(29,23,16,0.12)] bg-[rgba(255,255,255,0.72)] p-5">
+            <p className="text-[0.68rem] uppercase tracking-[0.25em] text-[rgba(29,23,16,0.45)]">
+              Notes
+            </p>
+            <InlineTextArea name="notes" className="mt-3 text-sm leading-7 text-[rgba(29,23,16,0.82)]" placeholder="Notes" />
+          </div>
+          <div className="rounded-[1.5rem] border border-[rgba(29,23,16,0.08)] bg-[rgba(255,255,255,0.84)] p-5">
+            <p className="text-[0.68rem] uppercase tracking-[0.25em] text-[rgba(29,23,16,0.45)]">
+              Terms
+            </p>
+            <InlineTextArea name="terms" className="mt-3 text-sm leading-7 text-[rgba(29,23,16,0.82)]" placeholder="Terms" />
+          </div>
         </div>
 
         <div className="rounded-[1.5rem] border border-[rgba(29,23,16,0.08)] bg-[rgba(255,255,255,0.92)] p-5">
@@ -292,12 +239,10 @@ function MinimalEditor({ document }: { document: InvoiceDocument }) {
             </div>
             {doc.visibility.showPaymentSummary ? (
               <>
-                {doc.amountPaid > 0 ? (
-                  <div className="flex items-center justify-between">
-                    <span>Paid</span>
-                    <span>{doc.amountPaidFormatted}</span>
-                  </div>
-                ) : null}
+                <div className="flex items-center justify-between">
+                  <span>Paid</span>
+                  <span>{doc.amountPaidFormatted}</span>
+                </div>
                 <div className="flex items-center justify-between text-base font-medium text-[var(--voucher-accent)]">
                   <span>Due</span>
                   <span>{doc.balanceDueFormatted}</span>
@@ -335,19 +280,18 @@ export function MinimalInvoiceTemplate({
                 {document.title}
               </p>
               <h2 className="mt-3 text-[1.95rem] leading-tight">
-                {document.branding.salutation ? document.branding.salutation + " " : ""}
                 {document.branding.companyName}
               </h2>
             </div>
             <div className="space-y-1.5 text-sm leading-6 text-[rgba(29,23,16,0.7)]">
               {document.visibility.showAddress && document.branding.address ? (
-                <p className="whitespace-pre-line">{document.branding.address}</p>
+                <p>{document.branding.address}</p>
               ) : null}
               {document.visibility.showEmail && document.branding.email ? (
-                <p>Email: {document.branding.email}</p>
+                <p>{document.branding.email}</p>
               ) : null}
               {document.visibility.showPhone && document.branding.phone ? (
-                <p>Phone: {document.branding.phone}</p>
+                <p>{document.branding.phone}</p>
               ) : null}
               {document.website ? <p>{document.website}</p> : null}
               {document.businessTaxId ? <p>{document.businessTaxId}</p> : null}
@@ -385,9 +329,9 @@ export function MinimalInvoiceTemplate({
           <p className="text-[0.68rem] font-semibold uppercase tracking-[0.25em] text-[rgba(29,23,16,0.45)]">
             Bill to
           </p>
-          <p className="mt-3 text-base font-medium">{document.clientSalutation ? document.clientSalutation + " " : ""}{document.clientName}</p>
+          <p className="mt-3 text-base font-medium">{document.clientName}</p>
           <div className="mt-3 space-y-1.5 text-sm leading-6 text-[rgba(29,23,16,0.7)]">
-            {document.clientAddress ? <p className="whitespace-pre-line">{document.clientAddress}</p> : null}
+            {document.clientAddress ? <p>{document.clientAddress}</p> : null}
             {document.clientEmail ? <p>{document.clientEmail}</p> : null}
             {document.clientPhone ? <p>{document.clientPhone}</p> : null}
             {document.clientTaxId ? <p>Tax ID: {document.clientTaxId}</p> : null}
@@ -395,10 +339,10 @@ export function MinimalInvoiceTemplate({
         </div>
         <div className="rounded-[1.5rem] p-5 text-white" style={{ backgroundColor: "var(--voucher-accent)" }}>
           <p className="text-[0.68rem] uppercase tracking-[0.25em] text-white">
-            Net Amount Payable
+            Balance due
           </p>
           <p className="mt-3 text-3xl font-medium text-white">{document.balanceDueFormatted}</p>
-          <p className="mt-4 text-sm leading-7 text-white">*{document.amountInWords}</p>
+          <p className="mt-4 text-sm leading-7 text-white">{document.amountInWords}</p>
         </div>
       </section>
 
@@ -414,7 +358,7 @@ export function MinimalInvoiceTemplate({
               <p className="text-[0.68rem] font-semibold uppercase tracking-[0.25em] text-[rgba(29,23,16,0.45)]">
                 Ship to
               </p>
-              <p className="mt-3 text-sm leading-7 text-[rgba(29,23,16,0.82)] whitespace-pre-line">
+              <p className="mt-3 text-sm leading-7 text-[rgba(29,23,16,0.82)]">
                 {document.shippingAddress}
               </p>
             </div>
@@ -452,31 +396,9 @@ export function MinimalInvoiceTemplate({
           {document.terms ? (
             <div className="document-break-inside-avoid rounded-[1.5rem] border border-[rgba(29,23,16,0.08)] bg-[rgba(255,255,255,0.84)] p-5">
               <p className="text-[0.68rem] uppercase tracking-[0.25em] text-[rgba(29,23,16,0.45)]">
-                Terms*
+                Terms
               </p>
               <p className="mt-3 text-sm leading-7 text-[rgba(29,23,16,0.82)]">{document.terms}</p>
-            </div>
-          ) : null}
-          {document.visibility.showUpiDetails && (document.upiId || document.upiQrDataUrl) ? (
-            <div className="document-break-inside-avoid rounded-[1.5rem] border border-[rgba(29,23,16,0.08)] bg-[rgba(255,255,255,0.84)] p-5">
-              <p className="text-[0.68rem] uppercase tracking-[0.25em] text-[rgba(29,23,16,0.45)]">
-                UPI Details
-              </p>
-              <div className="mt-3 flex flex-wrap items-center justify-between gap-4">
-                {document.upiId ? (
-                  <div>
-                    <p className="text-xs text-[rgba(29,23,16,0.45)]">UPI ID</p>
-                    <p className="text-sm font-medium text-[rgba(29,23,16,0.85)] mt-1">{document.upiId}</p>
-                  </div>
-                ) : null}
-                {document.upiQrDataUrl ? (
-                  <img
-                    src={document.upiQrDataUrl}
-                    alt="UPI QR Code"
-                    className="h-16 w-16 rounded-lg border border-[rgba(29,23,16,0.1)] object-contain p-1 bg-white"
-                  />
-                ) : null}
-              </div>
             </div>
           ) : null}
         </div>
@@ -513,12 +435,10 @@ export function MinimalInvoiceTemplate({
             </div>
             {document.visibility.showPaymentSummary ? (
               <>
-                {document.amountPaid > 0 ? (
-                  <div className="flex items-center justify-between">
-                    <span>Paid</span>
-                    <span>{document.amountPaidFormatted}</span>
-                  </div>
-                ) : null}
+                <div className="flex items-center justify-between">
+                  <span>Paid</span>
+                  <span>{document.amountPaidFormatted}</span>
+                </div>
                 <div className="flex items-center justify-between text-base font-medium text-[var(--voucher-accent)]">
                   <span>Due</span>
                   <span>{document.balanceDueFormatted}</span>

@@ -210,174 +210,171 @@
 /* ======================================================================
    Global Base Styles
    ====================================================================== */
-@layer base {
-  * {
-    box-sizing: border-box;
-  }
+* {
+  box-sizing: border-box;
+}
 
-  html {
-    scroll-behavior: smooth;
-    background: var(--surface-base);
-    color-scheme: light;
-  }
+html {
+  scroll-behavior: smooth;
+  background: var(--surface-base);
+  color-scheme: light;
+}
 
-  body {
-    background: var(--surface-base);
-    color: var(--text-primary);
-    font-family: var(--font-sans-stack);
-    font-size: 0.9375rem;
-    line-height: 1.6;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-  }
+body {
+  background: var(--surface-base);
+  color: var(--text-primary);
+  font-family: var(--font-sans-stack);
+  font-size: 0.9375rem;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
 
-  /* ----------------------------------------------------------------------
-     Typography Hierarchy
-     ---------------------------------------------------------------------- */
-  h1, h2, h3, h4, h5, h6 {
-    font-family: var(--font-display-stack);
-    font-weight: 600;
-    color: var(--text-primary);
-    letter-spacing: -0.02em;
-    line-height: 1.2;
-  }
+/* ----------------------------------------------------------------------
+   Typography Hierarchy
+   ---------------------------------------------------------------------- */
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-display-stack);
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
 
-  h1 {
-    font-size: 1.75rem;
-    line-height: 1.15;
-    letter-spacing: -0.03em;
-  }
+h1 {
+  font-size: 1.75rem;
+  line-height: 1.15;
+  letter-spacing: -0.03em;
+}
 
-  h2 {
-    font-size: 1.375rem;
-    line-height: 1.25;
-  }
+h2 {
+  font-size: 1.375rem;
+  line-height: 1.25;
+}
 
-  h3 {
-    font-size: 1.125rem;
-    line-height: 1.3;
-  }
+h3 {
+  font-size: 1.125rem;
+  line-height: 1.3;
+}
 
-  h4 {
-    font-size: 1rem;
-    line-height: 1.35;
-    font-weight: 600;
-  }
+h4 {
+  font-size: 1rem;
+  line-height: 1.35;
+  font-weight: 600;
+}
 
-  h5 {
-    font-size: 0.875rem;
-    line-height: 1.4;
-    font-weight: 600;
-    letter-spacing: -0.01em;
-  }
+h5 {
+  font-size: 0.875rem;
+  line-height: 1.4;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
 
-  h6 {
-    font-size: 0.8125rem;
-    line-height: 1.4;
-    font-weight: 600;
-    letter-spacing: 0;
-    text-transform: uppercase;
-    color: var(--text-muted);
-  }
+h6 {
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
 
-  p {
-    color: var(--text-secondary);
-  }
+p {
+  color: var(--text-secondary);
+}
 
-  small, .text-small {
-    font-size: 0.8125rem;
-    line-height: 1.5;
-  }
+small, .text-small {
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
 
-  .label {
-    font-size: 0.75rem;
-    font-weight: 600;
-    letter-spacing: 0.02em;
-    text-transform: uppercase;
-    color: var(--text-muted);
-  }
+.label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
 
-  .caption {
-    font-size: 0.75rem;
-    line-height: 1.5;
-    color: var(--text-muted);
-  }
+.caption {
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
 
-  /* ----------------------------------------------------------------------
-     Interactive Element Transitions
-     ---------------------------------------------------------------------- */
-  a,
-  button,
-  input,
-  textarea,
-  select {
-    transition:
-      background-color var(--transition-base),
-      color var(--transition-base),
-      border-color var(--transition-base),
-      transform var(--transition-base),
-      box-shadow var(--transition-base);
-  }
+/* ----------------------------------------------------------------------
+   Interactive Element Transitions
+   ---------------------------------------------------------------------- */
+a,
+button,
+input,
+textarea,
+select {
+  transition:
+    background-color var(--transition-base),
+    color var(--transition-base),
+    border-color var(--transition-base),
+    transform var(--transition-base),
+    box-shadow var(--transition-base);
+}
 
-  /* Smooth hover lift for interactive cards and panels */
-  .hover-lift {
-    transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-  }
+/* Smooth hover lift for interactive cards and panels */
+.hover-lift {
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
 
-  .hover-lift:hover {
-    transform: translateY(-2px);
-    box-shadow: var(--shadow-md);
-  }
+.hover-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
 
-  /* Subtle press feedback */
-  .press-feedback:active {
-    transform: scale(0.98);
-    transition-duration: 0.08s;
-  }
+/* Subtle press feedback */
+.press-feedback:active {
+  transform: scale(0.98);
+  transition-duration: 0.08s;
+}
 
-  /* Smooth image zoom on hover */
-  .img-zoom {
-    transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-  }
+/* Smooth image zoom on hover */
+.img-zoom {
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
 
-  .img-zoom:hover {
-    transform: scale(1.03);
-  }
+.img-zoom:hover {
+  transform: scale(1.03);
+}
 
-  /* Stagger animation helpers */
-  @keyframes fadeInUp {
-    from {
-      opacity: 0;
-      transform: translateY(8px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
+/* Stagger animation helpers */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
   }
-
-  .animate-fade-in-up {
-    animation: fadeInUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-  }
-
-  button:not(:disabled),
-  [role="button"]:not([aria-disabled="true"]) {
-    cursor: pointer;
-  }
-
-  /* ----------------------------------------------------------------------
-     Selection & Focus
-     ---------------------------------------------------------------------- */
-  ::selection {
-    background: rgba(22, 41, 77, 0.12);
-  }
-
-  :focus-visible {
-    outline: 2px solid var(--focus-ring);
-    outline-offset: 3px;
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 
+.animate-fade-in-up {
+  animation: fadeInUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+button:not(:disabled),
+[role="button"]:not([aria-disabled="true"]) {
+  cursor: pointer;
+}
+
+/* ----------------------------------------------------------------------
+   Selection & Focus
+   ---------------------------------------------------------------------- */
+::selection {
+  background: rgba(22, 41, 77, 0.12);
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 3px;
+}
 
 /* ======================================================================
    Slipwise Shared Component Primitives
@@ -577,14 +574,6 @@
   body {
     background: white !important;
     background-image: none !important;
-    -webkit-print-color-adjust: exact !important;
-    print-color-adjust: exact !important;
-  }
-
-  /* Ensure all colored template elements preserve backgrounds and text color */
-  article, div, section, span, p, h1, h2, h3, h4, h5, h6 {
-    -webkit-print-color-adjust: exact !important;
-    print-color-adjust: exact !important;
   }
 }
 
@@ -603,29 +592,4 @@
   html {
     scroll-behavior: auto;
   }
-}
-
-/* ======================================================================
-   Mailbox Message Body Styles (Sprint 4.2)
-   ====================================================================== */
-
-.mailbox-message-body blockquote {
-  margin: 0.75rem 0;
-  padding-left: 0.75rem;
-  border-left: 3px solid #cbd5e1;
-  color: #64748b;
-}
-
-.mailbox-message-body blockquote p {
-  margin: 0.25rem 0;
-}
-
-.mailbox-message-body a {
-  color: #2563eb;
-  text-decoration: underline;
-}
-
-.mailbox-message-body img {
-  max-width: 100%;
-  height: auto;
 }

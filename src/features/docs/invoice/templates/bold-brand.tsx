@@ -47,15 +47,12 @@ export function BoldBrandInvoiceTemplate({
               <p className="text-[0.7rem] uppercase tracking-[0.32em] text-white">
                 {document.title}
               </p>
-              <h2 className="mt-3 text-[2.05rem] leading-tight text-white">
-                {document.branding.salutation ? document.branding.salutation + " " : ""}
-                {document.branding.companyName}
-              </h2>
+              <h2 className="mt-3 text-[2.05rem] leading-tight text-white">{document.branding.companyName}</h2>
               <div className="mt-4 space-y-1.5 text-sm leading-6 text-white">
-                {document.visibility.showAddress && document.branding.address ? <p className="text-white whitespace-pre-line">{document.branding.address}</p> : null}
-                {document.visibility.showEmail && document.branding.email ? <p className="text-white">Email: {document.branding.email}</p> : null}
-                {document.visibility.showPhone && document.branding.phone ? <p className="text-white">Phone: {document.branding.phone}</p> : null}
-                {document.website ? <p className="text-white">{document.website}</p> : null}
+                {document.visibility.showAddress && document.branding.address ? <p>{document.branding.address}</p> : null}
+                {document.visibility.showEmail && document.branding.email ? <p>{document.branding.email}</p> : null}
+                {document.visibility.showPhone && document.branding.phone ? <p>{document.branding.phone}</p> : null}
+                {document.website ? <p>{document.website}</p> : null}
               </div>
             </div>
           </div>
@@ -64,7 +61,7 @@ export function BoldBrandInvoiceTemplate({
             <p className="mt-2 text-xl font-medium text-white">{document.invoiceNumber}</p>
             <p className="mt-4 text-[0.68rem] uppercase tracking-[0.25em] text-white">Due</p>
             <p className="mt-2 text-sm font-medium text-white">{document.dueDate || document.invoiceDate}</p>
-            <p className="mt-5 text-[0.68rem] uppercase tracking-[0.25em] text-white">Net Amount Payable</p>
+            <p className="mt-5 text-[0.68rem] uppercase tracking-[0.25em] text-white">Balance due</p>
             <p className="mt-2 text-2xl font-medium text-white">{document.balanceDueFormatted}</p>
           </div>
         </div>
@@ -78,9 +75,9 @@ export function BoldBrandInvoiceTemplate({
         >
         <div className="rounded-[1.5rem] border border-[rgba(29,23,16,0.08)] bg-[rgba(255,255,255,0.92)] p-5">
           <p className="text-[0.68rem] uppercase tracking-[0.25em] text-[rgba(29,23,16,0.45)]">Bill to</p>
-          <p className="mt-3 text-lg font-medium">{document.clientSalutation ? document.clientSalutation + " " : ""}{document.clientName}</p>
+          <p className="mt-3 text-lg font-medium">{document.clientName}</p>
           <div className="mt-3 space-y-1.5 text-sm leading-6 text-[rgba(29,23,16,0.72)]">
-            {document.clientAddress ? <p className="whitespace-pre-line">{document.clientAddress}</p> : null}
+            {document.clientAddress ? <p>{document.clientAddress}</p> : null}
             {document.clientEmail ? <p>{document.clientEmail}</p> : null}
             {document.clientPhone ? <p>{document.clientPhone}</p> : null}
             {document.clientTaxId ? <p>Tax ID: {document.clientTaxId}</p> : null}
@@ -105,46 +102,43 @@ export function BoldBrandInvoiceTemplate({
               <p className="text-[0.68rem] uppercase tracking-[0.25em] text-[rgba(29,23,16,0.45)]">Grand total</p>
               <p className="mt-2 font-medium">{document.grandTotalFormatted}</p>
             </div>
-            {document.amountPaid > 0 ? (
-              <div>
-                <p className="text-[0.68rem] uppercase tracking-[0.25em] text-[rgba(29,23,16,0.45)]">Paid</p>
-                <p className="mt-2 font-medium">{document.amountPaidFormatted}</p>
-              </div>
-            ) : null}
+            <div>
+              <p className="text-[0.68rem] uppercase tracking-[0.25em] text-[rgba(29,23,16,0.45)]">Paid</p>
+              <p className="mt-2 font-medium">{document.amountPaidFormatted}</p>
+            </div>
           </div>
         </div>
       </section>
-      <section
-        className={cn(
-          "document-break-inside-avoid grid gap-4",
-          document.visibility.showShippingAddress && document.placeOfSupply
-            ? "md:grid-cols-2"
-            : "grid-cols-1",
-        )}
-      >
-        {document.visibility.showShippingAddress ? (
-          <div className="rounded-[1.5rem] border border-[rgba(29,23,16,0.08)] bg-[rgba(255,255,255,0.92)] p-5">
-            <p className="text-[0.68rem] uppercase tracking-[0.25em] text-[rgba(29,23,16,0.45)]">Ship to</p>
-            <div className="mt-3 text-sm leading-7 text-[rgba(29,23,16,0.85)] whitespace-pre-line">
-              {document.shippingAddress}
-            </div>
-          </div>
-        ) : null}
-        {document.placeOfSupply ? (
-          <div className="rounded-[1.5rem] border border-[rgba(29,23,16,0.08)] bg-[rgba(255,255,255,0.92)] p-5">
-            <p className="text-[0.68rem] uppercase tracking-[0.25em] text-[rgba(29,23,16,0.45)]">Place of supply</p>
-            <div className="mt-3 text-sm font-medium text-[rgba(29,23,16,0.85)]">
-              {document.placeOfSupply}
-            </div>
-          </div>
-        ) : null}
-      </section>
 
-      {/* Item Table */}
-      <section className="overflow-hidden rounded-[1.6rem] border border-[rgba(29,23,16,0.08)] bg-[rgba(255,255,255,0.94)]">
+      {document.shippingAddress || document.placeOfSupply ? (
+        <section
+          className={cn(
+            "document-break-inside-avoid grid gap-4",
+            printLike ? "grid-cols-2" : "md:grid-cols-2",
+          )}
+        >
+          {document.shippingAddress ? (
+            <div className="rounded-[1.5rem] border border-[rgba(29,23,16,0.08)] bg-[rgba(255,255,255,0.92)] p-5">
+              <p className="text-[0.68rem] uppercase tracking-[0.25em] text-[rgba(29,23,16,0.45)]">Shipping address</p>
+              <p className="mt-3 text-sm leading-7 text-[rgba(29,23,16,0.82)]">{document.shippingAddress}</p>
+            </div>
+          ) : null}
+          {document.placeOfSupply ? (
+            <div className="rounded-[1.5rem] border border-[rgba(29,23,16,0.08)] bg-[rgba(255,255,255,0.92)] p-5">
+              <p className="text-[0.68rem] uppercase tracking-[0.25em] text-[rgba(29,23,16,0.45)]">Place of supply</p>
+              <p className="mt-3 text-sm font-medium text-[rgba(29,23,16,0.82)]">{document.placeOfSupply}</p>
+            </div>
+          ) : null}
+        </section>
+      ) : null}
+
+      <section className="overflow-hidden rounded-[1.6rem] border border-[rgba(29,23,16,0.08)] bg-[rgba(255,255,255,0.96)]">
         <table className="w-full border-collapse text-left text-[0.82rem]">
-          <thead className="document-table-head bg-[rgba(29,23,16,0.04)] text-[0.68rem] uppercase tracking-[0.2em] text-[rgba(29,23,16,0.52)]">
-            <tr>
+          <thead
+            className="document-table-head"
+            style={{ backgroundColor: "color-mix(in srgb, var(--voucher-accent) 16%, white 84%)" }}
+          >
+            <tr className="text-[0.68rem] uppercase tracking-[0.2em] text-[rgba(29,23,16,0.58)]">
               <th className="px-4 py-3">Description</th>
               <th className="px-4 py-3">Qty</th>
               <th className="px-4 py-3">Unit</th>
@@ -155,7 +149,7 @@ export function BoldBrandInvoiceTemplate({
           </thead>
           <tbody>
             {document.lineItems.map((item) => (
-              <tr key={`${item.description}-${item.lineTotal}`} className="document-table-row-avoid border-t border-[rgba(29,23,16,0.08)] align-top">
+              <tr key={`${item.description}-${item.lineTotal}`} className="document-table-row-avoid border-t border-[rgba(29,23,16,0.08)]">
                 <td className="px-4 py-4 text-[rgba(29,23,16,0.84)]">{item.description}</td>
                 <td className="px-4 py-4">{item.quantity}</td>
                 <td className="px-4 py-4">{item.unitPriceFormatted}</td>
@@ -168,28 +162,28 @@ export function BoldBrandInvoiceTemplate({
         </table>
       </section>
 
-      {/* Footer */}
-      <section className="document-break-inside-avoid grid gap-6 md:grid-cols-[1.1fr_0.9fr]">
+      <section
+        className={cn(
+          "grid gap-4",
+          printLike ? "grid-cols-[1fr_18rem]" : "md:grid-cols-[1fr_18rem]",
+        )}
+      >
         <div className="space-y-4">
           {document.notes ? (
-            <div className="rounded-[1.4rem] border border-[rgba(29,23,16,0.08)] bg-[rgba(255,255,255,0.88)] p-5">
+            <div className="document-break-inside-avoid rounded-[1.5rem] border border-[rgba(29,23,16,0.08)] bg-[rgba(255,255,255,0.9)] p-5">
               <p className="text-[0.68rem] uppercase tracking-[0.25em] text-[rgba(29,23,16,0.45)]">Notes</p>
-              <div className="mt-3 text-sm leading-7 text-[rgba(29,23,16,0.82)]">
-                {document.notes}
-              </div>
+              <p className="mt-3 text-sm leading-7 text-[rgba(29,23,16,0.82)]">{document.notes}</p>
             </div>
           ) : null}
           {document.terms ? (
-            <div className="rounded-[1.4rem] border border-[rgba(29,23,16,0.08)] bg-[rgba(255,255,255,0.88)] p-5">
-              <p className="text-[0.68rem] uppercase tracking-[0.25em] text-[rgba(29,23,16,0.45)]">Terms*</p>
-              <div className="mt-3 text-sm leading-7 text-[rgba(29,23,16,0.82)]">
-                {document.terms}
-              </div>
+            <div className="document-break-inside-avoid rounded-[1.5rem] border border-[rgba(29,23,16,0.08)] bg-[rgba(255,255,255,0.9)] p-5">
+              <p className="text-[0.68rem] uppercase tracking-[0.25em] text-[rgba(29,23,16,0.45)]">Terms</p>
+              <p className="mt-3 text-sm leading-7 text-[rgba(29,23,16,0.82)]">{document.terms}</p>
             </div>
           ) : null}
           {document.bankName || document.bankAccountNumber || document.bankIfsc ? (
-            <div className="rounded-[1.4rem] border border-[rgba(29,23,16,0.08)] bg-[rgba(255,255,255,0.88)] p-5">
-              <p className="text-[0.68rem] uppercase tracking-[0.25em] text-[rgba(29,23,16,0.45)]">Bank details</p>
+            <div className="document-break-inside-avoid rounded-[1.5rem] border border-[rgba(29,23,16,0.08)] bg-[rgba(255,255,255,0.9)] p-5">
+              <p className="text-[0.68rem] uppercase tracking-[0.25em] text-[rgba(29,23,16,0.45)]">Remit to</p>
               <div className="mt-3 space-y-1.5 text-sm leading-6 text-[rgba(29,23,16,0.82)]">
                 {document.bankName ? <p>{document.bankName}</p> : null}
                 {document.bankAccountNumber ? <p>A/c: {document.bankAccountNumber}</p> : null}
@@ -197,73 +191,34 @@ export function BoldBrandInvoiceTemplate({
               </div>
             </div>
           ) : null}
-
-          {document.upiId || document.upiQrDataUrl ? (
-            <div className="document-break-inside-avoid rounded-[1.4rem] border border-[rgba(29,23,16,0.08)] bg-[rgba(255,255,255,0.88)] p-5">
-              <p className="text-[0.68rem] uppercase tracking-[0.25em] text-[rgba(29,23,16,0.45)]">UPI Details</p>
-              <div className="mt-3 flex flex-wrap items-center justify-between gap-4">
-                {document.upiId ? (
-                  <div>
-                    <p className="text-xs text-[rgba(29,23,16,0.45)]">UPI ID</p>
-                    <p className="text-sm font-medium text-[rgba(29,23,16,0.85)] mt-1">{document.upiId}</p>
-                  </div>
-                ) : null}
-                {document.upiQrDataUrl ? (
-                  <img
-                    src={document.upiQrDataUrl}
-                    alt="UPI QR Code"
-                    className="h-16 w-16 rounded-lg border border-[rgba(29,23,16,0.1)] object-contain p-1 bg-white"
-                  />
-                ) : null}
-              </div>
-            </div>
-          ) : null}
         </div>
-        <div className="rounded-[1.4rem] border border-[rgba(29,23,16,0.08)] bg-[rgba(255,255,255,0.96)] p-5">
-          <SummaryRow label="Subtotal" value={document.subtotalFormatted} />
-          <SummaryRow label="Line discount" value={document.totalDiscountFormatted} />
-          <SummaryRow label="Tax" value={document.totalTaxFormatted} />
-          {document.extraCharges > 0 ? (
-            <SummaryRow label="Extra charges" value={document.extraChargesFormatted} />
-          ) : null}
-          {document.invoiceLevelDiscount > 0 ? (
-            <SummaryRow
-              label="Invoice discount"
-              value={document.invoiceLevelDiscountFormatted}
-            />
-          ) : null}
-          <div className="border-t border-[rgba(29,23,16,0.08)] pt-2">
-            <SummaryRow label="Grand total" value={document.grandTotalFormatted} emphasized />
+
+        <div className="document-break-inside-avoid rounded-[1.5rem] border border-[rgba(29,23,16,0.08)] bg-[rgba(255,255,255,0.98)] p-5">
+          <div className="space-y-3 text-sm">
+            <div className="flex items-center justify-between"><span>Subtotal</span><span>{document.subtotalFormatted}</span></div>
+            <div className="flex items-center justify-between"><span>Line discount</span><span>{document.totalDiscountFormatted}</span></div>
+            <div className="flex items-center justify-between"><span>Tax</span><span>{document.totalTaxFormatted}</span></div>
+            {document.extraCharges > 0 ? (
+              <div className="flex items-center justify-between"><span>Extra charges</span><span>{document.extraChargesFormatted}</span></div>
+            ) : null}
+            {document.invoiceLevelDiscount > 0 ? (
+              <div className="flex items-center justify-between"><span>Invoice discount</span><span>{document.invoiceLevelDiscountFormatted}</span></div>
+            ) : null}
+            <div className="flex items-center justify-between border-t border-[rgba(29,23,16,0.08)] pt-3 font-medium"><span>Grand total</span><span>{document.grandTotalFormatted}</span></div>
+            {document.visibility.showPaymentSummary ? (
+              <>
+                <div className="flex items-center justify-between"><span>Paid</span><span>{document.amountPaidFormatted}</span></div>
+                <div className="flex items-center justify-between text-base font-medium text-[var(--voucher-accent)]"><span>Due</span><span>{document.balanceDueFormatted}</span></div>
+              </>
+            ) : null}
           </div>
-          {document.visibility.showPaymentSummary ? (
-            <>
-              {document.amountPaid > 0 ? (
-                <SummaryRow label="Amount paid" value={document.amountPaidFormatted} />
-              ) : null}
-              <div className="border-t border-[rgba(29,23,16,0.08)] pt-2">
-                <SummaryRow label="Net Amount Payable" value={document.balanceDueFormatted} emphasized />
-              </div>
-            </>
-          ) : null}
-          {document.authorizedBy || document.authorizedByDesignation || document.authorizedByCompany ? (
+          {document.authorizedBy ? (
             <div className="mt-6 border-t border-dashed border-[rgba(29,23,16,0.16)] pt-4 text-sm">
-              <span className="font-semibold text-xs uppercase tracking-wider text-[rgba(29,23,16,0.55)] block mb-1">Approved By</span>
-              {document.authorizedBy && <div className="font-semibold text-[rgba(29,23,16,0.85)]">{document.authorizedBy}</div>}
-              {document.authorizedByDesignation && <div className="text-sm text-[rgba(29,23,16,0.72)] mt-0.5">{document.authorizedByDesignation}</div>}
-              {document.authorizedByCompany && <div className="text-sm text-[rgba(29,23,16,0.72)] mt-0.5">{document.authorizedByCompany}</div>}
+              Authorized by: {document.authorizedBy}
             </div>
           ) : null}
         </div>
       </section>
-    </div>
-  );
-}
-
-function SummaryRow({ label, value, emphasized }: { label: string; value: string; emphasized?: boolean }) {
-  return (
-    <div className={cn("flex justify-between py-1", emphasized ? "font-medium" : "text-[rgba(29,23,16,0.8)]")}>
-      <span className="text-[0.82rem]">{label}</span>
-      <span className="text-[0.82rem]">{value}</span>
     </div>
   );
 }
@@ -309,15 +264,14 @@ function BoldBrandEditor({ document }: { document: InvoiceDocument }) {
 
   return (
     <div className="space-y-6 text-[var(--voucher-ink)]">
-      <section className="relative overflow-hidden rounded-[1.75rem] border border-[rgba(29,23,16,0.08)] bg-[rgba(255,255,255,0.92)]">
-        {/* Top brand header with primary color background */}
-        <div
-          className="flex flex-col gap-6 p-6 md:flex-row md:items-start md:justify-between"
-          style={{
-            background: "linear-gradient(135deg, color-mix(in srgb, var(--voucher-accent) 94%, white 6%), #7f5a22)",
-            color: "white",
-          }}
-        >
+      {/* Header */}
+      <section
+        className="rounded-[1.8rem] p-6 text-white"
+        style={{
+          background: "linear-gradient(135deg, color-mix(in srgb, var(--voucher-accent) 94%, white 6%), #7f5a22)",
+        }}
+      >
+        <div className="flex items-start justify-between gap-6">
           <div className="flex items-start gap-4">
             <DocumentBrandMark
               branding={document.branding}
@@ -327,24 +281,11 @@ function BoldBrandEditor({ document }: { document: InvoiceDocument }) {
             />
             <div>
               <p className="text-[0.7rem] uppercase tracking-[0.32em] text-white">{document.title}</p>
-              <div className="mt-3 flex items-baseline gap-1.5">
-                {document.branding.salutation ? (
-                  <span className="text-[1.5rem] font-medium text-white/70 shrink-0">
-                    {document.branding.salutation}
-                  </span>
-                ) : null}
-                <InlineTextField name="branding.companyName" className="text-[2.05rem] leading-tight text-white flex-1" />
-              </div>
+              <InlineTextField name="branding.companyName" className="mt-3 text-[2.05rem] leading-tight text-white" />
               <div className="mt-4 space-y-1.5">
                 <InlineTextArea name="branding.address" className="text-sm leading-6 text-white" placeholder="Business address" />
-                <div className="flex items-center gap-1.5 text-sm text-white leading-6">
-                  <span className="opacity-70 text-xs shrink-0">Email:</span>
-                  <InlineTextField name="branding.email" className="text-sm leading-6 text-white" placeholder="Business email" />
-                </div>
-                <div className="flex items-center gap-1.5 text-sm text-white leading-6">
-                  <span className="opacity-70 text-xs shrink-0">Phone:</span>
-                  <InlineTextField name="branding.phone" className="text-sm leading-6 text-white" placeholder="Business phone" />
-                </div>
+                <InlineTextField name="branding.email" className="text-sm leading-6 text-white" placeholder="Business email" />
+                <InlineTextField name="branding.phone" className="text-sm leading-6 text-white" placeholder="Business phone" />
                 <InlineTextField name="website" className="text-sm leading-6 text-white" placeholder="Website" />
               </div>
             </div>
@@ -356,7 +297,7 @@ function BoldBrandEditor({ document }: { document: InvoiceDocument }) {
             <InlineDateField name="dueDate" className="mt-2 text-sm font-medium text-white" />
             <p className="mt-4 text-[0.68rem] uppercase tracking-[0.25em] text-white">Invoice date</p>
             <InlineDateField name="invoiceDate" className="mt-2 text-sm font-medium text-white" />
-            <p className="mt-5 text-[0.68rem] uppercase tracking-[0.25em] text-white">Net Amount Payable</p>
+            <p className="mt-5 text-[0.68rem] uppercase tracking-[0.25em] text-white">Balance due</p>
             <p className="mt-2 text-2xl font-medium text-white">{doc.balanceDueFormatted}</p>
           </div>
         </div>
@@ -366,7 +307,6 @@ function BoldBrandEditor({ document }: { document: InvoiceDocument }) {
       <section className="grid gap-4 md:grid-cols-[0.95fr_1.05fr]">
         <div className="rounded-[1.5rem] border border-[rgba(29,23,16,0.08)] bg-[rgba(255,255,255,0.92)] p-5">
           <p className="text-[0.68rem] uppercase tracking-[0.25em] text-[rgba(29,23,16,0.45)]">Bill to</p>
-          <InlineTextField name="clientSalutation" placeholder="" className="mt-3 text-sm font-medium text-[rgba(29,23,16,0.45)] w-16" />
           <InlineTextField name="clientName" className="mt-3 text-lg font-medium" placeholder="Client name" />
           <div className="mt-3 space-y-1.5 text-sm leading-6 text-[rgba(29,23,16,0.72)]">
             <InlineTextArea name="clientAddress" placeholder="Client address" />
@@ -389,38 +329,25 @@ function BoldBrandEditor({ document }: { document: InvoiceDocument }) {
               <p className="text-[0.68rem] uppercase tracking-[0.25em] text-[rgba(29,23,16,0.45)]">Grand total</p>
               <p className="mt-2 font-medium">{doc.grandTotalFormatted}</p>
             </div>
-            {doc.amountPaid > 0 ? (
-              <div>
-                <p className="text-[0.68rem] uppercase tracking-[0.25em] text-[rgba(29,23,16,0.45)]">Paid</p>
-                <p className="mt-2 font-medium">{doc.amountPaidFormatted}</p>
-              </div>
-            ) : null}
+            <div>
+              <p className="text-[0.68rem] uppercase tracking-[0.25em] text-[rgba(29,23,16,0.45)]">Paid</p>
+              <p className="mt-2 font-medium">{doc.amountPaidFormatted}</p>
+            </div>
           </div>
         </div>
       </section>
 
       {/* Shipping / Place of supply */}
-      {doc.visibility.showShippingAddress || doc.placeOfSupply ? (
-        <section
-          className={cn(
-            "grid gap-4",
-            doc.visibility.showShippingAddress && doc.placeOfSupply
-              ? "md:grid-cols-2"
-              : "grid-cols-1",
-          )}
-        >
-          {doc.visibility.showShippingAddress ? (
-            <div className="rounded-[1.5rem] border border-[rgba(29,23,16,0.08)] bg-[rgba(255,255,255,0.92)] p-5">
-              <p className="text-[0.68rem] uppercase tracking-[0.25em] text-[rgba(29,23,16,0.45)]">Shipping address</p>
-              <InlineTextArea name="shippingAddress" placeholder="Shipping address" />
-            </div>
-          ) : null}
-          <div className="rounded-[1.5rem] border border-[rgba(29,23,16,0.08)] bg-[rgba(255,255,255,0.92)] p-5">
-            <p className="text-[0.68rem] uppercase tracking-[0.25em] text-[rgba(29,23,16,0.45)]">Place of supply</p>
-            <InlineTextField name="placeOfSupply" placeholder="Place of supply" />
-          </div>
-        </section>
-      ) : null}
+      <section className="grid gap-4 md:grid-cols-2">
+        <div className="rounded-[1.5rem] border border-[rgba(29,23,16,0.08)] bg-[rgba(255,255,255,0.92)] p-5">
+          <p className="text-[0.68rem] uppercase tracking-[0.25em] text-[rgba(29,23,16,0.45)]">Shipping address</p>
+          <InlineTextArea name="shippingAddress" placeholder="Shipping address" />
+        </div>
+        <div className="rounded-[1.5rem] border border-[rgba(29,23,16,0.08)] bg-[rgba(255,255,255,0.92)] p-5">
+          <p className="text-[0.68rem] uppercase tracking-[0.25em] text-[rgba(29,23,16,0.45)]">Place of supply</p>
+          <InlineTextField name="placeOfSupply" placeholder="Place of supply" />
+        </div>
+      </section>
 
       {/* Line items */}
       <section className="overflow-hidden rounded-[1.6rem] border border-[rgba(29,23,16,0.08)] bg-[rgba(255,255,255,0.96)]">
@@ -479,44 +406,17 @@ function BoldBrandEditor({ document }: { document: InvoiceDocument }) {
             <InlineTextArea name="notes" className="mt-3 text-sm leading-7 text-[rgba(29,23,16,0.82)]" placeholder="Notes" />
           </div>
           <div className="rounded-[1.5rem] border border-[rgba(29,23,16,0.08)] bg-[rgba(255,255,255,0.9)] p-5">
-            <p className="text-[0.68rem] uppercase tracking-[0.25em] text-[rgba(29,23,16,0.45)]">Terms*</p>
+            <p className="text-[0.68rem] uppercase tracking-[0.25em] text-[rgba(29,23,16,0.45)]">Terms</p>
             <InlineTextArea name="terms" className="mt-3 text-sm leading-7 text-[rgba(29,23,16,0.82)]" placeholder="Terms" />
           </div>
-          {doc.visibility.showBankDetails ? (
-            <div className="rounded-[1.5rem] border border-[rgba(29,23,16,0.08)] bg-[rgba(255,255,255,0.9)] p-5">
-              <p className="text-[0.68rem] uppercase tracking-[0.25em] text-[rgba(29,23,16,0.45)]">Remit to</p>
-              <div className="mt-3 space-y-1.5 text-sm leading-6 text-[rgba(29,23,16,0.82)]">
-                <InlineTextField name="bankName" placeholder="Bank name" />
-                <InlineTextField name="bankAccountNumber" placeholder="Account number" />
-                <InlineTextField name="bankIfsc" placeholder="IFSC code" />
-              </div>
+          <div className="rounded-[1.5rem] border border-[rgba(29,23,16,0.08)] bg-[rgba(255,255,255,0.9)] p-5">
+            <p className="text-[0.68rem] uppercase tracking-[0.25em] text-[rgba(29,23,16,0.45)]">Remit to</p>
+            <div className="mt-3 space-y-1.5 text-sm leading-6 text-[rgba(29,23,16,0.82)]">
+              <InlineTextField name="bankName" placeholder="Bank name" />
+              <InlineTextField name="bankAccountNumber" placeholder="Account number" />
+              <InlineTextField name="bankIfsc" placeholder="IFSC code" />
             </div>
-          ) : null}
-
-          {doc.visibility.showUpiDetails ? (
-            <div className="rounded-[1.5rem] border border-[rgba(29,23,16,0.08)] bg-[rgba(255,255,255,0.9)] p-5">
-              <p className="text-[0.68rem] uppercase tracking-[0.25em] text-[rgba(29,23,16,0.45)]">UPI Details</p>
-              <div className="mt-3 flex flex-wrap items-center justify-between gap-4">
-                <div>
-                  <p className="text-xs text-[rgba(29,23,16,0.45)]">UPI ID</p>
-                  <InlineTextField name="upiId" placeholder="merchant@ybl" className="text-sm font-medium mt-1" />
-                </div>
-                {doc.upiQrDataUrl ? (
-                  <div className="flex flex-col items-center">
-                    <img
-                      src={doc.upiQrDataUrl}
-                      alt="UPI QR Code"
-                      className="h-16 w-16 rounded-lg border border-[rgba(29,23,16,0.1)] object-contain p-1 bg-white"
-                    />
-                  </div>
-                ) : (
-                  <div className="text-[11px] text-[rgba(29,23,16,0.45)] border border-dashed border-[rgba(29,23,16,0.14)] rounded-lg p-2 bg-white">
-                    Upload UPI QR in Sidebar
-                  </div>
-                )}
-              </div>
-            </div>
-          ) : null}
+          </div>
         </div>
 
         <div className="rounded-[1.5rem] border border-[rgba(29,23,16,0.08)] bg-[rgba(255,255,255,0.98)] p-5">
@@ -533,20 +433,14 @@ function BoldBrandEditor({ document }: { document: InvoiceDocument }) {
             <div className="flex items-center justify-between border-t border-[rgba(29,23,16,0.08)] pt-3 font-medium"><span>Grand total</span><span>{doc.grandTotalFormatted}</span></div>
             {doc.visibility.showPaymentSummary ? (
               <>
-                {doc.amountPaid > 0 ? (
-                  <div className="flex items-center justify-between"><span>Paid</span><span>{doc.amountPaidFormatted}</span></div>
-                ) : null}
-                <div className="border-t border-[rgba(29,23,16,0.08)] pt-2 font-medium">
-                  <div className="flex items-center justify-between"><span>Net Amount Payable</span><span>{doc.balanceDueFormatted}</span></div>
-                </div>
+                <div className="flex items-center justify-between"><span>Paid</span><span>{doc.amountPaidFormatted}</span></div>
+                <div className="flex items-center justify-between text-base font-medium text-[var(--voucher-accent)]"><span>Due</span><span>{doc.balanceDueFormatted}</span></div>
               </>
             ) : null}
           </div>
           <div className="mt-6 border-t border-dashed border-[rgba(29,23,16,0.16)] pt-4 text-sm">
-            <p className="text-[0.68rem] uppercase tracking-[0.25em] text-[rgba(29,23,16,0.45)]">Approved By</p>
-            <InlineTextField name="authorizedBy" placeholder="Name" className="font-semibold text-[rgba(29,23,16,0.85)]" />
-            <InlineTextField name="authorizedByDesignation" placeholder="Designation" className="mt-0.5 text-sm text-[rgba(29,23,16,0.65)]" />
-            <InlineTextField name="authorizedByCompany" placeholder="Company Name" className="mt-0.5 text-sm text-[rgba(29,23,16,0.65)]" />
+            <p className="text-[0.68rem] uppercase tracking-[0.25em] text-[rgba(29,23,16,0.45)]">Authorized by</p>
+            <InlineTextField name="authorizedBy" placeholder="Authorized by" />
           </div>
         </div>
       </section>
