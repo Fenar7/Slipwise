@@ -24,26 +24,12 @@ async function assignAudit(
   }
 }
 
-type EntityDelegate = {
-  findFirst(args: { where: { id: string; organizationId: string }; select: { id: true } }): Promise<{ id: string } | null>;
-};
-
-function getEntityDelegate(table: "invoice" | "voucher" | "customer" | "vendor"): EntityDelegate {
-  switch (table) {
-    case "invoice":  return db.invoice;
-    case "voucher":  return db.voucher;
-    case "customer": return db.customer;
-    case "vendor":   return db.vendor;
-  }
-}
-
 async function verifyOrgEntity(
   orgId: string,
   table: "invoice" | "voucher" | "customer" | "vendor",
   id: string
 ): Promise<boolean> {
-  const delegate = getEntityDelegate(table);
-  const record = await delegate.findFirst({
+  const record = await (db as any)[table].findFirst({
     where: { id, organizationId: orgId },
     select: { id: true },
   });

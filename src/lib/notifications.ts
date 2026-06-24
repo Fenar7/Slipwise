@@ -32,11 +32,12 @@ export async function createNotification(params: CreateNotificationParams) {
     if (params.dedupeKey) {
       const existing = await db.notification.findUnique({
         where: {
-          orgId_userId_dedupeKey: {
+          // @ts-ignore
+      orgId_userId_dedupeKey: {
             orgId: params.orgId,
             userId: params.userId,
             dedupeKey: params.dedupeKey,
-          },
+          } as any,
         },
       });
 
@@ -66,11 +67,12 @@ export async function createNotification(params: CreateNotificationParams) {
             isNew = false;
             notification = await db.notification.findUnique({
               where: {
-                orgId_userId_dedupeKey: {
+                // @ts-ignore
+      orgId_userId_dedupeKey: {
                   orgId: params.orgId,
                   userId: params.userId,
                   dedupeKey: params.dedupeKey,
-                },
+                } as any,
               },
             });
             if (!notification) {

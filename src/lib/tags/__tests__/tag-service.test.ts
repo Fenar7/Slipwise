@@ -60,7 +60,7 @@ describe("createTag", () => {
     const result = await createTag({ name: "Hotel Sarovar", color: "#3b82f6" });
 
     expect(result.success).toBe(true);
-    expect(result.data).toEqual(tag);
+    expect((result as any).data).toEqual(tag);
     expect(mocks.documentTagCreate).toHaveBeenCalledWith({
       data: { orgId: ORG_ID, name: "Hotel Sarovar", slug: "hotel-sarovar", color: "#3b82f6", description: null },
     });
@@ -86,7 +86,7 @@ describe("createTag", () => {
     const result = await createTag({ name: "   " });
 
     expect(result.success).toBe(false);
-    expect(result.error).toBe("Tag name is required");
+    expect((result as any).error).toBe("Tag name is required");
   });
 
   it("rejects name with no alphanumeric characters", async () => {
@@ -95,7 +95,7 @@ describe("createTag", () => {
     const result = await createTag({ name: "---!!!" });
 
     expect(result.success).toBe(false);
-    expect(result.error).toBe("Tag name must contain at least one letter or number");
+    expect((result as any).error).toBe("Tag name must contain at least one letter or number");
   });
 
   it("rejects duplicate tag by case-insensitive slug", async () => {
@@ -105,7 +105,7 @@ describe("createTag", () => {
     const result = await createTag({ name: "HOTEL SAROVAR" });
 
     expect(result.success).toBe(false);
-    expect(result.error).toBe("A tag with a similar name already exists in your organization");
+    expect((result as any).error).toBe("A tag with a similar name already exists in your organization");
     expect(mocks.documentTagFindFirst).toHaveBeenCalledWith({
       where: { orgId: ORG_ID, slug: "hotel-sarovar" },
       select: { id: true },
@@ -118,7 +118,7 @@ describe("createTag", () => {
     const result = await createTag({ name: "Test" });
 
     expect(result.success).toBe(false);
-    expect(result.error).toBe("Failed to create tag");
+    expect((result as any).error).toBe("Failed to create tag");
   });
 });
 
@@ -131,7 +131,7 @@ describe("listTags", () => {
     const result = await listTags();
 
     expect(result.success).toBe(true);
-    expect(result.data).toEqual(tags);
+    expect((result as any).data).toEqual(tags);
     expect(mocks.documentTagFindMany).toHaveBeenCalledWith({
       where: { orgId: ORG_ID, isArchived: false },
       orderBy: { name: "asc" },
@@ -161,7 +161,7 @@ describe("getTag", () => {
     const result = await getTag("tag_001");
 
     expect(result.success).toBe(true);
-    expect(result.data).toEqual(tag);
+    expect((result as any).data).toEqual(tag);
     expect(mocks.documentTagFindFirst).toHaveBeenCalledWith({
       where: { id: "tag_001", orgId: ORG_ID },
     });
@@ -174,7 +174,7 @@ describe("getTag", () => {
     const result = await getTag("nonexistent");
 
     expect(result.success).toBe(false);
-    expect(result.error).toBe("Tag not found");
+    expect((result as any).error).toBe("Tag not found");
   });
 
   it("returns error for tag in a different org", async () => {
@@ -184,7 +184,7 @@ describe("getTag", () => {
     const result = await getTag("tag_from_other_org");
 
     expect(result.success).toBe(false);
-    expect(result.error).toBe("Tag not found");
+    expect((result as any).error).toBe("Tag not found");
   });
 });
 
@@ -200,7 +200,7 @@ describe("renameTag", () => {
     const result = await renameTag("tag_001", { name: "Hotel Grand" });
 
     expect(result.success).toBe(true);
-    expect(result.data).toEqual(updated);
+    expect((result as any).data).toEqual(updated);
     expect(mocks.documentTagUpdate).toHaveBeenCalledWith({
       where: { id: "tag_001" },
       data: { name: "Hotel Grand", slug: "hotel-grand" },
@@ -233,7 +233,7 @@ describe("renameTag", () => {
     const result = await renameTag("tag_001", { name: "New Name" });
 
     expect(result.success).toBe(false);
-    expect(result.error).toBe("A tag with a similar name already exists in your organization");
+    expect((result as any).error).toBe("A tag with a similar name already exists in your organization");
   });
 
   it("returns error for non-existent tag", async () => {
@@ -243,7 +243,7 @@ describe("renameTag", () => {
     const result = await renameTag("nonexistent", { name: "New" });
 
     expect(result.success).toBe(false);
-    expect(result.error).toBe("Tag not found");
+    expect((result as any).error).toBe("Tag not found");
   });
 
   it("requires admin role", async () => {
@@ -252,7 +252,7 @@ describe("renameTag", () => {
     const result = await renameTag("tag_001", { name: "New" });
 
     expect(result.success).toBe(false);
-    expect(result.error).toBe("Failed to rename tag");
+    expect((result as any).error).toBe("Failed to rename tag");
   });
 });
 
@@ -267,7 +267,7 @@ describe("archiveTag", () => {
     const result = await archiveTag("tag_001");
 
     expect(result.success).toBe(true);
-    expect(result.data.isArchived).toBe(true);
+    expect((result as any).data.isArchived).toBe(true);
     expect(mocks.documentTagUpdate).toHaveBeenCalledWith({
       where: { id: "tag_001" },
       data: { isArchived: true },
@@ -281,7 +281,7 @@ describe("archiveTag", () => {
     const result = await archiveTag("nonexistent");
 
     expect(result.success).toBe(false);
-    expect(result.error).toBe("Tag not found");
+    expect((result as any).error).toBe("Tag not found");
   });
 
   it("requires admin role", async () => {
@@ -290,7 +290,7 @@ describe("archiveTag", () => {
     const result = await archiveTag("tag_001");
 
     expect(result.success).toBe(false);
-    expect(result.error).toBe("Failed to archive tag");
+    expect((result as any).error).toBe("Failed to archive tag");
   });
 });
 
@@ -305,7 +305,7 @@ describe("unarchiveTag", () => {
     const result = await unarchiveTag("tag_001");
 
     expect(result.success).toBe(true);
-    expect(result.data.isArchived).toBe(false);
+    expect((result as any).data.isArchived).toBe(false);
     expect(mocks.documentTagUpdate).toHaveBeenCalledWith({
       where: { id: "tag_001" },
       data: { isArchived: false },
@@ -319,6 +319,6 @@ describe("unarchiveTag", () => {
     const result = await unarchiveTag("nonexistent");
 
     expect(result.success).toBe(false);
-    expect(result.error).toBe("Tag not found");
+    expect((result as any).error).toBe("Tag not found");
   });
 });

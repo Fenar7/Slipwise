@@ -25,9 +25,9 @@ model Profile {
   twoFaEnforcedByOrg Boolean   @default(false)
 
   // Phase 38: Passkey MFA
-  passkeyEnabled    Boolean   @default(false)
-  passkeyEnabledAt  DateTime?
-  preferredMfaMethod String   @default("passkey") // passkey | totp
+  passkeyEnabled     Boolean   @default(false)
+  passkeyEnabledAt   DateTime?
+  preferredMfaMethod String    @default("passkey") // passkey | totp
 
   members              Member[]
   passkeys             PasskeyCredential[]
@@ -49,18 +49,18 @@ model Profile {
 // ─── Phase 38: Passkey Credentials ────────────────────────────────────────────
 
 model PasskeyCredential {
-  id             String   @id @default(cuid())
-  userId         String   @db.Uuid
-  credentialId   String   @unique
-  publicKey      Bytes
-  counter        BigInt   @default(0)
-  transports     String[] @default([])
-  deviceName     String?
-  deviceType     String?
-  backedUp       Boolean  @default(false)
-  lastUsedAt     DateTime?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id           String    @id @default(cuid())
+  userId       String    @db.Uuid
+  credentialId String    @unique
+  publicKey    Bytes
+  counter      BigInt    @default(0)
+  transports   String[]  @default([])
+  deviceName   String?
+  deviceType   String?
+  backedUp     Boolean   @default(false)
+  lastUsedAt   DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   user Profile @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -144,8 +144,6 @@ model Organization {
   apiRequestLogs               ApiRequestLog[]
   ssoConfig                    SsoConfig?
   orgPreferences               UserOrgPreference[]
-  messagingNotificationPreferences MessagingNotificationPreference[]
-  messagingFollowUps           MessagingFollowUp[]
   orgDomain                    OrgDomain?
   whiteLabel                   OrgWhiteLabel?
   emailDomains                 OrgEmailDomain[]
@@ -253,6 +251,8 @@ model Organization {
   customRoles                  CustomRole[]
   dataResidencyConfig          DataResidencyConfig?
   webhookDeadLetters           WebhookDeadLetter[]
+  mailboxSavedViews            MailboxSavedView[]
+  mailboxFolderCoverages       MailboxFolderCoverage[]
   // Mailbox Platform — Phase 2
   mailboxConnections           MailboxConnection[]
   mailboxThreadLinks           MailboxThreadLink[]
@@ -260,6 +260,13 @@ model Organization {
   mailboxAssignments           MailboxAssignment[]
   mailboxAuditEvents           MailboxAuditEvent[]
   mailboxProviderCursors       MailboxProviderCursor[]
+  mailboxCredentials           MailboxCredential[]
+  mailboxThreads               MailboxThread[]
+  mailboxMessages              MailboxMessage[]
+  mailboxSyncRuns              MailboxSyncRun[]
+  mailboxDraftAttachments      MailboxDraftAttachment[]
+  mailboxSearchDocuments       MailboxSearchDocument[]
+
   // Internal Messaging Platform — Phase 2
   conversations                Conversation[]
   conversationParticipants     ConversationParticipant[]
@@ -272,15 +279,16 @@ model Organization {
   presenceSessions             PresenceSession[]
   typingSessions               TypingSession[]
   conversationAttachments      ConversationAttachment[]
-  messagingAttachmentIndexes   MessagingAttachmentIndex[]
+  messagingAttachmentIndices   MessagingAttachmentIndex[]
   messagingTasks               MessagingTask[]
   conversationMeetings         ConversationMeeting[]
   calendarConnections          CalendarConnection[]
   messagingAuditEvents         MessagingAuditEvent[]
   conversationEventLogs        ConversationEventLog[]
-  downstreamConsumptionCheckpoints DownstreamConsumptionCheckpoint[]
   retentionPolicies            RetentionPolicy[]
-
+  downstreamCheckpoints        DownstreamConsumptionCheckpoint[]
+  messagingNotificationPrefs   MessagingNotificationPreference[]
+  messagingFollowUps           MessagingFollowUp[]
   @@index([entityGroupId])
   @@map("organization")
 }
@@ -479,12 +487,12 @@ model Sequence {
 }
 
 model SequenceFormat {
-  id             String  @id @default(cuid())
+  id             String   @id @default(cuid())
   sequenceId     String
   formatString   String
-  startCounter   Int     @default(1)
-  counterPadding Int     @default(5)
-  isDefault      Boolean @default(false)
+  startCounter   Int      @default(1)
+  counterPadding Int      @default(5)
+  isDefault      Boolean  @default(false)
   createdAt      DateTime @default(now())
 
   sequence Sequence @relation(fields: [sequenceId], references: [id], onDelete: Cascade)
@@ -494,14 +502,14 @@ model SequenceFormat {
 }
 
 model SequencePeriod {
-  id            String               @id @default(cuid())
-  sequenceId    String
-  startDate     DateTime             @db.Date
-  endDate       DateTime             @db.Date
-  currentCounter Int                 @default(1)
-  status        SequencePeriodStatus @default(OPEN)
-  createdAt     DateTime             @default(now())
-  updatedAt     DateTime             @updatedAt
+  id             String               @id @default(cuid())
+  sequenceId     String
+  startDate      DateTime             @db.Date
+  endDate        DateTime             @db.Date
+  currentCounter Int                  @default(1)
+  status         SequencePeriodStatus @default(OPEN)
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
 
   sequence Sequence  @relation(fields: [sequenceId], references: [id], onDelete: Cascade)
   invoices Invoice[] @relation("InvoiceSequencePeriod")
@@ -513,29 +521,29 @@ model SequencePeriod {
 }
 
 model SequenceSnapshot {
-  id              String              @id @default(cuid())
-  organizationId  String
-  sequenceId      String
-  version         Int
+  id             String @id @default(cuid())
+  organizationId String
+  sequenceId     String
+  version        Int
 
-  name            String
-  documentType    SequenceDocumentType
-  periodicity     SequencePeriodicity
-  isActive        Boolean
+  name         String
+  documentType SequenceDocumentType
+  periodicity  SequencePeriodicity
+  isActive     Boolean
 
-  formatString    String
-  startCounter    Int
-  counterPadding  Int
-  totalConsumed   Int                 @default(0)
+  formatString   String
+  startCounter   Int
+  counterPadding Int
+  totalConsumed  Int    @default(0)
 
   periodsSnapshot Json
 
-  changeType      SequenceChangeType
-  changeSummary   String?
-  changedById     String   @db.Uuid
-  changeNote      String?
+  changeType    SequenceChangeType
+  changeSummary String?
+  changedById   String             @db.Uuid
+  changeNote    String?
 
-  createdAt       DateTime            @default(now())
+  createdAt DateTime @default(now())
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   sequence     Sequence     @relation(fields: [sequenceId], references: [id], onDelete: Cascade)
@@ -1181,11 +1189,12 @@ model Customer {
   quotes           Quote[]
   arrangements     PaymentArrangement[]
   crmNotes         CrmNote[]                 @relation("CustomerNotes")
+  defaultTags      CustomerDefaultTag[]
+
   conversations    Conversation[]
   conversationParticipants ConversationParticipant[]
   conversationMessages    ConversationMessage[]
   conversationReadStates ConversationReadState[]
-
   @@index([organizationId])
   @@map("customer")
 }
@@ -1217,6 +1226,7 @@ model Vendor {
   bills          VendorBill[]
   purchaseOrders PurchaseOrder[]
   crmNotes       CrmNote[]       @relation("VendorNotes")
+  defaultTags    VendorDefaultTag[]
 
   @@index([organizationId])
   @@map("vendor")
@@ -1350,11 +1360,11 @@ model Invoice {
   organizationId         String
   customerId             String?
   invoiceNumber          String? // nullable — drafts do not consume official numbers (Phase 4)
-  invoiceDate            DateTime                 @db.Date
-  dueDate                DateTime?                @db.Date
+  invoiceDate            DateTime      @db.Date
+  dueDate                DateTime?     @db.Date
   status                 InvoiceStatus @default(DRAFT)
   formData               Json
-  totalAmount            Decimal                  @default(0) @db.Decimal(18, 2)
+  totalAmount            Decimal       @default(0) @db.Decimal(18, 2)
   notes                  String?
   originalId             String?
   issuedAt               DateTime?
@@ -1365,8 +1375,8 @@ model Invoice {
   razorpayPaymentLinkUrl String?
   paymentLinkExpiresAt   DateTime?
   // Payment reconciliation snapshot fields (derived, maintained by reconciliation service)
-  amountPaid             Decimal                  @default(0) @db.Decimal(18, 2)
-  remainingAmount        Decimal                  @default(0) @db.Decimal(18, 2)
+  amountPaid             Decimal       @default(0) @db.Decimal(18, 2)
+  remainingAmount        Decimal       @default(0) @db.Decimal(18, 2)
   lastPaymentAt          DateTime?
   lastPaymentMethod      String?
   paymentPromiseDate     String?
@@ -1382,10 +1392,10 @@ model Invoice {
   placeOfSupply          String?
   reverseCharge          Boolean       @default(false)
   exportType             String?
-  gstTotalCgst           Decimal                  @default(0) @db.Decimal(18, 2)
-  gstTotalSgst           Decimal                  @default(0) @db.Decimal(18, 2)
-  gstTotalIgst           Decimal                  @default(0) @db.Decimal(18, 2)
-  gstTotalCess           Decimal                  @default(0) @db.Decimal(18, 2)
+  gstTotalCgst           Decimal       @default(0) @db.Decimal(18, 2)
+  gstTotalSgst           Decimal       @default(0) @db.Decimal(18, 2)
+  gstTotalIgst           Decimal       @default(0) @db.Decimal(18, 2)
+  gstTotalCess           Decimal       @default(0) @db.Decimal(18, 2)
   irnNumber              String?
   irnAckNumber           String?
   irnAckDate             DateTime?
@@ -1436,6 +1446,7 @@ model Invoice {
   arrangement         PaymentArrangement?
   postedJournalEntry  JournalEntry?         @relation("InvoicePostedJournal", fields: [postedJournalEntryId], references: [id])
   tdsRecords          TdsRecord[]
+  tagAssignments      InvoiceTagAssignment[]
 
   eInvoiceRequests EInvoiceRequest[]
 
@@ -1505,6 +1516,7 @@ model Voucher {
   attachments      FileAttachment[]  @relation("VoucherAttachments")
   journalEntry     JournalEntry?     @relation("VoucherPostedJournal", fields: [journalEntryId], references: [id])
   approvalRequests ApprovalRequest[] @relation("VoucherApprovals")
+  tagAssignments    VoucherTagAssignment[]
 
   // Phase 1: Document Sequencing Platform
   sequenceId       String?
@@ -2153,11 +2165,9 @@ model Notification {
   // Sprint 18.2 delivery extensions
   emailRequested Boolean  @default(false)
   recipientEmail String?
-  dedupeKey      String?
 
   deliveries NotificationDelivery[]
 
-  @@unique([orgId, userId, dedupeKey])
   @@index([userId, isRead])
   @@index([orgId])
   @@map("notification")
@@ -5465,12 +5475,78 @@ model DocumentTag {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  organization       Organization          @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  invoiceAssignments InvoiceTagAssignment[]
+  voucherAssignments VoucherTagAssignment[]
+  customerDefaults   CustomerDefaultTag[]
+  vendorDefaults     VendorDefaultTag[]
 
   @@unique([orgId, slug], map: "document_tag_org_slug_unique")
   @@index([orgId])
   @@index([orgId, isArchived])
   @@map("document_tag")
+}
+
+// ─── Tag Assignments & Defaults (Phase 29) ─────────────────────────────────
+
+model InvoiceTagAssignment {
+  id        String   @id @default(cuid())
+  invoiceId String
+  tagId     String
+  createdAt DateTime @default(now())
+
+  invoice Invoice    @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  tag     DocumentTag @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@unique([invoiceId, tagId])
+  @@index([invoiceId])
+  @@index([tagId])
+  @@map("invoice_tag_assignment")
+}
+
+model VoucherTagAssignment {
+  id        String   @id @default(cuid())
+  voucherId String
+  tagId     String
+  createdAt DateTime @default(now())
+
+  voucher Voucher    @relation(fields: [voucherId], references: [id], onDelete: Cascade)
+  tag     DocumentTag @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@unique([voucherId, tagId])
+  @@index([voucherId])
+  @@index([tagId])
+  @@map("voucher_tag_assignment")
+}
+
+model CustomerDefaultTag {
+  id         String   @id @default(cuid())
+  customerId String
+  tagId      String
+  createdAt  DateTime @default(now())
+
+  customer Customer   @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  tag      DocumentTag @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@unique([customerId, tagId])
+  @@index([customerId])
+  @@index([tagId])
+  @@map("customer_default_tag")
+}
+
+model VendorDefaultTag {
+  id        String   @id @default(cuid())
+  vendorId  String
+  tagId     String
+  createdAt DateTime @default(now())
+
+  vendor Vendor     @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  tag    DocumentTag @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@unique([vendorId, tagId])
+  @@index([vendorId])
+  @@index([tagId])
+  @@map("vendor_default_tag")
 }
 
 // ─── Phase 27 Sprint 27.1: AI Financial Forecaster ──────────────────────────
@@ -5942,9 +6018,14 @@ enum MailboxAuditAction {
   CONNECTION_RECONNECTED
   CONNECTION_DEGRADED
   CONNECTION_PERMISSION_CHANGED
+  CONNECTION_POLICY_UPDATED
   THREAD_ASSIGNED
   THREAD_UNASSIGNED
   THREAD_STATUS_CHANGED
+  THREAD_READ
+  THREAD_UNREAD
+  THREAD_FLAGGED
+  THREAD_UNFLAGGED
   THREAD_LINKED
   THREAD_UNLINKED
   MESSAGE_SENT
@@ -5953,15 +6034,22 @@ enum MailboxAuditAction {
   DRAFT_CREATED
   DRAFT_DISCARDED
   SYNC_MANUAL_TRIGGERED
+  SYNC_SCHEDULED_TRIGGERED
+  SYNC_RENEWAL_TRIGGERED
+  SYNC_COMPLETED
+  SYNC_DELTA_COMPLETED
+  SYNC_FAILED
+  WATCH_RENEWED
+  WATCH_EXPIRED_DETECTED
   ADMIN_SUPPORT_ACTION
 
   @@map("mailbox_audit_action")
 }
 
 enum MailboxCursorType {
-  HISTORY_ID       // Gmail history-based incremental sync
-  PAGE_TOKEN       // page-token-based list cursor
-  WATCH_EXPIRY     // push-subscription renewal checkpoint
+  HISTORY_ID // Gmail history-based incremental sync
+  PAGE_TOKEN // page-token-based list cursor
+  WATCH_EXPIRY // push-subscription renewal checkpoint
 
   @@map("mailbox_cursor_type")
 }
@@ -5982,29 +6070,46 @@ model MailboxConnection {
   id                String                  @id @default(cuid())
   orgId             String
   provider          MailboxProvider
-  providerAccountId String                  // provider-side account identifier (e.g. Gmail user ID)
+  providerAccountId String // provider-side account identifier (e.g. Gmail user ID)
   emailAddress      String
   displayName       String
   status            MailboxConnectionStatus @default(ACTIVE)
+  visibilityPolicy  String                  @default("org_shared")
   /// Opaque reference to encrypted token store. Sprint 2.2 implements the store.
   tokenRef          String?
   tokenExpiry       DateTime?
   /// Provider-specific watch/subscription metadata (e.g. Gmail push subscription).
   /// Stored as JSON so no Gmail-specific columns leak into the core model.
   watchMetadata     Json?
+  /// Explicit watch/subscription expiration for renewal modeling.
+  watchExpiresAt    DateTime?
+  watchRenewedAt    DateTime?
+  /// Mailbox-scoped sync lease. Used to prevent concurrent sync execution.
+  syncLeaseToken    String?
+  syncLeaseExpiresAt DateTime?
   lastSyncAt        DateTime?
   lastSyncError     String?
+  lastSyncErrorCategory String?
   /// Soft-disable: when set, the connection is treated as inactive without deletion.
   disabledAt        DateTime?
+  /// Soft-delete: when set, the connection is permanently hidden from all views.
+  deletedAt         DateTime?
+  /// User-configurable notification preferences stored as { email: boolean, sms: boolean }.
+  notificationSettings Json?
   /// Who connected this mailbox (org member userId).
   connectedBy       String                  @db.Uuid
   createdAt         DateTime                @default(now())
   updatedAt         DateTime                @updatedAt
 
-  organization      Organization            @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  drafts            MailboxDraft[]
-  auditEvents       MailboxAuditEvent[]
-  providerCursors   MailboxProviderCursor[]
+  organization       Organization            @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  drafts             MailboxDraft[]
+  auditEvents        MailboxAuditEvent[]
+  providerCursors    MailboxProviderCursor[]
+  mailboxCredentials     MailboxCredential[]
+  mailboxThreads         MailboxThread[]
+  mailboxSyncRuns        MailboxSyncRun[]
+  mailboxFolderCoverages MailboxFolderCoverage[]
+  mailboxSearchDocuments MailboxSearchDocument[]
 
   /// One active connection per org per provider account.
   @@unique([orgId, provider, providerAccountId])
@@ -6019,14 +6124,14 @@ model MailboxConnection {
 /// Thread-to-business-record link. Supports multiple links per thread;
 /// exactly one may be marked isPrimary.
 model MailboxThreadLink {
-  id         String                       @id @default(cuid())
+  id         String                      @id @default(cuid())
   orgId      String
-  threadId   String                       // references MailboxThread.id (added Phase 3)
+  threadId   String // references MailboxThread.id (added Phase 3)
   entityType MailboxThreadLinkEntityType
   entityId   String
-  isPrimary  Boolean                      @default(false)
-  createdBy  String                       @db.Uuid
-  createdAt  DateTime                     @default(now())
+  isPrimary  Boolean                     @default(false)
+  createdBy  String                      @db.Uuid
+  createdAt  DateTime                    @default(now())
 
   organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
@@ -6044,9 +6149,11 @@ model MailboxDraft {
   mailboxConnectionId String
   /// threadId is nullable: null for new-message drafts.
   threadId            String?
+  /// messageId being replied to / forwarded. Part of canonical restore identity for thread-bound drafts.
+  replyToMessageId    String?
   mode                MailboxDraftMode
-  fromIdentity        String             // email address the draft sends from
-  toRecipients        Json               // string[]
+  fromIdentity        String // email address the draft sends from
+  toRecipients        Json // string[]
   ccRecipients        Json               @default("[]") // string[]
   bccRecipients       Json               @default("[]") // string[]
   subject             String
@@ -6060,14 +6167,15 @@ model MailboxDraft {
   createdAt           DateTime           @default(now())
   updatedAt           DateTime           @updatedAt
 
-  organization       Organization      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  organization      Organization      @relation(fields: [orgId], references: [id], onDelete: Cascade)
   /// Composite FK: references MailboxConnection[id, orgId] so a draft row cannot
   /// reference a connection from a different org at the database level.
-  mailboxConnection  MailboxConnection @relation(fields: [mailboxConnectionId, orgId], references: [id, orgId], onDelete: Cascade)
+  mailboxConnection MailboxConnection @relation(fields: [mailboxConnectionId, orgId], references: [id, orgId], onDelete: Cascade)
+  draftAttachments  MailboxDraftAttachment[]
 
+  @@unique([id, orgId])
   @@index([orgId, mailboxConnectionId, status])
   @@index([orgId, threadId])
-  @@unique([id, orgId])
   @@map("mailbox_draft")
 }
 
@@ -6076,7 +6184,7 @@ model MailboxDraft {
 model MailboxAssignment {
   id         String                  @id @default(cuid())
   orgId      String
-  threadId   String                  // references MailboxThread.id (added Phase 3)
+  threadId   String // references MailboxThread.id (added Phase 3)
   assigneeId String                  @db.Uuid
   assignedBy String                  @db.Uuid
   status     MailboxAssignmentStatus @default(ACTIVE)
@@ -6108,13 +6216,17 @@ model MailboxAuditEvent {
   metadata            Json?
   createdAt           DateTime           @default(now())
 
-  organization       Organization       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  organization      Organization       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   /// Single-field FK retained for the nullable connection reference: Prisma does not
   /// support nullable composite FKs cleanly. Org ownership is enforced by two
   /// independent constraints: (1) the Organization FK on orgId guarantees the audit
   /// event belongs to the correct org; (2) the service layer (logMailboxAuditTx)
   /// only sets mailboxConnectionId after verifying org ownership via findFirst.
-  mailboxConnection  MailboxConnection? @relation(fields: [mailboxConnectionId], references: [id], onDelete: SetNull)
+  mailboxConnection MailboxConnection? @relation(fields: [mailboxConnectionId], references: [id], onDelete: SetNull)
+  mailboxThread     MailboxThread?     @relation(fields: [mailboxThreadId], references: [id])
+  mailboxThreadId   String?
+  mailboxMessage    MailboxMessage?    @relation(fields: [mailboxMessageId], references: [id])
+  mailboxMessageId  String?
 
   @@index([orgId, createdAt])
   @@index([orgId, mailboxConnectionId, createdAt])
@@ -6146,6 +6258,289 @@ model MailboxProviderCursor {
   @@index([orgId, mailboxConnectionId])
   @@map("mailbox_provider_cursor")
 }
+
+/// Sync run status for observability and bookkeeping.
+enum MailboxSyncRunStatus {
+  RUNNING
+  COMPLETED
+  FAILED
+
+  @@map("mailbox_sync_run_status")
+}
+
+/// Why a sync run was triggered.
+enum MailboxSyncTriggerSource {
+  MANUAL
+  SCHEDULED
+  RENEWAL
+  WEBHOOK
+
+  @@map("mailbox_sync_trigger_source")
+}
+
+/// Whether this sync run is an initial backfill or an incremental delta.
+enum MailboxSyncMode {
+  INITIAL
+  DELTA
+
+  @@map("mailbox_sync_mode")
+}
+
+/// Normalized mailbox thread. One row per provider thread per connection.
+model MailboxThread {
+  id                  String              @id @default(cuid())
+  orgId               String
+  mailboxConnectionId String
+  providerThreadId    String
+  subject             String
+  participantsSummary Json                @default("[]")
+  lastMessageAt       DateTime
+  unreadCount         Int                 @default(0)
+  status              MailboxThreadStatus @default(OPEN)
+  /// Status before the thread was archived. Used to restore correct state on unarchive. Sprint 4.3.
+  preArchiveStatus    MailboxThreadStatus?
+  assigneeId          String?             @db.Uuid
+  isFlagged           Boolean             @default(false)
+  primaryLinkSummary  Json?
+  /// Normalized preview snippet from the most recent message. Sprint 3.3.
+  previewSnippet      String              @default("")
+  /// Total attachment count across all thread messages. Sprint 3.3.
+  attachmentCount   Int                 @default(0)
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+
+  organization      Organization        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  mailboxConnection MailboxConnection   @relation(fields: [mailboxConnectionId, orgId], references: [id, orgId], onDelete: Cascade)
+  messages          MailboxMessage[]
+  auditEvents       MailboxAuditEvent[]
+
+  @@unique([orgId, mailboxConnectionId, providerThreadId])
+  @@index([orgId, mailboxConnectionId, lastMessageAt])
+  @@index([orgId, status])
+  @@map("mailbox_thread")
+}
+
+/// Normalized mailbox message. One row per provider message.
+model MailboxMessage {
+  id                String    @id @default(cuid())
+  orgId             String
+  threadId          String
+  providerMessageId String
+  rfcMessageId      String?
+  direction         String // "inbound" | "outbound"
+  from              Json
+  to                Json      @default("[]")
+  cc                Json      @default("[]")
+  bcc               Json      @default("[]")
+  subject           String
+  htmlBody          String    @db.Text
+  textBody          String?   @db.Text
+  snippet           String
+  sentAt            DateTime
+  receivedAt        DateTime?
+  attachmentCount   Int       @default(0)
+  providerMetadata  Json?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  organization Organization        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  thread       MailboxThread       @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  attachments  MailboxAttachment[]
+  auditEvents  MailboxAuditEvent[]
+
+  @@unique([orgId, threadId, providerMessageId])
+  @@index([orgId, threadId, sentAt])
+  @@map("mailbox_message")
+}
+
+/// Normalized mailbox attachment metadata. One row per attachment.
+model MailboxAttachment {
+  id                   String   @id @default(cuid())
+  messageId            String
+  providerAttachmentId String
+  filename             String
+  mimeType             String
+  size                 Int
+  isInline             Boolean  @default(false)
+  storageRef           String?
+  createdAt            DateTime @default(now())
+
+  message MailboxMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, providerAttachmentId])
+  @@index([messageId])
+  @@map("mailbox_attachment")
+}
+
+/// Staged attachment for a draft before send.
+/// Storage references are resolved at send time; content is never stored inline.
+model MailboxDraftAttachment {
+  id         String   @id @default(cuid())
+  orgId      String
+  draftId    String
+  filename   String
+  mimeType   String
+  size       Int
+  isInline   Boolean  @default(false)
+  storageRef String
+  createdAt  DateTime @default(now())
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  draft        MailboxDraft @relation(fields: [draftId, orgId], references: [id, orgId], onDelete: Cascade)
+
+  @@unique([draftId, id])
+  @@index([orgId, draftId])
+  @@map("mailbox_draft_attachment")
+}
+
+/// Sync run bookkeeping for observability and retry safety.
+model MailboxSyncRun {
+  id                  String               @id @default(cuid())
+  orgId               String
+  mailboxConnectionId String
+  provider            MailboxProvider
+  status              MailboxSyncRunStatus
+  triggerSource       MailboxSyncTriggerSource @default(MANUAL)
+  syncMode            MailboxSyncMode          @default(INITIAL)
+  startedAt           DateTime
+  completedAt         DateTime?
+  errorCategory       String?
+  errorSummary        String?
+  stats               Json?
+  /** Last heartbeat/progress update during a running sync. Used for stall detection. */
+  lastHeartbeatAt     DateTime?
+  createdBy           String               @db.Uuid
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+
+  organization      Organization      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  mailboxConnection MailboxConnection @relation(fields: [mailboxConnectionId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, mailboxConnectionId, startedAt])
+  @@index([orgId, status])
+  @@map("mailbox_sync_run")
+}
+
+/// Encrypted OAuth credential store for mailbox connections.
+/// Raw access/refresh tokens are NEVER stored in MailboxConnection rows.
+/// Instead, MailboxConnection.tokenRef holds the id of a row in this table.
+/// The encryptedPayload is AES-256-GCM encrypted JSON (MailboxCredentialPayload).
+///
+/// Sprint 2.2: implements the tokenRef abstraction defined in Sprint 2.1.
+model MailboxCredential {
+  id               String   @id @default(cuid())
+  orgId            String
+  connectionId     String?
+  /// AES-256-GCM encrypted JSON payload. Format: v2:<iv>:<ciphertext>:<tag>
+  encryptedPayload String   @db.Text
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  organization Organization       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  connection   MailboxConnection? @relation(fields: [connectionId], references: [id], onDelete: SetNull)
+
+  @@index([orgId])
+  @@index([connectionId])
+  @@map("mailbox_credential")
+}
+
+/// Persisted operational saved view for mailbox triage.
+/// Sprint 6.3: minimal production-safe model. Org-scoped, per-user.
+model MailboxSavedView {
+  id           String   @id @default(cuid())
+  orgId        String
+  createdBy    String   @db.Uuid
+  label        String
+  /// JSON array of ActiveFilter shapes: [{ field, value, label }]
+  filters      Json     @default("[]")
+  searchQuery  String   @default("")
+  /// Optional smartViewId to pair with (e.g. "unread", "assigned-to-me")
+  smartViewId  String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, createdBy])
+  @@map("mailbox_saved_view")
+}
+
+/// Folder-level coverage state for truthful Gmail-grade mailbox completeness.
+/// Each row tracks the import state of a single Gmail system label (INBOX, SENT,
+/// SPAM, DRAFT, ARCHIVE) or aggregate source-of-truth (ALL_MAIL).
+///
+/// The four required Gmail labels that MUST reach COMPLETE before the app can
+/// claim "Up to date" are INBOX, SENT, SPAM, and DRAFT. ARCHIVE is informational.
+///
+/// Coverage lifecycle: PENDING → BOOTSTRAPPING → COMPLETE
+///   PENDING:      Never started. The folder has not been bootstrapped.
+///   BOOTSTRAPPING: Bootstrap in progress. Partial data may be visible.
+///   COMPLETE:     Full historical backfill finished. Future deltas keep it current.
+///   RECOVERING:   Previously complete but a gap was detected (stale cursor,
+///                 missed history events). Re-bootstrapping in progress.
+///   ERRORED:      Bootstrap or recovery failed; intervention needed.
+model MailboxFolderCoverage {
+  id                  String   @id @default(cuid())
+  orgId               String
+  mailboxConnectionId String
+  /// Gmail system label: "INBOX" | "SENT" | "SPAM" | "DRAFT" | "ARCHIVE" | "ALL_MAIL"
+  folder              String
+  state               String   @default("PENDING")
+  /// Last cursor value advanced for this folder (historyId or page token).
+  /// Allows bootstrap to resume from where it left off.
+  lastAdvancedCursor  String?
+  /// Total threads imported for this folder during last bootstrap/recovery.
+  totalThreads        Int      @default(0)
+  /// When the folder last reached COMPLETE state.
+  lastCompletedAt     DateTime?
+  /// Error summary if state is ERRORED.
+  errorSummary        String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  organization      Organization      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  mailboxConnection MailboxConnection @relation(fields: [mailboxConnectionId, orgId], references: [id, orgId], onDelete: Cascade)
+
+  @@unique([orgId, mailboxConnectionId, folder])
+  @@index([orgId, mailboxConnectionId])
+  @@index([orgId, mailboxConnectionId, state])
+  @@map("mailbox_folder_coverage")
+}
+
+model MailboxSearchDocument {
+  id                  String   @id @default(cuid())
+  orgId               String
+  mailboxConnectionId String
+  threadId            String
+  messageId           String   @default("")
+  documentType        String   // "THREAD" | "MESSAGE"
+  providerThreadId    String
+  providerMessageId   String?
+  searchText          String   @db.Text
+  subjectText         String
+  snippetText         String
+  fromDisplayName     String?
+  fromEmail           String?
+  toRecipients        String   @default("") @db.Text
+  lastActivityAt      DateTime
+  sentAt              DateTime?
+  isUnread            Boolean  @default(false)
+  isFlagged           Boolean  @default(false)
+  status              String   @default("OPEN")
+  assigneeId          String?  @db.Uuid
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  organization      Organization      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  mailboxConnection MailboxConnection @relation(fields: [mailboxConnectionId, orgId], references: [id, orgId], onDelete: Cascade)
+
+  @@unique([orgId, mailboxConnectionId, threadId, messageId])
+  @@index([orgId, mailboxConnectionId])
+  @@index([orgId, mailboxConnectionId, documentType])
+  @@index([orgId, lastActivityAt])
+  @@map("mailbox_search_document")
+}
+
 
 // ─── Internal Messaging Platform — Phase 2 Domain Models ────────────────────
 // Sprint 2.1: Schema and service contracts

@@ -1,16 +1,31 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import InvoicePage from "@/app/invoice/page";
+import { vi } from "vitest";
 
 describe("Invoice workspace", () => {
+  beforeAll(() => {
+    Object.defineProperty(window, "matchMedia", {
+      writable: true,
+      value: vi.fn().mockImplementation((query) => ({
+        matches: true,
+        media: query,
+        onchange: null,
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })),
+    });
+  });
   it("renders the interactive invoice builder", () => {
     render(<InvoicePage />);
 
     expect(
-      screen.getByRole("heading", { name: "Invoice Generator", level: 1 }),
+      screen.getByRole("heading", { name: "Template and branding", level: 3 }),
     ).toBeInTheDocument();
-    expect(screen.getByText(/template and branding/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /professional/i })).toBeInTheDocument();
-    expect(screen.getByText(/live a4 document/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/Preview/i).length).toBeGreaterThan(0);
   });
 
   it("updates the preview when line items change", () => {

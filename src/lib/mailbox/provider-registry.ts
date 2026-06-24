@@ -1,21 +1,22 @@
 import "server-only";
 
-import type { MailboxProvider } from "./domain-types";
 import type { IMailboxProviderAdapter, MailboxProviderRegistry } from "./provider-contracts";
 import { gmailProviderAdapter } from "./gmail-provider";
 
-const mailboxProviderRegistry: MailboxProviderRegistry = new Map([
+const registry: MailboxProviderRegistry = new Map([
   ["GMAIL", gmailProviderAdapter],
 ]);
 
-export function getMailboxProviderAdapter(
-  provider: MailboxProvider,
-): IMailboxProviderAdapter {
-  const adapter = mailboxProviderRegistry.get(provider);
+export function getMailboxProviderAdapter(provider: string): IMailboxProviderAdapter {
+  const adapter = registry.get(provider as "GMAIL");
   if (!adapter) {
-    throw new Error(`Mailbox provider adapter is not registered: ${provider}`);
+    throw new Error(`No mailbox provider adapter registered for: ${provider}`);
   }
   return adapter;
 }
 
-export { mailboxProviderRegistry };
+export function findMailboxProviderAdapter(provider: string): IMailboxProviderAdapter | null {
+  return registry.get(provider as any) ?? null;
+}
+
+export { registry as mailboxProviderRegistry };

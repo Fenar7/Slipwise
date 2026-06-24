@@ -86,6 +86,125 @@ const OPENAPI_SPEC = {
           phone: { type: "string", nullable: true }, gstin: { type: "string", nullable: true },
         },
       },
+      MailboxConnectionListItem: {
+        type: "object",
+        properties: {
+          id: { type: "string" },
+          orgId: { type: "string" },
+          provider: { type: "string", enum: ["GMAIL", "ZOHO"] },
+          emailAddress: { type: "string", format: "email" },
+          displayName: { type: "string" },
+          status: { type: "string", enum: ["ACTIVE", "DEGRADED", "DISCONNECTED", "RECONNECT_REQUIRED"] },
+          visibilityPolicy: { type: "string", enum: ["org_shared", "restricted", "admin_only"] },
+          notificationSettings: { type: "object", nullable: true, properties: { email: { type: "boolean" }, sms: { type: "boolean" } } },
+          health: { type: "object", properties: { status: { type: "string" }, actionRequired: { type: "boolean" } } },
+          lastSyncAt: { type: "string", format: "date-time", nullable: true },
+          lastSyncError: { type: "string", nullable: true },
+          connectedBy: { type: "string" },
+          createdAt: { type: "string", format: "date-time" },
+          updatedAt: { type: "string", format: "date-time" },
+        },
+      },
+      CreateMailboxConnectionInput: {
+        type: "object",
+        required: ["provider", "emailAddress", "displayName", "providerAccountId", "tokenRef"],
+        properties: {
+          provider: { type: "string", enum: ["GMAIL", "ZOHO"] },
+          emailAddress: { type: "string", format: "email" },
+          displayName: { type: "string", minLength: 1, maxLength: 100 },
+          visibilityPolicy: { type: "string", enum: ["org_shared", "restricted", "admin_only"], default: "org_shared" },
+          notificationSettings: { type: "object", properties: { email: { type: "boolean" }, sms: { type: "boolean" } } },
+          providerAccountId: { type: "string" },
+          tokenRef: { type: "string" },
+          tokenExpiry: { type: "string", format: "date-time", nullable: true },
+        },
+      },
+      PatchMailboxConnectionInput: {
+        type: "object",
+        properties: {
+          displayName: { type: "string", minLength: 1, maxLength: 100 },
+          visibilityPolicy: { type: "string", enum: ["org_shared", "restricted", "admin_only"] },
+          notificationSettings: { type: "object", properties: { email: { type: "boolean" }, sms: { type: "boolean" } } },
+        },
+      },
+      PaginatedMailboxConnectionsResponse: {
+        type: "object",
+        properties: {
+          connections: { type: "array", items: { $ref: "#/components/schemas/MailboxConnectionListItem" } },
+          nextCursor: { type: "string", nullable: true, description: "Cursor for the next page. null when on the last page." },
+        },
+      },
+      NewChatConnectionResponse: {
+        type: "object",
+        properties: {
+          id: { type: "string" },
+          displayName: { type: "string", description: "Auto-generated name (e.g. 'New Chat #3')" },
+          visibilityPolicy: { type: "string", enum: ["org_shared", "restricted", "admin_only"] },
+          notificationSettings: { type: "object", properties: { email: { type: "boolean" }, sms: { type: "boolean" } }, required: ["email", "sms"] },
+        },
+        required: ["id", "displayName", "visibilityPolicy", "notificationSettings"],
+      },
+      EmptyBody: {
+        type: "object",
+        description: "No payload required; strict mode rejects any keys.",
+        additionalProperties: false,
+      },
+      MailboxAuditEventItem: {
+        type: "object",
+        properties: {
+          id: { type: "string" },
+          action: { type: "string", description: "Audit action enum value" },
+          actionLabel: { type: "string", description: "Human-readable action label" },
+          summary: { type: "string" },
+          actorId: { type: "string" },
+          mailboxConnectionId: { type: "string", nullable: true },
+          threadId: { type: "string", nullable: true },
+          messageId: { type: "string", nullable: true },
+          metadata: { type: "object", nullable: true, description: "Sanitized metadata (sensitive keys stripped)" },
+          createdAt: { type: "string", format: "date-time" },
+        },
+        required: ["id", "action", "actionLabel", "summary", "actorId", "createdAt"],
+      },
+      PaginatedMailboxAuditResponse: {
+        type: "object",
+        properties: {
+          events: { type: "array", items: { $ref: "#/components/schemas/MailboxAuditEventItem" } },
+          nextCursor: { type: "string", nullable: true, description: "Cursor for the next page. null when on the last page." },
+        },
+        required: ["events", "nextCursor"],
+      },
+      MailboxConnectionSupportSummary: {
+        type: "object",
+        properties: {
+          summary: {
+            type: "object",
+            properties: {
+              connectionId: { type: "string" },
+              displayName: { type: "string" },
+              provider: { type: "string", enum: ["GMAIL", "ZOHO"] },
+              status: { type: "string", enum: ["ACTIVE", "DEGRADED", "DISCONNECTED", "RECONNECT_REQUIRED"] },
+              emailAddress: { type: "string", description: "Always [REDACTED]" },
+              lastSyncAt: { type: "string", format: "date-time", nullable: true },
+              lastSyncError: { type: "string", nullable: true },
+              syncRunCount: { type: "integer" },
+              failedSyncRunCount: { type: "integer" },
+              recentAuditEvents: { type: "array", items: { $ref: "#/components/schemas/MailboxAuditEventItem" } },
+              providerErrorSummary: { type: "string", nullable: true, description: "Sanitized error from latest failed sync" },
+              actionRequired: { type: "boolean" },
+              generatedAt: { type: "string", format: "date-time" },
+            },
+          },
+        },
+        required: ["summary"],
+      },
+      ProviderConnectionResponse: {
+        type: "object",
+        properties: {
+          ok: { type: "boolean", const: true },
+          connection: { $ref: "#/components/schemas/MailboxConnectionListItem" },
+        },
+        required: ["ok", "connection"],
+      },
     },
     parameters: {
       PageParam: { name: "page", in: "query", schema: { type: "integer", default: 1, minimum: 1 } },
@@ -176,6 +295,151 @@ const OPENAPI_SPEC = {
     "/reports/outstanding": {
       get: { summary: "Outstanding invoices by aging", tags: ["Reports"], responses: { "200": { description: "Aging report with buckets" } } },
     },
+    "/mailbox/connections": {
+      get: {
+        summary: "List mailbox connections (paginated)",
+        tags: ["Mailbox"],
+        parameters: [
+          { name: "cursor", in: "query", schema: { type: "string" }, description: "Opaque cursor (connection id) from the previous page" },
+          { name: "pageSize", in: "query", schema: { type: "integer", minimum: 1, maximum: 100, default: 20 }, description: "Results per page" },
+        ],
+        responses: {
+          "200": { description: "Paginated list of mailbox connections", content: { "application/json": { schema: { $ref: "#/components/schemas/PaginatedMailboxConnectionsResponse" } } } },
+          "400": { description: "Invalid query parameters" },
+          "429": { description: "Rate limited" },
+        },
+      },
+      post: {
+        summary: "Create a mailbox connection (New Chat or provider-based)",
+        tags: ["Mailbox"],
+        security: [{ BearerAuth: [] }, { ApiKeyAuth: [] }],
+        description: "Two modes:\\n1. **New Chat** (empty body): creates a system chat with auto-generated name 'New Chat #&lt;seq&gt;', welcome message, and masked audit. Requires `admin` role.\\n2. **Provider connection** (with provider, emailAddress, etc.): creates a real email connection. Requires `admin` role.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                oneOf: [
+                  { $ref: "#/components/schemas/EmptyBody" },
+                  { $ref: "#/components/schemas/CreateMailboxConnectionInput" },
+                ],
+              },
+            },
+          },
+        },
+        responses: {
+          "201": { description: "Connection created", headers: { Location: { schema: { type: "string" }, description: "URL of the created resource" } }, content: { "application/json": { schema: { oneOf: [{ $ref: "#/components/schemas/NewChatConnectionResponse" }, { $ref: "#/components/schemas/ProviderConnectionResponse" }] } } } },
+          "400": { description: "Validation error (invalid body or unknown keys)" },
+          "401": { description: "Missing or invalid authentication credentials" },
+          "403": { description: "User does not have the required `admin` role" },
+          "409": { description: "Duplicate displayName (provider flow only)" },
+          "429": { description: "Rate limited (mailboxCreate: 5 req/min for New Chat; mailboxPolicyUpdate: 10 req/min for provider connections). Also returned if org has ≥1000 active connections." },
+          "500": { description: "Internal server error" },
+        },
+      },
+    },
+    "/mailbox/connections/{connectionId}": {
+      get: {
+        summary: "Get mailbox connection detail",
+        tags: ["Mailbox"],
+        parameters: [{ name: "connectionId", in: "path", required: true, schema: { type: "string" } }],
+        responses: {
+          "200": { description: "Mailbox connection with sync runs", content: { "application/json": { schema: { type: "object", properties: { connection: { $ref: "#/components/schemas/MailboxConnectionListItem" } } } } } },
+          "404": { description: "Not found" },
+        },
+      },
+      patch: {
+        summary: "Update mailbox connection settings",
+        tags: ["Mailbox"],
+        parameters: [{ name: "connectionId", in: "path", required: true, schema: { type: "string" } }],
+        requestBody: { required: true, content: { "application/json": { schema: { $ref: "#/components/schemas/PatchMailboxConnectionInput" } } } },
+        responses: {
+          "200": { description: "Updated connection" },
+          "400": { description: "Validation error or unknown fields" },
+          "404": { description: "Not found" },
+          "429": { description: "Rate limited" },
+        },
+      },
+      delete: {
+        summary: "Soft-delete a mailbox connection",
+        tags: ["Mailbox"],
+        parameters: [{ name: "connectionId", in: "path", required: true, schema: { type: "string" } }],
+        responses: {
+          "200": { description: "Connection soft-deleted (status=DISCONNECTED, deletedAt set)" },
+          "404": { description: "Not found" },
+          "409": { description: "Connection has active drafts; cannot delete" },
+          "410": { description: "Already deleted" },
+          "429": { description: "Rate limited" },
+        },
+      },
+    },
+    "/mailbox/audit": {
+      get: {
+        summary: "List mailbox audit events (paginated)",
+        tags: ["Mailbox"],
+        parameters: [
+          { name: "cursor", in: "query", schema: { type: "string" }, description: "Opaque cursor (event id) from the previous page" },
+          { name: "pageSize", in: "query", schema: { type: "integer", minimum: 1, maximum: 100, default: 20 }, description: "Results per page" },
+          { name: "connectionId", in: "query", schema: { type: "string" }, description: "Filter by mailbox connection ID" },
+          { name: "action", in: "query", schema: { type: "string" }, description: "Filter by MailboxAuditAction enum value" },
+          { name: "from", in: "query", schema: { type: "string", format: "date-time" }, description: "Filter events created at or after this datetime" },
+          { name: "to", in: "query", schema: { type: "string", format: "date-time" }, description: "Filter events created at or before this datetime" },
+        ],
+        responses: {
+          "200": { description: "Paginated list of audit events", content: { "application/json": { schema: { $ref: "#/components/schemas/PaginatedMailboxAuditResponse" } } } },
+          "400": { description: "Invalid query parameters" },
+          "401": { description: "Missing or invalid authentication credentials" },
+          "403": { description: "User does not have the required `admin` role" },
+          "429": { description: "Rate limited" },
+        },
+      },
+    },
+    "/mailbox/audit/{eventId}": {
+      get: {
+        summary: "Get a single audit event",
+        tags: ["Mailbox"],
+        parameters: [{ name: "eventId", in: "path", required: true, schema: { type: "string" } }],
+        responses: {
+          "200": { description: "Audit event detail", content: { "application/json": { schema: { type: "object", properties: { event: { $ref: "#/components/schemas/MailboxAuditEventItem" } } } } } },
+          "401": { description: "Missing or invalid authentication credentials" },
+          "403": { description: "User does not have the required `admin` role" },
+          "404": { description: "Not found" },
+          "429": { description: "Rate limited" },
+        },
+      },
+    },
+    "/mailbox/connections/{connectionId}/audit": {
+      get: {
+        summary: "List audit events for a specific connection",
+        tags: ["Mailbox"],
+        parameters: [
+          { name: "connectionId", in: "path", required: true, schema: { type: "string" } },
+          { name: "cursor", in: "query", schema: { type: "string" }, description: "Opaque cursor (event id) from the previous page" },
+          { name: "pageSize", in: "query", schema: { type: "integer", minimum: 1, maximum: 100, default: 20 }, description: "Results per page" },
+        ],
+        responses: {
+          "200": { description: "Paginated list of connection-scoped audit events", content: { "application/json": { schema: { $ref: "#/components/schemas/PaginatedMailboxAuditResponse" } } } },
+          "401": { description: "Missing or invalid authentication credentials" },
+          "403": { description: "User does not have the required `admin` role" },
+          "404": { description: "Not found" },
+          "429": { description: "Rate limited" },
+        },
+      },
+    },
+    "/mailbox/connections/{connectionId}/support-summary": {
+      get: {
+        summary: "Get support summary for a connection",
+        tags: ["Mailbox"],
+        parameters: [{ name: "connectionId", in: "path", required: true, schema: { type: "string" } }],
+        responses: {
+          "200": { description: "Support summary with redacted email and sanitized errors", content: { "application/json": { schema: { $ref: "#/components/schemas/MailboxConnectionSupportSummary" } } } },
+          "401": { description: "Missing or invalid authentication credentials" },
+          "403": { description: "User does not have the required `admin` role" },
+          "404": { description: "Not found" },
+          "429": { description: "Rate limited" },
+        },
+      },
+    },
   },
   tags: [
     { name: "Invoices", description: "Invoice management" },
@@ -185,6 +449,7 @@ const OPENAPI_SPEC = {
     { name: "Employees", description: "Employee management" },
     { name: "Vendors", description: "Vendor management" },
     { name: "Reports", description: "Reports and analytics" },
+    { name: "Mailbox", description: "Mailbox connection management and governance" },
   ],
 };
 

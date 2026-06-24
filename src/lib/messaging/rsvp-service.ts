@@ -153,7 +153,7 @@ export async function seedMeetingAttendees(
     data: participants.map((p) => ({
       orgId,
       meetingId,
-      userId: p.userId,
+      userId: p.userId!,
       rsvpStatus: "PENDING" as const,
     })),
     skipDuplicates: true,

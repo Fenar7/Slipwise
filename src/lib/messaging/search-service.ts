@@ -403,7 +403,7 @@ export async function searchMessaging(
         subtitle: c.description ?? `${c.type.toLowerCase()} conversation`,
         timestamp: c.createdAt.toISOString(),
         score,
-        conversationType: c.type,
+        conversationType: c.type as any,
         isPrivate: c.visibility === "PRIVATE" || c.type === "DM",
         memberCount: participantCountMap.get(c.id) ?? 0,
       };

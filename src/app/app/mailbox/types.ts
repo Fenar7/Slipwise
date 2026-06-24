@@ -3,6 +3,8 @@
  * Designed to be stable for later backend integration (Phase 2+).
  */
 
+import type { MailboxSyncPresentation } from "@/lib/mailbox/sync-presentation-shape";
+
 export type MailboxConnectionStatus =
   | "connected"
   | "reconnect_required"
@@ -21,11 +23,14 @@ export interface MailboxConnection {
   status: MailboxConnectionStatus;
   lastSyncAt: string | null;
   lastSyncError: string | null;
+  lastSyncErrorCategory: string | null;
+  sync?: MailboxSyncPresentation;
   unreadCount: number;
   inboxCount: number;
 }
 
 export type ThreadStatus = "open" | "pending" | "closed" | "archived";
+export type MailboxFolder = "INBOX" | "SENT" | "SPAM" | "STARRED" | "DRAFT" | "TRASH";
 
 export interface MailboxTreeItem {
   id: string;
@@ -79,6 +84,7 @@ export interface MailboxAttachmentSummary {
 
 export interface MailboxMessageItem {
   id: string;
+  providerMessageId?: string;
   threadId: string;
   direction: MessageDirection;
   from: string;
@@ -89,10 +95,23 @@ export interface MailboxMessageItem {
   cc?: string[];
   subject: string;
   bodyHtml: string;
+  bodyText?: string | null;
   sentAt: string;
   /** Collapsed by default for older messages in a thread */
   isCollapsed: boolean;
   attachments: MailboxAttachmentSummary[];
+}
+
+export interface DraftRowData {
+  id: string;
+  mailboxConnectionId: string;
+  source: "local" | "provider";
+  subject: string;
+  snippet: string;
+  to: string[];
+  mailboxLabel: string;
+  mailboxColor: string;
+  updatedAt: string;
 }
 
 export interface MailboxThreadDetail {
@@ -101,6 +120,9 @@ export interface MailboxThreadDetail {
   subject: string;
   status: ThreadStatus;
   assignee: string | null;
+  /** Real userId for API calls; null when unassigned */
+  assigneeId: string | null;
+  isFlagged: boolean;
   mailboxLabel: string;
   mailboxColor: string;
   participantsSummary: string;
@@ -148,6 +170,8 @@ export interface MailboxComposerState {
   threadId: string | null;
   /** messageId being replied to, null for new/forward */
   replyToMessageId: string | null;
+  /** Persisted draft ID for this compose session. Sprint 5.1. */
+  draftId: string | null;
 }
 
 // ─── Sprint 1.4 additions ────────────────────────────────────────────────────
@@ -192,6 +216,24 @@ export interface MailboxAdminSummary {
   connectedBy: string;
 }
 
+/** Real admin connection shape returned by /api/mailbox/connections */
+export interface MailboxAdminConnection {
+  id: string;
+  orgId: string;
+  provider: MailboxProvider;
+  /** URL slug derived from connection id */
+  slug: string;
+  emailAddress: string;
+  displayName: string;
+  status: MailboxConnectionStatus;
+  lastSyncAt: string | null;
+  lastSyncError: string | null;
+  sync?: MailboxSyncPresentation;
+  connectedBy: string;
+  visibilityPolicy: string;
+  updatedAt?: string;
+}
+
 export type DisconnectConfirmState = "idle" | "confirming" | "disconnecting" | "disconnected";
 export type ReconnectConfirmState = "idle" | "confirming" | "reconnecting";
 
@@ -220,6 +262,8 @@ export interface LinkedContextState {
   /** Suggested links not yet confirmed */
   suggestions: ThreadLinkSummary[];
   assignee: string | null;
+  /** Real userId for API calls; null when unassigned */
+  assigneeId: string | null;
   status: ThreadStatus;
   /** ISO timestamp of last status change */
   statusChangedAt: string | null;
@@ -244,6 +288,19 @@ export interface SmartViewDef {
   description: string;
 }
 
+export const ACTIVE_FILTER_FIELDS = ["mailbox", "status", "assignee", "linked", "unread", "flagged"] as const;
+
+export const SUPPORTED_SAVED_VIEW_SMART_VIEW_IDS = [
+  "all-inboxes",
+  "unread",
+  "assigned-to-me",
+  "unassigned",
+  "flagged",
+  "waiting",
+] as const;
+
+export type SupportedSavedViewSmartViewId = (typeof SUPPORTED_SAVED_VIEW_SMART_VIEW_IDS)[number];
+
 export type FilterField = "mailbox" | "status" | "assignee" | "linked" | "unread" | "flagged";
 
 export interface ActiveFilter {
@@ -255,9 +312,18 @@ export interface ActiveFilter {
 export interface ActiveFilterState {
   filters: ActiveFilter[];
   searchQuery: string;
+  /** Sprint B: Search mode persists in query state. Defaults to "threads". */
+  searchMode: MailboxSearchMode;
 }
 
 // ─── Sprint 1.6 additions ────────────────────────────────────────────────────
+
+/**
+ * Sprint B: Explicit search mode for mailbox search.
+ * - "threads" (default): returns thread-level results, collapsing multiple matching messages
+ * - "messages": returns message-level results, showing each matching message separately
+ */
+export type MailboxSearchMode = "threads" | "messages";
 
 /**
  * Coarse loading state for major mailbox surfaces.

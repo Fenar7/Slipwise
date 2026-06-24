@@ -2,75 +2,21 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 import {
   ArrowLeft,
   CheckCircle2,
   AlertTriangle,
   ShieldCheck,
   Users,
-  Lock,
   Trash2,
   RefreshCw,
-  ChevronDown,
+  Loader2,
 } from "lucide-react";
-import { MOCK_ADMIN_SUMMARIES } from "../../../mock-data";
-import type { MailboxPermissionPolicy, DisconnectConfirmState } from "../../../types";
+import type { DisconnectConfirmState } from "../../../types";
 import { MailboxConnectFlow } from "../../mailbox-connect-flow";
-
-// ─── Permission row ───────────────────────────────────────────────────────────
-
-type AccessLevel = MailboxPermissionPolicy["readAccess"];
-
-const ACCESS_LABELS: Record<AccessLevel, string> = {
-  org_admins_only: "Admins only",
-  all_members: "All members",
-  specific_roles: "Specific roles",
-};
-
-function PermissionRow({
-  label,
-  description,
-  value,
-  onChange,
-  adminOnly = false,
-}: {
-  label: string;
-  description: string;
-  value: AccessLevel;
-  onChange: (v: AccessLevel) => void;
-  adminOnly?: boolean;
-}) {
-  const options: AccessLevel[] = ["org_admins_only", "all_members", "specific_roles"];
-  return (
-    <div className="flex items-start justify-between gap-4 py-4 border-b last:border-0" style={{ borderColor: "#F1F3F7" }}>
-      <div className="min-w-0">
-        <p className="text-sm font-medium text-[#0F172A]">{label}</p>
-        <p className="mt-0.5 text-xs text-[#64748B]">{description}</p>
-      </div>
-      {adminOnly ? (
-        <div className="flex shrink-0 items-center gap-1.5 rounded-lg border border-[#E2E5EA] bg-[#F7F8FB] px-3 py-1.5">
-          <Lock className="h-3.5 w-3.5 text-[#94A3B8]" aria-hidden="true" />
-          <span className="text-xs font-semibold text-[#64748B]">Admins only</span>
-        </div>
-      ) : (
-        <div className="relative shrink-0">
-          <select
-            value={value}
-            onChange={(e) => onChange(e.target.value as AccessLevel)}
-            className="appearance-none rounded-lg border border-[#D1D5DB] bg-white py-1.5 pl-3 pr-8 text-xs font-medium text-[#0F172A] outline-none focus:border-[#16294D] focus:ring-2 focus:ring-[rgba(22,41,77,0.12)]"
-            aria-label={`${label} access level`}
-          >
-            {options.map((opt) => (
-              <option key={opt} value={opt}>{ACCESS_LABELS[opt]}</option>
-            ))}
-          </select>
-          <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#64748B]" aria-hidden="true" />
-        </div>
-      )}
-    </div>
-  );
-}
 
 // ─── Disconnect confirmation ──────────────────────────────────────────────────
 
@@ -114,7 +60,7 @@ function DisconnectPanel({
           <div>
             <p className="text-sm font-bold text-red-900">Disconnect {displayName}?</p>
             <p className="mt-1 text-sm text-red-800">
-              This will remove Slipwise's access to this Gmail mailbox. Existing thread data will be retained, but new sync will stop immediately. This action requires re-authorization to undo.
+              This will end this mailbox&apos;s connection on Slipwise and stop all new sync immediately. Slipwise will attempt to revoke its Google authorization — if that succeeds, no further access occurs. Existing thread data is retained.
             </p>
           </div>
         </div>
@@ -162,15 +108,138 @@ interface ConnectionDetailClientProps {
   connectionId: string;
 }
 
-export function ConnectionDetailClient({ connectionId }: ConnectionDetailClientProps) {
-  const summary = MOCK_ADMIN_SUMMARIES.find((s) => s.connection.id === connectionId);
+interface FetchedConnection {
+  id: string;
+  displayName: string;
+  emailAddress: string;
+  status: string;
+  lastSyncAt: string | null;
+  lastSyncError: string | null;
+  connectedBy: string;
+  provider: string;
+  visibilityPolicy: string;
+}
 
-  const [policy, setPolicy] = useState(summary?.policy ?? null);
+function formatVisibilityPolicy(policy: string): string {
+  switch (policy) {
+    case "org_shared":
+      return "Shared with organization";
+    case "admin_only":
+      return "Admins only";
+    case "restricted":
+      return "Restricted";
+    default:
+      return policy;
+  }
+}
+
+export function ConnectionDetailClient({ connectionId }: ConnectionDetailClientProps) {
+  const searchParams = useSearchParams();
+  const [connection, setConnection] = useState<FetchedConnection | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+
   const [disconnectState, setDisconnectState] = useState<DisconnectConfirmState>("idle");
   const [showReconnect, setShowReconnect] = useState(false);
-  const [saved, setSaved] = useState(false);
+  const [disconnectError, setDisconnectError] = useState<string | null>(null);
+  const shouldOpenReconnect = searchParams.get("action") === "reconnect";
 
-  if (!summary || !policy) {
+  const [displayNameDraft, setDisplayNameDraft] = useState("");
+  const [visibilityDraft, setVisibilityDraft] = useState("org_shared");
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      setIsLoading(true);
+      setFetchError(null);
+      try {
+        const res = await fetch(`/api/mailbox/connections/${connectionId}`);
+        if (!res.ok) {
+          if (res.status === 404) {
+            setConnection(null);
+          } else {
+            throw new Error(`Failed to load connection: ${res.status}`);
+          }
+        } else {
+          const data = (await res.json()) as { connection?: FetchedConnection };
+          const conn = data.connection ?? null;
+          if (!cancelled) {
+            setConnection(conn);
+          }
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setFetchError(err instanceof Error ? err.message : "Unknown error");
+        }
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    }
+    load();
+    return () => { cancelled = true; };
+  }, [connectionId]);
+
+  useEffect(() => {
+    if (disconnectState !== "disconnecting") return;
+
+    async function doDisconnect() {
+      try {
+        const res = await fetch("/api/mailbox/gmail/disconnect", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ connectionId }),
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({ error: `Disconnect failed: ${res.status}` }));
+          throw new Error(body.error ?? `Disconnect failed: ${res.status}`);
+        }
+        setDisconnectState("disconnected");
+        window.setTimeout(() => {
+          window.location.href = "/app/mailbox/settings";
+        }, 1200);
+      } catch (err) {
+        setDisconnectError(err instanceof Error ? err.message : "Disconnect failed");
+        setDisconnectState("idle");
+      }
+    }
+    doDisconnect();
+  }, [disconnectState, connectionId]);
+
+  useEffect(() => {
+    if (!connection || !shouldOpenReconnect) return;
+    setShowReconnect(true);
+  }, [connection, shouldOpenReconnect]);
+
+  useEffect(() => {
+    if (connection) {
+      setDisplayNameDraft(connection.displayName);
+      setVisibilityDraft(connection.visibilityPolicy);
+    }
+  }, [connection]);
+  if (isLoading) {
+    return (
+      <div className="mx-auto max-w-2xl px-6 py-8" data-testid="connection-detail-loading">
+        <div className="flex items-center gap-2 text-sm text-[#64748B]">
+          <RefreshCw className="h-4 w-4 animate-spin" aria-hidden="true" />
+          Loading connection…
+        </div>
+      </div>
+    );
+  }
+
+  if (fetchError) {
+    return (
+      <div className="mx-auto max-w-2xl px-6 py-8" data-testid="connection-detail-error">
+        <p className="text-sm text-red-700">{fetchError}</p>
+        <Link href="/app/mailbox/settings" className="mt-2 text-sm font-medium text-[#16294D] underline">
+          Back to mailbox settings
+        </Link>
+      </div>
+    );
+  }
+
+  if (!connection) {
     return (
       <div className="mx-auto max-w-2xl px-6 py-8" data-testid="connection-not-found">
         <p className="text-sm text-[#64748B]">Mailbox connection not found.</p>
@@ -181,26 +250,28 @@ export function ConnectionDetailClient({ connectionId }: ConnectionDetailClientP
     );
   }
 
-  const { connection } = summary;
-  const needsReconnect = connection.status === "reconnect_required";
+  const needsReconnect = connection.status === "reconnect_required" || connection.status === "RECONNECT_REQUIRED";
+  const isDisconnected = connection.status === "disconnected" || connection.status === "DISCONNECTED";
 
-  useEffect(() => {
-    if (disconnectState !== "disconnecting") return;
-
-    const timeout = window.setTimeout(() => {
-      setDisconnectState("disconnected");
-    }, 1200);
-
-    return () => window.clearTimeout(timeout);
-  }, [disconnectState]);
-
-  const handleSavePermissions = () => {
-    setSaved(true);
-    window.setTimeout(() => setSaved(false), 2500);
-  };
-
-  const patchPolicy = (patch: Partial<typeof policy>) =>
-    setPolicy((prev) => prev ? { ...prev, ...patch } : prev);
+  if (isDisconnected) {
+    return (
+      <div className="mx-auto max-w-2xl px-6 py-8" data-testid="connection-disconnected-state">
+        <Link
+          href="/app/mailbox/settings"
+          className="mb-6 flex items-center gap-1.5 text-xs font-medium text-[#64748B] transition-colors hover:text-[#0F172A]"
+        >
+          <ArrowLeft className="h-3.5 w-3.5" />
+          Mailbox connections
+        </Link>
+        <div className="rounded-xl border border-gray-200 bg-gray-50 p-5">
+          <p className="text-sm font-semibold text-gray-700">This mailbox is no longer connected</p>
+          <p className="mt-1 text-xs text-gray-500">
+            This connection has been disconnected and is no longer active on Slipwise. If you want to use this mailbox again, connect a new mailbox.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto max-w-2xl px-6 py-8" data-testid="connection-detail-page">
@@ -226,7 +297,7 @@ export function ConnectionDetailClient({ connectionId }: ConnectionDetailClientP
           <h1 className="text-xl font-bold text-[#0F172A]">{connection.displayName}</h1>
           <p className="text-sm text-[#64748B]">{connection.emailAddress}</p>
           <p className="mt-1 text-xs text-[#94A3B8]">
-            Connected by {summary.connectedBy}
+            Connected by {connection.connectedBy}
           </p>
         </div>
       </div>
@@ -259,7 +330,7 @@ export function ConnectionDetailClient({ connectionId }: ConnectionDetailClientP
         <dl className="grid grid-cols-2 gap-4 text-sm">
           <div>
             <dt className="text-[10px] font-semibold uppercase tracking-wide text-[#94A3B8]">Status</dt>
-            <dd className="mt-0.5 font-medium text-[#334155] capitalize">{connection.status.replace("_", " ")}</dd>
+            <dd className="mt-0.5 font-medium text-[#334155] capitalize">{connection.status.replace("_", " ").toLowerCase()}</dd>
           </div>
           <div>
             <dt className="text-[10px] font-semibold uppercase tracking-wide text-[#94A3B8]">Provider</dt>
@@ -273,78 +344,162 @@ export function ConnectionDetailClient({ connectionId }: ConnectionDetailClientP
                 : "Never"}
             </dd>
           </div>
-          <div>
-            <dt className="text-[10px] font-semibold uppercase tracking-wide text-[#94A3B8]">Threads</dt>
-            <dd className="mt-0.5 font-medium text-[#334155]">
-              {connection.status === "connected" ? `${connection.inboxCount} in inbox` : "—"}
-            </dd>
-          </div>
         </dl>
       </section>
 
-      {/* Permissions */}
-      <section className="mb-6 rounded-xl border border-[#E2E5EA] bg-white p-5" aria-label="Mailbox permissions">
-        <div className="mb-1 flex items-center gap-2">
+      {/* Settings form — Display Name & Visibility Policy */}
+      <section className="mb-6 rounded-xl border border-[#E2E5EA] bg-white p-5" aria-label="Mailbox settings form">
+        <div className="mb-4 flex items-center gap-2">
           <ShieldCheck className="h-4 w-4 text-[#16294D]" aria-hidden="true" />
-          <h2 className="text-sm font-bold text-[#0F172A]">Permissions</h2>
+          <h2 className="text-sm font-bold text-[#0F172A]">Mailbox settings</h2>
         </div>
-        <p className="mb-4 text-xs text-[#64748B]">
-          Control who in your organization can access and use this mailbox.
-        </p>
 
+        {/* Display Name */}
+        <div className="mb-5">
+          <label htmlFor="display-name-input" className="mb-1.5 block text-xs font-semibold text-[#334155]">
+            Display name
+          </label>
+          <input
+            id="display-name-input"
+            type="text"
+            value={displayNameDraft}
+            onChange={(e) => setDisplayNameDraft(e.target.value)}
+            maxLength={100}
+            className="w-full rounded-lg border border-[#E2E5EA] bg-white px-3 py-2 text-sm text-[#0F172A] outline-none transition-colors placeholder:text-[#94A3B8] focus:border-[#16294D] focus:ring-1 focus:ring-[#16294D]/20"
+            data-testid="display-name-input"
+            placeholder="Enter a display name"
+          />
+          <p className="mt-1 text-[11px] text-[#94A3B8]">{displayNameDraft.length}/100 characters</p>
+        </div>
+
+        {/* Visibility Policy */}
         <div>
-          <PermissionRow
-            label="Read access"
-            description="Who can read threads in this mailbox"
-            value={policy.readAccess}
-            onChange={(v) => patchPolicy({ readAccess: v })}
-          />
-          <PermissionRow
-            label="Reply / send access"
-            description="Who can reply and send from this mailbox"
-            value={policy.sendAccess}
-            onChange={(v) => patchPolicy({ sendAccess: v })}
-          />
-          <PermissionRow
-            label="Manage access"
-            description="Who can change settings and disconnect this mailbox"
-            value={policy.manageAccess}
-            onChange={() => {}}
-            adminOnly
-          />
+          <p className="mb-2 text-xs font-semibold text-[#334155]">Mailbox visibility</p>
+          <p className="mb-3 text-xs text-[#64748B]">
+            Controls who in the organization can access this mailbox.
+          </p>
+          <div className="space-y-2.5">
+            <label
+              className={cn(
+                "flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors",
+                visibilityDraft === "org_shared"
+                  ? "border-[#16294D] bg-[#F1F3F7]"
+                  : "border-[#E2E5EA] bg-white hover:bg-[#F7F8FB]",
+              )}
+              data-testid="visibility-option-org_shared"
+            >
+              <input
+                type="radio"
+                name="visibilityPolicy"
+                value="org_shared"
+                checked={visibilityDraft === "org_shared"}
+                onChange={() => setVisibilityDraft("org_shared")}
+                className="mt-0.5 h-4 w-4 accent-[#16294D]"
+              />
+              <div>
+                <p className="text-sm font-semibold text-[#0F172A]">Shared with organization</p>
+                <p className="mt-0.5 text-xs text-[#64748B]">
+                  Any authorized member of the organization can read and triage email threads.
+                </p>
+              </div>
+            </label>
+
+            <label
+              className={cn(
+                "flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors",
+                visibilityDraft === "admin_only"
+                  ? "border-[#16294D] bg-[#F1F3F7]"
+                  : "border-[#E2E5EA] bg-white hover:bg-[#F7F8FB]",
+              )}
+              data-testid="visibility-option-admin_only"
+            >
+              <input
+                type="radio"
+                name="visibilityPolicy"
+                value="admin_only"
+                checked={visibilityDraft === "admin_only"}
+                onChange={() => setVisibilityDraft("admin_only")}
+                className="mt-0.5 h-4 w-4 accent-[#16294D]"
+              />
+              <div>
+                <p className="text-sm font-semibold text-[#0F172A]">Admins only</p>
+                <p className="mt-0.5 text-xs text-[#64748B]">
+                  Only organization administrators can access this mailbox.
+                </p>
+              </div>
+            </label>
+
+            <label
+              className={cn(
+                "flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors",
+                visibilityDraft === "restricted"
+                  ? "border-[#16294D] bg-[#F1F3F7]"
+                  : "border-[#E2E5EA] bg-white hover:bg-[#F7F8FB]",
+              )}
+              data-testid="visibility-option-restricted"
+            >
+              <input
+                type="radio"
+                name="visibilityPolicy"
+                value="restricted"
+                checked={visibilityDraft === "restricted"}
+                onChange={() => setVisibilityDraft("restricted")}
+                className="mt-0.5 h-4 w-4 accent-[#16294D]"
+              />
+              <div>
+                <p className="text-sm font-semibold text-[#0F172A]">Restricted</p>
+                <p className="mt-0.5 text-xs text-[#64748B]">
+                  Limited to specifically designated users (access enforcement scoped to Sprint 7.2).
+                </p>
+              </div>
+            </label>
+          </div>
         </div>
 
-        <div className="mt-4 flex items-center gap-3">
+        {/* Save button */}
+        <div className="mt-5 flex items-center gap-3">
           <button
-            onClick={handleSavePermissions}
-            className="rounded-lg px-4 py-2 text-sm font-semibold text-white transition-colors hover:opacity-90"
-            style={{ background: "#16294D" }}
-            aria-label="Save permission changes"
-            data-testid="save-permissions-btn"
+            onClick={async () => {
+              setIsSaving(true);
+              setSaveError(null);
+              try {
+                const res = await fetch(`/api/mailbox/connections/${connectionId}`, {
+                  method: "PATCH",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    displayName: displayNameDraft,
+                    visibilityPolicy: visibilityDraft,
+                  }),
+                });
+                if (!res.ok) {
+                  const body = await res.json().catch(() => ({ error: `Save failed: ${res.status}` }));
+                  throw new Error(body.error ?? `Save failed: ${res.status}`);
+                }
+                const data = (await res.json()) as { connection?: FetchedConnection };
+                if (data.connection) {
+                  setConnection(data.connection);
+                }
+                toast.success("Mailbox settings saved");
+              } catch (err) {
+                const message = err instanceof Error ? err.message : "Failed to save settings";
+                setSaveError(message);
+                toast.error(message);
+              } finally {
+                setIsSaving(false);
+              }
+            }}
+            disabled={isSaving}
+            className="flex items-center gap-1.5 rounded-lg bg-[#16294D] px-4 py-2 text-sm font-semibold text-white transition-colors hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+            data-testid="save-settings-btn"
           >
-            Save changes
+            {isSaving && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
+            {isSaving ? "Saving…" : "Save changes"}
           </button>
-          {saved && (
-            <span className="flex items-center gap-1.5 text-sm text-green-700" data-testid="saved-indicator">
-              <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
-              Saved
-            </span>
+          {saveError && (
+            <p className="text-xs text-red-600" data-testid="save-error">
+              {saveError}
+            </p>
           )}
-        </div>
-      </section>
-
-      {/* Visibility note */}
-      <section className="mb-6 rounded-xl border border-[#E2E5EA] bg-white p-5" aria-label="Visibility">
-        <div className="mb-1 flex items-center gap-2">
-          <Users className="h-4 w-4 text-[#16294D]" aria-hidden="true" />
-          <h2 className="text-sm font-bold text-[#0F172A]">Visibility</h2>
-        </div>
-        <p className="text-xs text-[#64748B]">
-          This mailbox is visible to members based on the read access setting above. Members without read access will not see this mailbox in their left rail or thread views.
-        </p>
-        <div className="mt-3 rounded-lg border border-[#E2E5EA] bg-[#F7F8FB] px-3 py-2.5 text-xs text-[#334155]">
-          <span className="font-semibold">Current visibility:</span>{" "}
-          {ACCESS_LABELS[policy.readAccess]}
         </div>
       </section>
 
@@ -356,21 +511,28 @@ export function ConnectionDetailClient({ connectionId }: ConnectionDetailClientP
       >
         <h2 className="mb-1 text-sm font-bold text-red-700">Danger zone</h2>
         <p className="mb-4 text-xs text-[#64748B]">
-          Disconnecting this mailbox will stop all sync and remove Slipwise's access. Existing thread data is retained but will no longer update.
+          Disconnecting stops all sync immediately and ends this mailbox&apos;s session on Slipwise. Slipwise will attempt to revoke its Google authorization. Existing thread data is retained but will no longer update.
         </p>
         <DisconnectPanel
           displayName={connection.displayName}
           state={disconnectState}
           onInitiate={() => setDisconnectState("confirming")}
           onConfirm={() => setDisconnectState("disconnecting")}
-          onCancel={() => setDisconnectState("idle")}
+          onCancel={() => {
+            setDisconnectState("idle");
+            setDisconnectError(null);
+          }}
         />
+        {disconnectError && (
+          <p className="mt-2 text-xs text-red-600">{disconnectError}</p>
+        )}
       </section>
 
       {/* Reconnect flow modal */}
       {showReconnect && (
         <MailboxConnectFlow
           reconnectEmail={connection.emailAddress}
+          reconnectConnectionId={connection.id}
           onClose={() => setShowReconnect(false)}
         />
       )}

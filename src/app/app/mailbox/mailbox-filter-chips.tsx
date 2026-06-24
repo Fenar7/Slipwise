@@ -9,8 +9,6 @@ const QUICK_FILTERS: ActiveFilter[] = [
   { field: "assignee", value: "me", label: "Assigned to me" },
   { field: "assignee", value: "none", label: "Unassigned" },
   { field: "status", value: "pending", label: "Pending" },
-  { field: "linked", value: "true", label: "Linked" },
-  { field: "linked", value: "false", label: "Unlinked" },
   { field: "flagged", value: "true", label: "Flagged" },
 ];
 
@@ -33,7 +31,7 @@ export function FilterChipsBar({
   onRemoveFilter,
   onClearAll,
 }: FilterChipsBarProps) {
-  const hasActiveFilters = filterState.filters.length > 0;
+  const hasActiveFilters = filterState.filters.length > 0 || !!filterState.searchQuery;
 
   return (
     <div

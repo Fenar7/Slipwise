@@ -98,6 +98,7 @@ function makeConnectionRow(overrides: Partial<Record<string, unknown>> = {}) {
     watchMetadata: { historyId: "12345" },
     lastSyncAt: new Date("2026-05-01T10:00:00Z"),
     lastSyncError: null,
+    lastSyncErrorCategory: null,
     disabledAt: null,
     connectedBy: ACTOR,
     createdAt: new Date("2026-01-01T00:00:00Z"),
@@ -700,8 +701,6 @@ describe("deleteMailboxCursors", () => {
 });
 
 // ─── Schema ownership invariant ───────────────────────────────────────────────
-// These tests verify that the composite FK design decisions are reflected in
-// the service layer contracts, not just in schema comments.
 
 describe("composite org ownership invariants", () => {
   it("cursor upsert where clause includes orgId (composite unique key)", async () => {
@@ -709,64 +708,43 @@ describe("composite org ownership invariants", () => {
     mockDb.mailboxProviderCursor.upsert.mockResolvedValue(makeCursorRow());
 
     await upsertMailboxCursor({
-      orgId: ORG_A,
-      mailboxConnectionId: CONN_ID,
-      provider: "GMAIL",
-      cursorType: "HISTORY_ID",
-      cursorValue: "1",
-      expiresAt: null,
+      orgId: ORG_A, mailboxConnectionId: CONN_ID,
+      provider: "GMAIL", cursorType: "HISTORY_ID", cursorValue: "1", expiresAt: null,
     });
 
-    const call = mockDb.mailboxProviderCursor.upsert.mock.calls[0][0];
-    // The where clause must include orgId so the update leg cannot touch
-    // a cursor belonging to a different org.
-    expect(call.where.orgId_mailboxConnectionId_cursorType.orgId).toBe(ORG_A);
-    expect(call.where.orgId_mailboxConnectionId_cursorType.mailboxConnectionId).toBe(CONN_ID);
+    const where = mockDb.mailboxProviderCursor.upsert.mock.calls[0][0].where
+      .orgId_mailboxConnectionId_cursorType;
+    expect(where.orgId).toBe(ORG_A);
+    expect(where.mailboxConnectionId).toBe(CONN_ID);
   });
 
-  it("cursor create leg includes orgId matching the connection", async () => {
+  it("cursor create leg includes orgId so composite FK is satisfied", async () => {
     mockDb.mailboxProviderCursor.findFirst.mockResolvedValue(null);
     mockDb.mailboxProviderCursor.upsert.mockResolvedValue(makeCursorRow());
 
     await upsertMailboxCursor({
-      orgId: ORG_A,
-      mailboxConnectionId: CONN_ID,
-      provider: "GMAIL",
-      cursorType: "PAGE_TOKEN",
-      cursorValue: "tok-1",
-      expiresAt: null,
+      orgId: ORG_A, mailboxConnectionId: CONN_ID,
+      provider: "GMAIL", cursorType: "PAGE_TOKEN", cursorValue: "tok-1", expiresAt: null,
     });
 
-    const call = mockDb.mailboxProviderCursor.upsert.mock.calls[0][0];
-    // The create data must carry orgId so the composite FK constraint is satisfied.
-    expect(call.create.orgId).toBe(ORG_A);
-    expect(call.create.mailboxConnectionId).toBe(CONN_ID);
+    const create = mockDb.mailboxProviderCursor.upsert.mock.calls[0][0].create;
+    expect(create.orgId).toBe(ORG_A);
+    expect(create.mailboxConnectionId).toBe(CONN_ID);
   });
 
-  it("cursor upsert for ORG_B cannot reuse ORG_A connection id", async () => {
-    // Simulates a cross-org attempt: orgId=ORG_B but mailboxConnectionId belongs to ORG_A.
-    // The service-layer provider-mismatch guard won't fire here (no existing cursor),
-    // but the composite unique key (orgId, mailboxConnectionId, cursorType) means
-    // the DB would reject a row where orgId != the connection's orgId.
-    // At the service level, the upsert where clause carries ORG_B, so it would
-    // create a new row scoped to ORG_B — which the composite FK on the schema
-    // would reject at the DB level because MailboxConnection[CONN_ID, ORG_B] doesn't exist.
-    // This test confirms the where clause carries the caller's orgId, not a hardcoded one.
+  it("cursor upsert for ORG_B carries ORG_B in where clause (not ORG_A)", async () => {
+    // At DB level the composite FK MailboxConnection[id, orgId] would reject a row
+    // where orgId=ORG_B but the connection belongs to ORG_A.
     mockDb.mailboxProviderCursor.findFirst.mockResolvedValue(null);
     mockDb.mailboxProviderCursor.upsert.mockResolvedValue(makeCursorRow({ orgId: ORG_B }));
 
     await upsertMailboxCursor({
-      orgId: ORG_B,
-      mailboxConnectionId: CONN_ID,
-      provider: "GMAIL",
-      cursorType: "HISTORY_ID",
-      cursorValue: "1",
-      expiresAt: null,
+      orgId: ORG_B, mailboxConnectionId: CONN_ID,
+      provider: "GMAIL", cursorType: "HISTORY_ID", cursorValue: "1", expiresAt: null,
     });
 
-    const call = mockDb.mailboxProviderCursor.upsert.mock.calls[0][0];
-    expect(call.where.orgId_mailboxConnectionId_cursorType.orgId).toBe(ORG_B);
-    // The DB composite FK MailboxConnection[id, orgId] would reject this at runtime
-    // because no MailboxConnection with id=CONN_ID and orgId=ORG_B exists.
+    const where = mockDb.mailboxProviderCursor.upsert.mock.calls[0][0].where
+      .orgId_mailboxConnectionId_cursorType;
+    expect(where.orgId).toBe(ORG_B);
   });
 });

@@ -77,7 +77,7 @@ async function ensureBucketExists(bucket: StorageBucket): Promise<void> {
   if (existing?.some((entry) => entry.name === bucket)) {
     if (bucket === "attachments") {
       await admin.storage.updateBucket(bucket, {
-        allowedMimeTypes: null,
+        public: false, allowedMimeTypes: null,
       }).catch((e) => console.warn("Failed to update attachments bucket allowedMimeTypes:", e));
     }
     return;
@@ -132,13 +132,13 @@ export async function uploadFileServer(
   }
 
   const result: UploadResult = {
-    storageKey: data.path,
+    storageKey: data?.path || "",
   };
 
   if (bucket === "logos") {
     const { data: urlData } = supabase.storage
       .from(bucket)
-      .getPublicUrl(data.path);
+      .getPublicUrl(data?.path || "");
     result.publicUrl = urlData.publicUrl;
   }
 

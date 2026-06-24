@@ -10,6 +10,47 @@ let mockPathname = "/app/mailbox";
 vi.mock("next/navigation", () => ({
   usePathname: () => mockPathname,
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(),
+}));
+
+vi.mock("../use-mailbox-query-sync", () => ({
+  useMailboxQuerySync: () => {
+    const [filterState, setFilterState] = require("react").useState({ filters: [], searchQuery: "" });
+    return { filterState, setFilterState };
+  },
+}));
+
+// Mock mailbox data hooks for workspace tests
+vi.mock("../use-mailbox-connections", () => ({
+  useMailboxConnections: () => ({
+    connections: [
+      { id: "conn_billing", orgId: "org_1", provider: "gmail", slug: "billing", emailAddress: "billing@acmecorp.com", displayName: "Billing", status: "connected", lastSyncAt: "2026-05-08T14:30:00Z", lastSyncError: null, lastSyncErrorCategory: null, unreadCount: 14, inboxCount: 47 },
+      { id: "conn_support", orgId: "org_1", provider: "gmail", slug: "support", emailAddress: "support@acmecorp.com", displayName: "Support", status: "connected", lastSyncAt: "2026-05-08T14:28:00Z", lastSyncError: null, lastSyncErrorCategory: null, unreadCount: 6, inboxCount: 23 },
+      { id: "conn_accounts", orgId: "org_1", provider: "gmail", slug: "accounts", emailAddress: "accounts@acmecorp.com", displayName: "Accounts", status: "reconnect_required", lastSyncAt: "2026-05-07T09:15:00Z", lastSyncError: "OAuth token expired. Reconnect required.", lastSyncErrorCategory: "auth_expired", unreadCount: 0, inboxCount: 0 },
+    ],
+    isLoading: false,
+    error: null,
+    refetch: vi.fn(),
+  }),
+}));
+
+vi.mock("../use-mailbox-threads", () => ({
+  useMailboxThreads: () => ({
+    threads: [
+      { id: "t1", mailboxConnectionId: "conn_billing", providerThreadId: "gmail-t1", subject: "Invoice #INV-2026-0412 — Payment overdue", participants: [{ email: "priya@clientco.in", displayName: "Priya Sharma" }], lastMessageAt: "2026-05-08T10:42:00Z", unreadCount: 1, status: "OPEN", assigneeId: "user-1", isFlagged: true, previewSnippet: "Hi, I wanted to follow up...", attachmentCount: 0, createdAt: "2026-05-06T09:00:00Z", updatedAt: "2026-05-08T10:42:00Z" },
+      { id: "t2", mailboxConnectionId: "conn_billing", providerThreadId: "gmail-t2", subject: "Re: Quote QT-2026-0089 — Revised pricing", participants: [{ email: "arjun@techventures.io", displayName: "Arjun Mehta" }], lastMessageAt: "2026-05-08T09:15:00Z", unreadCount: 1, status: "OPEN", assigneeId: null, isFlagged: false, previewSnippet: "Thanks for the revised quote...", attachmentCount: 2, createdAt: "2026-05-07T14:30:00Z", updatedAt: "2026-05-08T09:15:00Z" },
+      { id: "t3", mailboxConnectionId: "conn_accounts", providerThreadId: "gmail-t3", subject: "Voucher VCH-2026-0031 — Approval needed", participants: [{ email: "neha@vendor.com", displayName: "Neha Kapoor" }], lastMessageAt: "2026-05-07T11:00:00Z", unreadCount: 0, status: "PENDING", assigneeId: null, isFlagged: false, previewSnippet: "Please find attached the voucher...", attachmentCount: 1, createdAt: "2026-05-07T11:00:00Z", updatedAt: "2026-05-07T11:00:00Z" },
+      { id: "t4", mailboxConnectionId: "conn_billing", providerThreadId: "gmail-t4", subject: "Statement of account — April 2026", participants: [{ email: "ravi@globalretail.com", displayName: "Ravi Nair" }], lastMessageAt: "2026-05-07T16:45:00Z", unreadCount: 0, status: "OPEN", assigneeId: "user-2", isFlagged: false, previewSnippet: "Please find the attached statement...", attachmentCount: 1, createdAt: "2026-05-07T16:45:00Z", updatedAt: "2026-05-07T16:45:00Z" },
+      { id: "t5", mailboxConnectionId: "conn_support", providerThreadId: "gmail-t5", subject: "Support: Unable to download invoice PDF", participants: [{ email: "sunita@customer.com", displayName: "Sunita Rao" }], lastMessageAt: "2026-05-07T08:30:00Z", unreadCount: 1, status: "OPEN", assigneeId: null, isFlagged: false, previewSnippet: "Hi team, I'm trying to download...", attachmentCount: 0, createdAt: "2026-05-07T08:30:00Z", updatedAt: "2026-05-07T08:30:00Z" },
+      { id: "t6", mailboxConnectionId: "conn_accounts", providerThreadId: "gmail-t6", subject: "Re: TDS certificate for FY 2025-26", participants: [{ email: "vikram@enterprise.com", displayName: "Vikram Joshi" }], lastMessageAt: "2026-05-06T14:20:00Z", unreadCount: 0, status: "CLOSED", assigneeId: null, isFlagged: false, previewSnippet: "We've processed the TDS certificate...", attachmentCount: 1, createdAt: "2026-05-05T10:00:00Z", updatedAt: "2026-05-06T14:20:00Z" },
+    ],
+    totalCount: 6,
+    nextCursor: null,
+    isLoading: false,
+    error: null,
+    refetch: vi.fn(),
+    loadMore: vi.fn(),
+  }),
 }));
 
 import { MailboxContextPanel, MailboxContextPanelEmpty } from "../mailbox-context-panel";
@@ -71,12 +112,6 @@ describe("MOCK_LINKED_CONTEXT integrity", () => {
 });
 
 describe("SMART_VIEW_DEFS integrity", () => {
-  it("includes linked and unlinked views", () => {
-    const ids = SMART_VIEW_DEFS.map((v) => v.id);
-    expect(ids).toContain("linked");
-    expect(ids).toContain("unlinked");
-  });
-
   it("every view has a href and description", () => {
     for (const view of SMART_VIEW_DEFS) {
       expect(view.href).toBeTruthy();
@@ -209,7 +244,8 @@ describe("MailboxContextPanel — assignment block", () => {
     const onPatch = vi.fn();
     render(<MailboxContextPanel context={unassignedCtx} onPatch={onPatch} />);
     fireEvent.click(screen.getByTestId("assign-btn"));
-    expect(onPatch).toHaveBeenCalledWith({ assignee: "You" });
+    fireEvent.click(screen.getByTestId("assign-self-option"));
+    expect(onPatch).toHaveBeenCalledWith({ assignee: "You", assigneeId: "" });
   });
 
   it("renders status buttons for all statuses", () => {
@@ -275,9 +311,10 @@ describe("FilterChipsBar", () => {
     );
     expect(screen.getByTestId("filter-chip-unread-true")).toBeInTheDocument();
     expect(screen.getByTestId("filter-chip-assignee-me")).toBeInTheDocument();
-    expect(screen.getByTestId("filter-chip-linked-true")).toBeInTheDocument();
-    expect(screen.getByTestId("filter-chip-linked-false")).toBeInTheDocument();
     expect(screen.getByTestId("filter-chip-flagged-true")).toBeInTheDocument();
+    // Sprint 4.4: linked/unlinked chips removed from live UI (mock-only filters)
+    expect(screen.queryByTestId("filter-chip-linked-true")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("filter-chip-linked-false")).not.toBeInTheDocument();
   });
 
   it("inactive chips have aria-pressed=false", () => {
@@ -422,29 +459,20 @@ describe("MailboxWorkspace — Sprint 1.5 filter integration", () => {
     expect(screen.getByTestId("link-card-lnk_t1_inv")).toBeInTheDocument();
   });
 
-  it("left rail includes Linked smart view", () => {
-    renderWorkspaceAtPath();
-    expect(screen.getByRole("link", { name: /^linked$/i })).toBeInTheDocument();
-  });
+  // Sprint 4.4 review fix: linked/unlinked smart views removed from live nav
 
-  it("left rail includes Unlinked smart view", () => {
+  it("workspace search input updates filter state", () => {
     renderWorkspaceAtPath();
-    expect(screen.getByRole("link", { name: /^unlinked$/i })).toBeInTheDocument();
-  });
-
-  it("workspace search filters visible thread rows", () => {
-    renderWorkspaceAtPath();
-    fireEvent.change(screen.getByRole("textbox", { name: /search mailbox threads/i }), {
-      target: { value: "Sunita" },
-    });
-    expect(screen.getByText("Sunita Rao")).toBeInTheDocument();
-    expect(screen.queryByText("Priya Sharma")).not.toBeInTheDocument();
-    expect(screen.getAllByRole("option")).toHaveLength(1);
+    const searchInput = screen.getByRole("combobox", { name: /search mailbox threads/i });
+    fireEvent.change(searchInput, { target: { value: "Sunita" } });
+    // Sprint 4.4: search is backend-driven; UI state updates immediately
+    expect(searchInput).toHaveValue("Sunita");
+    expect(screen.getByTestId("clear-filters-btn")).toBeInTheDocument();
   });
 
   it("clearing search restores the current result set", () => {
     renderWorkspaceAtPath();
-    const searchInput = screen.getByRole("textbox", { name: /search mailbox threads/i });
+    const searchInput = screen.getByRole("combobox", { name: /search mailbox threads/i });
     fireEvent.change(searchInput, { target: { value: "Sunita" } });
     fireEvent.click(screen.getByRole("button", { name: /clear search/i }));
     expect(screen.getByText("Sunita Rao")).toBeInTheDocument();
@@ -452,27 +480,12 @@ describe("MailboxWorkspace — Sprint 1.5 filter integration", () => {
     expect(screen.getAllByRole("option")).toHaveLength(6);
   });
 
-  it("quick filters are usable from the real workspace zero state", () => {
+  it("supported quick filters show clear-filters button when applied", () => {
     renderWorkspaceAtPath();
-    fireEvent.click(screen.getByTestId("filter-chip-linked-false"));
-    expect(screen.getByText("Sunita Rao")).toBeInTheDocument();
-    expect(screen.queryByText("Priya Sharma")).not.toBeInTheDocument();
+    // Sprint 4.4: backend drives filtering; UI still shows active filter chips
+    fireEvent.click(screen.getByTestId("filter-chip-assignee-none"));
     expect(screen.getByTestId("clear-filters-btn")).toBeInTheDocument();
   });
 
-  it("linked route marks linked active without also marking all inboxes active", () => {
-    renderWorkspaceAtPath("/app/mailbox/linked");
-    const linked = screen.getByRole("link", { name: /^linked$/i });
-    const allInboxes = screen.getByRole("link", { name: /^all inboxes/i });
-    expect(linked.className).toContain("bg-red-50");
-    expect(allInboxes.className).not.toContain("bg-red-50");
-  });
-
-  it("unlinked route marks unlinked active without also marking all inboxes active", () => {
-    renderWorkspaceAtPath("/app/mailbox/unlinked");
-    const unlinked = screen.getByRole("link", { name: /^unlinked$/i });
-    const allInboxes = screen.getByRole("link", { name: /^all inboxes/i });
-    expect(unlinked.className).toContain("bg-red-50");
-    expect(allInboxes.className).not.toContain("bg-red-50");
-  });
+  // Sprint 4.4 review fix: linked/unlinked routes removed from live nav
 });

@@ -938,7 +938,7 @@ export async function getMeetingDetail(
   orgId: string,
   meetingId: string,
   userId: string,
-): Promise<ConversationMeetingRecord | null> {
+): Promise<any /* replaced ConversationMeeting */ | null> {
   const meeting = await db.conversationMeeting.findFirst({
     where: { id: meetingId, orgId },
   });

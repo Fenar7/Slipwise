@@ -653,7 +653,7 @@ export class MessagingGateway {
   private async handleSetPresence(
     socket: WebSocket,
     connState: GatewayConnectionState,
-    payload: { status: "online" | "away" | "offline"; activeConversationId?: string | null },
+    payload: { status: "ONLINE" | "AWAY" | "OFFLINE"; activeConversationId?: string | null },
     requestId: string,
   ): Promise<void> {
     const session = this.requireSession(socket, connState, requestId);
@@ -694,7 +694,7 @@ export class MessagingGateway {
           actorId: session.userId,
           data: {
             userId: presence.userId,
-            status: presence.status,
+            status: presence.status.toUpperCase() as any,
             activeConversationId: presence.activeConversationId,
           },
         },
