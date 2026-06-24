@@ -117,6 +117,7 @@ export function normalizeInvoice(values: InvoiceFormValues): InvoiceDocument {
     businessTaxId: visibility.showBusinessTaxId
       ? values.businessTaxId.trim() || undefined
       : undefined,
+    clientSalutation: values.clientSalutation?.trim() || undefined,
     clientName: values.clientName.trim(),
     clientAddress: visibility.showClientAddress
       ? values.clientAddress.trim() || undefined
@@ -169,8 +170,20 @@ export function normalizeInvoice(values: InvoiceFormValues): InvoiceDocument {
     bankIfsc: visibility.showBankDetails
       ? values.bankIfsc.trim() || undefined
       : undefined,
+    upiId: visibility.showUpiDetails
+      ? values.upiId.trim() || undefined
+      : undefined,
+    upiQrDataUrl: visibility.showUpiDetails
+      ? values.upiQrDataUrl || undefined
+      : undefined,
     authorizedBy: visibility.showSignature
       ? values.authorizedBy.trim() || undefined
+      : undefined,
+    authorizedByDesignation: visibility.showSignature
+      ? values.authorizedByDesignation?.trim() || undefined
+      : undefined,
+    authorizedByCompany: visibility.showSignature
+      ? values.authorizedByCompany?.trim() || undefined
       : undefined,
     visibility,
   };

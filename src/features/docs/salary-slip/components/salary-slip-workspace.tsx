@@ -21,6 +21,8 @@ import {
   TextAreaField,
   TextField,
   ToggleField,
+  SliderField,
+  SegmentedControlField,
 } from "@/components/forms/input-primitives";
 import { RepeaterSection } from "@/components/forms/repeater-section";
 import { salarySlipDefaultValues, salarySlipTemplateOptions } from "@/features/docs/salary-slip/constants";
@@ -622,6 +624,25 @@ function SalarySlipPanel({ employees = [], presets = [], initialTemplateId }: Wo
                     hint="Session-only asset for the live preview."
                   />
                 </div>
+                {values.branding?.logoDataUrl ? (
+                  <div className="grid gap-4 sm:grid-cols-2 mt-4">
+                    <SegmentedControlField<SalarySlipFormValues>
+                      name="branding.logoFit"
+                      label="Logo fit mode"
+                      options={[
+                        { value: "contain", label: "Fit (Contain)" },
+                        { value: "cover", label: "Fill (Cover)" },
+                      ]}
+                    />
+                    <SliderField<SalarySlipFormValues>
+                      name="branding.logoSize"
+                      label="Logo size"
+                      min={30}
+                      max={150}
+                      step={5}
+                    />
+                  </div>
+                ) : null}
               </FormSection>
           </div>
 
@@ -776,24 +797,30 @@ function SalarySlipPanel({ employees = [], presets = [], initialTemplateId }: Wo
                     label="Payment method"
                     placeholder="Bank transfer"
                   />
-                  <TextField<SalarySlipFormValues>
-                    name="bankName"
-                    label="Bank name"
-                    placeholder="Federal Bank"
-                  />
                 </div>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <TextField<SalarySlipFormValues>
-                    name="bankAccountNumber"
-                    label="Account number"
-                    placeholder="XXXX2841"
-                  />
-                  <TextField<SalarySlipFormValues>
-                    name="bankIfsc"
-                    label="IFSC"
-                    placeholder="FDRL0001220"
-                  />
-                </div>
+                {values.visibility?.showBankDetails ? (
+                  <>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <TextField<SalarySlipFormValues>
+                        name="bankName"
+                        label="Bank name"
+                        placeholder="Federal Bank"
+                      />
+                      <TextField<SalarySlipFormValues>
+                        name="bankAccountNumber"
+                        label="Account number"
+                        placeholder="XXXX2841"
+                      />
+                    </div>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <TextField<SalarySlipFormValues>
+                        name="bankIfsc"
+                        label="IFSC"
+                        placeholder="FDRL0001220"
+                      />
+                    </div>
+                  </>
+                ) : null}
                 <TextAreaField<SalarySlipFormValues>
                   name="notes"
                   label="Notes"

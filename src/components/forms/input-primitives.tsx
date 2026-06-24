@@ -346,3 +346,89 @@ export function FileUploadField<TFormValues extends FieldValues>({
     />
   );
 }
+
+type SliderFieldProps<TFormValues extends FieldValues> = BaseFieldProps<TFormValues> & {
+  min: number;
+  max: number;
+  step?: number;
+};
+
+export function SliderField<TFormValues extends FieldValues>({
+  name,
+  label,
+  hint,
+  min,
+  max,
+  step = 1,
+}: SliderFieldProps<TFormValues>) {
+  const { control } = useFormContext<TFormValues>();
+
+  return (
+    <Controller
+      name={name}
+      control={control}
+      render={({ field }) => (
+        <FieldShell label={label} hint={hint}>
+          <div className="flex items-center gap-4 py-2">
+            <input
+              type="range"
+              min={min}
+              max={max}
+              step={step}
+              value={typeof field.value === "number" ? field.value : min}
+              onChange={(e) => field.onChange(Number(e.target.value))}
+              className="h-1.5 w-full cursor-pointer appearance-none rounded-lg bg-[var(--border-soft)] accent-[var(--accent)] focus:outline-none"
+            />
+            <span className="min-w-[3.5rem] text-right text-sm font-medium text-[var(--foreground)]">
+              {field.value ?? min}px
+            </span>
+          </div>
+        </FieldShell>
+      )}
+    />
+  );
+}
+
+type SegmentedControlFieldProps<TFormValues extends FieldValues> = BaseFieldProps<TFormValues> & {
+  options: Array<{ value: string; label: string }>;
+};
+
+export function SegmentedControlField<TFormValues extends FieldValues>({
+  name,
+  label,
+  hint,
+  options,
+}: SegmentedControlFieldProps<TFormValues>) {
+  const { control } = useFormContext<TFormValues>();
+
+  return (
+    <Controller
+      name={name}
+      control={control}
+      render={({ field }) => (
+        <FieldShell label={label} hint={hint}>
+          <div className="grid grid-cols-2 gap-1 rounded-lg border border-[var(--border-soft)] bg-[var(--surface-soft)] p-1">
+            {options.map((option) => {
+              const isActive = field.value === option.value;
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => field.onChange(option.value)}
+                  className={cn(
+                    "rounded-[0.5rem] py-2 text-center text-sm font-medium transition-all",
+                    isActive
+                      ? "bg-white text-[var(--foreground)] shadow-sm border border-[var(--border-soft)]"
+                      : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+                  )}
+                >
+                  {option.label}
+                </button>
+              );
+            })}
+          </div>
+        </FieldShell>
+      )}
+    />
+  );
+}

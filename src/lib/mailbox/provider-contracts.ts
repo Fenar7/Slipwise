@@ -1,3 +1,5 @@
+import "server-only";
+
 /**
  * Mailbox provider-neutral contracts.
  *
@@ -11,7 +13,7 @@
  * - Sprint 2.1 locks the contract surface. Sprint 2.2 implements Gmail behind it.
  */
 
-import type { MailboxProvider } from "@/generated/prisma/client";
+import type { MailboxProvider, MailboxCursorType } from "@/generated/prisma/client";
 
 // ─── Provider identity ────────────────────────────────────────────────────────
 
@@ -26,6 +28,10 @@ export interface MailboxProviderDescriptor {
   readonly supportsPushSync: boolean;
   /** Whether this provider supports send/reply. */
   readonly supportsSend: boolean;
+  /** The cursor type this provider uses for incremental sync delta. */
+  readonly syncCursorType: MailboxCursorType;
+  /** Whether this provider supports live API searches. */
+  readonly supportsSearch: boolean;
 }
 
 // ─── Connection identity capture ─────────────────────────────────────────────
@@ -102,6 +108,8 @@ export interface MailboxThreadEnvelope {
   participants: MailboxParticipantRef[];
   /** Provider-specific metadata. Must not be used by core mailbox logic. */
   providerMetadata: Record<string, unknown>;
+  /** Optional cached raw thread response for sync optimizations (never persisted). */
+  cachedThreadData?: any;
 }
 
 /**
@@ -109,6 +117,14 @@ export interface MailboxThreadEnvelope {
  * Body content is not included here — it is fetched separately via
  * fetchThreadDetail to avoid loading large payloads during list sync.
  */
+export interface MailboxAttachmentEnvelope {
+  providerAttachmentId: string;
+  filename: string;
+  mimeType: string;
+  size: number;
+  isInline: boolean;
+}
+
 export interface MailboxMessageEnvelope {
   /** Provider-side message identifier. */
   providerMessageId: string;
@@ -118,6 +134,7 @@ export interface MailboxMessageEnvelope {
   from: MailboxParticipantRef;
   to: MailboxParticipantRef[];
   cc: MailboxParticipantRef[];
+  bcc: MailboxParticipantRef[];
   subject: string;
   /** Short preview snippet (plain text, safe to display). */
   snippet: string;
@@ -125,6 +142,52 @@ export interface MailboxMessageEnvelope {
   receivedAt: string | null;
   attachmentCount: number;
   providerMetadata: Record<string, unknown>;
+  attachments?: MailboxAttachmentEnvelope[];
+}
+
+export interface MailboxDraftEnvelope {
+  draftId: string;
+  thread: MailboxThreadEnvelope;
+  message: MailboxMessageEnvelope & { htmlBody: string; textBody: string | null };
+}
+
+export interface MailboxSearchHit {
+  providerThreadId: string;
+  providerMessageId: string | null;
+}
+
+export interface MailboxThreadSearchResult {
+  hits: MailboxSearchHit[];
+  nextPageToken: string | null;
+  estimatedTotal: number | null;
+}
+
+/**
+ * Sprint B: Message-level search result from a provider.
+ * Each hit represents a single message, not a thread.
+ */
+export interface MailboxMessageSearchHit {
+  providerThreadId: string;
+  providerMessageId: string;
+  snippet: string;
+  subject: string;
+  from: MailboxParticipantRef;
+  sentAt: string;
+}
+
+export interface MailboxMessageSearchResult {
+  hits: MailboxMessageSearchHit[];
+  nextPageToken: string | null;
+  estimatedTotal: number | null;
+}
+
+export interface MailboxDraftSyncResult {
+  drafts: MailboxDraftEnvelope[];
+  activeDraftIds: string[];
+  /** Draft IDs that could not be fetched (transient or malformed). Kept separate
+   * so reconciliation does not remove DRAFT labels from drafts that still exist
+   * on the provider but failed to download. */
+  failedDraftIds: string[];
 }
 
 export interface MailboxParticipantRef {
@@ -147,6 +210,7 @@ export type MailboxProviderErrorCategory =
   | "not_found"           // requested resource does not exist
   | "provider_unavailable" // provider API is temporarily unavailable
   | "quota_exceeded"      // provider quota exhausted
+  | "watch_expired"       // push subscription/watch has expired; renewal required
   | "unknown";            // unclassified error; log server-side only
 
 export interface MailboxProviderError {
@@ -155,6 +219,27 @@ export interface MailboxProviderError {
   safeMessage: string;
   /** Whether the operation is safe to retry. */
   retryable: boolean;
+}
+
+// ─── Watch renewal result ─────────────────────────────────────────────────────
+
+/**
+ * Result of a successful watch/subscription renewal.
+ * Provider-neutral: the mailbox core stores these fields directly on
+ * MailboxConnection.watchExpiresAt / watchRenewedAt.
+ */
+export interface MailboxBootstrapSliceResult {
+  sliceLabel: string;
+  paginationExhausted: boolean;
+  threadCount: number;
+  lastAdvancedCursor: string | null;
+}
+
+export interface MailboxWatchRenewalResult {
+  /** When the renewed watch will expire. Null if the provider does not expose expiry. */
+  expiresAt: Date | null;
+  /** Provider-specific metadata to persist in MailboxConnection.watchMetadata. */
+  metadata: Record<string, unknown>;
 }
 
 // ─── Provider adapter interface ───────────────────────────────────────────────
@@ -214,10 +299,36 @@ export interface IMailboxProviderAdapter {
     orgId: string;
     tokenRef: string;
     cursor: MailboxSyncCursor | null;
+    /**
+     * Per-folder continuation cursors for resumable initial bootstrap.
+     * Only used when cursor is null (initial/recovery sync).
+     * Keys are provider-specific folder identifiers; values are opaque
+     * page tokens to resume pagination from.
+     */
+    folderCursors?: Record<string, string>;
   }): Promise<
-    | { threads: MailboxThreadEnvelope[]; nextCursor: MailboxSyncCursor | null }
+    | {
+        threads: MailboxThreadEnvelope[];
+        nextCursor: MailboxSyncCursor | null;
+        /** Provider message IDs that were remotely deleted. Reconcile locally. */
+        deletedMessageIds?: string[];
+        /** Thread IDs affected by deletion events so we re-fetch them. */
+        deletionAffectedThreadIds?: string[];
+        /** Per-slice bootstrap results. Only present for initial (cursor=null) syncs. */
+        bootstrapSliceResults?: MailboxBootstrapSliceResult[];
+      }
     | MailboxProviderError
   >;
+
+  /**
+   * Fetch the provider's current draft set as provider-backed thread envelopes.
+   * This is distinct from mailbox delta sync because some providers expose
+   * drafts via dedicated APIs rather than normal mailbox thread history.
+   */
+  syncDrafts(params: {
+    orgId: string;
+    tokenRef: string;
+  }): Promise<MailboxDraftSyncResult | MailboxProviderError>;
 
   /**
    * Fetch full thread detail including message bodies.
@@ -227,8 +338,131 @@ export interface IMailboxProviderAdapter {
     orgId: string;
     tokenRef: string;
     providerThreadId: string;
+    cachedThreadData?: any;
   }): Promise<
     | { messages: (MailboxMessageEnvelope & { htmlBody: string; textBody: string | null })[] }
+    | MailboxProviderError
+  >;
+
+  /**
+   * Search provider mailbox content using the provider's native query semantics.
+   * Returns lightweight hits that can be hydrated into local mailbox threads.
+   */
+  searchThreads?(params: {
+    orgId: string;
+    tokenRef: string;
+    query: string;
+    pageToken?: string;
+    maxResults?: number;
+  }): Promise<MailboxThreadSearchResult | MailboxProviderError>;
+
+  /**
+   * Sprint B: Search provider mailbox at the message level.
+   * Returns individual message hits with enough context for message-mode rendering.
+   * Each hit includes the parent thread ID for opening the thread.
+   */
+  searchMessages?(params: {
+    orgId: string;
+    tokenRef: string;
+    query: string;
+    pageToken?: string;
+    maxResults?: number;
+  }): Promise<MailboxMessageSearchResult | MailboxProviderError>;
+
+  /**
+   * Renew the provider push watch/subscription.
+   * Returns the renewed watch metadata and expiration for persistence.
+   * Returns watch_expired if the watch cannot be renewed (e.g. auth expired).
+   */
+  renewWatch(params: {
+    orgId: string;
+    tokenRef: string;
+  }): Promise<MailboxWatchRenewalResult | MailboxProviderError>;
+
+  /**
+   * Send an outbound message via the provider.
+   *
+   * The mailbox core provides the full compose intent; the adapter is
+   * responsible for constructing provider-specific payloads (MIME,
+   * API request shapes, threading headers, etc.).
+   *
+   * Returns the provider-side message identifier and thread identifier
+   * so the mailbox core can correlate the sent message later.
+   */
+  sendMessage(params: {
+    orgId: string;
+    tokenRef: string;
+    from: string;
+    to: string[];
+    cc?: string[];
+    bcc?: string[];
+    subject: string;
+    htmlBody: string;
+    textBody?: string | null;
+    threadContext?: {
+      providerThreadId: string;
+      inReplyToRfcMessageId?: string | null;
+      references?: string[] | null;
+    } | null;
+    attachments?: Array<{
+      filename: string;
+      mimeType: string;
+      size: number;
+      isInline: boolean;
+      contentBase64: string;
+    }>;
+    /** Slipwise correlation key for durable send-attempt tracking (Sprint 5.4). */
+    correlationKey?: string;
+    /** Pre-generated RFC Message-ID header value (Sprint 5.4). */
+    rfcMessageId?: string;
+  }): Promise<
+    | {
+        providerMessageId: string;
+        providerThreadId: string;
+        rfcMessageId: string | null;
+      }
+    | MailboxProviderError
+  >;
+
+  /**
+   * Reconcile a prior send attempt by looking up the message on the provider.
+   * Returns whether the message exists and its provider identifiers.
+   * Sprint 5.4: used to resolve PENDING_RECONCILIATION send attempts.
+   */
+  reconcileSend(params: {
+    orgId: string;
+    tokenRef: string;
+    correlationKey: string;
+    rfcMessageId: string | null;
+  }): Promise<
+    | {
+        found: true;
+        providerMessageId: string;
+        providerThreadId: string;
+        rfcMessageId: string | null;
+      }
+    | { found: false; providerMessageId: null; providerThreadId: null; rfcMessageId: null }
+    | MailboxProviderError
+  >;
+
+  /**
+   * Fetch attachment bytes from the provider.
+   *
+   * Used for inbound message attachments that are not cached in local storage.
+   * The provider adapter is responsible for provider-specific authentication
+   * and binary retrieval. Returns raw bytes, filename, and MIME type.
+   */
+  fetchAttachment(params: {
+    orgId: string;
+    tokenRef: string;
+    providerMessageId: string;
+    providerAttachmentId: string;
+  }): Promise<
+    | {
+        bytes: Buffer;
+        filename: string;
+        mimeType: string;
+      }
     | MailboxProviderError
   >;
 
@@ -240,6 +474,20 @@ export interface IMailboxProviderAdapter {
     orgId: string;
     tokenRef: string;
   }): Promise<void>;
+
+  /**
+   * Query the provider for thread IDs matching a provider-specific query.
+   * Used for lightweight reconciliation (e.g., `is:starred`, `in:trash`)
+   * without triggering a full sync. Returns only provider thread IDs —
+   * no message envelopes or body content.
+   *
+   * Max results is bounded by the adapter (typically 500).
+   */
+  queryThreadIdsByLabel?(params: {
+    orgId: string;
+    tokenRef: string;
+    query: string;
+  }): Promise<{ threadIds: string[] } | MailboxProviderError>;
 }
 
 // ─── Provider registry ────────────────────────────────────────────────────────

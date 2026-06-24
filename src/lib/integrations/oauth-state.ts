@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 
-export type IntegrationOAuthProvider = "quickbooks" | "zoho";
+export type IntegrationOAuthProvider = "quickbooks" | "zoho" | "gmail";
 
 interface IntegrationOAuthStatePayload {
   provider: IntegrationOAuthProvider;
@@ -8,6 +8,8 @@ interface IntegrationOAuthStatePayload {
   userId: string;
   state: string;
   expiresAt: number;
+  /** Set when this OAuth flow is a reconnect for a specific mailbox connection. */
+  connectionId?: string;
 }
 
 export type IntegrationOAuthStateResult =
@@ -27,21 +29,23 @@ export function getIntegrationOAuthStateCookieName(
 
 export function getIntegrationOAuthStateCookieOptions(
   provider: IntegrationOAuthProvider,
+  pathPrefix = "/api/integrations",
 ) {
   return {
     httpOnly: true,
     sameSite: "lax" as const,
     secure: process.env.NODE_ENV === "production",
-    path: `/api/integrations/${provider}/callback`,
+    path: `${pathPrefix}/${provider}/callback`,
     maxAge: INTEGRATION_OAUTH_STATE_TTL_SECONDS,
   };
 }
 
 export function getClearedIntegrationOAuthStateCookieOptions(
   provider: IntegrationOAuthProvider,
+  pathPrefix = "/api/integrations",
 ) {
   return {
-    ...getIntegrationOAuthStateCookieOptions(provider),
+    ...getIntegrationOAuthStateCookieOptions(provider, pathPrefix),
     maxAge: 0,
   };
 }
@@ -51,6 +55,7 @@ export function createIntegrationOAuthState(
   orgId: string,
   userId: string,
   now = Date.now(),
+  connectionId?: string,
 ) {
   const payload: IntegrationOAuthStatePayload = {
     provider,
@@ -58,6 +63,7 @@ export function createIntegrationOAuthState(
     userId,
     state: crypto.randomBytes(24).toString("hex"),
     expiresAt: now + INTEGRATION_OAUTH_STATE_TTL_MS,
+    ...(connectionId ? { connectionId } : {}),
   };
 
   return {

@@ -5,6 +5,102 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("next/navigation", () => ({
   usePathname: () => "/app/mailbox",
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(),
+}));
+
+vi.mock("../use-mailbox-query-sync", () => ({
+  useMailboxQuerySync: () => {
+    const [filterState, setFilterState] = require("react").useState({ filters: [], searchQuery: "" });
+    return { filterState, setFilterState };
+  },
+}));
+
+// Mock mailbox data hooks for workspace tests
+vi.mock("../use-mailbox-connections", () => ({
+  useMailboxConnections: () => ({
+    connections: [],
+    isLoading: false,
+    error: null,
+    refetch: vi.fn(),
+  }),
+}));
+
+vi.mock("../use-mailbox-threads", () => ({
+  useMailboxThreads: () => ({
+    threads: [],
+    totalCount: 0,
+    nextCursor: null,
+    isLoading: false,
+    error: null,
+    refetch: vi.fn(),
+    loadMore: vi.fn(),
+  }),
+}));
+
+vi.mock("../use-mailbox-query-sync", () => ({
+  useMailboxQuerySync: () => ({
+    filterState: { searchQuery: "", filters: [] },
+    setFilterState: vi.fn(),
+  }),
+}));
+
+vi.mock("@/hooks/use-supabase-session", () => ({
+  useSupabaseSession: () => ({ user: { id: "user_self" }, loading: false }),
+}));
+
+vi.mock("../use-mailbox-saved-views", () => ({
+  useMailboxSavedViews: () => ({
+    savedViews: [],
+    isLoading: false,
+    error: null,
+    createSavedView: vi.fn(),
+    deleteSavedView: vi.fn(),
+  }),
+}));
+
+vi.mock("../use-mailbox-draft", () => ({
+  useMailboxDraft: () => ({
+    draftState: null,
+    openCompose: vi.fn(),
+    openReply: vi.fn(),
+    openForward: vi.fn(),
+    closeDraft: vi.fn(),
+    expandDraft: vi.fn(),
+    collapseDraft: vi.fn(),
+    updateDraft: vi.fn(),
+    sendDraft: vi.fn(),
+  }),
+}));
+
+vi.mock("../use-thread-action", () => ({
+  useThreadAction: () => ({
+    performAction: vi.fn(),
+    isLoading: false,
+  }),
+}));
+
+vi.mock("../use-assignable-members", () => ({
+  useAssignableMembers: () => ({
+    members: [],
+    isLoading: false,
+  }),
+}));
+
+vi.mock("../use-mailbox-sync-action", () => ({
+  useMailboxSyncAction: () => ({
+    triggerSync: vi.fn(),
+    isPending: vi.fn(() => false),
+    getError: vi.fn(() => null),
+    clearError: vi.fn(),
+  }),
+}));
+
+vi.mock("../use-mailbox-thread-detail", () => ({
+  useMailboxThreadDetail: () => ({
+    thread: null,
+    isLoading: false,
+    error: null,
+  }),
 }));
 
 import { MailboxLeftRail } from "../mailbox-left-rail";
@@ -67,7 +163,7 @@ describe("MailboxLeftRail", () => {
   });
 
   it("renders all global smart views", () => {
-    render(<MailboxLeftRail />);
+    render(<MailboxLeftRail connections={[]} />);
     for (const view of GLOBAL_SMART_VIEWS) {
       // Link text includes badge count, so use getAllByRole and check at least one matches
       const links = screen.getAllByRole("link").filter((l) =>
@@ -77,18 +173,52 @@ describe("MailboxLeftRail", () => {
     }
   });
 
-  it("renders connected account display names", () => {
-    render(<MailboxLeftRail />);
+  it("renders connected account display names when connections are passed explicitly", () => {
+    render(<MailboxLeftRail connections={MOCK_CONNECTIONS} />);
     // Billing and Support are connected and should be visible
     expect(screen.getByText("Billing")).toBeInTheDocument();
     expect(screen.getByText("Support")).toBeInTheDocument();
   });
 
-  it("shows reconnect warning for degraded account", () => {
-    render(<MailboxLeftRail />);
+  it("shows reconnect warning for degraded account when connections are passed explicitly", () => {
+    render(<MailboxLeftRail connections={MOCK_CONNECTIONS} />);
     // Accounts mailbox is reconnect_required — multiple elements with "Accounts" text is expected
     const accountsElements = screen.getAllByText("Accounts");
     expect(accountsElements.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("does NOT show mock connection display names when no connections prop is passed", () => {
+    render(<MailboxLeftRail />);
+    // Runtime default must not leak shell mock data connection names as interactive buttons
+    // (The "Accounts" section-header label is always rendered; we check no MailboxAccountGroup buttons appear)
+    expect(screen.queryByRole("button", { name: /billing/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /support/i })).not.toBeInTheDocument();
+    // Shell email addresses must not appear anywhere
+    expect(screen.queryByText(/billing@acmecorp.com/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/support@acmecorp.com/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/accounts@acmecorp.com/i)).not.toBeInTheDocument();
+  });
+
+  it("shows truthful empty accounts section when no connections are passed", () => {
+    render(<MailboxLeftRail />);
+    expect(screen.getByText(/no mailboxes connected/i)).toBeInTheDocument();
+  });
+
+  it("does not render any unread count badges for smart views in no-connection state", () => {
+    render(<MailboxLeftRail />);
+    // The fake counts 20, 3, 8, 2 must not appear anywhere in the rail
+    const fakeCountTexts = ["20", "3", "8", "2"];
+    for (const countText of fakeCountTexts) {
+      // Check that no badge-like span with only this number exists
+      const badge = screen.queryByText(countText);
+      expect(badge).not.toBeInTheDocument();
+    }
+  });
+
+  it("GLOBAL_SMART_VIEWS has no hardcoded unreadCount values", () => {
+    for (const view of GLOBAL_SMART_VIEWS) {
+      expect(view.unreadCount).toBeUndefined();
+    }
   });
 
   it("renders manage mailboxes link", () => {
@@ -105,6 +235,67 @@ describe("MailboxLeftRail", () => {
     render(<MailboxLeftRail />);
     const allInboxesLink = screen.getByRole("link", { name: /all inboxes/i });
     expect(allInboxesLink).toHaveClass("bg-red-50");
+  });
+
+  // ─── System folder visibility ──────────────────────────────────────────
+
+  it("renders all six system folder labels for connected accounts", () => {
+    render(<MailboxLeftRail connections={MOCK_CONNECTIONS} />);
+    // Each folder label appears once per account (3 connected × 6 folders = 18 links)
+    const folderLabels = ["Inbox", "Sent", "Drafts", "Starred", "Spam", "Trash"];
+    for (const label of folderLabels) {
+      const links = screen.getAllByRole("link").filter((l) => l.textContent === label);
+      // One per account: Billing, Support, Accounts
+      expect(links.length).toBe(3);
+    }
+  });
+
+  it("system folders render for reconnect_required accounts", () => {
+    render(<MailboxLeftRail connections={MOCK_CONNECTIONS} />);
+    // Accounts inbox (conn_accounts) must be present despite reconnect_required status
+    const accountsInbox = screen.getAllByRole("link").find(
+      (l) => l.getAttribute("href") === "/app/mailbox/conn_accounts/inbox"
+    );
+    expect(accountsInbox).toBeInTheDocument();
+  });
+
+  it("folder links navigate to /app/mailbox/{connId}/{folder}", () => {
+    render(<MailboxLeftRail connections={MOCK_CONNECTIONS} />);
+    // Billing inbox
+    const billingInbox = screen.getAllByRole("link").find(
+      (l) => l.getAttribute("href") === "/app/mailbox/conn_billing/inbox"
+    );
+    expect(billingInbox).toBeInTheDocument();
+
+    // Support sent
+    const supportSent = screen.getAllByRole("link").find(
+      (l) => l.getAttribute("href") === "/app/mailbox/conn_support/sent"
+    );
+    expect(supportSent).toBeInTheDocument();
+  });
+
+  it("shows reconnect notice and folder links for reconnect_required account", () => {
+    render(<MailboxLeftRail connections={MOCK_CONNECTIONS} />);
+    // Reconnect notice renders because expanded defaults to true
+    expect(screen.getByText(/reconnect required/i)).toBeInTheDocument();
+    expect(screen.getByText(/token expired/i)).toBeInTheDocument();
+    // Folder links still render for reconnect_required account
+    const accountsDrafts = screen.getAllByRole("link").find(
+      (l) => l.getAttribute("href") === "/app/mailbox/conn_accounts/drafts"
+    );
+    expect(accountsDrafts).toBeInTheDocument();
+  });
+
+  it("renders 18 folder links across all accounts (3 × 6)", () => {
+    render(<MailboxLeftRail connections={MOCK_CONNECTIONS} />);
+    const allLinks = screen.getAllByRole("link");
+    const folderHrefs = allLinks.filter(
+      (l) =>
+        l.getAttribute("href")?.startsWith("/app/mailbox/conn_") &&
+        !l.getAttribute("href")?.endsWith("/settings")
+    );
+    // 3 connections × 6 folders each
+    expect(folderHrefs.length).toBe(18);
   });
 });
 
@@ -129,7 +320,7 @@ describe("MailboxCommandBar", () => {
 
   it("renders the search input", () => {
     render(<MailboxCommandBar activeViewLabel="All Inboxes" />);
-    expect(screen.getByRole("textbox", { name: /search mailbox threads/i })).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: /search mailbox threads/i })).toBeInTheDocument();
   });
 
   it("renders the filter button", () => {
@@ -165,6 +356,34 @@ describe("MailboxCommandBar", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: /clear search/i }));
     expect(onClearSearch).toHaveBeenCalledOnce();
+  });
+
+  it("shows sync state and sync action when provided", () => {
+    render(
+      <MailboxCommandBar
+        activeViewLabel="Billing"
+        syncStatus={{
+          state: "running",
+          isSyncing: true,
+          syncMode: "INITIAL",
+          triggerSource: "MANUAL",
+          currentRunId: "run_1",
+          currentRunStartedAt: new Date().toISOString(),
+          lastCompletedAt: null,
+          lastRunStatus: "RUNNING",
+          lastErrorCategory: null,
+          lastErrorSummary: null,
+          lastRunThreadCount: null,
+          lastRunMessageCount: null,
+          stageLabel: "Initial import in progress",
+          detailLabel: "Importing recent threads. Messages will appear automatically.",
+        }}
+        onSyncNow={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText("Syncing")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /sync mailbox now/i })).toBeDisabled();
   });
 });
 
@@ -224,8 +443,8 @@ describe("MailboxReadingPaneEmpty", () => {
 
 describe("MailboxWorkspace", () => {
   it("resolves mailbox-specific folder labels from stable slugs", () => {
-    expect(resolveViewLabel("/app/mailbox/billing/inbox")).toBe("Billing · Inbox");
-    expect(resolveViewLabel("/app/mailbox/support/sent")).toBe("Support · Sent");
+    expect(resolveViewLabel("/app/mailbox/billing/inbox", MOCK_CONNECTIONS)).toBe("Billing · Inbox");
+    expect(resolveViewLabel("/app/mailbox/support/sent", MOCK_CONNECTIONS)).toBe("Support · Sent");
   });
 
   it("renders the workspace container", () => {

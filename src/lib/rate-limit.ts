@@ -81,4 +81,19 @@ export const RATE_LIMITS = {
   voucherApprove: { maxRequests: 30, window: "60 s" },
   // Phase 7/Sprint 7.2: Diagnostics tooling
   diagnostics: { maxRequests: 10, window: "60 s" },
+  // Mailbox Phase 2 Sprint 2.2: Gmail OAuth auth surfaces
+  mailboxConnect: { maxRequests: 5, window: "60 s" },
+  mailboxDisconnect: { maxRequests: 5, window: "60 s" },
+  mailboxReconnect: { maxRequests: 5, window: "60 s" },
+  mailboxTokenRefresh: { maxRequests: 10, window: "60 s" },
+  // Mailbox Phase 2 Sprint 2.4: Visibility policy governance
+  mailboxPolicyUpdate: { maxRequests: 10, window: "60 s" },
+  // Mailbox Sprint 7.3: New Chat creation (5 req/min per org)
+  mailboxCreate: { maxRequests: 5, window: "60 s" },
+  // Mailbox search suggestions
+  search: { maxRequests: 30, window: "60 s" },
+  // Mailbox Sprint 7.4: Audit trail and support summary
+  mailboxAuditList: { maxRequests: 30, window: "60 s" },
+  mailboxAuditDetail: { maxRequests: 60, window: "60 s" },
+  mailboxSupportSummary: { maxRequests: 20, window: "60 s" },
 } as const;

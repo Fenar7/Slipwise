@@ -29,7 +29,7 @@ function HeaderBrand({ document }: VoucherTemplateProps) {
         </h2>
         <div className="mt-4 space-y-1.5 text-sm leading-6 text-[rgba(29,23,16,0.68)]">
           {document.visibility.showAddress && document.branding.address ? (
-            <p>{document.branding.address}</p>
+            <p className="whitespace-pre-line">{document.branding.address}</p>
           ) : null}
           {document.visibility.showEmail && document.branding.email ? (
             <p>{document.branding.email}</p>
@@ -126,6 +126,33 @@ export function MinimalOfficeVoucherTemplate({
         </p>
       </section>
 
+      {/* UPI Details */}
+      {document.visibility.showUpiDetails && (document.upiId || document.upiQrDataUrl) ? (
+        <section className="document-break-inside-avoid rounded-[1.5rem] border border-[rgba(29,23,16,0.08)] bg-[rgba(255,255,255,0.72)] p-5">
+          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.25em] text-[rgba(29,23,16,0.45)]">
+            UPI Details
+          </p>
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-4">
+            {document.upiId ? (
+              <div>
+                <p className="text-xs text-[rgba(29,23,16,0.45)]">UPI ID</p>
+                <p className="text-sm font-medium text-[rgba(29,23,16,0.85)] mt-1">{document.upiId}</p>
+              </div>
+            ) : null}
+            {document.upiQrDataUrl ? (
+              <div className="flex flex-col items-center">
+                <img
+                  src={document.upiQrDataUrl}
+                  alt="UPI QR Code"
+                  className="h-20 w-20 rounded-lg border border-[rgba(29,23,16,0.1)] object-contain p-1 bg-white"
+                />
+                <span className="text-[10px] text-[rgba(29,23,16,0.45)] mt-1">Scan to Pay</span>
+              </div>
+            ) : null}
+          </div>
+        </section>
+      ) : null}
+
       {document.notes ? (
         <section className="document-break-inside-avoid rounded-[1.5rem] border border-dashed border-[rgba(29,23,16,0.12)] bg-[rgba(255,255,255,0.72)] p-5">
           <p className="text-[0.68rem] font-semibold uppercase tracking-[0.25em] text-[rgba(29,23,16,0.45)]">
@@ -141,21 +168,27 @@ export function MinimalOfficeVoucherTemplate({
         <section
           className={cn(
             "document-break-inside-avoid grid gap-4",
-            printLikeMode ? "grid-cols-2" : "md:grid-cols-2",
+            (!printLikeMode || (document.approvedBy && document.receivedBy))
+              ? (printLikeMode ? "grid-cols-2" : "md:grid-cols-2")
+              : "grid-cols-1",
           )}
         >
-          <div className="rounded-[1.5rem] border border-[rgba(29,23,16,0.08)] bg-[rgba(255,255,255,0.9)] p-5">
-            <div className="h-16 border-b border-dashed border-[rgba(29,23,16,0.16)]" />
-            <p className="mt-4 text-sm font-medium text-[rgba(29,23,16,0.82)]">
-              {document.approvedBy ? `Approved by: ${document.approvedBy}` : "Approved by"}
-            </p>
-          </div>
-          <div className="rounded-[1.5rem] border border-[rgba(29,23,16,0.08)] bg-[rgba(255,255,255,0.9)] p-5">
-            <div className="h-16 border-b border-dashed border-[rgba(29,23,16,0.16)]" />
-            <p className="mt-4 text-sm font-medium text-[rgba(29,23,16,0.82)]">
-              {document.receivedBy ? `Received by: ${document.receivedBy}` : "Received by"}
-            </p>
-          </div>
+          {(!printLikeMode || document.approvedBy) ? (
+            <div className="rounded-[1.5rem] border border-[rgba(29,23,16,0.08)] bg-[rgba(255,255,255,0.9)] p-5">
+              <div className="h-16 border-b border-dashed border-[rgba(29,23,16,0.16)]" />
+              <p className="mt-4 text-sm font-medium text-[rgba(29,23,16,0.82)]">
+                {document.approvedBy ? `Authorized by: ${document.approvedBy}` : "Authorized by"}
+              </p>
+            </div>
+          ) : null}
+          {(!printLikeMode || document.receivedBy) ? (
+            <div className="rounded-[1.5rem] border border-[rgba(29,23,16,0.08)] bg-[rgba(255,255,255,0.9)] p-5">
+              <div className="h-16 border-b border-dashed border-[rgba(29,23,16,0.16)]" />
+              <p className="mt-4 text-sm font-medium text-[rgba(29,23,16,0.82)]">
+                {document.receivedBy ? `Received by: ${document.receivedBy}` : "Received by"}
+              </p>
+            </div>
+          ) : null}
         </section>
       ) : null}
     </div>
@@ -251,6 +284,33 @@ function MinimalOfficeEditor() {
         <InlineTextArea name="purpose" placeholder="Purpose of payment…" className="mt-3 text-sm leading-7 text-[rgba(29,23,16,0.82)]" />
       </section>
 
+      {/* UPI Details */}
+      {doc.visibility.showUpiDetails ? (
+        <section className="document-break-inside-avoid rounded-[1.5rem] border border-dashed border-[rgba(29,23,16,0.12)] bg-[rgba(255,255,255,0.72)] p-5">
+          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.25em] text-[rgba(29,23,16,0.45)]">UPI Details</p>
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <p className="text-xs text-[rgba(29,23,16,0.45)]">UPI ID</p>
+              <InlineTextField name="upiId" placeholder="merchant@ybl" className="text-sm font-medium mt-1" />
+            </div>
+            {doc.upiQrDataUrl ? (
+              <div className="flex flex-col items-center">
+                <img
+                  src={doc.upiQrDataUrl}
+                  alt="UPI QR Code"
+                  className="h-20 w-20 rounded-lg border border-[rgba(29,23,16,0.1)] object-contain p-1 bg-white"
+                />
+                <span className="text-[10px] text-[rgba(29,23,16,0.45)] mt-1">Scan to Pay</span>
+              </div>
+            ) : (
+              <div className="text-[11px] text-[rgba(29,23,16,0.45)] border border-dashed border-[rgba(29,23,16,0.12)] rounded-lg p-3 bg-white">
+                Upload UPI QR in Sidebar
+              </div>
+            )}
+          </div>
+        </section>
+      ) : null}
+
       {/* Notes */}
       {doc.visibility.showNotes ? (
         <section className="document-break-inside-avoid rounded-[1.5rem] border border-dashed border-[rgba(29,23,16,0.12)] bg-[rgba(255,255,255,0.72)] p-5">
@@ -265,7 +325,7 @@ function MinimalOfficeEditor() {
           <div className="rounded-[1.5rem] border border-[rgba(29,23,16,0.08)] bg-[rgba(255,255,255,0.9)] p-5">
             <div className="h-16 border-b border-dashed border-[rgba(29,23,16,0.16)]" />
             <div className="mt-4 flex items-center gap-1 text-sm font-medium text-[rgba(29,23,16,0.82)]">
-              <span className="shrink-0">Approved by:</span>
+              <span className="shrink-0">Authorized by:</span>
               <InlineTextField name="approvedBy" placeholder="Name" className="text-sm font-medium" />
             </div>
           </div>

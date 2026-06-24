@@ -44,7 +44,7 @@ export function ModernCardVoucherTemplate({
             </h2>
             <div className="mt-1 space-y-0.5 text-xs leading-5 text-[rgba(29,23,16,0.55)]">
               {document.visibility.showAddress && document.branding.address ? (
-                <p>{document.branding.address}</p>
+                <p className="whitespace-pre-line">{document.branding.address}</p>
               ) : null}
               <span className="flex flex-wrap gap-x-3">
                 {document.visibility.showEmail && document.branding.email ? (
@@ -118,6 +118,33 @@ export function ModernCardVoucherTemplate({
         </p>
       </section>
 
+      {/* UPI Details */}
+      {document.visibility.showUpiDetails && (document.upiId || document.upiQrDataUrl) ? (
+        <section className="document-break-inside-avoid rounded-2xl border border-[rgba(29,23,16,0.06)] bg-[rgba(255,255,255,0.92)] p-5">
+          <p className="text-[0.65rem] font-semibold uppercase tracking-[0.25em] text-[rgba(29,23,16,0.45)]">
+            UPI Details
+          </p>
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-4">
+            {document.upiId ? (
+              <div>
+                <p className="text-xs text-[rgba(29,23,16,0.45)]">UPI ID</p>
+                <p className="text-sm font-medium text-[rgba(29,23,16,0.85)] mt-1">{document.upiId}</p>
+              </div>
+            ) : null}
+            {document.upiQrDataUrl ? (
+              <div className="flex flex-col items-center">
+                <img
+                  src={document.upiQrDataUrl}
+                  alt="UPI QR Code"
+                  className="h-20 w-20 rounded-lg border border-[rgba(29,23,16,0.1)] object-contain p-1 bg-white"
+                />
+                <span className="text-[10px] text-[rgba(29,23,16,0.45)] mt-1">Scan to Pay</span>
+              </div>
+            ) : null}
+          </div>
+        </section>
+      ) : null}
+
       {/* Notes */}
       {document.visibility.showNotes && document.notes ? (
         <section className="document-break-inside-avoid rounded-2xl border border-dashed border-[rgba(29,23,16,0.14)] bg-[rgba(255,255,255,0.7)] p-5">
@@ -130,15 +157,16 @@ export function ModernCardVoucherTemplate({
         </section>
       ) : null}
 
-      {/* Signature cards */}
       {document.visibility.showSignatureArea ? (
         <section
           className={cn(
-            "document-break-inside-avoid grid gap-3",
-            printLikeMode ? "grid-cols-2" : "md:grid-cols-2",
+            "document-break-inside-avoid grid gap-4",
+            (!printLikeMode || (document.approvedBy && document.receivedBy))
+              ? (printLikeMode ? "grid-cols-2" : "md:grid-cols-2")
+              : "grid-cols-1",
           )}
         >
-          {document.visibility.showApprovedBy ? (
+          {document.visibility.showApprovedBy && (!printLikeMode || document.approvedBy) ? (
             <div className="rounded-2xl border border-[rgba(29,23,16,0.06)] bg-[rgba(255,255,255,0.92)] p-5">
               <div
                 className="mb-4 h-0.5 w-full rounded-full"
@@ -147,12 +175,12 @@ export function ModernCardVoucherTemplate({
               <div className="h-14 border-b border-dashed border-[rgba(29,23,16,0.14)]" />
               <p className="mt-3 text-sm font-medium text-[rgba(29,23,16,0.8)]">
                 {document.approvedBy
-                  ? `Approved by: ${document.approvedBy}`
-                  : "Approved by"}
+                  ? `Authorized by: ${document.approvedBy}`
+                  : "Authorized by"}
               </p>
             </div>
           ) : null}
-          {document.visibility.showReceivedBy ? (
+          {document.visibility.showReceivedBy && (!printLikeMode || document.receivedBy) ? (
             <div className="rounded-2xl border border-[rgba(29,23,16,0.06)] bg-[rgba(255,255,255,0.92)] p-5">
               <div
                 className="mb-4 h-0.5 w-full rounded-full"
@@ -282,6 +310,33 @@ function ModernCardEditor() {
         <InlineTextArea name="purpose" placeholder="Purpose of payment…" className="mt-2 text-sm leading-7 text-[rgba(29,23,16,0.82)]" />
       </section>
 
+      {/* UPI Details */}
+      {doc.visibility.showUpiDetails ? (
+        <section className="document-break-inside-avoid rounded-2xl border border-dashed border-[rgba(29,23,16,0.14)] bg-[rgba(255,255,255,0.7)] p-5">
+          <p className="text-[0.65rem] font-semibold uppercase tracking-[0.25em] text-[rgba(29,23,16,0.45)]">UPI Details</p>
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <p className="text-xs text-[rgba(29,23,16,0.45)]">UPI ID</p>
+              <InlineTextField name="upiId" placeholder="merchant@ybl" className="text-sm font-medium mt-1" />
+            </div>
+            {doc.upiQrDataUrl ? (
+              <div className="flex flex-col items-center">
+                <img
+                  src={doc.upiQrDataUrl}
+                  alt="UPI QR Code"
+                  className="h-20 w-20 rounded-lg border border-[rgba(29,23,16,0.1)] object-contain p-1 bg-white"
+                />
+                <span className="text-[10px] text-[rgba(29,23,16,0.45)] mt-1">Scan to Pay</span>
+              </div>
+            ) : (
+              <div className="text-[11px] text-[rgba(29,23,16,0.45)] border border-dashed border-[rgba(29,23,16,0.14)] rounded-lg p-3 bg-white">
+                Upload UPI QR in Sidebar
+              </div>
+            )}
+          </div>
+        </section>
+      ) : null}
+
       {/* Notes */}
       {doc.visibility.showNotes ? (
         <section className="document-break-inside-avoid rounded-2xl border border-dashed border-[rgba(29,23,16,0.14)] bg-[rgba(255,255,255,0.7)] p-5">
@@ -298,7 +353,7 @@ function ModernCardEditor() {
               <div className="mb-4 h-0.5 w-full rounded-full" style={{ backgroundColor: "var(--voucher-accent)" }} />
               <div className="h-14 border-b border-dashed border-[rgba(29,23,16,0.14)]" />
               <div className="mt-3 flex items-center gap-1 text-sm font-medium text-[rgba(29,23,16,0.8)]">
-                <span className="shrink-0">Approved by:</span>
+                <span className="shrink-0">Authorized by:</span>
                 <InlineTextField name="approvedBy" placeholder="Name" className="text-sm font-medium" />
               </div>
             </div>

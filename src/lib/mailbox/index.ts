@@ -1,3 +1,5 @@
+import "server-only";
+
 /**
  * Mailbox service module — public API surface.
  *
@@ -26,6 +28,10 @@ export type {
   MailboxAssignmentRecord,
   MailboxAuditEventRecord,
   MailboxProviderCursorRecord,
+  MailboxThreadRecord,
+  MailboxMessageRecord,
+  MailboxAttachmentRecord,
+  MailboxSyncRunRecord,
   MailboxProvider,
   MailboxConnectionStatus,
   MailboxThreadStatus,
@@ -35,12 +41,20 @@ export type {
   MailboxAuditAction,
   MailboxCursorType,
   MailboxThreadLinkEntityType,
+  MailboxSyncRunStatus,
+  MailboxSyncTriggerSource,
+  MailboxSyncMode,
+  MailboxMessageDirection,
 } from "./domain-types";
 export {
   connectionRequiresReconnect,
   connectionIsDegraded,
   connectionIsOperational,
+  mailboxCanSync,
   cursorIsExpired,
+  watchIsExpired,
+  cursorIsValidForDelta,
+  resolveSyncMode,
 } from "./domain-types";
 
 // Provider contracts
@@ -52,6 +66,7 @@ export type {
   MailboxSyncCursor,
   MailboxThreadEnvelope,
   MailboxMessageEnvelope,
+  MailboxAttachmentEnvelope,
   MailboxParticipantRef,
   MailboxProviderErrorCategory,
   MailboxProviderError,
@@ -69,6 +84,12 @@ export type {
   MailboxAssignmentSummary,
   MailboxThreadLinkSummary,
   MailboxAuditEventSummary,
+  MailboxParticipantReadShape,
+  MailboxThreadReadShape,
+  MailboxMessageReadShape,
+  MailboxAttachmentReadShape,
+  MailboxThreadDetailReadShape,
+  MailboxThreadDetailMessageReadShape,
 } from "./read-shapes";
 export {
   toMailboxConnectionSummary,
@@ -78,6 +99,10 @@ export {
   toMailboxAssignmentSummary,
   toMailboxThreadLinkSummary,
   toMailboxAuditEventSummary,
+  toMailboxThreadReadShape,
+  toMailboxMessageReadShape,
+  toMailboxAttachmentReadShape,
+  toMailboxThreadDetailReadShape,
 } from "./read-shapes";
 
 // Audit helpers
@@ -105,3 +130,172 @@ export {
   upsertMailboxCursor,
   deleteMailboxCursors,
 } from "./cursor-service";
+
+// Health derivation
+export type { MailboxHealthStatus, MailboxConnectionHealth } from "./health";
+export { deriveMailboxHealth, EXPIRING_SOON_THRESHOLD_MS } from "./health";
+
+// Sprint 3.4: Sync failure classification and recovery model
+export type {
+  MailboxSyncFailureClass,
+  MailboxRecoveryAction,
+} from "./sync-failure-model";
+export {
+  classifyProviderError,
+  resolveRecoveryAction,
+  isRetryAllowed,
+  isReplayRequired,
+  isReconnectRequired,
+  shouldDegradeConnection,
+  resolveStatusAfterFailure,
+  resolveStatusAfterSuccess,
+  resolveRecoverySyncMode,
+  getFailureClassSummary,
+  getRecoveryActionSummary,
+} from "./sync-failure-model";
+
+export type {
+  MailboxRecoveryStatus,
+  RecoveryActionType,
+  RecoveryActionResult,
+  PerformRecoveryActionParams,
+} from "./recovery-service";
+export {
+  getMailboxRecoveryStatus,
+  performMailboxRecoveryAction,
+} from "./recovery-service";
+
+// Admin shapes
+export type { MailboxConnectionListItem } from "./admin-shapes";
+export { toMailboxConnectionListItem } from "./admin-shapes";
+
+// Sprint 2.2: Gmail OAuth and token lifecycle
+export type { MailboxCredentialPayload } from "./credential-store";
+export {
+  storeMailboxCredential,
+  readMailboxCredential,
+  rotateMailboxCredential,
+  revokeMailboxCredential,
+} from "./credential-store";
+
+export type { GmailCallbackResult, GmailRefreshResult, GmailVerifyResult } from "./gmail-oauth-service";
+export {
+  initiateGmailConnect,
+  handleGmailCallback,
+  refreshGmailAuthorization,
+  markConnectionReconnectRequired,
+  verifyGmailConnection,
+  disconnectGmailMailbox,
+} from "./gmail-oauth-service";
+
+export { gmailProviderAdapter, buildGmailAuthUrl, GMAIL_OAUTH_SCOPES } from "./gmail-provider";
+
+// Sprint 2.4: Connection permissions and org-scoped visibility
+export type {
+  MailboxVisibilityPolicy,
+  MailboxAccessLevel,
+  MailboxAccessResolution,
+} from "./domain-types";
+export {
+  resolveMailboxAccessLevel,
+  canAccessMailbox,
+} from "./domain-types";
+export {
+  getMailboxAccessResolution,
+  listMailboxConnectionsForMember,
+  setMailboxVisibilityPolicy,
+} from "./visibility-service";
+
+// Sprint 3.1: Provider registry
+export { getMailboxProviderAdapter, mailboxProviderRegistry } from "./provider-registry";
+
+// Sprint 3.1: Ingestion service
+export {
+  upsertMailboxThread,
+  upsertMailboxMessage,
+  upsertMailboxAttachment,
+  updateMailboxThreadSummary,
+} from "./ingestion-service";
+
+// Sprint 3.1: Sync orchestration
+export type { RunMailboxSyncParams, RunMailboxSyncResult } from "./mailbox-sync-service";
+export { runMailboxSync } from "./mailbox-sync-service";
+
+// Sprint 3.3: Participant normalization
+export {
+  normalizeParticipant,
+  normalizeParticipants,
+  deduplicateParticipants,
+  classifyMessageDirection,
+  extractParticipantsFromMessage,
+  deriveThreadParticipants,
+} from "./participant-service";
+
+// Sprint 3.3: Normalization helpers
+export { MAILBOX_SNIPPET_MAX_LENGTH, normalizeSnippet } from "./normalization-service";
+
+// Sprint 4.1: Thread list read model
+export type {
+  ListMailboxThreadsParams,
+  ListMailboxThreadsResult,
+} from "./thread-service";
+export { listMailboxThreads, getMailboxThread, getMailboxThreadDetail } from "./thread-service";
+
+// Sprint 5.1: Draft read shapes
+export type { MailboxDraftReadShape } from "./read-shapes";
+export { toMailboxDraftReadShape } from "./read-shapes";
+
+// Sprint 5.1: Composer backend and draft persistence
+export type {
+  CreateDraftInput,
+  AutosaveDraftInput,
+  DiscardDraftInput,
+  GetDraftInput,
+  RestoreDraftInput,
+  CreateDraftResult,
+  AutosaveDraftResult,
+  DiscardDraftResult,
+  RestoreDraftResult,
+  ListActiveDraftsInput,
+} from "./draft-service";
+export {
+  createOrRestoreDraft,
+  autosaveDraft,
+  discardDraft,
+  getDraft,
+  restoreDraft,
+  initializeReplyDraft,
+  initializeReplyAllDraft,
+  initializeForwardDraft,
+  listActiveDrafts,
+  DraftServiceError,
+} from "./draft-service";
+
+// Sprint 5.1: Compose context normalization
+export type { ComposeContext, AutosaveContext } from "./compose-context";
+export {
+  normalizeCreateDraftInput,
+  normalizeAutosaveDraftInput,
+} from "./compose-context";
+
+// Sprint 5.3: Attachment handling
+export type {
+  StageDraftAttachmentInput,
+  RemoveDraftAttachmentInput,
+  ResolveAttachmentForSendResult,
+  GetAttachmentDownloadInput,
+  GetMailboxAttachmentDownloadInput,
+} from "./attachment-service";
+export {
+  stageDraftAttachment,
+  removeDraftAttachment,
+  resolveAttachmentsForSend,
+  cleanupDraftAttachments,
+  getAttachmentDownloadUrl,
+  getMailboxAttachmentDownloadUrl,
+  AttachmentServiceError,
+  isAttachmentServiceError,
+} from "./attachment-service";
+export type {
+  MailboxDraftAttachmentReadShape,
+} from "./read-shapes";
