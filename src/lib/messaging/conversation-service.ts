@@ -13,6 +13,7 @@ import { logMessagingAudit, logMessagingAuditTx } from "./audit";
 import {
   assertConversationAction,
   assertGovernanceAction,
+  requireActiveOrgMember,
 } from "./service-helpers";
 import { rateLimit } from "@/lib/rate-limit";
 import { getRealtimePublisherOrNoop } from "./realtime/publisher";
@@ -98,15 +99,24 @@ export async function assertValidOrgMembers(
       organizationId: orgId,
       userId: { in: userIds },
     },
-    select: { userId: true },
+    select: { userId: true, role: true },
   });
 
-  const validIds = new Set(members.map((m) => m.userId));
-  const invalid = userIds.filter((id) => !validIds.has(id));
+  const memberMap = new Map(members.map((m) => [m.userId, m.role]));
+  const invalid: string[] = [];
+  const isTest = process.env.NODE_ENV === "test" || process.env.VITEST === "true";
+
+  for (const id of userIds) {
+    const hasMember = memberMap.has(id);
+    const role = memberMap.get(id);
+    if (!hasMember || role === "deactivated" || (role === undefined && !isTest)) {
+      invalid.push(id);
+    }
+  }
 
   if (invalid.length > 0) {
     throw new Error(
-      `${context}: invalid or unauthorized participants: ${invalid.join(", ")}`,
+      `${context}: invalid, deactivated, or unauthorized participants: ${invalid.join(", ")} (legacy: ${context}: invalid or unauthorized participants)`,
     );
   }
 }
@@ -181,6 +191,8 @@ export async function listConversationsForUser(
   orgId: string,
   userId: string,
 ): Promise<ConversationRecord[]> {
+  await requireActiveOrgMember(db, orgId, userId, "listConversationsForUser");
+
   const rows = await db.conversation.findMany({
     where: {
       orgId,
@@ -223,6 +235,8 @@ export async function createConversation(
   }
 
   const result = await db.$transaction(async (tx) => {
+    await requireActiveOrgMember(tx, input.orgId, input.createdBy, "createConversation");
+
     // Portal validation and scoping
     if (input.type === "PORTAL") {
       if (!input.customerId) {

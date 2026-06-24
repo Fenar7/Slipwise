@@ -37,3 +37,14 @@ export class NotFoundError extends Error {
     Object.setPrototypeOf(this, NotFoundError.prototype);
   }
 }
+
+export class MessagingAccessContextError extends Error {
+  constructor(message = "Messaging access context resolution failed") {
+    super(message);
+    this.name = "MessagingAccessContextError";
+    if (Error.captureStackTrace) {
+      Error.captureStackTrace(this, MessagingAccessContextError);
+    }
+    Object.setPrototypeOf(this, MessagingAccessContextError.prototype);
+  }
+}

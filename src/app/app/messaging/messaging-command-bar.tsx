@@ -24,6 +24,9 @@ interface MessagingCommandBarProps {
   onSearchFocus: () => void;
   unreadCount: number;
   activeSectionLabel?: string;
+  onCreateMessageClick?: () => void;
+  onCreateChannelClick?: () => void;
+  onCreateGroupClick?: () => void;
 }
 
 const NEW_ACTIONS = [
@@ -42,6 +45,9 @@ export function MessagingCommandBar({
   onSearchFocus,
   unreadCount,
   activeSectionLabel = "Messages",
+  onCreateMessageClick,
+  onCreateChannelClick,
+  onCreateGroupClick,
 }: MessagingCommandBarProps) {
   const [newOpen, setNewOpen] = React.useState(false);
 
@@ -88,7 +94,12 @@ export function MessagingCommandBar({
                   className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors hover:bg-gray-50 focus-visible:outline-none focus-visible:bg-gray-50"
                   style={{ color: "#49454F" }}
                   data-testid={action.testId}
-                  onClick={() => setNewOpen(false)}
+                  onClick={() => {
+                    setNewOpen(false);
+                    if (action.testId === "cmd-new-message") onCreateMessageClick?.();
+                    if (action.testId === "cmd-new-channel") onCreateChannelClick?.();
+                    if (action.testId === "cmd-new-group") onCreateGroupClick?.();
+                  }}
                 >
                   <Icon className="h-3.5 w-3.5 shrink-0" />
                   {action.label}

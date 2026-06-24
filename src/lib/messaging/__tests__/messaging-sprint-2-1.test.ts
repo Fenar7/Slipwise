@@ -301,7 +301,7 @@ function makeMeetingRow(overrides: Partial<Record<string, unknown>> = {}) {
     conversationId: CONV_ID,
     title: "Q2 Sync",
     description: null,
-    scheduledAt: new Date("2026-06-15T10:00:00Z"),
+    scheduledAt: new Date("2036-06-15T10:00:00Z"),
     durationMinutes: 60,
     status: "UPCOMING" as const,
     providerEventId: null,

@@ -16,6 +16,7 @@ import type {
 } from "./service-contracts";
 import {
   assertConversationAction,
+  requireActiveOrgMember,
 } from "./service-helpers";
 import { getRealtimePublisherOrNoop } from "./realtime/publisher";
 import { appendConversationEvent } from "./realtime/event-log-service";
@@ -61,6 +62,8 @@ export async function listThreadsForConversation(
   conversationId: string,
   userId: string,
 ): Promise<ConversationThreadRecord[]> {
+  await requireActiveOrgMember(db, orgId, userId, "listThreadsForConversation");
+
   const participant = await db.conversationParticipant.findFirst({
     where: {
       orgId,
@@ -125,7 +128,16 @@ export async function listThreadReplies(
     throw new Error("listThreadReplies: active participant access required");
   }
 
-  const hideInternalNotes = thread.conversation.type === "PORTAL" && participant.kind === "PORTAL_CLIENT";
+  let conversationType = (thread as any).conversation?.type;
+  if (!conversationType) {
+    const conv = await db.conversation.findFirst({
+      where: { id: thread.conversationId, orgId },
+      select: { type: true },
+    });
+    conversationType = conv?.type ?? "CHANNEL";
+  }
+
+  const hideInternalNotes = conversationType === "PORTAL" && participant.kind === "PORTAL_CLIENT";
 
   const rows = await db.conversationMessage.findMany({
     where: {
@@ -358,7 +370,7 @@ export async function replyToThread(
   );
 
   if (input.attachments && input.attachments.length > 0) {
-    indexAttachmentsForMessage(result.id, input.orgId, input.conversationId);
+    await indexAttachmentsForMessage(result.id, input.orgId, input.conversationId);
   }
 
   return result;

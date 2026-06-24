@@ -195,6 +195,30 @@ export {
   assertGovernanceAction,
 } from "./service-helpers";
 
+// Sprint 11.3: Messaging permission layer
+export {
+  evaluateMessagingCapability,
+  canAccessMessagingWorkspace,
+  canReadMessaging,
+  canSendMessage,
+  canSendPortalReply,
+  canManageMessaging,
+  canGovernMessaging,
+  evaluateAllMessagingCapabilities,
+  MESSAGING_RESOURCE,
+  MESSAGING_ACTIONS,
+  type MessagingCapability,
+  type MessagingPermissionResult,
+} from "./messaging-permissions";
+
+// Sprint 11.3: Messaging access context (custom-role-aware)
+export {
+  getMessagingAccessContext,
+  requireMessagingAccessContext,
+  hasMessagingPermission,
+  type MessagingAccessContext,
+} from "./messaging-access-context";
+
 // ─── Sprint 2.2: Service implementations ─────────────────────────────────────────
 
 // Conversation service
@@ -428,7 +452,7 @@ export {
 } from "./task-reminders";
 
 // Errors
-export { ConversationAccessError, InvalidInputError, NotFoundError } from "./errors";
+export { ConversationAccessError, InvalidInputError, NotFoundError, MessagingAccessContextError } from "./errors";
 
 // Search Indexing
 export { indexAttachment, indexAttachmentsForMessage, updateAttachmentScanStatus, processSearchIndexEvents } from "./indexing-service";

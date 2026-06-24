@@ -1,8 +1,10 @@
 import { NextRequest } from "next/server";
 import { listConversationMessages, sendMessage } from "@/lib/messaging";
 import { verifyUploadToken } from "@/lib/messaging/service-helpers";
+import { MESSAGING_RESOURCE, MESSAGING_ACTIONS } from "@/lib/messaging/messaging-permissions";
 import {
   requireMessagingApiContext,
+  requireMessagingPermission,
   messagingApiResponse,
   handleMessagingApiError,
   parsePagination,
@@ -19,13 +21,15 @@ export const runtime = "nodejs";
  *
  * Hardening (Sprint 3.3): unauthorized access returns 404 to prevent existence
  * leakage. Only active participants can list messages.
+ *
+ * Sprint 11.3: requires messaging:read permission.
  */
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const { orgId, userId } = await requireMessagingApiContext();
+    const { orgId, userId } = await requireMessagingPermission(MESSAGING_RESOURCE, MESSAGING_ACTIONS.READ);
     const { id } = await params;
     const { limit, cursor } = parsePagination(request.nextUrl.searchParams);
 
@@ -110,29 +114,57 @@ function parseMentions(raw: unknown): Array<{ userId: string; offsetStart: numbe
  * Sprint 5.5 hardening: attachment items must include a valid uploadToken
  * proven to originate from an authorized messaging upload for the current
  * user and org. Client-supplied storageRef/metadata alone are not trusted.
+ *
+ * Sprint 11.3: portal-visible sends (audience !== INTERNAL_ONLY) require
+ * the stricter messaging:update permission. Internal-only sends require
+ * only messaging:create. This enforces the capability distinction at the
+ * route boundary before the service layer.
  */
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const { orgId, userId } = await requireMessagingApiContext();
-    await applyMessagingRateLimit(request, orgId, "messagingSend");
+    const context = await requireMessagingApiContext();
+    const { orgId, userId } = context;
     const { id } = await params;
+    await applyMessagingRateLimit(request, orgId, "messagingSend");
     const body = (await request.json()) as Record<string, unknown>;
+    const attachments = parseAttachments(body.attachments, orgId, userId);
+    const mentions = parseMentions(body.mentions);
 
-    const messageBody = requireStringField(body.body, "body", 10000);
+    let messageBody = "";
+    if (body.body !== undefined && body.body !== null) {
+      if (typeof body.body !== "string") {
+        throw new Error("body must be a string");
+      }
+      messageBody = body.body.trim();
+    }
+
+    if (messageBody.length === 0 && (!attachments || attachments.length === 0)) {
+      messageBody = requireStringField(body.body, "body", 10000);
+    } else {
+      if (messageBody.length > 10000) {
+        throw new Error("body must be at most 10000 characters");
+      }
+    }
+
     const threadId =
       typeof body.threadId === "string" && body.threadId.trim().length > 0
         ? body.threadId.trim()
         : null;
-
-    const attachments = parseAttachments(body.attachments, orgId, userId);
-    const mentions = parseMentions(body.mentions);
     const audience =
       body.audience === "INTERNAL_ONLY"
         ? "INTERNAL_ONLY"
         : "EXTERNAL_VISIBLE";
+
+    // Sprint 11.3: portal-visible sends require stricter messaging:update permission.
+    // Internal-only sends require only messaging:create.
+    if (audience === "EXTERNAL_VISIBLE") {
+      await requireMessagingPermission(MESSAGING_RESOURCE, MESSAGING_ACTIONS.UPDATE);
+    } else {
+      await requireMessagingPermission(MESSAGING_RESOURCE, MESSAGING_ACTIONS.CREATE);
+    }
 
     const message = await sendMessage({
       orgId,

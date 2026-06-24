@@ -5,14 +5,48 @@ vi.mock("server-only", () => ({}));
 vi.mock("@/lib/db", () => {
   const mocks = {
     messagingTask: { findMany: vi.fn(), findUnique: vi.fn(), updateMany: vi.fn(), update: vi.fn(), create: vi.fn(), groupBy: vi.fn(), count: vi.fn() },
-    conversationParticipant: { findFirst: vi.fn(), findMany: vi.fn() },
+    conversationParticipant: {
+      findFirst: vi.fn(),
+      findMany: vi.fn().mockImplementation(async (args: any) => {
+        const orList = args?.where?.OR;
+        if (Array.isArray(orList)) {
+          const results = [];
+          for (const item of orList) {
+            const p = await mocks.conversationParticipant.findFirst({
+              where: {
+                orgId: item.orgId,
+                conversationId: item.conversationId,
+                userId: item.userId,
+                leftAt: null,
+              }
+            });
+            if (p) {
+              results.push({
+                orgId: item.orgId,
+                conversationId: item.conversationId,
+                userId: item.userId,
+              });
+            }
+          }
+          return results;
+        }
+        return [];
+      }),
+    },
     conversation: { findUnique: vi.fn() },
     conversationMessage: { findUnique: vi.fn() },
-    member: { findFirst: vi.fn() },
+    member: {
+      findFirst: vi.fn().mockResolvedValue({ role: "MEMBER" }),
+      findUnique: vi.fn().mockResolvedValue({ role: "MEMBER" }),
+      findMany: vi.fn().mockResolvedValue([]),
+    },
     notification: { create: vi.fn() },
     jobLog: { create: vi.fn() },
     messagingAuditEvent: { findMany: vi.fn(), create: vi.fn() },
     profile: { findMany: vi.fn() },
+    orgDefaults: { findMany: vi.fn().mockResolvedValue([]) },
+    conversationReadState: { findMany: vi.fn().mockResolvedValue([]) },
+    messagingNotificationPreference: { findMany: vi.fn().mockResolvedValue([]) },
   };
   const db = {
     ...mocks,

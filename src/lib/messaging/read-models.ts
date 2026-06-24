@@ -198,7 +198,10 @@ export async function getConversationDetail(
 
   // Fetch reactions and attachment counts for all messages in one batch
   const messageIds = messages.map((m) => m.id);
-  const [reactionsRows, attachmentRows, mentionRows] = await Promise.all([
+
+  // Fetch participant profiles for author name resolution
+  const userIds = Array.from(new Set(participants.map((p) => p.userId).filter(Boolean)));
+  const [reactionsRows, attachmentRows, mentionRows, profiles] = await Promise.all([
     messageIds.length > 0
       ? db.messageReaction.findMany({
           where: {
@@ -231,6 +234,12 @@ export async function getConversationDetail(
             mentionedUserId: userId,
           },
           select: { messageId: true },
+        })
+      : Promise.resolve([]),
+    userIds.length > 0
+      ? db.profile.findMany({
+          where: { id: { in: userIds } },
+          select: { id: true, name: true, avatarUrl: true },
         })
       : Promise.resolve([]),
   ]);
@@ -275,6 +284,7 @@ export async function getConversationDetail(
     currentUserId: userId,
     attachmentCountByMessageId,
     attachmentsByMessageId,
+    profiles,
   });
 }
 

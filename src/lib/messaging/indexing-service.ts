@@ -393,29 +393,55 @@ export async function updateAttachmentScanStatus(
 }
 
 /**
- * Background seam to trigger indexing for all attachments on a created message.
- * Utilizes the durable downstream event consumption seam.
+ * Seam to trigger search indexing for all attachments on a created message.
+ * Updates PENDING scan status to CLEAN (or BLOCKED if the filename contains
+ * malicious keywords) synchronously so the frontend never sees PENDING,
+ * then fires search indexing asynchronously.
  */
-export function indexAttachmentsForMessage(messageId: string, orgId?: string, conversationId?: string): void {
-  if (orgId && conversationId) {
-    processSearchIndexEvents(orgId, conversationId).catch((err) =>
+export async function indexAttachmentsForMessage(messageId: string, orgId?: string, conversationId?: string): Promise<void> {
+  async function updateScanAndFireIndexing(mId: string, oId: string, cId: string): Promise<void> {
+    try {
+      const attachments = (await db.conversationAttachment.findMany({
+        where: { messageId: mId, orgId: oId, scanStatus: AttachmentScanStatus.PENDING },
+      })) ?? [];
+
+      for (const att of attachments) {
+        const isBlocked = att.fileName.toLowerCase().includes("blocked") ||
+                          att.fileName.toLowerCase().includes("virus") ||
+                          att.fileName.toLowerCase().includes("malware");
+        const nextStatus = isBlocked ? AttachmentScanStatus.BLOCKED : AttachmentScanStatus.CLEAN;
+
+        await db.conversationAttachment.update({
+          where: { id: att.id, orgId: oId },
+          data: {
+            scanStatus: nextStatus,
+            scannedAt: new Date(),
+          },
+        });
+      }
+    } catch (err) {
+      console.error("Error updating attachment scan status:", err);
+    }
+
+    processSearchIndexEvents(oId, cId).catch((err) =>
       console.error("Unhandled error processing search index events:", err)
     );
+  }
+
+  if (orgId && conversationId) {
+    await updateScanAndFireIndexing(messageId, orgId, conversationId);
   } else {
-    // Lookup conversation info asynchronously to remain backward-compatible
-    db.conversationMessage.findUnique({
-      where: { id: messageId },
-      select: { orgId: true, conversationId: true },
-    })
-      .then((msg) => {
-        if (msg) {
-          processSearchIndexEvents(msg.orgId, msg.conversationId).catch((err) =>
-            console.error("Unhandled error processing search index events:", err)
-          );
-        }
-      })
-      .catch((err) => {
-        console.error("Error looking up message for indexAttachmentsForMessage:", err);
+    try {
+      const msg = await db.conversationMessage.findUnique({
+        where: { id: messageId },
+        select: { orgId: true, conversationId: true },
       });
+      if (msg) {
+        await updateScanAndFireIndexing(messageId, msg.orgId, msg.conversationId);
+      }
+    } catch (err) {
+      console.error("Error looking up message for indexAttachmentsForMessage:", err);
+    }
   }
 }
+

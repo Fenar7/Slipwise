@@ -1,7 +1,8 @@
 import { NextRequest } from "next/server";
 import { markConversationRead } from "@/lib/messaging";
+import { MESSAGING_RESOURCE, MESSAGING_ACTIONS } from "@/lib/messaging/messaging-permissions";
 import {
-  requireMessagingApiContext,
+  requireMessagingPermission,
   messagingApiResponse,
   handleMessagingApiError,
   safeRead,
@@ -18,13 +19,17 @@ export const runtime = "nodejs";
  * - Membership check is handled by markConversationRead (assertActiveParticipant).
  * - Existence-hiding: non-members receive 404 via safeRead + service-layer guard.
  * - Rate-limited to prevent abuse.
+ *
+ * Sprint 11.3: requires messaging:read permission.
+ * Read-state is a read-path capability — users must have read access to
+ * mark conversations as read.
  */
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const { orgId, userId } = await requireMessagingApiContext();
+    const { orgId, userId } = await requireMessagingPermission(MESSAGING_RESOURCE, MESSAGING_ACTIONS.READ);
     await applyMessagingRateLimit(request, orgId, "messagingSend");
     const { id: conversationId } = await params;
 

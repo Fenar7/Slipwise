@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import React from "react";
 import { PortalAttachmentItem } from "../attachment-item";
@@ -10,9 +10,19 @@ vi.mock("../../actions", () => ({
 }));
 
 describe("PortalAttachmentItem Component Tests", () => {
+  // Spy on the anchor click method — this is the safe way to verify anchor-based
+  // downloads without interfering with React's own use of createElement/appendChild.
+  let anchorClickSpy: ReturnType<typeof vi.spyOn>;
+
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.spyOn(window, "open").mockImplementation(() => null as any);
+    anchorClickSpy = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it("renders CLEAN attachments, offering a download button and triggering action on click", async () => {
@@ -47,7 +57,8 @@ describe("PortalAttachmentItem Component Tests", () => {
 
     await waitFor(() => {
       expect(getPortalAttachmentDownloadUrl).toHaveBeenCalledWith("test-org", "att-clean");
-      expect(window.open).toHaveBeenCalledWith("https://storage.mock/clean-download", "_blank");
+      // Uses anchor-based download (popup-blocker-safe), not window.open
+      expect(anchorClickSpy).toHaveBeenCalledTimes(1);
     });
   });
 

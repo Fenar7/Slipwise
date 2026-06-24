@@ -59,7 +59,10 @@ function isMissingBucketError(error: unknown): error is { message?: string; stat
   }
 
   const candidate = error as { message?: string; statusCode?: string | number };
-  return candidate.message === "Bucket not found" || candidate.statusCode === "404";
+  const is404 = candidate.message === "Bucket not found" || candidate.statusCode === "404";
+  const is403 = candidate.statusCode === "403" || candidate.statusCode === 403 || String(candidate.message).includes("row-level security");
+  
+  return is404 || is403;
 }
 
 async function ensureBucketExists(bucket: StorageBucket): Promise<void> {
@@ -72,6 +75,11 @@ async function ensureBucketExists(bucket: StorageBucket): Promise<void> {
   }
 
   if (existing?.some((entry) => entry.name === bucket)) {
+    if (bucket === "attachments") {
+      await admin.storage.updateBucket(bucket, {
+        allowedMimeTypes: null,
+      }).catch((e) => console.warn("Failed to update attachments bucket allowedMimeTypes:", e));
+    }
     return;
   }
 
@@ -81,6 +89,8 @@ async function ensureBucketExists(bucket: StorageBucket): Promise<void> {
     allowedMimeTypes:
       bucket === "logos"
         ? ["image/png", "image/jpeg", "image/svg+xml", "image/webp"]
+        : bucket === "attachments"
+        ? undefined
         : ["image/png", "image/jpeg", "image/pdf", "application/pdf"],
   });
 

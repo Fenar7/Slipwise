@@ -16,6 +16,11 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import "./local-setup";
+
+beforeEach(() => {
+  (global as any).__mockActiveMembership = true;
+});
 import { WebSocketServer, WebSocket } from "ws";
 import { randomUUID } from "crypto";
 
@@ -476,7 +481,7 @@ describe("Sprint 4.3 protocol validation", () => {
 describe("MessagingGateway Sprint 4.3 replay integration", () => {
   let wss: WebSocketServer;
   let gateway: MessagingGateway;
-  const port = 19997;
+  const port = 19984;
 
   beforeEach(() => {
     wss = new WebSocketServer({ port });

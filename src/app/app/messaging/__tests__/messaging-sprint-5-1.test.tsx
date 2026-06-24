@@ -342,15 +342,15 @@ describe("MessagingWorkspace integration (Sprint 5.1)", () => {
 
   it("renders real channel rows with unread counts", async () => {
     render(<MessagingWorkspace />);
-    await waitFor(() => expect(screen.getByText("finance")).toBeInTheDocument());
-    const listColumn = screen.getByTestId("conversation-list-column");
+    const listColumn = await waitFor(() => screen.getByTestId("conversation-list-column"));
+    expect(within(listColumn).getByText("finance")).toBeInTheDocument();
     expect(within(listColumn).getByLabelText("2 unread")).toBeInTheDocument();
   });
 
   it("clicking a channel triggers detail fetch and renders messages", async () => {
     render(<MessagingWorkspace />);
-    await waitFor(() => expect(screen.getByText("finance")).toBeInTheDocument());
-    fireEvent.click(screen.getByText("finance"));
+    const listColumn = await waitFor(() => screen.getByTestId("conversation-list-column"));
+    fireEvent.click(within(listColumn).getByText("finance"));
     await waitFor(() => expect(screen.getByText("Budget approved")).toBeInTheDocument());
     expect(fetchCalls.some((u) => u.includes("/api/messaging/conversations/ch-1"))).toBe(true);
   });
@@ -362,15 +362,15 @@ describe("MessagingWorkspace integration (Sprint 5.1)", () => {
 
   it("renders archived state for archived conversation", async () => {
     render(<MessagingWorkspace />);
-    await waitFor(() => expect(screen.getByText("old-proj")).toBeInTheDocument());
-    fireEvent.click(screen.getByText("old-proj"));
+    const listColumn = await waitFor(() => screen.getByTestId("conversation-list-column"));
+    fireEvent.click(within(listColumn).getByText("old-proj"));
     await waitFor(() => expect(screen.getByTestId("reading-workspace-archived")).toBeInTheDocument());
   });
 
   it("renders locked state for locked conversation", async () => {
     render(<MessagingWorkspace />);
-    await waitFor(() => expect(screen.getByText("announce")).toBeInTheDocument());
-    fireEvent.click(screen.getByText("announce"));
+    const listColumn = await waitFor(() => screen.getByTestId("conversation-list-column"));
+    fireEvent.click(within(listColumn).getByText("announce"));
     await waitFor(() => expect(screen.getByTestId("reading-workspace-locked")).toBeInTheDocument());
   });
 

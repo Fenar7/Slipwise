@@ -341,6 +341,7 @@ function makeTypingRow(overrides: Partial<Record<string, unknown>> = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  (global as any).__mockActiveMembership = true;
   db.conversation.findFirst.mockResolvedValue(makeConversationRow());
   db.conversationParticipant.findFirst.mockResolvedValue(makeParticipantRow({ role: "OWNER" }));
 });

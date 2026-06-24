@@ -128,6 +128,7 @@ vi.mock("@/app/api/messaging/_utils", async (importOriginal) => {
   return {
     ...actual,
     requireMessagingApiContext: vi.fn().mockResolvedValue({ userId: "user-1", orgId: "org-1" }),
+    requireMessagingPermission: vi.fn().mockResolvedValue({ userId: "user-1", orgId: "org-1" }),
     messagingApiResponse: (data: any) => ({ success: true, data }),
     messagingApiError: (code: string, message: string, status?: number) => ({ success: false, error: { code, message }, status }),
     handleMessagingApiError: (err: any) => ({ success: false, error: err.message }),
@@ -152,7 +153,7 @@ import { dispatchDueTaskReminders } from "../task-reminders";
 // API Route Handlers
 import { GET as getNotificationsRoute, POST as postNotificationsRoute } from "@/app/api/messaging/notifications/route";
 import { GET as getPrefsRoute, PUT as putPrefsRoute } from "@/app/api/messaging/notification-preferences/route";
-import { POST as postMuteRoute } from "@/app/api/messaging/conversations/[conversationId]/mute/route";
+import { POST as postMuteRoute } from "@/app/api/messaging/conversations/[id]/mute/route";
 
 describe("Sprint 9.3 — Notification Center, Preferences, and Alert Routing", () => {
   beforeEach(() => {

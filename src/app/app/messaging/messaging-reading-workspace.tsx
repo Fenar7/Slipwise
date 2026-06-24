@@ -17,19 +17,17 @@ import {
   Lock,
   Users,
   MessageSquare,
-  AtSign,
   MoreHorizontal,
   ChevronRight,
   X,
   Info,
   Bell,
   Pin,
-  FileText,
-  FileSpreadsheet,
   Smile,
   AlertTriangle,
   Loader2,
   Globe,
+  Download,
 } from "lucide-react";
 import type { ActiveConversation, ConversationMessage, MentionSuggestion, PresenceStatus } from "./types";
 import { MessagingComposer } from "./messaging-composer";
@@ -42,6 +40,7 @@ import { MessagingMessageActions } from "./messaging-message-actions";
 import { MessagingEmojiPicker } from "./messaging-emoji-picker";
 import { useThreadReplies } from "./lib/use-thread-replies";
 import type { ApiConversationDetail } from "./lib/mappers";
+import { FilePreviewModal, type FilePreviewAttachment } from "./components/file-preview-modal";
 import {
   MOCK_MESSAGES_CHANNEL_GENERAL,
   MOCK_MESSAGES_CHANNEL_FINANCE,
@@ -103,7 +102,7 @@ function formatDate(iso: string): string {
 
 // ─── No-conversation-selected state ──────────────────────────────────────────
 
-export function NoConversationSelected({ kind }: { kind?: "channel" | "dm" | "group" }) {
+export function NoConversationSelected({ kind }: { kind?: "channel" | "dm" | "group" | "portal" }) {
   const hints: Record<string, { icon: React.ElementType; heading: string; body: string }> = {
     channel: {
       icon: Hash,
@@ -119,6 +118,11 @@ export function NoConversationSelected({ kind }: { kind?: "channel" | "dm" | "gr
       icon: Users,
       heading: "Select a group",
       body: "Choose a group to see the conversation and collaborate with your team.",
+    },
+    portal: {
+      icon: Users,
+      heading: "Select a portal conversation",
+      body: "Choose a portal conversation to collaborate with external clients.",
     },
   };
 
@@ -381,67 +385,222 @@ function WorkspaceHeader({ conversation, threadOpen, onToggleThread, detailOpen,
 
 interface AttachmentChipProps {
   name: string;
+  mimeType?: string;
   attachmentId?: string;
+  sizeBytes?: number;
   onDownload?: (attachmentId: string) => Promise<{ signedUrl: string } | null>;
   scanStatus?: string;
 }
 
-function AttachmentChip({ name, attachmentId, onDownload, scanStatus }: AttachmentChipProps) {
-  const [downloadError, setDownloadError] = React.useState(false);
-  const isSpreadsheet = name.endsWith(".xlsx") || name.endsWith(".csv");
-  const isBlocked = scanStatus === "BLOCKED";
-  const Icon = isSpreadsheet ? FileSpreadsheet : FileText;
+function getFileColor(mimeType?: string, name?: string): { bg: string; text: string; border: string } {
+  if (mimeType?.startsWith("image/")) return { bg: "#EFF6FF", text: "#2563EB", border: "#BFDBFE" };
+  if (mimeType === "application/pdf") return { bg: "#FEF2F2", text: "#DC2626", border: "#FECACA" };
+  if (mimeType?.includes("spreadsheet") || name?.endsWith(".xlsx") || name?.endsWith(".csv") || name?.endsWith(".xls"))
+    return { bg: "#F0FDF4", text: "#16A34A", border: "#BBF7D0" };
+  if (mimeType?.includes("presentation") || name?.endsWith(".pptx") || name?.endsWith(".ppt"))
+    return { bg: "#FFF7ED", text: "#EA580C", border: "#FED7AA" };
+  if (mimeType?.includes("word") || name?.endsWith(".docx") || name?.endsWith(".doc"))
+    return { bg: "#EFF6FF", text: "#1D4ED8", border: "#BFDBFE" };
+  if (mimeType?.startsWith("video/")) return { bg: "#F5F3FF", text: "#7C3AED", border: "#DDD6FE" };
+  if (mimeType?.startsWith("audio/")) return { bg: "#FDF4FF", text: "#A21CAF", border: "#F0ABFC" };
+  return { bg: "#F8FAFC", text: "#64748B", border: "#E2E8F0" };
+}
 
-  async function handleClick() {
-    if (!attachmentId || !onDownload) return;
+function getFileExt(name: string): string {
+  const parts = name.split(".");
+  return parts.length > 1 ? parts[parts.length - 1].toUpperCase().slice(0, 5) : "FILE";
+}
+
+function fmtBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function AttachmentChip({ name, mimeType, attachmentId, sizeBytes, onDownload, scanStatus }: AttachmentChipProps) {
+  const [signedUrl, setSignedUrl] = React.useState<string | null>(null);
+  const [urlLoading, setUrlLoading] = React.useState(false);
+  const [downloadError, setDownloadError] = React.useState(false);
+  const [previewOpen, setPreviewOpen] = React.useState(false);
+  const isImage = mimeType?.startsWith("image/") ?? false;
+  const isBlocked = scanStatus === "BLOCKED";
+  const isPending = scanStatus === "PENDING";
+  const colors = getFileColor(mimeType, name);
+  const ext = getFileExt(name);
+
+  React.useEffect(() => {
+    if (!isImage || !attachmentId || !onDownload || isBlocked || isPending) return;
+    let cancelled = false;
+    onDownload(attachmentId).then((result) => {
+      if (!cancelled && result?.signedUrl) setSignedUrl(result.signedUrl);
+    });
+    return () => { cancelled = true; };
+  }, [isImage, attachmentId, onDownload, isBlocked, isPending]);
+
+  async function ensureSignedUrl(): Promise<string | null> {
+    if (signedUrl) return signedUrl;
+    if (!attachmentId || !onDownload) return null;
+    setUrlLoading(true);
     setDownloadError(false);
-    const result = await onDownload(attachmentId);
-    if (!result) {
+    try {
+      const result = await onDownload(attachmentId);
+      if (result?.signedUrl) { setSignedUrl(result.signedUrl); return result.signedUrl; }
       setDownloadError(true);
-      return;
+      return null;
+    } catch {
+      setDownloadError(true);
+      return null;
+    } finally {
+      setUrlLoading(false);
     }
-    window.open(result.signedUrl, "_blank");
   }
 
-  return (
-    <div className="mt-2 inline-flex items-center gap-2">
-      {isBlocked ? (
-        <span
-          className="inline-flex items-center gap-1 rounded-lg border bg-red-50 px-2.5 py-1.5 text-xs"
-          style={{ borderColor: "#FECACA" }}
-          title="This attachment was blocked by security scan"
-        >
-          <AlertTriangle className="h-3 w-3 shrink-0 text-red-600" />
-          <span className="text-red-700">Blocked attachment</span>
-        </span>
-      ) : scanStatus === "PENDING" ? (
-        <span
-          className="inline-flex items-center gap-1 rounded-lg border bg-amber-50 px-2.5 py-1.5 text-xs"
-          style={{ borderColor: "#FDE68A" }}
-        >
-          <Loader2 className="h-3 w-3 shrink-0 animate-spin text-amber-600" />
-          <span className="text-amber-700">Scanning…</span>
-        </span>
-      ) : (
-        <button
-          type="button"
-          onClick={handleClick}
-          className={downloadError ? "opacity-60" : "hover:bg-gray-100"}
-          style={{ border: "none" }}
-        >
-          <div
-            className="inline-flex items-center gap-2 rounded-lg border bg-gray-50 px-2.5 py-1.5 text-xs hover:bg-gray-100 transition-colors"
-            style={{ borderColor: "#E8E8E8" }}
-          >
-            <Icon className="h-3.5 w-3.5 shrink-0 text-[#79747E]" />
-            <span className="font-medium truncate max-w-[180px]" style={{ color: "#1C1B1F" }}>
-              {name}
-            </span>
+  function triggerAnchorDownload(url: string, filename: string) {
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.rel = "noopener noreferrer";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }
+
+  async function handleCardClick() {
+    if (isBlocked || isPending || urlLoading) return;
+    const url = await ensureSignedUrl();
+    if (url) setPreviewOpen(true);
+  }
+
+  async function handleDownloadClick(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (urlLoading) return;
+    const url = await ensureSignedUrl();
+    if (url) triggerAnchorDownload(url, name);
+  }
+
+  const modalAttachment: FilePreviewAttachment | null = signedUrl ? {
+    name, mimeType: mimeType ?? "application/octet-stream", sizeBytes: sizeBytes ?? 0, signedUrl, attachmentId,
+  } : null;
+
+  // BLOCKED
+  if (isBlocked) {
+    return (
+      <div className="mt-2 inline-flex items-center gap-2.5 rounded-xl border px-3 py-2 text-xs select-none"
+        style={{ background: "#FEF2F2", borderColor: "#FECACA" }} title="Blocked by security policy">
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg" style={{ background: "#FEE2E2" }}>
+          <AlertTriangle className="h-4 w-4 text-red-500" />
+        </div>
+        <div>
+          <p className="font-semibold text-red-700 truncate max-w-[160px]">{name}</p>
+          <p className="text-[10px] text-red-500 mt-0.5">Blocked by security scan</p>
+        </div>
+      </div>
+    );
+  }
+
+  // SCANNING
+  if (isPending) {
+    return (
+      <div className="mt-2 inline-flex items-center gap-2.5 rounded-xl border px-3 py-2 text-xs select-none"
+        style={{ background: "#FFFBEB", borderColor: "#FDE68A" }}>
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg" style={{ background: "#FEF3C7" }}>
+          <Loader2 className="h-4 w-4 animate-spin text-amber-500" />
+        </div>
+        <div>
+          <p className="font-semibold text-amber-800 truncate max-w-[160px]">{name}</p>
+          <p className="text-[10px] text-amber-600 mt-0.5">Scanning for safety…</p>
+        </div>
+      </div>
+    );
+  }
+
+  // IMAGE THUMBNAIL
+  if (isImage && signedUrl) {
+    return (
+      <div className="mt-2 group relative inline-block" style={{ maxWidth: "280px" }}>
+        <button type="button" onClick={handleCardClick}
+          className="block w-full rounded-xl overflow-hidden border-2 shadow-sm hover:shadow-md transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
+          style={{ borderColor: "#E8E8E8" }} title={`Preview ${name}`}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={signedUrl} alt={name}
+            className="block max-h-52 w-auto object-contain bg-[#f8f9fa]"
+            style={{ maxWidth: "280px" }} />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex flex-col justify-end p-2.5">
+            <span className="text-[11px] text-white font-medium truncate">{name}</span>
+            {sizeBytes !== undefined && <span className="text-[10px] text-white/70">{fmtBytes(sizeBytes)}</span>}
           </div>
         </button>
-      )}
+        <button type="button" onClick={handleDownloadClick} aria-label={`Download ${name}`}
+          className="absolute top-2 right-2 flex h-7 w-7 items-center justify-center rounded-lg bg-white/90 backdrop-blur-sm shadow opacity-0 group-hover:opacity-100 hover:bg-white transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
+          <Download className="h-3.5 w-3.5 text-gray-700" />
+        </button>
+        {downloadError && (
+          <button type="button" onClick={() => { setDownloadError(false); void ensureSignedUrl(); }}
+            className="mt-1 block text-[10px] text-red-500 hover:text-red-700 font-medium transition-colors">
+            ↻ Failed — click to retry
+          </button>
+        )}
+        {modalAttachment && (
+          <FilePreviewModal isOpen={previewOpen} onClose={() => setPreviewOpen(false)}
+            attachment={modalAttachment} onDownload={(url) => triggerAnchorDownload(url, name)} />
+        )}
+      </div>
+    );
+  }
+
+  // IMAGE LOADING SKELETON
+  if (isImage && urlLoading) {
+    return (
+      <div className="mt-2 inline-flex h-28 w-44 animate-pulse items-center justify-center rounded-xl border-2 bg-gray-100"
+        style={{ borderColor: "#E8E8E8" }}>
+        <Loader2 className="h-5 w-5 animate-spin text-gray-300" />
+      </div>
+    );
+  }
+
+  // FILE CARD (non-image)
+  return (
+    <div className="mt-2 flex flex-col gap-0.5">
+      <div className="group inline-flex items-stretch rounded-xl border-2 overflow-hidden shadow-sm hover:shadow-md transition-all duration-200"
+        style={{ borderColor: colors.border, maxWidth: "260px" }}>
+        {/* Preview trigger */}
+        <button type="button" onClick={handleCardClick} disabled={urlLoading}
+          className={cn(
+            "flex-1 flex items-center gap-2.5 px-3 py-2.5 text-left bg-white transition-colors duration-150 focus-visible:outline-none",
+            urlLoading ? "cursor-wait opacity-70" : "hover:bg-gray-50/80"
+          )}
+          title={`Preview ${name}`}>
+          {/* Colour-coded file type badge */}
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-[9px] font-bold tracking-wide transition-transform duration-150 group-hover:scale-105 select-none"
+            style={{ background: colors.bg, color: colors.text, border: `1.5px solid ${colors.border}` }}>
+            {urlLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" style={{ color: colors.text }} /> : ext}
+          </div>
+          <div className="min-w-0">
+            <p className="text-[12.5px] font-semibold truncate max-w-[130px]" style={{ color: "#1C1B1F" }}>{name}</p>
+            {sizeBytes !== undefined && (
+              <p className="text-[10px] mt-0.5" style={{ color: "#79747E" }}>{fmtBytes(sizeBytes)}</p>
+            )}
+          </div>
+        </button>
+        {/* Download button */}
+        <button type="button" onClick={handleDownloadClick} disabled={urlLoading}
+          className="flex w-9 shrink-0 items-center justify-center border-l-2 transition-colors duration-150 focus-visible:outline-none"
+          style={{ borderColor: colors.border, background: colors.bg }}
+          aria-label={`Download ${name}`} title="Download">
+          {urlLoading
+            ? <Loader2 className="h-3.5 w-3.5 animate-spin" style={{ color: colors.text }} />
+            : <Download className="h-3.5 w-3.5 transition-transform duration-150 group-hover:translate-y-0.5" style={{ color: colors.text }} />}
+        </button>
+      </div>
       {downloadError && (
-        <span className="text-[10px] text-red-600">Access denied</span>
+        <button type="button" onClick={() => { setDownloadError(false); void ensureSignedUrl(); }}
+          className="text-[10px] text-red-500 hover:text-red-700 font-medium transition-colors text-left">
+          ↻ Could not load — click to retry
+        </button>
+      )}
+      {modalAttachment && (
+        <FilePreviewModal isOpen={previewOpen} onClose={() => setPreviewOpen(false)}
+          attachment={modalAttachment} onDownload={(url) => triggerAnchorDownload(url, name)} />
       )}
     </div>
   );
@@ -590,12 +749,14 @@ function MessageRow({ message, isThreadAnchor, onOpenThread, onDownloadAttachmen
 
         {/* Attachment */}
         {message.attachmentRecords && message.attachmentRecords.length > 0 && (
-          <div className="mt-1.5 flex flex-wrap gap-1">
+          <div className="mt-1.5 flex flex-wrap gap-2">
             {message.attachmentRecords.map((att) => (
               <AttachmentChip
                 key={att.id}
                 name={att.name}
+                mimeType={att.mimeType}
                 attachmentId={att.id}
+                sizeBytes={att.sizeBytes}
                 onDownload={onDownloadAttachment ?? undefined}
                 scanStatus={att.scanStatus}
               />
@@ -736,6 +897,7 @@ function ChannelWorkspace({
   sendingReply,
   replyError,
   threadReplies: externalThreadReplies,
+  loadingThreadReplies,
   detail,
   onRefreshDetail,
   participants,
@@ -796,6 +958,8 @@ function ChannelWorkspace({
               : undefined}
             sendingReply={sendingReply}
             replyError={replyError}
+            loadingReplies={loadingThreadReplies}
+            onDownloadAttachment={onDownloadAttachment}
           />
         ) : (
         <div
@@ -949,6 +1113,7 @@ function GroupWorkspace({
   sendingReply,
   replyError,
   threadReplies: externalThreadReplies,
+  loadingThreadReplies,
   detail,
   onRefreshDetail,
   participants,
@@ -998,13 +1163,16 @@ function GroupWorkspace({
           replies={threadReplies}
           onClose={onCloseThread}
           onReply={onReply && detail && threadAnchorMessageId
-            ? (body) => {
+            ? (body, attachments) => {
                 const threadId = detail.threads.find((thread) => thread.anchorMessageId === threadAnchorMessageId)?.id ?? threadAnchorMessageId;
-                return onReply(threadId, body);
+                const attPayloads = attachments?.map(a => ({ storageRef: a.storageRef, uploadToken: a.uploadToken, fileName: a.fileName, mimeType: a.mimeType, sizeBytes: a.sizeBytes }));
+                return onReply(threadId, body, attPayloads?.length ? ({ attachments: attPayloads, mentions: undefined }) : undefined);
               }
             : undefined}
           sendingReply={sendingReply}
           replyError={replyError}
+          loadingReplies={loadingThreadReplies}
+          onDownloadAttachment={onDownloadAttachment}
         />
       )}
       {detailOpen && (
@@ -1189,6 +1357,7 @@ function PortalWorkspace({
   sendingReply,
   replyError,
   threadReplies: externalThreadReplies,
+  loadingThreadReplies,
   detail,
   onRefreshDetail,
   participants,
@@ -1319,6 +1488,8 @@ function PortalWorkspace({
               : undefined}
             sendingReply={sendingReply}
             replyError={replyError}
+            loadingReplies={loadingThreadReplies}
+            onDownloadAttachment={onDownloadAttachment}
           />
         ) : (
         <div
@@ -1386,6 +1557,7 @@ interface WorkspaceBodyProps {
   sendingReply?: boolean;
   replyError?: string | null;
   threadReplies?: ConversationMessage[];
+  loadingThreadReplies?: boolean;
   detail?: ApiConversationDetail | null;
   onRefreshDetail?: () => void;
   participants?: MentionSuggestion[];
@@ -1482,7 +1654,7 @@ export function MessagingReadingWorkspace({
   }, [detail, threadAnchorMessageId]);
 
   // Sprint 5.2: live thread replies via dedicated backend endpoint.
-  const { replies: liveThreadReplies } = useThreadReplies(
+  const { replies: liveThreadReplies, loading: loadingThreadReplies } = useThreadReplies(
     conversation?.id ?? null,
     activeThreadId,
     detail ?? null,
@@ -1642,6 +1814,7 @@ export function MessagingReadingWorkspace({
     sendingReply,
     replyError,
     threadReplies: resolvedThreadReplies,
+    loadingThreadReplies,
     detail,
     onRefreshDetail,
     participants,

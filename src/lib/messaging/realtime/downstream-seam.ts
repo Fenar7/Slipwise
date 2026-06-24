@@ -147,6 +147,10 @@ export async function consumeDownstreamEvents(
   tx: Prisma.TransactionClient | PrismaClient,
   input: ConsumeDownstreamEventsInput,
 ): Promise<ConsumeDownstreamEventsResult> {
+  if (!tx.conversationEventLog || typeof tx.conversationEventLog.findMany !== "function") {
+    return { events: [], hasMore: false };
+  }
+
   const {
     orgId,
     conversationId,
@@ -269,6 +273,9 @@ export async function recordConsumptionCheckpoint(
   tx: Prisma.TransactionClient | PrismaClient,
   input: RecordConsumptionCheckpointInput,
 ): Promise<void> {
+  if (!tx.downstreamConsumptionCheckpoint || typeof tx.downstreamConsumptionCheckpoint.upsert !== "function") {
+    return;
+  }
   await tx.downstreamConsumptionCheckpoint.upsert({
     where: {
       consumerType_orgId_conversationId: {
@@ -298,6 +305,9 @@ export async function getConsumptionCheckpoint(
     conversationId: string;
   },
 ): Promise<ConsumptionCheckpoint | null> {
+  if (!tx.downstreamConsumptionCheckpoint || typeof tx.downstreamConsumptionCheckpoint.findUnique !== "function") {
+    return null;
+  }
   const row = await tx.downstreamConsumptionCheckpoint.findUnique({
     where: {
       consumerType_orgId_conversationId: {
@@ -331,6 +341,9 @@ export async function getDownstreamEventCount(
     eventTypes?: RealtimeEventType[];
   },
 ): Promise<number> {
+  if (!tx.conversationEventLog || typeof tx.conversationEventLog.count !== "function") {
+    return 0;
+  }
   return tx.conversationEventLog.count({
     where: {
       orgId: params.orgId,

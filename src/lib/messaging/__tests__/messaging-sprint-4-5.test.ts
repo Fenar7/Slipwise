@@ -39,11 +39,15 @@ vi.mock("@/lib/db", () => {
   const conversationThread = { findFirst: vi.fn(), update: vi.fn() };
   const conversationReadState = { upsert: vi.fn(), findFirst: vi.fn() };
   const messagingAuditEvent = { create: vi.fn() };
+  const member = {
+    findUnique: vi.fn().mockResolvedValue({ role: "member" }),
+    findMany: vi.fn().mockResolvedValue([]),
+  };
   const db = {
     conversationEventLog, downstreamConsumptionCheckpoint, conversation,
     conversationParticipant, presenceSession, typingSession,
     conversationMessage, conversationThread, conversationReadState,
-    messagingAuditEvent,
+    messagingAuditEvent, member,
     $transaction: vi.fn().mockImplementation(async (fn: (tx: typeof db) => Promise<unknown>) => fn(db)),
   };
   return { db };
@@ -610,4 +614,113 @@ describe("Sprint 4.5 regression guard", () => {
     expect((errorMsg!.payload as Record<string, unknown>).fatal).toBe(true);
     ws.close();
   });
+
+  it("proactively terminates active session when member is deactivated in org", async () => {
+    db.conversation.findFirst.mockResolvedValue(makeConversationRow());
+    db.conversationParticipant.findFirst.mockResolvedValue(makeParticipantRow());
+    db.conversationEventLog.findFirst.mockResolvedValue({ id: "anchor", createdAt: new Date() });
+    db.conversationEventLog.findMany.mockResolvedValue([]);
+
+    const originalMember = (db as any).member;
+    const mockFindMany = vi.fn().mockResolvedValue([
+      { organizationId: ORG_A, userId: USER_1, role: "deactivated" }
+    ]);
+    (db as any).member = {
+      findMany: mockFindMany,
+      findUnique: vi.fn().mockResolvedValue({ role: "member" }),
+    };
+
+    const token = mintTestToken();
+    const ws = await wsConnect(`ws://localhost:${port}`);
+    wsSend(ws, { type: "resume_session", requestId: "r0", payload: { sessionToken: token.token } });
+    await wsNextMessage(ws);
+    wsSend(ws, { type: "subscribe_conversation", requestId: "r1", payload: { conversationId: CONV_ID, lastSeenCursor: "100" } });
+    const ack = await wsNextMessage(ws) as Record<string, unknown>;
+    expect(ack.type).toBe("subscription_ack");
+
+    // Wait for the sweep job to run and proactively close the socket due to deactivation
+    const closePromise = new Promise<void>((resolve) => {
+      ws.on("close", (code, reason) => {
+        expect(code).toBe(1008);
+        expect(reason.toString()).toContain("membership deactivated");
+        resolve();
+      });
+    });
+
+    await closePromise;
+    (db as any).member = originalMember;
+  });
+
+  it("proactively terminates active session when member model seam is completely missing in sweep job", async () => {
+    db.conversation.findFirst.mockResolvedValue(makeConversationRow());
+    db.conversationParticipant.findFirst.mockResolvedValue(makeParticipantRow());
+    db.conversationEventLog.findFirst.mockResolvedValue({ id: "anchor", createdAt: new Date() });
+    db.conversationEventLog.findMany.mockResolvedValue([]);
+
+    const originalMember = (db as any).member;
+    // Set member to undefined to simulate missing infrastructure
+    delete (db as any).member;
+
+    const token = mintTestToken();
+    const ws = await wsConnect(`ws://localhost:${port}`);
+    wsSend(ws, { type: "resume_session", requestId: "r0", payload: { sessionToken: token.token } });
+    await wsNextMessage(ws);
+
+    // Temp restore member for the subscription check to pass
+    (db as any).member = originalMember;
+    wsSend(ws, { type: "subscribe_conversation", requestId: "r1", payload: { conversationId: CONV_ID, lastSeenCursor: "100" } });
+    const ack = await wsNextMessage(ws) as Record<string, unknown>;
+    expect(ack.type).toBe("subscription_ack");
+
+    // Remove member again so the sweep job fails closed
+    delete (db as any).member;
+
+    // Wait for the sweep job to run and proactively close the socket
+    const closePromise = new Promise<void>((resolve) => {
+      ws.on("close", (code, reason) => {
+        expect(code).toBe(1008);
+        expect(reason.toString()).toContain("membership verification unavailable");
+        resolve();
+      });
+    });
+
+    await closePromise;
+    (db as any).member = originalMember;
+  });
+
+  it("proactively terminates active session when membership query throws during sweep", async () => {
+    db.conversation.findFirst.mockResolvedValue(makeConversationRow());
+    db.conversationParticipant.findFirst.mockResolvedValue(makeParticipantRow());
+    db.conversationEventLog.findFirst.mockResolvedValue({ id: "anchor", createdAt: new Date() });
+    db.conversationEventLog.findMany.mockResolvedValue([]);
+
+    const originalMember = (db as any).member;
+    const mockFindMany = vi.fn().mockRejectedValue(new Error("Database connection lost"));
+    (db as any).member = {
+      findMany: mockFindMany,
+      findUnique: vi.fn().mockResolvedValue({ role: "member" }),
+    };
+
+    const token = mintTestToken();
+    const ws = await wsConnect(`ws://localhost:${port}`);
+    wsSend(ws, { type: "resume_session", requestId: "r0", payload: { sessionToken: token.token } });
+    await wsNextMessage(ws);
+
+    wsSend(ws, { type: "subscribe_conversation", requestId: "r1", payload: { conversationId: CONV_ID, lastSeenCursor: "100" } });
+    const ack = await wsNextMessage(ws) as Record<string, unknown>;
+    expect(ack.type).toBe("subscription_ack");
+
+    // Wait for the sweep job to run and proactively close the socket
+    const closePromise = new Promise<void>((resolve) => {
+      ws.on("close", (code, reason) => {
+        expect(code).toBe(1008);
+        expect(reason.toString()).toContain("membership verification failed");
+        resolve();
+      });
+    });
+
+    await closePromise;
+    (db as any).member = originalMember;
+  });
 });
+

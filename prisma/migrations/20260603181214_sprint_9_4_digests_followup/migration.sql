@@ -6,38 +6,63 @@
   - A unique constraint covering the columns `[orgId,userId,dedupeKey]` on the table `notification` will be added. If there are existing duplicate values, this will fail.
 
 */
--- CreateEnum
-CREATE TYPE "meeting_rsvp_status" AS ENUM ('PENDING', 'ACCEPTED', 'TENTATIVE', 'DECLINED');
+-- CreateEnum (idempotent)
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'meeting_rsvp_status') THEN
+    CREATE TYPE "meeting_rsvp_status" AS ENUM ('PENDING', 'ACCEPTED', 'TENTATIVE', 'DECLINED');
+  END IF;
+END
+$$;
 
--- CreateEnum
-CREATE TYPE "meeting_reminder_window" AS ENUM ('SIXTY_MINUTES', 'FIFTEEN_MINUTES');
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'meeting_reminder_window') THEN
+    CREATE TYPE "meeting_reminder_window" AS ENUM ('SIXTY_MINUTES', 'FIFTEEN_MINUTES');
+  END IF;
+END
+$$;
 
--- CreateEnum
-CREATE TYPE "attachment_indexing_status" AS ENUM ('indexed', 'unindexed', 'pending', 'failed');
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'attachment_indexing_status') THEN
+    CREATE TYPE "attachment_indexing_status" AS ENUM ('indexed', 'unindexed', 'pending', 'failed');
+  END IF;
+END
+$$;
 
 -- AlterEnum
--- This migration adds more than one value to an enum.
--- With PostgreSQL versions 11 and earlier, this is not possible
--- in a single migration. This can be worked around by creating
--- multiple migrations, each migration adding only one value to
--- the enum.
-
-
-ALTER TYPE "messaging_audit_action" ADD VALUE 'CONVERSATION_UNARCHIVED';
-ALTER TYPE "messaging_audit_action" ADD VALUE 'CONVERSATION_LOCKED';
-ALTER TYPE "messaging_audit_action" ADD VALUE 'CONVERSATION_UNLOCKED';
-ALTER TYPE "messaging_audit_action" ADD VALUE 'MEETING_RESCHEDULED';
-ALTER TYPE "messaging_audit_action" ADD VALUE 'MEETING_ATTENDEE_RSVP';
-ALTER TYPE "messaging_audit_action" ADD VALUE 'MEETING_REMINDER_DISPATCHED';
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'CONVERSATION_UNARCHIVED' AND enumtypid = 'messaging_audit_action'::regtype) THEN
+    ALTER TYPE "messaging_audit_action" ADD VALUE 'CONVERSATION_UNARCHIVED';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'CONVERSATION_LOCKED' AND enumtypid = 'messaging_audit_action'::regtype) THEN
+    ALTER TYPE "messaging_audit_action" ADD VALUE 'CONVERSATION_LOCKED';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'CONVERSATION_UNLOCKED' AND enumtypid = 'messaging_audit_action'::regtype) THEN
+    ALTER TYPE "messaging_audit_action" ADD VALUE 'CONVERSATION_UNLOCKED';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'MEETING_RESCHEDULED' AND enumtypid = 'messaging_audit_action'::regtype) THEN
+    ALTER TYPE "messaging_audit_action" ADD VALUE 'MEETING_RESCHEDULED';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'MEETING_ATTENDEE_RSVP' AND enumtypid = 'messaging_audit_action'::regtype) THEN
+    ALTER TYPE "messaging_audit_action" ADD VALUE 'MEETING_ATTENDEE_RSVP';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'MEETING_REMINDER_DISPATCHED' AND enumtypid = 'messaging_audit_action'::regtype) THEN
+    ALTER TYPE "messaging_audit_action" ADD VALUE 'MEETING_REMINDER_DISPATCHED';
+  END IF;
+END
+$$;
 
 -- DropForeignKey
-ALTER TABLE "mailbox_send_attempt" DROP CONSTRAINT "mailbox_send_attempt_draftId_orgId_fkey";
+-- ALTER TABLE "mailbox_send_attempt" DROP CONSTRAINT "mailbox_send_attempt_draftId_orgId_fkey";
 
 -- DropForeignKey
-ALTER TABLE "mailbox_send_attempt" DROP CONSTRAINT "mailbox_send_attempt_mailboxConnectionId_orgId_fkey";
+-- ALTER TABLE "mailbox_send_attempt" DROP CONSTRAINT "mailbox_send_attempt_mailboxConnectionId_orgId_fkey";
 
 -- DropForeignKey
-ALTER TABLE "mailbox_send_attempt" DROP CONSTRAINT "mailbox_send_attempt_orgId_fkey";
+-- ALTER TABLE "mailbox_send_attempt" DROP CONSTRAINT "mailbox_send_attempt_orgId_fkey";
 
 -- DropForeignKey
 ALTER TABLE "presence_session" DROP CONSTRAINT "presence_session_activeConversationId_orgId_fkey";
@@ -46,29 +71,29 @@ ALTER TABLE "presence_session" DROP CONSTRAINT "presence_session_activeConversat
 ALTER TABLE "conversation_draft" ALTER COLUMN "contentMeta" DROP DEFAULT;
 
 -- AlterTable
-ALTER TABLE "conversation_meeting" ADD COLUMN     "joinUrl" TEXT,
-ADD COLUMN     "metadata" JSONB,
-ADD COLUMN     "reminderSentAt" TIMESTAMP(3);
+ALTER TABLE "conversation_meeting" ADD COLUMN IF NOT EXISTS     "joinUrl" TEXT,
+ADD COLUMN IF NOT EXISTS     "metadata" JSONB,
+ADD COLUMN IF NOT EXISTS     "reminderSentAt" TIMESTAMP(3);
 
 -- AlterTable
 ALTER TABLE "e_invoice_request" ALTER COLUMN "status" SET DEFAULT 'PENDING';
 
 -- AlterTable
-ALTER TABLE "messaging_task" ADD COLUMN     "providerEventId" TEXT,
+ALTER TABLE "messaging_task" ADD COLUMN IF NOT EXISTS     "providerEventId" TEXT,
 ALTER COLUMN "reminderAt" SET DATA TYPE TIMESTAMP(3),
 ALTER COLUMN "reminderSentAt" SET DATA TYPE TIMESTAMP(3);
 
 -- AlterTable
-ALTER TABLE "notification" ADD COLUMN     "dedupeKey" TEXT;
+ALTER TABLE "notification" ADD COLUMN IF NOT EXISTS     "dedupeKey" TEXT;
 
 -- DropTable
-DROP TABLE "mailbox_send_attempt";
+DROP TABLE IF EXISTS "mailbox_send_attempt";
 
 -- DropEnum
-DROP TYPE "mailbox_send_attempt_status";
+DROP TYPE IF EXISTS "mailbox_send_attempt_status";
 
 -- CreateTable
-CREATE TABLE "messaging_attachment_index" (
+CREATE TABLE IF NOT EXISTS "messaging_attachment_index" (
     "id" TEXT NOT NULL,
     "orgId" TEXT NOT NULL,
     "attachmentId" TEXT NOT NULL,
@@ -87,7 +112,7 @@ CREATE TABLE "messaging_attachment_index" (
 );
 
 -- CreateTable
-CREATE TABLE "meeting_attendee" (
+CREATE TABLE IF NOT EXISTS "meeting_attendee" (
     "id" TEXT NOT NULL,
     "orgId" TEXT NOT NULL,
     "meetingId" TEXT NOT NULL,
@@ -103,7 +128,7 @@ CREATE TABLE "meeting_attendee" (
 );
 
 -- CreateTable
-CREATE TABLE "meeting_reminder" (
+CREATE TABLE IF NOT EXISTS "meeting_reminder" (
     "id" TEXT NOT NULL,
     "orgId" TEXT NOT NULL,
     "meetingId" TEXT NOT NULL,
@@ -117,7 +142,7 @@ CREATE TABLE "meeting_reminder" (
 );
 
 -- CreateTable
-CREATE TABLE "downstream_consumption_checkpoint" (
+CREATE TABLE IF NOT EXISTS "downstream_consumption_checkpoint" (
     "id" TEXT NOT NULL,
     "consumerType" TEXT NOT NULL,
     "orgId" TEXT NOT NULL,
@@ -129,7 +154,7 @@ CREATE TABLE "downstream_consumption_checkpoint" (
 );
 
 -- CreateTable
-CREATE TABLE "messaging_notification_preference" (
+CREATE TABLE IF NOT EXISTS "messaging_notification_preference" (
     "id" TEXT NOT NULL,
     "orgId" TEXT NOT NULL,
     "userId" UUID NOT NULL,
@@ -151,7 +176,7 @@ CREATE TABLE "messaging_notification_preference" (
 );
 
 -- CreateTable
-CREATE TABLE "messaging_follow_up" (
+CREATE TABLE IF NOT EXISTS "messaging_follow_up" (
     "id" TEXT NOT NULL,
     "orgId" TEXT NOT NULL,
     "userId" UUID NOT NULL,
@@ -166,89 +191,149 @@ CREATE TABLE "messaging_follow_up" (
     CONSTRAINT "messaging_follow_up_pkey" PRIMARY KEY ("id")
 );
 
--- CreateIndex
-CREATE UNIQUE INDEX "messaging_attachment_index_attachmentId_key" ON "messaging_attachment_index"("attachmentId");
+-- CreateIndex (idempotent)
+CREATE UNIQUE INDEX IF NOT EXISTS "messaging_attachment_index_attachmentId_key" ON "messaging_attachment_index"("attachmentId");
+
+-- CreateIndex (idempotent)
+CREATE INDEX IF NOT EXISTS "messaging_attachment_index_orgId_conversationId_idx" ON "messaging_attachment_index"("orgId", "conversationId");
+
+-- CreateIndex (idempotent)
+CREATE INDEX IF NOT EXISTS "messaging_attachment_index_orgId_indexingStatus_idx" ON "messaging_attachment_index"("orgId", "indexingStatus");
+
+-- CreateIndex (idempotent)
+CREATE INDEX IF NOT EXISTS "meeting_attendee_orgId_meetingId_idx" ON "meeting_attendee"("orgId", "meetingId");
+
+-- CreateIndex (idempotent)
+CREATE INDEX IF NOT EXISTS "meeting_attendee_orgId_userId_rsvpStatus_idx" ON "meeting_attendee"("orgId", "userId", "rsvpStatus");
+
+-- CreateIndex (idempotent)
+CREATE UNIQUE INDEX IF NOT EXISTS "meeting_attendee_meetingId_userId_key" ON "meeting_attendee"("meetingId", "userId");
+
+-- CreateIndex (idempotent)
+CREATE INDEX IF NOT EXISTS "meeting_reminder_orgId_meetingId_idx" ON "meeting_reminder"("orgId", "meetingId");
+
+-- CreateIndex (idempotent)
+CREATE INDEX IF NOT EXISTS "meeting_reminder_sentAt_skipped_idx" ON "meeting_reminder"("sentAt", "skipped");
+
+-- CreateIndex (idempotent)
+CREATE UNIQUE INDEX IF NOT EXISTS "meeting_reminder_meetingId_window_key" ON "meeting_reminder"("meetingId", "window");
+
+-- CreateIndex (idempotent)
+CREATE INDEX IF NOT EXISTS "downstream_consumption_checkpoint_orgId_conversationId_idx" ON "downstream_consumption_checkpoint"("orgId", "conversationId");
+
+-- CreateIndex (idempotent)
+CREATE UNIQUE INDEX IF NOT EXISTS "downstream_consumption_checkpoint_consumerType_orgId_conver_key" ON "downstream_consumption_checkpoint"("consumerType", "orgId", "conversationId");
+
+-- CreateIndex (idempotent)
+CREATE UNIQUE INDEX IF NOT EXISTS "messaging_notification_preference_orgId_userId_key" ON "messaging_notification_preference"("orgId", "userId");
+
+-- CreateIndex (idempotent)
+CREATE INDEX IF NOT EXISTS "messaging_follow_up_orgId_userId_resolvedAt_idx" ON "messaging_follow_up"("orgId", "userId", "resolvedAt");
+
+-- CreateIndex (idempotent)
+CREATE INDEX IF NOT EXISTS "messaging_follow_up_orgId_conversationId_idx" ON "messaging_follow_up"("orgId", "conversationId");
+
+-- CreateIndex (idempotent)
+CREATE UNIQUE INDEX IF NOT EXISTS "messaging_follow_up_orgId_userId_messageId_key" ON "messaging_follow_up"("orgId", "userId", "messageId");
+
+-- CreateIndex (idempotent)
+CREATE INDEX IF NOT EXISTS "conversation_draft_orgId_conversationId_threadId_idx" ON "conversation_draft"("orgId", "conversationId", "threadId");
+
+-- CreateIndex (idempotent)
+CREATE UNIQUE INDEX IF NOT EXISTS "conversation_draft_id_orgId_key" ON "conversation_draft"("id", "orgId");
+
+-- CreateIndex (idempotent)
+CREATE INDEX IF NOT EXISTS "conversation_meeting_orgId_reminderSentAt_idx" ON "conversation_meeting"("orgId", "reminderSentAt");
 
 -- CreateIndex
-CREATE INDEX "messaging_attachment_index_orgId_conversationId_idx" ON "messaging_attachment_index"("orgId", "conversationId");
+CREATE UNIQUE INDEX IF NOT EXISTS "notification_orgId_userId_dedupeKey_key" ON "notification"("orgId", "userId", "dedupeKey");
 
--- CreateIndex
-CREATE INDEX "messaging_attachment_index_orgId_indexingStatus_idx" ON "messaging_attachment_index"("orgId", "indexingStatus");
+-- AddForeignKey (idempotent)
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'presence_session_activeConversationId_orgId_fkey') THEN
+    ALTER TABLE "presence_session" ADD CONSTRAINT "presence_session_activeConversationId_orgId_fkey" FOREIGN KEY ("activeConversationId", "orgId") REFERENCES "conversation"("id", "orgId") ON DELETE RESTRICT ON UPDATE CASCADE;
+  END IF;
+END
+$$;
 
--- CreateIndex
-CREATE INDEX "meeting_attendee_orgId_meetingId_idx" ON "meeting_attendee"("orgId", "meetingId");
+-- AddForeignKey (idempotent)
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'messaging_attachment_index_orgId_fkey') THEN
+    ALTER TABLE "messaging_attachment_index" ADD CONSTRAINT "messaging_attachment_index_orgId_fkey" FOREIGN KEY ("orgId") REFERENCES "organization"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  END IF;
+END
+$$;
 
--- CreateIndex
-CREATE INDEX "meeting_attendee_orgId_userId_rsvpStatus_idx" ON "meeting_attendee"("orgId", "userId", "rsvpStatus");
+-- AddForeignKey (idempotent)
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'messaging_attachment_index_attachmentId_fkey') THEN
+    ALTER TABLE "messaging_attachment_index" ADD CONSTRAINT "messaging_attachment_index_attachmentId_fkey" FOREIGN KEY ("attachmentId") REFERENCES "conversation_attachment"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  END IF;
+END
+$$;
 
--- CreateIndex
-CREATE UNIQUE INDEX "meeting_attendee_meetingId_userId_key" ON "meeting_attendee"("meetingId", "userId");
+-- AddForeignKey (idempotent)
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'meeting_attendee_meetingId_fkey') THEN
+    ALTER TABLE "meeting_attendee" ADD CONSTRAINT "meeting_attendee_meetingId_fkey" FOREIGN KEY ("meetingId") REFERENCES "conversation_meeting"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  END IF;
+END
+$$;
 
--- CreateIndex
-CREATE INDEX "meeting_reminder_orgId_meetingId_idx" ON "meeting_reminder"("orgId", "meetingId");
+-- AddForeignKey (idempotent)
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'meeting_reminder_meetingId_fkey') THEN
+    ALTER TABLE "meeting_reminder" ADD CONSTRAINT "meeting_reminder_meetingId_fkey" FOREIGN KEY ("meetingId") REFERENCES "conversation_meeting"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  END IF;
+END
+$$;
 
--- CreateIndex
-CREATE INDEX "meeting_reminder_sentAt_skipped_idx" ON "meeting_reminder"("sentAt", "skipped");
+-- AddForeignKey (idempotent)
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'downstream_consumption_checkpoint_orgId_fkey') THEN
+    ALTER TABLE "downstream_consumption_checkpoint" ADD CONSTRAINT "downstream_consumption_checkpoint_orgId_fkey" FOREIGN KEY ("orgId") REFERENCES "organization"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  END IF;
+END
+$$;
 
--- CreateIndex
-CREATE UNIQUE INDEX "meeting_reminder_meetingId_window_key" ON "meeting_reminder"("meetingId", "window");
+-- AddForeignKey (idempotent)
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'messaging_notification_preference_orgId_fkey') THEN
+    ALTER TABLE "messaging_notification_preference" ADD CONSTRAINT "messaging_notification_preference_orgId_fkey" FOREIGN KEY ("orgId") REFERENCES "organization"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  END IF;
+END
+$$;
 
--- CreateIndex
-CREATE INDEX "downstream_consumption_checkpoint_orgId_conversationId_idx" ON "downstream_consumption_checkpoint"("orgId", "conversationId");
+-- AddForeignKey (idempotent)
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'messaging_follow_up_orgId_fkey') THEN
+    ALTER TABLE "messaging_follow_up" ADD CONSTRAINT "messaging_follow_up_orgId_fkey" FOREIGN KEY ("orgId") REFERENCES "organization"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  END IF;
+END
+$$;
 
--- CreateIndex
-CREATE UNIQUE INDEX "downstream_consumption_checkpoint_consumerType_orgId_conver_key" ON "downstream_consumption_checkpoint"("consumerType", "orgId", "conversationId");
+-- AddForeignKey (idempotent)
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'messaging_follow_up_conversationId_orgId_fkey') THEN
+    ALTER TABLE "messaging_follow_up" ADD CONSTRAINT "messaging_follow_up_conversationId_orgId_fkey" FOREIGN KEY ("conversationId", "orgId") REFERENCES "conversation"("id", "orgId") ON DELETE CASCADE ON UPDATE CASCADE;
+  END IF;
+END
+$$;
 
--- CreateIndex
-CREATE UNIQUE INDEX "messaging_notification_preference_orgId_userId_key" ON "messaging_notification_preference"("orgId", "userId");
-
--- CreateIndex
-CREATE INDEX "messaging_follow_up_orgId_userId_resolvedAt_idx" ON "messaging_follow_up"("orgId", "userId", "resolvedAt");
-
--- CreateIndex
-CREATE INDEX "messaging_follow_up_orgId_conversationId_idx" ON "messaging_follow_up"("orgId", "conversationId");
-
--- CreateIndex
-CREATE UNIQUE INDEX "messaging_follow_up_orgId_userId_messageId_key" ON "messaging_follow_up"("orgId", "userId", "messageId");
-
--- CreateIndex
-CREATE INDEX "conversation_draft_orgId_conversationId_threadId_idx" ON "conversation_draft"("orgId", "conversationId", "threadId");
-
--- CreateIndex
-CREATE UNIQUE INDEX "conversation_draft_id_orgId_key" ON "conversation_draft"("id", "orgId");
-
--- CreateIndex
-CREATE INDEX "conversation_meeting_orgId_reminderSentAt_idx" ON "conversation_meeting"("orgId", "reminderSentAt");
-
--- CreateIndex
-CREATE UNIQUE INDEX "notification_orgId_userId_dedupeKey_key" ON "notification"("orgId", "userId", "dedupeKey");
-
--- AddForeignKey
-ALTER TABLE "presence_session" ADD CONSTRAINT "presence_session_activeConversationId_orgId_fkey" FOREIGN KEY ("activeConversationId", "orgId") REFERENCES "conversation"("id", "orgId") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "messaging_attachment_index" ADD CONSTRAINT "messaging_attachment_index_orgId_fkey" FOREIGN KEY ("orgId") REFERENCES "organization"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "messaging_attachment_index" ADD CONSTRAINT "messaging_attachment_index_attachmentId_fkey" FOREIGN KEY ("attachmentId") REFERENCES "conversation_attachment"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "meeting_attendee" ADD CONSTRAINT "meeting_attendee_meetingId_fkey" FOREIGN KEY ("meetingId") REFERENCES "conversation_meeting"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "meeting_reminder" ADD CONSTRAINT "meeting_reminder_meetingId_fkey" FOREIGN KEY ("meetingId") REFERENCES "conversation_meeting"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "downstream_consumption_checkpoint" ADD CONSTRAINT "downstream_consumption_checkpoint_orgId_fkey" FOREIGN KEY ("orgId") REFERENCES "organization"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "messaging_notification_preference" ADD CONSTRAINT "messaging_notification_preference_orgId_fkey" FOREIGN KEY ("orgId") REFERENCES "organization"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "messaging_follow_up" ADD CONSTRAINT "messaging_follow_up_orgId_fkey" FOREIGN KEY ("orgId") REFERENCES "organization"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "messaging_follow_up" ADD CONSTRAINT "messaging_follow_up_conversationId_orgId_fkey" FOREIGN KEY ("conversationId", "orgId") REFERENCES "conversation"("id", "orgId") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "messaging_follow_up" ADD CONSTRAINT "messaging_follow_up_messageId_orgId_fkey" FOREIGN KEY ("messageId", "orgId") REFERENCES "conversation_message"("id", "orgId") ON DELETE CASCADE ON UPDATE CASCADE;
+-- AddForeignKey (idempotent)
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'messaging_follow_up_messageId_orgId_fkey') THEN
+    ALTER TABLE "messaging_follow_up" ADD CONSTRAINT "messaging_follow_up_messageId_orgId_fkey" FOREIGN KEY ("messageId", "orgId") REFERENCES "conversation_message"("id", "orgId") ON DELETE CASCADE ON UPDATE CASCADE;
+  END IF;
+END
+$$;

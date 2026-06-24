@@ -3,22 +3,78 @@ import { db } from "@/lib/db";
 import { vi, beforeEach } from "vitest";
 
 beforeEach(() => {
+  (global as any).__mockActiveMembership = false;
   if (db && typeof db === "object") {
     // 1. Mock member model
     if (!("member" in db)) {
-      (db as any).member = {
-        findMany: vi.fn().mockImplementation(async (args: any) => {
-          const userIds = args?.where?.userId?.in || (args?.where?.userId ? [args.where.userId] : []);
-          return userIds.map((userId: string) => ({
-            userId,
-            organizationId: args?.where?.organizationId ?? "org-aaa",
-          }));
-        }),
-        findFirst: vi.fn().mockResolvedValue(null),
-        create: vi.fn().mockResolvedValue({}),
-        update: vi.fn().mockResolvedValue({}),
-      };
+      (db as any).member = {};
     }
+    const member = (db as any).member;
+
+    const setupMock = (fnName: string, defaultImpl: (...args: any[]) => any) => {
+      const existing = member[fnName];
+      if (!existing) {
+        member[fnName] = vi.fn().mockImplementation(defaultImpl as any);
+      } else if (
+        typeof existing.mockImplementation === "function" &&
+        typeof existing.getMockImplementation === "function" &&
+        !existing.getMockImplementation()
+      ) {
+        existing.mockImplementation(defaultImpl as any);
+      }
+    };
+
+    setupMock("findMany", async (args: any) => {
+      if (!(global as any).__mockActiveMembership) {
+        return [];
+      }
+      const orList = args?.where?.OR;
+      if (Array.isArray(orList)) {
+        return orList.map((item: any) => ({
+          userId: item.userId ?? "user-1",
+          organizationId: item.organizationId ?? "org-aaa",
+          role: "MEMBER",
+        }));
+      }
+      const userIds = args?.where?.userId?.in || (args?.where?.userId ? [args.where.userId] : []);
+      return userIds.map((userId: string) => ({
+        userId,
+        organizationId: args?.where?.organizationId ?? "org-aaa",
+        role: "MEMBER",
+      }));
+    });
+
+    setupMock("findFirst", async (args: any) => {
+      if (!(global as any).__mockActiveMembership) {
+        return null;
+      }
+      const userId = args?.where?.userId ?? "user-1";
+      const orgId = args?.where?.organizationId ?? "org-aaa";
+      return {
+        userId,
+        organizationId: orgId,
+        role: "MEMBER",
+        customRole: null,
+      };
+    });
+
+    setupMock("findUnique", async (args: any) => {
+      if (!(global as any).__mockActiveMembership) {
+        return null;
+      }
+      const orgUserId = args?.where?.organizationId_userId;
+      const userId = orgUserId?.userId ?? args?.where?.userId ?? "user-1";
+      const orgId = orgUserId?.organizationId ?? args?.where?.organizationId ?? "org-aaa";
+      return {
+        userId,
+        organizationId: orgId,
+        role: "MEMBER",
+        customRole: null,
+      };
+    });
+
+    setupMock("create", async () => ({}));
+    setupMock("update", async () => ({}));
 
     // 2. Mock conversationEventLog model
     if (!("conversationEventLog" in db)) {
