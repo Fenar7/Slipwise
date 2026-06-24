@@ -300,6 +300,7 @@ export const MOCK_MESSAGES_CHANNEL_FINANCE: ConversationMessage[] = [
     threadReplyCount: 4,
     reactions: [{ emoji: "👍", count: 3, reactedByCurrentUser: false }, { emoji: "✅", count: 2, reactedByCurrentUser: false }],
     attachmentRef: "Q2-Reconciliation-Draft.xlsx",
+    attachmentRecords: [],
     mentionsCurrentUser: false,
   },
   {
@@ -314,6 +315,7 @@ export const MOCK_MESSAGES_CHANNEL_FINANCE: ConversationMessage[] = [
     threadReplyCount: 0,
     reactions: [],
     attachmentRef: null,
+      attachmentRecords: [],
     mentionsCurrentUser: true,
   },
   {
@@ -328,6 +330,7 @@ export const MOCK_MESSAGES_CHANNEL_FINANCE: ConversationMessage[] = [
     threadReplyCount: 2,
     reactions: [{ emoji: "🕐", count: 1, reactedByCurrentUser: false }],
     attachmentRef: null,
+      attachmentRecords: [],
     mentionsCurrentUser: false,
   },
   {
@@ -342,6 +345,7 @@ export const MOCK_MESSAGES_CHANNEL_FINANCE: ConversationMessage[] = [
     threadReplyCount: 0,
     reactions: [{ emoji: "👍", count: 2, reactedByCurrentUser: false }],
     attachmentRef: null,
+      attachmentRecords: [],
     mentionsCurrentUser: false,
   },
   {
@@ -356,6 +360,7 @@ export const MOCK_MESSAGES_CHANNEL_FINANCE: ConversationMessage[] = [
     threadReplyCount: 0,
     reactions: [],
     attachmentRef: null,
+      attachmentRecords: [],
     mentionsCurrentUser: false,
   },
 ];
@@ -376,6 +381,7 @@ export const MOCK_MESSAGES_DM_ARJUN: ConversationMessage[] = [
     threadReplyCount: 0,
     reactions: [],
     attachmentRef: null,
+      attachmentRecords: [],
     mentionsCurrentUser: false,
   },
   {
@@ -390,6 +396,7 @@ export const MOCK_MESSAGES_DM_ARJUN: ConversationMessage[] = [
     threadReplyCount: 0,
     reactions: [{ emoji: "👍", count: 1, reactedByCurrentUser: false }],
     attachmentRef: null,
+      attachmentRecords: [],
     mentionsCurrentUser: false,
   },
   {
@@ -404,6 +411,7 @@ export const MOCK_MESSAGES_DM_ARJUN: ConversationMessage[] = [
     threadReplyCount: 0,
     reactions: [],
     attachmentRef: null,
+      attachmentRecords: [],
     mentionsCurrentUser: true,
   },
 ];
@@ -424,6 +432,7 @@ export const MOCK_MESSAGES_GROUP_Q2: ConversationMessage[] = [
     threadReplyCount: 3,
     reactions: [{ emoji: "✅", count: 4, reactedByCurrentUser: false }],
     attachmentRef: "Q2-Reconciliation-Draft.xlsx",
+    attachmentRecords: [],
     mentionsCurrentUser: false,
   },
   {
@@ -438,6 +447,7 @@ export const MOCK_MESSAGES_GROUP_Q2: ConversationMessage[] = [
     threadReplyCount: 0,
     reactions: [],
     attachmentRef: null,
+      attachmentRecords: [],
     mentionsCurrentUser: false,
   },
   {
@@ -452,6 +462,7 @@ export const MOCK_MESSAGES_GROUP_Q2: ConversationMessage[] = [
     threadReplyCount: 0,
     reactions: [{ emoji: "👀", count: 2, reactedByCurrentUser: false }],
     attachmentRef: null,
+      attachmentRecords: [],
     mentionsCurrentUser: true,
   },
   {
@@ -466,6 +477,7 @@ export const MOCK_MESSAGES_GROUP_Q2: ConversationMessage[] = [
     threadReplyCount: 0,
     reactions: [{ emoji: "✅", count: 3, reactedByCurrentUser: false }, { emoji: "🎉", count: 1, reactedByCurrentUser: false }],
     attachmentRef: null,
+      attachmentRecords: [],
     mentionsCurrentUser: false,
   },
 ];
@@ -483,6 +495,7 @@ export const MOCK_MESSAGES_CHANNEL_GENERAL: ConversationMessage[] = [
     threadReplyCount: 0,
     reactions: [{ emoji: "📌", count: 2, reactedByCurrentUser: false }],
     attachmentRef: null,
+      attachmentRecords: [],
     mentionsCurrentUser: false,
   },
   {
@@ -497,6 +510,7 @@ export const MOCK_MESSAGES_CHANNEL_GENERAL: ConversationMessage[] = [
     threadReplyCount: 0,
     reactions: [{ emoji: "👀", count: 3, reactedByCurrentUser: false }],
     attachmentRef: "Onboarding-Deck-v3.pdf",
+    attachmentRecords: [],
     mentionsCurrentUser: false,
   },
 ];
@@ -514,6 +528,7 @@ export const MOCK_MESSAGES_CHANNEL_INVOICES: ConversationMessage[] = [
     threadReplyCount: 0,
     reactions: [],
     attachmentRef: null,
+      attachmentRecords: [],
     mentionsCurrentUser: false,
   },
 ];
@@ -531,6 +546,7 @@ export const MOCK_MESSAGES_CHANNEL_PAYROLL: ConversationMessage[] = [
     threadReplyCount: 0,
     reactions: [{ emoji: "🕐", count: 1, reactedByCurrentUser: false }],
     attachmentRef: "May-Payroll-Summary.pdf",
+    attachmentRecords: [],
     mentionsCurrentUser: false,
   },
 ];
@@ -548,6 +564,7 @@ export const MOCK_MESSAGES_CHANNEL_COMPLIANCE: ConversationMessage[] = [
     threadReplyCount: 0,
     reactions: [{ emoji: "✅", count: 2, reactedByCurrentUser: false }],
     attachmentRef: null,
+      attachmentRecords: [],
     mentionsCurrentUser: false,
   },
 ];
@@ -565,6 +582,7 @@ export const MOCK_MESSAGES_DM_KAVYA: ConversationMessage[] = [
     threadReplyCount: 0,
     reactions: [],
     attachmentRef: null,
+      attachmentRecords: [],
     mentionsCurrentUser: false,
   },
 ];
@@ -582,6 +600,7 @@ export const MOCK_MESSAGES_DM_SNEHA: ConversationMessage[] = [
     threadReplyCount: 0,
     reactions: [{ emoji: "👍", count: 1, reactedByCurrentUser: false }],
     attachmentRef: "Vendor-Contract-Apex.pdf",
+    attachmentRecords: [],
     mentionsCurrentUser: false,
   },
 ];
@@ -599,6 +618,7 @@ export const MOCK_MESSAGES_GROUP_VENDOR: ConversationMessage[] = [
     threadReplyCount: 0,
     reactions: [{ emoji: "📎", count: 1, reactedByCurrentUser: false }],
     attachmentRef: "Vendor-Contract-Apex.pdf",
+    attachmentRecords: [],
     mentionsCurrentUser: false,
   },
 ];
@@ -616,6 +636,7 @@ export const MOCK_MESSAGES_GROUP_AUDIT: ConversationMessage[] = [
     threadReplyCount: 0,
     reactions: [{ emoji: "🗂️", count: 2, reactedByCurrentUser: false }],
     attachmentRef: null,
+      attachmentRecords: [],
     mentionsCurrentUser: false,
   },
 ];
@@ -637,6 +658,7 @@ export const MOCK_THREAD_REPLIES_CH_F_1: ConversationMessage[] = [
     threadReplyCount: 0,
     reactions: [],
     attachmentRef: null,
+      attachmentRecords: [],
     mentionsCurrentUser: false,
   },
   {
@@ -651,6 +673,7 @@ export const MOCK_THREAD_REPLIES_CH_F_1: ConversationMessage[] = [
     threadReplyCount: 0,
     reactions: [{ emoji: "✅", count: 1, reactedByCurrentUser: false }],
     attachmentRef: null,
+      attachmentRecords: [],
     mentionsCurrentUser: false,
   },
   {
@@ -665,6 +688,7 @@ export const MOCK_THREAD_REPLIES_CH_F_1: ConversationMessage[] = [
     threadReplyCount: 0,
     reactions: [],
     attachmentRef: null,
+      attachmentRecords: [],
     mentionsCurrentUser: false,
   },
   {
@@ -679,6 +703,7 @@ export const MOCK_THREAD_REPLIES_CH_F_1: ConversationMessage[] = [
     threadReplyCount: 0,
     reactions: [{ emoji: "👍", count: 2, reactedByCurrentUser: false }],
     attachmentRef: null,
+      attachmentRecords: [],
     mentionsCurrentUser: false,
   },
 ];
@@ -696,6 +721,7 @@ export const MOCK_THREAD_REPLIES_GROUP_Q2_1: ConversationMessage[] = [
     threadReplyCount: 0,
     reactions: [],
     attachmentRef: null,
+      attachmentRecords: [],
     mentionsCurrentUser: false,
   },
   {
@@ -710,6 +736,7 @@ export const MOCK_THREAD_REPLIES_GROUP_Q2_1: ConversationMessage[] = [
     threadReplyCount: 0,
     reactions: [{ emoji: "✅", count: 1, reactedByCurrentUser: false }],
     attachmentRef: null,
+      attachmentRecords: [],
     mentionsCurrentUser: false,
   },
   {
@@ -724,6 +751,7 @@ export const MOCK_THREAD_REPLIES_GROUP_Q2_1: ConversationMessage[] = [
     threadReplyCount: 0,
     reactions: [],
     attachmentRef: null,
+      attachmentRecords: [],
     mentionsCurrentUser: false,
   },
 ];

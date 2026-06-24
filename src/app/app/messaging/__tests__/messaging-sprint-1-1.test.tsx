@@ -11,9 +11,21 @@
  * - Nav item added to suite nav
  */
 
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import React from "react";
+
+vi.mock("@/app/app/messaging/lib/use-conversation-list");
+vi.mock("@/app/app/messaging/lib/use-conversation-detail");
+vi.mock("@/app/app/messaging/lib/use-conversation-tasks");
+vi.mock("@/app/app/messaging/lib/use-thread-replies");
+vi.mock("@/app/app/messaging/lib/use-attachment-files");
+
+import { setupLegacyMessagingMocks } from "./legacy-setup-helper";
+
+beforeEach(() => {
+  setupLegacyMessagingMocks();
+});
 
 // ─── Mock next/navigation ─────────────────────────────────────────────────────
 
@@ -54,11 +66,22 @@ import {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function renderLeftRail(activeSection = "channels" as const) {
+function renderLeftRail(activeSection: any = "channels", extraProps: Record<string, any> = {}) {
   return render(
     <MessagingLeftRail
       activeSection={activeSection}
       onSectionChange={vi.fn()}
+      channels={MOCK_CHANNELS}
+      dms={MOCK_DMS}
+      groups={MOCK_GROUPS}
+      portals={[]}
+      unreadSummary={{
+        channels: MOCK_CHANNELS.reduce((sum, c) => sum + c.unreadCount, 0),
+        dms: MOCK_DMS.reduce((sum, d) => sum + d.unreadCount, 0),
+        groups: MOCK_GROUPS.reduce((sum, g) => sum + g.unreadCount, 0),
+        portals: 0,
+      }}
+      {...extraProps}
     />
   );
 }

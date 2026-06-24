@@ -1,0 +1,578 @@
+import "server-only";
+
+/**
+ * Messaging domain types.
+ *
+ * These are the server-side domain types for the internal messaging platform.
+ * They are distinct from the UI-facing read shapes and from raw Prisma records.
+ *
+ * Rules:
+ * - These types mirror the Prisma schema but are not raw Prisma records.
+ * - They may be used in service layer logic, validation, and mappers.
+ * - No raw credential fields are stored in messaging records.
+ */
+
+import type {
+  ConversationType,
+  ConversationVisibility,
+  ConversationMessageStatus,
+  ConversationParticipantRole,
+  MessageReactionType,
+  PresenceStatus,
+  TypingStatus,
+  AttachmentScanStatus,
+  MessagingTaskStatus,
+  MeetingStatus,
+  MeetingRsvpStatus,
+  MeetingReminderWindow,
+  CalendarProvider,
+  CalendarConnectionStatus,
+  MessagingAuditAction,
+  RetentionPolicyType,
+  RetentionAction,
+  ConversationPortalState,
+  LinkedRecordType,
+  MessageAudience,
+  ParticipantKind,
+} from "@/generated/prisma/client";
+
+// Re-export enums for use in service layer without importing from generated client directly.
+export type {
+  ConversationType,
+  ConversationVisibility,
+  ConversationMessageStatus,
+  ConversationParticipantRole,
+  MessageReactionType,
+  PresenceStatus,
+  TypingStatus,
+  AttachmentScanStatus,
+  MessagingTaskStatus,
+  MeetingStatus,
+  MeetingRsvpStatus,
+  MeetingReminderWindow,
+  CalendarProvider,
+  CalendarConnectionStatus,
+  MessagingAuditAction,
+  RetentionPolicyType,
+  RetentionAction,
+  ConversationPortalState,
+  LinkedRecordType,
+  MessageAudience,
+  ParticipantKind,
+};
+
+// ─── Conversation ───────────────────────────────────────────────────────────────
+
+export interface ConversationRecord {
+  id: string;
+  orgId: string;
+  type: ConversationType;
+  name: string | null;
+  description: string | null;
+  visibility: ConversationVisibility | null;
+  dmPeerId: string | null;
+  archivedAt: Date | null;
+  archivedBy: string | null;
+  lockedAt: Date | null;
+  lockedBy: string | null;
+  lockReason: string | null;
+  createdBy: string;
+  createdAt: Date;
+  updatedAt: Date;
+  portalState: ConversationPortalState | null;
+  linkedRecordType: LinkedRecordType | null;
+  linkedRecordId: string | null;
+  customerId: string | null;
+}
+
+export function conversationIsArchived(record: ConversationRecord): boolean {
+  return record.archivedAt !== null;
+}
+
+export function conversationIsLocked(record: ConversationRecord): boolean {
+  return record.lockedAt !== null;
+}
+
+export function conversationIsDM(record: ConversationRecord): boolean {
+  return record.type === "DM";
+}
+
+export function conversationIsChannel(record: ConversationRecord): boolean {
+  return record.type === "CHANNEL";
+}
+
+export function conversationIsGroup(record: ConversationRecord): boolean {
+  return record.type === "GROUP";
+}
+
+export function conversationIsAccessible(record: ConversationRecord): boolean {
+  return !conversationIsArchived(record) && !conversationIsLocked(record);
+}
+
+// ─── Participant ──────────────────────────────────────────────────────────────
+
+export interface ConversationParticipantRecord {
+  id: string;
+  orgId: string;
+  conversationId: string;
+  userId: string | null;
+  customerId: string | null;
+  kind: ParticipantKind;
+  role: ConversationParticipantRole;
+  leftAt: Date | null;
+  mutedUntil: Date | null;
+  displayName: string | null;
+  isPinned: boolean;
+  joinedAt: Date;
+  updatedAt: Date;
+}
+
+export function participantIsActive(
+  record: ConversationParticipantRecord,
+): boolean {
+  return record.leftAt === null;
+}
+
+export function participantIsMuted(
+  record: ConversationParticipantRecord,
+): boolean {
+  if (!record.mutedUntil) return false;
+  return record.mutedUntil > new Date();
+}
+
+// ─── Message ──────────────────────────────────────────────────────────────────
+
+export interface ConversationMessageRecord {
+  id: string;
+  orgId: string;
+  conversationId: string;
+  threadId: string | null;
+  authorId: string | null;
+  customerId: string | null;
+  audience: MessageAudience;
+  body: string;
+  contentMeta: Record<string, unknown> | null;
+  status: ConversationMessageStatus;
+  editedAt: Date | null;
+  deletedAt: Date | null;
+  participantCountAtSend: number;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export function messageIsActive(
+  record: ConversationMessageRecord,
+): boolean {
+  return record.status === "ACTIVE";
+}
+
+export function messageIsDeleted(
+  record: ConversationMessageRecord,
+): boolean {
+  return record.status === "DELETED" || record.deletedAt !== null;
+}
+
+export function messageIsEdited(
+  record: ConversationMessageRecord,
+): boolean {
+  return record.status === "EDITED" || record.editedAt !== null;
+}
+
+// ─── Thread ───────────────────────────────────────────────────────────────────
+
+export interface ConversationThreadRecord {
+  id: string;
+  orgId: string;
+  conversationId: string;
+  anchorMessageId: string;
+  title: string | null;
+  replyCount: number;
+  resolvedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export function threadIsResolved(
+  record: ConversationThreadRecord,
+): boolean {
+  return record.resolvedAt !== null;
+}
+
+// ─── Reaction ─────────────────────────────────────────────────────────────────
+
+export interface MessageReactionRecord {
+  id: string;
+  orgId: string;
+  messageId: string;
+  userId: string;
+  type: MessageReactionType;
+  value: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// ─── Mention ──────────────────────────────────────────────────────────────────
+
+export interface MessageMentionRecord {
+  id: string;
+  orgId: string;
+  messageId: string;
+  mentionedUserId: string;
+  offsetStart: number;
+  offsetEnd: number;
+  acknowledged: boolean;
+  acknowledgedAt: Date | null;
+  createdAt: Date;
+}
+
+// ─── Draft ────────────────────────────────────────────────────────────────────
+
+export interface ConversationDraftRecord {
+  id: string;
+  orgId: string;
+  conversationId: string;
+  threadId: string | null;
+  userId: string;
+  body: string;
+  contentMeta: Record<string, unknown> | null;
+  updatedAt: Date;
+  createdAt: Date;
+}
+
+// ─── Read State ───────────────────────────────────────────────────────────────
+
+export interface ConversationReadStateRecord {
+  id: string;
+  orgId: string;
+  conversationId: string;
+  userId: string | null;
+  customerId: string | null;
+  lastReadMessageId: string | null;
+  lastReadAt: Date | null;
+  unreadCount: number;
+  isMuted: boolean;
+  updatedAt: Date;
+}
+
+// ─── Presence ─────────────────────────────────────────────────────────────────
+
+export interface PresenceSessionRecord {
+  id: string;
+  orgId: string;
+  userId: string;
+  status: PresenceStatus;
+  lastActivityAt: Date;
+  expiresAt: Date | null;
+  activeConversationId: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export function presenceIsExpired(
+  record: PresenceSessionRecord,
+): boolean {
+  if (!record.expiresAt) return false;
+  return record.expiresAt <= new Date();
+}
+
+// ─── Typing ───────────────────────────────────────────────────────────────────
+
+export interface TypingSessionRecord {
+  id: string;
+  orgId: string;
+  conversationId: string;
+  userId: string;
+  status: TypingStatus;
+  expiresAt: Date;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export function typingIsExpired(
+  record: TypingSessionRecord,
+): boolean {
+  return record.expiresAt <= new Date();
+}
+
+// ─── Attachment ───────────────────────────────────────────────────────────────
+
+export interface ConversationAttachmentRecord {
+  id: string;
+  orgId: string;
+  messageId: string;
+  storageRef: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  thumbnailRef: string | null;
+  scanStatus: AttachmentScanStatus;
+  scannedAt: Date | null;
+  createdAt: Date;
+}
+
+export function attachmentIsScanned(
+  record: ConversationAttachmentRecord,
+): boolean {
+  return record.scanStatus === "CLEAN" || record.scanStatus === "BLOCKED";
+}
+
+export function attachmentIsPendingScan(
+  record: ConversationAttachmentRecord,
+): boolean {
+  return record.scanStatus === "PENDING";
+}
+
+// ─── Task ─────────────────────────────────────────────────────────────────────
+
+export interface MessagingTaskRecord {
+  id: string;
+  orgId: string;
+  conversationId: string;
+  originatingMessageId: string | null;
+  title: string;
+  description: string | null;
+  status: MessagingTaskStatus;
+  priority: number;
+  assigneeId: string | null;
+  dueDate: Date | null;
+  reminderAt: Date | null;
+  reminderSentAt: Date | null;
+  completedAt: Date | null;
+  completedBy: string | null;
+  createdBy: string;
+  createdAt: Date;
+  updatedAt: Date;
+  providerEventId: string | null;
+}
+
+export function taskIsOpen(record: MessagingTaskRecord): boolean {
+  return record.status === "OPEN" || record.status === "IN_PROGRESS" || record.status === "OVERDUE";
+}
+
+export function taskIsOverdue(record: MessagingTaskRecord): boolean {
+  if (record.status === "DONE" || record.status === "CANCELLED") return false;
+  if (!record.dueDate) return false;
+  if (!taskIsOpen(record)) return false;
+  return record.dueDate < new Date();
+}
+
+/**
+ * Returns true if the task is open and due within the next `daysAhead` days (default 7).
+ * Used by the `due_soon` scope filter.
+ */
+export function taskIsDueSoon(record: MessagingTaskRecord, daysAhead = 7): boolean {
+  if (!taskIsOpen(record)) return false;
+  if (!record.dueDate) return false;
+  if (taskIsOverdue(record)) return false;
+  const upperBound = new Date();
+  upperBound.setDate(upperBound.getDate() + daysAhead);
+  return record.dueDate <= upperBound;
+}
+
+// ─── Meeting ──────────────────────────────────────────────────────────────────
+
+export interface ConversationMeetingRecord {
+  id: string;
+  orgId: string;
+  conversationId: string;
+  title: string;
+  description: string | null;
+  scheduledAt: Date;
+  durationMinutes: number;
+  status: MeetingStatus;
+  providerEventId: string | null;
+  /// Provider-issued join URL. Null when unavailable or not yet synced.
+  /// Exposed only to authorized attendees via read model — never raw to UI.
+  joinUrl: string | null;
+  scheduledBy: string;
+  cancelledAt: Date | null;
+  cancelledBy: string | null;
+  cancelReason: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  metadata: Record<string, unknown> | null;
+}
+
+export function meetingIsUpcoming(
+  record: ConversationMeetingRecord,
+  now = new Date(),
+): boolean {
+  if (record.status !== "UPCOMING") return false;
+  const endTime = new Date(record.scheduledAt.getTime() + record.durationMinutes * 60 * 1000);
+  return endTime >= now;
+}
+
+export function meetingIsEnded(
+  record: ConversationMeetingRecord,
+  now = new Date(),
+): boolean {
+  if (record.status === "ENDED" || record.status === "CANCELLED") return true;
+  const endTime = new Date(record.scheduledAt.getTime() + record.durationMinutes * 60 * 1000);
+  return endTime < now;
+}
+
+/**
+ * Returns true when a meeting starts within 60 minutes from now and has not ended.
+ * Used to determine global alert eligibility (moderate urgency).
+ */
+export function meetingIsWithinOneHour(
+  record: ConversationMeetingRecord,
+  now = new Date(),
+): boolean {
+  if (!meetingIsUpcoming(record, now)) return false;
+  const msUntilStart = record.scheduledAt.getTime() - now.getTime();
+  // Within 60 minutes but not yet started (or started but meeting window is still active)
+  return msUntilStart <= 60 * 60 * 1000;
+}
+
+/**
+ * Returns true when a meeting starts within 15 minutes from now and has not ended.
+ * Used for elevated urgency state in global alert.
+ */
+export function meetingIsWithinFifteenMinutes(
+  record: ConversationMeetingRecord,
+  now = new Date(),
+): boolean {
+  if (!meetingIsUpcoming(record, now)) return false;
+  const msUntilStart = record.scheduledAt.getTime() - now.getTime();
+  return msUntilStart <= 15 * 60 * 1000;
+}
+
+// ─── Meeting Attendee ────────────────────────────────────────────────────────
+
+export interface MeetingAttendeeRecord {
+  id: string;
+  orgId: string;
+  meetingId: string;
+  userId: string;
+  rsvpStatus: MeetingRsvpStatus;
+  respondedAt: Date | null;
+  providerAttendeeId: string | null;
+  /** providerStatus is internal — not exposed to UI read shapes */
+  providerStatus: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// ─── Meeting Reminder ────────────────────────────────────────────────────────
+
+export interface MeetingReminderRecord {
+  id: string;
+  orgId: string;
+  meetingId: string;
+  window: MeetingReminderWindow;
+  sentAt: Date | null;
+  skipped: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// ─── Calendar Connection ──────────────────────────────────────────────────────
+
+export interface CalendarConnectionRecord {
+  id: string;
+  orgId: string;
+  provider: CalendarProvider;
+  providerAccountId: string;
+  emailAddress: string;
+  displayName: string | null;
+  tokenRef: string | null;
+  tokenExpiry: Date | null;
+  status: CalendarConnectionStatus;
+  lastSyncAt: Date | null;
+  lastSyncError: string | null;
+  disconnectedAt: Date | null;
+  connectedBy: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/**
+ * Safe UI/read-model shape for calendar connection summaries.
+ *
+ * Deliberately omits all sensitive and provider-internal fields:
+ *   - tokenRef       — server-side encrypted token reference
+ *   - tokenExpiry    — token metadata, not needed client-side
+ *   - providerAccountId — provider internal ID, not needed client-side
+ *   - connectedBy    — user ID, not needed client-side
+ *   - orgId          — tenant-internal; not included in UI payloads
+ *
+ * Only fields required for banners, connection chips, and reconnect UX are kept.
+ */
+export interface CalendarConnectionSummary {
+  id: string;
+  provider: CalendarProvider;
+  emailAddress: string;
+  displayName: string | null;
+  status: CalendarConnectionStatus;
+  lastSyncAt: string | null;    // ISO string — safe for JSON serialization
+  lastSyncError: string | null;
+  disconnectedAt: string | null; // ISO string — safe for JSON serialization
+  createdAt: string;             // ISO string — safe for JSON serialization
+}
+
+export function calendarConnectionIsActive(
+  record: CalendarConnectionRecord,
+): boolean {
+  return record.status === "ACTIVE" && record.disconnectedAt === null;
+}
+
+export function calendarConnectionRequiresReconnect(
+  record: CalendarConnectionRecord,
+): boolean {
+  return record.status === "RECONNECT_REQUIRED" || record.status === "DISCONNECTED";
+}
+
+// ─── Audit Event ─────────────────────────────────────────────────────────────
+
+export interface MessagingAuditEventRecord {
+  id: string;
+  orgId: string;
+  conversationId: string | null;
+  messageId: string | null;
+  threadId: string | null;
+  taskId: string | null;
+  meetingId: string | null;
+  actorId: string;
+  action: MessagingAuditAction;
+  summary: string;
+  metadata: Record<string, unknown> | null;
+  createdAt: Date;
+}
+
+// ─── Retention Policy ─────────────────────────────────────────────────────────
+
+export interface RetentionPolicyRecord {
+  id: string;
+  orgId: string;
+  type: RetentionPolicyType;
+  conversationId: string | null;
+  retentionDays: number | null;
+  action: RetentionAction;
+  isActive: boolean;
+  lastAppliedAt: Date | null;
+  createdBy: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export function retentionPolicyIsIndefinite(
+  record: RetentionPolicyRecord,
+): boolean {
+  return record.retentionDays === null;
+}
+
+// ─── Messaging Follow-Up ──────────────────────────────────────────────────────
+
+export interface MessagingFollowUpRecord {
+  id: string;
+  orgId: string;
+  userId: string;
+  conversationId: string;
+  messageId: string;
+  note: string | null;
+  resolvedAt: Date | null;
+  resolvedBy: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}

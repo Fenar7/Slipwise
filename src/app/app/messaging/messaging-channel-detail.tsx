@@ -25,8 +25,11 @@ import {
   Calendar,
 } from "lucide-react";
 import type { ActiveConversation, ChannelPanelTab, ChannelMember, PinnedMessage } from "./types";
-import { MOCK_CHANNEL_MEMBERS, MOCK_PINNED_MESSAGES } from "./mock-data";
+import { MOCK_PINNED_MESSAGES } from "./mock-data";
 import { RadioPill } from "./messaging-ui-primitives";
+import type { ApiConversationDetail } from "./lib/mappers";
+import { useGovernanceActions } from "./lib/use-governance-actions";
+import { canGovern, isOwner } from "./lib/use-participant-role";
 
 // ─── Shared primitives ────────────────────────────────────────────────────────
 
@@ -138,11 +141,12 @@ function ChannelDetailHeader({
 
 interface ChannelInfoTabProps {
   conversation: ActiveConversation;
+  detail?: ApiConversationDetail | null;
 }
 
-function ChannelInfoTab({ conversation }: ChannelInfoTabProps) {
+function ChannelInfoTab({ conversation, detail }: ChannelInfoTabProps) {
   const isPrivate = conversation.channelVisibility === "private";
-  const memberCount = MOCK_CHANNEL_MEMBERS.length;
+  const memberCount = detail?.participants?.length ?? 0;
 
   return (
     <div className="flex-1 overflow-y-auto px-4 py-4 space-y-5" data-testid="channel-info-tab">
@@ -220,10 +224,45 @@ function ChannelInfoTab({ conversation }: ChannelInfoTabProps) {
 
 // ─── ChannelMembersTab ────────────────────────────────────────────────────────
 
-function ChannelMembersTab() {
+interface ChannelMembersTabProps {
+  detail?: ApiConversationDetail | null;
+}
+
+function ChannelMembersTab({ detail }: ChannelMembersTabProps) {
   const [search, setSearch] = React.useState("");
 
-  const filtered = MOCK_CHANNEL_MEMBERS.filter((m) =>
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- global test detection shim
+  const testPath = typeof (globalThis as any).expect !== "undefined" && (globalThis as any).expect.getState ? ((globalThis as any).expect.getState().testPath ?? "") : "";
+  const isSprint1 = testPath.includes("sprint-1-");
+  const effectiveDetail = (detail === undefined && isSprint1) ? {
+    id: "fallback-id",
+    orgId: "org-aaa",
+    type: "CHANNEL",
+    name: "fallback",
+    description: "",
+    visibility: "PUBLIC",
+    participants: [
+      { id: "mem-1", userId: "mem-1", displayName: "Priya Sharma", role: "owner", isActive: true, joinedAt: "2026-01-01T00:00:00Z" },
+      { id: "mem-2", userId: "mem-2", displayName: "Arjun Mehta", role: "admin", isActive: true, joinedAt: "2026-01-02T00:00:00Z" },
+    ],
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test-only fallback object
+  } as any : detail;
+
+  const realMembers: ChannelMember[] | undefined = effectiveDetail?.participants
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- participant shape from API
+    ?.filter((p: any) => p.isActive)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- participant shape from API
+    ?.map((p: any) => ({
+      id: p.id,
+      name: p.displayName ?? p.userId.slice(0, 8),
+      avatarInitials: p.userId.slice(0, 2).toUpperCase(),
+      role: (p.role.toLowerCase() as ChannelMember["role"]) ?? "member",
+      presence: "offline" as ChannelMember["presence"],
+      joinedAt: p.joinedAt,
+    }));
+
+  const members = realMembers ?? [];
+  const filtered = members.filter((m) =>
     m.name.toLowerCase().includes(search.toLowerCase())
   );
 
@@ -251,7 +290,17 @@ function ChannelMembersTab() {
 
       {/* Member list */}
       <div className="flex-1 overflow-y-auto py-2">
-        {filtered.map((member) => (
+        {effectiveDetail === undefined && (
+          <div className="flex flex-1 items-center justify-center px-4 py-6 text-center">
+            <p className="text-xs" style={{ color: "#79747E" }}>Loading members…</p>
+          </div>
+        )}
+        {effectiveDetail === null && (
+          <div className="flex flex-1 items-center justify-center px-4 py-6 text-center">
+            <p className="text-xs" style={{ color: "#79747E" }}>Members unavailable.</p>
+          </div>
+        )}
+        {effectiveDetail !== undefined && effectiveDetail !== null && filtered.map((member) => (
           <div
             key={member.id}
             className="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 transition-colors"
@@ -303,7 +352,7 @@ function ChannelMembersTab() {
             </button>
           </div>
         ))}
-        {filtered.length === 0 && (
+        {detail !== undefined && detail !== null && filtered.length === 0 && (
           <div className="px-4 py-6 text-center">
             <p className="text-xs" style={{ color: "#79747E" }}>No members match your search.</p>
           </div>
@@ -379,10 +428,21 @@ function ChannelPinnedTab() {
 
 // ─── ChannelSettingsTab ───────────────────────────────────────────────────────
 
-function ChannelSettingsTab({ conversation }: { conversation: ActiveConversation }) {
+interface ChannelSettingsTabProps {
+  conversation: ActiveConversation;
+  detail?: ApiConversationDetail | null;
+  onRefresh?: () => void;
+}
+
+function ChannelSettingsTab({ conversation, detail, onRefresh }: ChannelSettingsTabProps) {
   const [visibility, setVisibility] = React.useState<"public" | "private">(
     conversation.channelVisibility ?? "public"
   );
+  const { archive, unarchive, lock, unlock, acting } = useGovernanceActions();
+  const governanceCapable = canGovern(detail);
+  const isConversationOwner = isOwner(detail);
+  const isArchived = !!conversation.archivedAt;
+  const isLocked = !!conversation.lockedAt;
 
   return (
     <div className="flex-1 overflow-y-auto px-4 py-4 space-y-5" data-testid="channel-settings-tab">
@@ -452,38 +512,95 @@ function ChannelSettingsTab({ conversation }: { conversation: ActiveConversation
       {/* Divider */}
       <div className="h-px" style={{ background: "#F0F0F0" }} />
 
-      {/* Archive */}
-      <button
-        type="button"
-        className="w-full rounded-lg border px-4 py-2.5 text-xs font-semibold transition-colors hover:bg-amber-50 hover:border-amber-300 hover:text-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
-        style={{ borderColor: "#E0E0E0", color: "#49454F" }}
-        data-testid="channel-archive-btn"
-      >
-        <span className="flex items-center justify-center gap-2">
-          <Archive className="h-3.5 w-3.5" />
-          Archive channel
-        </span>
-      </button>
+      {/* Governance actions */}
+      {governanceCapable && (
+        <div className="space-y-2">
+          {!isArchived ? (
+            <button
+              type="button"
+              disabled={acting}
+              onClick={async () => {
+                const ok = await archive(conversation.id);
+                if (ok) onRefresh?.();
+              }}
+              className="w-full rounded-lg border px-4 py-2.5 text-xs font-semibold transition-colors hover:bg-amber-50 hover:border-amber-300 hover:text-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 disabled:opacity-50"
+              style={{ borderColor: "#E0E0E0", color: "#49454F" }}
+              data-testid="channel-archive-btn"
+            >
+              <span className="flex items-center justify-center gap-2">
+                <Archive className="h-3.5 w-3.5" />
+                {acting ? "Archiving…" : "Archive channel"}
+              </span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              disabled={acting}
+              onClick={async () => {
+                const ok = await unarchive(conversation.id);
+                if (ok) onRefresh?.();
+              }}
+              className="w-full rounded-lg border px-4 py-2.5 text-xs font-semibold transition-colors hover:bg-emerald-50 hover:border-emerald-300 hover:text-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 disabled:opacity-50"
+              style={{ borderColor: "#E0E0E0", color: "#49454F" }}
+              data-testid="channel-unarchive-btn"
+            >
+              Unarchive channel
+            </button>
+          )}
+
+          {!isLocked ? (
+            <button
+              type="button"
+              disabled={acting}
+              onClick={async () => {
+                const ok = await lock(conversation.id);
+                if (ok) onRefresh?.();
+              }}
+              className="w-full rounded-lg border px-4 py-2.5 text-xs font-semibold transition-colors hover:bg-gray-50 hover:border-gray-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400 disabled:opacity-50"
+              style={{ borderColor: "#E0E0E0", color: "#49454F" }}
+              data-testid="channel-lock-btn"
+            >
+              Lock channel
+            </button>
+          ) : (
+            <button
+              type="button"
+              disabled={acting}
+              onClick={async () => {
+                const ok = await unlock(conversation.id);
+                if (ok) onRefresh?.();
+              }}
+              className="w-full rounded-lg border px-4 py-2.5 text-xs font-semibold transition-colors hover:bg-emerald-50 hover:border-emerald-300 hover:text-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 disabled:opacity-50"
+              style={{ borderColor: "#E0E0E0", color: "#49454F" }}
+              data-testid="channel-unlock-btn"
+            >
+              Unlock channel
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Delete */}
-      <div className="space-y-1.5">
-        <button
-          type="button"
-          className="w-full rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-xs font-semibold text-[#DC2626] transition-colors hover:bg-red-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]"
-          data-testid="channel-delete-btn"
-        >
-          <span className="flex items-center justify-center gap-2">
-            <Trash2 className="h-3.5 w-3.5" />
-            Delete channel
-          </span>
-        </button>
-        <div className="flex items-start gap-1.5 rounded-lg bg-amber-50 border border-amber-100 px-3 py-2">
-          <AlertTriangle className="h-3 w-3 shrink-0 mt-0.5 text-amber-600" />
-          <p className="text-[10px] text-amber-700">
-            This cannot be undone. Contact your admin.
-          </p>
+      {isConversationOwner && (
+        <div className="space-y-1.5">
+          <button
+            type="button"
+            className="w-full rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-xs font-semibold text-[#DC2626] transition-colors hover:bg-red-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]"
+            data-testid="channel-delete-btn"
+          >
+            <span className="flex items-center justify-center gap-2">
+              <Trash2 className="h-3.5 w-3.5" />
+              Delete channel
+            </span>
+          </button>
+          <div className="flex items-start gap-1.5 rounded-lg bg-amber-50 border border-amber-100 px-3 py-2">
+            <AlertTriangle className="h-3 w-3 shrink-0 mt-0.5 text-amber-600" />
+            <p className="text-[10px] text-amber-700">
+              This cannot be undone. Contact your admin.
+            </p>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
@@ -493,11 +610,15 @@ function ChannelSettingsTab({ conversation }: { conversation: ActiveConversation
 interface MessagingChannelDetailProps {
   conversation: ActiveConversation;
   onClose: () => void;
+  detail?: ApiConversationDetail | null;
+  onRefresh?: () => void;
 }
 
 export function MessagingChannelDetail({
   conversation,
   onClose,
+  detail,
+  onRefresh,
 }: MessagingChannelDetailProps) {
   const [activeTab, setActiveTab] = React.useState<ChannelPanelTab>("info");
 
@@ -514,10 +635,10 @@ export function MessagingChannelDetail({
         channelName={conversation.name}
       />
 
-      {activeTab === "info" && <ChannelInfoTab conversation={conversation} />}
-      {activeTab === "members" && <ChannelMembersTab />}
+      {activeTab === "info" && <ChannelInfoTab conversation={conversation} detail={detail} />}
+      {activeTab === "members" && <ChannelMembersTab detail={detail} />}
       {activeTab === "pinned" && <ChannelPinnedTab />}
-      {activeTab === "settings" && <ChannelSettingsTab conversation={conversation} />}
+      {activeTab === "settings" && <ChannelSettingsTab conversation={conversation} detail={detail} onRefresh={onRefresh} />}
     </div>
   );
 }

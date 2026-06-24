@@ -10,9 +10,10 @@ const EMOJI_CATEGORIES = [
 
 interface MessagingEmojiPickerProps {
   onClose: () => void;
+  onSelect?: (emoji: string) => void;
 }
 
-export function MessagingEmojiPicker({ onClose }: MessagingEmojiPickerProps) {
+export function MessagingEmojiPicker({ onClose, onSelect }: MessagingEmojiPickerProps) {
   return (
     <div
       className="absolute z-30 w-72 rounded-lg border bg-white p-3 shadow-lg"
@@ -41,7 +42,10 @@ export function MessagingEmojiPicker({ onClose }: MessagingEmojiPickerProps) {
                   key={`${cat.name}-${emoji}`}
                   type="button"
                   className="flex h-7 w-7 items-center justify-center rounded text-base transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#DC2626]"
-                  onClick={onClose}
+                  onClick={() => {
+                    onSelect?.(emoji);
+                    onClose();
+                  }}
                 >
                   {emoji}
                 </button>

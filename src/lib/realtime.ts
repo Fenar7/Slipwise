@@ -34,14 +34,14 @@ export async function emitMailboxConnectionEvent(
   try {
     const { createSupabaseAdmin } = await import("@/lib/supabase/server");
     const supabase = createSupabaseAdmin();
-    const channel = supabase.channel("mailbox-connection-events");
+    const channel = (await supabase).channel("mailbox-connection-events");
     await channel.send({
       type: "broadcast",
       event,
       payload,
     });
     // Unsubscribe to clean up the channel subscription immediately.
-    await supabase.removeChannel(channel);
+    await (await supabase).removeChannel(channel);
   } catch (error) {
     console.warn("[realtime] Failed to emit mailbox connection event:", error);
   }

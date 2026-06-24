@@ -44,7 +44,7 @@ export const patchConnectionSchema = z
       .optional(),
     notificationSettings: notificationSettingsSchema.optional(),
   })
-  .strict("Unexpected fields in request body")
+  .strict()
   .refine(
     (data) => data.displayName !== undefined || data.visibilityPolicy !== undefined || data.notificationSettings !== undefined,
     { message: "At least one field (displayName, visibilityPolicy, notificationSettings) must be provided" },
@@ -59,7 +59,7 @@ export type PatchConnectionInput = z.infer<typeof patchConnectionSchema>;
 export const createConnectionSchema = z
   .object({
     provider: z.enum(MAILBOX_PROVIDER_VALUES, {
-      errorMap: () => ({ message: "provider must be one of: GMAIL, ZOHO" }),
+      message: "provider must be one of: GMAIL, ZOHO",
     }),
     emailAddress: z.string().email("emailAddress must be a valid email"),
     displayName: z
@@ -76,14 +76,14 @@ export const createConnectionSchema = z
     tokenRef: z.string().min(1, "tokenRef is required"),
     tokenExpiry: z.string().datetime().optional().nullable(),
   })
-  .strict("Unexpected fields in request body");
+  .strict();
 
 export type CreateConnectionInput = z.infer<typeof createConnectionSchema>;
 
 /**
  * Schema for New Chat POST — empty body with strict mode (rejects any keys).
  */
-export const newChatCreateSchema = z.object({}).strict("Request body must be empty for New Chat creation");
+export const newChatCreateSchema = z.object({}).strict();
 
 /**
  * Schema for cursor-based pagination query parameters.
@@ -132,6 +132,6 @@ export const auditListQuerySchema = z
     from: z.string().datetime({ message: "from must be a valid ISO datetime" }).optional(),
     to: z.string().datetime({ message: "to must be a valid ISO datetime" }).optional(),
   })
-  .strict("Unexpected query parameters");
+  .strict();
 
 export type AuditListQuery = z.infer<typeof auditListQuerySchema>;

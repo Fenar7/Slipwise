@@ -1,0 +1,183 @@
+"use client";
+
+/**
+ * MessagingDMCreate — Sprint 5.3
+ *
+ * Modal for creating a new direct message.
+ */
+
+import React from "react";
+import { cn } from "@/lib/utils";
+import { X, Search, Plus, MessageSquare } from "lucide-react";
+import { useOrgMembers } from "./lib/use-org-members";
+
+interface MessagingDMCreateProps {
+  onClose: () => void;
+  onCreate: (dmPeerId: string) => void;
+}
+
+export function MessagingDMCreate({ onClose, onCreate }: MessagingDMCreateProps) {
+  const [memberSearch, setMemberSearch] = React.useState("");
+  const [selectedMemberId, setSelectedMemberId] = React.useState<string | null>(null);
+  const { members, loading } = useOrgMembers();
+
+  React.useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
+  const filteredMembers = members.filter(
+    (m) =>
+      m.name.toLowerCase().includes(memberSearch.toLowerCase()) &&
+      m.id !== selectedMemberId
+  );
+
+  const selectedMember = members.find((m) => m.id === selectedMemberId);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+      data-testid="dm-create-modal"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div
+        className="relative w-full max-w-md rounded-xl bg-white shadow-xl overflow-hidden"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Create direct message"
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between border-b px-5 py-4" style={{ borderColor: "#E0E0E0" }}>
+          <h2 className="text-sm font-bold" style={{ color: "#1C1B1F" }}>
+            New message
+          </h2>
+          <button
+            type="button"
+            className="flex h-7 w-7 items-center justify-center rounded-lg transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]"
+            aria-label="Close"
+            onClick={onClose}
+            data-testid="dm-create-cancel"
+          >
+            <X className="h-4 w-4" style={{ color: "#79747E" }} />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="px-5 py-5 space-y-4">
+          {/* Member picker */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold" style={{ color: "#49454F" }}>
+              To
+            </label>
+            <div className="relative">
+              <div
+                className="flex items-center gap-2 rounded-lg border bg-white px-3 py-2 transition-colors focus-within:border-[#DC2626]"
+                style={{ borderColor: "#E0E0E0" }}
+              >
+                <Search className="h-3 w-3 shrink-0 text-[#79747E]" />
+                <input
+                  type="text"
+                  placeholder="Search team members…"
+                  value={memberSearch}
+                  onChange={(e) => setMemberSearch(e.target.value)}
+                  className="flex-1 bg-transparent text-xs outline-none placeholder:text-[#79747E]"
+                  style={{ color: "#1C1B1F" }}
+                  aria-label="Search team members"
+                  data-testid="dm-member-picker-input"
+                />
+              </div>
+
+              {filteredMembers.length > 0 && (
+                <div
+                  className="absolute left-0 right-0 top-full z-10 mt-1 rounded-lg border bg-white shadow-lg overflow-hidden max-h-60 overflow-y-auto"
+                  style={{ borderColor: "#E0E0E0" }}
+                  data-testid="dm-member-dropdown"
+                >
+                  {loading && (
+                    <div className="px-3 py-2 text-xs text-gray-400">Loading…</div>
+                  )}
+                  {filteredMembers.map((m) => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      className="flex w-full items-center gap-3 px-3 py-2.5 text-left hover:bg-gray-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#DC2626]"
+                      onClick={() => {
+                        setSelectedMemberId(m.id);
+                        setMemberSearch("");
+                      }}
+                      data-testid={`dm-picker-member-${m.id}`}
+                    >
+                      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gray-200 text-xs font-bold" style={{ color: "#49454F" }}>
+                        {m.avatarInitials}
+                      </div>
+                      <span className="flex-1 text-xs font-medium" style={{ color: "#1C1B1F" }}>
+                        {m.name}
+                      </span>
+                      <Plus className="h-3.5 w-3.5 text-[#DC2626]" />
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {selectedMember && (
+              <div className="flex flex-wrap gap-1.5 mt-2" data-testid="dm-selected-member">
+                <span
+                  className="flex items-center gap-1 rounded-full border bg-gray-50 px-2 py-1 text-xs font-medium"
+                  style={{ borderColor: "#E0E0E0", color: "#1C1B1F" }}
+                >
+                  {selectedMember.name}
+                  <button
+                    type="button"
+                    className="flex h-3.5 w-3.5 items-center justify-center rounded-full hover:bg-gray-200 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#DC2626]"
+                    aria-label={`Remove ${selectedMember.name}`}
+                    onClick={() => setSelectedMemberId(null)}
+                  >
+                    <X className="h-2.5 w-2.5 text-[#79747E]" />
+                  </button>
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div
+          className="flex items-center justify-end gap-2 border-t px-5 py-4"
+          style={{ borderColor: "#E0E0E0" }}
+        >
+          <button
+            type="button"
+            className="rounded-lg px-4 py-2 text-xs font-semibold transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]"
+            style={{ color: "#49454F" }}
+            onClick={onClose}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            className={cn(
+              "rounded-lg px-4 py-2 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]",
+              selectedMemberId
+                ? "bg-[#DC2626] text-white hover:bg-red-700"
+                : "bg-gray-100 text-[#79747E] cursor-not-allowed"
+            )}
+            disabled={!selectedMemberId}
+            aria-disabled={!selectedMemberId}
+            data-testid="dm-create-submit"
+            onClick={() => {
+              if (selectedMemberId) onCreate(selectedMemberId);
+            }}
+          >
+            Start conversation
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

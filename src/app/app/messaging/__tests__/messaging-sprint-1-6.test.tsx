@@ -1,9 +1,21 @@
 /**
  * Sprint 1.6 — Search, Files, Notifications, and Final Polish tests
  */
-import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import React from "react";
+
+vi.mock("@/app/app/messaging/lib/use-conversation-list");
+vi.mock("@/app/app/messaging/lib/use-conversation-detail");
+vi.mock("@/app/app/messaging/lib/use-conversation-tasks");
+vi.mock("@/app/app/messaging/lib/use-thread-replies");
+vi.mock("@/app/app/messaging/lib/use-attachment-files");
+
+import { setupLegacyMessagingMocks } from "./legacy-setup-helper";
+
+beforeEach(() => {
+  setupLegacyMessagingMocks();
+});
 
 vi.mock("next/navigation", () => ({
   usePathname: () => "/app/messaging",
@@ -28,6 +40,44 @@ import { MOCK_SEARCH_RESULTS, MOCK_NOTIFICATIONS } from "../mock-data";
 // ─── MessagingSearchPanel ────────────────────────────────────────────────────
 
 describe("MessagingSearchPanel", () => {
+  beforeEach(() => {
+    global.fetch = vi.fn().mockImplementation(async (url: string) => {
+      const urlObj = new URL(url, "http://localhost");
+      const q = urlObj.searchParams.get("q") || "";
+      const kindsParam = urlObj.searchParams.get("kinds") || "";
+      
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test mock data
+      const results: any[] = [];
+      let state = "active";
+
+      if (q && q !== "xyznonexistent") {
+        if (kindsParam.includes("message")) {
+          results.push({ id: "sr-1", kind: "message", title: "Priya Sharma", subtitle: "Q2 reconciliation draft is ready...", timestamp: "2026-05-09T08:15:00Z" });
+        }
+        if (kindsParam.includes("conversation")) {
+          results.push({ id: "sr-2", kind: "conversation", title: "#finance-ops", subtitle: "Finance team coordination and approvals", timestamp: "2026-05-09T10:30:00Z" });
+          results.push({ id: "sr-3", kind: "conversation", title: "Sneha Iyer", subtitle: "Sneha Iyer · Member · Online" });
+        }
+        if (kindsParam.includes("file")) {
+          state = "unindexed";
+        }
+      }
+
+      return {
+        ok: true,
+        json: async () => ({
+          success: true,
+          data: {
+            results,
+            facets: { message: 1, conversation: 2, task: 0, meeting: 0, file: 0 },
+            state,
+            unindexedKinds: state === "unindexed" ? ["file"] : [],
+          },
+        }),
+      } as any;
+    });
+  });
+
   function render_sp(query = "", onClose = vi.fn()) {
     return render(<MessagingSearchPanel query={query} onClose={onClose} />);
   }
@@ -56,66 +106,69 @@ describe("MessagingSearchPanel", () => {
     expect(onClose).toHaveBeenCalled();
   });
 
-  it("filter messages shows only message results", () => {
+  it("filter messages shows only message results", async () => {
     render_sp("payroll");
     fireEvent.click(screen.getByTestId("search-filter-messages"));
-    const messageResults = MOCK_SEARCH_RESULTS.filter((r) => r.kind === "message");
-    const otherResults = MOCK_SEARCH_RESULTS.filter((r) => r.kind !== "message");
-    messageResults.forEach((r) => {
-      expect(screen.getByTestId(`search-result-${r.id}`)).toBeInTheDocument();
+    
+    await waitFor(() => {
+      expect(screen.queryByTestId("search-loading")).not.toBeInTheDocument();
     });
-    otherResults.forEach((r) => {
-      expect(screen.queryByTestId(`search-result-${r.id}`)).not.toBeInTheDocument();
-    });
+
+    expect(screen.getByTestId("search-result-sr-1")).toBeInTheDocument();
+    expect(screen.queryByTestId("search-result-sr-2")).not.toBeInTheDocument();
   });
 
-  it("filter channels shows channel and person results", () => {
-    render_sp("");
+  it("filter channels shows conversation results", async () => {
+    render_sp("payroll");
     fireEvent.click(screen.getByTestId("search-filter-channels"));
-    const matching = MOCK_SEARCH_RESULTS.filter(
-      (r) => r.kind === "channel" || r.kind === "person"
-    );
-    const nonMatching = MOCK_SEARCH_RESULTS.filter(
-      (r) => r.kind !== "channel" && r.kind !== "person"
-    );
-    matching.forEach((r) => {
-      expect(screen.getByTestId(`search-result-${r.id}`)).toBeInTheDocument();
+    
+    await waitFor(() => {
+      expect(screen.queryByTestId("search-loading")).not.toBeInTheDocument();
     });
-    nonMatching.forEach((r) => {
-      expect(screen.queryByTestId(`search-result-${r.id}`)).not.toBeInTheDocument();
-    });
+
+    expect(screen.getByTestId("search-result-sr-2")).toBeInTheDocument();
+    expect(screen.getByTestId("search-result-sr-3")).toBeInTheDocument();
+    expect(screen.queryByTestId("search-result-sr-1")).not.toBeInTheDocument();
   });
 
-  it("filter files shows file results", () => {
-    render_sp("");
+  it("filter files shows unindexed file message", async () => {
+    render_sp("payroll");
     fireEvent.click(screen.getByTestId("search-filter-files"));
-    const fileResults = MOCK_SEARCH_RESULTS.filter((r) => r.kind === "file");
-    const otherResults = MOCK_SEARCH_RESULTS.filter((r) => r.kind !== "file");
-    fileResults.forEach((r) => {
-      expect(screen.getByTestId(`search-result-${r.id}`)).toBeInTheDocument();
+    
+    await waitFor(() => {
+      expect(screen.queryByTestId("search-loading")).not.toBeInTheDocument();
     });
-    otherResults.forEach((r) => {
-      expect(screen.queryByTestId(`search-result-${r.id}`)).not.toBeInTheDocument();
-    });
+
+    expect(screen.getByTestId("search-unindexed")).toBeInTheDocument();
   });
 
-  it("when query matches a result title, that result row is visible", () => {
+  it("when query matches a result title, that result row is visible", async () => {
     render_sp("compliance");
-    const result = MOCK_SEARCH_RESULTS.find((r) => r.title.toLowerCase().includes("compliance"));
-    expect(result).toBeDefined();
-    expect(screen.getByTestId(`search-result-${result!.id}`)).toBeInTheDocument();
+    
+    await waitFor(() => {
+      expect(screen.queryByTestId("search-loading")).not.toBeInTheDocument();
+    });
+
+    expect(screen.getByTestId("search-result-sr-1")).toBeInTheDocument();
   });
 
-  it("when query matches nothing, data-testid=search-no-results is shown", () => {
+  it("when query matches nothing, data-testid=search-no-results is shown", async () => {
     render_sp("xyznonexistent");
+    
+    await waitFor(() => {
+      expect(screen.queryByTestId("search-loading")).not.toBeInTheDocument();
+    });
+
     expect(screen.getByTestId("search-no-results")).toBeInTheDocument();
   });
 
-  it("all 4 filter buttons are present", () => {
+  it("all 6 filter buttons are present", () => {
     render_sp();
     expect(screen.getByTestId("search-filter-all")).toBeInTheDocument();
     expect(screen.getByTestId("search-filter-messages")).toBeInTheDocument();
     expect(screen.getByTestId("search-filter-channels")).toBeInTheDocument();
+    expect(screen.getByTestId("search-filter-tasks")).toBeInTheDocument();
+    expect(screen.getByTestId("search-filter-meetings")).toBeInTheDocument();
     expect(screen.getByTestId("search-filter-files")).toBeInTheDocument();
   });
 });

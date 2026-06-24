@@ -12,6 +12,7 @@ export type MessagingSection =
   | "channels"
   | "dms"
   | "groups"
+  | "portals"
   | "tasks"
   | "meetings"
   | "files"
@@ -43,6 +44,7 @@ export interface MessagingChannel {
   memberCount: number;
   unreadCount: number;
   isPinned: boolean;
+  isMuted?: boolean;
   lastActivityAt: string; // ISO string — real transport fills this later
 }
 
@@ -52,6 +54,7 @@ export interface DirectMessage {
   id: string;
   participant: MessagingParticipant;
   unreadCount: number;
+  isMuted?: boolean;
   lastActivityAt: string;
 }
 
@@ -65,12 +68,13 @@ export interface MessagingGroup {
   memberCount: number;
   unreadCount: number;
   isPrivate: boolean;
+  isMuted?: boolean;
   lastActivityAt: string;
 }
 
 // ─── Tasks ───────────────────────────────────────────────────────────────────
 
-export type TaskStatus = "open" | "in-progress" | "done" | "overdue";
+export type TaskStatus = "open" | "in-progress" | "done" | "overdue" | "cancelled";
 
 export interface MessagingTask {
   id: string;
@@ -83,7 +87,8 @@ export interface MessagingTask {
 
 // ─── Meetings ────────────────────────────────────────────────────────────────
 
-export type MeetingStatus = "upcoming" | "live" | "ended";
+export type MeetingStatus = "upcoming" | "live" | "ended" | "cancelled";
+export type MeetingRsvpStatus = "PENDING" | "ACCEPTED" | "TENTATIVE" | "DECLINED";
 
 export interface MessagingMeeting {
   id: string;
@@ -92,7 +97,13 @@ export interface MessagingMeeting {
   durationMinutes: number;
   status: MeetingStatus;
   participantCount: number;
-  calendarProvider: "google" | null; // provider-safe; null = not yet connected
+  calendarProvider: "google" | "outlook" | null;
+  /** Provider-issued join URL. Null when not available or user has declined. */
+  joinUrl: string | null;
+  /** Current user's RSVP status. PENDING = not yet responded. */
+  rsvpStatus: MeetingRsvpStatus;
+  /** userId of meeting organizer. */
+  scheduledBy: string;
 }
 
 // ─── Files ───────────────────────────────────────────────────────────────────
@@ -139,7 +150,7 @@ export interface MessagingWorkspaceState {
  * The type of conversation currently open in the reading workspace.
  * Drives distinct workspace cues per conversation kind.
  */
-export type ConversationKind = "channel" | "dm" | "group";
+export type ConversationKind = "channel" | "dm" | "group" | "portal";
 
 /**
  * A single static message in the reading pane.
@@ -158,10 +169,20 @@ export interface ConversationMessage {
   threadReplyCount: number;
   /** Reaction chips — static display only in Phase 1 */
   reactions: MessageReaction[];
-  /** Attachment hint — no real upload in Phase 1 */
+  /** Attachment hint — legacy count string for backward compat */
   attachmentRef: string | null;
+  /** Real attachment records from the backend (Sprint 5.5) */
+  attachmentRecords: Array<{
+    id: string;
+    name: string;
+    mimeType: string;
+    mimeCategory: string;
+    sizeBytes: number;
+    scanStatus: string;
+  }>;
   /** Whether the current viewer is mentioned */
   mentionsCurrentUser: boolean;
+  audience?: "EXTERNAL_VISIBLE" | "INTERNAL_ONLY";
 }
 
 /**
@@ -191,6 +212,17 @@ export interface ActiveConversation {
   threadOpen: boolean;
   /** The message ID whose thread is open, if any */
   threadAnchorMessageId: string | null;
+  /** Backend-derived: ISO timestamp when conversation was archived, or null */
+  archivedAt?: string | null;
+  /** Backend-derived: ISO timestamp when conversation was locked, or null */
+  lockedAt?: string | null;
+  /** Backend-derived: whether the current user can send messages */
+  canSend?: boolean;
+  portalState?: "OPEN" | "WAITING_ON_INTERNAL" | "WAITING_ON_CLIENT" | "CLOSED" | null;
+  linkedRecordType?: "CUSTOMER" | "INVOICE" | "QUOTE" | "PAYMENT" | "STATEMENT" | "TICKET" | "GENERAL_SUPPORT" | null;
+  linkedRecordId?: string | null;
+  customerId?: string | null;
+  assigneeId?: string | null;
 }
 
 /**
@@ -286,6 +318,12 @@ export interface MessagingTaskDetail extends MessagingTask {
   description: string | null;
   createdAt: string; // ISO
   createdBy: string; // participant name
+  originatingMessageId?: string | null;
+  reminderAt?: string | null;
+  reminderSentAt?: string | null;
+  dbStatus?: TaskStatus | null;
+  conversationName?: string | null;
+  conversationType?: "CHANNEL" | "DM" | "GROUP";
 }
 
 export type CalendarConnectionStatus =
@@ -301,26 +339,100 @@ export interface CalendarConnection {
 }
 
 export type MeetingTab = "upcoming" | "past" | "calendar";
-export type TaskFilterStatus = "all" | "open" | "in-progress" | "done" | "overdue";
+export type TaskFilterStatus = "all" | "open" | "in-progress" | "done" | "overdue" | "cancelled" | "assigned" | "created" | "due-soon";
 
 // ─── Sprint 1.6 — Search, Files, Notifications, and Final Polish ─────────────
 
-export type SearchResultKind = "message" | "channel" | "person" | "file";
+export type SearchResultKind =
+  | "message"
+  | "conversation"
+  | "task"
+  | "meeting"
+  | "file"
+  | "channel"
+  | "person";
 
-export interface MessagingSearchResult {
+export interface SearchResultBase {
   id: string;
   kind: SearchResultKind;
   title: string;
   subtitle: string;
-  avatarInitials?: string;
   timestamp?: string;
+  score?: number;
+}
+
+export interface MessageSearchResult extends SearchResultBase {
+  kind: "message";
+  conversationId: string;
+  conversationName: string;
+  authorName: string;
+  authorInitials: string;
+  snippet: string;
+}
+
+export interface ConversationSearchResult extends SearchResultBase {
+  kind: "conversation";
+  conversationType: "CHANNEL" | "DM" | "GROUP";
+  isPrivate: boolean;
+  memberCount: number;
+}
+
+export interface TaskSearchResult extends SearchResultBase {
+  kind: "task";
+  conversationId: string;
+  conversationName: string;
+  status: "OPEN" | "IN_PROGRESS" | "DONE" | "OVERDUE" | "CANCELLED";
+  assigneeName?: string;
+  dueDate?: string;
+}
+
+export interface MeetingSearchResult extends SearchResultBase {
+  kind: "meeting";
+  conversationId: string;
+  conversationName: string;
+  scheduledAt: string;
+  durationMinutes: number;
+  joinUrl?: string;
+}
+
+export interface FileSearchResult extends SearchResultBase {
+  kind: "file";
+  conversationId: string;
+  conversationName: string;
+  attachmentId: string;
+  mimeType: string;
+  mimeCategory: string;
+  sizeBytes: number;
+  sizeLabel: string;
+  scanStatus: "PENDING" | "CLEAN" | "BLOCKED";
+  snippet?: string;
+}
+
+// Support legacy mock data shapes as well
+export interface LegacyChannelSearchResult extends SearchResultBase {
+  kind: "channel";
   conversationRef?: string;
 }
+
+export interface LegacyPersonSearchResult extends SearchResultBase {
+  kind: "person";
+  avatarInitials?: string;
+}
+
+export type MessagingSearchResult =
+  | MessageSearchResult
+  | ConversationSearchResult
+  | TaskSearchResult
+  | MeetingSearchResult
+  | FileSearchResult
+  | LegacyChannelSearchResult
+  | LegacyPersonSearchResult;
 
 export type NotificationKind =
   | "mention"
   | "reply"
   | "task_reminder"
+  | "task_assigned"
   | "meeting_reminder"
   | "channel_invite";
 

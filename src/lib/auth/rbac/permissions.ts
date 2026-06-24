@@ -29,6 +29,7 @@ export const RESOURCES = [
   "inventory",
   "procurement",
   "tags",
+  "messaging",
 ] as const;
 export type Resource = (typeof RESOURCES)[number];
 
@@ -81,6 +82,7 @@ const SYSTEM_ROLE_PERMISSIONS: Record<SystemRole, PermissionSet> = {
     reports: ["read"],
     intel: ["read"],
     inventory: ["read"],
+    messaging: ["read", "create"],
   },
 };
 

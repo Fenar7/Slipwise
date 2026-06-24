@@ -172,7 +172,7 @@ describe("addInvoiceTag", () => {
 
     const result = await addInvoiceTag("invoice_1", "tag_001");
     expect(result.success).toBe(false);
-    expect(result.error).toBe("Invoice not found");
+    expect((result as any).error).toBe("Invoice not found");
   });
 
   it("rejects tag from a different org", async () => {
@@ -181,7 +181,7 @@ describe("addInvoiceTag", () => {
 
     const result = await addInvoiceTag("invoice_1", "tag_001");
     expect(result.success).toBe(false);
-    expect(result.error).toBe("Tag not found");
+    expect((result as any).error).toBe("Tag not found");
   });
 });
 
@@ -225,7 +225,7 @@ describe("setInvoiceTags", () => {
 
     const result = await setInvoiceTags("invoice_1", ["tag_001", "invalid_tag"]);
     expect(result.success).toBe(false);
-    expect(result.error).toContain("Tags not found");
+    expect((result as any).error).toContain("Tags not found");
   });
 });
 
@@ -239,7 +239,7 @@ describe("getInvoiceTags", () => {
 
     const result = await getInvoiceTags("invoice_1");
     expect(result.success).toBe(true);
-    expect(result.data).toHaveLength(2);
+    expect((result as any).data).toHaveLength(2);
   });
 });
 
@@ -262,7 +262,7 @@ describe("addVoucherTag", () => {
 
     const result = await addVoucherTag("voucher_1", "tag_001");
     expect(result.success).toBe(false);
-    expect(result.error).toBe("Voucher not found");
+    expect((result as any).error).toBe("Voucher not found");
   });
 });
 
@@ -295,7 +295,7 @@ describe("addCustomerDefaultTag", () => {
 
     const result = await addCustomerDefaultTag("customer_1", "tag_001");
     expect(result.success).toBe(false);
-    expect(result.error).toBe("Customer not found");
+    expect((result as any).error).toBe("Customer not found");
   });
 });
 
@@ -308,7 +308,7 @@ describe("getCustomerDefaultTags", () => {
 
     const result = await getCustomerDefaultTags("customer_1");
     expect(result.success).toBe(true);
-    expect(result.data).toHaveLength(1);
+    expect((result as any).data).toHaveLength(1);
   });
 });
 

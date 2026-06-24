@@ -1,9 +1,21 @@
 /**
  * Sprint 1.3 — Composer and Thread UX tests
  */
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, within } from "@testing-library/react";
 import React from "react";
+
+vi.mock("@/app/app/messaging/lib/use-conversation-list");
+vi.mock("@/app/app/messaging/lib/use-conversation-detail");
+vi.mock("@/app/app/messaging/lib/use-conversation-tasks");
+vi.mock("@/app/app/messaging/lib/use-thread-replies");
+vi.mock("@/app/app/messaging/lib/use-attachment-files");
+
+import { setupLegacyMessagingMocks } from "./legacy-setup-helper";
+
+beforeEach(() => {
+  setupLegacyMessagingMocks();
+});
 
 vi.mock("next/navigation", () => ({
   usePathname: () => "/app/messaging",
@@ -75,15 +87,15 @@ describe("MessagingThreadPanel", () => {
   it("renders each reply row", () => { rtp(); REPLIES.forEach(r => expect(screen.getByTestId(`thread-reply-${r.id}`)).toBeInTheDocument()); });
   it("renders thread composer", () => { rtp(); expect(screen.getByTestId("thread-composer")).toBeInTheDocument(); });
   it("shows empty state for empty replies", () => { rtp([]); expect(screen.getByText(/no replies yet/i)).toBeInTheDocument(); });
-  it("hover actions panel is in the DOM for each reply", () => { rtp(); REPLIES.forEach(r => expect(screen.getByTestId(`hover-actions-${r.id}`)).toBeInTheDocument()); });
+  it("hover actions panel is in the DOM for each reply", () => { rtp(); REPLIES.forEach(r => expect(screen.getByTestId(`thread-reply-hover-actions-${r.id}`)).toBeInTheDocument()); });
   it("clicking edit shows inline edit composer", () => {
     rtp();
-    fireEvent.click(screen.getByTestId(`hover-edit-${REPLIES[0].id}`));
+    fireEvent.click(screen.getByTestId(`thread-reply-edit-btn-${REPLIES[0].id}`));
     expect(screen.getByTestId(`inline-edit-composer-${REPLIES[0].id}`)).toBeInTheDocument();
   });
   it("Cancel dismisses inline edit composer", () => {
     rtp();
-    fireEvent.click(screen.getByTestId(`hover-edit-${REPLIES[0].id}`));
+    fireEvent.click(screen.getByTestId(`thread-reply-edit-btn-${REPLIES[0].id}`));
     fireEvent.click(screen.getByTestId(`inline-edit-cancel-${REPLIES[0].id}`));
     expect(screen.queryByTestId(`inline-edit-composer-${REPLIES[0].id}`)).not.toBeInTheDocument();
     expect(screen.getByTestId(`thread-reply-${REPLIES[0].id}`)).toBeInTheDocument();

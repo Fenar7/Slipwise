@@ -1,29 +1,8 @@
 "use client";
 
-/**
- * MessagingComposer — Sprint 1.3
- *
- * Rich message composer with all static UI states:
- * - Auto-expanding textarea (contentEditable div)
- * - Formatting toolbar (Bold, Italic, Strikethrough, Link, List, Code Block)
- * - Attachment staging area with file chips
- * - @mention popover with team member suggestions
- * - /slash command popover
- * - Send button reacting to empty vs. has-content state
- * - Restricted/locked state when user lacks posting rights
- *
- * No actual message sending in Phase 1 — all state is static/simulated.
- */
-
 import React from "react";
 import { cn } from "@/lib/utils";
 import {
-  Bold,
-  Italic,
-  Strikethrough,
-  Link2,
-  List,
-  Code2,
   Paperclip,
   AtSign,
   Smile,
@@ -38,7 +17,10 @@ import {
   Hash,
   Lock,
   ChevronRight,
+  AlertTriangle,
+  Loader2,
 } from "lucide-react";
+import { FormattingToolbar, applyComposerFormat } from "./messaging-formatting-toolbar";
 import type {
   AttachedFile,
   MentionSuggestion,
@@ -47,8 +29,8 @@ import type {
   PresenceStatus,
 } from "./types";
 import { MOCK_PARTICIPANTS } from "./mock-data";
-
-// ─── Static mock data for popovers ───────────────────────────────────────────
+import { useDrafts } from "./lib/use-drafts";
+import { useAttachmentUpload, type UploadedAttachment } from "./lib/use-attachment-upload";
 
 const MOCK_MENTION_SUGGESTIONS: MentionSuggestion[] = MOCK_PARTICIPANTS.map((p) => ({
   userId: p.id,
@@ -59,44 +41,31 @@ const MOCK_MENTION_SUGGESTIONS: MentionSuggestion[] = MOCK_PARTICIPANTS.map((p) 
 }));
 
 const MOCK_SLASH_COMMANDS: SlashCommand[] = [
-  {
-    command: "/task",
-    label: "Create Task",
-    description: "Create a new task linked to this conversation",
-    iconName: "CheckSquare",
-  },
-  {
-    command: "/meet",
-    label: "Schedule Meeting",
-    description: "Schedule a meeting with participants in this channel",
-    iconName: "Video",
-  },
-  {
-    command: "/doc",
-    label: "New Document",
-    description: "Create and share a new document",
-    iconName: "FileText",
-  },
-  {
-    command: "/mention",
-    label: "Mention Someone",
-    description: "Quickly mention a team member",
-    iconName: "AtSign",
-  },
-  {
-    command: "/channel",
-    label: "Link Channel",
-    description: "Reference another channel in your message",
-    iconName: "Hash",
-  },
+  { command: "/task", label: "Create Task", description: "Create a new task linked to this conversation", iconName: "CheckSquare" },
+  { command: "/meet", label: "Schedule Meeting", description: "Schedule a meeting with participants in this channel", iconName: "Video" },
+  { command: "/doc", label: "New Document", description: "Create and share a new document", iconName: "FileText" },
+  { command: "/mention", label: "Mention Someone", description: "Quickly mention a team member", iconName: "AtSign" },
+  { command: "/channel", label: "Link Channel", description: "Reference another channel in your message", iconName: "Hash" },
 ];
 
-const MOCK_STAGED_FILES: AttachedFile[] = [
-  { id: "f1", name: "Q2-Reconciliation-Draft.xlsx", sizeLabel: "248 KB", mimeCategory: "spreadsheet" },
-  { id: "f2", name: "Meeting-Notes.pdf", sizeLabel: "84 KB", mimeCategory: "document" },
-];
-
-// ─── Shared primitives ────────────────────────────────────────────────────────
+function extractMentionPayload(
+  body: string,
+  suggestions: MentionSuggestion[],
+): Array<{ userId: string; offsetStart: number; offsetEnd: number }> {
+  const mentions: Array<{ userId: string; offsetStart: number; offsetEnd: number }> = [];
+  for (const suggestion of suggestions) {
+    const token = `@${suggestion.name}`;
+    let searchFrom = 0;
+    while (searchFrom < body.length) {
+      const offsetStart = body.indexOf(token, searchFrom);
+      if (offsetStart === -1) break;
+      const offsetEnd = offsetStart + token.length;
+      mentions.push({ userId: suggestion.userId, offsetStart, offsetEnd });
+      searchFrom = offsetEnd;
+    }
+  }
+  return mentions.sort((a, b) => a.offsetStart - b.offsetStart);
+}
 
 function PresenceDot({ status }: { status: PresenceStatus }) {
   return (
@@ -131,52 +100,24 @@ function slashIcon(iconName: SlashCommand["iconName"]) {
   }
 }
 
-// ─── Formatting toolbar ───────────────────────────────────────────────────────
-
-interface FormatButton {
-  label: string;
-  icon: React.ElementType;
-  testId: string;
+function uploadedFileIcon(mimeCategory: string) {
+  switch (mimeCategory) {
+    case "spreadsheet": return FileSpreadsheet;
+    case "image": return Image;
+    case "document": return FileText;
+    default: return File;
+  }
 }
 
-const FORMAT_BUTTONS: FormatButton[] = [
-  { label: "Bold", icon: Bold, testId: "composer-fmt-bold" },
-  { label: "Italic", icon: Italic, testId: "composer-fmt-italic" },
-  { label: "Strikethrough", icon: Strikethrough, testId: "composer-fmt-strikethrough" },
-  { label: "Link", icon: Link2, testId: "composer-fmt-link" },
-  { label: "Bulleted list", icon: List, testId: "composer-fmt-list" },
-  { label: "Code block", icon: Code2, testId: "composer-fmt-code" },
-];
-
-function FormattingToolbar() {
-  return (
-    <div
-      className="flex items-center gap-0.5 border-b px-2 py-1.5"
-      style={{ borderColor: "#F0F0F0" }}
-      role="toolbar"
-      aria-label="Text formatting"
-      data-testid="composer-formatting-toolbar"
-    >
-      {FORMAT_BUTTONS.map(({ label, icon: Icon, testId }) => (
-        <button
-          key={label}
-          type="button"
-          className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#DC2626]"
-          aria-label={label}
-          data-testid={testId}
-        >
-          <Icon className="h-3.5 w-3.5" style={{ color: "#79747E" }} />
-        </button>
-      ))}
-    </div>
-  );
+function formatSizeLabel(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
-
-// ─── Attachment staging area ──────────────────────────────────────────────────
 
 interface AttachmentStagingProps {
-  files: AttachedFile[];
-  onRemove: (id: string) => void;
+  files: UploadedAttachment[];
+  onRemove: (storageRef: string) => void;
 }
 
 function AttachmentStaging({ files, onRemove }: AttachmentStagingProps) {
@@ -188,27 +129,27 @@ function AttachmentStaging({ files, onRemove }: AttachmentStagingProps) {
       data-testid="composer-attachment-staging"
     >
       {files.map((file) => {
-        const Icon = fileIcon(file.mimeCategory);
+        const Icon = uploadedFileIcon(file.mimeCategory);
         return (
           <div
-            key={file.id}
+            key={file.storageRef}
             className="group flex items-center gap-2 rounded-lg border bg-gray-50 px-2.5 py-1.5 text-xs"
             style={{ borderColor: "#E8E8E8" }}
-            data-testid={`composer-attachment-chip-${file.id}`}
+            data-testid={`composer-attachment-chip-${file.storageRef}`}
           >
             <Icon className="h-3.5 w-3.5 shrink-0 text-[#79747E]" />
             <span className="max-w-[140px] truncate font-medium" style={{ color: "#1C1B1F" }}>
-              {file.name}
+              {file.fileName}
             </span>
             <span className="shrink-0" style={{ color: "#79747E" }}>
-              {file.sizeLabel}
+              {formatSizeLabel(file.sizeBytes)}
             </span>
             <button
               type="button"
               className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full transition-colors hover:bg-red-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#DC2626]"
-              aria-label={`Remove ${file.name}`}
-              onClick={() => onRemove(file.id)}
-              data-testid={`composer-attachment-remove-${file.id}`}
+              aria-label={`Remove ${file.fileName}`}
+              onClick={() => onRemove(file.storageRef)}
+              data-testid={`composer-attachment-remove-${file.storageRef}`}
             >
               <X className="h-2.5 w-2.5 text-[#79747E] group-hover:text-[#DC2626]" />
             </button>
@@ -218,8 +159,6 @@ function AttachmentStaging({ files, onRemove }: AttachmentStagingProps) {
     </div>
   );
 }
-
-// ─── @mention popover ─────────────────────────────────────────────────────────
 
 interface MentionPopoverProps {
   suggestions: MentionSuggestion[];
@@ -279,8 +218,6 @@ function MentionPopover({ suggestions, onSelect }: MentionPopoverProps) {
   );
 }
 
-// ─── /slash command popover ───────────────────────────────────────────────────
-
 interface SlashPopoverProps {
   commands: SlashCommand[];
   onSelect: (cmd: SlashCommand) => void;
@@ -337,8 +274,6 @@ function SlashPopover({ commands, onSelect }: SlashPopoverProps) {
   );
 }
 
-// ─── Restricted composer ──────────────────────────────────────────────────────
-
 function RestrictedComposer({ reason }: { reason?: string }) {
   return (
     <div
@@ -359,22 +294,27 @@ function RestrictedComposer({ reason }: { reason?: string }) {
   );
 }
 
-// ─── Main composer ────────────────────────────────────────────────────────────
-
 export interface MessagingComposerProps {
-  /** Placeholder text shown when the input is empty */
   placeholder: string;
-  /** When false, renders the restricted/locked state */
   isAccessible?: boolean;
-  /** When true, renders the restricted/locked state (alias for !isAccessible) */
   restricted?: boolean;
-  /** Reason shown in the restricted state */
   restrictedReason?: string;
-  /**
-   * Simulated composer state — used in tests and Storybook to force a
-   * specific UI state without user interaction.
-   */
   simulatedState?: ComposerState;
+  onSend?: (
+    body: string,
+    options?: {
+      mentions?: Array<{ userId: string; offsetStart: number; offsetEnd: number }>;
+      attachments?: Array<{ storageRef: string; uploadToken: string; fileName: string; mimeType: string; sizeBytes: number }>;
+      audience?: "EXTERNAL_VISIBLE" | "INTERNAL_ONLY";
+    },
+  ) => void | Promise<unknown>;
+  sending?: boolean;
+  sendError?: string | null;
+  conversationId?: string;
+  threadId?: string | null;
+  participants?: MentionSuggestion[];
+  isPortal?: boolean;
+  isClosed?: boolean;
 }
 
 export function MessagingComposer({
@@ -383,21 +323,108 @@ export function MessagingComposer({
   restricted = false,
   restrictedReason,
   simulatedState,
+  onSend,
+  sending = false,
+  sendError,
+  conversationId,
+  threadId,
+  participants,
+  isPortal = false,
+  isClosed = false,
 }: MessagingComposerProps) {
   const [inputValue, setInputValue] = React.useState("");
-  const [stagedFiles, setStagedFiles] = React.useState<AttachedFile[]>([]);
+  const [audience, setAudience] = React.useState<"EXTERNAL_VISIBLE" | "INTERNAL_ONLY">(
+    isClosed ? "INTERNAL_ONLY" : "EXTERNAL_VISIBLE"
+  );
+
+  React.useEffect(() => {
+    if (isClosed) {
+      setAudience("INTERNAL_ONLY");
+    } else {
+      setAudience("EXTERNAL_VISIBLE");
+    }
+  }, [isClosed]);
   const [activePopover, setActivePopover] = React.useState<
     "mention" | "slash" | null
   >(simulatedState === "mention-popover" ? "mention" : simulatedState === "slash-popover" ? "slash" : null);
 
+  const { fetchDraft, saveDraft, deleteDraft } = useDrafts();
+  const {
+    uploading,
+    stagedFiles,
+    failures,
+    error: uploadError,
+    upload,
+    removeStaged,
+    clearFailures,
+    clearAll,
+    clearError,
+  } = useAttachmentUpload();
+
+  const inputRef = React.useRef<HTMLDivElement>(null);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const saveTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const mentionSuggestions = participants && participants.length > 0
+    ? participants
+    : MOCK_MENTION_SUGGESTIONS;
+
   const hasContent = inputValue.trim().length > 0 || stagedFiles.length > 0;
 
-  function handleRemoveFile(id: string) {
-    setStagedFiles((prev) => prev.filter((f) => f.id !== id));
+  React.useEffect(() => {
+    if (!conversationId) return;
+    let cancelled = false;
+    fetchDraft(conversationId, threadId ?? null).then((draft) => {
+      if (cancelled || !draft) return;
+      setInputValue(draft.body);
+      if (inputRef.current) {
+        inputRef.current.textContent = draft.body;
+      }
+    });
+    return () => { cancelled = true; };
+  }, [conversationId, threadId]);
+
+  React.useEffect(() => {
+    if (!conversationId || inputValue.trim().length === 0) return;
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      saveDraft(conversationId, inputValue, threadId ?? null);
+    }, 1500);
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    };
+  }, [inputValue, conversationId, threadId]);
+
+  function handleRemoveFile(storageRef: string) {
+    removeStaged(storageRef);
   }
 
-  function handleMentionSelect(_s: MentionSuggestion) {
+  function handleAttachClick() {
+    fileInputRef.current?.click();
+  }
+
+  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    for (let i = 0; i < files.length; i++) {
+      await upload(files[i]);
+    }
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  }
+
+  function handleMentionSelect(s: MentionSuggestion) {
     setActivePopover(null);
+    setInputValue((prev) => {
+      const updated = prev ? `${prev} @${s.name} ` : `@${s.name} `;
+      if (inputRef.current) {
+        inputRef.current.textContent = updated;
+      }
+      return updated;
+    });
   }
 
   function handleSlashSelect(_cmd: SlashCommand) {
@@ -412,14 +439,45 @@ export function MessagingComposer({
     setActivePopover((prev) => (prev === "slash" ? null : "slash"));
   }
 
-  // Simulate staged files when simulatedState is "has-content"
-  const displayFiles =
-    simulatedState === "has-content" && stagedFiles.length === 0
-      ? MOCK_STAGED_FILES
-      : stagedFiles;
+  async function handleSend() {
+    if (!onSend || !hasContent || sending) return;
+    const mentions = extractMentionPayload(inputValue, mentionSuggestions);
 
-  const displayHasContent =
-    simulatedState === "has-content" ? true : hasContent;
+    const attachmentPayload = stagedFiles.map((f) => ({
+      storageRef: f.storageRef,
+      uploadToken: f.uploadToken,
+      fileName: f.fileName,
+      mimeType: f.mimeType,
+      sizeBytes: f.sizeBytes,
+    }));
+
+    const options: {
+      mentions?: Array<{ userId: string; offsetStart: number; offsetEnd: number }>;
+      attachments?: Array<{ storageRef: string; uploadToken: string; fileName: string; mimeType: string; sizeBytes: number }>;
+      audience?: "EXTERNAL_VISIBLE" | "INTERNAL_ONLY";
+    } = {
+      mentions: mentions.length > 0 ? mentions : undefined,
+      attachments: attachmentPayload.length > 0 ? attachmentPayload : undefined,
+    };
+    if (isPortal) {
+      options.audience = audience;
+    }
+
+    await onSend(inputValue, options);
+
+    setInputValue("");
+    if (inputRef.current) inputRef.current.textContent = "";
+    clearAll();
+    if (conversationId) {
+      deleteDraft(conversationId, threadId ?? null);
+    }
+  }
+
+  const displayHasContent = simulatedState === "has-content" ? true : hasContent;
+
+  function applyFormat(type: string) {
+    applyComposerFormat(type, inputRef, setInputValue);
+  }
 
   if (restricted || !isAccessible) {
     return <RestrictedComposer reason={restrictedReason} />;
@@ -432,10 +490,9 @@ export function MessagingComposer({
       data-testid="reading-workspace-composer"
     >
       <div className="relative">
-        {/* Popovers — rendered above the composer */}
         {activePopover === "mention" && (
           <MentionPopover
-            suggestions={MOCK_MENTION_SUGGESTIONS}
+            suggestions={mentionSuggestions}
             onSelect={handleMentionSelect}
           />
         )}
@@ -446,23 +503,90 @@ export function MessagingComposer({
           />
         )}
 
+        {sendError && (
+          <div className="mb-2 rounded-lg bg-red-50 px-3 py-1.5 text-xs text-red-700" data-testid="composer-send-error">
+            {sendError}
+          </div>
+        )}
+
+        {failures.length > 0 && (
+          <div className="mb-2 rounded-lg bg-amber-50 px-3 py-2" data-testid="composer-upload-failures">
+            {failures.map((f, i) => (
+              <div key={i} className="flex items-center gap-2 text-xs text-amber-700">
+                <AlertTriangle className="h-3 w-3 shrink-0" />
+                <span className="flex-1 truncate">{f.fileName}: {f.message}</span>
+                {i === failures.length - 1 && (
+                  <button
+                    type="button"
+                    onClick={clearFailures}
+                    className="text-amber-800 hover:underline"
+                  >
+                    Dismiss
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {isPortal && (
+          <div className="flex gap-1 mb-2 border-b pb-1" style={{ borderColor: "#F0F0F0" }}>
+            <button
+              type="button"
+              disabled={isClosed}
+              onClick={() => setAudience("EXTERNAL_VISIBLE")}
+              className={cn(
+                "px-3 py-1.5 text-xs font-semibold rounded-t-lg transition-all border-b-2",
+                audience === "EXTERNAL_VISIBLE"
+                  ? "border-[#6200EE] text-[#6200EE] bg-gray-50"
+                  : "border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50/50",
+                isClosed && "opacity-50 cursor-not-allowed text-gray-400"
+              )}
+              data-testid="composer-tab-external"
+            >
+              Reply to Client
+            </button>
+            <button
+              type="button"
+              onClick={() => setAudience("INTERNAL_ONLY")}
+              className={cn(
+                "px-3 py-1.5 text-xs font-semibold rounded-t-lg transition-all border-b-2",
+                audience === "INTERNAL_ONLY"
+                  ? "border-amber-500 text-amber-700 bg-amber-50 font-bold"
+                  : "border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50/50"
+              )}
+              data-testid="composer-tab-internal"
+            >
+              Internal Note
+            </button>
+          </div>
+        )}
+
         <div
-          className="flex flex-col rounded-xl border bg-white transition-shadow focus-within:shadow-sm focus-within:border-gray-300"
-          style={{ borderColor: "#E0E0E0" }}
+          className={cn(
+            "flex flex-col rounded-xl border bg-white transition-shadow focus-within:shadow-sm focus-within:border-gray-300",
+            isPortal && audience === "INTERNAL_ONLY" && "border-amber-300 bg-amber-50/30 focus-within:border-amber-400 focus-within:shadow-amber-100/50"
+          )}
+          style={(!isPortal || audience !== "INTERNAL_ONLY") ? { borderColor: "#E0E0E0" } : undefined}
           data-testid="composer-shell"
         >
-          {/* Formatting toolbar */}
-          <FormattingToolbar />
+          <FormattingToolbar onFormat={applyFormat} />
 
-          {/* Attachment staging */}
-          <AttachmentStaging files={displayFiles} onRemove={handleRemoveFile} />
+          <AttachmentStaging files={stagedFiles} onRemove={handleRemoveFile} />
 
-          {/* Input area */}
+          {uploading && (
+            <div className="flex items-center gap-2 border-b px-3 py-2" style={{ borderColor: "#F0F0F0" }}>
+              <Loader2 className="h-3 w-3 animate-spin text-[#DC2626]" />
+              <span className="text-xs" style={{ color: "#79747E" }}>Uploading attachments…</span>
+            </div>
+          )}
+
           <div
             className="relative min-h-[2.75rem] max-h-40 overflow-y-auto px-3 py-2.5"
             data-testid="composer-input-area"
           >
             <div
+              ref={inputRef}
               role="textbox"
               aria-label={placeholder}
               aria-multiline="true"
@@ -473,30 +597,46 @@ export function MessagingComposer({
               data-placeholder={placeholder}
               data-testid="composer-input"
               onInput={(e) => setInputValue(e.currentTarget.textContent ?? "")}
+              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && onSend && displayHasContent && !sending) { e.preventDefault(); handleSend(); }}}
             />
           </div>
 
-          {/* Bottom action bar */}
+          {uploadError && (
+            <div className="border-t px-3 py-1.5" style={{ borderColor: "#FED7D7" }}>
+              <p className="text-xs text-red-600">{uploadError}</p>
+              <button
+                type="button"
+                onClick={clearError}
+                className="text-xs text-red-700 hover:underline"
+              >
+                Dismiss
+              </button>
+            </div>
+          )}
+
           <div
             className="flex items-center gap-1 border-t px-2 py-1.5"
             style={{ borderColor: "#F0F0F0" }}
           >
-            {/* Attach file */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              className="hidden"
+              multiple
+              onChange={handleFileChange}
+              data-testid="composer-file-input"
+            />
+
             <button
               type="button"
               className="flex h-7 w-7 items-center justify-center rounded-lg transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#DC2626]"
               aria-label="Attach file"
               data-testid="composer-attach-btn"
-              onClick={() =>
-                setStagedFiles((prev) =>
-                  prev.length === 0 ? MOCK_STAGED_FILES : prev
-                )
-              }
+              onClick={handleAttachClick}
             >
               <Paperclip className="h-3.5 w-3.5" style={{ color: "#79747E" }} />
             </button>
 
-            {/* @mention */}
             <button
               type="button"
               className={cn(
@@ -517,7 +657,6 @@ export function MessagingComposer({
               />
             </button>
 
-            {/* /slash */}
             <button
               type="button"
               className={cn(
@@ -540,7 +679,6 @@ export function MessagingComposer({
               </span>
             </button>
 
-            {/* Emoji */}
             <button
               type="button"
               className="flex h-7 w-7 items-center justify-center rounded-lg transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#DC2626]"
@@ -552,21 +690,21 @@ export function MessagingComposer({
 
             <div className="flex-1" />
 
-            {/* Send button — reacts to content state */}
             <button
               type="button"
               className={cn(
                 "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626] focus-visible:ring-offset-1",
-                displayHasContent
+                displayHasContent && !sending
                   ? "bg-[#DC2626] text-white hover:bg-red-700 cursor-pointer"
                   : "bg-gray-100 text-[#79747E] cursor-not-allowed opacity-60"
               )}
-              disabled={!displayHasContent}
+              disabled={!displayHasContent || sending}
               aria-label="Send message"
               data-testid="composer-send-btn"
+              onClick={handleSend}
             >
               <Send className="h-3 w-3" />
-              <span>Send</span>
+              <span>{sending ? "Sending…" : "Send"}</span>
             </button>
           </div>
         </div>

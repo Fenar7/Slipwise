@@ -52,7 +52,7 @@ vi.mock("@/lib/tags/assignment-service", () => ({
 }));
 
 import { createTag, renameTag, archiveTag, unarchiveTag } from "../tag-service";
-import { getTagAnalytics } from "../../intel/reports/tag-analytics/actions";
+import { getTagAnalytics } from "@/lib/intel/reports/tag-analytics/actions";
 
 const ORG_ID = "org_test";
 const ADMIN_CTX = { orgId: ORG_ID, userId: "u1", role: "admin", representedId: null, proxyGrantId: null, proxyScope: null };
@@ -110,7 +110,7 @@ describe("archive preserves historical identity", () => {
     const result = await archiveTag("tag_z");
 
     expect(result.success).toBe(true);
-    expect(result.success && result.data?.id).toBe("tag_z");
+    expect(result.success && (result as any).data?.id).toBe("tag_z");
   });
 
   it("renamed tag preserves its ID", async () => {
@@ -122,8 +122,8 @@ describe("archive preserves historical identity", () => {
     const result = await renameTag("tag_r", { name: "New Name" });
 
     expect(result.success).toBe(true);
-    expect(result.success && result.data?.id).toBe("tag_r");
-    expect(result.success && result.data?.name).toBe("New Name");
+    expect(result.success && (result as any).data?.id).toBe("tag_r");
+    expect(result.success && (result as any).data?.name).toBe("New Name");
   });
 
   it("unarchived tag restores to active state", async () => {
@@ -143,7 +143,7 @@ describe("cross-org safety", () => {
     const result = await archiveTag("other_org_tag");
 
     expect(result.success).toBe(false);
-    expect(result.error).toBe("Tag not found");
+    expect((result as any).error).toBe("Tag not found");
   });
 });
 

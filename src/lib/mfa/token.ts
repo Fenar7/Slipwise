@@ -138,7 +138,7 @@ export async function verifyMfaToken(
     const isValid = await webCrypto.subtle.verify(
       "HMAC",
       key,
-      sigBytes,
+      sigBytes as any,
       enc.encode(`${header}.${body}`)
     );
     if (!isValid) return null;

@@ -35,8 +35,6 @@ import {
   MOCK_DMS,
   MOCK_GROUPS,
 } from "./mock-data";
-import { MessagingChannelCreate } from "./messaging-channel-create";
-import { MessagingGroupCreate } from "./messaging-group-create";
 
 // ─── Shared primitives ────────────────────────────────────────────────────────
 
@@ -117,6 +115,7 @@ function ListHeader({
           style={{ color: "#79747E" }}
           aria-label={actionLabel}
           title={actionLabel}
+          onClick={onAction}
         >
           <Plus className="h-4 w-4" />
         </button>
@@ -148,16 +147,20 @@ function ListHeader({
 interface ChannelListProps {
   activeConversationId: string | null;
   onSelect: (conv: ActiveConversation) => void;
+  channels?: MessagingChannel[];
+  onRequestCreate?: () => void;
 }
 
 export function ChannelConversationList({
   activeConversationId,
   onSelect,
+  channels: liveChannels,
+  onRequestCreate,
 }: ChannelListProps) {
   const [search, setSearch] = React.useState("");
-  const [showCreate, setShowCreate] = React.useState(false);
 
-  const filtered = MOCK_CHANNELS.filter((ch) =>
+  const source = liveChannels ?? MOCK_CHANNELS;
+  const filtered = source.filter((ch) =>
     ch.name.toLowerCase().includes(search.toLowerCase())
   );
 
@@ -184,9 +187,9 @@ export function ChannelConversationList({
     >
       <ListHeader
         title="Channels"
-        subtitle={`${MOCK_CHANNELS.length} channels · ${MOCK_CHANNELS.filter((c) => c.visibility === "private").length} private`}
+        subtitle={`${source.length} channels · ${source.filter((c) => c.visibility === "private").length} private`}
         actionLabel="New channel"
-        onAction={() => setShowCreate(true)}
+        onAction={() => onRequestCreate?.()}
         searchPlaceholder="Find a channel…"
         searchValue={search}
         onSearchChange={setSearch}
@@ -227,7 +230,6 @@ export function ChannelConversationList({
           </button>
         </div>
       </div>
-      {showCreate && <MessagingChannelCreate onClose={() => setShowCreate(false)} />}
     </div>
   );
 }
@@ -302,12 +304,15 @@ function ChannelRow({
 interface DMListProps {
   activeConversationId: string | null;
   onSelect: (conv: ActiveConversation) => void;
+  dms?: DirectMessage[];
+  onRequestCreate?: () => void;
 }
 
-export function DMConversationList({ activeConversationId, onSelect }: DMListProps) {
+export function DMConversationList({ activeConversationId, onSelect, dms: liveDms, onRequestCreate }: DMListProps) {
   const [search, setSearch] = React.useState("");
 
-  const filtered = MOCK_DMS.filter((dm) =>
+  const source = liveDms ?? MOCK_DMS;
+  const filtered = source.filter((dm) =>
     dm.participant.name.toLowerCase().includes(search.toLowerCase())
   );
 
@@ -331,9 +336,9 @@ export function DMConversationList({ activeConversationId, onSelect }: DMListPro
     >
       <ListHeader
         title="Direct Messages"
-        subtitle={`${MOCK_DMS.length} conversations`}
+        subtitle={`${source.length} conversations`}
         actionLabel="New direct message"
-        onAction={() => {}}
+        onAction={() => onRequestCreate?.()}
         searchPlaceholder="Find a person…"
         searchValue={search}
         onSearchChange={setSearch}
@@ -355,6 +360,7 @@ export function DMConversationList({ activeConversationId, onSelect }: DMListPro
             type="button"
             className="w-full rounded-lg border border-dashed px-3 py-2 text-xs font-medium transition-colors hover:border-[#DC2626] hover:text-[#DC2626] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]"
             style={{ borderColor: "#E0E0E0", color: "#79747E" }}
+            onClick={() => onRequestCreate?.()}
           >
             Start a new message…
           </button>
@@ -435,14 +441,16 @@ function DMRow({
 interface GroupListProps {
   activeConversationId: string | null;
   onSelect: (conv: ActiveConversation) => void;
+  groups?: MessagingGroup[];
+  onRequestCreate?: () => void;
 }
 
-export function GroupConversationList({ activeConversationId, onSelect }: GroupListProps) {
+export function GroupConversationList({ activeConversationId, onSelect, groups: liveGroups, onRequestCreate }: GroupListProps) {
   const [search, setSearch] = React.useState("");
-  const [showCreate, setShowCreate] = React.useState(false);
 
-  const filtered = MOCK_GROUPS.filter((grp) =>
-    grp.name.toLowerCase().includes(search.toLowerCase())
+  const source = liveGroups ?? MOCK_GROUPS;
+  const filtered = source.filter((g) =>
+    g.name.toLowerCase().includes(search.toLowerCase())
   );
 
   function handleSelect(grp: MessagingGroup) {
@@ -466,9 +474,9 @@ export function GroupConversationList({ activeConversationId, onSelect }: GroupL
     >
       <ListHeader
         title="Groups"
-        subtitle={`${MOCK_GROUPS.length} groups · ${MOCK_GROUPS.filter((g) => g.isPrivate).length} private`}
+        subtitle={`${source.length} groups · ${source.filter((g) => g.isPrivate).length} private`}
         actionLabel="New group"
-        onAction={() => setShowCreate(true)}
+        onAction={() => onRequestCreate?.()}
         searchPlaceholder="Find a group…"
         searchValue={search}
         onSearchChange={setSearch}
@@ -486,7 +494,6 @@ export function GroupConversationList({ activeConversationId, onSelect }: GroupL
           <EmptySearch label="No groups match your search." />
         )}
       </div>
-      {showCreate && <MessagingGroupCreate onClose={() => setShowCreate(false)} />}
     </div>
   );
 }
@@ -577,6 +584,117 @@ function EmptySearch({ label }: { label: string }) {
       <p className="text-xs" style={{ color: "#79747E" }}>
         {label}
       </p>
+    </div>
+  );
+}
+
+// ─── Portal List ─────────────────────────────────────────────────────────────
+
+import type { ApiConversationSummary } from "./lib/mappers";
+
+interface PortalListProps {
+  activeConversationId: string | null;
+  onSelect: (conv: ActiveConversation) => void;
+  portals: ApiConversationSummary[];
+}
+
+export function PortalConversationList({
+  activeConversationId,
+  onSelect,
+  portals,
+}: PortalListProps) {
+  const [search, setSearch] = React.useState("");
+
+  const filtered = portals.filter((p) =>
+    (p.name ?? "Portal").toLowerCase().includes(search.toLowerCase())
+  );
+
+  return (
+    <div
+      className="flex flex-col h-full overflow-hidden"
+      data-testid="conv-list-portals"
+    >
+      <ListHeader
+        title="Portal Chats"
+        subtitle={`${portals.length} portals`}
+        actionLabel="New Portal Conversation"
+        onAction={() => {}}
+        searchPlaceholder="Find a portal chat…"
+        searchValue={search}
+        onSearchChange={setSearch}
+      />
+      <div className="flex-1 overflow-y-auto px-2 py-2">
+        {filtered.length === 0 ? (
+          <EmptySearch label="No portal chats found" />
+        ) : (
+          <ul className="space-y-1">
+            {filtered.map((portal) => {
+              const isActive = activeConversationId === portal.id;
+              const hasUnread = (portal.unreadCount ?? 0) > 0;
+              return (
+                <li key={portal.id}>
+                  <button
+                    type="button"
+                    className={cn(
+                      "flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626] focus-visible:ring-offset-1",
+                      isActive
+                        ? "bg-red-50 text-[#DC2626]"
+                        : "text-[#49454F] hover:bg-gray-50 hover:text-[#1C1B1F]"
+                    )}
+                    onClick={() =>
+                      onSelect({
+                        id: portal.id,
+                        kind: "portal",
+                        name: portal.name ?? "Portal Customer",
+                        subtitle: `${portal.portalState ?? "OPEN"}${portal.linkedRecordType ? ` · ${portal.linkedRecordType.toLowerCase()}` : ""}`,
+                        isAccessible: true,
+                        threadOpen: false,
+                        threadAnchorMessageId: null,
+                        portalState: portal.portalState,
+                        linkedRecordType: portal.linkedRecordType,
+                        linkedRecordId: portal.linkedRecordId,
+                        customerId: portal.customerId,
+                        assigneeId: portal.assigneeId,
+                      })
+                    }
+                    data-testid={`portal-row-${portal.id}`}
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between">
+                        <span className={cn("truncate font-medium", hasUnread && "font-bold text-[#1C1B1F]")}>
+                          {portal.name ?? "Portal Customer"}
+                        </span>
+                        {portal.lastMessageAt && (
+                          <span className="text-[10px] text-gray-400 shrink-0">
+                            {relativeTime(portal.lastMessageAt)}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center justify-between mt-0.5">
+                        <span className="truncate text-[10px] text-gray-500">
+                          {portal.linkedRecordType ? portal.linkedRecordType : "General Support"}
+                        </span>
+                        <span
+                          className={cn(
+                            "rounded px-1 py-0.5 text-[9px] font-bold uppercase tracking-wider shrink-0",
+                            portal.portalState === "CLOSED" && "bg-gray-100 text-gray-600",
+                            portal.portalState === "OPEN" && "bg-green-100 text-green-700",
+                            portal.portalState === "WAITING_ON_CLIENT" && "bg-amber-100 text-amber-700",
+                            portal.portalState === "WAITING_ON_INTERNAL" && "bg-red-100 text-red-700"
+                          )}
+                        >
+                          {portal.portalState ?? "OPEN"}
+                        </span>
+                      </div>
+                    </div>
+                    <UnreadPip count={portal.unreadCount ?? 0} />
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
     </div>
   );
 }

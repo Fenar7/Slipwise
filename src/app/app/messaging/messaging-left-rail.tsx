@@ -15,21 +15,31 @@ import {
   Lock,
   Circle,
   Inbox,
+  Globe,
 } from "lucide-react";
-import type { MessagingSection, PresenceStatus } from "./types";
+import type { MessagingSection, PresenceStatus, MessagingChannel, DirectMessage, MessagingGroup } from "./types";
 import {
-  MOCK_CHANNELS,
-  MOCK_DMS,
-  MOCK_GROUPS,
   MOCK_TASKS,
   MOCK_MEETINGS,
   MOCK_FILES,
-  MOCK_UNREAD_SUMMARY,
 } from "./mock-data";
+
+export interface LeftRailUnreadSummary {
+  channels: number;
+  dms: number;
+  groups: number;
+  portals: number;
+}
 
 interface MessagingLeftRailProps {
   activeSection: MessagingSection;
   onSectionChange: (section: MessagingSection) => void;
+  channels?: MessagingChannel[];
+  dms?: DirectMessage[];
+  groups?: MessagingGroup[];
+  portals?: Array<{ id: string; name: string | null; unreadCount: number }>;
+  unreadSummary?: LeftRailUnreadSummary;
+  onSelectConversation?: (id: string, section: MessagingSection) => void;
 }
 
 const ROW_BUTTON_CLASS =
@@ -140,12 +150,22 @@ function SectionHeader({
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export function MessagingLeftRail({ activeSection, onSectionChange }: MessagingLeftRailProps) {
+export function MessagingLeftRail({
+  activeSection,
+  onSectionChange,
+  channels = [],
+  dms = [],
+  groups = [],
+  portals = [],
+  unreadSummary,
+  onSelectConversation,
+}: MessagingLeftRailProps) {
   // Local expand state — each section can be independently expanded
   const [expanded, setExpanded] = React.useState<Record<MessagingSection, boolean>>({
     channels: true,
     dms: true,
     groups: false,
+    portals: true,
     tasks: false,
     meetings: false,
     files: false,
@@ -157,6 +177,7 @@ export function MessagingLeftRail({ activeSection, onSectionChange }: MessagingL
   };
 
   const overdueTaskCount = MOCK_TASKS.filter((t) => t.status === "overdue").length;
+  const totalUnread = (unreadSummary?.channels ?? 0) + (unreadSummary?.dms ?? 0) + (unreadSummary?.groups ?? 0);
 
   return (
     <aside
@@ -179,12 +200,12 @@ export function MessagingLeftRail({ activeSection, onSectionChange }: MessagingL
               Messages
             </span>
             <span className="ml-1.5 text-[10px] font-medium" style={{ color: "#79747E" }}>
-              {MOCK_UNREAD_SUMMARY.channels + MOCK_UNREAD_SUMMARY.dms + MOCK_UNREAD_SUMMARY.groups} unread
+              {totalUnread} unread
             </span>
           </div>
         </div>
         <div className="flex h-5 w-5 items-center justify-center rounded-full bg-[#DC2626] text-[9px] font-bold text-white">
-          {MOCK_UNREAD_SUMMARY.channels + MOCK_UNREAD_SUMMARY.dms + MOCK_UNREAD_SUMMARY.groups}
+          {totalUnread}
         </div>
       </div>
 
@@ -197,14 +218,14 @@ export function MessagingLeftRail({ activeSection, onSectionChange }: MessagingL
           label="Channels"
           section="channels"
           activeSection={activeSection}
-          unreadCount={MOCK_UNREAD_SUMMARY.channels}
+          unreadCount={unreadSummary?.channels ?? 0}
           onSelect={onSectionChange}
           isExpanded={expanded.channels}
           onToggle={() => toggle("channels")}
         />
         {expanded.channels && (
           <ul className="ml-4 space-y-0.5 border-l pl-2" style={{ borderColor: "#F0F0F0" }}>
-            {MOCK_CHANNELS.map((ch) => (
+            {channels.map((ch) => (
               <li key={ch.id}>
                 <button
                   type="button"
@@ -213,6 +234,7 @@ export function MessagingLeftRail({ activeSection, onSectionChange }: MessagingL
                     "text-[#49454F] hover:bg-gray-50 hover:text-[#1C1B1F]"
                   )}
                   aria-label={`${ch.name} channel`}
+                  onClick={() => onSelectConversation?.(ch.id, "channels")}
                 >
                   {ch.visibility === "private" ? (
                     <Lock className="h-3 w-3 shrink-0 text-[#79747E]" />
@@ -234,6 +256,7 @@ export function MessagingLeftRail({ activeSection, onSectionChange }: MessagingL
                   "text-[#79747E] hover:text-[#DC2626]"
                 )}
                 aria-label="Browse all channels"
+                onClick={() => onSectionChange("channels")}
               >
                 <span className="font-medium">Browse channels…</span>
               </button>
@@ -247,14 +270,14 @@ export function MessagingLeftRail({ activeSection, onSectionChange }: MessagingL
           label="Direct Messages"
           section="dms"
           activeSection={activeSection}
-          unreadCount={MOCK_UNREAD_SUMMARY.dms}
+          unreadCount={unreadSummary?.dms ?? 0}
           onSelect={onSectionChange}
           isExpanded={expanded.dms}
           onToggle={() => toggle("dms")}
         />
         {expanded.dms && (
           <ul className="ml-4 space-y-0.5 border-l pl-2" style={{ borderColor: "#F0F0F0" }}>
-            {MOCK_DMS.map((dm) => (
+            {dms.map((dm) => (
               <li key={dm.id}>
                 <button
                   type="button"
@@ -263,6 +286,7 @@ export function MessagingLeftRail({ activeSection, onSectionChange }: MessagingL
                     "text-[#49454F] hover:bg-gray-50 hover:text-[#1C1B1F]"
                   )}
                   aria-label={`DM with ${dm.participant.name}`}
+                  onClick={() => onSelectConversation?.(dm.id, "dms")}
                 >
                   <PresenceDot status={dm.participant.presence} />
                   <span className={cn("flex-1 truncate font-medium", dm.unreadCount > 0 && "font-bold text-[#1C1B1F]")}>
@@ -293,14 +317,14 @@ export function MessagingLeftRail({ activeSection, onSectionChange }: MessagingL
           label="Groups"
           section="groups"
           activeSection={activeSection}
-          unreadCount={MOCK_UNREAD_SUMMARY.groups}
+          unreadCount={unreadSummary?.groups ?? 0}
           onSelect={onSectionChange}
           isExpanded={expanded.groups}
           onToggle={() => toggle("groups")}
         />
         {expanded.groups && (
           <ul className="ml-4 space-y-0.5 border-l pl-2" style={{ borderColor: "#F0F0F0" }}>
-            {MOCK_GROUPS.map((grp) => (
+            {groups.map((grp) => (
               <li key={grp.id}>
                 <button
                   type="button"
@@ -309,6 +333,7 @@ export function MessagingLeftRail({ activeSection, onSectionChange }: MessagingL
                     "text-[#49454F] hover:bg-gray-50 hover:text-[#1C1B1F]"
                   )}
                   aria-label={`${grp.name} group`}
+                  onClick={() => onSelectConversation?.(grp.id, "groups")}
                 >
                   {grp.isPrivate ? (
                     <Lock className="h-3 w-3 shrink-0 text-[#79747E]" />
@@ -322,6 +347,35 @@ export function MessagingLeftRail({ activeSection, onSectionChange }: MessagingL
                 </button>
               </li>
             ))}
+          </ul>
+        )}
+
+        {/* ── Portals ── */}
+        <SectionHeader
+          icon={Globe}
+          label="Portal Chats"
+          section="portals"
+          activeSection={activeSection}
+          unreadCount={0}
+          onSelect={onSectionChange}
+          isExpanded={expanded.portals}
+          onToggle={() => toggle("portals")}
+        />
+        {expanded.portals && (
+          <ul className="ml-4 space-y-0.5 border-l pl-2" style={{ borderColor: "#F0F0F0" }}>
+            <li>
+              <button
+                type="button"
+                className={cn(
+                  ROW_BUTTON_CLASS,
+                  "text-[#79747E] hover:text-[#DC2626]"
+                )}
+                aria-label="Browse portal conversations"
+                onClick={() => onSectionChange("portals")}
+              >
+                <span className="font-medium font-semibold">Active Portals…</span>
+              </button>
+            </li>
           </ul>
         )}
 
@@ -380,7 +434,7 @@ export function MessagingLeftRail({ activeSection, onSectionChange }: MessagingL
           label="Meetings"
           section="meetings"
           activeSection={activeSection}
-          unreadCount={MOCK_UNREAD_SUMMARY.meetings}
+          unreadCount={0}
           onSelect={onSectionChange}
           isExpanded={expanded.meetings}
           onToggle={() => toggle("meetings")}
