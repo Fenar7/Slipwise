@@ -64,6 +64,7 @@ export function MessagingFilesPanel({ conversationId }: MessagingFilesPanelProps
   const [sort, setSort] = React.useState<FileSortOrder>("newest");
   const [downloading, setDownloading] = React.useState<string | null>(null);
   const [openError, setOpenError] = React.useState<string | null>(null);
+  const [previewAttachment, setPreviewAttachment] = React.useState<FilePreviewAttachment | null>(null);
 
   const { files, loading, error, fetchFiles, fetchDownloadUrl, clearError } = useAttachmentFiles();
 
@@ -87,7 +88,18 @@ export function MessagingFilesPanel({ conversationId }: MessagingFilesPanelProps
     return list;
   }, [files, category, sort]);
 
-  async function handleDownload(attachment: AttachmentFileSummary) {
+  function triggerAnchorDownload(url: string, filename: string) {
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.rel = "noopener noreferrer";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }
+
+  async function handleDownload(attachment: AttachmentFileSummary, e?: React.MouseEvent) {
+    if (e) e.stopPropagation();
     setDownloading(attachment.id);
     setOpenError(null);
     try {
@@ -96,13 +108,38 @@ export function MessagingFilesPanel({ conversationId }: MessagingFilesPanelProps
         setOpenError("Access denied or file unavailable.");
         return;
       }
-      window.open(result.signedUrl, "_blank");
+      triggerAnchorDownload(result.signedUrl, attachment.name);
     } catch {
-      setOpenError("Failed to open file.");
+      setOpenError("Failed to download file.");
     } finally {
       setDownloading(null);
     }
   }
+
+  async function handleRowClick(attachment: AttachmentFileSummary) {
+    if (attachment.scanStatus === "BLOCKED" || attachment.scanStatus === "PENDING") return;
+    setDownloading(attachment.id);
+    setOpenError(null);
+    try {
+      const result = await fetchDownloadUrl(attachment.id);
+      if (!result) {
+        setOpenError("Access denied or file unavailable.");
+        return;
+      }
+      setPreviewAttachment({
+        name: attachment.name,
+        mimeType: attachment.mimeType ?? "application/octet-stream",
+        sizeBytes: attachment.sizeBytes,
+        signedUrl: result.signedUrl,
+        attachmentId: attachment.id,
+      });
+    } catch {
+      setOpenError("Failed to open file preview.");
+    } finally {
+      setDownloading(null);
+    }
+  }
+
 
   return (
     <div className="flex flex-col h-full" data-testid="file-panel">
@@ -231,7 +268,7 @@ export function MessagingFilesPanel({ conversationId }: MessagingFilesPanelProps
                       className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]"
                       aria-label={`Download ${file.name}`}
                       data-testid={`file-download-${file.id}`}
-                      onClick={() => handleDownload(file)}
+                      onClick={(e) => handleDownload(file, e)}
                     >
                       {downloading === file.id ? (
                         <Loader2 className="h-3.5 w-3.5 animate-spin text-[#79747E]" />
@@ -254,6 +291,9 @@ export function MessagingFilesPanel({ conversationId }: MessagingFilesPanelProps
           })
         )}
       </div>
+      {previewAttachment && (
+        <FilePreviewModal isOpen={!!previewAttachment} onClose={() => setPreviewAttachment(null)} attachment={previewAttachment} onDownload={(url) => triggerAnchorDownload(url, previewAttachment.name)} />
+      )}
     </div>
   );
 }
