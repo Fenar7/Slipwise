@@ -613,10 +613,11 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
     }
 
     // ─── Determine whether recovery is required based on REAL folder coverage ──
-    const incompleteRequiredFolders =
-      effectiveMode === "DELTA" && !!effectiveCursor
-        ? await getIncompleteRequiredFolders(params.orgId, connection.id, connection.provider)
-        : [];
+    const incompleteRequiredFolders = await getIncompleteRequiredFolders(
+      params.orgId,
+      connection.id,
+      connection.provider
+    );
 
     const needsGmailCoverageRecovery = incompleteRequiredFolders.length > 0;
 
