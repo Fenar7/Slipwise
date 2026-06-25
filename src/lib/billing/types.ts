@@ -41,10 +41,12 @@ export interface CheckoutResult {
   checkoutUrl: string;
   sessionId: string;
   gateway: BillingGateway;
+  razorpayKeyId?: string;
 }
 
 export interface GatewayWebhookPayload {
   gateway: BillingGateway;
+  razorpayKeyId?: string;
   eventId: string;
   eventType: string;
   rawPayload: unknown;

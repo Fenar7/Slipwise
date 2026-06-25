@@ -59,7 +59,7 @@ export async function initiatePlanCheckoutAction(params: {
   billingInterval: "monthly" | "yearly";
   successUrl: string;
   cancelUrl: string;
-}): Promise<ActionResult<{ checkoutUrl: string }>> {
+}): Promise<ActionResult<{ checkoutUrl: string; gateway: string; sessionId: string; razorpayKeyId?: string }>> {
   const { orgId, userId } = await requireRole("admin");
   const { billingEmail, billingCountry } = await resolveCheckoutContext(
     orgId,
@@ -76,6 +76,14 @@ export async function initiatePlanCheckoutAction(params: {
     cancelUrl: params.cancelUrl,
   });
 
+  if (result.gateway === "RAZORPAY" && result.sessionId) {
+    await db.subscription.upsert({
+      where: { orgId },
+      update: { razorpaySubId: result.sessionId },
+      create: { orgId, planId: "free", status: "pending", razorpaySubId: result.sessionId },
+    });
+  }
+
   await logAudit({
     orgId,
     actorId: userId,
@@ -90,7 +98,7 @@ export async function initiatePlanCheckoutAction(params: {
     },
   });
 
-  return { success: true, data: { checkoutUrl: result.checkoutUrl } };
+  return { success: true, data: { checkoutUrl: result.checkoutUrl, gateway: result.gateway, sessionId: result.sessionId, razorpayKeyId: result.razorpayKeyId } };
 }
 
 export async function cancelSubscriptionAction(params: {
@@ -265,4 +273,39 @@ export async function getBillingEventsAction(page: number = 1): Promise<ActionRe
   ]);
 
   return { success: true, data: { events, total } };
+}
+
+export async function verifyCheckoutAction(): Promise<ActionResult<{ success: boolean }>> {
+  const { orgId } = await requireOrgContext();
+  const sub = await db.subscription.findUnique({ where: { orgId } });
+  
+  if (!sub || !sub.razorpaySubId || sub.status === "active") {
+    return { success: true, data: { success: true } };
+  }
+
+  try {
+    const { fetchRazorpaySubscription } = await import("@/lib/billing/razorpay");
+    const rzpSub = await fetchRazorpaySubscription(sub.razorpaySubId);
+
+    if (rzpSub && rzpSub.status === "active") {
+      const { getInternalPlanIdForRazorpayPlanId } = await import("@/lib/billing");
+      const internalPlanId = getInternalPlanIdForRazorpayPlanId(rzpSub.plan_id);
+      
+      await db.subscription.update({
+        where: { orgId },
+        data: {
+          status: "active",
+          ...(internalPlanId ? { planId: internalPlanId } : {}),
+          razorpayPlanId: rzpSub.plan_id,
+          razorpayCustomerId: rzpSub.customer_id,
+          currentPeriodStart: rzpSub.current_start ? new Date(rzpSub.current_start * 1000) : undefined,
+          currentPeriodEnd: rzpSub.current_end ? new Date(rzpSub.current_end * 1000) : undefined,
+        }
+      });
+    }
+  } catch (error) {
+    console.error("[Billing] Failed to verify checkout:", error);
+  }
+
+  return { success: true, data: { success: true } };
 }
