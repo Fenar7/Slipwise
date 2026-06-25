@@ -80,10 +80,12 @@ export async function createRazorpayCheckout(params: CheckoutParams): Promise<Ch
     },
   );
 
+  const creds = getRazorpayCredentials();
   return {
     checkoutUrl: subscription.short_url,
     sessionId: subscription.id,
     gateway: "RAZORPAY",
+    razorpayKeyId: creds?.keyId,
   };
 }
 
@@ -147,4 +149,8 @@ export function verifyRazorpayWebhookSignature(
   } catch {
     return false;
   }
+}
+
+export async function fetchRazorpaySubscription(subscriptionId: string): Promise<any> {
+  return razorpayRequest(`/subscriptions/${subscriptionId}`, "GET");
 }
