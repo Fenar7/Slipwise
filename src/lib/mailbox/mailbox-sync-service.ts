@@ -68,6 +68,7 @@ export interface RunMailboxSyncResult {
   messageCount: number;
   syncMode: MailboxSyncMode;
   triggerSource: MailboxSyncTriggerSource;
+  hasMore?: boolean;
   error?: {
     category: string;
     summary: string;
@@ -622,66 +623,24 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
     let threadCount = 0;
     let messageCount = 0;
     let lastHeartbeatAt = startedAt;
-    let draftSyncError: MailboxProviderError | null = null;
-    let recoveryBootstrapResults: import("./provider-contracts").MailboxBootstrapSliceResult[] | undefined;
-    if (needsGmailCoverageRecovery) {
-      // Build resumption cursors from prior incomplete folder coverage so we
-      // do not restart from scratch every recovery sync.
-      const folderCursors: Record<string, string> = {};
-      for (const folder of incompleteRequiredFolders) {
-        const coverage = await getFolderCoverage(params.orgId, connection.id, folder);
-        if (coverage?.lastAdvancedCursor) {
-          folderCursors[folder] = coverage.lastAdvancedCursor;
-        }
-      }
-
-      const recovery = await withRetry(
-        () =>
-          adapter.syncDelta({
-            orgId: params.orgId,
-            tokenRef: connection.tokenRef,
-            cursor: null,
-            folderCursors,
-          }),
-        {
-          baseDelayMs: 1000,
-          maxDelayMs: 15_000,
-          maxAttempts: 3,
-          retryable: (err) => {
-            if (isMailboxProviderError(err)) return err.retryable !== false;
-            return isRetryableProviderError(err);
-          },
-        },
-      );
-      if (isMailboxProviderError(recovery)) {
-        throw toProviderErrorException(recovery);
-      }
-
-      const recoveryStats = await ingestSyncedThreads({
-        orgId: params.orgId,
-        connectionId: connection.id,
-        mailboxEmail: connection.emailAddress,
-        tokenRef: connection.tokenRef,
-        adapter,
-        threads: recovery.threads,
-      });
-      threadCount += recoveryStats.threadCount;
-      messageCount += recoveryStats.messageCount;
-      recoveryBootstrapResults = recovery.bootstrapSliceResults;
-
-      // Persist incremental progress after recovery phase
-      const now = Date.now();
-      if (now - lastHeartbeatAt.getTime() >= HEARTBEAT_INTERVAL_MS) {
-        await updateSyncRunHeartbeat(run.id, { threadCount, messageCount, syncPhase: "coverage_recovery" }, new Date(now));
-        lastHeartbeatAt = new Date(now);
-      }
-    }
-
+    let draftSyncError: import("./provider-contracts").MailboxProviderError | null = null;
+    
     // --- CHUNKED SYNC PIPELINE ---
     let isInitialExhausted = false;
     let currentFolderCursors: Record<string, string> | undefined = undefined;
+    
+    if (needsGmailCoverageRecovery) {
+      currentFolderCursors = {};
+      for (const folder of incompleteRequiredFolders) {
+        const coverage = await getFolderCoverage(params.orgId, connection.id, folder);
+        if (coverage?.lastAdvancedCursor) {
+          currentFolderCursors[folder] = coverage.lastAdvancedCursor;
+        }
+      }
+    }
+
     let loopCount = 0;
-    const MAX_CHUNKS = 500; // safety cap to prevent infinite loops
+    const MAX_CHUNKS_PER_INVOCATION = 5; // 5 chunks = ~1000 threads per run. Keeps HTTP/DB lock short.
     let nextStatus = connection.status;
     let finalDelta: any = null;
 
@@ -723,14 +682,12 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
       threadCount += deltaStats.threadCount;
       messageCount += deltaStats.messageCount;
 
-      // Persist incremental progress after delta phase
       const nowAfterDelta = Date.now();
       if (nowAfterDelta - lastHeartbeatAt.getTime() >= HEARTBEAT_INTERVAL_MS) {
         await updateSyncRunHeartbeat(run.id, { threadCount, messageCount, syncPhase: "delta_sync" }, new Date(nowAfterDelta));
         lastHeartbeatAt = new Date(nowAfterDelta);
       }
 
-      // ─── Reconcile remote message deletions ───────────────────────────────
       if (delta.deletedMessageIds && delta.deletedMessageIds.length > 0) {
         await db.mailboxMessage.deleteMany({
           where: {
@@ -801,42 +758,39 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
         }
       }
 
-      // ── Update per-folder coverage after successful sync chunk ─────────────────
       const coverageAdapter = findMailboxProviderAdapter(connection.provider);
-      if (coverageAdapter) {
-        const bootstrapResults = effectiveMode === "INITIAL" ? delta.bootstrapSliceResults : recoveryBootstrapResults;
-
-        if (bootstrapResults && bootstrapResults.length > 0) {
-          let hasMore = false;
-          const nextCursors: Record<string, string> = {};
-          
-          for (const slice of bootstrapResults) {
-            const folder = slice.sliceLabel as "INBOX" | "SENT" | "SPAM" | "DRAFT" | "TRASH" | "STARRED";
-            if (slice.paginationExhausted) {
-              await markFolderCoverageComplete(params.orgId, connection.id, folder, slice.threadCount, slice.lastAdvancedCursor);
-            } else {
-              hasMore = true;
-              if (slice.lastAdvancedCursor) {
-                nextCursors[slice.sliceLabel] = slice.lastAdvancedCursor;
-              }
-              await updateFolderCoverageBootstrapping(params.orgId, connection.id, folder, slice.threadCount, slice.lastAdvancedCursor);
+      if (coverageAdapter && delta.bootstrapSliceResults) {
+        let hasMore = false;
+        const nextCursors: Record<string, string> = {};
+        
+        for (const slice of delta.bootstrapSliceResults) {
+          const folder = slice.sliceLabel as "INBOX" | "SENT" | "SPAM" | "DRAFT" | "TRASH" | "STARRED";
+          if (slice.paginationExhausted) {
+            await markFolderCoverageComplete(params.orgId, connection.id, folder, slice.threadCount, slice.lastAdvancedCursor);
+          } else {
+            hasMore = true;
+            if (slice.lastAdvancedCursor) {
+              nextCursors[slice.sliceLabel] = slice.lastAdvancedCursor;
             }
+            await updateFolderCoverageBootstrapping(params.orgId, connection.id, folder, slice.threadCount, slice.lastAdvancedCursor);
           }
-          
-          if (effectiveMode === "INITIAL" && hasMore) {
-            isInitialExhausted = false;
-            currentFolderCursors = nextCursors;
-          }
-        } else if (effectiveMode === "INITIAL" || recoveryBootstrapResults !== undefined) {
-          for (const folder of ["INBOX", "SENT", "SPAM", "DRAFT", "TRASH", "STARRED"] as const) {
-            await updateFolderCoverageBootstrapping(params.orgId, connection.id, folder, threadCount, "");
-          }
+        }
+        
+        if (hasMore) {
+          isInitialExhausted = false;
+          currentFolderCursors = nextCursors;
+        }
+      } else if (coverageAdapter && effectiveMode === "INITIAL") {
+        for (const folder of ["INBOX", "SENT", "SPAM", "DRAFT", "TRASH", "STARRED"] as const) {
+          await updateFolderCoverageBootstrapping(params.orgId, connection.id, folder, threadCount, "");
         }
       }
 
-    } while (!isInitialExhausted && loopCount < MAX_CHUNKS);
+    } while (!isInitialExhausted && loopCount < MAX_CHUNKS_PER_INVOCATION);
 
-    // ─── Reconcile STARRED and TRASH from provider truth ──────────────────
+    const hasMore = !isInitialExhausted;
+
+    // Only run expensive reconciliations when fully exhausted (or if it's a delta)
     if (connection.provider === "GMAIL" && effectiveMode === "DELTA") {
       try {
         await reconcileStarredTrashStatus({
@@ -850,7 +804,7 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
       }
     }
 
-    if (connection.provider === "GMAIL") {
+    if (connection.provider === "GMAIL" && !hasMore) {
       const draftSync = await withRetry(
         () => adapter.syncDrafts({ orgId: params.orgId, tokenRef: connection.tokenRef }),
         {
@@ -891,16 +845,10 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
           activeDraftIds: draftSync.activeDraftIds,
           failedDraftIds: draftSync.failedDraftIds,
         });
-
-        const nowAfterDrafts = Date.now();
-        if (nowAfterDrafts - lastHeartbeatAt.getTime() >= HEARTBEAT_INTERVAL_MS) {
-          await updateSyncRunHeartbeat(run.id, { threadCount, messageCount, syncPhase: "draft_sync" }, new Date(nowAfterDrafts));
-          lastHeartbeatAt = new Date(nowAfterDrafts);
-        }
       }
     }
 
-    if (finalDelta && finalDelta.nextCursor) {
+    if (finalDelta && finalDelta.nextCursor && !hasMore) {
       await upsertMailboxCursor({
         orgId: params.orgId,
         mailboxConnectionId: connection.id,
@@ -912,7 +860,7 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
     }
 
     let watchUpdateData: { watchExpiresAt: Date | null; watchRenewedAt: Date; } | undefined;
-    const shouldBootstrapWatch = connection.provider === "GMAIL" && (!connection.watchExpiresAt || effectiveMode === "INITIAL");
+    const shouldBootstrapWatch = connection.provider === "GMAIL" && (!connection.watchExpiresAt || (effectiveMode === "INITIAL" && !hasMore));
     if (shouldBootstrapWatch) {
       const renewal = await withRetry(
         () => adapter.renewWatch({ orgId: params.orgId, tokenRef: connection.tokenRef }),
@@ -935,30 +883,9 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
           mailboxConnectionId: connection.id,
           metadata: { errorCategory: renewal.category, runId: run.id },
         });
-        await logMailboxTelemetry("watch_renewal_failed", {
-          orgId: params.orgId,
-          connectionId: connection.id,
-          errorCategory: renewal.category,
-          errorSummary: renewal.safeMessage,
-          runId: run.id,
-        });
       } else {
         effectiveWatchMetadata = mergeWatchMetadata(effectiveWatchMetadata, renewal.metadata);
         watchUpdateData = { watchExpiresAt: renewal.expiresAt, watchRenewedAt: new Date() };
-        await logMailboxAudit({
-          orgId: params.orgId,
-          actorId: params.actorId,
-          action: "WATCH_RENEWED",
-          summary: "Mailbox watch established successfully",
-          mailboxConnectionId: connection.id,
-          metadata: { expiresAt: renewal.expiresAt?.toISOString(), runId: run.id },
-        });
-        await logMailboxTelemetry("watch_renewed", {
-          orgId: params.orgId,
-          connectionId: connection.id,
-          expiresAt: renewal.expiresAt?.toISOString(),
-          runId: run.id,
-        });
       }
     }
 
@@ -967,7 +894,7 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
       stats.draftErrorCategory = draftSyncError.category;
       stats.draftErrorSummary = draftSyncError.safeMessage;
     }
-    nextStatus = resolveStatusAfterSuccess(connection.status);
+    nextStatus = hasMore ? "RUNNING" : resolveStatusAfterSuccess(connection.status);
 
     await db.mailboxConnection.update({
       where: { id: connection.id },
@@ -1018,6 +945,7 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
       messageCount,
       syncMode: effectiveMode,
       triggerSource,
+      hasMore,
     };
   } catch (error) {
     if (!run) {

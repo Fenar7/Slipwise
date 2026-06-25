@@ -43,7 +43,34 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       triggerSource: "MANUAL",
     });
 
-    return NextResponse.json(result, { status: result.success ? 200 : 400 });
+    // If the sync returned early due to time constraints but has more data (chunking),
+    // spawn a detached background promise to continue processing the remaining chunks
+    // so the API response doesn't timeout.
+    if (result.hasMore) {
+      console.log(`[mailbox/sync] Sync incomplete, spawning background continuation for ${body.mailboxConnectionId}`);
+      
+      // Detached Promise: runs in the Node.js background.
+      (async () => {
+        try {
+          let hasMore = true;
+          while (hasMore) {
+            const nextResult = await runMailboxSync({
+              orgId: auth.ctx.orgId,
+              connectionId: String(body.mailboxConnectionId),
+              actorId: auth.ctx.userId,
+              triggerSource: "MANUAL",
+            });
+            hasMore = nextResult.hasMore === true;
+          }
+          console.log(`[mailbox/sync] Background sync finished for ${body.mailboxConnectionId}`);
+        } catch (bgError) {
+          console.error(`[mailbox/sync] Background sync failed for ${body.mailboxConnectionId}`, bgError);
+        }
+      })();
+    }
+
+    // Return 202 Accepted if it's still running in the background, otherwise 200 OK
+    return NextResponse.json(result, { status: result.hasMore ? 202 : (result.success ? 200 : 400) });
   } catch (error) {
     console.error("[mailbox/sync] POST failed:", error);
     return NextResponse.json(
