@@ -1302,8 +1302,9 @@ async function fetchBoundedThreadRefsForQuery(
   const threadRefs: GmailThreadRef[] = [];
   let nextPageToken: string | undefined = startPageToken;
   let pagesFetched = 0;
-  // Safety cap: 10,000 pages = ~1M threads max per folder
-  const SAFETY_MAX_PAGES = 10_000;
+  // Chunking: Fetch 2 pages (~200 threads) max per folder per sync loop iteration
+  // to stream results into the database incrementally for fast UX.
+  const SAFETY_MAX_PAGES = 2;
 
   do {
     pagesFetched += 1;

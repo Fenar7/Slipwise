@@ -392,21 +392,27 @@ export async function disconnectGmailMailbox(params: {
     throw new Error(`MailboxConnection ${connectionId} not found for org ${orgId}`);
   }
 
-  // 2. Atomically delete the connection and emit audit event.
-  await db.$transaction(async (tx) => {
-    await tx.mailboxConnection.delete({
-      where: { id: connection.id },
-    });
-    await tx.mailboxAuditEvent.create({
-      data: {
-        orgId,
-        actorId,
-        action: "CONNECTION_DISCONNECTED",
-        summary: `Disconnected Gmail mailbox: ${connection.emailAddress}`,
-        mailboxConnectionId: null,
-        metadata: { provider: "GMAIL" },
-      },
-    });
+  // 2. Soft-delete the connection and emit audit event.
+  // We do NOT use a db.$transaction here, and we do NOT hard-delete the connection,
+  // because hard-deleting triggers synchronous Postgres cascade deletes across hundreds
+  // of thousands of threads/messages, which causes Prisma interactive transaction timeouts.
+  await db.mailboxConnection.update({
+    where: { id: connection.id },
+    data: { 
+      status: "DISCONNECTED",
+      disabledAt: new Date(),
+    },
+  });
+
+  await db.mailboxAuditEvent.create({
+    data: {
+      orgId,
+      actorId,
+      action: "CONNECTION_DISCONNECTED",
+      summary: `Disconnected Gmail mailbox: ${connection.emailAddress}`,
+      mailboxConnectionId: connection.id,
+      metadata: { provider: "GMAIL" },
+    },
   });
 
   // 3. AFTER DB is consistent, revoke provider credentials (best-effort).

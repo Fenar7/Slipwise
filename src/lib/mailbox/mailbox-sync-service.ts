@@ -68,6 +68,7 @@ export interface RunMailboxSyncResult {
   messageCount: number;
   syncMode: MailboxSyncMode;
   triggerSource: MailboxSyncTriggerSource;
+  hasMore?: boolean;
   error?: {
     category: string;
     summary: string;
@@ -612,36 +613,49 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
     }
 
     // ─── Determine whether recovery is required based on REAL folder coverage ──
-    const incompleteRequiredFolders =
-      effectiveMode === "DELTA" && !!effectiveCursor
-        ? await getIncompleteRequiredFolders(params.orgId, connection.id, connection.provider)
-        : [];
+    const incompleteRequiredFolders = await getIncompleteRequiredFolders(
+      params.orgId,
+      connection.id,
+      connection.provider
+    );
 
     const needsGmailCoverageRecovery = incompleteRequiredFolders.length > 0;
 
     let threadCount = 0;
     let messageCount = 0;
     let lastHeartbeatAt = startedAt;
-    let draftSyncError: MailboxProviderError | null = null;
-    let recoveryBootstrapResults: import("./provider-contracts").MailboxBootstrapSliceResult[] | undefined;
+    let draftSyncError: import("./provider-contracts").MailboxProviderError | null = null;
+    
+    // --- CHUNKED SYNC PIPELINE ---
+    let isInitialExhausted = false;
+    let currentFolderCursors: Record<string, string> | undefined = undefined;
+    
     if (needsGmailCoverageRecovery) {
-      // Build resumption cursors from prior incomplete folder coverage so we
-      // do not restart from scratch every recovery sync.
-      const folderCursors: Record<string, string> = {};
+      currentFolderCursors = {};
       for (const folder of incompleteRequiredFolders) {
         const coverage = await getFolderCoverage(params.orgId, connection.id, folder);
         if (coverage?.lastAdvancedCursor) {
-          folderCursors[folder] = coverage.lastAdvancedCursor;
+          currentFolderCursors[folder] = coverage.lastAdvancedCursor;
         }
       }
+    }
 
-      const recovery = await withRetry(
+    let loopCount = 0;
+    const MAX_CHUNKS_PER_INVOCATION = 5; // 5 chunks = ~1000 threads per run. Keeps HTTP/DB lock short.
+    let nextStatus = connection.status;
+    let finalDelta: any = null;
+
+    do {
+      loopCount++;
+      isInitialExhausted = true; // Assume exhausted unless proven otherwise
+
+      const delta = await withRetry(
         () =>
           adapter.syncDelta({
             orgId: params.orgId,
             tokenRef: connection.tokenRef,
-            cursor: null,
-            folderCursors,
+            cursor: effectiveCursor ? { value: effectiveCursor.cursorValue, expiresAt: effectiveCursor.expiresAt } : null,
+            folderCursors: currentFolderCursors,
           }),
         {
           baseDelayMs: 1000,
@@ -653,125 +667,85 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
           },
         },
       );
-      if (isMailboxProviderError(recovery)) {
-        throw toProviderErrorException(recovery);
+      if (isMailboxProviderError(delta)) {
+        throw toProviderErrorException(delta);
       }
+      finalDelta = delta;
 
-      const recoveryStats = await ingestSyncedThreads({
+      const deltaStats = await ingestSyncedThreads({
         orgId: params.orgId,
         connectionId: connection.id,
         mailboxEmail: connection.emailAddress,
         tokenRef: connection.tokenRef,
         adapter,
-        threads: recovery.threads,
+        threads: delta.threads,
       });
-      threadCount += recoveryStats.threadCount;
-      messageCount += recoveryStats.messageCount;
-      recoveryBootstrapResults = recovery.bootstrapSliceResults;
+      threadCount += deltaStats.threadCount;
+      messageCount += deltaStats.messageCount;
 
-      // Persist incremental progress after recovery phase
-      const now = Date.now();
-      if (now - lastHeartbeatAt.getTime() >= HEARTBEAT_INTERVAL_MS) {
-        await updateSyncRunHeartbeat(run.id, { threadCount, messageCount, syncPhase: "coverage_recovery" }, new Date(now));
-        lastHeartbeatAt = new Date(now);
+      const nowAfterDelta = Date.now();
+      if (nowAfterDelta - lastHeartbeatAt.getTime() >= HEARTBEAT_INTERVAL_MS) {
+        await updateSyncRunHeartbeat(run.id, { threadCount, messageCount, syncPhase: "delta_sync" }, new Date(nowAfterDelta));
+        lastHeartbeatAt = new Date(nowAfterDelta);
       }
-    }
 
-    const delta = await withRetry(
-      () =>
-        adapter.syncDelta({
-          orgId: params.orgId,
-          tokenRef: connection.tokenRef,
-          cursor: effectiveCursor ? { value: effectiveCursor.cursorValue, expiresAt: effectiveCursor.expiresAt } : null,
-        }),
-      {
-        baseDelayMs: 1000,
-        maxDelayMs: 15_000,
-        maxAttempts: 3,
-        retryable: (err) => {
-          if (isMailboxProviderError(err)) return err.retryable !== false;
-          return isRetryableProviderError(err);
-        },
-      },
-    );
-    if (isMailboxProviderError(delta)) {
-      throw toProviderErrorException(delta);
-    }
-
-    const deltaStats = await ingestSyncedThreads({
-      orgId: params.orgId,
-      connectionId: connection.id,
-      mailboxEmail: connection.emailAddress,
-      tokenRef: connection.tokenRef,
-      adapter,
-      threads: delta.threads,
-    });
-    threadCount += deltaStats.threadCount;
-    messageCount += deltaStats.messageCount;
-
-    // Persist incremental progress after delta phase
-    const nowAfterDelta = Date.now();
-    if (nowAfterDelta - lastHeartbeatAt.getTime() >= HEARTBEAT_INTERVAL_MS) {
-      await updateSyncRunHeartbeat(run.id, { threadCount, messageCount, syncPhase: "delta_sync" }, new Date(nowAfterDelta));
-      lastHeartbeatAt = new Date(nowAfterDelta);
-    }
-
-    // ─── Reconcile remote message deletions ───────────────────────────────
-    // Gmail messagesDeleted is message-level. Remove individual messages
-    // first, then re-evaluate affected threads — only mark a thread as DELETED
-    // if it has zero remaining live messages after re-fetch.
-    if (delta.deletedMessageIds && delta.deletedMessageIds.length > 0) {
-      await db.mailboxMessage.deleteMany({
-        where: {
-          orgId: params.orgId,
-          thread: {
+      if (delta.deletedMessageIds && delta.deletedMessageIds.length > 0) {
+        await db.mailboxMessage.deleteMany({
+          where: {
+            orgId: params.orgId,
+            thread: { mailboxConnectionId: connection.id },
+            providerMessageId: { in: delta.deletedMessageIds },
+          },
+        });
+        await db.mailboxSearchDocument.deleteMany({
+          where: {
+            orgId: params.orgId,
             mailboxConnectionId: connection.id,
+            providerMessageId: { in: delta.deletedMessageIds },
+            documentType: "MESSAGE",
           },
-          providerMessageId: { in: delta.deletedMessageIds },
-        },
-      });
-      await db.mailboxSearchDocument.deleteMany({
-        where: {
-          orgId: params.orgId,
-          mailboxConnectionId: connection.id,
-          providerMessageId: { in: delta.deletedMessageIds },
-          documentType: "MESSAGE",
-        },
-      });
-    }
+        });
+      }
 
-    // Re-fetch threads affected by deletion events to reconcile thread state.
-    // If the re-fetched thread has zero messages, it was fully deleted
-    // remotely and we should soft-delete it locally.
-    if (delta.deletionAffectedThreadIds && delta.deletionAffectedThreadIds.length > 0) {
-      for (const providerThreadId of delta.deletionAffectedThreadIds) {
-        const detail = await withRetry(
-          () =>
-            adapter.fetchThreadDetail({
-              orgId: params.orgId,
-              tokenRef: connection.tokenRef,
-              providerThreadId,
-              cachedThreadData: undefined,
-            }),
-          {
-            baseDelayMs: 500,
-            maxDelayMs: 5_000,
-            maxAttempts: 2,
-            retryable: (err) => {
-              if (isMailboxProviderError(err)) return err.retryable !== false && err.category !== "not_found";
-              return isRetryableProviderError(err);
-            },
-          },
-        );
-        if (isMailboxProviderError(detail)) {
-          // Not found or other error: the thread is gone. Soft-delete it.
-          if (detail.category === "not_found") {
-            const threadToSoftDelete = await db.mailboxThread.findFirst({
-              where: {
+      if (delta.deletionAffectedThreadIds && delta.deletionAffectedThreadIds.length > 0) {
+        for (const providerThreadId of delta.deletionAffectedThreadIds) {
+          const detail = await withRetry(
+            () =>
+              adapter.fetchThreadDetail({
                 orgId: params.orgId,
-                mailboxConnectionId: connection.id,
+                tokenRef: connection.tokenRef,
                 providerThreadId,
+                cachedThreadData: undefined,
+              }),
+            {
+              baseDelayMs: 500,
+              maxDelayMs: 5_000,
+              maxAttempts: 2,
+              retryable: (err) => {
+                if (isMailboxProviderError(err)) return err.retryable !== false && err.category !== "not_found";
+                return isRetryableProviderError(err);
               },
+            },
+          );
+          if (isMailboxProviderError(detail)) {
+            if (detail.category === "not_found") {
+              const threadToSoftDelete = await db.mailboxThread.findFirst({
+                where: { orgId: params.orgId, mailboxConnectionId: connection.id, providerThreadId },
+                select: { id: true }
+              });
+              if (threadToSoftDelete) {
+                await db.mailboxThread.updateMany({
+                  where: { id: threadToSoftDelete.id },
+                  data: { status: "DELETED", updatedAt: new Date() },
+                });
+                await deleteMailboxSearchDocumentsForThread(params.orgId, connection.id, threadToSoftDelete.id);
+              }
+            }
+            continue;
+          }
+          if (detail.messages.length === 0) {
+            const threadToSoftDelete = await db.mailboxThread.findFirst({
+              where: { orgId: params.orgId, mailboxConnectionId: connection.id, providerThreadId },
               select: { id: true }
             });
             if (threadToSoftDelete) {
@@ -782,40 +756,42 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
               await deleteMailboxSearchDocumentsForThread(params.orgId, connection.id, threadToSoftDelete.id);
             }
           }
-          continue;
-        }
-        // Thread still exists but may have fewer messages than before.
-        // The individual message deletion above handles message removal.
-        // If there are no messages left in the provider response, the
-        // thread is effectively empty and should be soft-deleted.
-        if (detail.messages.length === 0) {
-          const threadToSoftDelete = await db.mailboxThread.findFirst({
-            where: {
-              orgId: params.orgId,
-              mailboxConnectionId: connection.id,
-              providerThreadId,
-            },
-            select: { id: true }
-          });
-          if (threadToSoftDelete) {
-            await db.mailboxThread.updateMany({
-              where: { id: threadToSoftDelete.id },
-              data: { status: "DELETED", updatedAt: new Date() },
-            });
-            await deleteMailboxSearchDocumentsForThread(params.orgId, connection.id, threadToSoftDelete.id);
-          }
         }
       }
-    }
 
-    // ─── Reconcile STARRED and TRASH from provider truth ──────────────────
-    // Gmail watch + history delta can miss label-only transitions (star/unstar,
-    // trash/restore without message changes). Run bounded reconciliation to
-    // keep isFlagged and trashed status truthful.
-    //
-    // This is non-fatal: if reconciliation fails, mark the specific folders
-    // as degraded but do NOT fail the entire mailbox sync. A failed
-    // reconciliation is a folder-scoped issue, not a mailbox-wide issue.
+      const coverageAdapter = findMailboxProviderAdapter(connection.provider);
+      if (coverageAdapter && delta.bootstrapSliceResults) {
+        let hasMore = false;
+        const nextCursors: Record<string, string> = {};
+        
+        for (const slice of delta.bootstrapSliceResults) {
+          const folder = slice.sliceLabel as "INBOX" | "SENT" | "SPAM" | "DRAFT" | "TRASH" | "STARRED";
+          if (slice.paginationExhausted) {
+            await markFolderCoverageComplete(params.orgId, connection.id, folder, slice.threadCount, slice.lastAdvancedCursor);
+          } else {
+            hasMore = true;
+            if (slice.lastAdvancedCursor) {
+              nextCursors[slice.sliceLabel] = slice.lastAdvancedCursor;
+            }
+            await updateFolderCoverageBootstrapping(params.orgId, connection.id, folder, slice.threadCount, slice.lastAdvancedCursor);
+          }
+        }
+        
+        if (hasMore) {
+          isInitialExhausted = false;
+          currentFolderCursors = nextCursors;
+        }
+      } else if (coverageAdapter && effectiveMode === "INITIAL") {
+        for (const folder of ["INBOX", "SENT", "SPAM", "DRAFT", "TRASH", "STARRED"] as const) {
+          await updateFolderCoverageBootstrapping(params.orgId, connection.id, folder, threadCount, "");
+        }
+      }
+
+    } while (!isInitialExhausted && loopCount < MAX_CHUNKS_PER_INVOCATION);
+
+    const hasMore = !isInitialExhausted;
+
+    // Only run expensive reconciliations when fully exhausted (or if it's a delta)
     if (connection.provider === "GMAIL" && effectiveMode === "DELTA") {
       try {
         await reconcileStarredTrashStatus({
@@ -825,21 +801,13 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
           tokenRef: connection.tokenRef,
         });
       } catch (reconciliationError) {
-        // Log but do not propagate — folder reconciliation is best-effort.
-        console.warn(
-          `[mailbox-sync] STARRED/TRASH reconciliation failed (non-fatal):`,
-          reconciliationError,
-        );
+        console.warn(`[mailbox-sync] STARRED/TRASH reconciliation failed (non-fatal):`, reconciliationError);
       }
     }
 
-    if (connection.provider === "GMAIL") {
+    if (connection.provider === "GMAIL" && !hasMore) {
       const draftSync = await withRetry(
-        () =>
-          adapter.syncDrafts({
-            orgId: params.orgId,
-            tokenRef: connection.tokenRef,
-          }),
+        () => adapter.syncDrafts({ orgId: params.orgId, tokenRef: connection.tokenRef }),
         {
           baseDelayMs: 1000,
           maxDelayMs: 10_000,
@@ -878,49 +846,25 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
           activeDraftIds: draftSync.activeDraftIds,
           failedDraftIds: draftSync.failedDraftIds,
         });
-
-        // Persist progress after draft sync phase
-        const nowAfterDrafts = Date.now();
-        if (nowAfterDrafts - lastHeartbeatAt.getTime() >= HEARTBEAT_INTERVAL_MS) {
-          await updateSyncRunHeartbeat(run.id, { threadCount, messageCount, syncPhase: "draft_sync" }, new Date(nowAfterDrafts));
-          lastHeartbeatAt = new Date(nowAfterDrafts);
-        }
       }
     }
 
-    // ─── Cursor advancement only after successful ingestion ─────────────────
-    if (delta.nextCursor) {
+    if (finalDelta && finalDelta.nextCursor && !hasMore) {
       await upsertMailboxCursor({
         orgId: params.orgId,
         mailboxConnectionId: connection.id,
         provider: connection.provider,
         cursorType: syncCursorType,
-        cursorValue: delta.nextCursor.value,
-        expiresAt: delta.nextCursor.expiresAt,
+        cursorValue: finalDelta.nextCursor.value,
+        expiresAt: finalDelta.nextCursor.expiresAt,
       });
     }
 
-    // ─── No fake "coverage recovered" metadata flags ──────────────────────────
-    // Completion truth comes from per-folder mailboxFolderCoverage rows.
-    // Do NOT persist gmailCoverageVersion / gmailCoveredSystemLabels merely
-    // because a sync ran. Only actual folder pagination exhaustion counts.
-
-    let watchUpdateData:
-      | {
-          watchExpiresAt: Date | null;
-          watchRenewedAt: Date;
-        }
-      | undefined;
-    const shouldBootstrapWatch =
-      connection.provider === "GMAIL" &&
-      (!connection.watchExpiresAt || effectiveMode === "INITIAL");
+    let watchUpdateData: { watchExpiresAt: Date | null; watchRenewedAt: Date; } | undefined;
+    const shouldBootstrapWatch = connection.provider === "GMAIL" && (!connection.watchExpiresAt || (effectiveMode === "INITIAL" && !hasMore));
     if (shouldBootstrapWatch) {
       const renewal = await withRetry(
-        () =>
-          adapter.renewWatch({
-            orgId: params.orgId,
-            tokenRef: connection.tokenRef,
-          }),
+        () => adapter.renewWatch({ orgId: params.orgId, tokenRef: connection.tokenRef }),
         {
           baseDelayMs: 1000,
           maxDelayMs: 10_000,
@@ -940,33 +884,9 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
           mailboxConnectionId: connection.id,
           metadata: { errorCategory: renewal.category, runId: run.id },
         });
-        await logMailboxTelemetry("watch_renewal_failed", {
-          orgId: params.orgId,
-          connectionId: connection.id,
-          errorCategory: renewal.category,
-          errorSummary: renewal.safeMessage,
-          runId: run.id,
-        });
       } else {
         effectiveWatchMetadata = mergeWatchMetadata(effectiveWatchMetadata, renewal.metadata);
-        watchUpdateData = {
-          watchExpiresAt: renewal.expiresAt,
-          watchRenewedAt: new Date(),
-        };
-        await logMailboxAudit({
-          orgId: params.orgId,
-          actorId: params.actorId,
-          action: "WATCH_RENEWED",
-          summary: "Mailbox watch established successfully",
-          mailboxConnectionId: connection.id,
-          metadata: { expiresAt: renewal.expiresAt?.toISOString(), runId: run.id },
-        });
-        await logMailboxTelemetry("watch_renewed", {
-          orgId: params.orgId,
-          connectionId: connection.id,
-          expiresAt: renewal.expiresAt?.toISOString(),
-          runId: run.id,
-        });
+        watchUpdateData = { watchExpiresAt: renewal.expiresAt, watchRenewedAt: new Date() };
       }
     }
 
@@ -975,54 +895,7 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
       stats.draftErrorCategory = draftSyncError.category;
       stats.draftErrorSummary = draftSyncError.safeMessage;
     }
-    const nextStatus = resolveStatusAfterSuccess(connection.status);
-
-    // ── Update per-folder coverage after successful sync ─────────────────
-    const coverageAdapter = findMailboxProviderAdapter(connection.provider);
-    if (coverageAdapter) {
-      // Use bootstrap results from the INITIAL delta or from the recovery sync.
-      const bootstrapResults =
-        effectiveMode === "INITIAL"
-          ? delta.bootstrapSliceResults
-          : recoveryBootstrapResults;
-
-      if (bootstrapResults && bootstrapResults.length > 0) {
-        for (const slice of bootstrapResults) {
-          const folder = slice.sliceLabel as "INBOX" | "SENT" | "SPAM" | "DRAFT" | "TRASH" | "STARRED";
-          if (slice.paginationExhausted) {
-            await markFolderCoverageComplete(
-              params.orgId,
-              connection.id,
-              folder,
-              slice.threadCount,
-              slice.lastAdvancedCursor,
-            );
-          } else {
-            await updateFolderCoverageBootstrapping(
-              params.orgId,
-              connection.id,
-              folder,
-              slice.threadCount,
-              slice.lastAdvancedCursor,
-            );
-          }
-        }
-      } else if (effectiveMode === "INITIAL" || recoveryBootstrapResults !== undefined) {
-        // Fallback: no per-slice results — mark folders that were requested but
-        // produced no individual results as BOOTSTRAPPING with null cursor.
-        // Never stamp delta.nextCursor (a historyId) into lastAdvancedCursor —
-        // that field is page-token-only and a historyId poisons recovery pagination.
-        for (const folder of ["INBOX", "SENT", "SPAM", "DRAFT", "TRASH", "STARRED"] as const) {
-          await updateFolderCoverageBootstrapping(
-            params.orgId,
-            connection.id,
-            folder,
-            threadCount,
-            "",  // null cursor — folder has no page-token resume point
-          );
-        }
-      }
-    }
+    nextStatus = hasMore ? "RUNNING" : resolveStatusAfterSuccess(connection.status);
 
     await db.mailboxConnection.update({
       where: { id: connection.id },
@@ -1073,6 +946,7 @@ export async function runMailboxSync(params: RunMailboxSyncParams): Promise<RunM
       messageCount,
       syncMode: effectiveMode,
       triggerSource,
+      hasMore,
     };
   } catch (error) {
     if (!run) {
