@@ -19,7 +19,9 @@ export async function GET(request: NextRequest) {
         nextRunAt: { lte: now },
       },
       include: {
-        baseInvoice: true,
+        baseInvoice: {
+          include: { lineItems: true }
+        },
       },
       take: 50, // Batch limit to avoid timeouts
     });
@@ -39,6 +41,7 @@ export async function GET(request: NextRequest) {
         const clonedInvoiceData = { ...rule.baseInvoice };
         // Clean up fields that should not be duplicated verbatim
         delete (clonedInvoiceData as any).id;
+        delete (clonedInvoiceData as any).lineItems;
         delete (clonedInvoiceData as any).invoiceNumber; // We want to generate a new one, or leave null for draft
         delete (clonedInvoiceData as any).createdAt;
         delete (clonedInvoiceData as any).updatedAt;
@@ -76,6 +79,14 @@ export async function GET(request: NextRequest) {
             // Link to the recurring rule
             generatedFrom: {
               connect: { id: rule.id }
+            },
+            lineItems: {
+              create: rule.baseInvoice.lineItems.map(item => {
+                const itemClone = { ...item };
+                delete (itemClone as any).id;
+                delete (itemClone as any).invoiceId;
+                return itemClone;
+              })
             }
           },
         });
