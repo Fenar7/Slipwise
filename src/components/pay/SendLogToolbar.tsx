@@ -15,6 +15,11 @@ export function SendLogToolbar() {
   
   const [searchValue, setSearchValue] = useState(defaultSearch);
 
+  // Sync state with URL if it changes externally (e.g. back button)
+  useEffect(() => {
+    setSearchValue(defaultSearch);
+  }, [defaultSearch]);
+
   // Debounced search
   useEffect(() => {
     const delayDebounceFn = setTimeout(() => {

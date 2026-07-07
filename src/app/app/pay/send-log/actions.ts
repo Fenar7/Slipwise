@@ -3,6 +3,7 @@
 import { db } from "@/lib/db";
 import { requireOrgContext } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
+import { Prisma } from "@prisma/client";
 
 export type ActionResult<T> =
   | { success: true; data: T }
@@ -14,9 +15,12 @@ export async function listSendLog(params?: { status?: string; page?: number; sea
   const limit = 20;
   const skip = (page - 1) * limit;
 
-  const where: any = {
+  const validStatuses = ["PENDING", "SENT", "FAILED"];
+  const parsedStatus = validStatuses.includes(params?.status || "") ? params?.status : undefined;
+
+  const where: Prisma.ScheduledSendWhereInput = {
     orgId,
-    ...(params?.status ? { status: params.status as "PENDING" | "SENT" | "FAILED" } : {}),
+    ...(parsedStatus ? { status: parsedStatus as any } : {}),
   };
 
   if (params?.search) {
@@ -52,7 +56,11 @@ export async function retrySend(
     const { orgId } = await requireOrgContext();
 
     const original = await db.scheduledSend.findFirst({
-      where: { id: sendId, orgId },
+      where: { 
+        id: sendId, 
+        orgId,
+        status: "FAILED" 
+      },
     });
 
     if (!original) {

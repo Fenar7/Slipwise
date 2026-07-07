@@ -4,6 +4,7 @@ import { SendLogToolbar } from "@/components/pay/SendLogToolbar";
 import { RetryForm } from "@/components/pay/RetryButton";
 import { MailX } from "lucide-react";
 import Link from "next/link";
+import { Suspense } from "react";
 
 export const metadata: Metadata = { title: "Send Log | Slipwise" };
 
@@ -46,7 +47,9 @@ export default async function SendLogPage({
   return (
     <div className="space-y-6">
       {/* Toolbar */}
-      <SendLogToolbar />
+      <Suspense fallback={<div className="h-9 w-full bg-[var(--surface-soft)] rounded-md animate-pulse" />}>
+        <SendLogToolbar />
+      </Suspense>
 
       {/* Table */}
       {records.length === 0 ? (
@@ -122,19 +125,19 @@ export default async function SendLogPage({
       {/* Pagination */}
       {totalPages > 1 && (
         <div className="flex items-center justify-center gap-2">
-          {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
-            <Link
-              key={p}
-              href={`/app/pay/send-log?${status ? `status=${status}&` : ""}${search ? `search=${search}&` : ""}page=${p}`}
-              className={`rounded-lg px-3 py-1.5 text-xs font-medium ${
-                p === page
-                  ? "bg-[var(--accent)] text-white"
-                  : "bg-[var(--surface-soft)] text-[var(--muted-foreground)] hover:bg-[var(--border-strong)]"
-              }`}
-            >
-              {p}
-            </Link>
-          ))}
+          <Link
+            href={`/app/pay/send-log?${status ? `status=${status}&` : ""}${search ? `search=${search}&` : ""}page=${Math.max(1, page - 1)}`}
+            className={`rounded-lg px-3 py-1.5 text-xs font-medium bg-[var(--surface-soft)] text-[var(--muted-foreground)] hover:bg-[var(--border-strong)] ${page <= 1 ? 'pointer-events-none opacity-50' : ''}`}
+          >
+            Prev
+          </Link>
+          <span className="text-xs text-[var(--muted-foreground)] font-medium">Page {page} of {totalPages}</span>
+          <Link
+            href={`/app/pay/send-log?${status ? `status=${status}&` : ""}${search ? `search=${search}&` : ""}page=${Math.min(totalPages, page + 1)}`}
+            className={`rounded-lg px-3 py-1.5 text-xs font-medium bg-[var(--surface-soft)] text-[var(--muted-foreground)] hover:bg-[var(--border-strong)] ${page >= totalPages ? 'pointer-events-none opacity-50' : ''}`}
+          >
+            Next
+          </Link>
         </div>
       )}
     </div>
