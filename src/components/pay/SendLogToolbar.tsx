@@ -79,7 +79,7 @@ export function SendLogToolbar() {
           <Link
             key={s}
             href={buildFilterUrl(s)}
-            className={`rounded-full px-3 py-1 text-sm font-medium transition-colors ${
+            className={`inline-flex items-center justify-center rounded-full px-4 py-1 text-sm font-medium transition-colors min-w-[60px] ${
               (s === "ALL" && !status) || status === s
                 ? "bg-red-600 text-white"
                 : "bg-slate-100 text-slate-700 hover:bg-slate-200"
