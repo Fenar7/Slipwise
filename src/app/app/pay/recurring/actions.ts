@@ -1,6 +1,7 @@
 "use server";
 
 import { db } from "@/lib/db";
+import { RecurringFrequency, RecurringStatus } from "@prisma/client";
 import { requireOrgContext } from "@/lib/auth";
 import { toAccountingNumber } from "@/lib/accounting/utils";
 import { revalidatePath } from "next/cache";
@@ -22,7 +23,7 @@ export async function listRecurringRules(params?: {
   const where = {
     orgId,
     ...(params?.status
-      ? { status: params.status as "ACTIVE" | "PAUSED" | "COMPLETED" }
+      ? { status: params.status as RecurringStatus }
       : {}),
   };
 
@@ -82,7 +83,7 @@ export async function createRecurringRule(data: {
       data: {
         orgId,
         baseInvoiceId: data.baseInvoiceId,
-        frequency: data.frequency as "WEEKLY" | "MONTHLY" | "QUARTERLY" | "YEARLY",
+        frequency: data.frequency as RecurringFrequency,
         nextRunAt: new Date(data.startDate),
         endDate: data.endDate ? new Date(data.endDate) : null,
         autoSend: data.autoSend,
@@ -180,6 +181,53 @@ export async function deleteRecurringRule(
   } catch (error) {
     console.error("deleteRecurringRule error:", error);
     return { success: false, error: "Failed to delete rule" };
+  }
+}
+
+export async function updateRecurringRule(
+  ruleId: string,
+  data: {
+    frequency?: string;
+    endDate?: string | null;
+    autoSend?: boolean;
+  }
+): Promise<ActionResult<void>> {
+  try {
+    const { orgId } = await requireOrgContext();
+
+    const rule = await db.recurringInvoiceRule.findFirst({
+      where: { id: ruleId, orgId },
+    });
+
+    if (!rule) {
+      return { success: false, error: "Rule not found" };
+    }
+
+    const updateData: any = {};
+    if (data.frequency) updateData.frequency = data.frequency as RecurringFrequency;
+    if (data.endDate !== undefined) {
+      updateData.endDate = data.endDate ? new Date(data.endDate) : null;
+    }
+    if (data.autoSend !== undefined) updateData.autoSend = data.autoSend;
+
+    // If frequency changed, recalculate nextRunAt if it's in the future
+    if (data.frequency && rule.frequency !== data.frequency && rule.nextRunAt > new Date()) {
+       // Just a simple recalculation based on lastRunAt if available
+       const baseDate = rule.lastRunAt || rule.createdAt;
+       updateData.nextRunAt = calculateNextRunAt(baseDate, data.frequency);
+    }
+
+    await db.recurringInvoiceRule.update({
+      where: { id: ruleId },
+      data: updateData,
+    });
+
+    revalidatePath("/app/pay/recurring");
+    revalidatePath(`/app/pay/recurring/${ruleId}`);
+    return { success: true, data: undefined };
+  } catch (error) {
+    console.error("updateRecurringRule error:", error);
+    return { success: false, error: "Failed to update rule" };
   }
 }
 
