@@ -8,16 +8,23 @@ export type ActionResult<T> =
   | { success: true; data: T }
   | { success: false; error: string };
 
-export async function listSendLog(params?: { status?: string; page?: number }) {
+export async function listSendLog(params?: { status?: string; page?: number; search?: string }) {
   const { orgId } = await requireOrgContext();
   const page = params?.page ?? 1;
   const limit = 20;
   const skip = (page - 1) * limit;
 
-  const where = {
+  const where: any = {
     orgId,
     ...(params?.status ? { status: params.status as "PENDING" | "SENT" | "FAILED" } : {}),
   };
+
+  if (params?.search) {
+    where.OR = [
+      { recipientEmail: { contains: params.search, mode: "insensitive" } },
+      { invoice: { invoiceNumber: { contains: params.search, mode: "insensitive" } } },
+    ];
+  }
 
   const [records, total] = await Promise.all([
     db.scheduledSend.findMany({
