@@ -3,21 +3,32 @@
 import { db } from "@/lib/db";
 import { requireOrgContext } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
+import { Prisma } from "@prisma/client";
 
 export type ActionResult<T> =
   | { success: true; data: T }
   | { success: false; error: string };
 
-export async function listSendLog(params?: { status?: string; page?: number }) {
+export async function listSendLog(params?: { status?: string; page?: number; search?: string }) {
   const { orgId } = await requireOrgContext();
   const page = params?.page ?? 1;
   const limit = 20;
   const skip = (page - 1) * limit;
 
-  const where = {
+  const validStatuses = ["PENDING", "SENT", "FAILED"];
+  const parsedStatus = validStatuses.includes(params?.status || "") ? params?.status : undefined;
+
+  const where: Prisma.ScheduledSendWhereInput = {
     orgId,
-    ...(params?.status ? { status: params.status as "PENDING" | "SENT" | "FAILED" } : {}),
+    ...(parsedStatus ? { status: parsedStatus as any } : {}),
   };
+
+  if (params?.search) {
+    where.OR = [
+      { recipientEmail: { contains: params.search, mode: "insensitive" } },
+      { invoice: { invoiceNumber: { contains: params.search, mode: "insensitive" } } },
+    ];
+  }
 
   const [records, total] = await Promise.all([
     db.scheduledSend.findMany({
@@ -45,7 +56,11 @@ export async function retrySend(
     const { orgId } = await requireOrgContext();
 
     const original = await db.scheduledSend.findFirst({
-      where: { id: sendId, orgId },
+      where: { 
+        id: sendId, 
+        orgId,
+        status: "FAILED" 
+      },
     });
 
     if (!original) {
