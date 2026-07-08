@@ -2,7 +2,8 @@ import { requireOrgContext } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { formatRelativeTime } from "@/lib/format-relative-time";
 import { replayAction, cancelAction } from "./actions";
-import { ShieldAlert, RotateCcw, XCircle, Clock } from "lucide-react";
+import { ShieldAlert, RotateCcw, XCircle, Clock, ServerCrash } from "lucide-react";
+import { ContentPanel } from "@/components/dashboard";
 
 export default async function JobsConsolePage() {
   const { orgId } = await requireOrgContext();
@@ -14,87 +15,119 @@ export default async function JobsConsolePage() {
   });
 
   return (
-    <div className="flex flex-col flex-1 p-6 max-w-7xl mx-auto w-full gap-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Flow Jobs Console</h1>
-          <p className="text-[var(--muted-foreground)]">Manage scheduled background actions, monitor dead-letters, and replay failures.</p>
+    <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 space-y-6">
+      {/* Header */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--brand-primary)] text-white shadow-sm">
+            <ServerCrash className="h-5 w-5" />
+          </div>
+          <div>
+            <h1 className="text-xl font-semibold tracking-tight text-[var(--text-primary)]">
+              Job Log
+            </h1>
+            <p className="mt-0.5 text-sm text-[var(--text-muted)]">
+              Manage scheduled background actions, monitor dead-letters, and replay failures.
+            </p>
+          </div>
         </div>
       </div>
 
-      <div className="rounded-xl border bg-white dark:bg-zinc-950 overflow-hidden shadow-sm">
-        <table className="w-full text-sm text-left">
-          <thead className="bg-zinc-50 dark:bg-zinc-900 border-b">
-            <tr>
-              <th className="px-4 py-3 font-medium text-[var(--muted-foreground)]">Action</th>
-              <th className="px-4 py-3 font-medium text-[var(--muted-foreground)]">Status</th>
-              <th className="px-4 py-3 font-medium text-[var(--muted-foreground)]">Attempts</th>
-              <th className="px-4 py-3 font-medium text-[var(--muted-foreground)]">Failure Reason</th>
-              <th className="px-4 py-3 font-medium text-[var(--muted-foreground)] text-right">Controls</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y">
-            {actions.map((job) => (
-              <tr key={job.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-900/50">
-                <td className="px-4 py-3">
-                  <div className="font-medium">{job.actionType}</div>
-                  <div className="text-xs text-[var(--muted-foreground)] flex items-center gap-1 mt-1">
-                    <Clock className="w-3 h-3" />
-                    {formatRelativeTime(job.scheduledAt)}
-                  </div>
-                </td>
-                <td className="px-4 py-3">
-                  <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                    job.status === 'DEAD_LETTERED' ? 'bg-red-100 text-red-600 dark:bg-red-900/30' :
-                    job.status === 'SUCCEEDED' ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30' :
-                    job.status === 'FAILED' ? 'bg-orange-100 text-orange-600 dark:bg-orange-900/30' :
-                    job.status === 'CANCELLED' ? 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800' :
-                    'bg-blue-100 text-blue-600 dark:bg-blue-900/30'
-                  }`}>
-                    {job.status}
-                  </span>
-                </td>
-                <td className="px-4 py-3">
-                  {job.attemptCount} / {job.maxAttempts}
-                </td>
-                <td className="px-4 py-3 text-[var(--muted-foreground)] max-w-xs truncate" title={job.lastError || "None"}>
-                  {job.lastError || "—"}
-                </td>
-                <td className="px-4 py-3 text-right">
-                  <form className="flex items-center justify-end gap-2">
-                    <input type="hidden" name="id" value={job.id} />
-                    {(job.status === 'DEAD_LETTERED' || job.status === 'FAILED') && (
-                      <button formAction={async (fd) => {
-                        "use server";
-                        await replayAction(fd.get("id") as string);
-                      }} className="p-1.5 text-[var(--muted-foreground)] hover:text-blue-500 rounded-md hover:bg-blue-50 dark:hover:bg-blue-900/50" title="Replay Job">
-                        <RotateCcw className="w-4 h-4" />
-                      </button>
-                    )}
-                    {(job.status === 'PENDING' || job.status === 'FAILED' || job.status === 'DEAD_LETTERED') && (
-                      <button formAction={async (fd) => {
-                        "use server";
-                        await cancelAction(fd.get("id") as string);
-                      }} className="p-1.5 text-[var(--muted-foreground)] hover:text-red-500 rounded-md hover:bg-red-50 dark:hover:bg-red-900/50" title="Cancel Job">
-                        <XCircle className="w-4 h-4" />
-                      </button>
-                    )}
-                  </form>
-                </td>
+      <ContentPanel padding="none">
+        <div className="overflow-x-auto rounded-xl border border-[var(--border-soft)] bg-[var(--surface-primary)] shadow-sm">
+          <table className="w-full text-left text-sm">
+            <thead>
+              <tr className="border-b border-[var(--border-soft)] bg-[var(--surface-subtle)] text-[0.75rem] uppercase tracking-wider text-[var(--text-muted)]">
+                <th className="px-5 py-3 font-semibold">Action</th>
+                <th className="px-5 py-3 font-semibold">Status</th>
+                <th className="px-5 py-3 font-semibold">Attempts</th>
+                <th className="px-5 py-3 font-semibold">Failure Reason</th>
+                <th className="px-5 py-3 text-right font-semibold">Controls</th>
               </tr>
-            ))}
+            </thead>
+            <tbody className="divide-y divide-[var(--border-soft)]">
+              {actions.map((job) => (
+                <tr key={job.id} className="transition-colors hover:bg-[var(--surface-hover)]">
+                  <td className="px-5 py-3.5">
+                    <div className="font-medium text-[var(--text-primary)]">{job.actionType}</div>
+                    <div className="mt-1 flex items-center gap-1.5 text-xs text-[var(--text-muted)]">
+                      <Clock className="h-3.5 w-3.5" />
+                      {formatRelativeTime(job.scheduledAt)}
+                    </div>
+                  </td>
+                  <td className="px-5 py-3.5">
+                    <span
+                      className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-semibold ${
+                        job.status === "DEAD_LETTERED"
+                          ? "bg-[var(--state-danger-soft)] text-[var(--state-danger)]"
+                          : job.status === "SUCCEEDED"
+                          ? "bg-[var(--state-success-soft)] text-[var(--state-success)]"
+                          : job.status === "FAILED"
+                          ? "bg-[var(--state-warning-soft)] text-[var(--state-warning)]"
+                          : job.status === "CANCELLED"
+                          ? "bg-[var(--surface-subtle)] text-[var(--text-secondary)]"
+                          : "bg-blue-50 text-blue-700" // PENDING
+                      }`}
+                    >
+                      {job.status}
+                    </span>
+                  </td>
+                  <td className="px-5 py-3.5 text-[var(--text-secondary)]">
+                    {job.attemptCount} <span className="text-[var(--text-muted)]">/ {job.maxAttempts}</span>
+                  </td>
+                  <td
+                    className="max-w-[200px] truncate px-5 py-3.5 text-[var(--text-secondary)]"
+                    title={job.lastError || "None"}
+                  >
+                    {job.lastError || "—"}
+                  </td>
+                  <td className="px-5 py-3.5 text-right">
+                    <form className="flex items-center justify-end gap-2">
+                      <input type="hidden" name="id" value={job.id} />
+                      {(job.status === "DEAD_LETTERED" || job.status === "FAILED") && (
+                        <button
+                          formAction={async (fd) => {
+                            "use server";
+                            await replayAction(fd.get("id") as string);
+                          }}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-md text-[var(--text-muted)] transition-colors hover:bg-blue-50 hover:text-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                          title="Replay Job"
+                        >
+                          <RotateCcw className="h-4 w-4" />
+                        </button>
+                      )}
+                      {(job.status === "PENDING" ||
+                        job.status === "FAILED" ||
+                        job.status === "DEAD_LETTERED") && (
+                        <button
+                          formAction={async (fd) => {
+                            "use server";
+                            await cancelAction(fd.get("id") as string);
+                          }}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-md text-[var(--text-muted)] transition-colors hover:bg-red-50 hover:text-red-600 focus:outline-none focus:ring-2 focus:ring-red-500/30"
+                          title="Cancel Job"
+                        >
+                          <XCircle className="h-4 w-4" />
+                        </button>
+                      )}
+                    </form>
+                  </td>
+                </tr>
+              ))}
 
-            {actions.length === 0 && (
-              <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-[var(--muted-foreground)]">
-                  <ShieldAlert className="w-6 h-6 mx-auto mb-2 opacity-50" />
-                  No jobs found in the queue.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+              {actions.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="px-5 py-16 text-center">
+                    <ShieldAlert className="mx-auto mb-3 h-8 w-8 text-[var(--text-muted)] opacity-50" />
+                    <p className="text-sm font-medium text-[var(--text-primary)]">No jobs in the queue</p>
+                    <p className="mt-1 text-xs text-[var(--text-muted)]">Background tasks and dead letters will appear here.</p>
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </ContentPanel>
     </div>
   );
 }
