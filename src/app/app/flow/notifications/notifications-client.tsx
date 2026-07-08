@@ -3,23 +3,95 @@
 import { useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { markNotificationRead, markAllRead } from "./actions";
+import {
+  Paperclip,
+  CheckCircle2,
+  XCircle,
+  Ticket,
+  MessageSquare,
+  Hand,
+  AlertTriangle,
+  Bell,
+  CheckCheck,
+  ArrowRight,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 
-// ─── Notification Type Icons ──────────────────────────────────────────────────
+// ─── Notification Type Config ────────────────────────────────────────────────
 
-const TYPE_ICONS: Record<string, string> = {
-  proof_uploaded: "📎",
-  proof_accepted: "✅",
-  proof_rejected: "❌",
-  ticket_opened: "🎫",
-  ticket_reply: "💬",
-  approval_requested: "✋",
-  approval_approved: "✅",
-  approval_rejected: "❌",
-  invoice_overdue: "⚠️",
+interface TypeConfig {
+  Icon: LucideIcon;
+  iconBg: string;
+  iconColor: string;
+  accentColor: string;
+}
+
+const TYPE_CONFIG: Record<string, TypeConfig> = {
+  proof_uploaded: {
+    Icon: Paperclip,
+    iconBg: "bg-blue-50",
+    iconColor: "text-blue-600",
+    accentColor: "bg-blue-500",
+  },
+  proof_accepted: {
+    Icon: CheckCircle2,
+    iconBg: "bg-emerald-50",
+    iconColor: "text-emerald-600",
+    accentColor: "bg-emerald-500",
+  },
+  proof_rejected: {
+    Icon: XCircle,
+    iconBg: "bg-red-50",
+    iconColor: "text-red-600",
+    accentColor: "bg-red-500",
+  },
+  ticket_opened: {
+    Icon: Ticket,
+    iconBg: "bg-violet-50",
+    iconColor: "text-violet-600",
+    accentColor: "bg-violet-500",
+  },
+  ticket_reply: {
+    Icon: MessageSquare,
+    iconBg: "bg-violet-50",
+    iconColor: "text-violet-600",
+    accentColor: "bg-violet-500",
+  },
+  approval_requested: {
+    Icon: Hand,
+    iconBg: "bg-amber-50",
+    iconColor: "text-amber-600",
+    accentColor: "bg-amber-500",
+  },
+  approval_approved: {
+    Icon: CheckCircle2,
+    iconBg: "bg-emerald-50",
+    iconColor: "text-emerald-600",
+    accentColor: "bg-emerald-500",
+  },
+  approval_rejected: {
+    Icon: XCircle,
+    iconBg: "bg-red-50",
+    iconColor: "text-red-600",
+    accentColor: "bg-red-500",
+  },
+  invoice_overdue: {
+    Icon: AlertTriangle,
+    iconBg: "bg-orange-50",
+    iconColor: "text-orange-600",
+    accentColor: "bg-orange-500",
+  },
 };
 
-function getIcon(type: string): string {
-  return TYPE_ICONS[type] ?? "🔔";
+const DEFAULT_CONFIG: TypeConfig = {
+  Icon: Bell,
+  iconBg: "bg-[var(--surface-subtle)]",
+  iconColor: "text-[var(--text-muted)]",
+  accentColor: "bg-[var(--brand-primary)]",
+};
+
+function getTypeConfig(type: string): TypeConfig {
+  return TYPE_CONFIG[type] ?? DEFAULT_CONFIG;
 }
 
 // ─── Relative Time ────────────────────────────────────────────────────────────
@@ -59,9 +131,10 @@ export function MarkAllReadButton({ hasUnread }: { hasUnread: boolean }) {
         })
       }
       disabled={isPending}
-      className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+      className="inline-flex items-center gap-2 rounded-lg border border-[var(--border-soft)] bg-[var(--surface-primary)] px-3.5 py-2 text-sm font-medium text-[var(--text-secondary)] shadow-sm transition-colors hover:bg-[var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-50"
     >
-      {isPending ? "Marking…" : "Mark All as Read"}
+      <CheckCheck className="h-4 w-4" />
+      {isPending ? "Marking…" : "Mark all read"}
     </button>
   );
 }
@@ -89,6 +162,7 @@ export function NotificationItem({
 }: NotificationItemProps) {
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
+  const { Icon, iconBg, iconColor, accentColor } = getTypeConfig(type);
 
   function handleClick() {
     startTransition(async () => {
@@ -107,27 +181,57 @@ export function NotificationItem({
     <button
       onClick={handleClick}
       disabled={isPending}
-      className={`flex w-full items-start gap-4 rounded-lg p-4 text-left transition-colors ${
+      className={`group relative flex w-full items-start gap-4 px-5 py-4 text-left transition-colors ${
         isRead
-          ? "bg-slate-50 hover:bg-slate-100"
-          : "border-l-4 border-blue-500 bg-white hover:bg-blue-50"
-      } ${isPending ? "opacity-50" : ""}`}
+          ? "bg-[var(--surface-primary)] hover:bg-[var(--surface-hover)]"
+          : "bg-blue-50/40 hover:bg-blue-50/70"
+      } ${isPending ? "opacity-60" : ""}`}
     >
-      <span className="mt-0.5 text-xl">{getIcon(type)}</span>
-      <div className="min-w-0 flex-1">
-        <p
-          className={`text-sm ${
-            isRead ? "font-normal text-slate-700" : "font-semibold text-slate-900"
-          }`}
-        >
-          {title}
-        </p>
-        <p className="mt-0.5 text-sm text-slate-500 line-clamp-2">{body}</p>
-        <p className="mt-1 text-xs text-slate-400">{relativeTime(createdAt)}</p>
-      </div>
+      {/* Unread accent bar */}
       {!isRead && (
-        <span className="mt-1 h-2.5 w-2.5 flex-shrink-0 rounded-full bg-blue-500" />
+        <span
+          className={`absolute left-0 top-1/2 -translate-y-1/2 h-6 w-1 rounded-r-full ${accentColor}`}
+        />
       )}
+
+      {/* Icon */}
+      <div
+        className={`mt-0.5 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl ${iconBg}`}
+      >
+        <Icon className={`h-4.5 w-4.5 ${iconColor}`} />
+      </div>
+
+      {/* Content */}
+      <div className="min-w-0 flex-1">
+        <div className="flex items-start justify-between gap-3">
+          <p
+            className={`text-sm leading-snug ${
+              isRead
+                ? "font-normal text-[var(--text-secondary)]"
+                : "font-semibold text-[var(--text-primary)]"
+            }`}
+          >
+            {title}
+          </p>
+          <div className="flex flex-shrink-0 items-center gap-2">
+            <span className="whitespace-nowrap text-xs text-[var(--text-muted)]">
+              {relativeTime(createdAt)}
+            </span>
+            {!isRead && (
+              <span className={`h-2 w-2 flex-shrink-0 rounded-full ${accentColor}`} />
+            )}
+          </div>
+        </div>
+        <p className="mt-0.5 text-sm text-[var(--text-muted)] line-clamp-2">
+          {body}
+        </p>
+        {link && (
+          <span className="mt-1.5 inline-flex items-center gap-1 text-xs font-medium text-[var(--brand-primary)] opacity-0 transition-opacity group-hover:opacity-100">
+            View details
+            <ArrowRight className="h-3 w-3" />
+          </span>
+        )}
+      </div>
     </button>
   );
 }
