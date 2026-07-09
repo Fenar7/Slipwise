@@ -1,6 +1,6 @@
 import { Suspense } from "react";
 import { listCustomers } from "@/app/app/data/actions";
-import { PageHeader } from "@/components/page-header";
+import { PageHeader } from "@/app/app/data/components/page-header";
 import { KpiCard } from "@/components/dashboard/kpi-card";
 import { Users } from "lucide-react";
 import { CustomersClientTable } from "@/app/app/data/customers/customers-client";

@@ -1,6 +1,6 @@
 import { Suspense } from "react";
 import { listVendors } from "@/app/app/data/actions";
-import { PageHeader } from "@/components/page-header";
+import { PageHeader } from "@/app/app/data/components/page-header";
 import { KpiCard } from "@/components/dashboard/kpi-card";
 import { Building2 } from "lucide-react";
 import { VendorsClientTable } from "@/app/app/data/vendors/vendors-client";
