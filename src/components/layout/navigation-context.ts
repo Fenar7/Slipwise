@@ -60,11 +60,19 @@ function matchHref(pathname: string, href: string) {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
+function isSuiteActive(cleanPath: string, item: NavItem) {
+  return (
+    matchHref(cleanPath, item.href) ||
+    cleanPath.startsWith(`/app/${item.suite}`) ||
+    (item.children?.some((child) => matchHref(cleanPath, child.href)) ?? false)
+  );
+}
+
 export function getNavigationContext(pathname: string): NavigationContext {
   const cleanPath = pathname.split("?")[0];
   const segments = cleanPath.split("/").filter(Boolean);
   const suiteItem =
-    suiteNavItems.find((item) => matchHref(cleanPath, item.href) || cleanPath.startsWith(`/app/${item.suite}`)) ??
+    suiteNavItems.find((item) => isSuiteActive(cleanPath, item)) ??
     suiteNavItems[0];
 
   const breadcrumbs: BreadcrumbItem[] = [{ href: "/app/home", label: "Slipwise" }];
@@ -76,7 +84,7 @@ export function getNavigationContext(pathname: string): NavigationContext {
       suiteLabel: "Home",
       switcherItems: suiteNavItems.map((item) => ({
         ...item,
-        isActive: matchHref(cleanPath, item.href) || cleanPath.startsWith(`/app/${item.suite}`),
+        isActive: isSuiteActive(cleanPath, item),
       })),
     };
   }
@@ -103,7 +111,7 @@ export function getNavigationContext(pathname: string): NavigationContext {
     suiteLabel,
     switcherItems: suiteNavItems.map((item) => ({
       ...item,
-      isActive: matchHref(cleanPath, item.href) || cleanPath.startsWith(`/app/${item.suite}`),
+      isActive: isSuiteActive(cleanPath, item),
     })),
   };
 }

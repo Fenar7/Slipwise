@@ -67,15 +67,12 @@ function getPageActions(pathname: string): PageAction[] {
   }
   if (pathname === "/app/data" || pathname === "/app/data/") {
     return [
-      { label: "Add Client", href: "/app/clients/new", icon: Users },
+      { label: "Add Customer", href: "/app/data/customers/new", icon: Users },
       { label: "Add Vendor", href: "/app/data/vendors/new", icon: Building2 },
     ];
   }
-  if (pathname === "/app/clients" || pathname === "/app/clients/") {
-    return [{ label: "Add Client", href: "/app/clients/new", icon: Plus }];
-  }
-  if (pathname.startsWith("/app/clients/")) {
-    return [{ label: "Clients", href: "/app/clients", icon: Users }];
+  if (pathname.startsWith("/app/data/customers")) {
+    return [{ label: "Add Customer", href: "/app/data/customers/new", icon: Plus }];
   }
   if (pathname.startsWith("/app/data/vendors")) {
     return [{ label: "Add Vendor", href: "/app/data/vendors/new", icon: Plus }];
@@ -98,11 +95,18 @@ function getPageActions(pathname: string): PageAction[] {
   return [];
 }
 
+const MESSAGING_PATH = "/app/messaging";
+
+function isMessagingRoute(pathname: string) {
+  return pathname === MESSAGING_PATH || pathname.startsWith(`${MESSAGING_PATH}/`);
+}
+
 export function AppTopbar({ orgName }: AppTopbarProps) {
   const pathname = usePathname();
   const { breadcrumbs, pageTitle, suiteLabel } = getNavigationContext(pathname);
-  const { actions: workspaceActions, headerContent, viewToggle } = useWorkspaceTopBar();
+  const { actions: workspaceActions, headerContent, viewToggle, tabs } = useWorkspaceTopBar();
   const pageActions = getPageActions(pathname);
+  const hasTabs = tabs.length > 0;
 
   return (
     <>
@@ -114,131 +118,205 @@ export function AppTopbar({ orgName }: AppTopbarProps) {
         className="sticky top-0 z-20 border-b bg-white"
         style={{ borderColor: "#E0E0E0" }}
       >
-        <div className="flex h-16 items-center gap-4 px-5">
-          {/* Left: Page title */}
-          <div className="min-w-0 flex-shrink-0">
-            <span className="text-[11px] font-bold uppercase tracking-widest" style={{ color: "#DC2626" }}>
-              {suiteLabel === "Home" ? "Slipwise" : suiteLabel}
-            </span>
-            <h1 className="truncate text-lg font-bold" style={{ color: "#1C1B1F" }}>
-              {pageTitle}
-            </h1>
-          </div>
-
-          {/* Center: breadcrumbs */}
-          <nav className="hidden xl:flex flex-wrap items-center gap-2 text-sm min-w-0 flex-1 px-6" style={{ color: "#79747E" }}>
-            {breadcrumbs.map((crumb, index) => (
-              <div key={`${crumb.label}-${index}`} className="flex items-center gap-2 shrink-0">
-                {crumb.href ? (
-                  <Link
-                    href={crumb.href}
-                    className="transition-colors hover:text-[#1C1B1F] font-medium"
-                    style={{ color: "#79747E" }}
+        {hasTabs ? (
+          /* ── Contextual tab bar (e.g. Messaging) ── */
+          <div className="flex h-12 items-center gap-4 px-5">
+            {/* Left: Slipwise wordmark + tabs */}
+            <div className="flex items-center gap-4 min-w-0 flex-1">
+              <Link
+                href="/app/home"
+                className="shrink-0 text-[11px] font-bold uppercase tracking-widest transition-colors hover:opacity-80"
+                style={{ color: "#DC2626" }}
+              >
+                Slipwise
+              </Link>
+              <div className="h-5 w-px shrink-0" style={{ background: "#E0E0E0" }} />
+              <nav className="flex items-center gap-1 overflow-x-auto" role="tablist">
+                {tabs.map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={tab.active}
+                    onClick={tab.onClick}
+                    className={cn(
+                      "shrink-0 rounded-md px-3 py-1.5 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2626]",
+                      tab.active
+                        ? "bg-[#DC2626] text-white"
+                        : "text-[#79747E] hover:text-[#1C1B1F] hover:bg-gray-50"
+                    )}
                   >
-                    {crumb.label}
-                  </Link>
-                ) : (
-                  <span className="font-semibold" style={{ color: "#1C1B1F" }}>{crumb.label}</span>
-                )}
-                {index < breadcrumbs.length - 1 ? (
-                  <span style={{ color: "#E0E0E0" }}>/</span>
-                ) : null}
-              </div>
-            ))}
-          </nav>
+                    {tab.label}
+                  </button>
+                ))}
+              </nav>
+            </div>
 
-          {/* Right: workspace actions + page actions + notification */}
-          <div className="flex items-center gap-2 shrink-0">
-            {/* Workspace header content (e.g. tags) */}
-            {headerContent}
+            {/* Right: workspace actions + org name */}
+            <div className="flex items-center gap-2 shrink-0">
+              {headerContent}
+              {workspaceActions.length > 0 && (
+                <div className="flex items-center gap-1">
+                  {workspaceActions.map((action) => {
+                    const className = cn(
+                      "inline-flex items-center justify-center rounded-md px-3 py-1.5 text-xs font-medium transition-all disabled:cursor-wait disabled:opacity-65",
+                      actionClassName(action.variant),
+                    );
+                    return action.href ? (
+                      <Link key={action.id} href={action.href} className={className}>
+                        {action.label}
+                      </Link>
+                    ) : (
+                      <button
+                        key={action.id}
+                        type="button"
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          action.onClick?.();
+                        }}
+                        disabled={action.disabled}
+                        className={className}
+                      >
+                        {action.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              <span className="text-[11px] font-medium" style={{ color: "#79747E" }}>
+                {orgName ?? "Workspace"}
+              </span>
+            </div>
+          </div>
+        ) : (
+          <div className="flex h-16 items-center gap-4 px-5">
+            {/* Left: Page title */}
+            <div className="min-w-0 flex-shrink-0">
+              <span className="text-[11px] font-bold uppercase tracking-widest" style={{ color: "#DC2626" }}>
+                {suiteLabel === "Home" ? "Slipwise" : suiteLabel}
+              </span>
+              <h1 className="truncate text-lg font-bold" style={{ color: "#1C1B1F" }}>
+                {pageTitle}
+              </h1>
+            </div>
 
-            {/* Workspace actions */}
-            {workspaceActions.length > 0 && (
-              <div className="flex items-center gap-1">
-                {workspaceActions.map((action) => {
-                  const className = cn(
-                    "inline-flex items-center justify-center rounded-md px-3 py-1.5 text-xs font-medium transition-all disabled:cursor-wait disabled:opacity-65",
-                    actionClassName(action.variant),
-                  );
-                  return action.href ? (
-                    <Link key={action.id} href={action.href} className={className}>
-                      {action.label}
+            {/* Center: breadcrumbs */}
+            <nav className="hidden xl:flex flex-wrap items-center gap-2 text-sm min-w-0 flex-1 px-6" style={{ color: "#79747E" }}>
+              {breadcrumbs.map((crumb, index) => (
+                <div key={`${crumb.label}-${index}`} className="flex items-center gap-2 shrink-0">
+                  {crumb.href ? (
+                    <Link
+                      href={crumb.href}
+                      className="transition-colors hover:text-[#1C1B1F] font-medium"
+                      style={{ color: "#79747E" }}
+                    >
+                      {crumb.label}
                     </Link>
                   ) : (
-                    <button
-                      key={action.id}
-                      type="button"
-                      onMouseDown={(e) => e.preventDefault()}
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        action.onClick?.();
-                      }}
-                      disabled={action.disabled}
-                      className={className}
-                    >
-                      {action.label}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-
-            {/* View toggle (Form/Document) */}
-            {viewToggle && (
-              <div className="flex gap-0.5 rounded-md bg-[var(--surface-subtle)] p-0.5">
-                <button
-                  type="button"
-                  onClick={() => viewToggle.onChange("form")}
-                  className={cn(
-                    "inline-flex items-center gap-1.5 rounded px-2 py-1.5 text-xs font-medium transition-colors",
-                    viewToggle.mode === "form"
-                      ? "bg-white text-[var(--text-primary)] shadow-sm"
-                      : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]",
+                    <span className="font-semibold" style={{ color: "#1C1B1F" }}>{crumb.label}</span>
                   )}
-                >
-                  <FileText className="h-3.5 w-3.5" />
-                  Form
-                </button>
-                <button
-                  type="button"
-                  onClick={() => viewToggle.onChange("document")}
-                  className={cn(
-                    "inline-flex items-center gap-1.5 rounded px-2 py-1.5 text-xs font-medium transition-colors",
-                    viewToggle.mode === "document"
-                      ? "bg-white text-[var(--text-primary)] shadow-sm"
-                      : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]",
-                  )}
-                >
-                  <ScrollText className="h-3.5 w-3.5" />
-                  Document
-                </button>
-              </div>
-            )}
+                  {index < breadcrumbs.length - 1 ? (
+                    <span style={{ color: "#E0E0E0" }}>/</span>
+                  ) : null}
+                </div>
+              ))}
+            </nav>
 
-            {/* Page actions */}
-            {pageActions.map((action) => {
-              const Icon = action.icon;
-              return (
-                <Link
-                  key={action.href}
-                  href={action.href}
-                  className="inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-bold transition-opacity hover:opacity-90"
-                  style={{ background: "#DC2626", color: "#fff" }}
-                >
-                  <Icon className="h-4 w-4" />
-                  <span className="hidden sm:inline">{action.label}</span>
-                </Link>
-              );
-            })}
+            {/* Right: workspace actions + page actions + notification */}
+            <div className="flex items-center gap-2 shrink-0">
+              {/* Workspace header content (e.g. tags) */}
+              {headerContent}
 
-            <div className="h-6 w-px mx-1" style={{ background: "#E0E0E0" }} />
+              {/* Workspace actions */}
+              {workspaceActions.length > 0 && (
+                <div className="flex items-center gap-1">
+                  {workspaceActions.map((action) => {
+                    const className = cn(
+                      "inline-flex items-center justify-center rounded-md px-3 py-1.5 text-xs font-medium transition-all disabled:cursor-wait disabled:opacity-65",
+                      actionClassName(action.variant),
+                    );
+                    return action.href ? (
+                      <Link key={action.id} href={action.href} className={className}>
+                        {action.label}
+                      </Link>
+                    ) : (
+                      <button
+                        key={action.id}
+                        type="button"
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          action.onClick?.();
+                        }}
+                        disabled={action.disabled}
+                        className={className}
+                      >
+                        {action.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
 
-            <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-              <NotificationBell />
-            </motion.div>
+              {/* View toggle (Form/Document) */}
+              {viewToggle && (
+                <div className="flex gap-0.5 rounded-md bg-[var(--surface-subtle)] p-0.5">
+                  <button
+                    type="button"
+                    onClick={() => viewToggle.onChange("form")}
+                    className={cn(
+                      "inline-flex items-center gap-1.5 rounded px-2 py-1.5 text-xs font-medium transition-colors",
+                      viewToggle.mode === "form"
+                        ? "bg-white text-[var(--text-primary)] shadow-sm"
+                        : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]",
+                    )}
+                  >
+                    <FileText className="h-3.5 w-3.5" />
+                    Form
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => viewToggle.onChange("document")}
+                    className={cn(
+                      "inline-flex items-center gap-1.5 rounded px-2 py-1.5 text-xs font-medium transition-colors",
+                      viewToggle.mode === "document"
+                        ? "bg-white text-[var(--text-primary)] shadow-sm"
+                        : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]",
+                    )}
+                  >
+                    <ScrollText className="h-3.5 w-3.5" />
+                    Document
+                  </button>
+                </div>
+              )}
+
+              {/* Page actions */}
+              {pageActions.map((action) => {
+                const Icon = action.icon;
+                return (
+                  <Link
+                    key={action.href}
+                    href={action.href}
+                    className="inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-bold transition-opacity hover:opacity-90"
+                    style={{ background: "#DC2626", color: "#fff" }}
+                  >
+                    <Icon className="h-4 w-4" />
+                    <span className="hidden sm:inline">{action.label}</span>
+                  </Link>
+                );
+              })}
+
+              <div className="h-6 w-px mx-1" style={{ background: "#E0E0E0" }} />
+
+              <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+                <NotificationBell />
+              </motion.div>
+            </div>
           </div>
-        </div>
+        )}
       </motion.header>
     </>
   );

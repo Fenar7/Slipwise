@@ -200,27 +200,37 @@ export function AppSidebar({ orgName, initialUser }: AppSidebarProps) {
                           className="mt-0.5 ml-[26px] space-y-0.5 border-l pl-3 overflow-hidden"
                           style={{ borderColor: "#F0F0F0" }}
                         >
-                          {item.children.map((child) => {
-                            const childActive = pathname === child.href || pathname.startsWith(`${child.href}/`);
-                            return (
-                              <li key={child.href}>
-                                <Link
-                                  href={child.href}
-                                  className={cn(
-                                    "flex items-center rounded-md px-2.5 py-1.5 text-sm transition-colors",
-                                    childActive
-                                      ? "font-bold text-[#DC2626]"
-                                      : "text-[#49454F] hover:text-[#DC2626]"
-                                  )}
-                                >
-                                  {childActive && (
-                                    <span className="mr-2 h-1.5 w-1.5 rounded-full bg-[#DC2626]" />
-                                  )}
-                                  <span className="font-medium">{child.label}</span>
-                                </Link>
-                              </li>
-                            );
-                          })}
+                          {(() => {
+                            const activeChildIndex = item.children!.reduce((bestIdx, current, currentIdx) => {
+                              const currentMatches = pathname === current.href || pathname.startsWith(`${current.href}/`);
+                              if (!currentMatches) return bestIdx;
+                              if (bestIdx === -1) return currentIdx;
+                              // If both match, pick the longer href
+                              return current.href.length > item.children![bestIdx].href.length ? currentIdx : bestIdx;
+                            }, -1);
+
+                            return item.children!.map((child, index) => {
+                              const childActive = index === activeChildIndex;
+                              return (
+                                <li key={child.href}>
+                                  <Link
+                                    href={child.href}
+                                    className={cn(
+                                      "flex items-center rounded-md px-2.5 py-1.5 text-sm transition-colors",
+                                      childActive
+                                        ? "font-bold text-[#DC2626]"
+                                        : "text-[#49454F] hover:text-[#DC2626]"
+                                    )}
+                                  >
+                                    {childActive && (
+                                      <span className="mr-2 h-1.5 w-1.5 rounded-full bg-[#DC2626]" />
+                                    )}
+                                    <span className="font-medium">{child.label}</span>
+                                  </Link>
+                                </li>
+                              );
+                            });
+                          })()}
                         </motion.ul>
                       )}
                     </AnimatePresence>

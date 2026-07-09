@@ -3657,7 +3657,7 @@ export async function getCashPositionAction(): Promise<CashPositionResult> {
         where: {
           organizationId: orgId,
           status: { in: ["ISSUED", "VIEWED", "DUE", "OVERDUE", "PARTIALLY_PAID"] },
-          dueDate: { lte: in7Days.toISOString().split("T")[0] },
+          dueDate: { lte: in7Days },
         },
         _count: { id: true },
         _sum: { totalAmount: true },
@@ -3666,7 +3666,7 @@ export async function getCashPositionAction(): Promise<CashPositionResult> {
         where: {
           organizationId: orgId,
           status: { in: ["ISSUED", "VIEWED", "DUE", "OVERDUE", "PARTIALLY_PAID"] },
-          dueDate: { lte: in30Days.toISOString().split("T")[0] },
+          dueDate: { lte: in30Days },
         },
         _count: { id: true },
         _sum: { totalAmount: true },

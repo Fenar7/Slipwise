@@ -69,6 +69,10 @@ function isActiveMemberRole(role: string): boolean {
   return (ROLE_LEVELS[role] ?? -1) >= 0;
 }
 
+export async function getAuthContext(req?: any): Promise<any> {
+  return getAuthRoutingContext();
+}
+
 export async function getAuthRoutingContext(): Promise<AuthRoutingContext> {
   const supabase = await createSupabaseServer();
 

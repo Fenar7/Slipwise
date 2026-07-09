@@ -84,12 +84,6 @@ export async function updateSession(request: NextRequest) {
       persistenceCookie.value,
       persistenceCookie.options,
     );
-
-    getRememberedSupabaseCookieRefreshes(request.cookies.getAll()).forEach(
-      ({ name, value, options }) => {
-        supabaseResponse.cookies.set(name, value, options);
-      },
-    );
   }
 
   return { user: authError ? null : user, supabaseResponse };

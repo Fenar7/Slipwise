@@ -35,9 +35,7 @@ export function InvoicePrintSurface({
   const bodyClasses =
     mode === "print"
       ? "min-h-screen bg-white px-4 py-6 md:px-8 md:py-10"
-      : mode === "png"
-        ? "bg-white p-0"
-        : "min-h-screen bg-white p-0";
+      : "bg-white p-0";
 
   return (
     <main className={bodyClasses}>

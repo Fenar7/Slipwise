@@ -100,33 +100,46 @@ export async function inviteUser(data: {
       };
     }
 
+    const email = data.email.trim().toLowerCase();
+
     const existing = await db.member.findFirst({
       where: {
         organizationId: orgId,
-        user: { email: data.email },
+        user: { email: { equals: email, mode: "insensitive" } },
       },
     });
     if (existing) {
       return { success: false, error: "User is already a member" };
     }
 
-    const pendingInvite = await db.invitation.findFirst({
+    const activeInvite = await db.invitation.findFirst({
       where: {
         organizationId: orgId,
-        email: data.email,
+        email: { equals: email, mode: "insensitive" },
         status: "pending",
+        expiresAt: { gt: new Date() },
       },
     });
-    if (pendingInvite) {
-      return { success: false, error: "An invitation is already pending for this email" };
+    if (activeInvite) {
+      return { success: false, error: "An active invitation is already pending for this email" };
     }
+
+    // Invalidate any other pending (expired) invitations for the same email in this org
+    await db.invitation.updateMany({
+      where: {
+        organizationId: orgId,
+        email: { equals: email, mode: "insensitive" },
+        status: "pending",
+      },
+      data: { status: "cancelled" },
+    });
 
     const expiresAt = new Date(Date.now() + 72 * 60 * 60 * 1000);
 
     const invitation = await db.invitation.create({
       data: {
         organizationId: orgId,
-        email: data.email,
+        email,
         role: data.role,
         status: "pending",
         expiresAt,
@@ -143,7 +156,7 @@ export async function inviteUser(data: {
     const acceptUrl = `${appUrl}/auth/accept-invite?token=${invitation.id}`;
 
     await sendEmail({
-      to: data.email,
+      to: email,
       subject: `You've been invited to ${org?.name ?? "an organization"} on Slipwise`,
       html: inviteEmailHtml({
         orgName: org?.name ?? "Organization",
@@ -160,7 +173,7 @@ export async function inviteUser(data: {
       entityType: "Invitation",
       entityId: invitation.id,
       metadata: {
-        email: data.email,
+        email,
         role: data.role,
         expiresAt: expiresAt.toISOString(),
       },
@@ -175,6 +188,7 @@ export async function inviteUser(data: {
     };
   }
 }
+
 
 export async function updateMemberRole(
   memberId: string,
@@ -199,6 +213,14 @@ export async function updateMemberRole(
 
     if (role === "owner") {
       return { success: false, error: "Cannot assign the Owner role" };
+    }
+
+    if (target.role === "deactivated") {
+      return { success: false, error: "Cannot change role of a deactivated member. Use reactivation flow instead." };
+    }
+
+    if (role === "deactivated") {
+      return { success: false, error: "Cannot assign the deactivated role via role update. Use deactivation flow instead." };
     }
 
     if (!canManageRole(actorRole, target.role) || !canManageRole(actorRole, role)) {
@@ -279,6 +301,19 @@ export async function deactivateMember(
       };
     }
 
+    // If deactivating an admin, ensure at least 1 admin remains
+    if (target.role === "admin") {
+      const adminCount = await db.member.count({
+        where: { organizationId: orgId, role: "admin" },
+      });
+      if (adminCount <= 1) {
+        return {
+          success: false,
+          error: "Cannot deactivate — at least one Admin is required",
+        };
+      }
+    }
+
     await db.member.update({
       where: { id: memberId },
       data: { role: "deactivated" },
@@ -340,7 +375,7 @@ export async function reactivateMember(
     await logAudit({
       orgId,
       actorId: userId,
-      action: "member.role_changed",
+      action: "member.reactivated",
       entityType: "Member",
       entityId: memberId,
       metadata: {
@@ -444,6 +479,17 @@ export async function resendInvitation(
       return { success: false, error: "Invitation is no longer pending" };
     }
 
+    // Check if the user is already a member (active or deactivated)
+    const existingMember = await db.member.findFirst({
+      where: {
+        organizationId: orgId,
+        user: { email: { equals: invitation.email, mode: "insensitive" } },
+      },
+    });
+    if (existingMember) {
+      return { success: false, error: "User is already a member" };
+    }
+
     const newExpiry = new Date(Date.now() + 72 * 60 * 60 * 1000);
     await db.invitation.update({
       where: { id: invitationId },
@@ -467,6 +513,19 @@ export async function resendInvitation(
         role: invitation.role ?? "viewer",
         acceptUrl,
       }),
+    });
+
+    await logAudit({
+      orgId,
+      actorId: userId,
+      action: "invitation.resent",
+      entityType: "Invitation",
+      entityId: invitationId,
+      metadata: {
+        email: invitation.email,
+        role: invitation.role,
+        expiresAt: newExpiry.toISOString(),
+      },
     });
 
     revalidatePath("/app/settings/users");
@@ -494,9 +553,25 @@ export async function cancelInvitation(
       return { success: false, error: "Invitation not found" };
     }
 
+    if (invitation.status !== "pending") {
+      return { success: false, error: "Invitation is no longer pending" };
+    }
+
     await db.invitation.update({
       where: { id: invitationId },
       data: { status: "cancelled" },
+    });
+
+    await logAudit({
+      orgId,
+      actorId: userId,
+      action: "invitation.cancelled",
+      entityType: "Invitation",
+      entityId: invitationId,
+      metadata: {
+        email: invitation.email,
+        role: invitation.role,
+      },
     });
 
     revalidatePath("/app/settings/users");

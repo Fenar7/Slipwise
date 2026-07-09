@@ -94,9 +94,9 @@ export function amountToWords(value: number) {
   const wholeWords = convertWholeNumber(whole);
 
   if (fraction === 0) {
-    return `${capitalize(wholeWords)} only`;
+    return `Rupees ${wholeWords} only`;
   }
 
   const fractionWords = convertWholeNumber(fraction);
-  return `${capitalize(wholeWords)} and ${fractionWords} paise only`;
+  return `Rupees ${wholeWords} and ${fractionWords} paise only`;
 }

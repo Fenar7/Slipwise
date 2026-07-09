@@ -85,6 +85,23 @@ export function TraditionalLedgerVoucherTemplate({
             <Row label="Reference" value={document.referenceNumber} />
           ) : null}
           <Row label="Purpose" value={document.purpose} />
+          {document.visibility.showUpiDetails && (document.upiId || document.upiQrDataUrl) ? (
+            <Row
+              label="UPI Details"
+              value={
+                <div className="flex items-center gap-4 text-sm font-medium">
+                  {document.upiId ? <span>ID: {document.upiId}</span> : null}
+                  {document.upiQrDataUrl ? (
+                    <img
+                      src={document.upiQrDataUrl}
+                      alt="UPI QR Code"
+                      className="h-20 w-20 rounded border border-[rgba(29,23,16,0.1)] object-contain p-0.5 bg-white"
+                    />
+                  ) : null}
+                </div>
+              }
+            />
+          ) : null}
           {document.notes ? <Row label="Notes" value={document.notes} /> : null}
         </div>
       </section>
@@ -101,7 +118,7 @@ export function TraditionalLedgerVoucherTemplate({
           </p>
           <div className="mt-4 space-y-2 text-sm leading-7 text-[rgba(29,23,16,0.82)]">
             {document.visibility.showAddress && document.branding.address ? (
-              <p>{document.branding.address}</p>
+              <p className="whitespace-pre-line">{document.branding.address}</p>
             ) : null}
             {document.visibility.showEmail && document.branding.email ? (
               <p>{document.branding.email}</p>
@@ -121,7 +138,7 @@ export function TraditionalLedgerVoucherTemplate({
               {document.approvedBy ? (
                 <div>
                   <div className="h-12 border-b border-dashed border-[rgba(29,23,16,0.16)]" />
-                  <p className="mt-3 text-sm font-medium">Approved by: {document.approvedBy}</p>
+                  <p className="mt-3 text-sm font-medium">Authorized by: {document.approvedBy}</p>
                 </div>
               ) : null}
               {document.receivedBy ? (
@@ -218,6 +235,20 @@ function TraditionalLedgerEditor() {
           <LedgerRow label="Purpose">
             <InlineTextArea name="purpose" placeholder="Purpose of payment…" className="text-sm" />
           </LedgerRow>
+          {doc.visibility.showUpiDetails ? (
+            <LedgerRow label="UPI Details">
+              <div className="flex items-center gap-4">
+                <InlineTextField name="upiId" placeholder="UPI ID (merchant@ybl)" className="text-sm" />
+                {doc.upiQrDataUrl ? (
+                  <img
+                    src={doc.upiQrDataUrl}
+                    alt="UPI QR Code"
+                    className="h-20 w-20 rounded border border-[rgba(29,23,16,0.1)] object-contain p-0.5 bg-white"
+                  />
+                ) : null}
+              </div>
+            </LedgerRow>
+          ) : null}
           {doc.visibility.showNotes ? (
             <LedgerRow label="Notes">
               <InlineTextArea name="notes" placeholder="Additional notes…" className="text-sm" />
@@ -260,7 +291,7 @@ function TraditionalLedgerEditor() {
                 <div>
                   <div className="h-12 border-b border-dashed border-[rgba(29,23,16,0.16)]" />
                   <div className="mt-3 flex items-center gap-1 text-sm font-medium">
-                    <span className="shrink-0">Approved by:</span>
+                    <span className="shrink-0">Authorized by:</span>
                     <InlineTextField name="approvedBy" placeholder="Name" className="text-sm font-medium" />
                   </div>
                 </div>

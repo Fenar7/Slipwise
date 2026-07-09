@@ -90,7 +90,7 @@ describe("normalizeInvoice", () => {
     expect(document.grandTotal).toBe(54100);
     expect(document.amountPaid).toBe(15000);
     expect(document.balanceDue).toBe(39100);
-    expect(document.amountInWords).toBe("Fifty-four thousand one hundred only");
+    expect(document.amountInWords).toBe("Rupees fifty-four thousand one hundred only");
   });
 
   it("hides optional footer and client blocks through visibility pruning", () => {

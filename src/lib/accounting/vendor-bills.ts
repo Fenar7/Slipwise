@@ -201,7 +201,9 @@ function deriveVendorBillLifecycleStatus(input: {
 }
 
 async function refreshVendorBillOverdueStatesTx(tx: TxClient, orgId: string) {
-  const today = todayIsoDate();
+  // Use a native Date object to satisfy Prisma's DateTime validation
+  const todayDate = new Date();
+  todayDate.setHours(0, 0, 0, 0);
 
   await tx.vendorBill.updateMany({
     where: {
@@ -209,7 +211,7 @@ async function refreshVendorBillOverdueStatesTx(tx: TxClient, orgId: string) {
       archivedAt: null,
       remainingAmount: { gt: MONEY_TOLERANCE },
       status: "APPROVED",
-      dueDate: { not: null, lt: today },
+      dueDate: { not: null, lt: todayDate },
     },
     data: {
       status: "OVERDUE",
@@ -223,7 +225,7 @@ async function refreshVendorBillOverdueStatesTx(tx: TxClient, orgId: string) {
       status: "OVERDUE",
       OR: [
         { dueDate: null },
-        { dueDate: { gte: today } },
+        { dueDate: { gte: todayDate } },
         { remainingAmount: { lte: MONEY_TOLERANCE } },
       ],
     },

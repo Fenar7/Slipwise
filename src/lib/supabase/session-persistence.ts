@@ -23,10 +23,6 @@ type SetCookieRecord = CookieRecord & {
 };
 
 const TERMINAL_AUTH_ERROR_PATTERNS = [
-  "refresh token",
-  "refresh_token",
-  "invalid token",
-  "token has expired",
   "session not found",
   "session_not_found",
   "user not found",

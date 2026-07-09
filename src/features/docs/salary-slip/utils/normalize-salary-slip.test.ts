@@ -9,7 +9,7 @@ describe("normalizeSalarySlip", () => {
     expect(document.totalEarnings).toBe(47500);
     expect(document.totalDeductions).toBe(2000);
     expect(document.netSalary).toBe(45500);
-    expect(document.netSalaryInWords).toBe("Forty-five thousand five hundred only");
+    expect(document.netSalaryInWords).toBe("Rupees forty-five thousand five hundred only");
   });
 
   it("prunes hidden optional sections from the normalized payload", () => {

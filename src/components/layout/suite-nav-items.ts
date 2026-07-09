@@ -15,6 +15,8 @@ import {
   ImageIcon,
   Receipt,
   Handshake,
+  Inbox,
+  MessagesSquare,
 } from "lucide-react";
 
 export interface NavItem {
@@ -32,6 +34,18 @@ export const suiteNavItems: NavItem[] = [
     label: "Home",
     suite: "home",
     icon: Home,
+  },
+  {
+    href: "/app/mailbox",
+    label: "Mailbox",
+    suite: "mailbox",
+    icon: Inbox,
+  },
+  {
+    href: "/app/messaging",
+    label: "Messaging",
+    suite: "messaging",
+    icon: MessagesSquare,
   },
   {
     href: "/app/docs",
@@ -57,6 +71,7 @@ export const suiteNavItems: NavItem[] = [
     suite: "data",
     icon: Database,
     children: [
+      { href: "/app/data/customers", label: "Customers" },
       { href: "/app/data/vendors", label: "Vendors" },
       { href: "/app/data/employees", label: "Employees" },
       { href: "/app/data/salary-presets", label: "Salary Presets" },
@@ -76,7 +91,6 @@ export const suiteNavItems: NavItem[] = [
       { href: "/app/pay/unmatched", label: "Unmatched Payments" },
       { href: "/app/pay/reconciliation", label: "Bank Reconciliation" },
       { href: "/app/pay/collections-intelligence", label: "Collections Intelligence" },
-      { href: "/app/pay/intelligence/aging", label: "Aging Analysis" },
       { href: "/app/pay/payroll", label: "Payroll Runs" },
     ],
   },
@@ -182,22 +196,14 @@ export const suiteNavItems: NavItem[] = [
     ],
   },
   {
-    href: "/app/clients",
-    label: "Clients",
-    suite: "clients",
-    icon: Users,
-    children: [
-      { href: "/app/clients", label: "Workspace" },
-    ],
-  },
-  {
     href: "/app/crm",
     label: "CRM",
     suite: "crm",
     icon: Users,
     children: [
       { href: "/app/crm", label: "Dashboard" },
-      { href: "/app/data/vendors", label: "Vendors" },
+      { href: "/app/crm/customers", label: "Customers" },
+      { href: "/app/crm/vendors", label: "Vendors" },
     ],
   },
   {

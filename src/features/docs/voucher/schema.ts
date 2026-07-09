@@ -24,6 +24,8 @@ const brandingSchema = z.object({
   accentColor: z
     .string()
     .regex(/^#([0-9a-fA-F]{6})$/, "Enter a valid hex color."),
+  logoSize: z.number().min(30).max(150).optional(),
+  logoFit: z.enum(["contain", "cover"]).optional(),
 });
 
 const visibilitySchema = z.object({
@@ -36,6 +38,7 @@ const visibilitySchema = z.object({
   showApprovedBy: z.boolean(),
   showReceivedBy: z.boolean(),
   showSignatureArea: z.boolean(),
+  showUpiDetails: z.boolean(),
 });
 
 export const voucherDocumentSchema = z.object({
@@ -56,6 +59,8 @@ export const voucherDocumentSchema = z.object({
   notes: z.string().trim().optional(),
   approvedBy: z.string().trim().optional(),
   receivedBy: z.string().trim().optional(),
+  upiId: z.string().trim().optional(),
+  upiQrDataUrl: z.string().optional(),
   visibility: visibilitySchema,
 });
 
@@ -83,6 +88,8 @@ export const voucherFormSchema = z
     notes: z.string().trim(),
     approvedBy: z.string().trim(),
     receivedBy: z.string().trim(),
+    upiId: z.string().trim(),
+    upiQrDataUrl: z.string().optional(),
     visibility: visibilitySchema,
     vendorId: z.string().optional(),
     isMultiLine: z.boolean().optional(),
