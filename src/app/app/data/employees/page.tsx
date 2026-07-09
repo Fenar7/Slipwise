@@ -1,10 +1,10 @@
 import { Suspense } from "react";
-import { listEmployees, deleteEmployee } from "../actions";
-import { DataTable } from "../components/data-table";
+import { listEmployees } from "../actions";
 import { PageHeader } from "../components/page-header";
 import { KpiCard } from "@/components/dashboard/kpi-card";
-import { StatusBadge } from "@/components/dashboard/status-badge";
 import { Briefcase } from "lucide-react";
+
+import { EmployeesClientTable } from "./employees-client";
 
 export const metadata = {
   title: "Employees | Slipwise",
@@ -18,28 +18,8 @@ async function EmployeesTable({ search, page }: { search?: string; page: number 
       <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
         <KpiCard label="Total Employees" value={total} icon={Briefcase} />
       </div>
-      <DataTable
-        data={employees}
-        columns={[
-          { key: "name", label: "Name", render: (row) => <span className="font-medium">{row.name}</span> },
-          { key: "email", label: "Email" },
-          { key: "employeeId", label: "Employee ID" },
-          { key: "designation", label: "Designation" },
-          {
-            key: "department",
-            label: "Department",
-            width: "140px",
-            render: (row) =>
-              row.department ? (
-                <StatusBadge variant="neutral">{String(row.department)}</StatusBadge>
-              ) : (
-                "—"
-              ),
-          },
-        ]}
-        entityType="employee"
-        editPath="/app/data/employees"
-        deleteAction={deleteEmployee}
+      <EmployeesClientTable
+        employees={employees}
         total={total}
         page={page}
         totalPages={totalPages}

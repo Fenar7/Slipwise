@@ -1,13 +1,12 @@
 import { Suspense } from "react";
-import { listCustomers } from "../actions";
-import { PageHeader } from "../components/page-header";
+import { listCustomers } from "@/app/app/data/actions";
+import { PageHeader } from "@/app/app/data/components/page-header";
 import { KpiCard } from "@/components/dashboard/kpi-card";
 import { Users } from "lucide-react";
-
-import { CustomersClientTable } from "./customers-client";
+import { CustomersClientTable } from "@/app/app/data/customers/customers-client";
 
 export const metadata = {
-  title: "Customers | Slipwise",
+  title: "Customers | CRM | Slipwise",
 };
 
 async function CustomersTable({ search, page }: { search?: string; page: number }) {
@@ -28,7 +27,7 @@ async function CustomersTable({ search, page }: { search?: string; page: number 
   );
 }
 
-export default async function CustomersPage({
+export default async function CrmCustomersPage({
   searchParams,
 }: {
   searchParams: Promise<{ search?: string; page?: string }>;
@@ -39,8 +38,8 @@ export default async function CustomersPage({
   return (
     <div className="mx-auto max-w-[var(--container-content,80rem)]">
       <PageHeader
-        title="Customers"
-        description="Manage your customers for invoices and quotes"
+        title="CRM Customers"
+        description="View and manage customer relationships"
         addLink="/app/data/customers/new"
         addLabel="Add Customer"
       />

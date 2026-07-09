@@ -294,7 +294,11 @@ export async function listVendors(params?: {
   ]);
   
   return {
-    vendors,
+    vendors: vendors.map((v) => ({
+      ...v,
+      totalBilled: v.totalBilled != null ? Number(v.totalBilled) : null,
+      totalPaid: v.totalPaid != null ? Number(v.totalPaid) : null,
+    })),
     total,
     page,
     totalPages: Math.ceil(total / limit),
@@ -425,7 +429,10 @@ export async function listEmployees(params?: {
   ]);
   
   return {
-    employees,
+    employees: employees.map((e) => ({
+      ...e,
+      ctcAnnual: e.ctcAnnual != null ? Number(e.ctcAnnual) : null,
+    })),
     total,
     page,
     totalPages: Math.ceil(total / limit),

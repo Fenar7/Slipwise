@@ -1,25 +1,24 @@
 import { Suspense } from "react";
-import { listCustomers } from "../actions";
-import { PageHeader } from "../components/page-header";
+import { listVendors } from "@/app/app/data/actions";
+import { PageHeader } from "@/app/app/data/components/page-header";
 import { KpiCard } from "@/components/dashboard/kpi-card";
-import { Users } from "lucide-react";
-
-import { CustomersClientTable } from "./customers-client";
+import { Building2 } from "lucide-react";
+import { VendorsClientTable } from "@/app/app/data/vendors/vendors-client";
 
 export const metadata = {
-  title: "Customers | Slipwise",
+  title: "Vendors | CRM | Slipwise",
 };
 
-async function CustomersTable({ search, page }: { search?: string; page: number }) {
-  const { customers, total, totalPages } = await listCustomers({ search, page, limit: 20 });
+async function VendorsTable({ search, page }: { search?: string; page: number }) {
+  const { vendors, total, totalPages } = await listVendors({ search, page, limit: 20 });
 
   return (
     <>
       <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <KpiCard label="Total Customers" value={total} icon={Users} />
+        <KpiCard label="Total Vendors" value={total} icon={Building2} />
       </div>
-      <CustomersClientTable
-        customers={customers}
+      <VendorsClientTable
+        vendors={vendors}
         total={total}
         page={page}
         totalPages={totalPages}
@@ -28,7 +27,7 @@ async function CustomersTable({ search, page }: { search?: string; page: number 
   );
 }
 
-export default async function CustomersPage({
+export default async function CrmVendorsPage({
   searchParams,
 }: {
   searchParams: Promise<{ search?: string; page?: string }>;
@@ -39,10 +38,10 @@ export default async function CustomersPage({
   return (
     <div className="mx-auto max-w-[var(--container-content,80rem)]">
       <PageHeader
-        title="Customers"
-        description="Manage your customers for invoices and quotes"
-        addLink="/app/data/customers/new"
-        addLabel="Add Customer"
+        title="CRM Vendors"
+        description="View and manage vendor relationships"
+        addLink="/app/data/vendors/new"
+        addLabel="Add Vendor"
       />
 
       <Suspense
@@ -53,7 +52,7 @@ export default async function CustomersPage({
           </div>
         }
       >
-        <CustomersTable search={params.search} page={page} />
+        <VendorsTable search={params.search} page={page} />
       </Suspense>
     </div>
   );
