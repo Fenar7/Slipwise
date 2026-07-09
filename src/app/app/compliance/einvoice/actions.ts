@@ -246,7 +246,7 @@ export async function listEInvoiceRequests(invoiceId: string) {
 export async function listAllEInvoiceRequests() {
   const { orgId } = await requireOrgContext();
 
-  return db.eInvoiceRequest.findMany({
+  const requests = await db.eInvoiceRequest.findMany({
     where: { orgId },
     orderBy: { createdAt: "desc" },
     include: {
@@ -254,10 +254,18 @@ export async function listAllEInvoiceRequests() {
         select: {
           invoiceNumber: true,
           totalAmount: true,
-          customerName: true,
+          customer: { select: { name: true } },
         },
       },
     },
     take: 50,
   });
+
+  return requests.map((req) => ({
+    ...req,
+    invoice: {
+      ...req.invoice,
+      totalAmount: Number(req.invoice.totalAmount),
+    },
+  }));
 }

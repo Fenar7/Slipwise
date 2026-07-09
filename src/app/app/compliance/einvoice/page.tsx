@@ -105,8 +105,8 @@ export default function EInvoiceDashboardPage() {
                           {req.invoice.invoiceNumber}
                         </Link>
                       </td>
-                      <td className="px-4 py-3 text-slate-700 max-w-[200px] truncate" title={req.invoice.customerName ?? ""}>
-                        {req.invoice.customerName ?? "N/A"}
+                      <td className="px-4 py-3 text-slate-700 max-w-[200px] truncate" title={req.invoice.customer?.name ?? ""}>
+                        {req.invoice.customer?.name ?? "N/A"}
                       </td>
                       <td className="px-4 py-3 text-right tabular-nums text-slate-700">
                         {new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR" }).format(toAccountingNumber(req.invoice.totalAmount))}
