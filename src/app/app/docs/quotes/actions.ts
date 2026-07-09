@@ -13,6 +13,7 @@ import {
 import { revalidatePath } from "next/cache";
 import { emitQuoteEvent } from "@/lib/document-events";
 import { syncQuoteToIndex, removeDocumentFromIndex } from "@/lib/docs-vault";
+import { resolveQuoteAutofill, type QuoteAutofillPayload } from "./autofill-resolver";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -46,6 +47,34 @@ export interface QuoteInput {
   templateId?: string;
   discountAmount?: number;
   lineItems: QuoteLineItemInput[];
+}
+
+// ─── Quote Autofill & Validation ──────────────────────────────────────────────
+
+export async function validateQuoteCustomer(customerId: string, orgId: string): Promise<void> {
+  if (!customerId) {
+    throw new Error("Customer ID is required");
+  }
+  const customer = await db.customer.findFirst({
+    where: { id: customerId, organizationId: orgId },
+  });
+  if (!customer) {
+    throw new Error("Customer not found or does not belong to this organisation.");
+  }
+}
+
+export async function resolveQuoteAutofillAction(params: {
+  customerId?: string;
+}): Promise<ActionResult<QuoteAutofillPayload>> {
+  try {
+    const payload = await resolveQuoteAutofill(params);
+    return { success: true, data: payload };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to resolve quote autofill",
+    };
+  }
 }
 
 // ─── List Quotes ──────────────────────────────────────────────────────────────
@@ -116,6 +145,9 @@ export async function createQuoteAction(
   try {
     const { orgId, userId } = await requireOrgContext();
 
+    // Validate customerId belongs to active org
+    await validateQuoteCustomer(data.customerId, orgId);
+
     // Plan gating
     const limitCheck = await checkLimit(orgId, "quotesPerMonth");
     if (!limitCheck.allowed) {
@@ -177,6 +209,10 @@ export async function updateQuoteAction(
 ): Promise<ActionResult<{ id: string }>> {
   try {
     const { orgId, userId } = await requireOrgContext();
+
+    if (data.customerId) {
+      await validateQuoteCustomer(data.customerId, orgId);
+    }
 
     await updateQuote(quoteId, orgId, userId, {
       title: data.title,

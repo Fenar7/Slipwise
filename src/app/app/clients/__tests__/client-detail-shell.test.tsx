@@ -1,0 +1,170 @@
+import { describe, it, expect, vi } from "vitest";
+import { render, screen, fireEvent } from "@testing-library/react";
+import { ClientDetailShell } from "../components/client-detail-shell";
+import { MOCK_CLIENTS } from "../components/client-workspace-mock-data";
+import { getMockClientDetail } from "../components/client-detail-mock-data";
+
+// Mock Next.js Link and navigation
+vi.mock("next/link", () => ({
+  default: ({
+    children,
+    href,
+  }: {
+    children: React.ReactNode;
+    href: string;
+  }) => <a href={href}>{children}</a>,
+}));
+
+vi.mock("next/navigation", () => ({
+  notFound: () => {
+    throw new Error("NotFound");
+  },
+}));
+
+describe("ClientDetailShell", () => {
+  it("renders the client detail shell for a known client", () => {
+    const client = getMockClientDetail("cl_01");
+    render(<ClientDetailShell client={client!} />);
+    expect(screen.getByRole("heading", { name: /Acme Manufacturing Ltd/i })).toBeInTheDocument();
+    expect(screen.getAllByText(/rajesh@acmemfg.in/i).length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("renders the summary band with KPIs", () => {
+    const client = getMockClientDetail("cl_01");
+    render(<ClientDetailShell client={client!} />);
+    expect(screen.getByText(/Outstanding/i)).toBeInTheDocument();
+    expect(screen.getByText(/Total Invoiced/i)).toBeInTheDocument();
+    expect(screen.getByText(/Total Paid/i)).toBeInTheDocument();
+    expect(screen.getByText(/Lifetime Value/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/Invoices/i).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText(/Portal Access/i)).toBeInTheDocument();
+  });
+
+  it("renders tab navigation with all sections", () => {
+    const client = getMockClientDetail("cl_01");
+    render(<ClientDetailShell client={client!} />);
+    expect(screen.getByRole("navigation", { name: /Client detail sections/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Overview/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Documents/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Contacts/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Billing & Tax/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Portal/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Activity/i })).toBeInTheDocument();
+  });
+
+  it("shows overview content by default", () => {
+    const client = getMockClientDetail("cl_01");
+    render(<ClientDetailShell client={client!} />);
+    expect(screen.getByText(/Recent Invoices/i)).toBeInTheDocument();
+    expect(screen.getByText(/Recent Quotes/i)).toBeInTheDocument();
+    expect(screen.getByText(/Primary Contact/i)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /Address/i })).toBeInTheDocument();
+  });
+
+  it("switches to documents tab", () => {
+    const client = getMockClientDetail("cl_01");
+    render(<ClientDetailShell client={client!} />);
+    fireEvent.click(screen.getByRole("button", { name: /Documents/i }));
+    expect(screen.getByRole("button", { name: /Documents/i })).toHaveAttribute("aria-current", "page");
+  });
+
+  it("switches to contacts tab and shows contacts", () => {
+    const client = getMockClientDetail("cl_01");
+    render(<ClientDetailShell client={client!} />);
+    fireEvent.click(screen.getByRole("button", { name: /Contacts/i }));
+    expect(screen.getByText(/All Contacts/i)).toBeInTheDocument();
+    expect(screen.getByText(/Rajesh Kumar/i)).toBeInTheDocument();
+    expect(screen.getByText(/Sunita Patel/i)).toBeInTheDocument();
+  });
+
+  it("switches to billing tab and shows tax info", () => {
+    const client = getMockClientDetail("cl_01");
+    render(<ClientDetailShell client={client!} />);
+    fireEvent.click(screen.getByRole("button", { name: /Billing & Tax/i }));
+    expect(screen.getByRole("heading", { name: /Billing Address/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /Tax Information/i })).toBeInTheDocument();
+    expect(screen.getAllByText(/GSTIN/i).length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("switches to portal tab and shows portal status", () => {
+    const client = getMockClientDetail("cl_01");
+    render(<ClientDetailShell client={client!} />);
+    fireEvent.click(screen.getByRole("button", { name: /Portal/i }));
+    expect(screen.getByRole("heading", { name: /Client Hub Status/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /Client Hub Access Information/i })).toBeInTheDocument();
+  });
+
+  it("switches to activity tab and shows timeline", () => {
+    const client = getMockClientDetail("cl_01");
+    render(<ClientDetailShell client={client!} />);
+    fireEvent.click(screen.getByRole("button", { name: /Activity/i }));
+    expect(screen.getByText(/Recent Activity/i)).toBeInTheDocument();
+  });
+
+  it("renders right rail with portal readiness", () => {
+    const client = getMockClientDetail("cl_01");
+    render(<ClientDetailShell client={client!} />);
+    expect(screen.getByRole("heading", { name: /Portal Readiness/i })).toBeInTheDocument();
+    expect(screen.getAllByRole("heading", { name: /Quick Actions/i }).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByRole("heading", { name: /Details/i })).toBeInTheDocument();
+  });
+
+  it("renders breadcrumbs with back link to clients list", () => {
+    const client = getMockClientDetail("cl_01");
+    render(<ClientDetailShell client={client!} />);
+    expect(screen.getByRole("link", { name: /Clients/i })).toBeInTheDocument();
+  });
+
+  it("renders quick action buttons in header", () => {
+    const client = getMockClientDetail("cl_01");
+    render(<ClientDetailShell client={client!} />);
+    const headerActions = screen.getAllByRole("link");
+    expect(headerActions.some((el) => el.textContent?.includes("Invoice"))).toBe(true);
+    expect(headerActions.some((el) => el.textContent?.includes("Quote"))).toBe(true);
+    expect(headerActions.some((el) => el.textContent?.includes("Edit"))).toBe(true);
+  });
+
+  it("throws notFound for unknown/null client", () => {
+    expect(() => render(<ClientDetailShell client={null as any} />)).toThrow("NotFound");
+  });
+});
+
+describe("ClientDetailShell — sparse data client", () => {
+  it("renders correctly for a client with moderate data", () => {
+    const client = getMockClientDetail("cl_02");
+    render(<ClientDetailShell client={client!} />);
+    expect(screen.getByRole("heading", { name: /Beta Logistics Pvt Ltd/i })).toBeInTheDocument();
+    expect(screen.getAllByText(/priya@betalogistics.com/i).length).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe("ClientDetailShell — regression: all workspace-visible clients have detail shells", () => {
+  it.each(MOCK_CLIENTS.map((c) => [c.id, c.name] as const))(
+    "renders detail shell for workspace client %s (%s) without 404",
+    (id) => {
+      const client = getMockClientDetail(id);
+      expect(() => render(<ClientDetailShell client={client!} />)).not.toThrow();
+    }
+  );
+});
+
+describe("ClientDetailShell — sparse fallback states", () => {
+  it("renders empty-state placeholders for a client with no invoices/quotes/activity", () => {
+    const client = getMockClientDetail("cl_09");
+    render(<ClientDetailShell client={client!} />);
+    // Overview tab shows empty states for invoices and quotes
+    expect(screen.getByText(/No recent invoices/i)).toBeInTheDocument();
+    expect(screen.getByText(/No recent quotes/i)).toBeInTheDocument();
+
+    // Activity tab shows empty state
+    fireEvent.click(screen.getByRole("button", { name: /Activity/i }));
+    expect(screen.getByText(/No activity recorded/i)).toBeInTheDocument();
+  });
+
+  it("renders portal disabled state for a non-enabled client", () => {
+    const client = getMockClientDetail("cl_09");
+    render(<ClientDetailShell client={client!} />);
+    fireEvent.click(screen.getByRole("button", { name: /Portal/i }));
+    expect(screen.getByText(/Client Hub Disabled/i)).toBeInTheDocument();
+  });
+});

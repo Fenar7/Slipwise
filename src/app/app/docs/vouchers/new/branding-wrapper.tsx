@@ -2,6 +2,7 @@
 import { useOrgBranding } from "@/hooks/use-org-branding";
 import { VoucherWorkspace } from "@/features/docs/voucher/components/voucher-workspace";
 import type { VoucherFormValues } from "@/features/docs/voucher/types";
+import type { VoucherAutofillPayload } from "../autofill-resolver";
 
 interface Vendor {
   id: string;
@@ -31,10 +32,12 @@ export function VoucherBrandingWrapper({
   existingVoucher,
   vendors = [],
   initialTemplateId,
+  initialAutofill,
 }: {
   existingVoucher?: ExistingVoucher;
   vendors?: Vendor[];
   initialTemplateId?: string;
+  initialAutofill?: VoucherAutofillPayload | null;
 }) {
   const branding = useOrgBranding();
 
@@ -63,6 +66,7 @@ export function VoucherBrandingWrapper({
         vendors={vendors}
         initialTemplateId={initialTemplateId}
         initialAccentColor={branding.accentColor}
+        initialAutofill={initialAutofill}
       />
     </div>
   );

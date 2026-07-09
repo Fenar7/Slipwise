@@ -19,13 +19,21 @@ interface CustomerPickerProps {
   customers: Customer[];
   onTagPrefill?: (tagIds: string[]) => void;
   onCustomerSelect?: (customerId: string) => void;
+  onCustomerChange?: (customer: Customer | null) => void;
+  initialCustomerId?: string;
 }
 
-export function CustomerPicker({ customers, onTagPrefill, onCustomerSelect }: CustomerPickerProps) {
+export function CustomerPicker({ customers, onTagPrefill, onCustomerSelect, onCustomerChange, initialCustomerId }: CustomerPickerProps) {
   const { setValue } = useFormContext<InvoiceFormValues>();
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState("");
-  const [selectedName, setSelectedName] = useState("");
+  const [selectedName, setSelectedName] = useState(() => {
+    if (initialCustomerId) {
+      const match = customers.find((c) => c.id === initialCustomerId);
+      return match?.name ?? "";
+    }
+    return "";
+  });
   const ref = useRef<HTMLDivElement>(null);
 
   const filtered = customers.filter((c) =>
@@ -43,6 +51,7 @@ export function CustomerPicker({ customers, onTagPrefill, onCustomerSelect }: Cu
     setSearch("");
 
     if (onCustomerSelect) onCustomerSelect(customer.id);
+    if (onCustomerChange) onCustomerChange(customer);
 
     if (onTagPrefill) {
       try {
@@ -64,6 +73,7 @@ export function CustomerPicker({ customers, onTagPrefill, onCustomerSelect }: Cu
     setValue("clientEmail", "");
     setValue("clientPhone", "");
     setValue("clientTaxId", "");
+    if (onCustomerChange) onCustomerChange(null);
   };
 
   useEffect(() => {
@@ -135,7 +145,7 @@ export function CustomerPicker({ customers, onTagPrefill, onCustomerSelect }: Cu
           </div>
           <div className="border-t border-slate-100 p-2">
             <a
-              href="/app/data/customers/new"
+              href="/app/clients/new"
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center gap-1 px-3 py-2 text-sm text-[var(--accent)] hover:bg-slate-50 rounded-lg"

@@ -1,11 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useSearchParams } from "next/navigation";
 import {
   getBillingDashboardData,
   initiatePlanCheckoutAction,
-  verifyCheckoutAction,
   cancelSubscriptionAction,
 } from "./actions";
 import { PLANS, formatPriceInr, type PlanId } from "@/lib/plans/config";
@@ -68,18 +66,12 @@ function statusBadge(status: string) {
 export default function BillingSettingsPage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [upgradingPlanId, setUpgradingPlanId] = useState<string | null>(null);
+  const [upgrading, setUpgrading] = useState(false);
   const [interval, setInterval] = useState<"monthly" | "yearly">("monthly");
-
-const searchParams = useSearchParams();
-  const isSuccess = searchParams.get("success") === "true";
 
   useEffect(() => {
     let cancelled = false;
     async function load() {
-      if (isSuccess) {
-        await verifyCheckoutAction();
-      }
       const result = await getBillingDashboardData();
       if (!cancelled) {
         setData(result.success ? result.data : null);
@@ -88,65 +80,20 @@ const searchParams = useSearchParams();
     }
     load();
     return () => { cancelled = true; };
-  }, [isSuccess]);
+  }, []);
 
   async function handleUpgrade(planId: string) {
-    setUpgradingPlanId(planId);
-    try {
-      const result = await initiatePlanCheckoutAction({
-        planId,
-        billingInterval: interval,
-        successUrl: `${window.location.origin}/app/settings/billing?success=true`,
-        cancelUrl: `${window.location.origin}/app/settings/billing?canceled=true`,
-      });
-      if (result.success) {
-        if (result.data.gateway === "RAZORPAY" && result.data.sessionId && result.data.razorpayKeyId) {
-          // Load Razorpay Checkout JS if not loaded
-          if (!(window as any).Razorpay) {
-            await new Promise((resolve) => {
-              const script = document.createElement("script");
-              script.src = "https://checkout.razorpay.com/v1/checkout.js";
-              script.onload = resolve;
-              document.body.appendChild(script);
-            });
-          }
-
-          const options = {
-            key: result.data.razorpayKeyId,
-            subscription_id: result.data.sessionId,
-            name: "Payslip Generator",
-            description: "Subscription Upgrade",
-            handler: function (response: any) {
-              window.location.assign(`${window.location.origin}/app/settings/billing?success=true`);
-            },
-            modal: {
-              ondismiss: function() {
-                setUpgradingPlanId(null);
-              }
-            }
-          };
-
-          const rzp = new (window as any).Razorpay(options);
-          rzp.on('payment.failed', function (response: any) {
-            setUpgradingPlanId(null);
-            alert(response.error.description || "Payment failed. Please try again.");
-          });
-          rzp.open();
-          return;
-        }
-
-        if (result.data.checkoutUrl) {
-          window.location.assign(result.data.checkoutUrl);
-        }
-      } else {
-        alert("Failed to initiate checkout. Please try again.");
-        setUpgradingPlanId(null);
-      }
-    } catch (error: any) {
-      console.error(error);
-      alert(error.message || "An unexpected error occurred.");
-      setUpgradingPlanId(null);
+    setUpgrading(true);
+    const result = await initiatePlanCheckoutAction({
+      planId,
+      billingInterval: interval,
+      successUrl: `${window.location.origin}/app/settings/billing?success=true`,
+      cancelUrl: `${window.location.origin}/app/settings/billing?canceled=true`,
+    });
+    if (result.success && result.data.checkoutUrl) {
+      window.location.assign(result.data.checkoutUrl);
     }
+    setUpgrading(false);
   }
 
   async function handleCancel() {
@@ -432,15 +379,15 @@ const searchParams = useSearchParams();
                     {!isCurrent && plan.id !== "free" && (
                       <button
                         onClick={() => handleUpgrade(plan.id)}
-                        disabled={upgradingPlanId !== null}
+                        disabled={upgrading}
                         className="w-full rounded-xl py-2.5 text-sm font-semibold transition-colors"
                         style={{
                           background: "#DC2626",
                           color: "#fff",
-                          opacity: upgradingPlanId === plan.id ? 0.6 : 1,
+                          opacity: upgrading ? 0.6 : 1,
                         }}
                       >
-                        {upgradingPlanId === plan.id ? "Processing..." : `Upgrade to ${plan.name}`}
+                        {upgrading ? "Processing..." : `Upgrade to ${plan.name}`}
                       </button>
                     )}
                     {isCurrent && (
@@ -454,7 +401,7 @@ const searchParams = useSearchParams();
                     {!isCurrent && plan.id === "free" && currentPlanId !== "free" && (
                       <button
                         onClick={() => handleUpgrade(plan.id)}
-                        disabled={upgradingPlanId !== null}
+                        disabled={upgrading}
                         className="w-full rounded-xl border py-2.5 text-sm font-semibold transition-colors hover:border-[#DC2626]"
                         style={{ borderColor: "#E0E0E0", color: "#49454F" }}
                       >

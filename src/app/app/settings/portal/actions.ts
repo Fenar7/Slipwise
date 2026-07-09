@@ -3,11 +3,14 @@
 import { db } from "@/lib/db";
 import { requireOrgContext, requireRole } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
+import { getPortalAccessState, logPortalAccess } from "@/lib/portal-auth";
+
 
 // ─── Portal settings (read/write) ────────────────────────────────────────────
 
 export async function getPortalSettings(organizationId: string) {
   const { orgId } = await requireOrgContext();
+  await requireRole("admin");
   if (orgId !== organizationId) throw new Error("Unauthorized");
 
   return db.orgDefaults.findUnique({
@@ -55,6 +58,10 @@ export async function updatePortalSettings({
     },
   });
 
+  if (!portalEnabled) {
+    await revokeAllPortalTokens(orgId);
+  }
+
   logAudit({
     orgId,
     actorId: userId,
@@ -69,6 +76,7 @@ export async function updatePortalSettings({
 
 export async function getPortalPolicies(organizationId: string) {
   const { orgId } = await requireOrgContext();
+  await requireRole("admin");
   if (orgId !== organizationId) throw new Error("Unauthorized");
 
   return db.orgDefaults.findUnique({
@@ -141,22 +149,38 @@ export async function getPortalAccessLogs(
     toDate?: string;
     page?: number;
     pageSize?: number;
+    path?: string;
+    statusCode?: number;
   },
 ) {
   const { orgId } = await requireOrgContext();
+  await requireRole("admin");
   if (orgId !== organizationId) throw new Error("Unauthorized");
 
   const page = filters?.page ?? 1;
   const pageSize = filters?.pageSize ?? 20;
 
+  let fromDateObj: Date | undefined;
+  if (filters?.fromDate && !isNaN(Date.parse(filters.fromDate))) {
+    fromDateObj = new Date(filters.fromDate);
+  }
+
+  let toDateObj: Date | undefined;
+  if (filters?.toDate && !isNaN(Date.parse(filters.toDate))) {
+    toDateObj = new Date(filters.toDate);
+    toDateObj.setUTCHours(23, 59, 59, 999);
+  }
+
   const where = {
     orgId: organizationId,
     ...(filters?.customerId && { customerId: filters.customerId }),
     ...(filters?.action && { action: filters.action }),
-    ...((filters?.fromDate || filters?.toDate) && {
+    ...(filters?.path && { path: { contains: filters.path, mode: "insensitive" as const } }),
+    ...(filters?.statusCode !== undefined && { statusCode: filters.statusCode }),
+    ...((fromDateObj || toDateObj) && {
       accessedAt: {
-        ...(filters.fromDate && { gte: new Date(filters.fromDate) }),
-        ...(filters.toDate && { lte: new Date(filters.toDate) }),
+        ...(fromDateObj && { gte: fromDateObj }),
+        ...(toDateObj && { lte: toDateObj }),
       },
     }),
   };
@@ -227,6 +251,13 @@ export async function revokeCustomerPortalAccess(
     }),
   ]);
 
+  logPortalAccess({
+    orgId: organizationId,
+    customerId,
+    path: "/app/settings/portal",
+    action: "access_revoked",
+  });
+
   logAudit({
     orgId,
     actorId: userId,
@@ -282,3 +313,101 @@ export async function revokeAllPortalTokens(organizationId: string) {
     revokedSessions: revokedSessions.count,
   };
 }
+
+// ─── Customer Portal Access / Onboarding Lifecycle Status Action ─────────────
+
+export async function getPortalCustomersWithAccessState(organizationId: string) {
+  const { orgId } = await requireOrgContext();
+  await requireRole("admin");
+  if (orgId !== organizationId) throw new Error("Unauthorized");
+
+  // Retrieve organization default settings
+  const orgDefaults = await db.orgDefaults.findUnique({
+    where: { organizationId },
+    select: { portalEnabled: true },
+  });
+  const portalEnabled = orgDefaults?.portalEnabled ?? false;
+
+  const customers = await db.customer.findMany({
+    where: { organizationId },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      phone: true,
+      address: true,
+      taxId: true,
+      gstin: true,
+      lifecycleStage: true,
+      clientHubLifecycle: {
+        select: {
+          enabled: true,
+          latestInviteSentAt: true,
+          latestInviteEmail: true,
+          inviteSentCount: true,
+          publicAccessHandle: true,
+        },
+      },
+      portalTokens: {
+        select: {
+          createdAt: true,
+          expiresAt: true,
+          isRevoked: true,
+          lastUsedAt: true,
+        },
+      },
+      portalSessions: {
+        select: {
+          revokedAt: true,
+          expiresAt: true,
+        },
+      },
+    },
+    orderBy: { name: "asc" },
+  });
+
+  return customers.map((c) => {
+    // compute access state
+    const accessState = getPortalAccessState({
+      portalEnabled,
+      lifecycleEnabled: c.clientHubLifecycle?.enabled ?? false,
+      latestInviteSentAt: c.clientHubLifecycle?.latestInviteSentAt ?? null,
+      inviteSentCount: c.clientHubLifecycle?.inviteSentCount ?? 0,
+      tokens: c.portalTokens,
+      sessions: c.portalSessions,
+    });
+
+    const blockers: string[] = [];
+    if (!portalEnabled) {
+      blockers.push("Portal is disabled for organization");
+    }
+    if (!c.name || c.name.trim().length === 0) {
+      blockers.push("Customer name is required");
+    }
+    if (!c.email || c.email.trim().length === 0) {
+      blockers.push("Customer email is required");
+    }
+    if (!c.phone || c.phone.trim().length === 0) {
+      blockers.push("Customer phone is required");
+    }
+    if (!c.address || c.address.trim().length === 0) {
+      blockers.push("Customer address is required");
+    }
+    if ((!c.taxId || c.taxId.trim().length === 0) && (!c.gstin || c.gstin.trim().length === 0)) {
+      blockers.push("Customer tax/GSTIN identifier is required");
+    }
+    const inviteEligible = portalEnabled && blockers.length === 0;
+
+    return {
+      id: c.id,
+      name: c.name,
+      email: c.email,
+      phone: c.phone,
+      accessState,
+      clientHubLifecycle: c.clientHubLifecycle,
+      inviteEligible,
+      blockers,
+    };
+  });
+}
+

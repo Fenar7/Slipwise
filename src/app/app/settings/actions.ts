@@ -1,50 +1,104 @@
 "use server";
-import { db } from "@/lib/db";
 
-export async function getOrgSettings(organizationId: string) {
+import { db } from "@/lib/db";
+import { requireOrgContext, requireRole } from "@/lib/auth";
+
+export async function getOrgSettings() {
+  const { orgId } = await requireOrgContext();
   const [branding, defaults] = await Promise.all([
-    db.brandingProfile.findUnique({ where: { organizationId } }),
-    db.orgDefaults.findUnique({ where: { organizationId } }),
+    db.brandingProfile.findUnique({ where: { organizationId: orgId } }),
+    db.orgDefaults.findUnique({ where: { organizationId: orgId } }),
   ]);
   return { branding, defaults };
 }
 
 export async function saveOrgBranding({
-  organizationId,
   accentColor,
   fontFamily,
 }: {
-  organizationId: string;
   accentColor: string;
   fontFamily: string;
 }) {
+  const { orgId } = await requireRole("admin");
+
   await db.brandingProfile.upsert({
-    where: { organizationId },
-    create: { organizationId, accentColor, fontFamily },
+    where: { organizationId: orgId },
+    create: { organizationId: orgId, accentColor, fontFamily },
     update: { accentColor, fontFamily },
   });
 }
 
 export async function saveOrgFinancials({
-  organizationId,
   bankName,
   bankAccount,
   bankIFSC,
   taxId,
   gstin,
   businessAddress,
+  defaultVoucherNotes,
+  defaultVoucherApprovedBy,
+  defaultVoucherReceivedBy,
+  defaultVoucherPaymentMode,
+  defaultInvoiceNotes,
+  defaultInvoiceTerms,
+  defaultInvoiceAuthorizedBy,
+  defaultQuoteNotes,
+  defaultQuoteTerms,
 }: {
-  organizationId: string;
   bankName: string;
   bankAccount: string;
   bankIFSC: string;
   taxId: string;
   gstin: string;
   businessAddress: string;
+  defaultVoucherNotes: string;
+  defaultVoucherApprovedBy: string;
+  defaultVoucherReceivedBy: string;
+  defaultVoucherPaymentMode: string;
+  defaultInvoiceNotes: string;
+  defaultInvoiceTerms: string;
+  defaultInvoiceAuthorizedBy: string;
+  defaultQuoteNotes: string;
+  defaultQuoteTerms: string;
 }) {
+  const { orgId } = await requireRole("admin");
+
   await db.orgDefaults.upsert({
-    where: { organizationId },
-    create: { organizationId, bankName, bankAccount, bankIFSC, taxId, gstin, businessAddress },
-    update: { bankName, bankAccount, bankIFSC, taxId, gstin, businessAddress },
+    where: { organizationId: orgId },
+    create: {
+      organizationId: orgId,
+      bankName,
+      bankAccount,
+      bankIFSC,
+      taxId,
+      gstin,
+      businessAddress,
+      defaultVoucherNotes: defaultVoucherNotes || null,
+      defaultVoucherApprovedBy: defaultVoucherApprovedBy || null,
+      defaultVoucherReceivedBy: defaultVoucherReceivedBy || null,
+      defaultVoucherPaymentMode: defaultVoucherPaymentMode || null,
+      defaultInvoiceNotes: defaultInvoiceNotes || null,
+      defaultInvoiceTerms: defaultInvoiceTerms || null,
+      defaultInvoiceAuthorizedBy: defaultInvoiceAuthorizedBy || null,
+      defaultQuoteNotes: defaultQuoteNotes || null,
+      defaultQuoteTerms: defaultQuoteTerms || null,
+    },
+    update: {
+      bankName,
+      bankAccount,
+      bankIFSC,
+      taxId,
+      gstin,
+      businessAddress,
+      defaultVoucherNotes: defaultVoucherNotes || null,
+      defaultVoucherApprovedBy: defaultVoucherApprovedBy || null,
+      defaultVoucherReceivedBy: defaultVoucherReceivedBy || null,
+      defaultVoucherPaymentMode: defaultVoucherPaymentMode || null,
+      defaultInvoiceNotes: defaultInvoiceNotes || null,
+      defaultInvoiceTerms: defaultInvoiceTerms || null,
+      defaultInvoiceAuthorizedBy: defaultInvoiceAuthorizedBy || null,
+      defaultQuoteNotes: defaultQuoteNotes || null,
+      defaultQuoteTerms: defaultQuoteTerms || null,
+    },
   });
 }

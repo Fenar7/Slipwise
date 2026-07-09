@@ -15,6 +15,7 @@ import { getSequenceConfig } from "@/features/sequences/services/sequence-admin"
 import type { ConsumeResult } from "@/features/sequences/types";
 import { setVoucherTags } from "@/lib/tags/assignment-service";
 import { fromMinorUnits, normalizeMoney, sumMinorUnits } from "@/lib/money";
+import { validateVoucherVendor } from "./autofill-resolver";
 
 export type ActionResult<T> = 
   | { success: true; data: T }
@@ -172,6 +173,8 @@ export async function saveVoucher(
         error: `Voucher limit reached (${limitCheck.current}/${limitCheck.limit}). Upgrade your plan to create more vouchers.`,
       };
     }
+
+    await validateVoucherVendor(input.vendorId, orgId);
     
     // Phase 5 / Sprint 5.2: assign the official number at approval
     // time via the sequence engine (or legacy fallback).  Sprint 5.1
@@ -303,6 +306,10 @@ export async function updateVoucher(
 
     if (existing.accountingStatus === "POSTED") {
       return { success: false, error: "Posted vouchers cannot be edited. Reverse and recreate instead." };
+    }
+
+    if (input.vendorId !== undefined) {
+      await validateVoucherVendor(input.vendorId, orgId);
     }
     
     const normalizedVoucher = input.lines

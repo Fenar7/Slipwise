@@ -34,6 +34,7 @@ const {
         findUnique: vi.fn(),
         upsert: vi.fn(),
         update: vi.fn(),
+        deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
       },
     },
     mockSendEmail: vi.fn(),
@@ -57,6 +58,7 @@ import {
   verifyMagicLink,
   getPortalSession,
   revokePortalSession,
+  getPortalAccessState,
 } from "../portal-auth";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -93,6 +95,7 @@ function makeCustomerResult(overrides: Record<string, unknown> = {}) {
         portalSupportEmail: "support@slipwise.com",
       },
     },
+    clientHubLifecycle: { enabled: true },
     ...overrides,
   };
 }
@@ -106,12 +109,14 @@ describe("portal-auth", () => {
     vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://app.slipwise.com");
     mockSendEmail.mockResolvedValue(undefined);
     mockLogAudit.mockResolvedValue(undefined);
+    mockDb.customer.findFirst.mockResolvedValue(makeCustomerResult());
     mockDb.customerPortalToken.updateMany.mockResolvedValue({ count: 0 });
     mockDb.customerPortalToken.create.mockResolvedValue({ id: "tok-1" });
     // Rate limit: default to no window (allows through)
     mockDb.portalRateLimit.findUnique.mockResolvedValue(null);
     mockDb.portalRateLimit.upsert.mockResolvedValue({ count: 1 });
     mockDb.portalRateLimit.update.mockResolvedValue({});
+    mockDb.portalRateLimit.deleteMany.mockResolvedValue({ count: 0 });
     // Session: default to success
     mockDb.customerPortalSession.create.mockResolvedValue({ id: "sess-1" });
     mockDb.customerPortalSession.findUnique.mockResolvedValue(null);
@@ -189,6 +194,7 @@ describe("portal-auth", () => {
             slug: "slipwise",
             defaults: { portalEnabled: true, portalSessionExpiryHours: 24 },
           },
+          clientHubLifecycle: { enabled: true },
         },
       });
       mockDb.customerPortalToken.update.mockResolvedValue({});
@@ -389,6 +395,7 @@ describe("portal-auth", () => {
             slug: "slipwise",
             defaults: { portalEnabled: true, portalSessionExpiryHours: 24 },
           },
+          clientHubLifecycle: { enabled: true },
         },
       });
       mockDb.customerPortalToken.update.mockResolvedValue({});
@@ -457,6 +464,142 @@ describe("portal-auth", () => {
       const session = await getPortalSession();
 
       expect(session).toBeNull();
+    });
+  });
+
+  // ─── getPortalAccessState ──────────────────────────────────────────────────
+
+  describe("getPortalAccessState", () => {
+    it("returns LOCKED if portal or customer lifecycle is disabled", () => {
+      const state = getPortalAccessState({
+        portalEnabled: false,
+        lifecycleEnabled: true,
+        latestInviteSentAt: null,
+        inviteSentCount: 0,
+        tokens: [],
+        sessions: [],
+      });
+      expect(state).toBe("LOCKED");
+
+      const state2 = getPortalAccessState({
+        portalEnabled: true,
+        lifecycleEnabled: false,
+        latestInviteSentAt: null,
+        inviteSentCount: 0,
+        tokens: [],
+        sessions: [],
+      });
+      expect(state2).toBe("LOCKED");
+    });
+
+    it("returns NEVER_INVITED if customer is enabled but inviteSentCount is 0", () => {
+      const state = getPortalAccessState({
+        portalEnabled: true,
+        lifecycleEnabled: true,
+        latestInviteSentAt: null,
+        inviteSentCount: 0,
+        tokens: [],
+        sessions: [],
+      });
+      expect(state).toBe("NEVER_INVITED");
+    });
+
+    it("returns ISSUED if invite is sent and newest token is active/valid", () => {
+      const state = getPortalAccessState({
+        portalEnabled: true,
+        lifecycleEnabled: true,
+        latestInviteSentAt: new Date(),
+        inviteSentCount: 1,
+        tokens: [
+          {
+            createdAt: new Date(),
+            expiresAt: new Date(Date.now() + 86400000),
+            isRevoked: false,
+            lastUsedAt: null,
+          },
+        ],
+        sessions: [],
+      });
+      expect(state).toBe("ISSUED");
+    });
+
+    it("returns EXPIRED if the token is expired", () => {
+      const state = getPortalAccessState({
+        portalEnabled: true,
+        lifecycleEnabled: true,
+        latestInviteSentAt: new Date(Date.now() - 90000000),
+        inviteSentCount: 1,
+        tokens: [
+          {
+            createdAt: new Date(Date.now() - 90000000),
+            expiresAt: new Date(Date.now() - 10000),
+            isRevoked: false,
+            lastUsedAt: null,
+          },
+        ],
+        sessions: [],
+      });
+      expect(state).toBe("EXPIRED");
+    });
+
+    it("returns REVOKED if tokens and sessions are explicitly revoked", () => {
+      const state = getPortalAccessState({
+        portalEnabled: true,
+        lifecycleEnabled: true,
+        latestInviteSentAt: new Date(),
+        inviteSentCount: 1,
+        tokens: [
+          {
+            createdAt: new Date(),
+            expiresAt: new Date(Date.now() + 86400000),
+            isRevoked: true,
+            lastUsedAt: null,
+          },
+        ],
+        sessions: [
+          {
+            revokedAt: new Date(),
+            expiresAt: new Date(Date.now() + 86400000),
+          },
+        ],
+      });
+      expect(state).toBe("REVOKED");
+    });
+
+    it("returns ACTIVE if there is an unrevoked and unexpired session", () => {
+      const state = getPortalAccessState({
+        portalEnabled: true,
+        lifecycleEnabled: true,
+        latestInviteSentAt: new Date(),
+        inviteSentCount: 1,
+        tokens: [],
+        sessions: [
+          {
+            revokedAt: null,
+            expiresAt: new Date(Date.now() + 86400000),
+          },
+        ],
+      });
+      expect(state).toBe("ACTIVE");
+    });
+
+    it("returns VERIFIED if a session is present but revoked/expired, or a token was used", () => {
+      const state = getPortalAccessState({
+        portalEnabled: true,
+        lifecycleEnabled: true,
+        latestInviteSentAt: new Date(),
+        inviteSentCount: 1,
+        tokens: [
+          {
+            createdAt: new Date(),
+            expiresAt: new Date(Date.now() + 86400000),
+            isRevoked: false,
+            lastUsedAt: new Date(),
+          },
+        ],
+        sessions: [],
+      });
+      expect(state).toBe("VERIFIED");
     });
   });
 });

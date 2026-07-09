@@ -28,6 +28,8 @@ import { getSequenceConfig } from "@/features/sequences/services/sequence-admin"
 import { rateLimitByOrg, RATE_LIMITS } from "@/lib/rate-limit";
 import type { ConsumeResult } from "@/features/sequences/types";
 import { setInvoiceTags } from "@/lib/tags/assignment-service";
+import { resolveInvoiceAutofill } from "./autofill-resolver";
+import type { InvoiceAutofillPayload } from "./autofill-resolver";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -301,6 +303,48 @@ async function reverseInvoiceInventoryTx(
 // ─── Invoice Actions ──────────────────────────────────────────────────────────
 
 /**
+ * Verify that a customerId belongs to the active org.
+ * Returns the validated id, or null when no customer is linked.
+ * Throws on cross-org or missing customer to prevent forged linkage.
+ */
+async function resolveValidatedCustomerId(
+  orgId: string,
+  customerId?: string | null,
+): Promise<string | null> {
+  if (!customerId) {
+    return null;
+  }
+
+  const customer = await db.customer.findFirst({
+    where: { id: customerId, organizationId: orgId },
+    select: { id: true },
+  });
+
+  if (!customer) {
+    throw new Error(
+      "Customer not found or does not belong to this organisation.",
+    );
+  }
+
+  return customer.id;
+}
+
+export async function resolveInvoiceAutofillAction(params: {
+  customerId?: string;
+  templateParam?: string;
+}): Promise<ActionResult<InvoiceAutofillPayload>> {
+  try {
+    const payload = await resolveInvoiceAutofill(params);
+    return { success: true, data: payload };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to resolve invoice autofill",
+    };
+  }
+}
+
+/**
  * Assign the next official invoice number via the sequence engine.
  * Falls back to legacy OrgDefaults numbering if no active sequence
  * exists for the org (e.g. migration not yet run).
@@ -378,6 +422,9 @@ export async function saveInvoice(
     const invoiceDate = normalizeInvoiceDateInput(input.invoiceDate, "Invoice date");
     const dueDate = normalizeOptionalInvoiceDateInput(input.dueDate, "Due date");
 
+    // Validate customer belongs to this org before any write
+    const validatedCustomerId = await resolveValidatedCustomerId(orgId, input.customerId);
+
     const invoice = await db.$transaction(async (tx) => {
       if (status === "ISSUED") {
         const assigned = await assignNextInvoiceNumber(orgId, invoiceDate, tx);
@@ -390,7 +437,7 @@ export async function saveInvoice(
       const created = await tx.invoice.create({
         data: {
           organizationId: orgId,
-          customerId: input.customerId || null,
+          customerId: validatedCustomerId,
           invoiceNumber,
           invoiceDate,
           dueDate,
@@ -532,6 +579,11 @@ export async function updateInvoice(
       return { success: false, error: "Posted invoices cannot be edited" };
     }
 
+    // Validate customer belongs to this org before any write
+    const validatedCustomerId = input.customerId !== undefined
+      ? await resolveValidatedCustomerId(orgId, input.customerId)
+      : undefined;
+
     const normalizedInvoice = input.lineItems
       ? normalizeInvoiceLineItems(input.lineItems)
       : null;
@@ -540,7 +592,7 @@ export async function updateInvoice(
       await tx.invoice.update({
         where: { id },
         data: {
-          customerId: input.customerId,
+          customerId: validatedCustomerId,
           ...(input.invoiceDate !== undefined
             ? { invoiceDate: normalizeInvoiceDateInput(input.invoiceDate, "Invoice date") }
             : {}),
@@ -739,28 +791,16 @@ export async function getInvoice(id: string) {
 
   return {
     ...invoice,
+    invoiceDate: formatIsoDate(invoice.invoiceDate),
+    dueDate: invoice.dueDate ? formatIsoDate(invoice.dueDate) : null,
     totalAmount: toAccountingNumber(invoice.totalAmount),
     amountPaid: toAccountingNumber(invoice.amountPaid),
     remainingAmount: toAccountingNumber(invoice.remainingAmount),
-    gstTotalCgst: Number(invoice.gstTotalCgst),
-    gstTotalSgst: Number(invoice.gstTotalSgst),
-    gstTotalIgst: Number(invoice.gstTotalIgst),
-    gstTotalCess: Number(invoice.gstTotalCess),
-    invoiceDate: formatIsoDate(invoice.invoiceDate),
-    dueDate: invoice.dueDate ? formatIsoDate(invoice.dueDate) : null,
     paymentPromiseDate: invoice.paymentPromiseDate ? formatIsoDate(invoice.paymentPromiseDate) : null,
     lineItems: invoice.lineItems.map((lineItem) => ({
       ...lineItem,
       amount: toAccountingNumber(lineItem.amount),
     })),
-    customer: invoice.customer
-      ? {
-          ...invoice.customer,
-          lifetimeValue: Number(invoice.customer.lifetimeValue),
-          totalInvoiced: Number(invoice.customer.totalInvoiced),
-          totalPaid: Number(invoice.customer.totalPaid),
-        }
-      : null,
   };
 }
 
@@ -867,15 +907,11 @@ export async function listInvoices(params?: {
   return {
     invoices: invoices.map((invoice) => ({
       ...invoice,
+      invoiceDate: formatIsoDate(invoice.invoiceDate),
+      dueDate: invoice.dueDate ? formatIsoDate(invoice.dueDate) : null,
       totalAmount: toAccountingNumber(invoice.totalAmount),
       amountPaid: toAccountingNumber(invoice.amountPaid),
       remainingAmount: toAccountingNumber(invoice.remainingAmount),
-      gstTotalCgst: Number(invoice.gstTotalCgst),
-      gstTotalSgst: Number(invoice.gstTotalSgst),
-      gstTotalIgst: Number(invoice.gstTotalIgst),
-      gstTotalCess: Number(invoice.gstTotalCess),
-      invoiceDate: formatIsoDate(invoice.invoiceDate),
-      dueDate: invoice.dueDate ? formatIsoDate(invoice.dueDate) : null,
       paymentPromiseDate: invoice.paymentPromiseDate
         ? formatIsoDate(invoice.paymentPromiseDate)
         : null,

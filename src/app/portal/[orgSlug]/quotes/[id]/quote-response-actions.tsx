@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { acceptPortalQuote, declinePortalQuote } from "../../actions";
+import { getStaleOutcomeMessage } from "@/lib/portal-quote-helpers";
 
 interface QuoteResponseActionsProps {
   orgSlug: string;
@@ -19,7 +20,11 @@ export function QuoteResponseActions({ orgSlug, quoteId }: QuoteResponseActionsP
     startAccept(async () => {
       const res = await acceptPortalQuote(orgSlug, quoteId);
       if (res.success) {
-        setResult({ type: "success", message: `Quote #${res.data.quoteNumber} accepted. We'll be in touch shortly.` });
+        if (res.data.staleOutcome) {
+          setResult({ type: "success", message: getStaleOutcomeMessage(res.data.staleOutcome) });
+        } else {
+          setResult({ type: "success", message: `Quote #${res.data.quoteNumber} accepted. We'll be in touch shortly.` });
+        }
       } else {
         setResult({ type: "error", message: res.error });
       }
@@ -31,7 +36,11 @@ export function QuoteResponseActions({ orgSlug, quoteId }: QuoteResponseActionsP
     startDecline(async () => {
       const res = await declinePortalQuote(orgSlug, quoteId, declineReason || undefined);
       if (res.success) {
-        setResult({ type: "success", message: `Quote #${res.data.quoteNumber} declined.` });
+        if (res.data.staleOutcome) {
+          setResult({ type: "success", message: getStaleOutcomeMessage(res.data.staleOutcome) });
+        } else {
+          setResult({ type: "success", message: `Quote #${res.data.quoteNumber} declined.` });
+        }
       } else {
         setResult({ type: "error", message: res.error });
       }

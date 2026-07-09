@@ -37,13 +37,17 @@ function isExpiredSoon(validUntil: Date) {
   return diffDays >= 0 && diffDays <= 3;
 }
 
+import { checkLegacyRouteRedirect } from "@/lib/portal-eligibility";
+
 export default async function PortalQuotesPage({
   params,
 }: {
   params: Promise<{ orgSlug: string }>;
 }) {
   const { orgSlug } = await params;
-  const session = await getPortalSession();
+  await checkLegacyRouteRedirect(orgSlug, "/quotes");
+
+  const session = await getPortalSession(orgSlug);
   if (!session) redirect(`/portal/${orgSlug}/auth/login`);
 
   const result = await getPortalQuotes(orgSlug);

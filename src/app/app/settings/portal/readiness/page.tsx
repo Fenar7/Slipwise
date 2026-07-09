@@ -1,6 +1,6 @@
 import { CheckCircle, XCircle, AlertCircle, ExternalLink } from "lucide-react";
 import Link from "next/link";
-import { requireOrgContext } from "@/lib/auth";
+import { requireRole } from "@/lib/auth";
 import { db } from "@/lib/db";
 
 export const metadata = { title: "Portal Readiness – Slipwise" };
@@ -120,6 +120,45 @@ async function buildChecklist(orgId: string): Promise<CheckItem[]> {
     actionLabel: "Configure policies",
   });
 
+  // 8. Magic link expiry security bounds
+  const magicLinkExpiry = org?.defaults?.portalMagicLinkExpiryHours ?? 1;
+  items.push({
+    id: "magic-link-expiry",
+    label: "Magic link expiry bounds",
+    description: magicLinkExpiry >= 1 && magicLinkExpiry <= 2
+      ? `Magic links expire after ${magicLinkExpiry} hour${magicLinkExpiry > 1 ? "s" : ""}. This is within the secure recommended range.`
+      : `Magic links expire after ${magicLinkExpiry} hour${magicLinkExpiry > 1 ? "s" : ""}. We recommend setting expiry to 1-2 hours to minimize interception risk.`,
+    status: magicLinkExpiry >= 1 && magicLinkExpiry <= 2 ? "pass" : "warn",
+    actionHref: "/app/settings/portal/policies",
+    actionLabel: "Configure policies",
+  });
+
+  // 9. Warning items for enabled customers missing primary email addresses
+  const enabledWithMissingEmailCount = await db.customer.count({
+    where: {
+      organizationId: orgId,
+      lifecycleStage: { not: "CHURNED" },
+      clientHubLifecycle: {
+        enabled: true,
+      },
+      OR: [
+        { email: null },
+        { email: "" },
+      ],
+    },
+  });
+
+  items.push({
+    id: "portal-customer-emails",
+    label: "Portal customer email check",
+    description: enabledWithMissingEmailCount === 0
+      ? "All portal-enabled customers have a primary email address configured."
+      : `${enabledWithMissingEmailCount} portal-enabled customer${enabledWithMissingEmailCount > 1 ? "s are" : " is"} missing a primary email address. They will not be able to log in until an email is set.`,
+    status: enabledWithMissingEmailCount === 0 ? "pass" : "warn",
+    actionHref: "/app/settings/portal/client-hub",
+    actionLabel: "Manage client overrides",
+  });
+
   return items;
 }
 
@@ -136,7 +175,7 @@ const STATUS_LABEL = {
 };
 
 export default async function PortalReadinessPage() {
-  const { orgId } = await requireOrgContext();
+  const { orgId } = await requireRole("admin");
   const items = await buildChecklist(orgId);
 
   const passCount = items.filter((i) => i.status === "pass").length;

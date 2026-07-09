@@ -19,9 +19,10 @@ interface VendorPickerProps {
   label?: string;
   onTagPrefill?: (tagIds: string[]) => void;
   onVendorSelect?: (vendorId: string) => void;
+  onClearVendor?: () => void;
 }
 
-export function VendorPicker({ vendors, label = "Select contact", onTagPrefill, onVendorSelect }: VendorPickerProps) {
+export function VendorPicker({ vendors, label = "Select contact", onTagPrefill, onVendorSelect, onClearVendor }: VendorPickerProps) {
   const { setValue } = useFormContext<VoucherFormValues>();
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -58,6 +59,7 @@ export function VendorPicker({ vendors, label = "Select contact", onTagPrefill, 
     setSelectedName("");
     setValue("vendorId", undefined);
     setValue("counterpartyName", "");
+    if (onClearVendor) onClearVendor();
   };
 
   useEffect(() => {

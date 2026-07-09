@@ -45,6 +45,15 @@ const mockDb = vi.hoisted(() => ({
     findFirst: vi.fn(),
     update: vi.fn(),
   },
+  $transaction: vi.fn(async (fn: Function) => {
+    const tx = {
+      quote: {
+        findFirst: mockDb.quote.findFirst,
+        update: mockDb.quote.update,
+      },
+    };
+    return fn(tx);
+  }),
 }));
 
 vi.mock("server-only", () => ({}));
@@ -56,6 +65,9 @@ vi.mock("@/lib/portal-auth", () => ({
 }));
 vi.mock("@/lib/flow/workflow-engine", () => ({
   fireWorkflowTrigger: vi.fn(),
+}));
+vi.mock("@/lib/document-events", () => ({
+  emitQuoteEvent: vi.fn(),
 }));
 vi.mock("next/navigation", () => ({ redirect: vi.fn() }));
 

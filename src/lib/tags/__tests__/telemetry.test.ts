@@ -1,58 +1,63 @@
-import { describe, it, expect, vi } from "vitest";
-import { trackEvent } from "@/lib/analytics";
-import {
-  trackTagCreated,
-  trackTagApplied,
-  trackTagRemoved,
-  trackTagReportFiltered,
-  trackTagAnalyticsViewed,
-  trackTagDrilldownOpened,
-  trackTagDefaultsUpdated,
-  trackBulkTaggingStarted,
-} from "../telemetry";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
-vi.mock("@/lib/analytics", () => ({
-  trackEvent: vi.fn(() => Promise.resolve()),
-}));
+import { recordTagEvent } from "../telemetry";
 
-describe("tag telemetry", () => {
-  it("tracks tag creation", () => {
-    trackTagCreated({ name: "Urgent" });
-    expect(trackEvent).toHaveBeenCalledWith("tag_created", { name: "Urgent" });
+beforeEach(() => {
+  vi.spyOn(console, "log").mockImplementation(() => {});
+  vi.stubEnv("NODE_ENV", "development");
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.restoreAllMocks();
+});
+
+describe("recordTagEvent", () => {
+  it("logs a tag_created event", async () => {
+    await recordTagEvent({
+      event: "tag_created",
+      orgId: "org_abc",
+      tagId: "tag_001",
+    });
+
+    expect(console.log).toHaveBeenCalledWith(
+      "[tag-telemetry]",
+      expect.stringContaining("tag_created")
+    );
+    expect(console.log).toHaveBeenCalledWith(
+      "[tag-telemetry]",
+      expect.stringContaining("tag_001")
+    );
   });
 
-  it("tracks tag application", () => {
-    trackTagApplied("invoice", 3);
-    expect(trackEvent).toHaveBeenCalledWith("tag_applied", { doc_type: "invoice", tag_count: 3 });
+  it("logs a tag_assigned_to_invoice event with entity info", async () => {
+    await recordTagEvent({
+      event: "tag_assigned_to_invoice",
+      orgId: "org_abc",
+      tagId: "tag_001",
+      entityType: "invoice",
+      entityId: "inv_1",
+    });
+
+    const calls = vi.mocked(console.log).mock.calls;
+    const eventCall = calls.find((c) => c[0] === "[tag-telemetry]");
+    expect(eventCall).toBeDefined();
+    const payload = JSON.parse(eventCall![1]);
+    expect(payload.event).toBe("tag_assigned_to_invoice");
+    expect(payload.entityId).toBe("inv_1");
+    expect(payload.timestamp).toBeDefined();
   });
 
-  it("tracks tag removal", () => {
-    trackTagRemoved("voucher");
-    expect(trackEvent).toHaveBeenCalledWith("tag_removed", { doc_type: "voucher" });
-  });
+  it("does not log in production by default", async () => {
+    vi.unstubAllEnvs();
+    vi.stubEnv("NODE_ENV", "production");
 
-  it("tracks tag report filtering", () => {
-    trackTagReportFiltered("invoice", 2);
-    expect(trackEvent).toHaveBeenCalledWith("tag_report_filtered", { report_type: "invoice", tag_count: 2 });
-  });
+    await recordTagEvent({
+      event: "tag_created",
+      orgId: "org_abc",
+      tagId: "tag_001",
+    });
 
-  it("tracks tag analytics views", () => {
-    trackTagAnalyticsViewed("detailed");
-    expect(trackEvent).toHaveBeenCalledWith("tag_analytics_viewed", { mode: "detailed" });
-  });
-
-  it("tracks tag drilldown views", () => {
-    trackTagDrilldownOpened("invoice");
-    expect(trackEvent).toHaveBeenCalledWith("tag_drilldown_opened", { doc_type: "invoice" });
-  });
-
-  it("tracks tag defaults updates", () => {
-    trackTagDefaultsUpdated("customer", 4);
-    expect(trackEvent).toHaveBeenCalledWith("tag_defaults_updated", { entity_type: "customer", tag_count: 4 });
-  });
-
-  it("tracks bulk tagging starts", () => {
-    trackBulkTaggingStarted("voucher", 12);
-    expect(trackEvent).toHaveBeenCalledWith("tag_bulk_started", { doc_type: "voucher", doc_count: 12 });
+    expect(console.log).not.toHaveBeenCalled();
   });
 });

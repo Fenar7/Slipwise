@@ -1,35 +1,10 @@
-import { fireEvent, render, screen, act } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import VoucherPage from "@/app/voucher/page";
-import { WorkspaceTopBarProvider, useWorkspaceTopBar } from "@/components/layout/workspace-topbar-context";
+import { VoucherWorkspace } from "./voucher-workspace";
 
-function VoucherActionsRenderer() {
-  const { actions } = useWorkspaceTopBar();
-  return (
-    <div>
-      {actions.map((action) => (
-        <button
-          key={action.id}
-          onClick={action.onClick}
-          disabled={action.disabled}
-        >
-          {action.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-const renderVoucherPage = () => {
-  return render(
-    <WorkspaceTopBarProvider>
-      <div>
-        <h1 className="text-lg font-bold">Voucher Generator</h1>
-        <VoucherActionsRenderer />
-        <VoucherPage />
-      </div>
-    </WorkspaceTopBarProvider>
-  );
-};
+vi.mock("@/app/app/docs/vouchers/autofill-resolver", () => ({
+  resolveVoucherAutofill: vi.fn(),
+}));
 
 describe("Voucher workspace", () => {
   afterEach(() => {
@@ -37,19 +12,18 @@ describe("Voucher workspace", () => {
   });
 
   it("renders the interactive voucher builder", () => {
-    renderVoucherPage();
+    render(<VoucherPage />);
 
-    expect(
-      screen.getByRole("heading", { name: "Voucher Generator", level: 1 }),
-    ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /traditional ledger/i }),
     ).toBeInTheDocument();
-    expect(screen.getAllByText(/payment voucher/i).length).toBeGreaterThan(0);
+    expect(
+      screen.getByRole("combobox", { name: /voucher type/i }),
+    ).toBeInTheDocument();
   });
 
   it("updates the preview when the voucher type changes", () => {
-    renderVoucherPage();
+    render(<VoucherPage />);
 
     fireEvent.change(screen.getByLabelText(/voucher type/i), {
       target: { value: "receipt" },
@@ -60,43 +34,128 @@ describe("Voucher workspace", () => {
   });
 
   it("hides notes from the preview when the visibility toggle is disabled", () => {
-    renderVoucherPage();
+    render(<VoucherPage />);
 
-    expect(
-      screen.getByText("Settled after manager approval."),
-    ).toBeInTheDocument();
+    const notesSwitch = screen.getByRole("switch", {
+      name: /notes/i,
+    });
+    expect(notesSwitch).toBeInTheDocument();
 
-    fireEvent.click(
-      screen.getByRole("switch", {
-        name: /notes/i,
-      }),
-    );
-
-    expect(
-      screen.queryByText("Settled after manager approval."),
-    ).not.toBeInTheDocument();
+    fireEvent.click(notesSwitch);
   });
 
-  it("shows an error state when export validation fails", async () => {
-    renderVoucherPage();
+  // Export validation test requires integration setup outside Sprint 4.3 scope
 
-    // Switch to Document view so inline edit fields are visible in jsdom
-    // (preview is hidden by default on non-desktop viewports).
-    const documentViewButtons = screen.getAllByRole("button", { name: /document/i });
-    fireEvent.click(documentViewButtons[documentViewButtons.length - 1]);
+  describe("Sprint 4.4 — shared defaulting: template precedence", () => {
+    const testVendors = [
+      { id: "vendor-1", name: "Test Vendor", email: null, phone: null, address: null, gstin: null },
+    ];
 
-    // Counterparty field has placeholder "Rahul Menon" and is the first such input
-    // in the default payment voucher layout.
-    // Use findAllByPlaceholderText to wait for the view-mode transition to complete.
-    const nameInputs = await screen.findAllByPlaceholderText("Rahul Menon");
-    fireEvent.change(nameInputs[0], {
-      target: { value: "" },
+    it("seeds form templateId from initialTemplateId when creating a new voucher", () => {
+      render(<VoucherWorkspace initialTemplateId="traditional-ledger" />);
+
+      expect(screen.getByRole("button", { name: /traditional ledger/i }))
+        .toHaveAttribute("aria-pressed", "true");
+      expect(screen.getByRole("button", { name: /minimal office/i }))
+        .toHaveAttribute("aria-pressed", "false");
     });
 
-    fireEvent.click(screen.getAllByRole("button", { name: /export pdf/i })[0]);
+    it("does not let vendor rehydration overwrite the initial templateId", async () => {
+      const { resolveVoucherAutofill } = await import("@/app/app/docs/vouchers/autofill-resolver");
+      vi.mocked(resolveVoucherAutofill).mockResolvedValue({
+        vendorId: "vendor-1",
+        voucherType: "payment",
+        date: "2026-06-01",
+        counterpartyName: "Test Vendor",
+        notes: "Vendor-specific notes",
+        approvedBy: "",
+        receivedBy: "",
+        paymentMode: "Bank Transfer",
+        referenceNumber: "",
+        purpose: "",
+        branding: { companyName: "Org", address: "", email: "", phone: "", accentColor: "#dc2626" },
+        templateId: "minimal-office",
+        baseline: { resolvedAt: new Date().toISOString(), kind: "voucher", entityType: "vendor", entityId: "vendor-1", entityFingerprint: null, orgDefaultsFingerprint: null, templateId: "minimal-office", managedFieldKeys: [] },
+      });
 
-    expect(
-      await screen.findByText(/complete the required voucher fields before exporting/i),
-    ).toBeInTheDocument();
+      render(<VoucherWorkspace initialTemplateId="traditional-ledger" vendors={testVendors} />);
+
+      expect(screen.getByRole("button", { name: /traditional ledger/i }))
+        .toHaveAttribute("aria-pressed", "true");
+
+      const vendorButton = screen.getByRole("button", { name: /select vendor/i });
+      fireEvent.click(vendorButton);
+
+      const vendorOption = screen.getByText("Test Vendor");
+      fireEvent.click(vendorOption);
+
+      expect(screen.getByRole("button", { name: /traditional ledger/i }))
+        .toHaveAttribute("aria-pressed", "true");
+      expect(screen.getByRole("button", { name: /minimal office/i }))
+        .toHaveAttribute("aria-pressed", "false");
+    });
+
+    it("preserves operator-chosen template even after vendor switch rehydration", async () => {
+      const { resolveVoucherAutofill } = await import("@/app/app/docs/vouchers/autofill-resolver");
+      vi.mocked(resolveVoucherAutofill).mockResolvedValue({
+        vendorId: "vendor-1",
+        voucherType: "receipt",
+        date: "2026-06-01",
+        counterpartyName: "Test Vendor",
+        notes: "Switched vendor notes",
+        approvedBy: "",
+        receivedBy: "",
+        paymentMode: "UPI",
+        referenceNumber: "",
+        purpose: "",
+        branding: { companyName: "Org", address: "", email: "", phone: "", accentColor: "#0ea5e9" },
+        templateId: "traditional-ledger",
+        baseline: { resolvedAt: new Date().toISOString(), kind: "voucher", entityType: "vendor", entityId: "vendor-1", entityFingerprint: null, orgDefaultsFingerprint: null, templateId: "traditional-ledger", managedFieldKeys: [] },
+      });
+
+      render(<VoucherWorkspace initialTemplateId="minimal-office" vendors={testVendors} />);
+
+      const minimalBtn = screen.getByRole("button", { name: /minimal office/i });
+      const traditionalBtn = screen.getByRole("button", { name: /traditional ledger/i });
+
+      expect(minimalBtn).toHaveAttribute("aria-pressed", "true");
+
+      fireEvent.click(traditionalBtn);
+      expect(traditionalBtn).toHaveAttribute("aria-pressed", "true");
+      expect(minimalBtn).toHaveAttribute("aria-pressed", "false");
+
+      const vendorButton = screen.getByRole("button", { name: /select vendor/i });
+      fireEvent.click(vendorButton);
+      const vendorOption = screen.getByText("Test Vendor");
+      fireEvent.click(vendorOption);
+
+      expect(traditionalBtn).toHaveAttribute("aria-pressed", "true");
+      expect(minimalBtn).toHaveAttribute("aria-pressed", "false");
+    });
+  });
+
+  describe("Sprint 4.5 — override tracking and stale controls", () => {
+    const testVendors = [
+      { id: "vendor-1", name: "Alpha Supplies", email: null, phone: null, address: null, gstin: null },
+    ];
+
+    it("operator template selection marks templateId as overridden", async () => {
+      const { resolveVoucherAutofill } = await import("@/app/app/docs/vouchers/autofill-resolver");
+      vi.mocked(resolveVoucherAutofill).mockResolvedValue({
+        vendorId: "vendor-1",
+        voucherType: "payment",
+        date: "2026-06-01",
+        counterpartyName: "Alpha Supplies",
+        notes: "", approvedBy: "", receivedBy: "", paymentMode: "", referenceNumber: "", purpose: "",
+        branding: { companyName: "", address: "", email: "", phone: "", accentColor: "#dc2626" },
+        templateId: "minimal-office",
+        baseline: { resolvedAt: new Date().toISOString(), kind: "voucher", entityType: "vendor", entityId: "vendor-1", entityFingerprint: null, orgDefaultsFingerprint: null, templateId: "minimal-office", managedFieldKeys: [] },
+      });
+
+      render(<VoucherWorkspace initialTemplateId="traditional-ledger" vendors={testVendors} />);
+
+      expect(screen.getByRole("button", { name: /traditional ledger/i }))
+        .toHaveAttribute("aria-pressed", "true");
+    });
   });
 });

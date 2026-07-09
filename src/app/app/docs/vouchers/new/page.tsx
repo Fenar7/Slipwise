@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { VoucherBrandingWrapper } from "./branding-wrapper";
 import { listVendors } from "@/app/app/data/actions";
-import { getOrgDefaults } from "@/app/app/actions/org-defaults-actions";
+import { resolveVoucherAutofill } from "../autofill-resolver";
 
 export const metadata: Metadata = {
   title: "Voucher Studio",
@@ -11,13 +11,21 @@ export const metadata: Metadata = {
 export default async function NewVoucherPage({
   searchParams,
 }: {
-  searchParams: Promise<{ template?: string }>;
+  searchParams: Promise<{ template?: string; vendorId?: string }>;
 }) {
   const params = await searchParams;
-  const [vendorResult, defaults] = await Promise.all([
+  const [vendorResult, autofillPayload] = await Promise.all([
     listVendors({ limit: 100 }).catch(() => ({ vendors: [] })),
-    getOrgDefaults().catch(() => null),
+    resolveVoucherAutofill({
+      vendorId: params.vendorId || undefined,
+      templateParam: params.template || undefined,
+    }).catch(() => null),
   ]);
-  const templateId = params.template || defaults?.defaultVoucherTemplate || undefined;
-  return <VoucherBrandingWrapper vendors={vendorResult.vendors} initialTemplateId={templateId} />;
+  return (
+    <VoucherBrandingWrapper
+      vendors={vendorResult.vendors}
+      initialTemplateId={autofillPayload?.templateId}
+      initialAutofill={autofillPayload}
+    />
+  );
 }

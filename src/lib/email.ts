@@ -10,9 +10,9 @@ interface SendEmailOptions {
 
 export async function sendEmail({ to, subject, html }: SendEmailOptions): Promise<void> {
   if (!resend) {
-    console.log(`[EMAIL DEV] To: ${to} | Subject: ${subject}`);
-    console.log(`[EMAIL DEV] Body preview: ${html.substring(0, 100)}...`);
-    return;
+    throw new Error(
+      "Email provider is not configured. Set RESEND_API_KEY environment variable to send emails."
+    );
   }
   await resend.emails.send({
     from: process.env.RESEND_FROM_EMAIL ?? "noreply@slipwise.app",
@@ -53,6 +53,27 @@ export function otpEmailHtml({ otp }: { otp: string }): string {
         <span style="font-size: 36px; font-weight: 700; letter-spacing: 12px; color: #1a1a1a;">${otp}</span>
       </div>
       <p style="color: #999; font-size: 12px; margin-top: 24px;">If you didn't request this, ignore this email.</p>
+    </div>
+  `;
+}
+
+export function clientHubInviteEmailHtml({
+  url,
+  orgName,
+  customerName,
+}: {
+  url: string;
+  orgName: string;
+  customerName: string;
+}): string {
+  return `
+    <div style="font-family: Inter, sans-serif; max-width: 480px; margin: 0 auto; padding: 40px 24px;">
+      <h1 style="font-size: 24px; font-weight: 700; color: #1a1a1a; margin-bottom: 8px;">Your Client Hub is ready</h1>
+      <p style="color: #555; margin-bottom: 24px;">Hi ${customerName},</p>
+      <p style="color: #555; margin-bottom: 24px;">You can now access your personalized client hub for ${orgName}. Review invoices, quotes, and stay up to date with your account.</p>
+      <a href="${url}" style="display: inline-block; background: #dc2626; color: #fff; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 600;">Open Client Hub</a>
+      <p style="color: #999; font-size: 12px; margin-top: 24px;">Sign in with your email to receive a one-time verification code. If you have any questions, reply to this email.</p>
+      <p style="color: #999; font-size: 12px; margin-top: 8px;">${url}</p>
     </div>
   `;
 }
