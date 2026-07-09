@@ -55,10 +55,6 @@ function daysInRange(from: Date, to: Date): number {
   return Math.max(1, Math.round((to.getTime() - from.getTime()) / 86_400_000));
 }
 
-function isoDate(d: Date): string {
-  return d.toISOString().slice(0, 10);
-}
-
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
@@ -147,8 +143,6 @@ async function queryRecurringRevenue(
 ): Promise<RecurringRevenueData> {
   const sparklineStart = startOfMonth(monthsAgo(periodEnd, SPARKLINE_MONTHS - 1));
   const sparklineMonths = monthKeysEndingAt(periodEnd);
-  const sparklineStartIso = isoDate(sparklineStart);
-
   const [rules, generatedInvoices] = await Promise.all([
     db.recurringInvoiceRule.findMany({
       where: { orgId, status: "ACTIVE" },
@@ -158,7 +152,7 @@ async function queryRecurringRevenue(
       where: {
         organizationId: orgId,
         generatedFromRuleId: { not: null },
-        invoiceDate: { gte: sparklineStartIso },
+        invoiceDate: { gte: sparklineStart },
         status: { not: "CANCELLED" },
       },
       select: { invoiceDate: true, totalAmount: true },
@@ -382,7 +376,7 @@ async function queryPayables(
       where: {
         orgId,
         status: { in: ["APPROVED", "PARTIALLY_PAID"] },
-        billDate: { lte: isoDate(prevEnd) },
+        billDate: { lte: prevEnd },
       },
       _sum: { remainingAmount: true },
     }),
