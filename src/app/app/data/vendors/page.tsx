@@ -1,11 +1,8 @@
 import { Suspense } from "react";
-import Link from "next/link";
-import { listVendors, deleteVendor } from "../actions";
-import { DataTable } from "../components/data-table";
+import { listVendors } from "../actions";
 import { PageHeader } from "../components/page-header";
 import { KpiCard } from "@/components/dashboard/kpi-card";
-import { StatusBadge } from "@/components/dashboard/status-badge";
-import { Building2, ArrowUpRight } from "lucide-react";
+import { Building2 } from "lucide-react";
 
 import { VendorsClientTable } from "./vendors-client";
 

@@ -1,11 +1,8 @@
 import { Suspense } from "react";
-import Link from "next/link";
-import { listCustomers, deleteCustomer } from "../actions";
-import { DataTable } from "../components/data-table";
+import { listCustomers } from "../actions";
 import { PageHeader } from "../components/page-header";
 import { KpiCard } from "@/components/dashboard/kpi-card";
-import { StatusBadge } from "@/components/dashboard/status-badge";
-import { Users, ArrowUpRight } from "lucide-react";
+import { Users } from "lucide-react";
 
 import { CustomersClientTable } from "./customers-client";
 

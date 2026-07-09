@@ -1,9 +1,7 @@
 import { Suspense } from "react";
-import { listEmployees, deleteEmployee } from "../actions";
-import { DataTable } from "../components/data-table";
+import { listEmployees } from "../actions";
 import { PageHeader } from "../components/page-header";
 import { KpiCard } from "@/components/dashboard/kpi-card";
-import { StatusBadge } from "@/components/dashboard/status-badge";
 import { Briefcase } from "lucide-react";
 
 import { EmployeesClientTable } from "./employees-client";
