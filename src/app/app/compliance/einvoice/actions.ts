@@ -242,3 +242,22 @@ export async function listEInvoiceRequests(invoiceId: string) {
     orderBy: { createdAt: "desc" },
   });
 }
+
+export async function listAllEInvoiceRequests() {
+  const { orgId } = await requireOrgContext();
+
+  return db.eInvoiceRequest.findMany({
+    where: { orgId },
+    orderBy: { createdAt: "desc" },
+    include: {
+      invoice: {
+        select: {
+          invoiceNumber: true,
+          totalAmount: true,
+          customerName: true,
+        },
+      },
+    },
+    take: 50,
+  });
+}
