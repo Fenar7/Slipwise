@@ -362,6 +362,19 @@ describe("Shared Defaulting Engine — Invoice Adapter", () => {
     expect(result.clientName).toBe("");
     expect(result.clientEmail).toBe("");
   });
+
+  it("populates branding.companyName from organization record", async () => {
+    vi.mocked(db.orgDefaults.findUnique).mockResolvedValue(null);
+    vi.mocked(db.organization.findUnique).mockResolvedValue({
+      name: "Acme Corp Ltd",
+    } as any);
+
+    const result = await resolveInvoiceDefaults({
+      orgId: ORG_ID,
+    });
+
+    expect(result.branding.companyName).toBe("Acme Corp Ltd");
+  });
 });
 
 describe("Shared Defaulting Engine — Quote Adapter", () => {
