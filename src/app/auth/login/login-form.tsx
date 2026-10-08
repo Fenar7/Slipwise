@@ -153,8 +153,10 @@ export function LoginForm({
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (loading) return;
     setError("");
     setLoading(true);
+    let navigating = false;
     try {
       const response = await fetch("/api/auth/password-login", {
         method: "POST",
@@ -177,6 +179,7 @@ export function LoginForm({
 
       if (!response.ok) {
         if (data.code === "email_not_confirmed") {
+          navigating = true;
           router.push("/auth/verify-email?email=" + encodeURIComponent(email));
           return;
         }
@@ -185,13 +188,17 @@ export function LoginForm({
         return;
       }
 
+      navigating = true;
       window.location.assign(data.redirectTo || destination);
       return;
     } catch (err) {
+      if (navigating) return;
       console.error("[login] unexpected error:", err);
       setError("Could not reach login service. Make sure local auth is reachable from this device.");
     } finally {
-      setLoading(false);
+      if (!navigating) {
+        setLoading(false);
+      }
     }
   }
 

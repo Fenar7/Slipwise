@@ -129,7 +129,7 @@ export async function verify2faSetup(
     // Issue the challenge session cookie so the user is not immediately
     // redirected to the MFA challenge page after completing setup.
     const cookieStore = await cookies();
-    cookieStore.set(MFA_CHALLENGE_COOKIE, signChallengeToken(user.id), {
+    cookieStore.set(MFA_CHALLENGE_COOKIE, await signChallengeToken(user.id), {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",

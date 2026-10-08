@@ -42,11 +42,16 @@ const nextConfig: NextConfig = {
   async redirects() {
     return [
       { source: "/app", destination: "/app/home", permanent: false },
+      { source: "/login", destination: "/auth/login", permanent: false },
+      { source: "/signin", destination: "/auth/login", permanent: false },
+      { source: "/signup", destination: "/auth/signup", permanent: false },
+      { source: "/register", destination: "/auth/signup", permanent: false },
     ];
   },
 
   // Performance: Enable experimental optimizations
   experimental: {
+    turbopackFileSystemCacheForDev: false,
     optimizePackageImports: [
       "lucide-react",
       "recharts",

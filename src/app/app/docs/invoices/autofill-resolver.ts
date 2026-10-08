@@ -4,8 +4,6 @@ import { requireOrgContext } from "@/lib/auth";
 import { resolveInvoiceDefaults } from "@/app/app/docs/shared/defaulting/adapters/invoice-adapter";
 import type { InvoiceAutofillPayload } from "@/app/app/docs/shared/defaulting/adapters/invoice-adapter";
 
-export type { InvoiceAutofillPayload };
-
 export async function resolveInvoiceAutofill(params: {
   customerId?: string;
   templateParam?: string;

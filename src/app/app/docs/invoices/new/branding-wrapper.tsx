@@ -1,7 +1,7 @@
 "use client";
 import { useOrgBranding } from "@/hooks/use-org-branding";
 import { InvoiceWorkspace } from "@/features/docs/invoice/components/invoice-workspace";
-import type { InvoiceAutofillPayload } from "@/app/app/docs/invoices/autofill-resolver";
+import type { InvoiceAutofillPayload } from "@/app/app/docs/shared/defaulting/adapters/invoice-adapter";
 
 export type ExistingInvoice = {
   id: string;

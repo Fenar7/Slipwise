@@ -430,6 +430,17 @@ model OrgDefaults {
   matchQtyTolerancePct    Float @default(5.0)
   matchAmountTolerancePct Float @default(2.0)
 
+  // Document default autofill fields (Migrations 20260527200000, 20260530104650, 20260530114500)
+  defaultInvoiceNotes        String?
+  defaultInvoiceTerms        String?
+  defaultInvoiceAuthorizedBy String?
+  defaultQuoteNotes          String?
+  defaultQuoteTerms          String?
+  defaultVoucherNotes        String?
+  defaultVoucherApprovedBy   String?
+  defaultVoucherReceivedBy   String?
+  defaultVoucherPaymentMode  String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -1177,6 +1188,7 @@ model Customer {
   totalPaid         Decimal                @default(0)
   lastInteractionAt DateTime?
   tags              String[]               @default([])
+  paymentTermsDays  Int                    @default(30)
 
   organization     Organization              @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   invoices         Invoice[]

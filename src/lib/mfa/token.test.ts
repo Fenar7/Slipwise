@@ -4,7 +4,7 @@ import { signMfaToken, verifyMfaToken } from "./token";
 describe("signMfaToken + verifyMfaToken", () => {
   const originalSecret = process.env.TOTP_SESSION_SECRET;
 
-  beforeAll(() => {
+  beforeAll(async () => {
     process.env.TOTP_SESSION_SECRET = "test-secret-for-mfa-tokens";
   });
 
@@ -14,14 +14,14 @@ describe("signMfaToken + verifyMfaToken", () => {
 
   it("signs and verifies a valid token", async () => {
     const userId = "user-123";
-    const token = signMfaToken(userId);
+    const token = await signMfaToken(userId);
     const result = await verifyMfaToken(token, process.env.TOTP_SESSION_SECRET!);
     expect(result).toBe(userId);
   });
 
   it("rejects an expired token", async () => {
     const userId = "user-456";
-    const token = signMfaToken(userId);
+    const token = await signMfaToken(userId);
 
     // Fast-forward past the 5-minute expiry
     const originalDateNow = Date.now;
@@ -35,7 +35,7 @@ describe("signMfaToken + verifyMfaToken", () => {
 
   it("rejects a tampered token", async () => {
     const userId = "user-789";
-    const token = signMfaToken(userId);
+    const token = await signMfaToken(userId);
     // Tamper with the payload
     const [header, body, sig] = token.split(".");
     const tamperedBody = Buffer.from(body, "base64url")
@@ -53,7 +53,7 @@ describe("signMfaToken + verifyMfaToken", () => {
 
   it("rejects a token with wrong secret", async () => {
     const userId = "user-abc";
-    const token = signMfaToken(userId);
+    const token = await signMfaToken(userId);
     const result = await verifyMfaToken(token, "wrong-secret");
     expect(result).toBeNull();
   });
@@ -66,7 +66,7 @@ describe("signMfaToken + verifyMfaToken", () => {
   it("rejects a token with wrong typ claim", async () => {
     // Create a challenge token (typ: undefined or different) instead of MFA token
     const { signChallengeToken } = await import("@/lib/totp/challenge-session");
-    const challengeToken = signChallengeToken("user-xyz");
+    const challengeToken = await signChallengeToken("user-xyz");
     const result = await verifyMfaToken(challengeToken, process.env.TOTP_SESSION_SECRET!);
     expect(result).toBeNull();
   });

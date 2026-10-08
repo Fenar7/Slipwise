@@ -1,17 +1,12 @@
 /**
  * MFA challenge session cookie helpers.
  *
- * Server-side (Node.js): sign cookies with crypto.createHmac (same HS256
- * pattern used in portal-auth.ts).
- *
- * Edge/middleware: verify with the Web Crypto API (crypto.subtle) which is
+ * Edge-compatible: verify with the Web Crypto API (crypto.subtle) which is
  * available in the Next.js Edge Runtime.
  *
  * Originally TOTP-specific, now generalized for any MFA factor (TOTP, passkey,
  * recovery code). The cookie name stays stable to avoid migration friction.
  */
-
-import crypto from "crypto";
 
 export const MFA_CHALLENGE_COOKIE = "sw_2fa";
 /** How long a verified MFA session stays valid (12 hours). */
@@ -23,11 +18,13 @@ export const TOTP_SESSION_DURATION_SECONDS = MFA_SESSION_DURATION_SECONDS;
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function base64url(input: string): string {
-  return Buffer.from(input).toString("base64url");
+function base64urlEncode(input: string | Uint8Array): string {
+  const bytes = typeof input === "string" ? new TextEncoder().encode(input) : input;
+  const base64 = btoa(String.fromCharCode(...new Uint8Array(bytes)));
+  return base64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-function decodeBase64Url(input: string): Uint8Array {
+function base64urlDecode(input: string): Uint8Array {
   const normalized = input.replace(/-/g, "+").replace(/_/g, "/");
   const padding = "=".repeat((4 - (normalized.length % 4)) % 4);
   const base64 = normalized + padding;
@@ -35,40 +32,42 @@ function decodeBase64Url(input: string): Uint8Array {
   return Uint8Array.from(binary, (char) => char.charCodeAt(0));
 }
 
-function getWebCrypto() {
-  if (globalThis.crypto?.subtle) {
-    return globalThis.crypto;
-  }
-  return crypto.webcrypto;
+function getSecret(): string | null {
+  return process.env.TOTP_SESSION_SECRET ?? process.env.PORTAL_JWT_SECRET ?? null;
 }
 
-function getSecret(): string {
-  const s = process.env.TOTP_SESSION_SECRET ?? process.env.PORTAL_JWT_SECRET ?? "";
-  if (!s) {
-    throw new Error(
-      "TOTP_SESSION_SECRET is not configured. Add it to your environment variables."
-    );
-  }
-  return s;
-}
-
-// ─── Server-side: sign ───────────────────────────────────────────────────────
+// ─── Edge-compatible: sign via crypto.subtle ─────────────────────────────────
 
 /**
  * Create a signed challenge cookie value tied to a specific user.
  * Call this after successfully verifying any MFA factor (TOTP, passkey, recovery).
  */
-export function signChallengeToken(userId: string): string {
+export async function signChallengeToken(userId: string): Promise<string> {
+  const secret = getSecret();
+  if (!secret) {
+    throw new Error("TOTP_SESSION_SECRET is not configured. Add it to your environment variables.");
+  }
   const now = Math.floor(Date.now() / 1000);
-  const header = base64url(JSON.stringify({ alg: "HS256", typ: "JWT" }));
-  const body = base64url(
+  const header = base64urlEncode(JSON.stringify({ alg: "HS256", typ: "JWT" }));
+  const body = base64urlEncode(
     JSON.stringify({ sub: userId, iat: now, exp: now + MFA_SESSION_DURATION_SECONDS })
   );
-  const signature = crypto
-    .createHmac("sha256", getSecret())
-    .update(`${header}.${body}`)
-    .digest("base64url");
-  return `${header}.${body}.${signature}`;
+
+  const enc = new TextEncoder();
+  const key = await globalThis.crypto.subtle.importKey(
+    "raw",
+    enc.encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+
+  const signature = await globalThis.crypto.subtle.sign(
+    "HMAC",
+    key,
+    enc.encode(`${header}.${body}`)
+  );
+  return `${header}.${body}.${base64urlEncode(new Uint8Array(signature))}`;
 }
 
 // ─── Edge-compatible: verify via crypto.subtle ───────────────────────────────
@@ -81,6 +80,7 @@ export async function verifyChallengeToken(
   token: string,
   secret: string
 ): Promise<string | null> {
+  if (!secret) return null;
   try {
     const parts = token.split(".");
     if (parts.length !== 3) return null;
@@ -88,8 +88,7 @@ export async function verifyChallengeToken(
 
     // Import the signing key using the Web Crypto API
     const enc = new TextEncoder();
-    const webCrypto = getWebCrypto();
-    const key = await webCrypto.subtle.importKey(
+    const key = await globalThis.crypto.subtle.importKey(
       "raw",
       enc.encode(secret),
       { name: "HMAC", hash: "SHA-256" },
@@ -98,18 +97,18 @@ export async function verifyChallengeToken(
     );
 
     // base64url → Uint8Array
-    const sigBytes = decodeBase64Url(sig);
+    const sigBytes = base64urlDecode(sig);
 
-    const isValid = await webCrypto.subtle.verify(
+    const isValid = await globalThis.crypto.subtle.verify(
       "HMAC",
       key,
-      sigBytes as any,
+      sigBytes,
       enc.encode(`${header}.${body}`)
     );
     if (!isValid) return null;
 
     const payload = JSON.parse(
-      new TextDecoder().decode(decodeBase64Url(body))
+      new TextDecoder().decode(base64urlDecode(body))
     ) as { sub?: string; exp?: number };
 
     const now = Math.floor(Date.now() / 1000);

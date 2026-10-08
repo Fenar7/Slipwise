@@ -39,7 +39,7 @@ CREATE INDEX "mailbox_search_document_orgId_mailboxConnectionId_documentType_idx
 CREATE INDEX "mailbox_search_document_orgId_lastActivityAt_idx" ON "mailbox_search_document"("orgId", "lastActivityAt");
 
 -- AddForeignKey
-ALTER TABLE "mailbox_search_document" ADD CONSTRAINT "mailbox_search_document_orgId_fkey" FOREIGN KEY ("orgId") REFERENCES "Organization"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "mailbox_search_document" ADD CONSTRAINT "mailbox_search_document_orgId_fkey" FOREIGN KEY ("orgId") REFERENCES "organization"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "mailbox_search_document" ADD CONSTRAINT "mailbox_search_document_mailboxConnectionId_orgId_fkey" FOREIGN KEY ("mailboxConnectionId", "orgId") REFERENCES "mailbox_connection"("id", "orgId") ON DELETE CASCADE ON UPDATE CASCADE;

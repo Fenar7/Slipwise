@@ -52,7 +52,7 @@ async function syncMfaMetadata(
 
 async function issueMfaCookie(userId: string) {
   const cookieStore = await cookies();
-  cookieStore.set(MFA_CHALLENGE_COOKIE, signChallengeToken(userId), {
+  cookieStore.set(MFA_CHALLENGE_COOKIE, await signChallengeToken(userId), {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",

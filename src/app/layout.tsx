@@ -40,6 +40,7 @@ export default function RootLayout({
     <html
       lang="en"
       data-scroll-behavior="smooth"
+      suppressHydrationWarning
       className={`${inter.variable} ${manrope.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">

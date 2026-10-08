@@ -1,3 +1,4 @@
+import { db } from "@/lib/db";
 import { resolveDefaults } from "@/app/app/docs/shared/defaulting/resolver";
 import type { DefaultResolutionInput, BaselineMetadata } from "@/app/app/docs/shared/defaulting/types";
 import { todayIso, addDays } from "@/app/app/docs/shared/defaulting/date-utils";
@@ -39,7 +40,13 @@ export async function resolveInvoiceDefaults(input: {
     entityId: input.customerId,
     queryParams: input.templateParam ? { template: input.templateParam } : undefined,
   };
-  const resolution = await resolveDefaults(resolutionInput);
+  const [resolution, org] = await Promise.all([
+    resolveDefaults(resolutionInput),
+    db.organization.findUnique({
+      where: { id: input.orgId },
+      select: { name: true },
+    }),
+  ]);
   const od = resolution.orgDefaults;
   const entity = resolution.entity;
   const businessTaxId = od.gstin || od.taxId || "";
@@ -56,7 +63,7 @@ export async function resolveInvoiceDefaults(input: {
     notes: od.defaultInvoiceNotes || "", terms: od.defaultInvoiceTerms || "",
     authorizedBy: od.defaultInvoiceAuthorizedBy || "", bankName: od.bankName || "",
     bankAccountNumber: od.bankAccount || "", bankIfsc: od.bankIFSC || "", amountPaid: "0",
-    branding: { companyName: "", address: od.businessAddress || "", email: "", phone: "" },
+    branding: { companyName: org?.name?.trim() || "", address: od.businessAddress || "", email: "", phone: "" },
     baseline,
   };
 }

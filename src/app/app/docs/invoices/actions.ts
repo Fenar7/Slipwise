@@ -29,7 +29,7 @@ import { rateLimitByOrg, RATE_LIMITS } from "@/lib/rate-limit";
 import type { ConsumeResult } from "@/features/sequences/types";
 import { setInvoiceTags } from "@/lib/tags/assignment-service";
 import { resolveInvoiceAutofill } from "./autofill-resolver";
-import type { InvoiceAutofillPayload } from "./autofill-resolver";
+import type { InvoiceAutofillPayload } from "@/app/app/docs/shared/defaulting/adapters/invoice-adapter";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

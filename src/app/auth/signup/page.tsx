@@ -23,6 +23,7 @@ export default function SignupPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (loading) return;
     setError("");
     if (password !== confirm) {
       setError("Passwords do not match");
@@ -33,6 +34,7 @@ export default function SignupPage() {
       return;
     }
     setLoading(true);
+    let navigating = false;
     try {
       const supabase = createSupabaseBrowser();
       const { data, error: signUpError } = await supabase.auth.signUp({
@@ -47,18 +49,23 @@ export default function SignupPage() {
         console.error("[signup] signUp error:", signUpError.message, signUpError.code);
         setError(signUpError.message ?? "Could not create account");
       } else if (data.session) {
+        navigating = true;
         console.log("[signup] signed up and session created immediately (no confirmation)");
         router.push("/onboarding");
         router.refresh();
       } else {
+        navigating = true;
         console.log("[signup] user created, awaiting email confirmation");
         router.push("/auth/verify-email?email=" + encodeURIComponent(email));
       }
     } catch (err) {
+      if (navigating) return;
       console.error("[signup] unexpected error:", err);
       setError("Something went wrong. Please try again.");
     } finally {
-      setLoading(false);
+      if (!navigating) {
+        setLoading(false);
+      }
     }
   }
 

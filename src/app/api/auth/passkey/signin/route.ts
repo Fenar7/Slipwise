@@ -183,7 +183,7 @@ export async function POST(request: NextRequest) {
     // 7. The passkey authentication itself satisfies MFA. Return a short-lived
     // handoff token so middleware can set the sw_2fa cookie on the next page
     // load instead of relying on a fetch() Set-Cookie response.
-    const mfaToken = signMfaToken(credential.userId);
+    const mfaToken = await signMfaToken(credential.userId);
     const finalResponse = NextResponse.json({ success: true, callbackUrl, mfaToken });
     responseObj.cookies.getAll().forEach(({ name, value }) => {
       finalResponse.cookies.set(name, value, {

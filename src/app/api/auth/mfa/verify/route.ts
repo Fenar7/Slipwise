@@ -24,7 +24,7 @@ function sanitizeCallbackUrl(raw: string): string {
 }
 
 function issueCookie(userId: string): [string, string, Record<string, unknown>] {
-  const value = signChallengeToken(userId);
+  const value = await signChallengeToken(userId);
   const options = {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
@@ -40,7 +40,7 @@ function buildSuccessResponse(
   callbackUrl: string,
   setCookie: boolean
 ): NextResponse {
-  const mfaToken = signMfaToken(userId);
+  const mfaToken = await signMfaToken(userId);
   const response = NextResponse.json({ success: true, callbackUrl, mfaToken });
   if (setCookie) {
     const [name, value, options] = issueCookie(userId);

@@ -234,6 +234,7 @@ Depending on what is requested next, the likely paths are:
 
 ## Important Do-Not-Touch Notes
 
+- **CRITICAL GLOBAL RULE**: Do not go into execution or write/modify code unless specifically told to. Always wait for explicit instructions before modifying the codebase.
 - Do not disturb mailbox PR `#327`
 - Do not retarget stacked messaging PRs unless explicitly asked
 - Do not modify or delete the unrelated untracked files unless explicitly asked
