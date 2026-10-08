@@ -4,8 +4,6 @@ import { requireOrgContext } from "@/lib/auth";
 import { resolveVoucherDefaults } from "@/app/app/docs/shared/defaulting/adapters/voucher-adapter";
 import type { VoucherAutofillPayload } from "@/app/app/docs/shared/defaulting/adapters/voucher-adapter";
 
-export type { VoucherAutofillPayload };
-
 export async function validateVoucherVendor(vendorId: string | undefined | null, orgId: string): Promise<void> {
   if (!vendorId) return;
   const { db } = await import("@/lib/db");

@@ -51,6 +51,7 @@ const nextConfig: NextConfig = {
 
   // Performance: Enable experimental optimizations
   experimental: {
+    turbopackFileSystemCacheForDev: false,
     optimizePackageImports: [
       "lucide-react",
       "recharts",

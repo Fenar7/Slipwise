@@ -46,7 +46,7 @@ import {
   issueInvoice,
   resolveInvoiceAutofillAction,
 } from "@/app/app/docs/invoices/actions";
-import type { InvoiceAutofillPayload } from "@/app/app/docs/invoices/autofill-resolver";
+import type { InvoiceAutofillPayload } from "@/app/app/docs/shared/defaulting/adapters/invoice-adapter";
 import { StaleDataBanner } from "@/components/foundation/stale-data-banner";
 import { INVOICE_MANAGED_FIELDS } from "@/app/app/docs/shared/defaulting/managed-fields";
 import type { StaleInfo } from "@/app/app/docs/shared/defaulting/types";

@@ -1,4 +1,5 @@
-@import "tailwindcss";
+@import "tailwindcss" source(none);
+@source "../";
 
 /* ======================================================================
    Slipwise Design Token System — Phase 1 Foundation

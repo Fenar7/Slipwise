@@ -12,8 +12,6 @@ import { checkFeature } from "@/lib/plans/enforcement";
 
 type ActionResult<T> = { success: true; data: T } | { success: false; error: string };
 
-export type { GstHealthIssue, Gstr1Data, Gstr3bSummary } from "@/lib/gst/reporting";
-
 export async function getGstr1Data(params: {
   startDate: string;
   endDate: string;

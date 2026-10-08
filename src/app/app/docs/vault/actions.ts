@@ -3,8 +3,6 @@
 import { queryVault, getDocsSummary } from "@/lib/docs-vault";
 import type { VaultQueryParams, VaultResult, DocsSummary } from "@/lib/docs-vault";
 
-export type { VaultQueryParams, VaultResult, DocsSummary };
-
 /**
  * Server action — query the Document Vault.
  * Org-scoped internally via requireOrgContext().

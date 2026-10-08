@@ -13,7 +13,8 @@ import {
 import { revalidatePath } from "next/cache";
 import { emitQuoteEvent } from "@/lib/document-events";
 import { syncQuoteToIndex, removeDocumentFromIndex } from "@/lib/docs-vault";
-import { resolveQuoteAutofill, type QuoteAutofillPayload } from "./autofill-resolver";
+import { resolveQuoteAutofill } from "./autofill-resolver";
+import type { QuoteAutofillPayload } from "@/app/app/docs/shared/defaulting/adapters/quote-adapter";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

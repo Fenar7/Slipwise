@@ -2,7 +2,7 @@
 import { useOrgBranding } from "@/hooks/use-org-branding";
 import { VoucherWorkspace } from "@/features/docs/voucher/components/voucher-workspace";
 import type { VoucherFormValues } from "@/features/docs/voucher/types";
-import type { VoucherAutofillPayload } from "../autofill-resolver";
+import type { VoucherAutofillPayload } from "@/app/app/docs/shared/defaulting/adapters/voucher-adapter";
 
 interface Vendor {
   id: string;

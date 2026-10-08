@@ -54,7 +54,8 @@ import {
   updateVoucher,
   type VoucherInput,
 } from "@/app/app/docs/vouchers/actions";
-import { resolveVoucherAutofill, type VoucherAutofillPayload } from "@/app/app/docs/vouchers/autofill-resolver";
+import { resolveVoucherAutofill } from "@/app/app/docs/vouchers/autofill-resolver";
+import type { VoucherAutofillPayload } from "@/app/app/docs/shared/defaulting/adapters/voucher-adapter";
 import { StaleDataBanner } from "@/components/foundation/stale-data-banner";
 import { VOUCHER_MANAGED_FIELDS } from "@/app/app/docs/shared/defaulting/managed-fields";
 import { staleLabel } from "@/app/app/docs/shared/defaulting/stale-detection";
